@@ -318,7 +318,7 @@ No automated test suite exists yet. The test CSV is `Jamf Reports/97 Computers.c
 (96 sanitized dummy devices). Manual test workflow:
 
 ```bash
-cd "/Users/alyoung/Documents/04_GitHub_Projects/jamf-reports-community"
+cd /path/to/jamf-reports-community
 
 # Verify compilation
 python3 -c "import py_compile; py_compile.compile('jamf-reports-community.py', doraise=True)"

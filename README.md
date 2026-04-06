@@ -3,7 +3,7 @@
 Config-driven macOS fleet reporting for Jamf Pro. Generates formatted Excel workbooks from
 a Jamf Pro CSV export — no Power BI, no custom infrastructure, no hardcoded credentials.
 
-Long-form setup and operations docs live in [docs/wiki/Home.md](/Users/alyoung/Documents/04_GitHub_Projects/jamf-reports-community/docs/wiki/Home.md).
+Long-form setup and operations docs live in the [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki).
 
 ---
 

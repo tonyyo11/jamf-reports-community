@@ -98,7 +98,7 @@ Use these exact names:
 No automated test suite. Test CSV: `Jamf Reports/97 Computers.csv` (96 sanitized dummy devices).
 
 ```bash
-cd /Users/alyoung/Documents/04_GitHub_Projects/jamf-reports-community
+cd /path/to/jamf-reports-community
 
 # 1. Verify syntax
 python3 -c "import py_compile; py_compile.compile('jamf_reports_community.py', doraise=True)"

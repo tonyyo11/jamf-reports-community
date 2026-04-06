@@ -1,6 +1,6 @@
 # jamf-reports-community Wiki
 
-This wiki set is the long-form companion to [COMMUNITY_README.md](/Users/alyoung/Documents/04_GitHub_Projects/jamf-reports-community/COMMUNITY_README.md).
+This wiki set is the long-form companion to [COMMUNITY_README.md](https://github.com/tonyyo11/jamf-reports-community/blob/main/COMMUNITY_README.md).
 
 Use it when you want a full setup and operating guide instead of a quick-start.
 
