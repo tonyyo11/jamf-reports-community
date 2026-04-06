@@ -1,0 +1,23 @@
+# Local config (org-specific, never commit)
+config.yaml
+
+# Jamf CLI cached data
+jamf-cli-data/
+
+# Generated report output
+Generated Reports/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Internal planning docs / Claude Code session state
+.claude/
+Community Edition Recap.rtf
+
+# Report files
+*.xlsx

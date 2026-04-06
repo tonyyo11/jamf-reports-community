@@ -1,0 +1,388 @@
+# jamf-reports community edition — example configuration
+#
+# Copy this file to config.yaml and edit to match your Jamf Pro instance.
+# Run the scaffold command to auto-generate a starter config from your CSV:
+#
+#   python3 jamf-reports-community.py scaffold --csv your_export.csv
+#
+# The scaffold command reads your actual CSV headers and maps them to the
+# logical field names below. You only need to hand-edit fields it could not
+# detect automatically.
+#
+# Column names in this file must exactly match your Jamf Pro CSV headers,
+# including capitalization and spaces.
+#
+# Validate your config against your CSV at any time:
+#
+#   python3 jamf-reports-community.py check --csv your_export.csv
+
+
+# =============================================================================
+# COLUMN MAPPING
+# =============================================================================
+# Maps logical field names (used internally by the report tool) to the actual
+# column headers in your Jamf Pro CSV export.
+#
+# Required fields (marked below) must be present for core functionality.
+# Optional fields can be omitted or left blank — those sheets or calculations
+# will be skipped gracefully.
+#
+# Tip: Open your CSV in a spreadsheet app, copy the exact header text, and
+# paste it here as the value.
+
+columns:
+
+  # --- Core identity fields (required) ---
+
+  # The computer's display name in Jamf Pro.
+  computer_name: "Computer Name"
+
+  # The hardware serial number. Used as a stable unique key across reports.
+  serial_number: "Serial Number"
+
+  # The macOS version string as reported by Jamf inventory.
+  # Common values: "macOS 15.3.2", "15.3.2", "Sequoia 15.3.2"
+  # The tool normalises these automatically.
+  operating_system: "Operating System Version"
+
+  # Timestamp of the computer's last Jamf check-in.
+  # Accepted formats: "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", ISO 8601.
+  last_checkin: "Last Check-in"
+
+  # --- User assignment (optional) ---
+
+  # The department the computer is assigned to.
+  department: "Department"
+
+  # The manager field (plain name or AD Distinguished Name — both are handled).
+  # Do not point this at Jamf's built-in "Managed" / "Unmanaged" status column.
+  manager: "Manager"
+
+  # The assigned user's email address.
+  email: "Email Address"
+
+  # --- Security controls (optional — each drives a row in Security Controls sheet) ---
+
+  # FileVault 2 encryption status. Prefer the detailed FileVault 2 status column
+  # over summary/count-style columns such as "FileVault Status" with values like "1/1".
+  filevault: "FileVault 2 - Status"
+
+  # System Integrity Protection status. Typical values: "Enabled", "Disabled".
+  sip: "System Integrity Protection"
+
+  # macOS Firewall status. Typical values: "Enabled", "Disabled", "On", "Off".
+  firewall: "Firewall Enabled"
+
+  # Secure Boot level. Typical values: "Full Security", "Medium Security", "No Security".
+  secure_boot: "Secure Boot Level"
+
+  # Whether a Bootstrap Token is escrowed in Jamf. Typical values: "Yes" / "No".
+  bootstrap_token: "Bootstrap Token Escrowed"
+
+  # Boot volume percentage used. The tool reads this as a plain number (0-100).
+  disk_percent_full: "Boot Drive Percentage Full"
+
+  # --- Hardware info (optional) ---
+
+  # Processor architecture. Typical values: "Apple M3 Pro", "Intel Core i9".
+  architecture: "Architecture"
+
+  # The human-readable model name (e.g., "MacBook Pro (16-inch, 2021)").
+  model: "Model"
+
+  # --- Enrollment / MDM (optional) ---
+
+  # Date the computer was last enrolled in Jamf.
+  last_enrollment: "Last Enrollment"
+
+  # MDM configuration profile expiration date.
+  # Used with custom_eas type: date to flag expiring/expired profiles.
+  mdm_expiry: "MDM Profile Expiration Date"
+
+
+# =============================================================================
+# SECURITY AGENTS
+# =============================================================================
+# Defines which third-party security tools to track.
+# Each entry drives a row in the Security Agents sheet.
+#
+# Required fields per entry:
+#   name            - Display label in the report
+#   column          - Exact EA column name in your CSV
+#   connected_value - The string that means "installed / running"
+#                     (case-insensitive substring match)
+#
+# Comment out any agents your org does not deploy.
+
+security_agents:
+  - name: "CrowdStrike Falcon"
+    column: "CrowdStrike Falcon - Status"
+    # Common EA values: "Installed", "Running", "Healthy", "1"
+    connected_value: "Installed"
+
+  - name: "SentinelOne"
+    column: "SentinelOne - Agent Status"
+    # Common EA values: "running", "Installed", "Active"
+    connected_value: "running"
+
+  - name: "Jamf Protect"
+    column: "Jamf Protect - Status"
+    # Common EA values: "Healthy", "Installed", "Running"
+    connected_value: "Healthy"
+
+  - name: "Splunk UF"
+    column: "Splunk Universal Forwarder - Status"
+    # Common EA values: "Running", "Installed", "Active"
+    connected_value: "Running"
+
+  - name: "Nessus Agent"
+    column: "Nessus Agent - Status"
+    # Common EA values: "running", "Linked", "Installed"
+    connected_value: "running"
+
+  - name: "Tanium Client"
+    column: "Tanium Client - Version"
+    # For Tanium, any non-empty version string means installed.
+    # Match the version prefix your org deploys.
+    connected_value: "7."
+
+  - name: "Carbon Black"
+    column: "Carbon Black Cloud - Sensor Status"
+    # Common EA values: "ACTIVE", "Installed", "Running"
+    connected_value: "ACTIVE"
+
+
+# =============================================================================
+# JAMF-CLI SNAPSHOTS
+# =============================================================================
+# jamf-cli is optional. When available, the script can fetch live data and save
+# JSON snapshots here. When live auth is unavailable, the script can also reuse
+# the newest saved snapshot for each supported sheet.
+#
+# This lets you keep the simple community default ("jamf-cli-data" next to the
+# script) or point at an existing cache such as "Jamf Reports/jamf-cli-data".
+# Relative paths here resolve from the folder containing config.yaml.
+
+jamf_cli:
+  # Directory where jamf-cli JSON snapshots are stored.
+  data_dir: "jamf-cli-data"
+  # Optional jamf-cli profile name, equivalent to passing -p/--profile to
+  # jamf-cli. When you use multiple profiles, point data_dir at a profile-
+  # specific folder so cached snapshots do not mix between tenants.
+  profile: ""
+  # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.
+  use_cached_data: true
+  # Fetch Fleet Overview live by default. Set false if you want overview to use
+  # cached JSON only for a specific tenant or troubleshooting scenario.
+  allow_live_overview: true
+
+
+# =============================================================================
+# COMPLIANCE
+# =============================================================================
+# Tracks mSCP (macOS Security Compliance Project) audit results or any other
+# compliance framework your org reports on.
+#
+# The mSCP EA scripts write a failed-rules count and a pipe-delimited list of
+# failed rule IDs to two separate EAs. Configure both below.
+#
+# Set enabled: false to skip the Compliance sheet entirely.
+
+compliance:
+  enabled: true
+  baseline_label: "NIST 800-53r5 Moderate"
+  # EA column containing the integer count of failed rules.
+  failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5"
+  # EA column containing the pipe-delimited list of failed rule IDs.
+  # Example cell value: "os_filevault_enable|os_screensaver_timeout|..."
+  failures_list_column: "Compliance - Failed mSCP Result List - NIST 800-53r5"
+
+
+# =============================================================================
+# CUSTOM EA SHEETS
+# =============================================================================
+# Define extra spreadsheet tabs driven entirely by EA data from your CSV.
+# Each list entry creates one sheet in the output workbook.
+#
+# Required fields for every entry:
+#   name    - Sheet tab label and section heading in the report
+#   column  - Exact EA column name in your CSV
+#   type    - One of: boolean, percentage, version, text, date
+#
+# Supported EA types:
+#
+#   boolean     - Values like Yes/No, True/False, Enabled/Disabled.
+#                 Generates a summary table. Set true_value to the string
+#                 that means "compliant".
+#
+#   percentage  - Numeric values 0-100. Flags devices above warning_threshold
+#                 and critical_threshold. Generates a distribution table.
+#
+#   version     - Version strings (e.g., "15.3.2", "10.0.1").
+#                 Generates a version frequency table. Set current_versions
+#                 to a list of known-current versions for status coloring.
+#
+#   text        - Free-form strings. Generates a frequency table.
+#                 Useful for agent status values, account names, etc.
+#
+#   date        - Date strings. Flags devices where the date is past (expired)
+#                 or within warning_days days (expiring soon).
+#                 Useful for certificate expiration, profile expiration.
+
+custom_eas:
+
+  # --- FileVault encryption status ---
+  - name: "FileVault Status"
+    column: "FileVault 2 - Status"
+    type: boolean
+    # Value in this EA that means "compliant / enabled"
+    true_value: "Encrypted"
+
+  # --- Disk usage (% used) ---
+  - name: "Disk Usage"
+    column: "Boot Drive Percentage Full"
+    type: percentage
+    # Devices above warning_threshold are flagged yellow; above critical_threshold, red.
+    warning_threshold: 80
+    critical_threshold: 90
+
+  # --- macOS version compliance ---
+  - name: "macOS Version"
+    column: "Operating System Version"
+    type: version
+    # List the version strings considered current in your org.
+    # Devices on any other version are flagged in the output.
+    current_versions:
+      - "15.4"
+      - "15.3.2"
+
+  # --- Secure Token status ---
+  - name: "Secure Token"
+    column: "Secure Token - Status"
+    type: boolean
+    true_value: "Enabled"
+
+  # --- MDM configuration profile expiration ---
+  - name: "MDM Profile Expiration"
+    column: "MDM Profile Expiration Date"
+    type: date
+    # Devices with an expiration date within this many days are flagged "expiring soon".
+    # Falls back to thresholds.cert_warning_days if not set here.
+    warning_days: 30
+
+  # --- Identity certificate expiration ---
+  - name: "Identity Certificate Expiration"
+    column: "Identity Certificate - Expiration Date"
+    type: date
+    warning_days: 60
+
+  # --- Patch management agent status ---
+  - name: "Patch Agent Status"
+    column: "Patch Management - Agent Status"
+    type: text
+
+
+# =============================================================================
+# THRESHOLDS
+# =============================================================================
+# Global numeric thresholds used as defaults across multiple sheets.
+# Per-EA thresholds (like warning_threshold in custom_eas above) override
+# these defaults when both are set.
+
+thresholds:
+
+  # Devices not checked in within this many days are treated as inactive
+  # and excluded from compliance/security agent counts.
+  stale_device_days: 30
+
+  # Default disk usage thresholds used when not set per-EA.
+  warning_disk_percent: 80
+  critical_disk_percent: 90
+
+  # Default certificate/date expiry warning window (days).
+  cert_warning_days: 90
+
+
+# =============================================================================
+# OUTPUT
+# =============================================================================
+
+output:
+
+  # Directory where report files are written. Relative paths resolve from the
+  # folder containing config.yaml. Created automatically if it does not exist.
+  output_dir: "Generated Reports"
+
+  # Append a local date/time stamp to user-specified output filenames unless
+  # they already contain one. Auto-named outputs are always timestamped.
+  timestamp_outputs: true
+
+  # Automatically move older generated runs out of the main output folder.
+  archive_enabled: true
+
+  # Optional archive directory for older generated reports and inventory CSVs.
+  # Leave blank to use an "archive" folder next to the active output file.
+  archive_dir: ""
+
+  # Number of recent timestamped runs to keep in the main output folder for
+  # each report family before older runs are moved into archive_dir.
+  keep_latest_runs: 10
+
+
+# =============================================================================
+# CHARTS
+# =============================================================================
+# Controls matplotlib PNG chart generation and embedding in the xlsx workbook.
+# Requires: pip install matplotlib
+#
+# Charts are embedded in a "Charts" sheet in the workbook AND saved as
+# standalone PNG files alongside the xlsx. PNG filenames use the workbook stem
+# as a prefix, so each run stays grouped together.
+#
+# Trend charts read dated CSV snapshots from historical_csv_dir or --historical-csv-dir.
+# Snapshot filenames should contain YYYY-MM-DD, YYYYMMDD, YYYY-MM-DD_HHMMSS,
+# or YYYY-MM-DDTHHMMSS somewhere in the filename.
+
+charts:
+
+  # Set to false to disable all chart generation.
+  enabled: true
+
+  # Save charts as PNG files alongside the xlsx report.
+  save_png: true
+
+  # Embed all generated charts into a "Charts" sheet in the workbook.
+  embed_in_xlsx: true
+
+  # Optional directory of dated CSV snapshots used for trend charts.
+  # Relative paths resolve from the folder containing config.yaml.
+  historical_csv_dir: "snapshots"
+
+  # When true, generate automatically copies the current --csv into
+  # historical_csv_dir using a date/time-stamped filename.
+  archive_current_csv: true
+
+  # macOS adoption charts: device counts per OS version over time.
+  # Uses CSV snapshots when available and falls back to jamf-cli
+  # inventory-summary snapshot history for jamf-cli-only workflows.
+  os_adoption:
+    enabled: true
+    # Also generate one chart per major macOS version (drilldown to minor/patch).
+    per_major_charts: true
+
+  # Compliance trend: stacked area chart bucketing devices by failure count.
+  # Requires compliance.failures_count_column to be configured.
+  compliance_trend:
+    enabled: true
+    # Failure count bands — labels, thresholds, and colors.
+    bands:
+      - {label: "Pass",            min_failures: 0,  max_failures: 0,    color: "#4472C4"}
+      - {label: "Low (1-10)",      min_failures: 1,  max_failures: 10,   color: "#2E9E7D"}
+      - {label: "Med-Low (11-30)", min_failures: 11, max_failures: 30,   color: "#FFCA30"}
+      - {label: "Medium (31-50)",  min_failures: 31, max_failures: 50,   color: "#F07C21"}
+      - {label: "High (>50)",      min_failures: 51, max_failures: 9999, color: "#C0392B"}
+
+  # jamf-cli-only trend: managed/unmanaged and current/stale device counts
+  # over time from cached device-compliance snapshots.
+  device_state_trend:
+    enabled: true
