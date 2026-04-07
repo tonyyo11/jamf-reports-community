@@ -1,0 +1,108 @@
+name: Generate Jamf Report
+
+on:
+  # Run every Monday at 08:00 UTC — adjust to your org's schedule.
+  schedule:
+    - cron: "0 8 * * 1"
+
+  # Allow manual runs from the Actions tab, with an optional CSV upload path.
+  workflow_dispatch:
+    inputs:
+      csv_path:
+        description: "Relative path to a CSV export committed to this repo (leave blank to skip)"
+        required: false
+        default: ""
+
+jobs:
+  generate-report:
+    name: Generate report
+    runs-on: macos-latest   # macOS runner gives access to jamf-cli via Homebrew
+
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Check out the repository
+      # ------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 2. Set up Python
+      # ------------------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ------------------------------------------------------------------
+      # 3. (Optional) Install jamf-cli via Homebrew.
+      #    Remove this step if you're running CSV-only reports or if
+      #    jamf-cli is pre-installed on your self-hosted runner.
+      # ------------------------------------------------------------------
+      - name: Install jamf-cli
+        run: brew install jamf-cli
+        continue-on-error: true   # non-fatal; script falls back to CSV-only mode
+
+      # ------------------------------------------------------------------
+      # 4. Authenticate jamf-cli.
+      #    Store your Jamf Pro URL, client ID, and client secret as
+      #    repository secrets: JAMF_URL, JAMF_CLIENT_ID, JAMF_CLIENT_SECRET
+      #
+      #    Remove or skip this step if jamf-cli is not in use.
+      # ------------------------------------------------------------------
+      - name: Authenticate jamf-cli
+        if: env.JAMF_URL != ''
+        env:
+          JAMF_URL: ${{ secrets.JAMF_URL }}
+          JAMF_CLIENT_ID: ${{ secrets.JAMF_CLIENT_ID }}
+          JAMF_CLIENT_SECRET: ${{ secrets.JAMF_CLIENT_SECRET }}
+        run: |
+          jamf-cli pro setup \
+            --url "$JAMF_URL" \
+            --client-id "$JAMF_CLIENT_ID" \
+            --client-secret "$JAMF_CLIENT_SECRET"
+        continue-on-error: true   # non-fatal; script continues without jamf-cli data
+
+      # ------------------------------------------------------------------
+      # 5. Collect fresh jamf-cli snapshots (skipped if auth failed).
+      #    The JSON files are saved to jamf-cli-data/ and used by generate.
+      # ------------------------------------------------------------------
+      - name: Collect jamf-cli snapshots
+        run: python3 jamf-reports-community.py collect
+        continue-on-error: true
+
+      # ------------------------------------------------------------------
+      # 6. Generate the report.
+      #    --csv is optional; omit it for a jamf-cli-only report.
+      #    Pass a --notify webhook URL via the TEAMS_WEBHOOK_URL secret to
+      #    receive an Adaptive Card summary in Microsoft Teams.
+      # ------------------------------------------------------------------
+      - name: Generate report
+        env:
+          CSV_PATH: ${{ github.event.inputs.csv_path || '' }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          ARGS=""
+          if [ -n "$CSV_PATH" ]; then
+            ARGS="$ARGS --csv \"$CSV_PATH\""
+          fi
+          if [ -n "$TEAMS_WEBHOOK_URL" ]; then
+            ARGS="$ARGS --notify \"$TEAMS_WEBHOOK_URL\""
+          fi
+          eval python3 jamf-reports-community.py generate $ARGS
+
+      # ------------------------------------------------------------------
+      # 7. Upload the Excel report as a workflow artifact.
+      #    The artifact is retained for 30 days by default.
+      #    Adjust retention-days to suit your policy.
+      # ------------------------------------------------------------------
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jamf-report-${{ github.run_number }}
+          path: "Generated Reports/*.xlsx"
+          retention-days: 30
+          if-no-files-found: error
