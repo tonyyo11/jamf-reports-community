@@ -1064,6 +1064,23 @@ class JamfCLIBridge:
             ["patch-status", "patch_status"],
         )
 
+    def patch_device_failures(self) -> Any:
+        """Fetch per-device patch failures via pro report patch-status --scan-failures.
+
+        Requires jamf-cli v1.4.0+. Returns one row per failing device per patch policy,
+        enriched with inventory data and the last action taken from the patch log.
+        JSON shape:
+          [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
+            "device_id":"123","status_date":"2026-04-01","attempt":3,
+            "last_action":"Retrying","serial":"ABC123",
+            "os_version":"15.7.3","username":"jdoe"}, ...]
+        """
+        return self._run_and_save(
+            "patch-device-failures",
+            ["pro", "report", "patch-status", "--scan-failures"],
+            ["patch-device-failures", "patch_device_failures"],
+        )
+
     def app_status(self) -> Any:
         """Fetch managed app deployment report from jamf-cli pro report app-status."""
         self._require_report_command("app-status", ["app-status", "app_status"])
@@ -1346,6 +1363,7 @@ class CoreDashboard:
             ("Profile Status", self._write_profile_status),
             ("App Status", self._write_app_status),
             ("Patch Compliance", self._write_patch),
+            ("Patch Failures", self._write_patch_failures),
             ("Update Status", self._write_update_status),
         ]
         for name, fn in sheets:
@@ -2028,6 +2046,57 @@ class CoreDashboard:
                 _safe_write(ws, row, 5, pct_value, _pct_format(self._fmts, pct_value))
             else:
                 _safe_write(ws, row, 5, pct_raw or "N/A", self._fmts["cell"])
+            row += 1
+
+    def _write_patch_failures(self) -> None:
+        # jamf-cli pro report patch-status --scan-failures --output json (v1.4.0+) returns:
+        #   [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
+        #     "device_id":"123","status_date":"2026-04-01","attempt":3,
+        #     "last_action":"Retrying","serial":"ABC123",
+        #     "os_version":"15.7.3","username":"jdoe"}, ...]
+        # Each row is one failing device × one patch policy.
+        raw = self._bridge.patch_device_failures()
+        rows = raw if isinstance(raw, list) else []
+
+        ws = self._wb.add_worksheet("Patch Failures")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Patch Failures",
+            f"Source: jamf-cli pro report patch-status --scan-failures | Generated: {ts}",
+            self._fmts,
+            ncols=8,
+        )
+        ws.set_column(0, 0, 30)  # Device
+        ws.set_column(1, 1, 16)  # Serial
+        ws.set_column(2, 2, 14)  # OS Version
+        ws.set_column(3, 3, 22)  # Username
+        ws.set_column(4, 4, 42)  # Policy
+        ws.set_column(5, 5, 18)  # Status Date
+        ws.set_column(6, 6, 10)  # Attempts
+        ws.set_column(7, 7, 42)  # Last Action
+
+        headers = [
+            "Device", "Serial", "OS Version", "Username",
+            "Policy", "Status Date", "Attempts", "Last Action",
+        ]
+        for c, h in enumerate(headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        row += 1
+
+        if not rows:
+            _safe_write(ws, row, 0, "No patch device failures found.", self._fmts["cell"])
+            return
+
+        for item in rows:
+            _safe_write(ws, row, 0, item.get("device", ""), self._fmts["cell"])
+            _safe_write(ws, row, 1, item.get("serial", ""), self._fmts["cell"])
+            _safe_write(ws, row, 2, item.get("os_version", ""), self._fmts["cell"])
+            _safe_write(ws, row, 3, item.get("username", ""), self._fmts["cell"])
+            _safe_write(ws, row, 4, item.get("policy", ""), self._fmts["cell"])
+            _safe_write(ws, row, 5, item.get("status_date", ""), self._fmts["cell"])
+            _safe_write(ws, row, 6, _to_int(item.get("attempt", 0)), self._fmts["cell"])
+            _safe_write(ws, row, 7, item.get("last_action", ""), self._fmts["cell"])
             row += 1
 
     def _write_app_status(self) -> None:
@@ -3756,6 +3825,7 @@ def cmd_collect(
                 ("EA Definitions", bridge.computer_extension_attributes),
                 ("Software Installs", bridge.software_installs),
                 ("Patch Compliance", bridge.patch_status),
+                ("Patch Failures", bridge.patch_device_failures),
                 ("Policy Health", bridge.policy_status),
                 ("Profile Status", bridge.profile_status),
             ]
