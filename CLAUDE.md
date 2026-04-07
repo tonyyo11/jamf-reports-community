@@ -268,7 +268,7 @@ To add a new type:
 
 ---
 
-## jamf-cli JSON Shapes (v1.2.0)
+## jamf-cli JSON Shapes (v1.2.0–v1.4.0)
 
 CoreDashboard parses these exact shapes. Do not change the parsing without verifying
 against the jamf-cli source.
@@ -299,6 +299,18 @@ against the jamf-cli source.
 
 Patch-status parser handles both `installed/total` and `on_latest/on_other` field shapes
 for compatibility with different jamf-cli versions.
+
+**`pro report patch-status --scan-failures --output json`** *(v1.4.0+)*
+```json
+[{"policy": "Firefox 130.0", "policy_id": "42", "device": "MacBook-001",
+  "device_id": "123", "status_date": "2026-04-01", "attempt": 3,
+  "last_action": "Retrying", "serial": "ABC123",
+  "os_version": "15.7.3", "username": "jdoe"}]
+```
+
+One row per failing device × patch policy. `last_action` is fetched from
+`/v2/patch-policies/{id}/logs/{deviceId}/details` (highest attempt, highest action order).
+Used by `JamfCLIBridge.patch_device_failures()` → CoreDashboard "Patch Failures" sheet.
 
 ---
 
