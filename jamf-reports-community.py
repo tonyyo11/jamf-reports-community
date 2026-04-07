@@ -26,6 +26,8 @@ import shutil
 import subprocess
 import tempfile
 import unicodedata
+import urllib.error
+import urllib.request
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -3611,11 +3613,71 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _post_teams_notification(
+    webhook_url: str,
+    report_path: Path,
+    sheets_written: int,
+    generated_at: str,
+) -> None:
+    """Post an Adaptive Card summary to a Microsoft Teams incoming webhook.
+
+    Args:
+        webhook_url: Teams incoming webhook URL (from --notify or config).
+        report_path: Path to the generated xlsx file.
+        sheets_written: Total number of sheets written to the workbook.
+        generated_at: Human-readable generation timestamp string.
+    """
+    payload = {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentUrl": None,
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [
+                        {
+                            "type": "TextBlock",
+                            "size": "Large",
+                            "weight": "Bolder",
+                            "text": "Jamf Report Generated",
+                        },
+                        {
+                            "type": "FactSet",
+                            "facts": [
+                                {"title": "File", "value": report_path.name},
+                                {"title": "Sheets", "value": str(sheets_written)},
+                                {"title": "Generated", "value": generated_at},
+                            ],
+                        },
+                    ],
+                },
+            }
+        ],
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        webhook_url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status not in (200, 202):
+                print(f"  [warn] Teams webhook returned HTTP {resp.status}; notification may not appear.")
+    except urllib.error.URLError as exc:
+        print(f"  [warn] Teams webhook notification failed: {exc}")
+
+
 def cmd_generate(
     config: Config,
     csv_path: Optional[str],
     out_file: Optional[str],
     historical_csv_dir: Optional[str] = None,
+    notify_url: Optional[str] = None,
 ) -> None:
     """Run all report generation and write the Excel file.
 
@@ -3624,6 +3686,7 @@ def cmd_generate(
         csv_path: Optional path to CSV inventory export.
         out_file: Optional output file path override.
         historical_csv_dir: Optional directory of dated CSV snapshots for trend charts.
+        notify_url: Optional Teams incoming webhook URL for post-generation notification.
     """
     csv_path_obj = _cli_path(csv_path)
     csv_path_str = str(csv_path_obj) if csv_path_obj else None
@@ -3785,6 +3848,9 @@ def cmd_generate(
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older output file(s) to {archive_dir}")
     print(f"\nReport written: {out_path}")
+    if notify_url:
+        print("  Sending Teams notification...")
+        _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
 
 
 def cmd_collect(
@@ -4011,6 +4077,11 @@ def main() -> None:
         "--historical-csv-dir",
         help="Directory of dated CSV snapshots for trend charts or collection",
     )
+    parser.add_argument(
+        "--notify",
+        metavar="WEBHOOK_URL",
+        help="Microsoft Teams incoming webhook URL; posts an Adaptive Card after generate",
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
@@ -4028,7 +4099,7 @@ def main() -> None:
     elif args.command == "inventory-csv":
         cmd_inventory_csv(config, args.out_file)
     elif args.command == "generate":
-        cmd_generate(config, args.csv, args.out_file, args.historical_csv_dir)
+        cmd_generate(config, args.csv, args.out_file, args.historical_csv_dir, args.notify)
 
 
 if __name__ == "__main__":
