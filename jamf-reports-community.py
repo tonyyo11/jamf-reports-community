@@ -91,6 +91,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "critical_disk_percent": 90,
         "warning_disk_percent": 80,
         "cert_warning_days": 90,
+        "profile_error_critical": 50,
+        "profile_error_warning": 10,
     },
     "output": {
         "output_dir": "Generated Reports",
@@ -737,19 +739,19 @@ class Config:
 
     @property
     def compliance(self) -> dict:
-        return self._data.get("compliance", {})
+        return self._data.get("compliance") or {}
 
     @property
     def jamf_cli(self) -> dict:
-        return self._data.get("jamf_cli", {})
+        return self._data.get("jamf_cli") or {}
 
     @property
     def thresholds(self) -> dict:
-        return self._data.get("thresholds", {})
+        return self._data.get("thresholds") or {}
 
     @property
     def output(self) -> dict:
-        return self._data.get("output", {})
+        return self._data.get("output") or {}
 
 
 # ---------------------------------------------------------------------------
@@ -1132,7 +1134,11 @@ class JamfCLIBridge:
 
     def computers_list(self) -> Any:
         """Fetch the lightweight computer inventory index from jamf-cli pro computers list."""
-        return self._run(["pro", "computers", "list"])
+        return self._run_and_save(
+            "computers-list",
+            ["pro", "computers", "list"],
+            ["computers-list", "computers_list"],
+        )
 
     def ea_results(self, name_filter: str = "", include_all: bool = True) -> Any:
         """Fetch computer extension attribute values from jamf-cli pro report ea-results."""
@@ -1367,6 +1373,27 @@ def _write_report_sources_sheet(
 
 
 # ---------------------------------------------------------------------------
+# CoreDashboard helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_envelope(raw: Any) -> dict:
+    """Unwrap a single-element list response and return a dict, or empty dict.
+
+    Several jamf-cli report commands wrap their result in a one-element list.
+    This helper handles both the list and bare-dict shapes consistently.
+
+    Args:
+        raw: The parsed JSON value returned by a jamf-cli command.
+
+    Returns:
+        The inner dict, or an empty dict if the response is absent/invalid.
+    """
+    node = raw[0] if isinstance(raw, list) and raw else raw
+    return node if isinstance(node, dict) and node else {}
+
+
+# ---------------------------------------------------------------------------
 # CoreDashboard
 # ---------------------------------------------------------------------------
 
@@ -1392,6 +1419,23 @@ class CoreDashboard:
         self._bridge = bridge
         self._wb = workbook
         self._fmts = fmts
+
+    def _severity_fmt(self, value: int, warn: int, crit: int) -> Any:
+        """Return red/yellow/normal cell format based on value vs thresholds.
+
+        Args:
+            value: The integer value to test.
+            warn: Threshold at or above which the yellow format is returned.
+            crit: Threshold at or above which the red format is returned.
+
+        Returns:
+            An xlsxwriter format object from self._fmts.
+        """
+        if value >= crit:
+            return self._fmts["red"]
+        if value >= warn:
+            return self._fmts["yellow"]
+        return self._fmts["cell"]
 
     def write_all(self) -> list[str]:
         """Write all core sheets. Returns list of sheet names written."""
@@ -1906,8 +1950,8 @@ class CoreDashboard:
         #   [{"summary":{total_policies,enabled,disabled,config_findings,warnings,info},
         #     "config_findings":[{severity,policy,policy_id,check,detail},...]}]
         raw = self._bridge.policy_status()
-        envelope = (raw[0] if isinstance(raw, list) and raw else raw) or {}
-        if not isinstance(envelope, dict) or not envelope:
+        envelope = _extract_envelope(raw)
+        if not envelope:
             raise RuntimeError("policy-status returned no data")
         summary = envelope.get("summary", {}) if isinstance(envelope, dict) else {}
         findings = envelope.get("config_findings", []) if isinstance(envelope, dict) else []
@@ -1963,8 +2007,8 @@ class CoreDashboard:
         #     "device_failures": [...],
         #     "device_pending": [...]}]
         raw = self._bridge.profile_status()
-        envelope = (raw[0] if isinstance(raw, list) and raw else raw) or {}
-        if not isinstance(envelope, dict) or not envelope:
+        envelope = _extract_envelope(raw)
+        if not envelope:
             raise RuntimeError("profile-status returned no data")
         summary = envelope.get("summary", {})
         failures = envelope.get("failures", [])
@@ -1998,6 +2042,8 @@ class CoreDashboard:
                 row += 1
 
         if failures:
+            err_crit = int(self._config.thresholds.get("profile_error_critical", 50))
+            err_warn = int(self._config.thresholds.get("profile_error_warning", 10))
             row += 1
             headers = ["Device Type", "Profile Name", "Profile ID", "Errors", "Devices",
                        "Last Error", "Top Error"]
@@ -2006,9 +2052,7 @@ class CoreDashboard:
             row += 1
             for item in failures[:200]:
                 errors = _to_int(item.get("errors", 0))
-                fmt = self._fmts["red"] if errors >= 50 else (
-                    self._fmts["yellow"] if errors >= 10 else self._fmts["cell"]
-                )
+                fmt = self._severity_fmt(errors, err_warn, err_crit)
                 _safe_write(ws, row, 0, item.get("device_type", ""), fmt)
                 _safe_write(ws, row, 1, item.get("name", ""), fmt)
                 _safe_write(ws, row, 2, item.get("id", ""), self._fmts["cell"])
@@ -2152,8 +2196,8 @@ class CoreDashboard:
         #                   "devices":N,"last_error":"...","top_error":"..."},...],
         #     "device_failures": [...]}]
         raw = self._bridge.app_status()
-        envelope = (raw[0] if isinstance(raw, list) and raw else raw) or {}
-        if not isinstance(envelope, dict) or not envelope:
+        envelope = _extract_envelope(raw)
+        if not envelope:
             raise RuntimeError("app-status returned no data")
         summary = envelope.get("summary", {})
         failures = envelope.get("failures", [])
@@ -2187,6 +2231,8 @@ class CoreDashboard:
                 row += 1
 
         if failures:
+            err_crit = int(self._config.thresholds.get("profile_error_critical", 50))
+            err_warn = int(self._config.thresholds.get("profile_error_warning", 10))
             row += 1
             headers = ["Device Type", "App Name", "App ID", "Errors", "Devices",
                        "Last Error", "Top Error"]
@@ -2195,9 +2241,7 @@ class CoreDashboard:
             row += 1
             for item in failures[:200]:
                 errors = _to_int(item.get("errors", 0))
-                fmt = self._fmts["red"] if errors >= 50 else (
-                    self._fmts["yellow"] if errors >= 10 else self._fmts["cell"]
-                )
+                fmt = self._severity_fmt(errors, err_warn, err_crit)
                 _safe_write(ws, row, 0, item.get("device_type", ""), fmt)
                 _safe_write(ws, row, 1, item.get("name", ""), fmt)
                 _safe_write(ws, row, 2, item.get("id", ""), self._fmts["cell"])
@@ -2233,8 +2277,8 @@ class CoreDashboard:
         #                      "status":"...","product_key":"...","updated":"..."},...]}
         # The outer response may be wrapped in a list.
         raw = self._bridge.update_status()
-        envelope = (raw[0] if isinstance(raw, list) and raw else raw) or {}
-        if not isinstance(envelope, dict) or not envelope:
+        envelope = _extract_envelope(raw)
+        if not envelope:
             raise RuntimeError("update-status returned no data")
         summary = envelope.get("summary", {})
         error_devices = envelope.get("ErrorDevices", [])
@@ -2340,6 +2384,17 @@ class CSVDashboard:
                     print(f"  Merged extra CSV: {Path(extra_path).name} ({len(extra_df)} rows)")
                 except Exception as exc:
                     print(f"  [warn] Could not read extra CSV '{extra_path}': {exc} — skipping")
+            all_col_sets = [set(f.columns) for f in frames]
+            union_cols = set.union(*all_col_sets)
+            for i, cols in enumerate(all_col_sets):
+                missing = union_cols - cols
+                if missing:
+                    names = ", ".join(sorted(missing)[:5])
+                    suffix = " ..." if len(missing) > 5 else ""
+                    print(
+                        f"  [warn] CSV {i + 1} is missing {len(missing)} column(s) present in"
+                        f" other CSVs — those cells will be empty: {names}{suffix}"
+                    )
             self._df = pd.concat(frames, ignore_index=True).fillna("")
             print(
                 f"  Loaded {len(frames)} CSV(s): {len(self._df)} rows total,"
@@ -2386,6 +2441,19 @@ class CSVDashboard:
 
     def _get(self, row: Any, logical: str) -> str:
         return self._mapper.extract(row, logical)
+
+    def _device_name(self, row: Any) -> str:
+        """Extract computer name from a DataFrame row using the configured column.
+
+        Args:
+            row: A pandas Series (DataFrame row) from self._df.iterrows().
+
+        Returns:
+            The device name string, or empty string if the column is not configured
+            or not present in this row.
+        """
+        col = self._col("computer_name")
+        return str(row[col]) if col and col in row.index else ""
 
     def _write_inventory(self) -> None:
         stale_days = int(self._config.thresholds.get("stale_device_days", 30))
@@ -2529,9 +2597,8 @@ class CSVDashboard:
             if not non_connected_df.empty:
                 _safe_write(ws, row_i, 0, "Non-Connected Devices", self._fmts["header"])
                 row_i += 1
-                name_col = self._col("computer_name")
                 for _, dr in non_connected_df.iterrows():
-                    name = str(dr[name_col]) if name_col and name_col in dr.index else ""
+                    name = self._device_name(dr)
                     status = str(dr[col])
                     _safe_write(ws, row_i, 0, name, self._fmts["cell"])
                     _safe_write(ws, row_i, 1, status, self._fmts["cell"])
@@ -2640,10 +2707,8 @@ class CSVDashboard:
             _safe_write(ws, row_i, 0, "Failing Devices", self._fmts["header"])
             _safe_write(ws, row_i, 1, "Value", self._fmts["header"])
             row_i += 1
-            name_col = self._col("computer_name")
             for _, dr in failed_df.iterrows():
-                nm = str(dr[name_col]) if name_col and name_col in dr.index else ""
-                _safe_write(ws, row_i, 0, nm, self._fmts["cell"])
+                _safe_write(ws, row_i, 0, self._device_name(dr), self._fmts["cell"])
                 _safe_write(ws, row_i, 1, str(dr[col]), self._fmts["cell"])
                 row_i += 1
 
@@ -2657,15 +2722,13 @@ class CSVDashboard:
         nums = pd.to_numeric(self._df[col].str.replace("%", "", regex=False), errors="coerce")
         critical_df = self._df[nums >= crit]
         warning_df = self._df[(nums >= warn) & (nums < crit)]
-        name_col = self._col("computer_name")
         for label, sub_df in [("Critical (>= {:.0f}%)".format(crit), critical_df),
                                ("Warning ({:.0f}% - {:.0f}%)".format(warn, crit), warning_df)]:
             _safe_write(ws, row_i, 0, label, self._fmts["header"])
             _safe_write(ws, row_i, 1, "Value", self._fmts["header"])
             row_i += 1
             for _, dr in sub_df.iterrows():
-                nm = str(dr[name_col]) if name_col and name_col in dr.index else ""
-                _safe_write(ws, row_i, 0, nm, self._fmts["cell"])
+                _safe_write(ws, row_i, 0, self._device_name(dr), self._fmts["cell"])
                 _safe_write(ws, row_i, 1, str(dr[col]), self._fmts["cell"])
                 row_i += 1
             row_i += 1
@@ -2714,7 +2777,6 @@ class CSVDashboard:
         ea_name = ea.get("name", col)
         warn_days = int(ea.get("warning_days",
                                 self._config.thresholds.get("cert_warning_days", 90)))
-        name_col = self._col("computer_name")
         _safe_write(ws, row_i, 0, "Device", self._fmts["header"])
         _safe_write(ws, row_i, 1, "Date Value", self._fmts["header"])
         _safe_write(ws, row_i, 2, "Days Until Expiry", self._fmts["header"])
@@ -2732,8 +2794,7 @@ class CSVDashboard:
             fmt = (self._fmts["red"] if days_until < 0 else
                    self._fmts["yellow"] if days_until < warn_days else
                    self._fmts["green"])
-            nm = str(dr[name_col]) if name_col and name_col in dr.index else ""
-            _safe_write(ws, row_i, 0, nm, fmt)
+            _safe_write(ws, row_i, 0, self._device_name(dr), fmt)
             _safe_write(ws, row_i, 1, raw, fmt)
             _safe_write(ws, row_i, 2, days_until, fmt)
             row_i += 1
