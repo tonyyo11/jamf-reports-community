@@ -308,6 +308,12 @@ thresholds:
   # Default certificate/date expiry warning window (days).
   cert_warning_days: 90
 
+  # Error count thresholds for jamf-cli Profile Status and App Status sheets.
+  # Rows with error counts at or above profile_error_critical are highlighted red;
+  # at or above profile_error_warning, yellow.
+  profile_error_critical: 50
+  profile_error_warning: 10
+
 
 # =============================================================================
 # OUTPUT
@@ -333,6 +339,13 @@ output:
   # Number of recent timestamped runs to keep in the main output folder for
   # each report family before older runs are moved into archive_dir.
   keep_latest_runs: 10
+
+  # Generate a PowerPoint (.pptx) executive-summary deck alongside the xlsx.
+  # Requires python-pptx: pip install python-pptx
+  # The deck contains a title slide, a report-summary slide, and a list of
+  # all sheets written.  It is intended as a starting point for presentations,
+  # not as a complete replacement for the xlsx.
+  export_pptx: false
 
 
 # =============================================================================

@@ -24,8 +24,11 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unicodedata
+import urllib.error
+import urllib.request
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -39,6 +42,11 @@ import yaml
 plt: Any = None
 mdates: Any = None
 HAS_MATPLOTLIB: Optional[bool] = None
+
+pptx_Presentation: Any = None   # pptx.Presentation class, set by _load_pptx()
+pptx_Inches: Any = None          # pptx.util.Inches
+pptx_Pt: Any = None              # pptx.util.Pt
+HAS_PPTX: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +93,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "critical_disk_percent": 90,
         "warning_disk_percent": 80,
         "cert_warning_days": 90,
+        "profile_error_critical": 50,
+        "profile_error_warning": 10,
     },
     "output": {
         "output_dir": "Generated Reports",
@@ -92,6 +102,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "archive_enabled": True,
         "archive_dir": "",
         "keep_latest_runs": 10,
+        "export_pptx": False,
     },
     "charts": {
         "enabled": True,
@@ -438,6 +449,28 @@ def _load_matplotlib() -> bool:
     except ImportError:
         HAS_MATPLOTLIB = False
     return HAS_MATPLOTLIB
+
+
+def _load_pptx() -> bool:
+    """Import python-pptx lazily; sets HAS_PPTX and module-level pptx_* globals.
+
+    Returns:
+        True if python-pptx is available, False otherwise.
+    """
+    global HAS_PPTX, pptx_Presentation, pptx_Inches, pptx_Pt
+    if HAS_PPTX is not None:
+        return HAS_PPTX
+    try:
+        from pptx import Presentation as _Presentation  # type: ignore[import-untyped]
+        from pptx.util import Inches as _Inches, Pt as _Pt  # type: ignore[import-untyped]
+
+        pptx_Presentation = _Presentation
+        pptx_Inches = _Inches
+        pptx_Pt = _Pt
+        HAS_PPTX = True
+    except ImportError:
+        HAS_PPTX = False
+    return HAS_PPTX
 
 
 def _normalized_text(value: Any) -> str:
@@ -861,19 +894,19 @@ class Config:
 
     @property
     def compliance(self) -> dict:
-        return self._data.get("compliance", {})
+        return self._data.get("compliance") or {}
 
     @property
     def jamf_cli(self) -> dict:
-        return self._data.get("jamf_cli", {})
+        return self._data.get("jamf_cli") or {}
 
     @property
     def thresholds(self) -> dict:
-        return self._data.get("thresholds", {})
+        return self._data.get("thresholds") or {}
 
     @property
     def output(self) -> dict:
-        return self._data.get("output", {})
+        return self._data.get("output") or {}
 
 
 # ---------------------------------------------------------------------------
@@ -1224,6 +1257,23 @@ class JamfCLIBridge:
             ["patch-status", "patch_status"],
         )
 
+    def patch_device_failures(self) -> Any:
+        """Fetch per-device patch failures via pro report patch-status --scan-failures.
+
+        Requires jamf-cli v1.4.0+. Returns one row per failing device per patch policy,
+        enriched with inventory data and the last action taken from the patch log.
+        JSON shape:
+          [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
+            "device_id":"123","status_date":"2026-04-01","attempt":3,
+            "last_action":"Retrying","serial":"ABC123",
+            "os_version":"15.7.3","username":"jdoe"}, ...]
+        """
+        return self._run_and_save(
+            "patch-device-failures",
+            ["pro", "report", "patch-status", "--scan-failures"],
+            ["patch-device-failures", "patch_device_failures"],
+        )
+
     def app_status(self) -> Any:
         """Fetch managed app deployment report from jamf-cli pro report app-status."""
         self._require_report_command("app-status", ["app-status", "app_status"])
@@ -1264,7 +1314,11 @@ class JamfCLIBridge:
 
     def computers_list(self) -> Any:
         """Fetch the lightweight computer inventory index from jamf-cli pro computers list."""
-        return self._run(["pro", "computers", "list"])
+        return self._run_and_save(
+            "computers-list",
+            ["pro", "computers", "list"],
+            ["computers-list", "computers_list"],
+        )
 
     def ea_results(self, name_filter: str = "", include_all: bool = True) -> Any:
         """Fetch computer extension attribute values from jamf-cli pro report ea-results."""
@@ -1341,6 +1395,20 @@ class JamfCLIBridge:
             args,
             ["software-installs", "software_installs"],
         )
+
+    def device_lookup(self, device_id: str) -> Any:
+        """Fetch a per-device detail view from jamf-cli pro device.
+
+        Args:
+            device_id: Jamf Pro computer ID or serial number to look up.
+
+        Returns:
+            Parsed JSON response from jamf-cli.
+
+        Raises:
+            RuntimeError: If jamf-cli is unavailable or the request fails.
+        """
+        return self._run(["pro", "device", device_id])
 
 
 # ---------------------------------------------------------------------------
@@ -1485,6 +1553,27 @@ def _write_report_sources_sheet(
 
 
 # ---------------------------------------------------------------------------
+# CoreDashboard helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_envelope(raw: Any) -> dict:
+    """Unwrap a single-element list response and return a dict, or empty dict.
+
+    Several jamf-cli report commands wrap their result in a one-element list.
+    This helper handles both the list and bare-dict shapes consistently.
+
+    Args:
+        raw: The parsed JSON value returned by a jamf-cli command.
+
+    Returns:
+        The inner dict, or an empty dict if the response is absent/invalid.
+    """
+    node = raw[0] if isinstance(raw, list) and raw else raw
+    return node if isinstance(node, dict) and node else {}
+
+
+# ---------------------------------------------------------------------------
 # CoreDashboard
 # ---------------------------------------------------------------------------
 
@@ -1511,6 +1600,23 @@ class CoreDashboard:
         self._wb = workbook
         self._fmts = fmts
 
+    def _severity_fmt(self, value: int, warn: int, crit: int) -> Any:
+        """Return red/yellow/normal cell format based on value vs thresholds.
+
+        Args:
+            value: The integer value to test.
+            warn: Threshold at or above which the yellow format is returned.
+            crit: Threshold at or above which the red format is returned.
+
+        Returns:
+            An xlsxwriter format object from self._fmts.
+        """
+        if value >= crit:
+            return self._fmts["red"]
+        if value >= warn:
+            return self._fmts["yellow"]
+        return self._fmts["cell"]
+
     def write_all(self) -> list[str]:
         """Write all core sheets. Returns list of sheet names written."""
         written = []
@@ -1526,6 +1632,7 @@ class CoreDashboard:
             ("Profile Status", self._write_profile_status),
             ("App Status", self._write_app_status),
             ("Patch Compliance", self._write_patch),
+            ("Patch Failures", self._write_patch_failures),
             ("Update Status", self._write_update_status),
         ]
         for name, fn in sheets:
@@ -2023,8 +2130,8 @@ class CoreDashboard:
         #   [{"summary":{total_policies,enabled,disabled,config_findings,warnings,info},
         #     "config_findings":[{severity,policy,policy_id,check,detail},...]}]
         raw = self._bridge.policy_status()
-        envelope = (raw[0] if isinstance(raw, list) and raw else raw) or {}
-        if not isinstance(envelope, dict) or not envelope:
+        envelope = _extract_envelope(raw)
+        if not envelope:
             raise RuntimeError("policy-status returned no data")
         summary = envelope.get("summary", {}) if isinstance(envelope, dict) else {}
         findings = envelope.get("config_findings", []) if isinstance(envelope, dict) else []
@@ -2080,8 +2187,8 @@ class CoreDashboard:
         #     "device_failures": [...],
         #     "device_pending": [...]}]
         raw = self._bridge.profile_status()
-        envelope = (raw[0] if isinstance(raw, list) and raw else raw) or {}
-        if not isinstance(envelope, dict) or not envelope:
+        envelope = _extract_envelope(raw)
+        if not envelope:
             raise RuntimeError("profile-status returned no data")
         summary = envelope.get("summary", {})
         failures = envelope.get("failures", [])
@@ -2115,6 +2222,8 @@ class CoreDashboard:
                 row += 1
 
         if failures:
+            err_crit = int(self._config.thresholds.get("profile_error_critical", 50))
+            err_warn = int(self._config.thresholds.get("profile_error_warning", 10))
             row += 1
             headers = ["Device Type", "Profile Name", "Profile ID", "Errors", "Devices",
                        "Last Error", "Top Error"]
@@ -2123,9 +2232,7 @@ class CoreDashboard:
             row += 1
             for item in failures[:200]:
                 errors = _to_int(item.get("errors", 0))
-                fmt = self._fmts["red"] if errors >= 50 else (
-                    self._fmts["yellow"] if errors >= 10 else self._fmts["cell"]
-                )
+                fmt = self._severity_fmt(errors, err_warn, err_crit)
                 _safe_write(ws, row, 0, item.get("device_type", ""), fmt)
                 _safe_write(ws, row, 1, item.get("name", ""), fmt)
                 _safe_write(ws, row, 2, item.get("id", ""), self._fmts["cell"])
@@ -2210,6 +2317,57 @@ class CoreDashboard:
                 _safe_write(ws, row, 5, pct_raw or "N/A", self._fmts["cell"])
             row += 1
 
+    def _write_patch_failures(self) -> None:
+        # jamf-cli pro report patch-status --scan-failures --output json (v1.4.0+) returns:
+        #   [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
+        #     "device_id":"123","status_date":"2026-04-01","attempt":3,
+        #     "last_action":"Retrying","serial":"ABC123",
+        #     "os_version":"15.7.3","username":"jdoe"}, ...]
+        # Each row is one failing device × one patch policy.
+        raw = self._bridge.patch_device_failures()
+        rows = raw if isinstance(raw, list) else []
+
+        ws = self._wb.add_worksheet("Patch Failures")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Patch Failures",
+            f"Source: jamf-cli pro report patch-status --scan-failures | Generated: {ts}",
+            self._fmts,
+            ncols=8,
+        )
+        ws.set_column(0, 0, 30)  # Device
+        ws.set_column(1, 1, 16)  # Serial
+        ws.set_column(2, 2, 14)  # OS Version
+        ws.set_column(3, 3, 22)  # Username
+        ws.set_column(4, 4, 42)  # Policy
+        ws.set_column(5, 5, 18)  # Status Date
+        ws.set_column(6, 6, 10)  # Attempts
+        ws.set_column(7, 7, 42)  # Last Action
+
+        headers = [
+            "Device", "Serial", "OS Version", "Username",
+            "Policy", "Status Date", "Attempts", "Last Action",
+        ]
+        for c, h in enumerate(headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        row += 1
+
+        if not rows:
+            _safe_write(ws, row, 0, "No patch device failures found.", self._fmts["cell"])
+            return
+
+        for item in rows:
+            _safe_write(ws, row, 0, item.get("device", ""), self._fmts["cell"])
+            _safe_write(ws, row, 1, item.get("serial", ""), self._fmts["cell"])
+            _safe_write(ws, row, 2, item.get("os_version", ""), self._fmts["cell"])
+            _safe_write(ws, row, 3, item.get("username", ""), self._fmts["cell"])
+            _safe_write(ws, row, 4, item.get("policy", ""), self._fmts["cell"])
+            _safe_write(ws, row, 5, item.get("status_date", ""), self._fmts["cell"])
+            _safe_write(ws, row, 6, _to_int(item.get("attempt", 0)), self._fmts["cell"])
+            _safe_write(ws, row, 7, item.get("last_action", ""), self._fmts["cell"])
+            row += 1
+
     def _write_app_status(self) -> None:
         # jamf-cli pro report app-status --output json shares the profile-status envelope:
         #   [{"summary": {"total_errors": N, "unique_profiles": N, "unique_devices": N,
@@ -2218,8 +2376,8 @@ class CoreDashboard:
         #                   "devices":N,"last_error":"...","top_error":"..."},...],
         #     "device_failures": [...]}]
         raw = self._bridge.app_status()
-        envelope = (raw[0] if isinstance(raw, list) and raw else raw) or {}
-        if not isinstance(envelope, dict) or not envelope:
+        envelope = _extract_envelope(raw)
+        if not envelope:
             raise RuntimeError("app-status returned no data")
         summary = envelope.get("summary", {})
         failures = envelope.get("failures", [])
@@ -2253,6 +2411,8 @@ class CoreDashboard:
                 row += 1
 
         if failures:
+            err_crit = int(self._config.thresholds.get("profile_error_critical", 50))
+            err_warn = int(self._config.thresholds.get("profile_error_warning", 10))
             row += 1
             headers = ["Device Type", "App Name", "App ID", "Errors", "Devices",
                        "Last Error", "Top Error"]
@@ -2261,9 +2421,7 @@ class CoreDashboard:
             row += 1
             for item in failures[:200]:
                 errors = _to_int(item.get("errors", 0))
-                fmt = self._fmts["red"] if errors >= 50 else (
-                    self._fmts["yellow"] if errors >= 10 else self._fmts["cell"]
-                )
+                fmt = self._severity_fmt(errors, err_warn, err_crit)
                 _safe_write(ws, row, 0, item.get("device_type", ""), fmt)
                 _safe_write(ws, row, 1, item.get("name", ""), fmt)
                 _safe_write(ws, row, 2, item.get("id", ""), self._fmts["cell"])
@@ -2299,8 +2457,8 @@ class CoreDashboard:
         #                      "status":"...","product_key":"...","updated":"..."},...]}
         # The outer response may be wrapped in a list.
         raw = self._bridge.update_status()
-        envelope = (raw[0] if isinstance(raw, list) and raw else raw) or {}
-        if not isinstance(envelope, dict) or not envelope:
+        envelope = _extract_envelope(raw)
+        if not envelope:
             raise RuntimeError("update-status returned no data")
         summary = envelope.get("summary", {})
         error_devices = envelope.get("ErrorDevices", [])
@@ -2370,9 +2528,16 @@ class CSVDashboard:
 
     Args:
         config: Loaded Config instance.
-        csv_path: Path to the CSV file.
+        csv_path: Path to the primary CSV file.
         workbook: Active xlsxwriter Workbook.
         fmts: Format dict from _build_formats.
+        extra_csv_paths: Optional list of additional CSV paths to merge into the
+            primary DataFrame.  Each extra CSV is loaded and concatenated; a
+            "CSV Source" column is added to every row so downstream sheets can
+            distinguish which export each record came from.  Missing columns are
+            filled with empty strings.  Column names must match across files for
+            the config mapping to work correctly — the primary CSV's schema is
+            authoritative.
     """
 
     def __init__(
@@ -2381,13 +2546,52 @@ class CSVDashboard:
         csv_path: str,
         workbook: xlsxwriter.Workbook,
         fmts: dict,
+        extra_csv_paths: Optional[list[str]] = None,
     ) -> None:
         self._config = config
         self._mapper = ColumnMapper(config)
         self._wb = workbook
         self._fmts = fmts
-        self._df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
-        print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
+        try:
+            primary = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
+        except Exception as exc:
+            raise SystemExit(
+                f"Error: could not read CSV '{csv_path}': {exc}"
+            ) from exc
+
+        if extra_csv_paths:
+            frames: list[Any] = []
+            primary["CSV Source"] = Path(csv_path).name
+            frames.append(primary)
+            for extra_path in extra_csv_paths:
+                try:
+                    extra_df = pd.read_csv(
+                        extra_path, dtype=str, encoding="utf-8-sig"
+                    ).fillna("")
+                    extra_df["CSV Source"] = Path(extra_path).name
+                    frames.append(extra_df)
+                    print(f"  Merged extra CSV: {Path(extra_path).name} ({len(extra_df)} rows)")
+                except Exception as exc:
+                    print(f"  [warn] Could not read extra CSV '{extra_path}': {exc} — skipping")
+            all_col_sets = [set(f.columns) for f in frames]
+            union_cols = set.union(*all_col_sets)
+            for i, cols in enumerate(all_col_sets):
+                missing = union_cols - cols
+                if missing:
+                    names = ", ".join(sorted(missing)[:5])
+                    suffix = " ..." if len(missing) > 5 else ""
+                    print(
+                        f"  [warn] CSV {i + 1} is missing {len(missing)} column(s) present in"
+                        f" other CSVs — those cells will be empty: {names}{suffix}"
+                    )
+            self._df = pd.concat(frames, ignore_index=True).fillna("")
+            print(
+                f"  Loaded {len(frames)} CSV(s): {len(self._df)} rows total,"
+                f" {len(self._df.columns)} columns"
+            )
+        else:
+            self._df = primary
+            print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
 
     def write_all(self) -> list[str]:
         """Write all CSV-derived sheets. Returns list of sheet names written."""
@@ -2426,6 +2630,19 @@ class CSVDashboard:
 
     def _get(self, row: Any, logical: str) -> str:
         return self._mapper.extract(row, logical)
+
+    def _device_name(self, row: Any) -> str:
+        """Extract computer name from a DataFrame row using the configured column.
+
+        Args:
+            row: A pandas Series (DataFrame row) from self._df.iterrows().
+
+        Returns:
+            The device name string, or empty string if the column is not configured
+            or not present in this row.
+        """
+        col = self._col("computer_name")
+        return str(row[col]) if col and col in row.index else ""
 
     def _write_inventory(self) -> None:
         stale_days = int(self._config.thresholds.get("stale_device_days", 30))
@@ -2576,10 +2793,9 @@ class CSVDashboard:
             if not non_connected_df.empty:
                 _safe_write(ws, row_i, 0, "Non-Connected Devices", self._fmts["header"])
                 row_i += 1
-                name_col = self._col("computer_name")
                 for _, dr in non_connected_df.iterrows():
-                    name = str(dr[name_col]) if name_col and name_col in dr.index else ""
-                    status = _display_value(dr[col])
+                    name = self._device_name(dr)
+                    status = str(dr[col])
                     _safe_write(ws, row_i, 0, name, self._fmts["cell"])
                     _safe_write(ws, row_i, 1, status, self._fmts["cell"])
                     row_i += 1
@@ -2687,10 +2903,8 @@ class CSVDashboard:
             _safe_write(ws, row_i, 0, "Failing Devices", self._fmts["header"])
             _safe_write(ws, row_i, 1, "Value", self._fmts["header"])
             row_i += 1
-            name_col = self._col("computer_name")
             for _, dr in failed_df.iterrows():
-                nm = str(dr[name_col]) if name_col and name_col in dr.index else ""
-                _safe_write(ws, row_i, 0, nm, self._fmts["cell"])
+                _safe_write(ws, row_i, 0, self._device_name(dr), self._fmts["cell"])
                 _safe_write(ws, row_i, 1, str(dr[col]), self._fmts["cell"])
                 row_i += 1
 
@@ -2704,15 +2918,13 @@ class CSVDashboard:
         nums = pd.to_numeric(self._df[col].str.replace("%", "", regex=False), errors="coerce")
         critical_df = self._df[nums >= crit]
         warning_df = self._df[(nums >= warn) & (nums < crit)]
-        name_col = self._col("computer_name")
         for label, sub_df in [("Critical (>= {:.0f}%)".format(crit), critical_df),
                                ("Warning ({:.0f}% - {:.0f}%)".format(warn, crit), warning_df)]:
             _safe_write(ws, row_i, 0, label, self._fmts["header"])
             _safe_write(ws, row_i, 1, "Value", self._fmts["header"])
             row_i += 1
             for _, dr in sub_df.iterrows():
-                nm = str(dr[name_col]) if name_col and name_col in dr.index else ""
-                _safe_write(ws, row_i, 0, nm, self._fmts["cell"])
+                _safe_write(ws, row_i, 0, self._device_name(dr), self._fmts["cell"])
                 _safe_write(ws, row_i, 1, str(dr[col]), self._fmts["cell"])
                 row_i += 1
             row_i += 1
@@ -2765,7 +2977,6 @@ class CSVDashboard:
         ea_name = ea.get("name", col)
         warn_days = int(ea.get("warning_days",
                                 self._config.thresholds.get("cert_warning_days", 90)))
-        name_col = self._col("computer_name")
         _safe_write(ws, row_i, 0, "Device", self._fmts["header"])
         _safe_write(ws, row_i, 1, "Date Value", self._fmts["header"])
         _safe_write(ws, row_i, 2, "Days Until Expiry", self._fmts["header"])
@@ -2783,8 +2994,7 @@ class CSVDashboard:
             fmt = (self._fmts["red"] if days_until < 0 else
                    self._fmts["yellow"] if days_until < warn_days else
                    self._fmts["green"])
-            nm = str(dr[name_col]) if name_col and name_col in dr.index else ""
-            _safe_write(ws, row_i, 0, nm, fmt)
+            _safe_write(ws, row_i, 0, self._device_name(dr), fmt)
             _safe_write(ws, row_i, 1, raw, fmt)
             _safe_write(ws, row_i, 2, days_until, fmt)
             row_i += 1
@@ -3380,6 +3590,71 @@ class ChartGenerator:
 
 
 # ---------------------------------------------------------------------------
+# Device deep-dive command
+# ---------------------------------------------------------------------------
+
+
+def _print_device_detail(data: Any, indent: int = 0) -> None:
+    """Recursively format and print a jamf-cli device JSON response.
+
+    Args:
+        data: Parsed JSON (dict, list, or scalar) from jamf-cli pro device.
+        indent: Current indentation level (spaces multiplied by 2).
+    """
+    pad = "  " * indent
+    if isinstance(data, list):
+        for item in data:
+            _print_device_detail(item, indent)
+            if isinstance(item, dict):
+                print()
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            label = str(key).replace("_", " ").title()
+            if isinstance(value, dict):
+                print(f"{pad}{label}:")
+                _print_device_detail(value, indent + 1)
+            elif isinstance(value, list):
+                print(f"{pad}{label} ({len(value)}):")
+                _print_device_detail(value, indent + 1)
+            else:
+                display = "" if value is None else str(value)
+                print(f"{pad}  {label:<28} {display}")
+    else:
+        print(f"{pad}{data}")
+
+
+def cmd_device(config: Config, device_id: str) -> None:
+    """Print a formatted device detail view using jamf-cli pro device.
+
+    Args:
+        config: Loaded Config instance.
+        device_id: Device identifier (Jamf Pro computer ID or serial number).
+    """
+    jamf_cli_cfg = config.jamf_cli
+    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
+    bridge = JamfCLIBridge(
+        save_output=False,
+        data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
+        profile=jamf_cli_profile,
+        use_cached_data=False,
+    )
+    if not bridge.is_available():
+        raise SystemExit(
+            "Error: jamf-cli is not installed or not found.\n"
+            "  Install via Homebrew: brew install jamf-cli\n"
+            "  Or set JAMFCLI_PATH to the binary location."
+        )
+    print(f"Device: {device_id}")
+    print("=" * (len(device_id) + 8))
+    try:
+        data = bridge.device_lookup(device_id)
+    except RuntimeError as exc:
+        raise SystemExit(f"Error: {exc}") from exc
+    _print_device_detail(data)
+
+
+# ---------------------------------------------------------------------------
 # Scaffold command
 # ---------------------------------------------------------------------------
 
@@ -3457,12 +3732,88 @@ def _suggest_custom_ea_candidates(unmatched_headers: list[str]) -> None:
     print()
 
 
-def cmd_scaffold(csv_path: str, out_path: str) -> None:
+def _interactive_column_mapping(
+    headers: list[str],
+    matched: dict[str, str],
+) -> dict[str, str]:
+    """Walk the user through reviewing and correcting auto-matched column assignments.
+
+    For each logical field, shows the auto-match (if any) alongside a numbered
+    list of all available CSV columns so the user can accept, override, or skip.
+    Falls back to returning the original matched dict when stdin is not a TTY.
+
+    Args:
+        headers: All column names from the CSV.
+        matched: Auto-matched dict of logical_field -> csv_column (may be empty string).
+
+    Returns:
+        Updated mapping dict (logical -> csv_column or "").
+    """
+    if not sys.stdin.isatty():
+        print("[interactive] stdin is not a terminal; using auto-matched results.")
+        return matched
+
+    logical_fields = list(DEFAULT_CONFIG["columns"].keys())
+    result = dict(matched)
+
+    print("\nInteractive column mapping")
+    print("  Enter  — accept the auto-match (or skip if none)")
+    print("  number — choose that column from the list")
+    print("  s / 0  — leave this field blank\n")
+
+    for idx, logical in enumerate(logical_fields, 1):
+        auto = result.get(logical, "")
+        # Available = all headers not already claimed by another field
+        others_used = {v for k, v in result.items() if k != logical and v}
+        available = [h for h in headers if h not in others_used]
+
+        hints = ", ".join(COLUMN_HINTS.get(logical, []))
+        print(f"[{idx}/{len(logical_fields)}] {logical}  (hints: {hints})")
+
+        if auto:
+            print(f"  Auto-match: {auto!r}  (press Enter to accept)")
+        else:
+            print("  No auto-match found")
+
+        print("  0: <skip — leave blank>")
+        for i, h in enumerate(available, 1):
+            marker = "  <- auto-match" if h == auto else ""
+            print(f"  {i}: {h}{marker}")
+
+        prompt = f"  Choice [Enter={auto!r}]: " if auto else "  Choice [Enter=skip]: "
+        while True:
+            try:
+                raw = input(prompt).strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nInteractive mapping aborted. Using current results.")
+                return result
+
+            if raw == "":
+                break  # accept auto or skip
+            if raw.lower() == "s" or raw == "0":
+                result[logical] = ""
+                break
+            try:
+                choice = int(raw)
+                if 1 <= choice <= len(available):
+                    result[logical] = available[choice - 1]
+                    break
+                print(f"  Please enter a number between 0 and {len(available)}.")
+            except ValueError:
+                print("  Invalid input — enter a number, 's' to skip, or Enter to accept.")
+
+        print()
+
+    return result
+
+
+def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> None:
     """Auto-generate a starter config.yaml from CSV headers.
 
     Args:
         csv_path: Path to the CSV file to inspect.
         out_path: Output path for generated config.yaml.
+        interactive: If True, prompt the user to review each column mapping before writing.
     """
     csv_path_obj = _cli_path(csv_path)
     out_path_obj = _cli_path(out_path)
@@ -3495,6 +3846,9 @@ def cmd_scaffold(csv_path: str, out_path: str) -> None:
             print(f"  - {h!r}")
 
     _suggest_custom_ea_candidates(unmatched)
+
+    if interactive:
+        matched = _interactive_column_mapping(headers, matched)
 
     config_data = copy.deepcopy(DEFAULT_CONFIG)
     for logical in config_data["columns"]:
@@ -3764,11 +4118,72 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _post_teams_notification(
+    webhook_url: str,
+    report_path: Path,
+    sheets_written: int,
+    generated_at: str,
+) -> None:
+    """Post an Adaptive Card summary to a Microsoft Teams incoming webhook.
+
+    Args:
+        webhook_url: Teams incoming webhook URL (from --notify or config).
+        report_path: Path to the generated xlsx file.
+        sheets_written: Total number of sheets written to the workbook.
+        generated_at: Human-readable generation timestamp string.
+    """
+    payload = {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentUrl": None,
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [
+                        {
+                            "type": "TextBlock",
+                            "size": "Large",
+                            "weight": "Bolder",
+                            "text": "Jamf Report Generated",
+                        },
+                        {
+                            "type": "FactSet",
+                            "facts": [
+                                {"title": "File", "value": report_path.name},
+                                {"title": "Sheets", "value": str(sheets_written)},
+                                {"title": "Generated", "value": generated_at},
+                            ],
+                        },
+                    ],
+                },
+            }
+        ],
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        webhook_url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status not in (200, 202):
+                print(f"  [warn] Teams webhook returned HTTP {resp.status}; notification may not appear.")
+    except urllib.error.URLError as exc:
+        print(f"  [warn] Teams webhook notification failed: {exc}")
+
+
 def cmd_generate(
     config: Config,
     csv_path: Optional[str],
     out_file: Optional[str],
     historical_csv_dir: Optional[str] = None,
+    notify_url: Optional[str] = None,
+    csv_extra: Optional[list[str]] = None,
 ) -> None:
     """Run all report generation and write the Excel file.
 
@@ -3777,6 +4192,8 @@ def cmd_generate(
         csv_path: Optional path to CSV inventory export.
         out_file: Optional output file path override.
         historical_csv_dir: Optional directory of dated CSV snapshots for trend charts.
+        notify_url: Optional Teams incoming webhook URL for post-generation notification.
+        csv_extra: Optional list of additional CSV paths to merge with csv_path.
     """
     csv_path_obj = _resolve_cli_input_path(csv_path, config)
     csv_path_str = str(csv_path_obj) if csv_path_obj else None
@@ -3846,26 +4263,14 @@ def cmd_generate(
 
         if csv_path_str:
             print("\nGenerating CSV sheets...")
-            if not csv_path_obj or not csv_path_obj.is_file():
-                checked = _describe_cli_input_candidates(csv_path, config)
-                print(f"  [error] CSV not found: {csv_path!r}")
-                if checked:
-                    print(f"  Checked: {checked}")
-                print(
-                    "  Skipping CSV sheets. Provide an existing Jamf Pro export or run"
-                    " inventory-csv --out-file inventory.csv first."
-                )
+            try:
+                csv_dash = CSVDashboard(config, csv_path_str, wb, fmts, extra_csv_paths=csv_extra)
+            except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
+                print(f"  [error] Cannot read CSV: {exc}")
+                print("  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export.")
             else:
-                try:
-                    csv_dash = CSVDashboard(config, csv_path_str, wb, fmts)
-                except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
-                    print(f"  [error] Cannot read CSV {csv_path_str!r}: {exc}")
-                    print(
-                        "  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export."
-                    )
-                else:
-                    csv_written = csv_dash.write_all()
-                    sheets_written += len(csv_written)
+                csv_written = csv_dash.write_all()
+                sheets_written += len(csv_written)
         else:
             print("\nNo CSV provided — skipping inventory sheets.")
             print("  Pass --csv path/to/export.csv to enable inventory analysis.")
@@ -3950,6 +4355,145 @@ def cmd_generate(
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older output file(s) to {archive_dir}")
     print(f"\nReport written: {out_path}")
+    if notify_url:
+        print("  Sending Teams notification...")
+        _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
+
+    if config.output.get("export_pptx") is True:
+        exporter = ReportExporter(
+            out_path.parent,
+            out_path.stem,
+            generated_at,
+            jamf_cli_written,
+            csv_written,
+        )
+        pptx_path = exporter.export_pptx()
+        if pptx_path:
+            print(f"  PPTX export: {pptx_path}")
+
+
+# ---------------------------------------------------------------------------
+# PPTX report exporter
+# ---------------------------------------------------------------------------
+
+
+class ReportExporter:
+    """Generates a PPTX executive-summary deck alongside the xlsx report.
+
+    The deck is intentionally minimal — title slide, sheet inventory, and data
+    source summary.  It is designed to be opened in PowerPoint or Keynote as a
+    starting point for presenting fleet data rather than as a complete document.
+
+    Requires ``python-pptx`` (``pip install python-pptx``).  If the library is
+    not installed the export is skipped with a warning.
+
+    Args:
+        output_dir: Directory where the xlsx was written.
+        report_stem: Base filename (without extension) of the xlsx output.
+        generated_at: Human-readable generation timestamp string.
+        jamf_cli_sheets: Sheet names generated from jamf-cli data.
+        csv_sheets: Sheet names generated from CSV data.
+    """
+
+    _TITLE_ACCENT = "#2D5EA2"      # blue matching the workbook header colour
+
+    def __init__(
+        self,
+        output_dir: Path,
+        report_stem: str,
+        generated_at: str,
+        jamf_cli_sheets: list[str],
+        csv_sheets: list[str],
+    ) -> None:
+        self._output_dir = output_dir
+        self._report_stem = report_stem
+        self._generated_at = generated_at
+        self._jamf_cli_sheets = jamf_cli_sheets
+        self._csv_sheets = csv_sheets
+
+    def export_pptx(self) -> Optional[Path]:
+        """Generate the PPTX summary file.
+
+        Returns:
+            Path to the ``.pptx`` file on success, or ``None`` if python-pptx
+            is unavailable or an error occurs during generation.
+        """
+        if not _load_pptx():
+            print("  [skip] PPTX export: python-pptx not installed (pip install python-pptx)")
+            return None
+
+        try:
+            return self._build_pptx()
+        except Exception as exc:
+            print(f"  [warn] PPTX export failed: {exc}")
+            return None
+
+    def _build_pptx(self) -> Path:
+        """Build and save the PPTX deck, returning the output path."""
+        prs = pptx_Presentation()
+        prs.slide_width = pptx_Inches(13.33)
+        prs.slide_height = pptx_Inches(7.5)
+
+        self._add_title_slide(prs)
+        self._add_summary_slide(prs)
+        if self._jamf_cli_sheets or self._csv_sheets:
+            self._add_sheets_slide(prs)
+
+        out_path = self._output_dir / f"{self._report_stem}.pptx"
+        prs.save(str(out_path))
+        return out_path
+
+    def _add_title_slide(self, prs: Any) -> None:
+        """Add the opening title slide."""
+        layout = prs.slide_layouts[0]   # Title Slide layout
+        slide = prs.slides.add_slide(layout)
+        slide.shapes.title.text = "Jamf Pro Fleet Report"
+        if len(slide.placeholders) > 1:
+            slide.placeholders[1].text = self._generated_at
+
+    def _add_summary_slide(self, prs: Any) -> None:
+        """Add a slide summarising what data sources were included."""
+        layout = prs.slide_layouts[1]   # Title and Content layout
+        slide = prs.slides.add_slide(layout)
+        slide.shapes.title.text = "Report Summary"
+        tf = slide.placeholders[1].text_frame
+        tf.clear()
+
+        total = len(self._jamf_cli_sheets) + len(self._csv_sheets)
+        tf.paragraphs[0].text = f"Sheets generated: {total}"
+
+        sources: list[str] = []
+        if self._jamf_cli_sheets:
+            sources.append("jamf-cli (live or cached snapshots)")
+        if self._csv_sheets:
+            sources.append("Jamf Pro CSV export")
+
+        for source in sources:
+            p = tf.add_paragraph()
+            p.text = f"Data source: {source}"
+            p.level = 1
+
+        p = tf.add_paragraph()
+        p.text = f"Generated: {self._generated_at}"
+        p.level = 1
+
+    def _add_sheets_slide(self, prs: Any) -> None:
+        """Add a slide listing every sheet written to the workbook."""
+        layout = prs.slide_layouts[1]
+        slide = prs.slides.add_slide(layout)
+        slide.shapes.title.text = "Included Sheets"
+        tf = slide.placeholders[1].text_frame
+        tf.clear()
+
+        all_sheets = self._jamf_cli_sheets + self._csv_sheets
+        tf.paragraphs[0].text = "jamf-cli sheets:" if self._jamf_cli_sheets else "Sheets:"
+        for name in all_sheets:
+            p = tf.add_paragraph()
+            marker = "  •  " + name
+            if name in self._csv_sheets and self._jamf_cli_sheets:
+                marker = "  ○  " + name   # different bullet for CSV sheets
+            p.text = marker
+            p.level = 1
 
 
 def cmd_collect(
@@ -3990,6 +4534,7 @@ def cmd_collect(
                 ("EA Definitions", bridge.computer_extension_attributes),
                 ("Software Installs", bridge.software_installs),
                 ("Patch Compliance", bridge.patch_status),
+                ("Patch Failures", bridge.patch_device_failures),
                 ("Policy Health", bridge.policy_status),
                 ("Profile Status", bridge.profile_status),
             ]
@@ -4172,16 +4717,17 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Commands:\n"
-            "  generate   Build the Excel report\n"
-            "  collect    Save jamf-cli snapshots and optional CSV history\n"
+            "  generate      Build the Excel report\n"
+            "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
-            "  scaffold   Generate a starter config.yaml from a CSV\n"
-            "  check      Verify jamf-cli auth and config\n"
+            "  scaffold      Generate a starter config.yaml from a CSV\n"
+            "  check         Verify jamf-cli auth and config\n"
+            "  device        Print a device detail view from jamf-cli pro device\n"
         ),
     )
     parser.add_argument(
         "command",
-        choices=["generate", "collect", "inventory-csv", "scaffold", "check"],
+        choices=["generate", "collect", "inventory-csv", "scaffold", "check", "device"],
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--csv", help="Path to Jamf Pro CSV export")
@@ -4191,12 +4737,45 @@ def main() -> None:
         "--historical-csv-dir",
         help="Directory of dated CSV snapshots for trend charts or collection",
     )
+    parser.add_argument(
+        "--notify",
+        metavar="WEBHOOK_URL",
+        help="Microsoft Teams incoming webhook URL; posts an Adaptive Card after generate",
+    )
+    parser.add_argument(
+        "--interactive", "-i",
+        action="store_true",
+        help="Walk through each column mapping interactively after auto-matching (scaffold only)",
+    )
+    parser.add_argument(
+        "--id",
+        metavar="DEVICE_ID",
+        help="Jamf Pro computer ID or serial number to look up (device command only)",
+    )
+    parser.add_argument(
+        "--csv-extra",
+        action="append",
+        metavar="CSV_PATH",
+        dest="csv_extra",
+        help=(
+            "Additional CSV export to merge with --csv (can be repeated). "
+            "Useful for combining computers, mobile-device, and users exports. "
+            "A 'CSV Source' column is added to identify which file each row came from."
+        ),
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
         if not args.csv:
             parser.error("scaffold requires --csv")
-        cmd_scaffold(args.csv, args.out)
+        cmd_scaffold(args.csv, args.out, interactive=args.interactive)
+        return
+
+    if args.command == "device":
+        if not args.id:
+            parser.error("device requires --id")
+        config = Config(args.config)
+        cmd_device(config, args.id)
         return
 
     config = Config(args.config)
@@ -4208,7 +4787,10 @@ def main() -> None:
     elif args.command == "inventory-csv":
         cmd_inventory_csv(config, args.out_file)
     elif args.command == "generate":
-        cmd_generate(config, args.csv, args.out_file, args.historical_csv_dir)
+        cmd_generate(
+            config, args.csv, args.out_file, args.historical_csv_dir,
+            args.notify, args.csv_extra,
+        )
 
 
 if __name__ == "__main__":
