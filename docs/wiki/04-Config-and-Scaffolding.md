@@ -12,11 +12,16 @@ in config.
 Run:
 
 ```bash
+python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file inventory.csv
 python3 jamf-reports-community.py scaffold --csv inventory.csv
 ```
 
 This creates a starter `config.yaml` by matching CSV headers to the tool's logical field
 names.
+
+If that CSV came from `inventory-csv`, scaffold can now also auto-detect generic
+FileVault, SIP, firewall, Gatekeeper, and bootstrap-token columns from the generated
+baseline export.
 
 ## Always Review The Scaffold Output
 
@@ -32,6 +37,7 @@ Common things to review:
 Use:
 
 ```bash
+python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file inventory.csv
 python3 jamf-reports-community.py check --config config.yaml --csv inventory.csv
 ```
 

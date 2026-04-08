@@ -73,10 +73,14 @@ columns:
   # macOS Firewall status. Typical values: "Enabled", "Disabled", "On", "Off".
   firewall: "Firewall Enabled"
 
+  # Gatekeeper status. Typical values: "Enabled", "Disabled", "On", "Off".
+  gatekeeper: "Gatekeeper"
+
   # Secure Boot level. Typical values: "Full Security", "Medium Security", "No Security".
   secure_boot: "Secure Boot Level"
 
-  # Whether a Bootstrap Token is escrowed in Jamf. Typical values: "Yes" / "No".
+  # Whether a Bootstrap Token is escrowed in Jamf. Prefer the escrowed column over
+  # "Bootstrap Token Allowed" when tracking compliance.
   bootstrap_token: "Bootstrap Token Escrowed"
 
   # Boot volume percentage used. The tool reads this as a plain number (0-100).
@@ -171,6 +175,8 @@ jamf_cli:
   # specific folder so cached snapshots do not mix between tenants.
   profile: ""
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.
+  # This helps generate/check keep working from cached report data, but
+  # inventory-csv still requires live jamf-cli auth.
   use_cached_data: true
   # Fetch Fleet Overview live by default. Set false if you want overview to use
   # cached JSON only for a specific tenant or troubleshooting scenario.

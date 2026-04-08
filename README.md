@@ -13,7 +13,7 @@ A single Python script (`jamf-reports-community.py`) that reads a YAML config fi
 produces a multi-sheet Excel workbook covering:
 
 - Device inventory and stale device tracking
-- Security controls summary (FileVault, SIP, firewall, secure boot, bootstrap token)
+- Security controls summary (FileVault, SIP, firewall, Gatekeeper, secure boot, bootstrap token)
 - Third-party security agent installation rates (CrowdStrike, SentinelOne, Splunk, etc.)
 - mSCP compliance results (failed-rule counts and per-device detail)
 - Custom EA-driven sheets (disk usage, certificate expiry, version tracking, and more)
@@ -140,6 +140,20 @@ python3 jamf-reports-community.py inventory-csv
 That export uses `jamf-cli pro computers list` plus `jamf-cli pro report ea-results --all`
 to create a wide CSV with one row per computer and one column per EA.
 
+The generated baseline CSV also attempts to add generic security posture columns from
+`jamf-cli pro device`, including FileVault, SIP, firewall, Gatekeeper, and bootstrap
+token states. That means a scaffolded config from `inventory-csv` can now populate the
+CSV-driven `Security Controls` sheet without requiring a Jamf UI export.
+
+Before relying on jamf-cli-driven commands, validate the profile you expect to use:
+
+```bash
+jamf-cli config validate -p yourprofile
+```
+
+`inventory-csv` and `collect` require working live jamf-cli auth. `generate` can reuse
+saved JSON snapshots when `jamf_cli.use_cached_data: true`.
+
 If you later run `generate` or `collect` with jamf-cli available, the workbook can also
 include live EA coverage, EA definition metadata, software install distribution, device
 compliance, inventory summary, and other API-driven sheets alongside the CSV analysis.
@@ -213,7 +227,8 @@ If you omit `--csv`, the workbook is built from jamf-cli data only.
 Examples:
 
 ```bash
-# Mixed workbook: jamf-cli sheets plus CSV sheets
+# Mixed workbook: create a baseline CSV, then build jamf-cli sheets plus CSV sheets
+python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file inventory.csv
 python3 jamf-reports-community.py generate --config config.yaml --csv inventory.csv
 
 # jamf-cli-only workbook
@@ -257,6 +272,18 @@ best for bootstrap and general inventory reporting. It is not a full replacement
 every possible Jamf Pro Advanced Search or every per-device field exposed by `jamf-cli
 pro device`.
 
+`inventory-csv` is a live-auth path. Unlike `generate`, it does not reuse cached JSON
+snapshots when jamf-cli auth is broken.
+
+Because the command now enriches each computer with `jamf-cli pro device` security
+details, it can take noticeably longer on larger fleets than a plain `computers list`
+export. The payoff is that scaffolded configs can auto-map FileVault, SIP, firewall,
+Gatekeeper, and bootstrap-token columns directly from the generated CSV.
+
+If you want later commands to use `--csv inventory.csv`, create it explicitly with
+`inventory-csv --out-file inventory.csv`. If you omit `--out-file`, the export is written
+to `Generated Reports/` using the configured timestamp behavior.
+
 ### `scaffold` — Generate a starter config from your CSV
 
 ```
@@ -287,7 +314,7 @@ Sheets appear only when the required config and data are present.
 |-------|----------|-------------|
 | Device Inventory | `--csv`, `columns` | All active devices with OS, model, last check-in |
 | Stale Devices | `--csv`, `columns.last_checkin` | Devices not checked in within `stale_device_days` |
-| Security Controls | `--csv`, `columns` | FileVault, SIP, firewall, secure boot rates |
+| Security Controls | `--csv`, `columns` | FileVault, SIP, firewall, Gatekeeper, secure boot, bootstrap token rates |
 | Security Agents | `--csv`, `security_agents` | Per-agent install rate; missing-agent device list |
 | Compliance | `--csv`, `compliance` | Failed rule counts per device; top failing rules |
 | Custom EA sheets | `--csv`, `custom_eas` | One sheet per entry |
@@ -327,6 +354,7 @@ columns:
   filevault: "FileVault 2 - Status"
   sip: "System Integrity Protection"
   firewall: "Firewall Enabled"
+  gatekeeper: "Gatekeeper"
   secure_boot: "Secure Boot Level"
   bootstrap_token: "Bootstrap Token Escrowed"
   disk_percent_full: "Boot Drive Percentage Full"
@@ -630,13 +658,16 @@ sheets still generate normally.
 
 If several Core Dashboard sheets are skipped with auth-related errors, check:
 
-1. Run `jamf-cli pro overview` directly to confirm the profile is authenticated.
-2. If the API client token has expired, re-authenticate: `jamf-cli pro setup --url https://jamf.example.com`
-3. If auth is intermittently failing (e.g., scheduled runs overnight), set
+1. Run `jamf-cli config validate -p yourprofile` to confirm the expected profile resolves.
+2. Run `jamf-cli --profile yourprofile pro overview` directly to confirm the API path works.
+3. If the API client token has expired, re-authenticate: `jamf-cli pro setup --url https://jamf.example.com`
+4. If auth is intermittently failing (e.g., scheduled runs overnight), set
    `jamf_cli.use_cached_data: true` — the script will fall back to the most recent
    saved JSON snapshot for each sheet that fails live collection.
-4. If the Jamf Pro server is temporarily unreachable, cached data avoids a fully blank
+5. If the Jamf Pro server is temporarily unreachable, cached data avoids a fully blank
    workbook. Snapshots are labeled with their age in the sheet header.
+
+`inventory-csv` remains live-only, so it will still fail until jamf-cli auth is fixed.
 
 **Stale snapshots in jamf-cli-data/**
 

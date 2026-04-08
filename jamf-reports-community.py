@@ -27,6 +27,7 @@ import subprocess
 import tempfile
 import unicodedata
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -56,6 +57,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "filevault": "",
         "sip": "",
         "firewall": "",
+        "gatekeeper": "",
         "secure_boot": "",
         "bootstrap_token": "",
         "disk_percent_full": "",
@@ -132,6 +134,7 @@ COLUMN_HINTS: dict[str, list[str]] = {
     "filevault": ["filevault 2 status", "filevault 2 - status", "filevault status", "filevault"],
     "sip": ["system integrity protection", "sip"],
     "firewall": ["firewall", "firewall enabled", "fw"],
+    "gatekeeper": ["gatekeeper"],
     "secure_boot": ["secure boot level", "secure boot"],
     "bootstrap_token": ["bootstrap token escrowed", "bootstrap token is escrowed"],
     "disk_percent_full": ["boot drive percentage full", "percentage full", "disk percent full"],
@@ -222,7 +225,7 @@ def _parse_manager(raw_value: Any) -> str:
 
 def _now_ts() -> str:
     """Return current UTC timestamp as a compact string."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S%f")
 
 
 def _file_stamp() -> str:
@@ -320,6 +323,54 @@ def _cli_path(path_value: Optional[str]) -> Optional[Path]:
     return Path(text).expanduser()
 
 
+def _cli_input_candidates(
+    path_value: Optional[str],
+    config: Optional["Config"] = None,
+) -> list[Path]:
+    """Return candidate locations for a CLI-supplied input path."""
+    path = _cli_path(path_value)
+    if path is None:
+        return []
+
+    candidates = [path]
+    if config is not None and not path.is_absolute():
+        config_relative = config.base_dir / path
+        if config_relative not in candidates:
+            candidates.append(config_relative)
+    return candidates
+
+
+def _resolve_cli_input_path(
+    path_value: Optional[str],
+    config: Optional["Config"] = None,
+) -> Optional[Path]:
+    """Resolve a CLI-supplied input path from existing candidate locations."""
+    candidates = _cli_input_candidates(path_value, config)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0] if candidates else None
+
+
+def _describe_cli_input_candidates(
+    path_value: Optional[str],
+    config: Optional["Config"] = None,
+) -> str:
+    """Return a human-readable list of input paths checked for a CLI argument."""
+    candidates = _cli_input_candidates(path_value, config)
+    if not candidates:
+        return ""
+
+    seen: set[str] = set()
+    rendered: list[str] = []
+    for candidate in candidates:
+        text = str(candidate)
+        if text not in seen:
+            seen.add(text)
+            rendered.append(text)
+    return " or ".join(rendered)
+
+
 def _days_since(date_str: str) -> Optional[int]:
     """Parse a date string and return days elapsed since then.
 
@@ -329,13 +380,32 @@ def _days_since(date_str: str) -> Optional[int]:
     Returns:
         Integer days since that date, or None if unparseable.
     """
+    text = str(date_str).strip()
+    if not text:
+        return None
+
+    iso_text = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(iso_text)
+        if parsed.tzinfo is not None:
+            return (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).days
+        return (datetime.now() - parsed).days
+    except ValueError:
+        pass
+
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%Y-%m-%d"):
         try:
-            dt = datetime.strptime(str(date_str).strip(), fmt)
+            dt = datetime.strptime(text, fmt)
             return (datetime.now() - dt).days
         except ValueError:
             continue
     return None
+
+
+def _display_value(value: Any, empty_label: str = "Unknown / Not Reported") -> str:
+    """Return a report-friendly label for a value, substituting blanks."""
+    text = str(value or "").strip()
+    return text if text else empty_label
 
 
 def _load_matplotlib() -> bool:
@@ -474,6 +544,26 @@ def _security_control_is_compliant(logical: str, value: Any) -> bool:
 
     if logical == "bootstrap_token":
         return normalized in {"escrowed", "yes", "true", "enabled"}
+
+    if logical == "gatekeeper":
+        return normalized in {
+            "enabled",
+            "yes",
+            "true",
+            "1",
+            "on",
+            "active",
+            "running",
+            "connected",
+            "app_store",
+            "app store",
+            "app_store_and_identified_developers",
+            "app store and identified developers",
+            "mac_app_store",
+            "mac app store",
+            "mac_app_store_and_identified_developers",
+            "mac app store and identified developers",
+        }
 
     return normalized in {"enabled", "yes", "true", "1", "on", "active", "running", "connected"}
 
@@ -616,6 +706,71 @@ def _inventory_export_row(computer: dict[str, Any]) -> dict[str, Any]:
         "UDID": str(computer.get("udid", "") or "").strip(),
         "Management ID": str(computer.get("managementId", "") or "").strip(),
     }
+
+
+def _inventory_detail_identifier(computer: dict[str, Any]) -> str:
+    """Return the best jamf-cli identifier for per-device detail lookups."""
+    for key in ("id", "serialNumber", "name"):
+        value = str(computer.get(key, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _inventory_security_detail_fields(detail_rows: Any) -> dict[str, str]:
+    """Extract generic security posture fields from `jamf-cli pro device` output."""
+    extracted = {column: "" for column in INVENTORY_SECURITY_DETAIL_COLUMNS}
+    rows = detail_rows if isinstance(detail_rows, list) else []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("section", "") or "").strip() != "Security":
+            continue
+        resource = str(item.get("resource", "") or "").strip()
+        column = INVENTORY_SECURITY_RESOURCE_MAP.get(resource)
+        if not column:
+            continue
+        extracted[column] = str(item.get("value", "") or "").strip()
+    return extracted
+
+
+def _enrich_inventory_rows_with_security_details(
+    bridge: "JamfCLIBridge",
+    computers: list[dict[str, Any]],
+    rows_by_name: dict[str, dict[str, Any]],
+) -> tuple[int, int]:
+    """Merge per-device security posture values into inventory export rows."""
+    targets: list[tuple[str, str]] = []
+    for computer in computers:
+        if not isinstance(computer, dict):
+            continue
+        name = str(computer.get("name", "") or "").strip()
+        identifier = _inventory_detail_identifier(computer)
+        if name and identifier and name in rows_by_name:
+            targets.append((name, identifier))
+
+    if not targets:
+        return 0, 0
+
+    enriched = 0
+    failures = 0
+    max_workers = min(8, len(targets))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(bridge.device_detail, identifier): name
+            for name, identifier in targets
+        }
+        for future in as_completed(future_map):
+            name = future_map[future]
+            try:
+                detail_fields = _inventory_security_detail_fields(future.result())
+            except RuntimeError:
+                failures += 1
+                continue
+            rows_by_name[name].update(detail_fields)
+            if any(detail_fields.values()):
+                enriched += 1
+    return enriched, failures
 
 
 # ---------------------------------------------------------------------------
@@ -925,7 +1080,12 @@ class JamfCLIBridge:
         try:
             return json.loads(result.stdout)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"jamf-cli returned non-JSON output: {result.stdout[:200]}") from exc
+            detail = "\n".join(
+                part for part in [result.stdout.strip(), result.stderr.strip()] if part
+            )
+            raise RuntimeError(
+                f"jamf-cli returned non-JSON output: {detail[:1000]}"
+            ) from exc
 
     def _latest_cached_json(self, report_names: list[str]) -> Optional[Path]:
         """Return the newest cached JSON snapshot for any of the supplied report names."""
@@ -1076,11 +1236,31 @@ class JamfCLIBridge:
     def update_status(self) -> Any:
         """Fetch managed software update report from jamf-cli pro report update-status."""
         self._require_report_command("update-status", ["update-status", "update_status"])
-        return self._run_and_save(
-            "update-status",
-            ["pro", "report", "update-status"],
-            ["update-status", "update_status"],
-        )
+        try:
+            return self._run_and_save(
+                "update-status",
+                ["pro", "report", "update-status"],
+                ["update-status", "update_status"],
+            )
+        except RuntimeError as exc:
+            detail = str(exc)
+            if (
+                "No managed software update data found." in detail
+                or "Managed Software Update Plans toggle is off." in detail
+            ):
+                return {
+                    "message": "No managed software update data found.",
+                    "summary": {},
+                    "ErrorDevices": [],
+                }
+            raise
+
+    def device_detail(self, identifier: str) -> Any:
+        """Fetch the aggregated device detail view for one computer."""
+        ident = str(identifier).strip()
+        if not ident:
+            raise RuntimeError("device detail lookup requires a non-empty identifier")
+        return self._run(["pro", "device", ident])
 
     def computers_list(self) -> Any:
         """Fetch the lightweight computer inventory index from jamf-cli pro computers list."""
@@ -2124,6 +2304,7 @@ class CoreDashboard:
             raise RuntimeError("update-status returned no data")
         summary = envelope.get("summary", {})
         error_devices = envelope.get("ErrorDevices", [])
+        no_data_message = str(envelope.get("message", "") or "").strip()
 
         ws = self._wb.add_worksheet("Update Status")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -2151,6 +2332,14 @@ class CoreDashboard:
                 _safe_write(ws, row, 0, label, self._fmts["cell"])
                 _safe_write(ws, row, 1, val, self._fmts["cell"])
                 row += 1
+
+        if not summary and not error_devices and no_data_message:
+            _safe_write(ws, row, 0, "Status", self._fmts["header"])
+            _safe_write(ws, row, 1, "Details", self._fmts["header"])
+            row += 1
+            _safe_write(ws, row, 0, "No Data", self._fmts["yellow"])
+            _safe_write(ws, row, 1, no_data_message, self._fmts["yellow"])
+            row += 1
 
         if error_devices:
             row += 1
@@ -2197,12 +2386,7 @@ class CSVDashboard:
         self._mapper = ColumnMapper(config)
         self._wb = workbook
         self._fmts = fmts
-        try:
-            self._df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
-        except Exception as exc:
-            raise SystemExit(
-                f"Error: could not read CSV '{csv_path}': {exc}"
-            ) from exc
+        self._df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
         print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
 
     def write_all(self) -> list[str]:
@@ -2253,7 +2437,7 @@ class CSVDashboard:
         for _, row in self._df.iterrows():
             checkin = str(row.get(checkin_col, "")) if checkin_col else ""
             days = _days_since(checkin) if checkin else None
-            if days is None or days <= stale_days:
+            if days is not None and 0 <= days <= stale_days:
                 active_rows.append(row)
 
         ws = self._wb.add_worksheet("Device Inventory")
@@ -2315,7 +2499,14 @@ class CSVDashboard:
         ws.set_column(1, 5, 22)
 
     def _write_security_controls(self) -> None:
-        control_fields = ["filevault", "sip", "firewall", "secure_boot", "bootstrap_token"]
+        control_fields = [
+            "filevault",
+            "sip",
+            "firewall",
+            "gatekeeper",
+            "secure_boot",
+            "bootstrap_token",
+        ]
         configured = [(f, self._col(f)) for f in control_fields if self._col(f)]
         if not configured:
             raise RuntimeError("no security control columns configured")
@@ -2388,7 +2579,7 @@ class CSVDashboard:
                 name_col = self._col("computer_name")
                 for _, dr in non_connected_df.iterrows():
                     name = str(dr[name_col]) if name_col and name_col in dr.index else ""
-                    status = str(dr[col])
+                    status = _display_value(dr[col])
                     _safe_write(ws, row_i, 0, name, self._fmts["cell"])
                     _safe_write(ws, row_i, 1, status, self._fmts["cell"])
                     row_i += 1
@@ -2535,17 +2726,20 @@ class CSVDashboard:
         row_i += 1
         has_current_list = bool(current)
         for ver, cnt in sorted(dist.items(), key=lambda x: -x[1]):
+            display_ver = _display_value(ver)
             is_current = (
                 any(str(ver).lower().startswith(cv.lower()) for cv in current)
                 if has_current_list else None
             )
-            if is_current is True:
+            if not str(ver).strip():
+                fmt = self._fmts["yellow"]
+            elif is_current is True:
                 fmt = self._fmts["green"]
             elif is_current is False:
                 fmt = self._fmts["red"]
             else:
                 fmt = self._fmts["cell"]
-            _safe_write(ws, row_i, 0, ver, fmt)
+            _safe_write(ws, row_i, 0, display_ver, fmt)
             _safe_write(ws, row_i, 1, cnt, fmt)
             if is_current is True:
                 current_label = "Yes"
@@ -2562,8 +2756,9 @@ class CSVDashboard:
         _safe_write(ws, row_i, 1, "Count", self._fmts["header"])
         row_i += 1
         for val, cnt in sorted(dist.items(), key=lambda x: -x[1]):
-            _safe_write(ws, row_i, 0, val, self._fmts["cell"])
-            _safe_write(ws, row_i, 1, cnt, self._fmts["cell"])
+            fmt = self._fmts["yellow"] if not str(val).strip() else self._fmts["cell"]
+            _safe_write(ws, row_i, 0, _display_value(val), fmt)
+            _safe_write(ws, row_i, 1, cnt, fmt)
             row_i += 1
 
     def _ea_date(self, ws: Any, row_i: int, col: str, ea: dict) -> None:
@@ -2632,6 +2827,12 @@ INVENTORY_EXPORT_COLUMNS: list[str] = [
     "Operating System",
     "OS Build",
     "OS Rapid Security Response",
+    "FileVault Status",
+    "System Integrity Protection",
+    "Firewall Enabled",
+    "Bootstrap Token Escrowed",
+    "Bootstrap Token Allowed",
+    "Gatekeeper",
     "Model",
     "Asset Tag",
     "IP Address",
@@ -2649,6 +2850,24 @@ INVENTORY_EXPORT_COLUMNS: list[str] = [
     "UDID",
     "Management ID",
 ]
+
+INVENTORY_SECURITY_DETAIL_COLUMNS: list[str] = [
+    "FileVault Status",
+    "System Integrity Protection",
+    "Firewall Enabled",
+    "Bootstrap Token Escrowed",
+    "Bootstrap Token Allowed",
+    "Gatekeeper",
+]
+
+INVENTORY_SECURITY_RESOURCE_MAP: dict[str, str] = {
+    "FileVault": "FileVault Status",
+    "SIP": "System Integrity Protection",
+    "Firewall": "Firewall Enabled",
+    "Bootstrap Token Escrowed": "Bootstrap Token Escrowed",
+    "Bootstrap Token Allowed": "Bootstrap Token Allowed",
+    "Gatekeeper": "Gatekeeper",
+}
 
 
 class ChartGenerator:
@@ -3396,7 +3615,7 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
 
     if csv_path:
         print("\n--- CSV column validation ---")
-        csv_path_obj = _cli_path(csv_path)
+        csv_path_obj = _resolve_cli_input_path(csv_path, config)
         try:
             if csv_path_obj is None:
                 raise FileNotFoundError("missing CSV path")
@@ -3404,7 +3623,10 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             headers = df.columns.tolist()
             csv_cols = set(headers)
         except Exception as exc:
-            print(f"  Could not read CSV: {exc}")
+            checked = _describe_cli_input_candidates(csv_path, config)
+            print(f"  Could not read CSV {csv_path!r}: {exc}")
+            if checked:
+                print(f"  Checked: {checked}")
         else:
             mismatches = []
             for field, col in config.columns.items():
@@ -3556,7 +3778,7 @@ def cmd_generate(
         out_file: Optional output file path override.
         historical_csv_dir: Optional directory of dated CSV snapshots for trend charts.
     """
-    csv_path_obj = _cli_path(csv_path)
+    csv_path_obj = _resolve_cli_input_path(csv_path, config)
     csv_path_str = str(csv_path_obj) if csv_path_obj else None
 
     output_cfg = config.output
@@ -3624,14 +3846,26 @@ def cmd_generate(
 
         if csv_path_str:
             print("\nGenerating CSV sheets...")
-            try:
-                csv_dash = CSVDashboard(config, csv_path_str, wb, fmts)
-            except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
-                print(f"  [error] Cannot read CSV: {exc}")
-                print("  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export.")
+            if not csv_path_obj or not csv_path_obj.is_file():
+                checked = _describe_cli_input_candidates(csv_path, config)
+                print(f"  [error] CSV not found: {csv_path!r}")
+                if checked:
+                    print(f"  Checked: {checked}")
+                print(
+                    "  Skipping CSV sheets. Provide an existing Jamf Pro export or run"
+                    " inventory-csv --out-file inventory.csv first."
+                )
             else:
-                csv_written = csv_dash.write_all()
-                sheets_written += len(csv_written)
+                try:
+                    csv_dash = CSVDashboard(config, csv_path_str, wb, fmts)
+                except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
+                    print(f"  [error] Cannot read CSV {csv_path_str!r}: {exc}")
+                    print(
+                        "  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export."
+                    )
+                else:
+                    csv_written = csv_dash.write_all()
+                    sheets_written += len(csv_written)
         else:
             print("\nNo CSV provided — skipping inventory sheets.")
             print("  Pass --csv path/to/export.csv to enable inventory analysis.")
@@ -3771,7 +4005,7 @@ def cmd_collect(
         print("  jamf-cli: not found; skipping live snapshot collection.")
 
     archived = False
-    csv_path_obj = _cli_path(csv_path)
+    csv_path_obj = _resolve_cli_input_path(csv_path, config)
     hist_dir_obj = _cli_path(historical_csv_dir)
     if hist_dir_obj is None:
         hist_dir_obj = config.resolve_path("charts", "historical_csv_dir")
@@ -3795,7 +4029,7 @@ def cmd_collect(
 
 
 def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> None:
-    """Export a wide computer inventory CSV from jamf-cli computers list plus EA results."""
+    """Export a wide computer inventory CSV from jamf-cli inventory and EA data."""
     output_cfg = config.output
     out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
     if out_dir is None:
@@ -3859,6 +4093,11 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> None:
         )
 
     rows_by_name = {row["Computer Name"]: row for row in base_rows}
+    detail_enriched, detail_failures = _enrich_inventory_rows_with_security_details(
+        bridge,
+        computers,
+        rows_by_name,
+    )
     ea_columns: set[str] = set()
     unmatched_devices: set[str] = set()
     ea_raw = bridge.ea_results(include_all=True)
@@ -3884,6 +4123,17 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> None:
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
 
     print(f"  [ok] Exported {len(df)} computers")
+    print(
+        "  [ok] Added"
+        f" {len(INVENTORY_SECURITY_DETAIL_COLUMNS)} generic security detail column(s)"
+    )
+    if detail_enriched:
+        print(f"  [ok] Enriched security details for {detail_enriched} computer(s)")
+    if detail_failures:
+        print(
+            "  [warn] Could not enrich device security details for"
+            f" {detail_failures} computer(s)"
+        )
     print(f"  [ok] Included {len(ea_columns)} extension attribute columns")
     if unmatched_devices:
         print(
@@ -3892,7 +4142,7 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> None:
         )
     print(
         "  Note: this export is built from jamf-cli computers list plus"
-        " jamf-cli report ea-results."
+        " per-device security details and jamf-cli report ea-results."
     )
     if archive_enabled:
         archive_dir = config.resolve_path("output", "archive_dir")

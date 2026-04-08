@@ -13,6 +13,7 @@ A practical weekly run looks like this:
 Example:
 
 ```bash
+python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file inventory.csv
 python3 jamf-reports-community.py collect --config config.yaml --csv inventory.csv
 python3 jamf-reports-community.py generate --config config.yaml --csv inventory.csv --historical-csv-dir snapshots/
 ```

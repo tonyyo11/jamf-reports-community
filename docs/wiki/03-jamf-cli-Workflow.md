@@ -59,6 +59,12 @@ jamf_cli:
 
 ## Build a Baseline CSV From jamf-cli
 
+Validate the profile first:
+
+```bash
+jamf-cli config validate -p yourprofile
+```
+
 This is the fastest way to bootstrap reporting without building a Jamf UI export first:
 
 ```bash
@@ -68,6 +74,7 @@ python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file 
 That command combines:
 
 - `jamf-cli pro computers list`
+- `jamf-cli pro device <id>` for generic per-device security posture fields
 - `jamf-cli pro report ea-results --all`
 
 Use the resulting CSV as input for:
@@ -80,11 +87,20 @@ This is the bridge between jamf-cli-only collection and the broader CSV-driven r
 surface. It is the right move when you want security-agent, compliance, or custom-EA
 visualizations without building a Jamf Pro export first.
 
+Because the export now enriches each computer with generic security posture fields
+(FileVault, SIP, firewall, Gatekeeper, bootstrap token states), a scaffolded config from
+that CSV can populate the `Security Controls` sheet directly. Expect the command to run a
+bit longer on larger fleets because it performs a per-device detail lookup.
+
+`inventory-csv` is live-only. It does not reuse cached JSON snapshots, so validate auth
+first if you plan to depend on it in automation.
+
 ## Collect Snapshots
 
 Refresh API-backed JSON snapshots:
 
 ```bash
+python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file inventory.csv
 python3 jamf-reports-community.py collect --config config.yaml --csv inventory.csv
 ```
 
@@ -100,6 +116,7 @@ Recommended pattern:
 ## Generate a Workbook
 
 ```bash
+python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file inventory.csv
 python3 jamf-reports-community.py generate --config config.yaml --csv inventory.csv
 ```
 
@@ -162,6 +179,7 @@ Recommended pattern for scheduled reporting:
 1. Run `collect` nightly to refresh snapshots.
 2. Run `generate` weekly (or on demand) to produce the workbook from saved data.
 3. Keep `use_cached_data: true` so `generate` never fails due to a momentary auth issue.
+4. Use `inventory-csv` only when you need a fresh CSV baseline and know live auth is good.
 
 ## Where To Use jamf-cli Directly
 

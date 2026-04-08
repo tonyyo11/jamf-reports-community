@@ -78,8 +78,9 @@ python3 jamf-reports-community.py check    [--csv export.csv]
 **`collect`** — fetch live snapshots from jamf-cli and save to `jamf_cli.data_dir`. Also
 archives a CSV snapshot if `--csv` and `--historical-csv-dir` are both provided.
 
-**`inventory-csv`** — export a wide CSV from jamf-cli `computers list` + EA results,
-suitable for use as a `--csv` source on systems without a Jamf Pro CSV export.
+**`inventory-csv`** — export a wide CSV from jamf-cli `computers list` + per-device
+security details + EA results, suitable for use as a `--csv` source on systems without a
+Jamf Pro CSV export.
 
 ### `--historical-csv-dir` usage
 
@@ -122,6 +123,7 @@ The config uses these names — use them exactly:
 | `columns` | `operating_system` | `os_version` |
 | `columns` | `last_checkin` | `last_contact` |
 | `columns` | `email` | `assigned_user_email` |
+| `columns` | `gatekeeper` | `gate_keeper` |
 | `jamf_cli` | `profile` | `jamf_profile` |
 | `jamf_cli` | `allow_live_overview` | `live_overview` |
 | `security_agents` | `connected_value` | `installed_value` |

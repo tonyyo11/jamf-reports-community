@@ -89,6 +89,13 @@ Notes:
 For interactive use, prefer `jamf-cli pro setup` so the client ID and secret are stored
 in the system keychain instead of shell history.
 
+Validate the profile before running `inventory-csv` or `collect`:
+
+```bash
+jamf-cli config validate -p yourprofile
+jamf-cli --profile yourprofile pro overview
+```
+
 For automation, environment variables are acceptable:
 
 - `JAMF_URL`
