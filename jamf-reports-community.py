@@ -24,6 +24,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unicodedata
 import urllib.error
@@ -1180,6 +1181,20 @@ class JamfCLIBridge:
             args,
             ["software-installs", "software_installs"],
         )
+
+    def device_lookup(self, device_id: str) -> Any:
+        """Fetch a per-device detail view from jamf-cli pro device.
+
+        Args:
+            device_id: Jamf Pro computer ID or serial number to look up.
+
+        Returns:
+            Parsed JSON response from jamf-cli.
+
+        Raises:
+            RuntimeError: If jamf-cli is unavailable or the request fails.
+        """
+        return self._run(["pro", "device", device_id])
 
 
 # ---------------------------------------------------------------------------
@@ -3232,6 +3247,71 @@ class ChartGenerator:
 
 
 # ---------------------------------------------------------------------------
+# Device deep-dive command
+# ---------------------------------------------------------------------------
+
+
+def _print_device_detail(data: Any, indent: int = 0) -> None:
+    """Recursively format and print a jamf-cli device JSON response.
+
+    Args:
+        data: Parsed JSON (dict, list, or scalar) from jamf-cli pro device.
+        indent: Current indentation level (spaces multiplied by 2).
+    """
+    pad = "  " * indent
+    if isinstance(data, list):
+        for item in data:
+            _print_device_detail(item, indent)
+            if isinstance(item, dict):
+                print()
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            label = str(key).replace("_", " ").title()
+            if isinstance(value, dict):
+                print(f"{pad}{label}:")
+                _print_device_detail(value, indent + 1)
+            elif isinstance(value, list):
+                print(f"{pad}{label} ({len(value)}):")
+                _print_device_detail(value, indent + 1)
+            else:
+                display = "" if value is None else str(value)
+                print(f"{pad}  {label:<28} {display}")
+    else:
+        print(f"{pad}{data}")
+
+
+def cmd_device(config: Config, device_id: str) -> None:
+    """Print a formatted device detail view using jamf-cli pro device.
+
+    Args:
+        config: Loaded Config instance.
+        device_id: Device identifier (Jamf Pro computer ID or serial number).
+    """
+    jamf_cli_cfg = config.jamf_cli
+    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
+    bridge = JamfCLIBridge(
+        save_output=False,
+        data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
+        profile=jamf_cli_profile,
+        use_cached_data=False,
+    )
+    if not bridge.is_available():
+        raise SystemExit(
+            "Error: jamf-cli is not installed or not found.\n"
+            "  Install via Homebrew: brew install jamf-cli\n"
+            "  Or set JAMFCLI_PATH to the binary location."
+        )
+    print(f"Device: {device_id}")
+    print("=" * (len(device_id) + 8))
+    try:
+        data = bridge.device_lookup(device_id)
+    except RuntimeError as exc:
+        raise SystemExit(f"Error: {exc}") from exc
+    _print_device_detail(data)
+
+
+# ---------------------------------------------------------------------------
 # Scaffold command
 # ---------------------------------------------------------------------------
 
@@ -3309,12 +3389,88 @@ def _suggest_custom_ea_candidates(unmatched_headers: list[str]) -> None:
     print()
 
 
-def cmd_scaffold(csv_path: str, out_path: str) -> None:
+def _interactive_column_mapping(
+    headers: list[str],
+    matched: dict[str, str],
+) -> dict[str, str]:
+    """Walk the user through reviewing and correcting auto-matched column assignments.
+
+    For each logical field, shows the auto-match (if any) alongside a numbered
+    list of all available CSV columns so the user can accept, override, or skip.
+    Falls back to returning the original matched dict when stdin is not a TTY.
+
+    Args:
+        headers: All column names from the CSV.
+        matched: Auto-matched dict of logical_field -> csv_column (may be empty string).
+
+    Returns:
+        Updated mapping dict (logical -> csv_column or "").
+    """
+    if not sys.stdin.isatty():
+        print("[interactive] stdin is not a terminal; using auto-matched results.")
+        return matched
+
+    logical_fields = list(DEFAULT_CONFIG["columns"].keys())
+    result = dict(matched)
+
+    print("\nInteractive column mapping")
+    print("  Enter  — accept the auto-match (or skip if none)")
+    print("  number — choose that column from the list")
+    print("  s / 0  — leave this field blank\n")
+
+    for idx, logical in enumerate(logical_fields, 1):
+        auto = result.get(logical, "")
+        # Available = all headers not already claimed by another field
+        others_used = {v for k, v in result.items() if k != logical and v}
+        available = [h for h in headers if h not in others_used]
+
+        hints = ", ".join(COLUMN_HINTS.get(logical, []))
+        print(f"[{idx}/{len(logical_fields)}] {logical}  (hints: {hints})")
+
+        if auto:
+            print(f"  Auto-match: {auto!r}  (press Enter to accept)")
+        else:
+            print("  No auto-match found")
+
+        print("  0: <skip — leave blank>")
+        for i, h in enumerate(available, 1):
+            marker = "  <- auto-match" if h == auto else ""
+            print(f"  {i}: {h}{marker}")
+
+        prompt = f"  Choice [Enter={auto!r}]: " if auto else "  Choice [Enter=skip]: "
+        while True:
+            try:
+                raw = input(prompt).strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nInteractive mapping aborted. Using current results.")
+                return result
+
+            if raw == "":
+                break  # accept auto or skip
+            if raw.lower() == "s" or raw == "0":
+                result[logical] = ""
+                break
+            try:
+                choice = int(raw)
+                if 1 <= choice <= len(available):
+                    result[logical] = available[choice - 1]
+                    break
+                print(f"  Please enter a number between 0 and {len(available)}.")
+            except ValueError:
+                print("  Invalid input — enter a number, 's' to skip, or Enter to accept.")
+
+        print()
+
+    return result
+
+
+def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> None:
     """Auto-generate a starter config.yaml from CSV headers.
 
     Args:
         csv_path: Path to the CSV file to inspect.
         out_path: Output path for generated config.yaml.
+        interactive: If True, prompt the user to review each column mapping before writing.
     """
     csv_path_obj = _cli_path(csv_path)
     out_path_obj = _cli_path(out_path)
@@ -3347,6 +3503,9 @@ def cmd_scaffold(csv_path: str, out_path: str) -> None:
             print(f"  - {h!r}")
 
     _suggest_custom_ea_candidates(unmatched)
+
+    if interactive:
+        matched = _interactive_column_mapping(headers, matched)
 
     config_data = copy.deepcopy(DEFAULT_CONFIG)
     for logical in config_data["columns"]:
@@ -4058,16 +4217,17 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Commands:\n"
-            "  generate   Build the Excel report\n"
-            "  collect    Save jamf-cli snapshots and optional CSV history\n"
+            "  generate      Build the Excel report\n"
+            "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
-            "  scaffold   Generate a starter config.yaml from a CSV\n"
-            "  check      Verify jamf-cli auth and config\n"
+            "  scaffold      Generate a starter config.yaml from a CSV\n"
+            "  check         Verify jamf-cli auth and config\n"
+            "  device        Print a device detail view from jamf-cli pro device\n"
         ),
     )
     parser.add_argument(
         "command",
-        choices=["generate", "collect", "inventory-csv", "scaffold", "check"],
+        choices=["generate", "collect", "inventory-csv", "scaffold", "check", "device"],
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--csv", help="Path to Jamf Pro CSV export")
@@ -4082,12 +4242,29 @@ def main() -> None:
         metavar="WEBHOOK_URL",
         help="Microsoft Teams incoming webhook URL; posts an Adaptive Card after generate",
     )
+    parser.add_argument(
+        "--interactive", "-i",
+        action="store_true",
+        help="Walk through each column mapping interactively after auto-matching (scaffold only)",
+    )
+    parser.add_argument(
+        "--id",
+        metavar="DEVICE_ID",
+        help="Jamf Pro computer ID or serial number to look up (device command only)",
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
         if not args.csv:
             parser.error("scaffold requires --csv")
-        cmd_scaffold(args.csv, args.out)
+        cmd_scaffold(args.csv, args.out, interactive=args.interactive)
+        return
+
+    if args.command == "device":
+        if not args.id:
+            parser.error("device requires --id")
+        config = Config(args.config)
+        cmd_device(config, args.id)
         return
 
     config = Config(args.config)
