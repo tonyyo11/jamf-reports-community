@@ -302,6 +302,12 @@ thresholds:
   # Default certificate/date expiry warning window (days).
   cert_warning_days: 90
 
+  # Error count thresholds for jamf-cli Profile Status and App Status sheets.
+  # Rows with error counts at or above profile_error_critical are highlighted red;
+  # at or above profile_error_warning, yellow.
+  profile_error_critical: 50
+  profile_error_warning: 10
+
 
 # =============================================================================
 # OUTPUT
