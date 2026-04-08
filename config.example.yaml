@@ -328,6 +328,13 @@ output:
   # each report family before older runs are moved into archive_dir.
   keep_latest_runs: 10
 
+  # Generate a PowerPoint (.pptx) executive-summary deck alongside the xlsx.
+  # Requires python-pptx: pip install python-pptx
+  # The deck contains a title slide, a report-summary slide, and a list of
+  # all sheets written.  It is intended as a starting point for presentations,
+  # not as a complete replacement for the xlsx.
+  export_pptx: false
+
 
 # =============================================================================
 # CHARTS

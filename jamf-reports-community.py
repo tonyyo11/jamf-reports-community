@@ -24,6 +24,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unicodedata
 import urllib.error
@@ -40,6 +41,11 @@ import yaml
 plt: Any = None
 mdates: Any = None
 HAS_MATPLOTLIB: Optional[bool] = None
+
+pptx_Presentation: Any = None   # pptx.Presentation class, set by _load_pptx()
+pptx_Inches: Any = None          # pptx.util.Inches
+pptx_Pt: Any = None              # pptx.util.Pt
+HAS_PPTX: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +98,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "archive_enabled": True,
         "archive_dir": "",
         "keep_latest_runs": 10,
+        "export_pptx": False,
     },
     "charts": {
         "enabled": True,
@@ -370,6 +377,28 @@ def _load_matplotlib() -> bool:
     except ImportError:
         HAS_MATPLOTLIB = False
     return HAS_MATPLOTLIB
+
+
+def _load_pptx() -> bool:
+    """Import python-pptx lazily; sets HAS_PPTX and module-level pptx_* globals.
+
+    Returns:
+        True if python-pptx is available, False otherwise.
+    """
+    global HAS_PPTX, pptx_Presentation, pptx_Inches, pptx_Pt
+    if HAS_PPTX is not None:
+        return HAS_PPTX
+    try:
+        from pptx import Presentation as _Presentation  # type: ignore[import-untyped]
+        from pptx.util import Inches as _Inches, Pt as _Pt  # type: ignore[import-untyped]
+
+        pptx_Presentation = _Presentation
+        pptx_Inches = _Inches
+        pptx_Pt = _Pt
+        HAS_PPTX = True
+    except ImportError:
+        HAS_PPTX = False
+    return HAS_PPTX
 
 
 def _normalized_text(value: Any) -> str:
@@ -1180,6 +1209,20 @@ class JamfCLIBridge:
             args,
             ["software-installs", "software_installs"],
         )
+
+    def device_lookup(self, device_id: str) -> Any:
+        """Fetch a per-device detail view from jamf-cli pro device.
+
+        Args:
+            device_id: Jamf Pro computer ID or serial number to look up.
+
+        Returns:
+            Parsed JSON response from jamf-cli.
+
+        Raises:
+            RuntimeError: If jamf-cli is unavailable or the request fails.
+        """
+        return self._run(["pro", "device", device_id])
 
 
 # ---------------------------------------------------------------------------
@@ -2252,9 +2295,16 @@ class CSVDashboard:
 
     Args:
         config: Loaded Config instance.
-        csv_path: Path to the CSV file.
+        csv_path: Path to the primary CSV file.
         workbook: Active xlsxwriter Workbook.
         fmts: Format dict from _build_formats.
+        extra_csv_paths: Optional list of additional CSV paths to merge into the
+            primary DataFrame.  Each extra CSV is loaded and concatenated; a
+            "CSV Source" column is added to every row so downstream sheets can
+            distinguish which export each record came from.  Missing columns are
+            filled with empty strings.  Column names must match across files for
+            the config mapping to work correctly — the primary CSV's schema is
+            authoritative.
     """
 
     def __init__(
@@ -2263,18 +2313,41 @@ class CSVDashboard:
         csv_path: str,
         workbook: xlsxwriter.Workbook,
         fmts: dict,
+        extra_csv_paths: Optional[list[str]] = None,
     ) -> None:
         self._config = config
         self._mapper = ColumnMapper(config)
         self._wb = workbook
         self._fmts = fmts
         try:
-            self._df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
+            primary = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig").fillna("")
         except Exception as exc:
             raise SystemExit(
                 f"Error: could not read CSV '{csv_path}': {exc}"
             ) from exc
-        print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
+
+        if extra_csv_paths:
+            frames: list[Any] = []
+            primary["CSV Source"] = Path(csv_path).name
+            frames.append(primary)
+            for extra_path in extra_csv_paths:
+                try:
+                    extra_df = pd.read_csv(
+                        extra_path, dtype=str, encoding="utf-8-sig"
+                    ).fillna("")
+                    extra_df["CSV Source"] = Path(extra_path).name
+                    frames.append(extra_df)
+                    print(f"  Merged extra CSV: {Path(extra_path).name} ({len(extra_df)} rows)")
+                except Exception as exc:
+                    print(f"  [warn] Could not read extra CSV '{extra_path}': {exc} — skipping")
+            self._df = pd.concat(frames, ignore_index=True).fillna("")
+            print(
+                f"  Loaded {len(frames)} CSV(s): {len(self._df)} rows total,"
+                f" {len(self._df.columns)} columns"
+            )
+        else:
+            self._df = primary
+            print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
 
     def write_all(self) -> list[str]:
         """Write all CSV-derived sheets. Returns list of sheet names written."""
@@ -3232,6 +3305,71 @@ class ChartGenerator:
 
 
 # ---------------------------------------------------------------------------
+# Device deep-dive command
+# ---------------------------------------------------------------------------
+
+
+def _print_device_detail(data: Any, indent: int = 0) -> None:
+    """Recursively format and print a jamf-cli device JSON response.
+
+    Args:
+        data: Parsed JSON (dict, list, or scalar) from jamf-cli pro device.
+        indent: Current indentation level (spaces multiplied by 2).
+    """
+    pad = "  " * indent
+    if isinstance(data, list):
+        for item in data:
+            _print_device_detail(item, indent)
+            if isinstance(item, dict):
+                print()
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            label = str(key).replace("_", " ").title()
+            if isinstance(value, dict):
+                print(f"{pad}{label}:")
+                _print_device_detail(value, indent + 1)
+            elif isinstance(value, list):
+                print(f"{pad}{label} ({len(value)}):")
+                _print_device_detail(value, indent + 1)
+            else:
+                display = "" if value is None else str(value)
+                print(f"{pad}  {label:<28} {display}")
+    else:
+        print(f"{pad}{data}")
+
+
+def cmd_device(config: Config, device_id: str) -> None:
+    """Print a formatted device detail view using jamf-cli pro device.
+
+    Args:
+        config: Loaded Config instance.
+        device_id: Device identifier (Jamf Pro computer ID or serial number).
+    """
+    jamf_cli_cfg = config.jamf_cli
+    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
+    bridge = JamfCLIBridge(
+        save_output=False,
+        data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
+        profile=jamf_cli_profile,
+        use_cached_data=False,
+    )
+    if not bridge.is_available():
+        raise SystemExit(
+            "Error: jamf-cli is not installed or not found.\n"
+            "  Install via Homebrew: brew install jamf-cli\n"
+            "  Or set JAMFCLI_PATH to the binary location."
+        )
+    print(f"Device: {device_id}")
+    print("=" * (len(device_id) + 8))
+    try:
+        data = bridge.device_lookup(device_id)
+    except RuntimeError as exc:
+        raise SystemExit(f"Error: {exc}") from exc
+    _print_device_detail(data)
+
+
+# ---------------------------------------------------------------------------
 # Scaffold command
 # ---------------------------------------------------------------------------
 
@@ -3309,12 +3447,88 @@ def _suggest_custom_ea_candidates(unmatched_headers: list[str]) -> None:
     print()
 
 
-def cmd_scaffold(csv_path: str, out_path: str) -> None:
+def _interactive_column_mapping(
+    headers: list[str],
+    matched: dict[str, str],
+) -> dict[str, str]:
+    """Walk the user through reviewing and correcting auto-matched column assignments.
+
+    For each logical field, shows the auto-match (if any) alongside a numbered
+    list of all available CSV columns so the user can accept, override, or skip.
+    Falls back to returning the original matched dict when stdin is not a TTY.
+
+    Args:
+        headers: All column names from the CSV.
+        matched: Auto-matched dict of logical_field -> csv_column (may be empty string).
+
+    Returns:
+        Updated mapping dict (logical -> csv_column or "").
+    """
+    if not sys.stdin.isatty():
+        print("[interactive] stdin is not a terminal; using auto-matched results.")
+        return matched
+
+    logical_fields = list(DEFAULT_CONFIG["columns"].keys())
+    result = dict(matched)
+
+    print("\nInteractive column mapping")
+    print("  Enter  — accept the auto-match (or skip if none)")
+    print("  number — choose that column from the list")
+    print("  s / 0  — leave this field blank\n")
+
+    for idx, logical in enumerate(logical_fields, 1):
+        auto = result.get(logical, "")
+        # Available = all headers not already claimed by another field
+        others_used = {v for k, v in result.items() if k != logical and v}
+        available = [h for h in headers if h not in others_used]
+
+        hints = ", ".join(COLUMN_HINTS.get(logical, []))
+        print(f"[{idx}/{len(logical_fields)}] {logical}  (hints: {hints})")
+
+        if auto:
+            print(f"  Auto-match: {auto!r}  (press Enter to accept)")
+        else:
+            print("  No auto-match found")
+
+        print("  0: <skip — leave blank>")
+        for i, h in enumerate(available, 1):
+            marker = "  <- auto-match" if h == auto else ""
+            print(f"  {i}: {h}{marker}")
+
+        prompt = f"  Choice [Enter={auto!r}]: " if auto else "  Choice [Enter=skip]: "
+        while True:
+            try:
+                raw = input(prompt).strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nInteractive mapping aborted. Using current results.")
+                return result
+
+            if raw == "":
+                break  # accept auto or skip
+            if raw.lower() == "s" or raw == "0":
+                result[logical] = ""
+                break
+            try:
+                choice = int(raw)
+                if 1 <= choice <= len(available):
+                    result[logical] = available[choice - 1]
+                    break
+                print(f"  Please enter a number between 0 and {len(available)}.")
+            except ValueError:
+                print("  Invalid input — enter a number, 's' to skip, or Enter to accept.")
+
+        print()
+
+    return result
+
+
+def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> None:
     """Auto-generate a starter config.yaml from CSV headers.
 
     Args:
         csv_path: Path to the CSV file to inspect.
         out_path: Output path for generated config.yaml.
+        interactive: If True, prompt the user to review each column mapping before writing.
     """
     csv_path_obj = _cli_path(csv_path)
     out_path_obj = _cli_path(out_path)
@@ -3347,6 +3561,9 @@ def cmd_scaffold(csv_path: str, out_path: str) -> None:
             print(f"  - {h!r}")
 
     _suggest_custom_ea_candidates(unmatched)
+
+    if interactive:
+        matched = _interactive_column_mapping(headers, matched)
 
     config_data = copy.deepcopy(DEFAULT_CONFIG)
     for logical in config_data["columns"]:
@@ -3678,6 +3895,7 @@ def cmd_generate(
     out_file: Optional[str],
     historical_csv_dir: Optional[str] = None,
     notify_url: Optional[str] = None,
+    csv_extra: Optional[list[str]] = None,
 ) -> None:
     """Run all report generation and write the Excel file.
 
@@ -3687,6 +3905,7 @@ def cmd_generate(
         out_file: Optional output file path override.
         historical_csv_dir: Optional directory of dated CSV snapshots for trend charts.
         notify_url: Optional Teams incoming webhook URL for post-generation notification.
+        csv_extra: Optional list of additional CSV paths to merge with csv_path.
     """
     csv_path_obj = _cli_path(csv_path)
     csv_path_str = str(csv_path_obj) if csv_path_obj else None
@@ -3757,7 +3976,7 @@ def cmd_generate(
         if csv_path_str:
             print("\nGenerating CSV sheets...")
             try:
-                csv_dash = CSVDashboard(config, csv_path_str, wb, fmts)
+                csv_dash = CSVDashboard(config, csv_path_str, wb, fmts, extra_csv_paths=csv_extra)
             except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
                 print(f"  [error] Cannot read CSV: {exc}")
                 print("  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export.")
@@ -3851,6 +4070,142 @@ def cmd_generate(
     if notify_url:
         print("  Sending Teams notification...")
         _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
+
+    if config.output.get("export_pptx") is True:
+        exporter = ReportExporter(
+            out_path.parent,
+            out_path.stem,
+            generated_at,
+            jamf_cli_written,
+            csv_written,
+        )
+        pptx_path = exporter.export_pptx()
+        if pptx_path:
+            print(f"  PPTX export: {pptx_path}")
+
+
+# ---------------------------------------------------------------------------
+# PPTX report exporter
+# ---------------------------------------------------------------------------
+
+
+class ReportExporter:
+    """Generates a PPTX executive-summary deck alongside the xlsx report.
+
+    The deck is intentionally minimal — title slide, sheet inventory, and data
+    source summary.  It is designed to be opened in PowerPoint or Keynote as a
+    starting point for presenting fleet data rather than as a complete document.
+
+    Requires ``python-pptx`` (``pip install python-pptx``).  If the library is
+    not installed the export is skipped with a warning.
+
+    Args:
+        output_dir: Directory where the xlsx was written.
+        report_stem: Base filename (without extension) of the xlsx output.
+        generated_at: Human-readable generation timestamp string.
+        jamf_cli_sheets: Sheet names generated from jamf-cli data.
+        csv_sheets: Sheet names generated from CSV data.
+    """
+
+    _TITLE_ACCENT = "#2D5EA2"      # blue matching the workbook header colour
+
+    def __init__(
+        self,
+        output_dir: Path,
+        report_stem: str,
+        generated_at: str,
+        jamf_cli_sheets: list[str],
+        csv_sheets: list[str],
+    ) -> None:
+        self._output_dir = output_dir
+        self._report_stem = report_stem
+        self._generated_at = generated_at
+        self._jamf_cli_sheets = jamf_cli_sheets
+        self._csv_sheets = csv_sheets
+
+    def export_pptx(self) -> Optional[Path]:
+        """Generate the PPTX summary file.
+
+        Returns:
+            Path to the ``.pptx`` file on success, or ``None`` if python-pptx
+            is unavailable or an error occurs during generation.
+        """
+        if not _load_pptx():
+            print("  [skip] PPTX export: python-pptx not installed (pip install python-pptx)")
+            return None
+
+        try:
+            return self._build_pptx()
+        except Exception as exc:
+            print(f"  [warn] PPTX export failed: {exc}")
+            return None
+
+    def _build_pptx(self) -> Path:
+        """Build and save the PPTX deck, returning the output path."""
+        prs = pptx_Presentation()
+        prs.slide_width = pptx_Inches(13.33)
+        prs.slide_height = pptx_Inches(7.5)
+
+        self._add_title_slide(prs)
+        self._add_summary_slide(prs)
+        if self._jamf_cli_sheets or self._csv_sheets:
+            self._add_sheets_slide(prs)
+
+        out_path = self._output_dir / f"{self._report_stem}.pptx"
+        prs.save(str(out_path))
+        return out_path
+
+    def _add_title_slide(self, prs: Any) -> None:
+        """Add the opening title slide."""
+        layout = prs.slide_layouts[0]   # Title Slide layout
+        slide = prs.slides.add_slide(layout)
+        slide.shapes.title.text = "Jamf Pro Fleet Report"
+        if len(slide.placeholders) > 1:
+            slide.placeholders[1].text = self._generated_at
+
+    def _add_summary_slide(self, prs: Any) -> None:
+        """Add a slide summarising what data sources were included."""
+        layout = prs.slide_layouts[1]   # Title and Content layout
+        slide = prs.slides.add_slide(layout)
+        slide.shapes.title.text = "Report Summary"
+        tf = slide.placeholders[1].text_frame
+        tf.clear()
+
+        total = len(self._jamf_cli_sheets) + len(self._csv_sheets)
+        tf.paragraphs[0].text = f"Sheets generated: {total}"
+
+        sources: list[str] = []
+        if self._jamf_cli_sheets:
+            sources.append("jamf-cli (live or cached snapshots)")
+        if self._csv_sheets:
+            sources.append("Jamf Pro CSV export")
+
+        for source in sources:
+            p = tf.add_paragraph()
+            p.text = f"Data source: {source}"
+            p.level = 1
+
+        p = tf.add_paragraph()
+        p.text = f"Generated: {self._generated_at}"
+        p.level = 1
+
+    def _add_sheets_slide(self, prs: Any) -> None:
+        """Add a slide listing every sheet written to the workbook."""
+        layout = prs.slide_layouts[1]
+        slide = prs.slides.add_slide(layout)
+        slide.shapes.title.text = "Included Sheets"
+        tf = slide.placeholders[1].text_frame
+        tf.clear()
+
+        all_sheets = self._jamf_cli_sheets + self._csv_sheets
+        tf.paragraphs[0].text = "jamf-cli sheets:" if self._jamf_cli_sheets else "Sheets:"
+        for name in all_sheets:
+            p = tf.add_paragraph()
+            marker = "  •  " + name
+            if name in self._csv_sheets and self._jamf_cli_sheets:
+                marker = "  ○  " + name   # different bullet for CSV sheets
+            p.text = marker
+            p.level = 1
 
 
 def cmd_collect(
@@ -4058,16 +4413,17 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Commands:\n"
-            "  generate   Build the Excel report\n"
-            "  collect    Save jamf-cli snapshots and optional CSV history\n"
+            "  generate      Build the Excel report\n"
+            "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
-            "  scaffold   Generate a starter config.yaml from a CSV\n"
-            "  check      Verify jamf-cli auth and config\n"
+            "  scaffold      Generate a starter config.yaml from a CSV\n"
+            "  check         Verify jamf-cli auth and config\n"
+            "  device        Print a device detail view from jamf-cli pro device\n"
         ),
     )
     parser.add_argument(
         "command",
-        choices=["generate", "collect", "inventory-csv", "scaffold", "check"],
+        choices=["generate", "collect", "inventory-csv", "scaffold", "check", "device"],
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--csv", help="Path to Jamf Pro CSV export")
@@ -4082,12 +4438,40 @@ def main() -> None:
         metavar="WEBHOOK_URL",
         help="Microsoft Teams incoming webhook URL; posts an Adaptive Card after generate",
     )
+    parser.add_argument(
+        "--interactive", "-i",
+        action="store_true",
+        help="Walk through each column mapping interactively after auto-matching (scaffold only)",
+    )
+    parser.add_argument(
+        "--id",
+        metavar="DEVICE_ID",
+        help="Jamf Pro computer ID or serial number to look up (device command only)",
+    )
+    parser.add_argument(
+        "--csv-extra",
+        action="append",
+        metavar="CSV_PATH",
+        dest="csv_extra",
+        help=(
+            "Additional CSV export to merge with --csv (can be repeated). "
+            "Useful for combining computers, mobile-device, and users exports. "
+            "A 'CSV Source' column is added to identify which file each row came from."
+        ),
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
         if not args.csv:
             parser.error("scaffold requires --csv")
-        cmd_scaffold(args.csv, args.out)
+        cmd_scaffold(args.csv, args.out, interactive=args.interactive)
+        return
+
+    if args.command == "device":
+        if not args.id:
+            parser.error("device requires --id")
+        config = Config(args.config)
+        cmd_device(config, args.id)
         return
 
     config = Config(args.config)
@@ -4099,7 +4483,10 @@ def main() -> None:
     elif args.command == "inventory-csv":
         cmd_inventory_csv(config, args.out_file)
     elif args.command == "generate":
-        cmd_generate(config, args.csv, args.out_file, args.historical_csv_dir, args.notify)
+        cmd_generate(
+            config, args.csv, args.out_file, args.historical_csv_dir,
+            args.notify, args.csv_extra,
+        )
 
 
 if __name__ == "__main__":
