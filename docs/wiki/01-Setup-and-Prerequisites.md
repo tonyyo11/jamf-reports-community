@@ -53,6 +53,7 @@ Primary references:
 - [jamf-cli Documentation Wiki](https://github.com/Jamf-Concepts/jamf-cli/wiki)
 - [jamf-cli README](https://github.com/Jamf-Concepts/jamf-cli)
 - [Setup Guide](https://github.com/Jamf-Concepts/jamf-cli/wiki/Setup-Guide)
+- [Configuration & Profiles](https://github.com/Jamf-Concepts/jamf-cli/wiki/Configuration-&-Profiles)
 - [Secrets & Keychain](https://github.com/Jamf-Concepts/jamf-cli/wiki/Secrets-&-Keychain)
 
 ## Recommended Folder Layout
@@ -79,6 +80,8 @@ Notes:
 - `config.yaml` path settings resolve relative to the config file location.
 - If you use more than one `jamf-cli` profile, keep each profile in its own snapshot
   directory.
+- If you automate with LaunchAgents, keep one reporting workspace and one LaunchAgent per
+  tenant/profile.
 - The local example in this repo uses `jamf_cli.profile: dummy` and
   `jamf_cli.data_dir: jamf-cli-data/dummy`.
 - Timestamped generated outputs can be auto-archived so the active output folder stays

@@ -13,6 +13,10 @@ Usage:
                                               [--historical-csv-dir path/to/snapshots/]
     python3 jamf-reports-community.py inventory-csv [--config config.yaml]
                                                     [--out-file path/to/inventory.csv]
+    python3 jamf-reports-community.py launchagent-setup [--config config.yaml]
+                                                        [--mode csv-assisted]
+                                                        [--schedule weekdays]
+                                                        [--time-of-day 07:00]
     python3 jamf-reports-community.py scaffold [--csv path/to/export.csv] [--out config.yaml]
     python3 jamf-reports-community.py check [--csv path/to/export.csv]
 """
@@ -21,7 +25,9 @@ import argparse
 import copy
 import json
 import os
+import plistlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -47,6 +53,49 @@ pptx_Presentation: Any = None   # pptx.Presentation class, set by _load_pptx()
 pptx_Inches: Any = None          # pptx.util.Inches
 pptx_Pt: Any = None              # pptx.util.Pt
 HAS_PPTX: Optional[bool] = None
+
+LAUNCHAGENT_LABEL_PREFIX = "com.github.tonyyo11.jamf-reports-community"
+DEFAULT_LAUNCHD_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+AUTOMATION_MODE_DESCRIPTIONS: dict[str, str] = {
+    "snapshot-only": "Refresh jamf-cli snapshots and optional CSV history without writing a workbook.",
+    "jamf-cli-only": "Generate a workbook from jamf-cli live data and/or cached JSON snapshots.",
+    "jamf-cli-full": "Build a jamf-cli inventory CSV, refresh snapshots, and generate a workbook.",
+    "csv-assisted": "Prefer the newest inbox CSV when present; otherwise fall back to jamf-cli-only.",
+}
+AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
+    "daily": "Every day at the chosen time",
+    "weekdays": "Monday through Friday at the chosen time",
+    "weekly": "One weekday each week at the chosen time",
+    "monthly": "One day of the month at the chosen time",
+}
+WEEKDAY_NAME_TO_VALUE: dict[str, int] = {
+    "sun": 0,
+    "sunday": 0,
+    "mon": 1,
+    "monday": 1,
+    "tue": 2,
+    "tues": 2,
+    "tuesday": 2,
+    "wed": 3,
+    "wednesday": 3,
+    "thu": 4,
+    "thur": 4,
+    "thurs": 4,
+    "thursday": 4,
+    "fri": 5,
+    "friday": 5,
+    "sat": 6,
+    "saturday": 6,
+}
+WEEKDAY_VALUE_TO_NAME: dict[int, str] = {
+    0: "Sunday",
+    1: "Monday",
+    2: "Tuesday",
+    3: "Wednesday",
+    4: "Thursday",
+    5: "Friday",
+    6: "Saturday",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +435,235 @@ def _describe_cli_input_candidates(
             seen.add(text)
             rendered.append(text)
     return " or ".join(rendered)
+
+
+def _expand_setup_path(path_value: str, base_dir: Path) -> Path:
+    """Return an absolute setup path, resolving relative values from base_dir."""
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    return path.resolve()
+
+
+def _prompt_text(prompt: str, default: Optional[str] = None) -> str:
+    """Prompt for a text value, returning the default on empty input."""
+    if not sys.stdin.isatty():
+        raise SystemExit(f"Error: {prompt} requires interactive input.")
+
+    suffix = f" [{default}]" if default not in (None, "") else ""
+    while True:
+        try:
+            raw = input(f"{prompt}{suffix}: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raise SystemExit("Interactive setup aborted.") from None
+        if raw:
+            return raw
+        if default is not None:
+            return default
+
+
+def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
+    """Prompt for a yes/no answer."""
+    if not sys.stdin.isatty():
+        raise SystemExit(f"Error: {prompt} requires interactive input.")
+
+    default_hint = "Y/n" if default else "y/N"
+    while True:
+        try:
+            raw = input(f"{prompt} ({default_hint}): ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            raise SystemExit("Interactive setup aborted.") from None
+        if not raw:
+            return default
+        if raw in {"y", "yes"}:
+            return True
+        if raw in {"n", "no"}:
+            return False
+        print("  Please answer yes or no.")
+
+
+def _prompt_choice(
+    title: str,
+    options: list[tuple[str, str]],
+    default: str,
+) -> str:
+    """Prompt the user to choose a key from a small list of options."""
+    if not sys.stdin.isatty():
+        raise SystemExit(f"Error: {title} requires interactive input.")
+
+    print(f"\n{title}")
+    for idx, (_, label) in enumerate(options, 1):
+        marker = " (default)" if options[idx - 1][0] == default else ""
+        print(f"  {idx}. {label}{marker}")
+
+    while True:
+        try:
+            raw = input("  Choice: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raise SystemExit("Interactive setup aborted.") from None
+        if not raw:
+            return default
+        if raw.isdigit():
+            choice = int(raw)
+            if 1 <= choice <= len(options):
+                return options[choice - 1][0]
+        print(f"  Enter a number between 1 and {len(options)}, or press Enter for default.")
+
+
+def _parse_time_of_day(value: str) -> tuple[int, int]:
+    """Parse a local HH:MM time string."""
+    text = str(value).strip()
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
+    if not match:
+        raise ValueError("Time must be in HH:MM format, for example 07:00.")
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if hour > 23 or minute > 59:
+        raise ValueError("Time must be within 00:00 to 23:59.")
+    return hour, minute
+
+
+def _parse_weekday(value: str) -> tuple[int, str]:
+    """Parse a weekday name for launchd weekly schedules."""
+    text = str(value).strip().lower()
+    if text not in WEEKDAY_NAME_TO_VALUE:
+        raise ValueError("Weekday must be Sunday through Saturday.")
+    day_value = WEEKDAY_NAME_TO_VALUE[text]
+    return day_value, WEEKDAY_VALUE_TO_NAME[day_value]
+
+
+def _parse_day_of_month(value: Any) -> int:
+    """Parse a monthly schedule day, restricting to 1-28 for predictability."""
+    try:
+        day_value = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Day of month must be an integer between 1 and 28.") from exc
+    if not 1 <= day_value <= 28:
+        raise ValueError("Day of month must be between 1 and 28.")
+    return day_value
+
+
+def _default_launchagent_label(config: "Config") -> str:
+    """Return the default LaunchAgent label for a config/profile combination."""
+    profile_name = str(config.jamf_cli.get("profile", "") or "").strip()
+    slug_source = profile_name or config.path.stem or "default"
+    return f"{LAUNCHAGENT_LABEL_PREFIX}.{_filename_component(slug_source)}"
+
+
+def _launchagent_schedule_items(
+    schedule: str,
+    hour: int,
+    minute: int,
+    weekday: Optional[int] = None,
+    day_of_month: Optional[int] = None,
+) -> list[dict[str, int]]:
+    """Return launchd StartCalendarInterval entries for a schedule preset."""
+    if schedule == "daily":
+        return [{"Hour": hour, "Minute": minute}]
+    if schedule == "weekdays":
+        return [{"Weekday": day, "Hour": hour, "Minute": minute} for day in range(1, 6)]
+    if schedule == "weekly":
+        if weekday is None:
+            raise ValueError("Weekly schedules require a weekday.")
+        return [{"Weekday": weekday, "Hour": hour, "Minute": minute}]
+    if schedule == "monthly":
+        if day_of_month is None:
+            raise ValueError("Monthly schedules require a day of month.")
+        return [{"Day": day_of_month, "Hour": hour, "Minute": minute}]
+    raise ValueError(f"Unsupported schedule: {schedule}")
+
+
+def _launchagent_schedule_summary(
+    schedule: str,
+    hour: int,
+    minute: int,
+    weekday_name: Optional[str] = None,
+    day_of_month: Optional[int] = None,
+) -> str:
+    """Return a human-readable summary for a schedule preset."""
+    time_str = f"{hour:02d}:{minute:02d}"
+    if schedule == "daily":
+        return f"Daily at {time_str}"
+    if schedule == "weekdays":
+        return f"Weekdays at {time_str}"
+    if schedule == "weekly":
+        return f"Weekly on {weekday_name or 'Monday'} at {time_str}"
+    if schedule == "monthly":
+        return f"Monthly on day {day_of_month or 1} at {time_str}"
+    return f"{schedule} at {time_str}"
+
+
+def _latest_csv_inbox_file(
+    csv_inbox_dir: Optional[str],
+    freshness_days: int,
+) -> tuple[Optional[Path], str]:
+    """Return the newest CSV in an inbox folder, enforcing an optional age limit."""
+    if not csv_inbox_dir:
+        return None, "No CSV inbox configured."
+
+    inbox_dir = Path(csv_inbox_dir).expanduser()
+    if not inbox_dir.is_dir():
+        return None, f"CSV inbox not found: {inbox_dir}"
+
+    candidates = sorted(
+        (
+            path for path in inbox_dir.rglob("*.csv")
+            if path.is_file() and not path.name.startswith(".")
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None, f"No CSV files found in {inbox_dir}"
+
+    newest = candidates[0]
+    age = datetime.now() - datetime.fromtimestamp(newest.stat().st_mtime)
+    if freshness_days > 0 and age > timedelta(days=freshness_days):
+        age_days = int(age.total_seconds() // 86400)
+        return None, (
+            f"Newest CSV is stale ({age_days} day(s) old): {newest.name}"
+        )
+    return newest, f"Using newest CSV from inbox: {newest.name}"
+
+
+def _write_status_file(path_value: Optional[str], status: dict[str, Any]) -> None:
+    """Persist an automation run status JSON file when a path is configured."""
+    if not path_value:
+        return
+    path = Path(path_value).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as fh:
+        json.dump(status, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+
+
+def _require_existing_config_path(path_value: str) -> Path:
+    """Return a resolved config path, raising when the file does not exist."""
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    else:
+        path = path.resolve()
+    if not path.exists():
+        raise SystemExit(
+            f"Error: config file not found: {path}\n"
+            "Create it first with scaffold or copy config.example.yaml into place."
+        )
+    return path
+
+
+def _find_jamf_cli_binary() -> Optional[str]:
+    """Return the best available jamf-cli binary path."""
+    candidates = [
+        os.environ.get("JAMFCLI_PATH", ""),
+        shutil.which("jamf-cli") or "",
+        "/opt/homebrew/bin/jamf-cli",
+        "/usr/local/bin/jamf-cli",
+    ]
+    for path in candidates:
+        if path and Path(path).is_file() and os.access(path, os.X_OK):
+            return path
+    return None
 
 
 def _days_since(date_str: str) -> Optional[int]:
@@ -889,12 +1167,17 @@ class Config:
     @property
     def base_dir(self) -> Path:
         """Return the directory relative config-managed paths should use."""
+        return self.path.parent
+
+    @property
+    def path(self) -> Path:
+        """Return the resolved config file path."""
         config_path = self._path
         if not config_path.is_absolute():
             config_path = (Path.cwd() / config_path).resolve()
         else:
             config_path = config_path.resolve()
-        return config_path.parent
+        return config_path
 
     def resolve_path_value(self, value: Any) -> Optional[Path]:
         """Resolve a config-managed path value relative to the config location."""
@@ -1012,16 +1295,7 @@ class JamfCLIBridge:
         self._report_commands_cache: Optional[set[str]] = None
 
     def _find_binary(self) -> Optional[str]:
-        candidates = [
-            os.environ.get("JAMFCLI_PATH", ""),
-            shutil.which("jamf-cli") or "",
-            "/opt/homebrew/bin/jamf-cli",
-            "/usr/local/bin/jamf-cli",
-        ]
-        for path in candidates:
-            if path and Path(path).is_file() and os.access(path, os.X_OK):
-                return path
-        return None
+        return _find_jamf_cli_binary()
 
     def is_available(self) -> bool:
         """Return True if jamf-cli binary is found and executable."""
@@ -4271,7 +4545,7 @@ def cmd_generate(
     historical_csv_dir: Optional[str] = None,
     notify_url: Optional[str] = None,
     csv_extra: Optional[list[str]] = None,
-) -> None:
+) -> Path:
     """Run all report generation and write the Excel file.
 
     Args:
@@ -4457,6 +4731,7 @@ def cmd_generate(
         pptx_path = exporter.export_pptx()
         if pptx_path:
             print(f"  PPTX export: {pptx_path}")
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -4583,11 +4858,11 @@ class ReportExporter:
             p.level = 1
 
 
-def cmd_collect(
+def _collect_snapshots(
     config: Config,
     csv_path: Optional[str] = None,
     historical_csv_dir: Optional[str] = None,
-) -> None:
+) -> tuple[int, bool]:
     """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
     print("--- Collect snapshots ---")
     print(f"  config base dir: {config.base_dir}")
@@ -4653,6 +4928,16 @@ def cmd_collect(
             archived = True
             print(f"  [ok] Archived CSV snapshot: {archived_path}")
 
+    return collected, archived
+
+
+def cmd_collect(
+    config: Config,
+    csv_path: Optional[str] = None,
+    historical_csv_dir: Optional[str] = None,
+) -> None:
+    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
+    collected, archived = _collect_snapshots(config, csv_path, historical_csv_dir)
     if collected == 0 and not archived:
         raise SystemExit(
             "Error: No snapshots collected. Authenticate jamf-cli for live data or"
@@ -4660,7 +4945,31 @@ def cmd_collect(
         )
 
 
-def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> None:
+def _default_inventory_csv_out_file(config: Config) -> Path:
+    """Return the default inventory CSV destination path before timestamping."""
+    out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
+    if out_dir is None:
+        out_dir = Path("Generated Reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
+    if jamf_cli_profile:
+        return out_dir / f"jamf_inventory_{_filename_component(jamf_cli_profile)}.csv"
+    return out_dir / "jamf_inventory.csv"
+
+
+def _automation_inventory_out_file(config: Config) -> Path:
+    """Return the default automation inventory CSV destination path."""
+    out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
+    if out_dir is None:
+        out_dir = Path("Generated Reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    profile_name = str(config.jamf_cli.get("profile", "") or "").strip()
+    slug_source = profile_name or config.path.stem or "default"
+    stem = f"automation_inventory_{_filename_component(slug_source)}.csv"
+    return out_dir / stem
+
+
+def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
     """Export a wide computer inventory CSV from jamf-cli inventory and EA data."""
     output_cfg = config.output
     out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
@@ -4679,12 +4988,7 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> None:
             Path(out_file).expanduser(), run_stamp, timestamp_outputs
         )
     else:
-        profile_component = _filename_component(jamf_cli_profile) if jamf_cli_profile else ""
-        if profile_component:
-            base_name = f"jamf_inventory_{profile_component}.csv"
-        else:
-            base_name = "jamf_inventory.csv"
-        out_path = _timestamped_output_path(out_dir / base_name, run_stamp, True)
+        out_path = _timestamped_output_path(_default_inventory_csv_out_file(config), run_stamp, True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Output: {out_path}")
@@ -4790,6 +5094,486 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> None:
         )
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older inventory export(s) to {archive_dir}")
+    return out_path
+
+
+def _resolve_time_choice(value: Optional[str], default: str = "07:00") -> tuple[str, int, int]:
+    """Return a validated HH:MM string and parsed hour/minute values."""
+    candidate = value
+    while True:
+        raw = candidate if candidate is not None else _prompt_text(
+            "Run time (24-hour HH:MM)", default,
+        )
+        try:
+            hour, minute = _parse_time_of_day(raw)
+            return raw, hour, minute
+        except ValueError as exc:
+            if candidate is not None:
+                raise SystemExit(f"Error: {exc}") from None
+            print(f"  {exc}")
+
+
+def _resolve_weekday_choice(
+    value: Optional[str],
+    default: str = "Monday",
+) -> tuple[int, str]:
+    """Return a validated launchd weekday value and display name."""
+    candidate = value
+    while True:
+        raw = candidate if candidate is not None else _prompt_text("Weekday", default)
+        try:
+            return _parse_weekday(raw)
+        except ValueError as exc:
+            if candidate is not None:
+                raise SystemExit(f"Error: {exc}") from None
+            print(f"  {exc}")
+
+
+def _resolve_day_of_month_choice(value: Optional[int], default: int = 1) -> int:
+    """Return a validated monthly day-of-month value."""
+    candidate = value
+    while True:
+        raw: Any = candidate if candidate is not None else _prompt_text("Day of month (1-28)", str(default))
+        try:
+            return _parse_day_of_month(raw)
+        except ValueError as exc:
+            if candidate is not None:
+                raise SystemExit(f"Error: {exc}") from None
+            print(f"  {exc}")
+
+
+def _resolve_csv_freshness_days(value: Any, default: int = 14) -> int:
+    """Return a validated positive CSV freshness window."""
+    candidate = default if value is None else value
+    while True:
+        raw: Any = candidate if candidate is not None else _prompt_text(
+            "CSV freshness window in days", str(default),
+        )
+        try:
+            days = int(raw)
+        except (TypeError, ValueError):
+            if value is not None:
+                raise SystemExit("Error: CSV freshness window must be a positive integer.") from None
+            print("  CSV freshness window must be a positive integer.")
+            candidate = None
+            continue
+        if days < 1:
+            if value is not None:
+                raise SystemExit("Error: CSV freshness window must be at least 1 day.") from None
+            print("  CSV freshness window must be at least 1 day.")
+            candidate = None
+            continue
+        return days
+
+
+def _resolve_workspace_dir(value: Optional[str], config: Config) -> Path:
+    """Return the automation workspace directory."""
+    if value:
+        return _expand_setup_path(value, config.base_dir)
+    if not sys.stdin.isatty():
+        return config.base_dir.resolve()
+    return _expand_setup_path(
+        _prompt_text("Workspace directory for automation files", str(config.base_dir)),
+        config.base_dir,
+    )
+
+
+def _resolve_historical_csv_dir(
+    value: Optional[str],
+    workspace_dir: Path,
+    mode: str,
+) -> Optional[Path]:
+    """Return the historical CSV directory to use for automation, if any."""
+    if value:
+        return _expand_setup_path(value, workspace_dir)
+    if mode not in {"snapshot-only", "jamf-cli-full", "csv-assisted"}:
+        return None
+    if not sys.stdin.isatty():
+        return (workspace_dir / "snapshots").resolve()
+    enabled = _prompt_yes_no(
+        "Create/use a historical CSV snapshots folder for trend reporting?",
+        True,
+    )
+    if not enabled:
+        return None
+    return _expand_setup_path(
+        _prompt_text("Historical CSV directory", str(workspace_dir / "snapshots")),
+        workspace_dir,
+    )
+
+
+def _resolve_csv_inbox_settings(
+    csv_inbox_dir: Optional[str],
+    csv_freshness_days: Any,
+    workspace_dir: Path,
+    mode: str,
+) -> tuple[Optional[Path], int]:
+    """Return CSV inbox configuration for automation."""
+    freshness_days = _resolve_csv_freshness_days(csv_freshness_days)
+    if csv_inbox_dir:
+        return _expand_setup_path(csv_inbox_dir, workspace_dir), freshness_days
+    if mode not in {"snapshot-only", "csv-assisted"}:
+        return None, freshness_days
+    if not sys.stdin.isatty():
+        if mode == "csv-assisted":
+            return (workspace_dir / "csv-inbox").resolve(), freshness_days
+        return None, freshness_days
+    enabled = _prompt_yes_no(
+        "Use a CSV inbox folder when Jamf emails or exports are available?",
+        mode == "csv-assisted",
+    )
+    if not enabled:
+        return None, freshness_days
+    if csv_freshness_days is None:
+        freshness_days = _resolve_csv_freshness_days(
+            _prompt_text("CSV freshness window in days", str(freshness_days)),
+        )
+    inbox_dir = _expand_setup_path(
+        _prompt_text("CSV inbox directory", str(workspace_dir / "csv-inbox")),
+        workspace_dir,
+    )
+    return inbox_dir, freshness_days
+
+
+def _launchagent_environment() -> dict[str, str]:
+    """Return environment variables to persist into the LaunchAgent plist."""
+    env = {
+        "HOME": str(Path.home()),
+        "PATH": DEFAULT_LAUNCHD_PATH,
+        "PYTHONUNBUFFERED": "1",
+    }
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    if xdg_config_home:
+        env["XDG_CONFIG_HOME"] = xdg_config_home
+    jamf_cli_binary = _find_jamf_cli_binary()
+    if jamf_cli_binary:
+        env["JAMFCLI_PATH"] = jamf_cli_binary
+    return env
+
+
+def _launchagent_program_arguments(
+    config_path: Path,
+    mode: str,
+    status_file: Path,
+    historical_csv_dir: Optional[Path],
+    csv_inbox_dir: Optional[Path],
+    csv_freshness_days: int,
+    notify_url: Optional[str],
+) -> list[str]:
+    """Return the ProgramArguments array for the generated LaunchAgent plist."""
+    args = [
+        str(Path(sys.executable).resolve()),
+        str(Path(__file__).resolve()),
+        "launchagent-run",
+        "--config",
+        str(config_path),
+        "--mode",
+        mode,
+        "--status-file",
+        str(status_file),
+    ]
+    if historical_csv_dir:
+        args.extend(["--historical-csv-dir", str(historical_csv_dir)])
+    if csv_inbox_dir:
+        args.extend(
+            [
+                "--csv-inbox-dir",
+                str(csv_inbox_dir),
+                "--csv-freshness-days",
+                str(csv_freshness_days),
+            ]
+        )
+    if notify_url:
+        args.extend(["--notify", notify_url])
+    return args
+
+
+def _write_launchagent_plist(
+    plist_path: Path,
+    label: str,
+    program_arguments: list[str],
+    working_directory: Path,
+    schedule_items: list[dict[str, int]],
+    stdout_path: Path,
+    stderr_path: Path,
+) -> None:
+    """Write a LaunchAgent plist for the supplied automation plan."""
+    payload = {
+        "Label": label,
+        "ProgramArguments": program_arguments,
+        "WorkingDirectory": str(working_directory),
+        "EnvironmentVariables": _launchagent_environment(),
+        "StartCalendarInterval": schedule_items,
+        "RunAtLoad": False,
+        "StandardOutPath": str(stdout_path),
+        "StandardErrorPath": str(stderr_path),
+    }
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(plist_path, "wb") as fh:
+        plistlib.dump(payload, fh, sort_keys=True)
+
+
+def _load_launchagent(plist_path: Path, label: str, run_now: bool) -> str:
+    """Bootstrap a LaunchAgent into the current GUI session."""
+    target = f"gui/{os.getuid()}"
+    label_target = f"{target}/{label}"
+    subprocess.run(
+        ["launchctl", "bootout", target, str(plist_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        subprocess.run(
+            ["launchctl", "bootstrap", target, str(plist_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout).strip()
+        raise SystemExit(f"Error: launchctl bootstrap failed: {detail}") from None
+    subprocess.run(
+        ["launchctl", "enable", label_target],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if run_now:
+        try:
+            subprocess.run(
+                ["launchctl", "kickstart", "-k", label_target],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout).strip()
+            raise SystemExit(f"Error: launchctl kickstart failed: {detail}") from None
+    return target
+
+
+def cmd_launchagent_run(
+    config: Config,
+    mode: str,
+    csv_inbox_dir: Optional[str],
+    csv_freshness_days: int,
+    historical_csv_dir: Optional[str],
+    status_file: Optional[str],
+    notify_url: Optional[str] = None,
+) -> None:
+    """Run a scheduled automation workflow from a generated LaunchAgent."""
+    started_at = datetime.now(timezone.utc).isoformat()
+    status: dict[str, Any] = {
+        "config_path": str(config.path),
+        "finished_at": None,
+        "mode": mode,
+        "profile": str(config.jamf_cli.get("profile", "") or "").strip(),
+        "report_path": None,
+        "selected_csv": None,
+        "started_at": started_at,
+        "status_file": status_file,
+        "success": False,
+    }
+    if historical_csv_dir:
+        status["historical_csv_dir"] = str(Path(historical_csv_dir).expanduser())
+    if csv_inbox_dir:
+        status["csv_inbox_dir"] = str(Path(csv_inbox_dir).expanduser())
+
+    try:
+        selected_csv: Optional[Path] = None
+        if mode in {"snapshot-only", "csv-assisted"}:
+            selected_csv, selection_note = _latest_csv_inbox_file(
+                csv_inbox_dir,
+                csv_freshness_days,
+            )
+            print(selection_note)
+            status["csv_selection_note"] = selection_note
+            status["selected_csv"] = str(selected_csv) if selected_csv else None
+
+        if mode == "snapshot-only":
+            collected, archived = _collect_snapshots(
+                config,
+                str(selected_csv) if selected_csv else None,
+                historical_csv_dir,
+            )
+            if collected == 0 and not archived:
+                raise SystemExit(
+                    "Error: snapshot-only automation had nothing to collect."
+                    " Authenticate jamf-cli or provide a CSV inbox plus historical CSV directory."
+                )
+            status["collected_snapshots"] = collected
+            status["archived_csv"] = archived
+        elif mode == "jamf-cli-only":
+            report_path = cmd_generate(config, None, None, historical_csv_dir, notify_url)
+            status["report_path"] = str(report_path)
+        elif mode == "jamf-cli-full":
+            inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
+            status["inventory_csv_path"] = str(inventory_path)
+            _collect_snapshots(config, None, historical_csv_dir)
+            report_path = cmd_generate(
+                config,
+                str(inventory_path),
+                None,
+                historical_csv_dir,
+                notify_url,
+            )
+            status["report_path"] = str(report_path)
+        elif mode == "csv-assisted":
+            _collect_snapshots(config, None, historical_csv_dir)
+            report_path = cmd_generate(
+                config,
+                str(selected_csv) if selected_csv else None,
+                None,
+                historical_csv_dir,
+                notify_url,
+            )
+            status["report_path"] = str(report_path)
+        else:
+            raise SystemExit(f"Error: unsupported automation mode: {mode}")
+    except SystemExit as exc:
+        status["error"] = str(exc)
+        status["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _write_status_file(status_file, status)
+        raise
+    except Exception as exc:
+        status["error"] = str(exc)
+        status["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _write_status_file(status_file, status)
+        raise
+
+    status["success"] = True
+    status["finished_at"] = datetime.now(timezone.utc).isoformat()
+    _write_status_file(status_file, status)
+
+
+def cmd_launchagent_setup(
+    config: Config,
+    config_path_value: str,
+    label: Optional[str],
+    mode: Optional[str],
+    schedule: Optional[str],
+    time_of_day: Optional[str],
+    weekday: Optional[str],
+    day_of_month: Optional[int],
+    workspace_dir: Optional[str],
+    launchagents_dir: Optional[str],
+    csv_inbox_dir: Optional[str],
+    csv_freshness_days: Any,
+    historical_csv_dir: Optional[str],
+    notify_url: Optional[str],
+    skip_load: bool,
+    run_now: bool,
+) -> None:
+    """Interactively create and optionally load a LaunchAgent automation job."""
+    config_path = _require_existing_config_path(config_path_value)
+    mode_options = [
+        (key, f"{key}: {desc}") for key, desc in AUTOMATION_MODE_DESCRIPTIONS.items()
+    ]
+    schedule_options = [
+        (key, f"{key}: {desc}") for key, desc in AUTOMATION_SCHEDULE_DESCRIPTIONS.items()
+    ]
+    selected_mode = mode or _prompt_choice("Automation workflow", mode_options, "csv-assisted")
+    selected_schedule = schedule or _prompt_choice(
+        "Schedule type",
+        schedule_options,
+        "weekdays",
+    )
+    _, hour, minute = _resolve_time_choice(time_of_day)
+    weekday_value: Optional[int] = None
+    weekday_name: Optional[str] = None
+    if selected_schedule == "weekly":
+        weekday_value, weekday_name = _resolve_weekday_choice(weekday)
+    monthly_day: Optional[int] = None
+    if selected_schedule == "monthly":
+        monthly_day = _resolve_day_of_month_choice(day_of_month)
+
+    automation_root = _resolve_workspace_dir(workspace_dir, config)
+    csv_history_dir = _resolve_historical_csv_dir(historical_csv_dir, automation_root, selected_mode)
+    csv_inbox_path, freshness_days = _resolve_csv_inbox_settings(
+        csv_inbox_dir,
+        csv_freshness_days,
+        automation_root,
+        selected_mode,
+    )
+    launchagents_root = _expand_setup_path(
+        launchagents_dir or str(Path.home() / "Library" / "LaunchAgents"),
+        automation_root,
+    )
+    job_label = label or _default_launchagent_label(config)
+    job_slug = _filename_component(job_label)
+    automation_dir = automation_root / "automation"
+    logs_dir = automation_dir / "logs"
+    status_path = automation_dir / f"{job_slug}_status.json"
+    plist_path = launchagents_root / f"{job_label}.plist"
+    stdout_path = logs_dir / f"{job_slug}.out.log"
+    stderr_path = logs_dir / f"{job_slug}.err.log"
+
+    output_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
+    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    for path in [automation_dir, logs_dir, output_dir, jamf_cli_dir, csv_history_dir, csv_inbox_path]:
+        if path is not None:
+            path.mkdir(parents=True, exist_ok=True)
+
+    program_arguments = _launchagent_program_arguments(
+        config_path,
+        selected_mode,
+        status_path,
+        csv_history_dir,
+        csv_inbox_path,
+        freshness_days,
+        notify_url,
+    )
+    schedule_items = _launchagent_schedule_items(
+        selected_schedule,
+        hour,
+        minute,
+        weekday_value,
+        monthly_day,
+    )
+    _write_launchagent_plist(
+        plist_path,
+        job_label,
+        program_arguments,
+        config.base_dir,
+        schedule_items,
+        stdout_path,
+        stderr_path,
+    )
+
+    print("\nLaunchAgent setup summary")
+    print(f"  config: {config_path}")
+    profile_name = str(config.jamf_cli.get("profile", "") or "").strip()
+    print(f"  jamf-cli profile: {profile_name or 'default'}")
+    if not profile_name:
+        print(
+            "  [warn] jamf_cli.profile is blank; this LaunchAgent will use jamf-cli's"
+            " default profile."
+        )
+    print(f"  jamf-cli data dir: {jamf_cli_dir}")
+    if not _find_jamf_cli_binary():
+        print("  [warn] jamf-cli was not found during setup; runtime depends on PATH or JAMFCLI_PATH.")
+    print(f"  workflow: {selected_mode}")
+    print(f"  schedule: {_launchagent_schedule_summary(selected_schedule, hour, minute, weekday_name, monthly_day)}")
+    print(f"  output dir: {output_dir}")
+    if csv_history_dir:
+        print(f"  historical CSV dir: {csv_history_dir}")
+    if csv_inbox_path:
+        print(f"  CSV inbox dir: {csv_inbox_path} (freshness: {freshness_days} day(s))")
+    print(f"  plist: {plist_path}")
+    print(f"  stdout log: {stdout_path}")
+    print(f"  stderr log: {stderr_path}")
+    print(f"  status file: {status_path}")
+    print(f"  command: {shlex.join(program_arguments)}")
+
+    if skip_load:
+        print("  LaunchAgent not loaded (--skip-load).")
+        return
+
+    target = _load_launchagent(plist_path, job_label, run_now)
+    print(f"  Loaded into launchd target: {target}")
+    if run_now:
+        print("  Triggered one immediate run with launchctl kickstart.")
 
 
 # ---------------------------------------------------------------------------
@@ -4807,6 +5591,8 @@ def main() -> None:
             "  generate      Build the Excel report\n"
             "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
+            "  launchagent-setup Create a LaunchAgent for scheduled reporting\n"
+            "  launchagent-run   Internal runner used by generated LaunchAgents\n"
             "  scaffold      Generate a starter config.yaml from a CSV\n"
             "  check         Verify jamf-cli auth and config\n"
             "  device        Print a device detail view from jamf-cli pro device\n"
@@ -4814,7 +5600,16 @@ def main() -> None:
     )
     parser.add_argument(
         "command",
-        choices=["generate", "collect", "inventory-csv", "scaffold", "check", "device"],
+        choices=[
+            "generate",
+            "collect",
+            "inventory-csv",
+            "launchagent-setup",
+            "launchagent-run",
+            "scaffold",
+            "check",
+            "device",
+        ],
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--csv", help="Path to Jamf Pro CSV export")
@@ -4850,6 +5645,64 @@ def main() -> None:
             "A 'CSV Source' column is added to identify which file each row came from."
         ),
     )
+    parser.add_argument(
+        "--mode",
+        choices=sorted(AUTOMATION_MODE_DESCRIPTIONS),
+        help="Automation workflow mode (launchagent commands only)",
+    )
+    parser.add_argument(
+        "--schedule",
+        choices=sorted(AUTOMATION_SCHEDULE_DESCRIPTIONS),
+        help="Schedule preset for launchagent-setup",
+    )
+    parser.add_argument(
+        "--time-of-day",
+        help="Local run time in HH:MM 24-hour format (launchagent-setup only)",
+    )
+    parser.add_argument(
+        "--weekday",
+        help="Weekday name for weekly launchagent schedules (launchagent-setup only)",
+    )
+    parser.add_argument(
+        "--day-of-month",
+        type=int,
+        help="Day of month 1-28 for monthly launchagent schedules",
+    )
+    parser.add_argument(
+        "--label",
+        help="LaunchAgent label override (launchagent-setup only)",
+    )
+    parser.add_argument(
+        "--workspace-dir",
+        help="Directory for automation logs, status, and helper folders",
+    )
+    parser.add_argument(
+        "--launchagents-dir",
+        help="LaunchAgents directory override (default: ~/Library/LaunchAgents)",
+    )
+    parser.add_argument(
+        "--csv-inbox-dir",
+        help="Folder containing emailed or exported Jamf CSVs for automation",
+    )
+    parser.add_argument(
+        "--csv-freshness-days",
+        type=int,
+        help="Maximum CSV age in days before automation falls back",
+    )
+    parser.add_argument(
+        "--status-file",
+        help="Automation status JSON path (launchagent-run only)",
+    )
+    parser.add_argument(
+        "--skip-load",
+        action="store_true",
+        help="Write the LaunchAgent plist without loading it",
+    )
+    parser.add_argument(
+        "--run-now",
+        action="store_true",
+        help="Kickstart the LaunchAgent immediately after loading it",
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
@@ -4865,6 +5718,8 @@ def main() -> None:
         cmd_device(config, args.id)
         return
 
+    if args.command in {"launchagent-setup", "launchagent-run"}:
+        _require_existing_config_path(args.config)
     config = Config(args.config)
 
     if args.command == "check":
@@ -4873,6 +5728,37 @@ def main() -> None:
         cmd_collect(config, args.csv, args.historical_csv_dir)
     elif args.command == "inventory-csv":
         cmd_inventory_csv(config, args.out_file)
+    elif args.command == "launchagent-setup":
+        cmd_launchagent_setup(
+            config,
+            args.config,
+            args.label,
+            args.mode,
+            args.schedule,
+            args.time_of_day,
+            args.weekday,
+            args.day_of_month,
+            args.workspace_dir,
+            args.launchagents_dir,
+            args.csv_inbox_dir,
+            args.csv_freshness_days,
+            args.historical_csv_dir,
+            args.notify,
+            args.skip_load,
+            args.run_now,
+        )
+    elif args.command == "launchagent-run":
+        if not args.mode:
+            parser.error("launchagent-run requires --mode")
+        cmd_launchagent_run(
+            config,
+            args.mode,
+            args.csv_inbox_dir,
+            _resolve_csv_freshness_days(args.csv_freshness_days),
+            args.historical_csv_dir,
+            args.status_file,
+            args.notify,
+        )
     elif args.command == "generate":
         cmd_generate(
             config, args.csv, args.out_file, args.historical_csv_dir,

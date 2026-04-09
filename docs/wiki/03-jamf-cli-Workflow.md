@@ -113,6 +113,11 @@ Recommended pattern:
 3. Use `inventory-csv` when you need a CSV-shaped baseline for scaffolded reporting.
 4. Use `generate` with or without `--csv` depending on the run type.
 
+If you want to schedule that cadence on a Mac, use
+`python3 jamf-reports-community.py launchagent-setup --config config.yaml`.
+That LaunchAgent path is designed to preserve the same user-scoped `jamf-cli` profile and
+config context that you use interactively.
+
 ## Generate a Workbook
 
 ```bash

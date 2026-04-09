@@ -197,6 +197,43 @@ This refreshes live `jamf-cli` JSON snapshots when auth is working and can also 
 the current CSV into `charts.historical_csv_dir` for trend charts. `collect` is the best
 way to build an append-only historical store for later weekly and monthly reporting.
 
+### Step 6 — Optional: automate collection and reporting with a LaunchAgent
+
+If you want trend lines to improve over time, automate the collection cadence first.
+`launchagent-setup` creates a macOS LaunchAgent that runs in the same user context as
+your `jamf-cli` profile and config, which keeps scheduled reporting aligned with the
+same keychain-backed and XDG-configured environment you use interactively.
+
+Recommended pattern for MSPs and multi-tenant admins:
+
+- one `jamf-cli` profile per tenant
+- one `config.yaml` per tenant
+- one reporting workspace per tenant
+- one LaunchAgent per tenant
+
+That separation keeps `jamf-cli-data/`, CSV inboxes, historical snapshots, and generated
+reports from mixing across customers.
+
+```bash
+python3 jamf-reports-community.py launchagent-setup --config config.yaml
+```
+
+The setup command can build these workflow types:
+
+- `snapshot-only` — refresh jamf-cli snapshots and optional CSV history only
+- `jamf-cli-only` — generate a workbook from live or cached jamf-cli data
+- `jamf-cli-full` — build a jamf-cli baseline CSV, refresh snapshots, and generate a workbook
+- `csv-assisted` — prefer the newest CSV in an inbox folder and fall back to jamf-cli-only
+
+Schedules currently support `daily`, `weekdays`, `weekly`, and `monthly`.
+
+Reference guidance:
+
+- [jamf-cli Setup Guide](https://github.com/Jamf-Concepts/jamf-cli/wiki/Setup-Guide)
+- [jamf-cli Configuration & Profiles](https://github.com/Jamf-Concepts/jamf-cli/wiki/Configuration-&-Profiles)
+- [jamf-cli Secrets & Keychain](https://github.com/Jamf-Concepts/jamf-cli/wiki/Secrets-&-Keychain)
+- [Wiki: LaunchAgent Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/07-LaunchAgent-Automation)
+
 ---
 
 ## CLI Reference
@@ -283,6 +320,57 @@ Gatekeeper, and bootstrap-token columns directly from the generated CSV.
 If you want later commands to use `--csv inventory.csv`, create it explicitly with
 `inventory-csv --out-file inventory.csv`. If you omit `--out-file`, the export is written
 to `Generated Reports/` using the configured timestamp behavior.
+
+### `launchagent-setup` — Create a scheduled LaunchAgent on macOS
+
+```bash
+python3 jamf-reports-community.py launchagent-setup \
+    [--config config.yaml] \
+    [--mode csv-assisted] \
+    [--schedule weekdays] \
+    [--time-of-day 07:00]
+```
+
+This interactive setup command writes a LaunchAgent plist, creates log and status-file
+paths, and points the job back at `launchagent-run` with absolute paths for the script,
+config, and optional CSV inbox/history folders.
+
+Why use it:
+
+- scheduled `collect` and `generate` runs build better historical data over time
+- LaunchAgents keep automation scoped to the same macOS user account that owns the
+  `jamf-cli` profile and config
+- `csv-assisted` can consume emailed Jamf exports from a folder but still fall back to
+  jamf-cli-only output when no fresh CSV is present
+
+Examples:
+
+```bash
+# Interactive setup with prompts
+python3 jamf-reports-community.py launchagent-setup --config config.yaml
+
+# Weekday report run with a CSV inbox fallback
+python3 jamf-reports-community.py launchagent-setup \
+    --config config.yaml \
+    --mode csv-assisted \
+    --schedule weekdays \
+    --time-of-day 07:15 \
+    --csv-inbox-dir ~/JamfReports/inbox
+
+# Month-start history collection without generating a workbook
+python3 jamf-reports-community.py launchagent-setup \
+    --config config.yaml \
+    --mode snapshot-only \
+    --schedule monthly \
+    --day-of-month 1 \
+    --time-of-day 06:00
+```
+
+### `launchagent-run` — Internal scheduled runner
+
+Generated LaunchAgents call `launchagent-run`. It is safe to run manually when
+troubleshooting, but most users should use `launchagent-setup` and let it compose the
+correct arguments.
 
 ### `scaffold` — Generate a starter config from your CSV
 
