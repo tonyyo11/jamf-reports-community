@@ -127,6 +127,11 @@ There is no single right operating model. Common options:
 - Run inside CI with secrets from environment variables
 - Trigger manually through GitHub Actions for controlled ad-hoc runs
 
+For local macOS automation, the recommended default in this project is now a per-user
+LaunchAgent created by `launchagent-setup`. See the dedicated
+[LaunchAgent Automation](./07-LaunchAgent-Automation.md) page for the operating model,
+workflow modes, and scheduling examples.
+
 ## GitHub Actions As A Future Pattern
 
 One good future operating model is a set of manually triggered GitHub Actions workflows.

@@ -29,6 +29,7 @@ Jamf Platform API work.
 4. [Config and Scaffolding](./04-Config-and-Scaffolding.md)
 5. [Reporting Cadence and Operations](./05-Reporting-Cadence-and-Operations.md)
 6. [Historical Trends and Extensibility](./06-Historical-Trends-and-Extensibility.md)
+7. [LaunchAgent Automation](./07-LaunchAgent-Automation.md)
 
 ## Choose Your Starting Path
 
@@ -64,3 +65,7 @@ visualization, or historical snapshots.
 If your real objective is historical reporting, read the historical-trends page before
 you automate anything. The quality of your charts depends on how intentionally you save
 point-in-time snapshots.
+
+If you want those snapshots and workbooks to happen on a real cadence, read the
+LaunchAgent automation page next. That is the recommended local-macOS scheduling model
+for this project.

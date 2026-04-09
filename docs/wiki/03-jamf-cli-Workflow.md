@@ -57,6 +57,14 @@ jamf_cli:
   data_dir: "jamf-cli-data/dummy"
 ```
 
+If you want the filesystem layout created for you, bootstrap one workspace per profile:
+
+```bash
+python3 jamf-reports-community.py workspace-init \
+    --profile prod \
+    --workspace-root ~/Jamf-Reports
+```
+
 ## Build a Baseline CSV From jamf-cli
 
 Validate the profile first:
@@ -112,6 +120,11 @@ Recommended pattern:
 2. Keep `jamf-cli-data/<profile>/` append-only.
 3. Use `inventory-csv` when you need a CSV-shaped baseline for scaffolded reporting.
 4. Use `generate` with or without `--csv` depending on the run type.
+
+If you want to schedule that cadence on a Mac, use
+`python3 jamf-reports-community.py launchagent-setup --config config.yaml`.
+That LaunchAgent path is designed to preserve the same user-scoped `jamf-cli` profile and
+config context that you use interactively.
 
 ## Generate a Workbook
 
