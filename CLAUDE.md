@@ -34,7 +34,7 @@ no other Python files. Do not create additional modules — keep it single-file.
 | `Config` | Loads `config.yaml`, deep-merges with `DEFAULT_CONFIG`, exposes typed properties. `resolve_path()` resolves relative paths from the config file's directory. |
 | `ColumnMapper` | Resolves logical field names → CSV column names. `.get(field)` returns name or None. `.extract(row, field)` returns cell value or `""` |
 | `JamfCLIBridge` | Subprocess wrapper for jamf-cli. Saves JSON output to `jamf-cli-data/`. Optional — gracefully no-ops if jamf-cli is absent. Supports `profile` for multi-tenant use. Falls back to latest cached JSON when live calls fail (`use_cached_data=True`). |
-| `CoreDashboard` | Generates 9 sheets from jamf-cli JSON data: Fleet Overview, Inventory Summary, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Patch Compliance. No CSV required. |
+| `CoreDashboard` | Generates sheets from jamf-cli JSON data: Fleet Overview, Inventory Summary, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures. No CSV required. |
 | `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Generates: Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance, plus one sheet per `custom_eas` entry. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
 
@@ -268,7 +268,7 @@ To add a new type:
 
 ---
 
-## jamf-cli JSON Shapes (v1.2.0–v1.4.0)
+## jamf-cli JSON Shapes (v1.2.0–v1.6.0)
 
 CoreDashboard parses these exact shapes. Do not change the parsing without verifying
 against the jamf-cli source.
@@ -311,6 +311,35 @@ for compatibility with different jamf-cli versions.
 One row per failing device × patch policy. `last_action` is fetched from
 `/v2/patch-policies/{id}/logs/{deviceId}/details` (highest attempt, highest action order).
 Used by `JamfCLIBridge.patch_device_failures()` → CoreDashboard "Patch Failures" sheet.
+
+**`pro report update-status --output json`** *(v1.6.0+)*
+```json
+[{"total": N,
+  "status_summary": [{"status": "PENDING", "count": N}, ...],
+  "plan_total": N,
+  "plan_state_summary": [{"state": "Activated", "count": N}, ...]}]
+```
+
+v1.5 and earlier used `{"summary": {"total_updates": N, "pending": N, ...}, "ErrorDevices": [...]}`.
+`_write_update_status` detects the format via the `status_summary` key and handles both shapes.
+
+**`pro report update-status --scan-failures --output json`** *(v1.6.0+)*
+```json
+[{"total": N,
+  "status_summary": [{"status": "...", "count": N}],
+  "error_devices": [{"name": "...", "serial": "...", "device_type": "...",
+                     "os_version": "...", "username": "...", "status": "...",
+                     "product_key": "...", "updated": "..."}],
+  "plan_total": N,
+  "plan_state_summary": [{"state": "...", "count": N}],
+  "failed_plans": [{"name": "...", "serial": "...", "device_type": "...",
+                    "os_version": "...", "username": "...", "state": "...",
+                    "action": "...", "version": "...", "error": "...",
+                    "last_event": "..."}]}]
+```
+
+Used by `JamfCLIBridge.update_device_failures()` → CoreDashboard "Update Failures" sheet.
+API-expensive: fetches full computer and mobile inventory plus per-plan events in parallel.
 
 ---
 

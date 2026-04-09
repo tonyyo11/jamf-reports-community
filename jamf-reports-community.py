@@ -1674,6 +1674,47 @@ class JamfCLIBridge:
                 }
             raise
 
+    def update_device_failures(self) -> Any:
+        """Fetch per-device update failures via pro report update-status --scan-failures.
+
+        Requires jamf-cli v1.6.0+. Enriches error devices and failed plans with
+        inventory details (name, serial, OS, username) and per-plan last events.
+        JSON shape (v1.6):
+          [{"total": N, "status_summary": [{"status": "...", "count": N}],
+            "error_devices": [{"name": "...", "serial": "...", "device_type": "...",
+                               "os_version": "...", "username": "...", "status": "...",
+                               "product_key": "...", "updated": "..."}],
+            "plan_total": N,
+            "plan_state_summary": [{"state": "...", "count": N}],
+            "failed_plans": [{"name": "...", "serial": "...", "device_type": "...",
+                              "os_version": "...", "username": "...", "state": "...",
+                              "action": "...", "version": "...", "error": "...",
+                              "last_event": "..."}]}]
+        """
+        self._require_report_command("update-status", ["update-status", "update_status"])
+        try:
+            return self._run_and_save(
+                "update-device-failures",
+                ["pro", "report", "update-status", "--scan-failures"],
+                ["update-device-failures", "update_device_failures"],
+            )
+        except RuntimeError as exc:
+            detail = str(exc)
+            if (
+                "No managed software update data found." in detail
+                or "Managed Software Update Plans toggle is off." in detail
+            ):
+                return [{
+                    "message": "No managed software update data found.",
+                    "total": 0,
+                    "status_summary": [],
+                    "error_devices": [],
+                    "plan_total": 0,
+                    "plan_state_summary": [],
+                    "failed_plans": [],
+                }]
+            raise
+
     def device_detail(self, identifier: str) -> Any:
         """Fetch the aggregated device detail view for one computer."""
         ident = str(identifier).strip()
@@ -1778,6 +1819,33 @@ class JamfCLIBridge:
             RuntimeError: If jamf-cli is unavailable or the request fails.
         """
         return self._run(["pro", "device", device_id])
+
+    def computers_inventory_patch(
+        self,
+        serial: str,
+        field_values: dict[str, str],
+    ) -> Any:
+        """Patch writable fields on a computer identified by serial number.
+
+        Requires jamf-cli v1.6.0+ (computers-inventory patch subcommand).
+        Uses --serial to identify the device; --set for each field/value pair.
+
+        Args:
+            serial: Device serial number.
+            field_values: Mapping of field paths to values, e.g.
+                {"general.managed": "true"}.
+
+        Returns:
+            Parsed JSON response (updated computer object).
+
+        Raises:
+            RuntimeError: If jamf-cli is unavailable, the subcommand is not
+                supported by the installed version, or the API call fails.
+        """
+        args = ["pro", "computers-inventory", "patch", "--serial", serial]
+        for field, value in field_values.items():
+            args.extend(["--set", f"{field}={value}"])
+        return self._run(args)
 
 
 # ---------------------------------------------------------------------------
@@ -2003,6 +2071,7 @@ class CoreDashboard:
             ("Patch Compliance", self._write_patch),
             ("Patch Failures", self._write_patch_failures),
             ("Update Status", self._write_update_status),
+            ("Update Failures", self._write_update_failures),
         ]
         for name, fn in sheets:
             try:
@@ -2819,19 +2888,29 @@ class CoreDashboard:
                 row += 1
 
     def _write_update_status(self) -> None:
-        # jamf-cli pro report update-status --output json returns:
+        # jamf-cli pro report update-status --output json shape differs by version:
+        #
+        # v1.5 and earlier:
         #   {"summary": {"total_updates": N, "pending": N, "downloading": N,
         #                "installing": N, "installed": N, "errors": N},
         #    "ErrorDevices": [{"device_name":"...","serial":"...","os_version":"...",
         #                      "status":"...","product_key":"...","updated":"..."},...]}
-        # The outer response may be wrapped in a list.
+        #
+        # v1.6+:
+        #   [{"total": N,
+        #     "status_summary": [{"status": "...", "count": N}, ...],
+        #     "plan_total": N,
+        #     "plan_state_summary": [{"state": "...", "count": N}, ...]}]
+        #   (error_devices and failed_plans only present with --scan-failures)
+        #
+        # Detect format by checking which summary key is present.
         raw = self._bridge.update_status()
         envelope = _extract_envelope(raw)
         if not envelope:
             raise RuntimeError("update-status returned no data")
-        summary = envelope.get("summary", {})
-        error_devices = envelope.get("ErrorDevices", [])
+
         no_data_message = str(envelope.get("message", "") or "").strip()
+        is_v16 = "status_summary" in envelope
 
         ws = self._wb.add_worksheet("Update Status")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -2845,46 +2924,197 @@ class CoreDashboard:
         ws.set_column(0, 0, 32)
         ws.set_column(1, 5, 20)
 
-        summary_fields = [
-            ("total_updates", "Total Updates"),
-            ("pending", "Pending"),
-            ("downloading", "Downloading"),
-            ("installing", "Installing"),
-            ("installed", "Installed"),
-            ("errors", "Errors"),
-        ]
-        for key, label in summary_fields:
-            val = summary.get(key)
-            if val is not None:
-                _safe_write(ws, row, 0, label, self._fmts["cell"])
-                _safe_write(ws, row, 1, val, self._fmts["cell"])
-                row += 1
-
-        if not summary and not error_devices and no_data_message:
+        if no_data_message and not is_v16 and not envelope.get("summary"):
             _safe_write(ws, row, 0, "Status", self._fmts["header"])
             _safe_write(ws, row, 1, "Details", self._fmts["header"])
             row += 1
             _safe_write(ws, row, 0, "No Data", self._fmts["yellow"])
             _safe_write(ws, row, 1, no_data_message, self._fmts["yellow"])
-            row += 1
+            return
 
+        if is_v16:
+            # v1.6+ format: status_summary list + plan_state_summary list
+            status_summary = envelope.get("status_summary") or []
+            plan_state_summary = envelope.get("plan_state_summary") or []
+            total = _to_int(envelope.get("total", 0))
+            plan_total = _to_int(envelope.get("plan_total", 0))
+
+            _safe_write(ws, row, 0, f"Update Statuses ({total} total)", self._fmts["header"])
+            _safe_write(ws, row, 1, "Count", self._fmts["header"])
+            row += 1
+            for item in sorted(status_summary, key=lambda x: -_to_int(x.get("count", 0))):
+                _safe_write(ws, row, 0, item.get("status", ""), self._fmts["cell"])
+                _safe_write(ws, row, 1, _to_int(item.get("count", 0)), self._fmts["cell"])
+                row += 1
+
+            if plan_state_summary:
+                row += 1
+                _safe_write(
+                    ws, row, 0,
+                    f"Update Plan States ({plan_total} total)",
+                    self._fmts["header"],
+                )
+                _safe_write(ws, row, 1, "Count", self._fmts["header"])
+                row += 1
+                for item in sorted(
+                    plan_state_summary, key=lambda x: -_to_int(x.get("count", 0))
+                ):
+                    _safe_write(ws, row, 0, item.get("state", ""), self._fmts["cell"])
+                    _safe_write(ws, row, 1, _to_int(item.get("count", 0)), self._fmts["cell"])
+                    row += 1
+        else:
+            # v1.5 and earlier: summary dict + ErrorDevices list
+            summary = envelope.get("summary", {})
+            error_devices = envelope.get("ErrorDevices", [])
+            summary_fields = [
+                ("total_updates", "Total Updates"),
+                ("pending", "Pending"),
+                ("downloading", "Downloading"),
+                ("installing", "Installing"),
+                ("installed", "Installed"),
+                ("errors", "Errors"),
+            ]
+            for key, label in summary_fields:
+                val = summary.get(key)
+                if val is not None:
+                    _safe_write(ws, row, 0, label, self._fmts["cell"])
+                    _safe_write(ws, row, 1, val, self._fmts["cell"])
+                    row += 1
+
+            if error_devices:
+                row += 1
+                _safe_write(ws, row, 0, "Devices with Update Errors", self._fmts["header"])
+                row += 1
+                dev_headers = ["Device Name", "Serial", "OS Version", "Status",
+                               "Product Key", "Updated"]
+                for c, h in enumerate(dev_headers):
+                    _safe_write(ws, row, c, h, self._fmts["header"])
+                row += 1
+                for item in error_devices[:200]:
+                    _safe_write(ws, row, 0, item.get("device_name", ""), self._fmts["cell"])
+                    _safe_write(ws, row, 1, item.get("serial", ""), self._fmts["cell"])
+                    _safe_write(ws, row, 2, item.get("os_version", ""), self._fmts["cell"])
+                    _safe_write(ws, row, 3, item.get("status", ""), self._fmts["cell"])
+                    _safe_write(ws, row, 4, item.get("product_key", ""), self._fmts["cell"])
+                    _safe_write(ws, row, 5, item.get("updated", ""), self._fmts["cell"])
+                    row += 1
+
+    def _write_update_failures(self) -> None:
+        # jamf-cli pro report update-status --scan-failures --output json (v1.6+) returns:
+        #   [{"total": N, "status_summary": [...],
+        #     "error_devices": [{"name":"...","serial":"...","device_type":"...",
+        #                        "os_version":"...","username":"...","status":"...",
+        #                        "product_key":"...","updated":"..."}],
+        #     "plan_total": N, "plan_state_summary": [...],
+        #     "failed_plans": [{"name":"...","serial":"...","device_type":"...",
+        #                       "os_version":"...","username":"...","state":"...",
+        #                       "action":"...","version":"...","error":"...",
+        #                       "last_event":"..."}]}]
+        raw = self._bridge.update_device_failures()
+        envelope = _extract_envelope(raw)
+        if not envelope:
+            raise RuntimeError("update-status --scan-failures returned no data")
+
+        no_data_message = str(envelope.get("message", "") or "").strip()
+        error_devices = envelope.get("error_devices") or []
+        failed_plans = envelope.get("failed_plans") or []
+
+        ws = self._wb.add_worksheet("Update Failures")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Update Failures",
+            (
+                "Source: jamf-cli pro report update-status --scan-failures"
+                f" (v1.6.0+) | Generated: {ts}"
+            ),
+            self._fmts,
+            ncols=8,
+        )
+
+        if no_data_message and not error_devices and not failed_plans:
+            _safe_write(ws, row, 0, "No Data", self._fmts["yellow"])
+            _safe_write(ws, row, 1, no_data_message, self._fmts["yellow"])
+            return
+
+        # --- Error Devices table ---
+        ws.set_column(0, 0, 30)  # Device
+        ws.set_column(1, 1, 16)  # Serial
+        ws.set_column(2, 2, 14)  # Device Type
+        ws.set_column(3, 3, 14)  # OS Version
+        ws.set_column(4, 4, 22)  # Username
+        ws.set_column(5, 5, 28)  # Status
+        ws.set_column(6, 6, 24)  # Product Key
+        ws.set_column(7, 7, 18)  # Updated
+
+        _safe_write(
+            ws, row, 0,
+            f"Update Error Devices ({len(error_devices)})",
+            self._fmts["header"],
+        )
+        row += 1
         if error_devices:
-            row += 1
-            _safe_write(ws, row, 0, "Devices with Update Errors", self._fmts["header"])
-            row += 1
-            dev_headers = ["Device Name", "Serial", "OS Version", "Status",
-                           "Product Key", "Updated"]
-            for c, h in enumerate(dev_headers):
+            err_headers = [
+                "Device", "Serial", "Device Type", "OS Version",
+                "Username", "Status", "Product Key", "Updated",
+            ]
+            for c, h in enumerate(err_headers):
                 _safe_write(ws, row, c, h, self._fmts["header"])
             row += 1
-            for item in error_devices[:200]:
-                _safe_write(ws, row, 0, item.get("device_name", ""), self._fmts["cell"])
+            for item in error_devices:
+                _safe_write(ws, row, 0, item.get("name", ""), self._fmts["cell"])
                 _safe_write(ws, row, 1, item.get("serial", ""), self._fmts["cell"])
-                _safe_write(ws, row, 2, item.get("os_version", ""), self._fmts["cell"])
-                _safe_write(ws, row, 3, item.get("status", ""), self._fmts["cell"])
-                _safe_write(ws, row, 4, item.get("product_key", ""), self._fmts["cell"])
-                _safe_write(ws, row, 5, item.get("updated", ""), self._fmts["cell"])
+                _safe_write(ws, row, 2, item.get("device_type", ""), self._fmts["cell"])
+                _safe_write(ws, row, 3, item.get("os_version", ""), self._fmts["cell"])
+                _safe_write(ws, row, 4, item.get("username", ""), self._fmts["cell"])
+                _safe_write(ws, row, 5, item.get("status", ""), self._fmts["red"])
+                _safe_write(ws, row, 6, item.get("product_key", ""), self._fmts["cell"])
+                _safe_write(ws, row, 7, item.get("updated", ""), self._fmts["cell"])
                 row += 1
+        else:
+            _safe_write(ws, row, 0, "No update error devices found.", self._fmts["cell"])
+            row += 1
+
+        # --- Failed Plans table ---
+        row += 1
+        ws.set_column(5, 5, 16)  # Plan State (reuse col 5)
+        ws.set_column(6, 6, 18)  # Action
+        ws.set_column(7, 7, 14)  # Version
+
+        _safe_write(
+            ws, row, 0,
+            f"Failed Update Plans ({len(failed_plans)})",
+            self._fmts["header"],
+        )
+        row += 1
+        if failed_plans:
+            plan_headers = [
+                "Device", "Serial", "Device Type", "OS Version",
+                "Username", "Plan State", "Action", "Version",
+                "Error Reasons", "Last Event",
+            ]
+            # Expand column count for extra columns
+            ws.set_column(8, 8, 42)   # Error Reasons
+            ws.set_column(9, 9, 28)   # Last Event
+            for c, h in enumerate(plan_headers):
+                _safe_write(ws, row, c, h, self._fmts["header"])
+            row += 1
+            for item in failed_plans:
+                state = item.get("state", "")
+                row_fmt = self._fmts["red"] if state == "PlanFailed" else self._fmts["yellow"]
+                _safe_write(ws, row, 0, item.get("name", ""), self._fmts["cell"])
+                _safe_write(ws, row, 1, item.get("serial", ""), self._fmts["cell"])
+                _safe_write(ws, row, 2, item.get("device_type", ""), self._fmts["cell"])
+                _safe_write(ws, row, 3, item.get("os_version", ""), self._fmts["cell"])
+                _safe_write(ws, row, 4, item.get("username", ""), self._fmts["cell"])
+                _safe_write(ws, row, 5, state, row_fmt)
+                _safe_write(ws, row, 6, item.get("action", ""), self._fmts["cell"])
+                _safe_write(ws, row, 7, item.get("version", ""), self._fmts["cell"])
+                _safe_write(ws, row, 8, item.get("error", ""), self._fmts["cell"])
+                _safe_write(ws, row, 9, item.get("last_event", ""), self._fmts["cell"])
+                row += 1
+        else:
+            _safe_write(ws, row, 0, "No failed update plans found.", self._fmts["cell"])
 
 
 # ---------------------------------------------------------------------------
@@ -5808,6 +6038,122 @@ def cmd_launchagent_setup(
 
 
 # ---------------------------------------------------------------------------
+# Managed-state patching (requires jamf-cli v1.6.0+)
+# ---------------------------------------------------------------------------
+
+
+def _read_serials_file(path: str) -> list[str]:
+    """Read serial numbers from a text file, one per line.
+
+    Lines starting with '#' and blank lines are ignored.
+
+    Args:
+        path: Path to the serials file.
+
+    Returns:
+        List of stripped serial number strings.
+
+    Raises:
+        SystemExit: If the file cannot be opened.
+    """
+    serials: list[str] = []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#"):
+                    serials.append(stripped)
+    except OSError as exc:
+        raise SystemExit(f"Error reading serials file {path}: {exc}") from exc
+    return serials
+
+
+def cmd_patch_managed(
+    config: Config,
+    managed_value: bool,
+    dry_run: bool = False,
+    serials_file: Optional[str] = None,
+) -> None:
+    """Set managed state on computers via jamf-cli computers-inventory patch.
+
+    Requires jamf-cli v1.6.0+. Without --serials-file, queries device-compliance
+    and patches all devices currently in the opposite managed state. With
+    --serials-file, patches every listed serial to the target state.
+
+    Args:
+        config: Loaded Config object.
+        managed_value: Target managed state (True = managed, False = unmanaged).
+        dry_run: If True, print what would change without making API calls.
+        serials_file: Optional path to a file with one serial number per line.
+    """
+    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
+
+    bridge = JamfCLIBridge(
+        save_output=False,
+        data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
+        profile=jamf_cli_profile,
+        use_cached_data=False,
+    )
+    if not bridge.is_available():
+        raise SystemExit("Error: jamf-cli not found. Install it or set JAMFCLI_PATH.")
+
+    target_str = "true" if managed_value else "false"
+    print(f"Target managed state: {target_str}")
+
+    if serials_file:
+        serials = _read_serials_file(serials_file)
+        if not serials:
+            raise SystemExit(f"Error: no serial numbers found in {serials_file}")
+        print(f"  {len(serials)} serial(s) from {serials_file}")
+    else:
+        stale_days = int(config.thresholds.get("stale_device_days", 30))
+        raw = bridge.device_compliance(stale_days)
+        rows = raw if isinstance(raw, list) else []
+        if not rows:
+            raise SystemExit("Error: device-compliance returned no data.")
+        opposite = "unmanaged" if managed_value else "managed"
+        serials = [
+            str(item.get("serial", "") or "").strip()
+            for item in rows
+            if isinstance(item, dict)
+            and _to_bool(item.get("managed")) is not managed_value
+            and str(item.get("serial", "") or "").strip()
+        ]
+        print(f"  {len(serials)} currently-{opposite} device(s) from device-compliance")
+
+    if not serials:
+        print("  No devices to patch.")
+        return
+
+    if dry_run:
+        print(f"\n[dry-run] Would set general.managed={target_str} on {len(serials)} device(s):")
+        for serial in serials:
+            print(f"  {serial}")
+        return
+
+    print(f"\nPatching {len(serials)} device(s)...")
+    success = 0
+    failed = 0
+    for serial in serials:
+        try:
+            bridge.computers_inventory_patch(serial, {"general.managed": target_str})
+            print(f"  [ok]   {serial}")
+            success += 1
+        except RuntimeError as exc:
+            detail = str(exc)
+            if "unknown command" in detail.lower() or "computers-inventory" in detail.lower():
+                raise SystemExit(
+                    "Error: 'computers-inventory patch' not available."
+                    " Upgrade to jamf-cli v1.6.0+."
+                ) from exc
+            print(f"  [fail] {serial}: {exc}")
+            failed += 1
+
+    print(f"\nDone: {success} patched, {failed} failed.")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -5828,6 +6174,7 @@ def main() -> None:
             "  scaffold      Generate a starter config.yaml from a CSV\n"
             "  check         Verify jamf-cli auth and config\n"
             "  device        Print a device detail view from jamf-cli pro device\n"
+            "  patch-managed Set managed state on computers (requires jamf-cli v1.6.0+)\n"
         ),
     )
     parser.add_argument(
@@ -5842,6 +6189,7 @@ def main() -> None:
             "scaffold",
             "check",
             "device",
+            "patch-managed",
         ],
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
@@ -5876,6 +6224,24 @@ def main() -> None:
             "Additional CSV export to merge with --csv (can be repeated). "
             "Useful for combining computers, mobile-device, and users exports. "
             "A 'CSV Source' column is added to identify which file each row came from."
+        ),
+    )
+    parser.add_argument(
+        "--managed",
+        choices=["true", "false"],
+        help="Target managed state: 'true' to manage, 'false' to unmanage (patch-managed only)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be patched without making API calls (patch-managed only)",
+    )
+    parser.add_argument(
+        "--serials-file",
+        metavar="PATH",
+        help=(
+            "File with one serial number per line to patch"
+            " (patch-managed only; default: auto-detect from device-compliance)"
         ),
     )
     parser.add_argument(
@@ -6027,6 +6393,15 @@ def main() -> None:
         cmd_generate(
             config, args.csv, args.out_file, args.historical_csv_dir,
             args.notify, args.csv_extra,
+        )
+    elif args.command == "patch-managed":
+        if not args.managed:
+            parser.error("patch-managed requires --managed true|false")
+        cmd_patch_managed(
+            config,
+            managed_value=args.managed == "true",
+            dry_run=args.dry_run,
+            serials_file=args.serials_file,
         )
 
 
