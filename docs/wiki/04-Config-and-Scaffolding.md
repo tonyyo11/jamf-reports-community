@@ -23,6 +23,10 @@ If that CSV came from `inventory-csv`, scaffold can now also auto-detect generic
 FileVault, SIP, firewall, Gatekeeper, and bootstrap-token columns from the generated
 baseline export.
 
+For common compliance-only exports, scaffold also recognizes `Last Inventory Update` as
+`last_checkin` and can auto-fill the `compliance` failures-count and failures-list
+columns.
+
 ## Always Review The Scaffold Output
 
 Scaffold is a starting point, not a final answer.

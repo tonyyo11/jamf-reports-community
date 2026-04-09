@@ -295,6 +295,10 @@ python3 jamf-reports-community.py scaffold \
 Reads CSV headers, fuzzy-matches them to known field names, and writes a `config.yaml`
 with best-guess mappings. Safe to run multiple times — overwrites the existing file.
 
+For common compliance exports, scaffold also tries to populate
+`compliance.failures_count_column` and `compliance.failures_list_column`, and it treats
+headers such as `Last Inventory Update` as a valid `last_checkin` match.
+
 ### `check` — Validate config against CSV
 
 ```

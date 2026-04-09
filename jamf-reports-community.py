@@ -138,7 +138,13 @@ COLUMN_HINTS: dict[str, list[str]] = {
     "computer_name": ["computer name", "device name", "hostname", "name"],
     "serial_number": ["serial number", "serial", "serialnumber"],
     "operating_system": ["operating system version", "operating system", "macos version"],
-    "last_checkin": ["last check-in", "last checkin", "last contact", "checkin"],
+    "last_checkin": [
+        "last check-in",
+        "last checkin",
+        "last contact",
+        "last inventory update",
+        "checkin",
+    ],
     "department": ["department", "dept"],
     "manager": ["manager", "managed by", "direct manager"],
     "email": ["email address", "email", "e-mail"],
@@ -522,6 +528,32 @@ def _best_header_match(
             best_header = header
             best_score = score
     return best_header, best_score
+
+
+def _best_hint_match(
+    headers: list[str],
+    hints: list[str],
+    used_headers: Optional[set[str]] = None,
+) -> Optional[str]:
+    """Return the best header matching one of the provided hint substrings."""
+    normalized_hints = [_normalized_text(hint) for hint in hints if str(hint).strip()]
+    reserved = used_headers or set()
+    best_header: Optional[str] = None
+    best_score = 0
+    for header in headers:
+        if header in reserved:
+            continue
+        normalized = _normalized_text(header)
+        score = 0
+        for hint in normalized_hints:
+            if normalized == hint:
+                score = max(score, 100)
+            elif hint in normalized:
+                score = max(score, 90)
+        if score > best_score:
+            best_header = header
+            best_score = score
+    return best_header if best_score else None
 
 
 def _contains_case_insensitive(series: Any, needle: str) -> Any:
@@ -3676,6 +3708,23 @@ _EA_TYPE_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
+_SCAFFOLD_COMPLIANCE_HINTS: dict[str, list[str]] = {
+    "failures_count_column": [
+        "failed mscp results count",
+        "failed mscp result count",
+        "failed results count",
+        "failed rule count",
+        "compliance failures count",
+    ],
+    "failures_list_column": [
+        "failed mscp result list",
+        "failed mscp results list",
+        "failed results list",
+        "failed rule list",
+        "compliance failures list",
+    ],
+}
+
 
 def _suggest_ea_type(header: str) -> str:
     """Return a suggested custom_ea type based on column name heuristics."""
@@ -3835,11 +3884,26 @@ def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> Non
             matched[logical] = best_header
             used_headers.add(best_header)
 
+    compliance_matches: dict[str, str] = {}
+    for key, hints in _SCAFFOLD_COMPLIANCE_HINTS.items():
+        best_header = _best_hint_match(headers, hints, used_headers)
+        if best_header:
+            compliance_matches[key] = best_header
+            used_headers.add(best_header)
+
     unmatched = [header for header in headers if header not in used_headers]
 
     print(f"Auto-matched {len(matched)} logical fields:")
     for k, v in matched.items():
         print(f"  {k}: {v!r}")
+    if compliance_matches:
+        print("Auto-detected compliance fields:")
+        for key, value in compliance_matches.items():
+            print(f"  compliance.{key}: {value!r}")
+        if len(compliance_matches) == 2:
+            print("  compliance.enabled: true")
+        else:
+            print("  compliance.enabled: false (complete the missing column before generating)")
     if unmatched:
         print(f"Unmatched columns ({len(unmatched)}) — add manually to config if needed:")
         for h in unmatched:
@@ -3853,6 +3917,16 @@ def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> Non
     config_data = copy.deepcopy(DEFAULT_CONFIG)
     for logical in config_data["columns"]:
         config_data["columns"][logical] = matched.get(logical, "")
+    config_data["compliance"]["failures_count_column"] = compliance_matches.get(
+        "failures_count_column", ""
+    )
+    config_data["compliance"]["failures_list_column"] = compliance_matches.get(
+        "failures_list_column", ""
+    )
+    config_data["compliance"]["enabled"] = bool(
+        config_data["compliance"]["failures_count_column"]
+        and config_data["compliance"]["failures_list_column"]
+    )
 
     config_str = yaml.dump(config_data, default_flow_style=False, sort_keys=False)
     with open(out_path_obj, "w") as fh:
@@ -4012,6 +4086,19 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                 else:
                     print(f"  [MISSING] custom_ea '{name}': {col!r} — not found in CSV")
                     mismatches.append((f"custom_ea:{name}", col))
+            compliance_cols = [
+                ("failures_count_column", "compliance.failures_count_column"),
+                ("failures_list_column", "compliance.failures_list_column"),
+            ]
+            for key, label in compliance_cols:
+                col = str(config.compliance.get(key, "") or "").strip()
+                if not col:
+                    continue
+                if col in csv_cols:
+                    print(f"  [ok] {label}: {col!r}")
+                else:
+                    print(f"  [MISSING] {label}: {col!r} — not found in CSV")
+                    mismatches.append((label, col))
             if mismatches:
                 print(
                     f"\n  {len(mismatches)} column(s) not found."
