@@ -197,7 +197,30 @@ This refreshes live `jamf-cli` JSON snapshots when auth is working and can also 
 the current CSV into `charts.historical_csv_dir` for trend charts. `collect` is the best
 way to build an append-only historical store for later weekly and monthly reporting.
 
-### Step 6 — Optional: automate collection and reporting with a LaunchAgent
+### Step 6 — Optional: bootstrap a per-profile workspace
+
+If you support more than one Jamf tenant or more than one `jamf-cli` profile, create one
+workspace per tenant before you automate anything.
+
+```bash
+python3 jamf-reports-community.py workspace-init \
+    --profile yourprofile \
+    --workspace-root ~/Jamf-Reports
+```
+
+That creates a profile-scoped folder tree such as:
+
+- `config.yaml`
+- `jamf-cli-data/`
+- `snapshots/`
+- `Generated Reports/`
+- `csv-inbox/`
+- `automation/logs/`
+
+By default, the generated `config.yaml` resets path-bearing settings back to local
+workspace-relative defaults so each tenant’s data stays isolated.
+
+### Step 7 — Optional: automate collection and reporting with a LaunchAgent
 
 If you want trend lines to improve over time, automate the collection cadence first.
 `launchagent-setup` creates a macOS LaunchAgent that runs in the same user context as
@@ -210,6 +233,10 @@ Recommended pattern for MSPs and multi-tenant admins:
 - one `config.yaml` per tenant
 - one reporting workspace per tenant
 - one LaunchAgent per tenant
+
+If `jamf_cli.profile` is set but your paths still use generic shared defaults such as
+`jamf-cli-data`, `snapshots`, or `Generated Reports`, `check` and `launchagent-setup`
+now print profile-isolation guidance so you can avoid mixing tenant data.
 
 That separation keeps `jamf-cli-data/`, CSV inboxes, historical snapshots, and generated
 reports from mixing across customers.
@@ -320,6 +347,41 @@ Gatekeeper, and bootstrap-token columns directly from the generated CSV.
 If you want later commands to use `--csv inventory.csv`, create it explicitly with
 `inventory-csv --out-file inventory.csv`. If you omit `--out-file`, the export is written
 to `Generated Reports/` using the configured timestamp behavior.
+
+### `workspace-init` — Create a per-profile workspace skeleton
+
+```bash
+python3 jamf-reports-community.py workspace-init \
+    [--seed-config config.yaml] \
+    [--profile yourprofile] \
+    [--workspace-root ~/Jamf-Reports] \
+    [--workspace-name acme-prod]
+```
+
+This command creates a new workspace directory for one tenant/profile and writes a seeded
+`config.yaml`. If `--seed-config` exists, that config is cloned first. Otherwise the
+command falls back to `config.example.yaml`.
+
+Use it when:
+
+- you manage multiple Jamf Pro tenants
+- you want one reporting workspace per `jamf-cli` profile
+- you want `jamf-cli-data/`, `snapshots/`, and `Generated Reports/` separated by tenant
+
+Examples:
+
+```bash
+# Create a fresh tenant workspace from config.example.yaml
+python3 jamf-reports-community.py workspace-init \
+    --profile acme-prod \
+    --workspace-root ~/Jamf-Reports
+
+# Clone an existing config into a new per-profile workspace
+python3 jamf-reports-community.py workspace-init \
+    --seed-config ~/Jamf-Reports/shared-template.yaml \
+    --profile school-west \
+    --workspace-root ~/Jamf-Reports
+```
 
 ### `launchagent-setup` — Create a scheduled LaunchAgent on macOS
 

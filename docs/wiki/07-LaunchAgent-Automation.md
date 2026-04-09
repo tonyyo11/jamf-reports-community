@@ -57,6 +57,16 @@ notes that `pro setup --from-file` auto-names profiles like `pro-school1`,
 `pro-school2`, and so on. `jamf-reports-community` should mirror that separation by
 keeping one scheduled job per profile/tenant.
 
+The easiest way to enforce that structure locally is to start with:
+
+```bash
+python3 jamf-reports-community.py workspace-init \
+    --profile yourprofile \
+    --workspace-root ~/Jamf-Reports
+```
+
+Then point `launchagent-setup` at the generated workspace config.
+
 ## What `launchagent-setup` Creates
 
 Run:

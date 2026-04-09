@@ -652,6 +652,26 @@ def _require_existing_config_path(path_value: str) -> Path:
     return path
 
 
+def _seed_config_template_path() -> Path:
+    """Return the repository config.example.yaml path."""
+    return Path(__file__).resolve().with_name("config.example.yaml")
+
+
+def _load_workspace_seed_config(seed_config_path: Optional[str]) -> tuple["Config", str]:
+    """Load the seed config for workspace bootstrapping."""
+    seed_path_obj = _cli_path(seed_config_path)
+    if seed_path_obj is not None:
+        if not seed_path_obj.exists():
+            raise SystemExit(f"Error: seed config not found: {seed_path_obj}")
+        return Config(str(seed_path_obj)), str(seed_path_obj.resolve())
+
+    template_path = _seed_config_template_path()
+    if template_path.exists():
+        return Config(str(template_path)), str(template_path)
+
+    return Config("__workspace_init_defaults__.yaml"), "DEFAULT_CONFIG"
+
+
 def _find_jamf_cli_binary() -> Optional[str]:
     """Return the best available jamf-cli binary path."""
     candidates = [
@@ -664,6 +684,45 @@ def _find_jamf_cli_binary() -> Optional[str]:
         if path and Path(path).is_file() and os.access(path, os.X_OK):
             return path
     return None
+
+
+def _profile_isolation_guidance(config: "Config") -> list[str]:
+    """Return advisory notes for multi-profile path isolation."""
+    profile_name = str(config.jamf_cli.get("profile", "") or "").strip()
+    if not profile_name:
+        return []
+
+    profile_component = _filename_component(profile_name)
+    guidance = [
+        "Active jamf_cli.profile is set. Keep one config/workspace per tenant,"
+        " or make snapshot/output paths profile-specific. Consider workspace-init"
+        " for a per-profile workspace skeleton.",
+    ]
+
+    data_dir_raw = str(config.get("jamf_cli", "data_dir", default="jamf-cli-data") or "").strip()
+    if _normalized_text(data_dir_raw) == "jamf-cli-data":
+        guidance.append(
+            "jamf_cli.data_dir is the shared default."
+            f" Consider jamf-cli-data/{profile_component}."
+        )
+
+    hist_dir_raw = str(config.get("charts", "historical_csv_dir", default="") or "").strip()
+    if not hist_dir_raw or _normalized_text(hist_dir_raw) == "snapshots":
+        guidance.append(
+            "charts.historical_csv_dir is blank or generic."
+            f" Consider snapshots/{profile_component} when multiple tenants share a parent workspace."
+        )
+
+    output_dir_raw = str(
+        config.get("output", "output_dir", default="Generated Reports") or ""
+    ).strip()
+    if _normalized_text(output_dir_raw) == "generated reports":
+        guidance.append(
+            "output.output_dir is the shared default."
+            f" Consider Generated Reports/{profile_component} if multiple tenants share a workspace."
+        )
+
+    return guidance
 
 
 def _days_since(date_str: str) -> Optional[int]:
@@ -1163,6 +1222,10 @@ class Config:
                 return default
             node = node.get(k, default)
         return node
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a deep copy of the loaded config data."""
+        return copy.deepcopy(self._data)
 
     @property
     def base_dir(self) -> Path:
@@ -4211,6 +4274,164 @@ def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> Non
 
 
 # ---------------------------------------------------------------------------
+# Workspace bootstrap
+# ---------------------------------------------------------------------------
+
+
+def _resolve_workspace_profile_name(
+    seed_config: Config,
+    profile: Optional[str],
+) -> str:
+    """Return the profile name to use for a bootstrapped workspace."""
+    explicit = str(profile or "").strip()
+    if explicit:
+        return explicit
+
+    seeded = str(seed_config.jamf_cli.get("profile", "") or "").strip()
+    if seeded:
+        return seeded
+
+    if sys.stdin.isatty():
+        return _prompt_text("jamf-cli profile name")
+
+    raise SystemExit(
+        "Error: workspace-init requires --profile when the seed config does not"
+        " already set jamf_cli.profile."
+    )
+
+
+def _resolve_workspace_root_dir(
+    workspace_root: Optional[str],
+    seed_config: Config,
+) -> Path:
+    """Return the parent directory under which a workspace will be created."""
+    if workspace_root:
+        return _expand_setup_path(workspace_root, Path.cwd())
+
+    if not sys.stdin.isatty():
+        return Path.cwd().resolve()
+
+    default_root = str(seed_config.base_dir)
+    return _expand_setup_path(
+        _prompt_text("Workspace root directory", default_root),
+        Path.cwd(),
+    )
+
+
+def _resolve_workspace_name(
+    profile_name: str,
+    workspace_name: Optional[str],
+) -> str:
+    """Return the filesystem directory name for a bootstrapped workspace."""
+    explicit = str(workspace_name or "").strip()
+    if explicit:
+        return _filename_component(explicit)
+    return _filename_component(profile_name)
+
+
+def _workspace_seed_config_data(seed_config: Config, profile_name: str) -> dict[str, Any]:
+    """Return a seed config adjusted for a per-profile workspace."""
+    config_data = seed_config.to_dict()
+    config_data.setdefault("jamf_cli", {})
+    config_data.setdefault("output", {})
+    config_data.setdefault("charts", {})
+    config_data["jamf_cli"]["profile"] = profile_name
+    config_data["jamf_cli"]["data_dir"] = "jamf-cli-data"
+    config_data["output"]["output_dir"] = "Generated Reports"
+    config_data["output"]["archive_dir"] = ""
+    config_data["charts"]["historical_csv_dir"] = "snapshots"
+    return config_data
+
+
+def _write_config_yaml(path: Path, config_data: dict[str, Any], header_lines: list[str]) -> None:
+    """Write a config YAML file with a small generated header."""
+    config_str = yaml.dump(config_data, default_flow_style=False, sort_keys=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as fh:
+        for line in header_lines:
+            fh.write(f"# {line}\n")
+        fh.write("\n")
+        fh.write(config_str)
+
+
+def cmd_workspace_init(
+    seed_config_path: Optional[str],
+    profile: Optional[str],
+    workspace_root: Optional[str],
+    workspace_name: Optional[str],
+    overwrite_config: bool,
+) -> None:
+    """Create a per-profile reporting workspace and seeded config.yaml."""
+    seed_config, seed_source = _load_workspace_seed_config(seed_config_path)
+    profile_name = _resolve_workspace_profile_name(seed_config, profile)
+    root_dir = _resolve_workspace_root_dir(workspace_root, seed_config)
+    directory_name = _resolve_workspace_name(profile_name, workspace_name)
+    workspace_dir = (root_dir / directory_name).resolve()
+
+    generated_paths = {
+        "workspace": workspace_dir,
+        "config": workspace_dir / "config.yaml",
+        "jamf_cli_data": workspace_dir / "jamf-cli-data",
+        "snapshots": workspace_dir / "snapshots",
+        "output": workspace_dir / "Generated Reports",
+        "csv_inbox": workspace_dir / "csv-inbox",
+        "automation": workspace_dir / "automation",
+        "logs": workspace_dir / "automation" / "logs",
+    }
+
+    for key, path in generated_paths.items():
+        if key == "config":
+            continue
+        path.mkdir(parents=True, exist_ok=True)
+
+    config_path = generated_paths["config"]
+    wrote_config = False
+    if config_path.exists() and not overwrite_config:
+        print(f"Config already exists, leaving it in place: {config_path}")
+    else:
+        config_data = _workspace_seed_config_data(seed_config, profile_name)
+        _write_config_yaml(
+            config_path,
+            config_data,
+            [
+                "Generated by jamf-reports-community.py workspace-init",
+                f"Seed source: {seed_source}",
+                f"jamf_cli.profile: {profile_name}",
+                "This workspace is intended to isolate one Jamf tenant/profile.",
+            ],
+        )
+        wrote_config = True
+
+    print("\nWorkspace bootstrap summary")
+    print(f"  profile: {profile_name}")
+    print(f"  seed config: {seed_source}")
+    print(f"  workspace: {workspace_dir}")
+    print(f"  config: {config_path}")
+    print(f"  jamf-cli data: {generated_paths['jamf_cli_data']}")
+    print(f"  historical CSVs: {generated_paths['snapshots']}")
+    print(f"  output: {generated_paths['output']}")
+    print(f"  CSV inbox: {generated_paths['csv_inbox']}")
+    print(f"  automation logs: {generated_paths['logs']}")
+    if wrote_config:
+        print("  config write: created or updated")
+    else:
+        print("  config write: skipped (use --overwrite-config to replace it)")
+
+    print("\nNext steps")
+    print(f"  1. Review {config_path}")
+    print(f"  2. jamf-cli config validate -p {shlex.quote(profile_name)}")
+    print(
+        "  3. python3 jamf-reports-community.py check"
+        f" --config {shlex.quote(str(config_path))}"
+    )
+    print(
+        "  4. python3 jamf-reports-community.py launchagent-setup"
+        f" --config {shlex.quote(str(config_path))}"
+        f" --workspace-dir {shlex.quote(str(workspace_dir))}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check command
 # ---------------------------------------------------------------------------
 
@@ -4389,6 +4610,11 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
 
     print("\n--- Config validation ---")
     _validate_config_structure(config)
+    isolation_guidance = _profile_isolation_guidance(config)
+    if isolation_guidance:
+        print("\n--- Profile isolation guidance ---")
+        for item in isolation_guidance:
+            print(f"  [NOTE] {item}")
 
     print("\n--- jamf-cli check ---")
     jamf_cli_cfg = config.jamf_cli
@@ -5565,6 +5791,11 @@ def cmd_launchagent_setup(
     print(f"  stderr log: {stderr_path}")
     print(f"  status file: {status_path}")
     print(f"  command: {shlex.join(program_arguments)}")
+    isolation_guidance = _profile_isolation_guidance(config)
+    if isolation_guidance:
+        print("  profile isolation guidance:")
+        for item in isolation_guidance:
+            print(f"    - {item}")
 
     if skip_load:
         print("  LaunchAgent not loaded (--skip-load).")
@@ -5591,6 +5822,7 @@ def main() -> None:
             "  generate      Build the Excel report\n"
             "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
+            "  workspace-init Create a per-profile reporting workspace skeleton\n"
             "  launchagent-setup Create a LaunchAgent for scheduled reporting\n"
             "  launchagent-run   Internal runner used by generated LaunchAgents\n"
             "  scaffold      Generate a starter config.yaml from a CSV\n"
@@ -5604,6 +5836,7 @@ def main() -> None:
             "generate",
             "collect",
             "inventory-csv",
+            "workspace-init",
             "launchagent-setup",
             "launchagent-run",
             "scaffold",
@@ -5649,6 +5882,10 @@ def main() -> None:
         "--mode",
         choices=sorted(AUTOMATION_MODE_DESCRIPTIONS),
         help="Automation workflow mode (launchagent commands only)",
+    )
+    parser.add_argument(
+        "--profile",
+        help="jamf-cli profile name (workspace-init only)",
     )
     parser.add_argument(
         "--schedule",
@@ -5703,6 +5940,23 @@ def main() -> None:
         action="store_true",
         help="Kickstart the LaunchAgent immediately after loading it",
     )
+    parser.add_argument(
+        "--seed-config",
+        help="Seed config path for workspace-init; defaults to config.example.yaml when absent",
+    )
+    parser.add_argument(
+        "--workspace-root",
+        help="Parent directory under which workspace-init creates the profile workspace",
+    )
+    parser.add_argument(
+        "--workspace-name",
+        help="Directory name override for workspace-init",
+    )
+    parser.add_argument(
+        "--overwrite-config",
+        action="store_true",
+        help="Allow workspace-init to replace an existing workspace config.yaml",
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
@@ -5716,6 +5970,16 @@ def main() -> None:
             parser.error("device requires --id")
         config = Config(args.config)
         cmd_device(config, args.id)
+        return
+
+    if args.command == "workspace-init":
+        cmd_workspace_init(
+            args.seed_config,
+            args.profile,
+            args.workspace_root,
+            args.workspace_name,
+            args.overwrite_config,
+        )
         return
 
     if args.command in {"launchagent-setup", "launchagent-run"}:

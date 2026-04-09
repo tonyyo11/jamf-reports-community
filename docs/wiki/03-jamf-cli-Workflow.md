@@ -57,6 +57,14 @@ jamf_cli:
   data_dir: "jamf-cli-data/dummy"
 ```
 
+If you want the filesystem layout created for you, bootstrap one workspace per profile:
+
+```bash
+python3 jamf-reports-community.py workspace-init \
+    --profile prod \
+    --workspace-root ~/Jamf-Reports
+```
+
 ## Build a Baseline CSV From jamf-cli
 
 Validate the profile first:

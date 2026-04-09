@@ -87,6 +87,17 @@ Notes:
 - Timestamped generated outputs can be auto-archived so the active output folder stays
   readable while older runs remain preserved.
 
+If you manage multiple tenants, create one workspace per `jamf-cli` profile:
+
+```bash
+python3 jamf-reports-community.py workspace-init \
+    --profile yourprofile \
+    --workspace-root ~/Jamf-Reports
+```
+
+That bootstrap command creates a per-profile `config.yaml`, `jamf-cli-data/`,
+`snapshots/`, `Generated Reports/`, `csv-inbox/`, and `automation/logs/` layout.
+
 ## Authentication Guidance
 
 For interactive use, prefer `jamf-cli pro setup` so the client ID and secret are stored
