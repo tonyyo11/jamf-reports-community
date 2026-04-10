@@ -206,6 +206,31 @@ protect:
 
 
 # =============================================================================
+# JAMF PLATFORM API
+# =============================================================================
+# Preview workbook support for jamf-cli builds that expose Platform API report
+# commands under `jamf-cli pro report`, including:
+#   - blueprint-status
+#   - compliance-rules
+#   - compliance-devices
+#   - ddm-status
+#
+# This path is opt-in because the upstream jamf-cli Platform API support is
+# still emerging. It uses the same selected jamf-cli profile, but that profile
+# must also have working Platform gateway auth in the jamf-cli build you use.
+#
+# Set compliance_benchmark to the benchmark title or ID you want the workbook
+# to summarize. If you leave it blank, the workbook still includes blueprint
+# and DDM sheets, but skips the benchmark-specific compliance sheets.
+
+platform:
+  # Set true to enable the preview Platform API sheets.
+  enabled: false
+  # Benchmark title or ID for the Platform compliance sheets.
+  compliance_benchmark: ""
+
+
+# =============================================================================
 # COMPLIANCE
 # =============================================================================
 # Tracks mSCP (macOS Security Compliance Project) audit results or any other

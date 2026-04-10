@@ -133,6 +133,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "protect": {
         "enabled": False,
     },
+    "platform": {
+        "enabled": False,
+        "compliance_benchmark": "",
+    },
     "compliance": {
         "enabled": False,
         "failures_count_column": "",
@@ -916,6 +920,23 @@ def _to_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _parse_percent(value: Any) -> Optional[float]:
+    """Return a 0.0-1.0 ratio from a percent-like value, or None if unavailable."""
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    has_percent = text.endswith("%")
+    try:
+        numeric = float(text.rstrip("%").strip())
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if has_percent or numeric > 1:
+        numeric /= 100.0
+    if numeric < 0:
+        return None
+    return numeric
+
+
 def _to_bool(value: Any) -> bool:
     """Coerce common boolean-like values to a Python bool."""
     if isinstance(value, bool):
@@ -1679,6 +1700,10 @@ class Config:
         return self._data.get("protect") or {}
 
     @property
+    def platform(self) -> dict:
+        return self._data.get("platform") or {}
+
+    @property
     def thresholds(self) -> dict:
         return self._data.get("thresholds") or {}
 
@@ -1765,7 +1790,11 @@ class JamfCLIBridge:
         """Return True if jamf-cli binary is found and executable."""
         return self._binary is not None
 
-    def has_cached_data(self, include_protect: bool = True) -> bool:
+    def has_cached_data(
+        self,
+        include_protect: bool = True,
+        include_platform: bool = False,
+    ) -> bool:
         """Return True when the configured data directory contains cached JSON snapshots."""
         report_names = [
             "overview",
@@ -1802,6 +1831,19 @@ class JamfCLIBridge:
                     "protect_analytics",
                     "protect-plans",
                     "protect_plans",
+                ]
+            )
+        if include_platform:
+            report_names.extend(
+                [
+                    "blueprint-status",
+                    "blueprint_status",
+                    "compliance-rules",
+                    "compliance_rules",
+                    "compliance-devices",
+                    "compliance_devices",
+                    "ddm-status",
+                    "ddm_status",
                 ]
             )
         return self._latest_cached_json(report_names) is not None
@@ -2215,6 +2257,51 @@ class JamfCLIBridge:
                     "failed_plans": [],
                 }]
             raise
+
+    def blueprint_status(self) -> Any:
+        """Fetch blueprint deployment status from jamf-cli pro report blueprint-status."""
+        self._require_report_command("blueprint-status", ["blueprint-status", "blueprint_status"])
+        return self._run_and_save(
+            "blueprint-status",
+            ["pro", "report", "blueprint-status"],
+            ["blueprint-status", "blueprint_status"],
+        )
+
+    def compliance_rules(self, benchmark_title: str) -> Any:
+        """Fetch benchmark rule compliance from jamf-cli pro report compliance-rules."""
+        benchmark = str(benchmark_title).strip()
+        if not benchmark:
+            raise RuntimeError("platform compliance rules require a benchmark title or ID")
+        self._require_report_command("compliance-rules", ["compliance-rules", "compliance_rules"])
+        return self._run_and_save(
+            "compliance-rules",
+            ["pro", "report", "compliance-rules", benchmark],
+            ["compliance-rules", "compliance_rules"],
+        )
+
+    def compliance_devices(self, benchmark_title: str) -> Any:
+        """Fetch failing benchmark devices from jamf-cli pro report compliance-devices."""
+        benchmark = str(benchmark_title).strip()
+        if not benchmark:
+            raise RuntimeError("platform compliance devices require a benchmark title or ID")
+        self._require_report_command(
+            "compliance-devices",
+            ["compliance-devices", "compliance_devices"],
+        )
+        return self._run_and_save(
+            "compliance-devices",
+            ["pro", "report", "compliance-devices", benchmark],
+            ["compliance-devices", "compliance_devices"],
+        )
+
+    def ddm_status(self) -> Any:
+        """Fetch declaration health from jamf-cli pro report ddm-status."""
+        self._require_report_command("ddm-status", ["ddm-status", "ddm_status"])
+        return self._run_and_save(
+            "ddm-status",
+            ["pro", "report", "ddm-status"],
+            ["ddm-status", "ddm_status"],
+        )
 
     def protect_overview(self) -> Any:
         """Fetch a Jamf Protect instance summary from jamf-cli protect overview."""
@@ -2845,27 +2932,37 @@ class CoreDashboard:
     def write_all(self) -> list[str]:
         """Write all core sheets. Returns list of sheet names written."""
         written = []
-        sheets = [
-            ("Fleet Overview", self._write_overview),
-            ("Mobile Fleet Summary", self._write_mobile_fleet_summary),
-            ("Inventory Summary", self._write_inventory_summary),
-            ("Mobile Inventory", self._write_mobile_inventory),
-            ("Security Posture", self._write_security),
-            ("Device Compliance", self._write_device_compliance),
-            ("EA Coverage", self._write_ea_coverage),
-            ("EA Definitions", self._write_ea_definitions),
-            ("Software Installs", self._write_software_installs),
-            ("Policy Health", self._write_policy),
-            ("Profile Status", self._write_profile_status),
-            ("Mobile Config Profiles", self._write_mobile_config_profiles),
-            ("App Status", self._write_app_status),
-            ("Patch Compliance", self._write_patch),
-            ("Patch Failures", self._write_patch_failures),
-            ("Update Status", self._write_update_status),
-            ("Update Failures", self._write_update_failures),
-        ]
+        sheets = [("Fleet Overview", self._write_overview)]
         if self._protect_enabled():
-            sheets.insert(1, ("Protect Overview", self._write_protect_overview))
+            sheets.append(("Protect Overview", self._write_protect_overview))
+        if self._platform_enabled():
+            sheets.append(("Platform Blueprints", self._write_platform_blueprints))
+            if self._platform_benchmark_title():
+                sheets.append(("Platform Compliance Rules", self._write_platform_compliance_rules))
+                sheets.append(
+                    ("Platform Compliance Devices", self._write_platform_compliance_devices)
+                )
+            sheets.append(("Platform DDM Status", self._write_platform_ddm_status))
+        sheets.extend(
+            [
+                ("Mobile Fleet Summary", self._write_mobile_fleet_summary),
+                ("Inventory Summary", self._write_inventory_summary),
+                ("Mobile Inventory", self._write_mobile_inventory),
+                ("Security Posture", self._write_security),
+                ("Device Compliance", self._write_device_compliance),
+                ("EA Coverage", self._write_ea_coverage),
+                ("EA Definitions", self._write_ea_definitions),
+                ("Software Installs", self._write_software_installs),
+                ("Policy Health", self._write_policy),
+                ("Profile Status", self._write_profile_status),
+                ("Mobile Config Profiles", self._write_mobile_config_profiles),
+                ("App Status", self._write_app_status),
+                ("Patch Compliance", self._write_patch),
+                ("Patch Failures", self._write_patch_failures),
+                ("Update Status", self._write_update_status),
+                ("Update Failures", self._write_update_failures),
+            ]
+        )
         for name, fn in sheets:
             try:
                 fn()
@@ -2919,6 +3016,33 @@ class CoreDashboard:
     def _protect_enabled(self) -> bool:
         """Return True when experimental Jamf Protect reporting is enabled."""
         return self._config.get("protect", "enabled", default=False) is True
+
+    def _platform_enabled(self) -> bool:
+        """Return True when preview Platform API reporting is enabled."""
+        return self._config.get("platform", "enabled", default=False) is True
+
+    def _platform_benchmark_title(self) -> str:
+        """Return the configured Platform compliance benchmark title or ID."""
+        return str(
+            self._config.get("platform", "compliance_benchmark", default="") or ""
+        ).strip()
+
+    @staticmethod
+    def _platform_rows(raw: Any) -> list[dict[str, Any]]:
+        """Normalize Platform report JSON into a list of row dictionaries."""
+        return [item for item in _extract_items(raw) if isinstance(item, dict)]
+
+    def _platform_status_fmt(self, value: Any) -> Any:
+        """Return a warning/error format for platform state-like labels."""
+        normalized = _normalized_text(value)
+        if any(token in normalized for token in ("fail", "error", "unsuccessful")):
+            return self._fmts["red"]
+        if any(
+            token in normalized
+            for token in ("pending", "draft", "partial", "progress", "scheduled")
+        ):
+            return self._fmts["yellow"]
+        return self._fmts["cell"]
 
     def _protect_text(self, flat: dict[str, Any], candidates: list[str]) -> str:
         """Return the first non-empty flattened value for a Protect field."""
@@ -3237,6 +3361,276 @@ class CoreDashboard:
         if optional_errors:
             notes = [{"Note": message} for message in optional_errors[:5]]
             self._write_table_block(ws, row, "Optional Source Notes", ["Note"], notes, max_rows=5)
+
+    def _write_platform_blueprints(self) -> None:
+        """Write a blueprint deployment summary from Platform API report data."""
+        if not self._platform_enabled():
+            raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
+
+        rows = self._platform_rows(self._bridge.blueprint_status())
+        if not rows:
+            raise RuntimeError("jamf-cli blueprint-status returned no rows")
+
+        deployed = sum(1 for item in rows if _normalized_text(item.get("state", "")) == "deployed")
+        with_failures = sum(1 for item in rows if _to_int(item.get("failed", 0)) > 0)
+        with_pending = sum(1 for item in rows if _to_int(item.get("pending", 0)) > 0)
+
+        ws = self._wb.add_worksheet("Platform Blueprints")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Platform Blueprints",
+            "Source: jamf-cli pro report blueprint-status"
+            f" | Generated: {ts}",
+            self._fmts,
+            ncols=7,
+        )
+        ws.set_column(0, 0, 34)
+        ws.set_column(1, 6, 16)
+        for label, value in [
+            ("Total Blueprints", len(rows)),
+            ("Deployed Blueprints", deployed),
+            ("Blueprints with Failures", with_failures),
+            ("Blueprints with Pending Devices", with_pending),
+        ]:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, value, self._fmts["cell"])
+            row += 1
+
+        row += 1
+        headers = ["Blueprint", "State", "Scope Groups", "Steps", "Succeeded", "Failed", "Pending"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        for item in sorted(
+            rows,
+            key=lambda current: (
+                -_to_int(current.get("failed", 0)),
+                -_to_int(current.get("pending", 0)),
+                str(current.get("name", "")).lower(),
+            ),
+        ):
+            failed = _to_int(item.get("failed", 0))
+            pending = _to_int(item.get("pending", 0))
+            _safe_write(ws, row, 0, item.get("name", ""), self._fmts["cell"])
+            _safe_write(ws, row, 1, item.get("state", ""), self._platform_status_fmt(item.get("state")))
+            _safe_write(ws, row, 2, item.get("scope", ""), self._fmts["cell"])
+            _safe_write(ws, row, 3, item.get("steps", ""), self._fmts["cell"])
+            _safe_write(ws, row, 4, item.get("succeeded", ""), self._fmts["cell"])
+            _safe_write(ws, row, 5, item.get("failed", ""), self._fmts["red"] if failed else self._fmts["cell"])
+            _safe_write(
+                ws,
+                row,
+                6,
+                item.get("pending", ""),
+                self._fmts["yellow"] if pending else self._fmts["cell"],
+            )
+            row += 1
+
+    def _write_platform_compliance_rules(self) -> None:
+        """Write per-rule Platform compliance results for the configured benchmark."""
+        benchmark = self._platform_benchmark_title()
+        if not benchmark:
+            raise RuntimeError("set platform.compliance_benchmark to include benchmark sheets")
+
+        rows = self._platform_rows(self._bridge.compliance_rules(benchmark))
+        if not rows:
+            raise RuntimeError("jamf-cli compliance-rules returned no rows")
+
+        avg_pass_rate = [
+            ratio for ratio in (_parse_percent(item.get("passRate", "")) for item in rows)
+            if ratio is not None
+        ]
+        rules_with_failures = sum(1 for item in rows if _to_int(item.get("failed", 0)) > 0)
+        rules_with_unknown = sum(1 for item in rows if _to_int(item.get("unknown", 0)) > 0)
+
+        ws = self._wb.add_worksheet("Platform Compliance Rules")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Platform Compliance Rules",
+            f"Source: jamf-cli pro report compliance-rules {benchmark} | Generated: {ts}",
+            self._fmts,
+            ncols=6,
+        )
+        ws.set_column(0, 0, 44)
+        ws.set_column(1, 5, 16)
+        for label, value in [
+            ("Benchmark", benchmark),
+            ("Rules Returned", len(rows)),
+            ("Rules with Failures", rules_with_failures),
+            ("Rules with Unknown Results", rules_with_unknown),
+            (
+                "Average Pass Rate",
+                (sum(avg_pass_rate) / len(avg_pass_rate)) if avg_pass_rate else "",
+            ),
+        ]:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            fmt = self._fmts["pct"] if label == "Average Pass Rate" and value != "" else self._fmts["cell"]
+            _safe_write(ws, row, 1, value, fmt)
+            row += 1
+
+        row += 1
+        headers = ["Rule", "Passed", "Failed", "Unknown", "Devices", "Pass Rate"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        for item in rows:
+            failed = _to_int(item.get("failed", 0))
+            unknown = _to_int(item.get("unknown", 0))
+            pass_rate = _parse_percent(item.get("passRate", ""))
+            base_fmt = self._fmts["red"] if failed else self._fmts["yellow"] if unknown else self._fmts["cell"]
+            _safe_write(ws, row, 0, item.get("rule", ""), base_fmt)
+            _safe_write(ws, row, 1, _to_int(item.get("passed", 0)), self._fmts["cell"])
+            _safe_write(ws, row, 2, failed, self._fmts["red"] if failed else self._fmts["cell"])
+            _safe_write(
+                ws,
+                row,
+                3,
+                unknown,
+                self._fmts["yellow"] if unknown else self._fmts["cell"],
+            )
+            _safe_write(ws, row, 4, _to_int(item.get("devices", 0)), self._fmts["cell"])
+            if pass_rate is None:
+                _safe_write(ws, row, 5, item.get("passRate", ""), self._fmts["cell"])
+            else:
+                _safe_write(ws, row, 5, pass_rate, _pct_format(self._fmts, pass_rate))
+            row += 1
+
+    def _write_platform_compliance_devices(self) -> None:
+        """Write failing Platform compliance devices for the configured benchmark."""
+        benchmark = self._platform_benchmark_title()
+        if not benchmark:
+            raise RuntimeError("set platform.compliance_benchmark to include benchmark sheets")
+
+        rows = self._platform_rows(self._bridge.compliance_devices(benchmark))
+        if not rows:
+            raise RuntimeError("jamf-cli compliance-devices returned no rows")
+
+        compliance_values = [
+            ratio for ratio in (_parse_percent(item.get("compliance", "")) for item in rows)
+            if ratio is not None
+        ]
+
+        ws = self._wb.add_worksheet("Platform Compliance Devices")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Platform Compliance Devices",
+            f"Source: jamf-cli pro report compliance-devices {benchmark} | Generated: {ts}",
+            self._fmts,
+            ncols=5,
+        )
+        ws.set_column(0, 0, 34)
+        ws.set_column(1, 1, 18)
+        ws.set_column(2, 4, 16)
+        for label, value in [
+            ("Benchmark", benchmark),
+            ("Devices Returned", len(rows)),
+            ("Devices with Failing Rules", sum(1 for item in rows if _to_int(item.get("rulesFailed", 0)) > 0)),
+            (
+                "Average Compliance",
+                (sum(compliance_values) / len(compliance_values)) if compliance_values else "",
+            ),
+        ]:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            fmt = self._fmts["pct"] if label == "Average Compliance" and value != "" else self._fmts["cell"]
+            _safe_write(ws, row, 1, value, fmt)
+            row += 1
+
+        row += 1
+        headers = ["Device", "Device ID", "Rules Failed", "Rules Passed", "Compliance"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        for item in sorted(
+            rows,
+            key=lambda current: (
+                -_to_int(current.get("rulesFailed", 0)),
+                str(current.get("device", "")).lower(),
+            ),
+        ):
+            rules_failed = _to_int(item.get("rulesFailed", 0))
+            compliance = _parse_percent(item.get("compliance", ""))
+            _safe_write(ws, row, 0, item.get("device", ""), self._fmts["cell"])
+            _safe_write(ws, row, 1, item.get("deviceId", ""), self._fmts["cell"])
+            _safe_write(
+                ws,
+                row,
+                2,
+                rules_failed,
+                self._fmts["red"] if rules_failed else self._fmts["cell"],
+            )
+            _safe_write(ws, row, 3, _to_int(item.get("rulesPassed", 0)), self._fmts["cell"])
+            if compliance is None:
+                _safe_write(ws, row, 4, item.get("compliance", ""), self._fmts["cell"])
+            else:
+                _safe_write(ws, row, 4, compliance, _pct_format(self._fmts, compliance))
+            row += 1
+
+    def _write_platform_ddm_status(self) -> None:
+        """Write DDM declaration health from Platform API report data."""
+        if not self._platform_enabled():
+            raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
+
+        rows = self._platform_rows(self._bridge.ddm_status())
+        if not rows:
+            raise RuntimeError("jamf-cli ddm-status returned no rows")
+
+        sources_with_issues = sum(1 for item in rows if _to_int(item.get("unsuccessful", 0)) > 0)
+        unsuccessful_total = sum(_to_int(item.get("unsuccessful", 0)) for item in rows)
+
+        ws = self._wb.add_worksheet("Platform DDM Status")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Platform DDM Status",
+            "Source: jamf-cli pro report ddm-status"
+            f" | Generated: {ts}",
+            self._fmts,
+            ncols=6,
+        )
+        ws.set_column(0, 1, 28)
+        ws.set_column(2, 5, 16)
+        for label, value in [
+            ("Sources Returned", len(rows)),
+            ("Sources with Unsuccessful Declarations", sources_with_issues),
+            ("Total Unsuccessful Declarations", unsuccessful_total),
+        ]:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, value, self._fmts["cell"])
+            row += 1
+
+        row += 1
+        headers = ["Type", "Source", "Devices", "Declarations", "Successful", "Unsuccessful"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        for item in sorted(
+            rows,
+            key=lambda current: (
+                -_to_int(current.get("unsuccessful", 0)),
+                str(current.get("source", "")).lower(),
+            ),
+        ):
+            unsuccessful = _to_int(item.get("unsuccessful", 0))
+            _safe_write(ws, row, 0, item.get("type", ""), self._fmts["cell"])
+            _safe_write(ws, row, 1, item.get("source", ""), self._fmts["cell"])
+            _safe_write(ws, row, 2, _to_int(item.get("devices", 0)), self._fmts["cell"])
+            _safe_write(ws, row, 3, _to_int(item.get("declarations", 0)), self._fmts["cell"])
+            _safe_write(ws, row, 4, _to_int(item.get("successful", 0)), self._fmts["cell"])
+            _safe_write(
+                ws,
+                row,
+                5,
+                unsuccessful,
+                self._fmts["red"] if unsuccessful else self._fmts["cell"],
+            )
+            row += 1
 
     def _write_mobile_fleet_summary(self) -> None:
         """Write a mobile-focused fleet summary using overview and mobile inventory sources."""
@@ -6043,6 +6437,15 @@ def _validate_config_structure(config: Config) -> None:
                     " the Compliance sheet will fail at generate time"
                 )
 
+    platform_cfg = config.platform
+    if platform_cfg.get("enabled") and not str(
+        platform_cfg.get("compliance_benchmark", "") or ""
+    ).strip():
+        issues.append(
+            "platform.enabled is true but platform.compliance_benchmark is blank —"
+            " benchmark-specific platform sheets will be skipped"
+        )
+
     # Custom EA type validation
     for ea in config.custom_eas:
         name = ea.get("name", "?")
@@ -6189,6 +6592,10 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     print("\n--- jamf-cli check ---")
     jamf_cli_cfg = config.jamf_cli
     protect_enabled = config.get("protect", "enabled", default=False) is True
+    platform_enabled = config.get("platform", "enabled", default=False) is True
+    platform_benchmark = str(
+        config.get("platform", "compliance_benchmark", default="") or ""
+    ).strip()
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
     live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
@@ -6206,6 +6613,9 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     else:
         print("  live overview: disabled (cached overview only)")
     print(f"  protect reporting: {'enabled' if protect_enabled else 'disabled'}")
+    print(f"  platform reporting: {'enabled' if platform_enabled else 'disabled'}")
+    if platform_enabled and platform_benchmark:
+        print(f"  platform benchmark: {platform_benchmark}")
     if bridge.is_available():
         print(f"  jamf-cli: found -> {bridge._binary}")
         report_commands = bridge._report_commands()
@@ -6221,11 +6631,21 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             future_optional = {"policy-status", "profile-status"}
             missing_current = sorted(current_core - report_commands)
             missing_optional = sorted(future_optional - report_commands)
+            platform_required = {"blueprint-status", "ddm-status"} if platform_enabled else set()
+            platform_benchmark_cmds = (
+                {"compliance-rules", "compliance-devices"}
+                if platform_enabled and platform_benchmark else set()
+            )
+            missing_platform = sorted(
+                (platform_required | platform_benchmark_cmds) - report_commands
+            )
             print(f"  supported report commands: {', '.join(sorted(report_commands))}")
             if missing_current:
                 print(f"  missing current core commands: {', '.join(missing_current)}")
             if missing_optional:
                 print(f"  missing optional commands: {', '.join(missing_optional)}")
+            if missing_platform:
+                print(f"  missing platform commands: {', '.join(missing_platform)}")
         if protect_enabled:
             protect_commands = bridge._protect_commands()
             if protect_commands:
@@ -6280,11 +6700,38 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                     print("  protect auth: inconclusive (overview returned placeholder values)")
             except RuntimeError as exc:
                 print(f"  protect auth: failed — {exc}")
-        if bridge.has_cached_data(include_protect=protect_enabled):
+        if platform_enabled:
+            try:
+                live_platform_bridge = JamfCLIBridge(
+                    save_output=False,
+                    data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
+                    profile=jamf_cli_profile,
+                    use_cached_data=False,
+                )
+                if not report_commands or "blueprint-status" in report_commands:
+                    live_platform_bridge.blueprint_status()
+                    print("  platform auth: ok (blueprint-status)")
+                else:
+                    print("  platform auth: skipped — blueprint-status not available")
+                if platform_benchmark:
+                    if not report_commands or "compliance-rules" in report_commands:
+                        live_platform_bridge.compliance_rules(platform_benchmark)
+                        print("  platform benchmark: ok (compliance-rules)")
+                    else:
+                        print("  platform benchmark: skipped — compliance-rules not available")
+            except RuntimeError as exc:
+                print(f"  platform auth: failed — {exc}")
+        if bridge.has_cached_data(
+            include_protect=protect_enabled,
+            include_platform=platform_enabled,
+        ):
             print("  cached snapshots: found")
     else:
         print("  jamf-cli: not found (set JAMFCLI_PATH or install via Homebrew)")
-        if bridge.has_cached_data(include_protect=protect_enabled):
+        if bridge.has_cached_data(
+            include_protect=protect_enabled,
+            include_platform=platform_enabled,
+        ):
             print("  cached snapshots: found")
             print("  Note: core sheets can still render from cached jamf-cli JSON snapshots.")
         else:
@@ -6388,6 +6835,7 @@ def cmd_generate(
 
     jamf_cli_cfg = config.jamf_cli
     protect_enabled = config.get("protect", "enabled", default=False) is True
+    platform_enabled = config.get("platform", "enabled", default=False) is True
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
     live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
@@ -6397,7 +6845,10 @@ def cmd_generate(
         profile=jamf_cli_profile,
         use_cached_data=jamf_cli_cfg.get("use_cached_data", True) is not False,
     )
-    jamf_cli_ready = bridge.is_available() or bridge.has_cached_data(include_protect=protect_enabled)
+    jamf_cli_ready = bridge.is_available() or bridge.has_cached_data(
+        include_protect=protect_enabled,
+        include_platform=platform_enabled,
+    )
 
     if out_file:
         out_path = _timestamped_output_path(
@@ -6427,10 +6878,20 @@ def cmd_generate(
         print(f"  jamf-cli profile: {jamf_cli_profile}")
     if protect_enabled:
         print("  protect reporting: enabled (experimental)")
+    if platform_enabled:
+        platform_benchmark = str(
+            config.get("platform", "compliance_benchmark", default="") or ""
+        ).strip()
+        print("  platform reporting: enabled (preview)")
+        if platform_benchmark:
+            print(f"  platform benchmark: {platform_benchmark}")
     if not live_overview_allowed:
         print("  live overview disabled; Fleet Overview will use cache only.")
     try:
-        if bridge.is_available() or bridge.has_cached_data(include_protect=protect_enabled):
+        if bridge.is_available() or bridge.has_cached_data(
+            include_protect=protect_enabled,
+            include_platform=platform_enabled,
+        ):
             print("\nGenerating jamf-cli sheets...")
             core = CoreDashboard(config, bridge, wb, fmts)
             jamf_cli_written = core.write_all()
@@ -7623,6 +8084,10 @@ def _collect_snapshots(
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
     protect_enabled = config.get("protect", "enabled", default=False) is True
+    platform_enabled = config.get("platform", "enabled", default=False) is True
+    platform_benchmark = str(
+        config.get("platform", "compliance_benchmark", default="") or ""
+    ).strip()
     live_overview_allowed = config.jamf_cli.get("allow_live_overview", True) is True
     bridge = JamfCLIBridge(
         save_output=True,
@@ -7633,6 +8098,10 @@ def _collect_snapshots(
     print(f"  jamf-cli data dir: {bridge._data_dir}")
     if jamf_cli_profile:
         print(f"  jamf-cli profile: {jamf_cli_profile}")
+    if platform_enabled:
+        print("  platform reporting: enabled (preview)")
+        if platform_benchmark:
+            print(f"  platform benchmark: {platform_benchmark}")
     if bridge.is_available():
         stale_days = int(config.thresholds.get("stale_device_days", 30))
         commands = []
@@ -7666,6 +8135,30 @@ def _collect_snapshots(
                     ("Protect Plans", bridge.protect_plans),
                 ]
             )
+        if platform_enabled:
+            commands.extend(
+                [
+                    ("Platform Blueprints", bridge.blueprint_status),
+                    ("Platform DDM Status", bridge.ddm_status),
+                ]
+            )
+            if platform_benchmark:
+                commands.extend(
+                    [
+                        (
+                            "Platform Compliance Rules",
+                            lambda: bridge.compliance_rules(platform_benchmark),
+                        ),
+                        (
+                            "Platform Compliance Devices",
+                            lambda: bridge.compliance_devices(platform_benchmark),
+                        ),
+                    ]
+                )
+            else:
+                print(
+                    "  [skip] Platform Compliance: platform.compliance_benchmark is blank"
+                )
         for label, command in commands:
             try:
                 command()

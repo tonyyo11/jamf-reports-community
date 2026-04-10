@@ -8,7 +8,8 @@ This project is designed for Jamf Pro reporting. It reads Jamf Pro CSV exports, 
 It has been tested on Jamf Pro only. `jamf-cli` supports more than Jamf Pro, but this
 community project only has experimental Jamf Protect coverage today. The `Protect
 Overview` sheet is available as an opt-in path, but it has not been fully validated
-against a live Protect tenant or future Platform API data.
+against a live Protect tenant. Preview Platform API workbook support is also available
+when your jamf-cli build includes the new `pro report` platform commands.
 
 ## Required Components
 
@@ -56,6 +57,19 @@ run `jamf-cli protect setup`, and set:
 protect:
   enabled: true
 ```
+
+If you also want the preview Platform API sheets, use a jamf-cli build that exposes
+`blueprint-status`, `compliance-rules`, `compliance-devices`, and `ddm-status` under
+`jamf-cli pro report`, then set:
+
+```yaml
+platform:
+  enabled: true
+  compliance_benchmark: "CIS Level 1"
+```
+
+Leave `platform.compliance_benchmark` blank if you only want the blueprint and DDM
+summary sheets.
 
 Primary references:
 
@@ -116,6 +130,9 @@ in the system keychain instead of shell history.
 If you enable Jamf Protect reporting, run `jamf-cli protect setup` as well. Protect uses
 its own API credentials even though `jamf-cli` still selects the profile with the same
 global `-p/--profile` flag.
+
+If you enable Platform reporting, make sure the same selected jamf-cli profile has
+working Platform gateway auth in the jamf-cli build you are using.
 
 Validate the profile before running `inventory-csv` or `collect`:
 
