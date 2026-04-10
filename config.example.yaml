@@ -168,6 +168,9 @@ security_agents:
 # Relative paths here resolve from the folder containing config.yaml.
 
 jamf_cli:
+  # Master switch for jamf-cli integration. Set false for a strict CSV-only
+  # run that ignores both live jamf-cli commands and cached jamf-cli JSON.
+  enabled: true
   # Directory where jamf-cli JSON snapshots are stored.
   data_dir: "jamf-cli-data"
   # Optional jamf-cli profile name, equivalent to passing -p/--profile to

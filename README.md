@@ -549,6 +549,7 @@ Controls where jamf-cli JSON snapshots are stored and whether cached snapshots a
 
 ```yaml
 jamf_cli:
+  enabled: true
   data_dir: "jamf-cli-data"
   profile: ""
   use_cached_data: true
@@ -560,7 +561,9 @@ your production-style layout, point `data_dir` at that directory instead. Relati
 resolve from the folder containing `config.yaml`. When you switch between multiple
 jamf-cli profiles, set `profile` and use a profile-specific `data_dir` to keep cached
 snapshots from different tenants separate. Set `allow_live_overview: false` only if you
-want Fleet Overview to rely on cached JSON for a specific environment.
+want Fleet Overview to rely on cached JSON for a specific environment. Set
+`enabled: false` when you want a strict CSV-only run that skips both live jamf-cli calls
+and cached jamf-cli sheets entirely.
 
 ### `compliance`
 

@@ -125,6 +125,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "security_agents": [],
     "jamf_cli": {
+        "enabled": True,
         "data_dir": "jamf-cli-data",
         "profile": "",
         "use_cached_data": True,
@@ -686,8 +687,36 @@ def _find_jamf_cli_binary() -> Optional[str]:
     return None
 
 
+def _jamf_cli_enabled(config: "Config") -> bool:
+    """Return True when jamf-cli integration is enabled in config."""
+    return config.jamf_cli.get("enabled", True) is not False
+
+
+def _decode_json_output(raw: str) -> Any:
+    """Decode JSON from clean or banner-prefixed CLI output."""
+    text = str(raw or "").strip()
+    if not text:
+        raise json.JSONDecodeError("No JSON content found", text, 0)
+
+    decoder = json.JSONDecoder()
+    try:
+        return decoder.decode(text)
+    except json.JSONDecodeError as first_exc:
+        for idx, char in enumerate(text):
+            if char not in "[{":
+                continue
+            try:
+                payload, _ = decoder.raw_decode(text[idx:])
+                return payload
+            except json.JSONDecodeError:
+                continue
+        raise first_exc
+
+
 def _profile_isolation_guidance(config: "Config") -> list[str]:
     """Return advisory notes for multi-profile path isolation."""
+    if not _jamf_cli_enabled(config):
+        return []
     profile_name = str(config.jamf_cli.get("profile", "") or "").strip()
     if not profile_name:
         return []
@@ -1822,7 +1851,7 @@ class JamfCLIBridge:
             detail = (exc.stderr or exc.stdout).strip()
             raise RuntimeError(f"jamf-cli failed ({exc.returncode}): {detail}") from exc
         try:
-            return json.loads(result.stdout)
+            return _decode_json_output(result.stdout)
         except json.JSONDecodeError as exc:
             detail = "\n".join(
                 part for part in [result.stdout.strip(), result.stderr.strip()] if part
@@ -5008,6 +5037,8 @@ def cmd_device(config: Config, device_id: str) -> None:
         config: Loaded Config instance.
         device_id: Device identifier (Jamf Pro computer ID or serial number).
     """
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: jamf-cli is disabled in config (jamf_cli.enabled: false).")
     jamf_cli_cfg = config.jamf_cli
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
@@ -5472,6 +5503,13 @@ def _validate_config_structure(config: Config) -> None:
             except (TypeError, ValueError):
                 issues.append(f"{label} = {val!r} — must be a number, not {type(val).__name__}")
 
+    jamf_cli_enabled = config.jamf_cli.get("enabled", True)
+    if jamf_cli_enabled not in (True, False):
+        issues.append(
+            "jamf_cli.enabled must be true or false."
+            f" Current value: {jamf_cli_enabled!r}"
+        )
+
     # Compliance: if enabled, both columns must be set
     comp = config.compliance
     if comp.get("enabled"):
@@ -5626,6 +5664,10 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             print(f"  [NOTE] {item}")
 
     print("\n--- jamf-cli check ---")
+    if not _jamf_cli_enabled(config):
+        print("  jamf-cli: disabled in config (jamf_cli.enabled: false)")
+        print("  Note: generate will skip live and cached jamf-cli sheets.")
+        return
     jamf_cli_cfg = config.jamf_cli
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
@@ -5805,16 +5847,22 @@ def cmd_generate(
     run_stamp = _file_stamp()
 
     jamf_cli_cfg = config.jamf_cli
+    jamf_cli_enabled = _jamf_cli_enabled(config)
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
-    live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
-    bridge = JamfCLIBridge(
-        save_output=True,
-        data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
-        profile=jamf_cli_profile,
-        use_cached_data=jamf_cli_cfg.get("use_cached_data", True) is not False,
+    live_overview_allowed = jamf_cli_enabled and (
+        jamf_cli_cfg.get("allow_live_overview", True) is True
     )
-    jamf_cli_ready = bridge.is_available() or bridge.has_cached_data()
+    bridge: Optional[JamfCLIBridge] = None
+    jamf_cli_ready = False
+    if jamf_cli_enabled:
+        bridge = JamfCLIBridge(
+            save_output=True,
+            data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
+            profile=jamf_cli_profile,
+            use_cached_data=jamf_cli_cfg.get("use_cached_data", True) is not False,
+        )
+        jamf_cli_ready = bridge.is_available() or bridge.has_cached_data()
 
     if out_file:
         out_path = _timestamped_output_path(
@@ -5839,23 +5887,30 @@ def cmd_generate(
     jamf_cli_written: list[str] = []
     csv_written: list[str] = []
     chart_source = ""
-    print(f"  jamf-cli data dir: {bridge._data_dir}")
-    if jamf_cli_profile:
-        print(f"  jamf-cli profile: {jamf_cli_profile}")
-    if not live_overview_allowed:
-        print("  live overview disabled; Fleet Overview will use cache only.")
+    if jamf_cli_enabled and bridge is not None:
+        print(f"  jamf-cli data dir: {bridge._data_dir}")
+        if jamf_cli_profile:
+            print(f"  jamf-cli profile: {jamf_cli_profile}")
+        if not live_overview_allowed:
+            print("  live overview disabled; Fleet Overview will use cache only.")
+    else:
+        print("  jamf-cli disabled in config; skipping live and cached jamf-cli sheets.")
     try:
-        if bridge.is_available() or bridge.has_cached_data():
+        if jamf_cli_enabled and bridge is not None and (
+            bridge.is_available() or bridge.has_cached_data()
+        ):
             print("\nGenerating jamf-cli sheets...")
             core = CoreDashboard(config, bridge, wb, fmts)
             jamf_cli_written = core.write_all()
             sheets_written += len(jamf_cli_written)
-        else:
+        elif jamf_cli_enabled:
             print("\nWarning: jamf-cli not available — skipping core dashboard sheets.")
             print(
                 "  Set JAMFCLI_PATH, authenticate jamf-cli, or populate cached"
                 " jamf-cli JSON snapshots."
             )
+        else:
+            print("\njamf-cli disabled in config — skipping core dashboard sheets.")
 
         if csv_path_str:
             print("\nGenerating CSV sheets...")
@@ -5894,7 +5949,7 @@ def cmd_generate(
                 hist_dir,
                 out_path.parent,
                 wb,
-                jamf_cli_dir,
+                jamf_cli_dir if jamf_cli_enabled else None,
                 out_path.stem,
             )
             png_paths, chart_sources = chart_gen.generate_all()
@@ -5905,8 +5960,8 @@ def cmd_generate(
 
         if sheets_written == 0:
             raise SystemExit(
-                "Error: No data sources available. Run 'jamf-cli pro setup' or"
-                " provide --csv path/to/export.csv"
+                "Error: No data sources available."
+                " Enable jamf-cli or provide --csv path/to/export.csv."
             )
 
         _write_report_sources_sheet(
@@ -5916,8 +5971,8 @@ def cmd_generate(
             config,
             csv_path_str,
             hist_dir,
-            str(bridge._data_dir),
-            jamf_cli_profile,
+            str(bridge._data_dir) if bridge is not None else "",
+            jamf_cli_profile if jamf_cli_enabled else "",
             live_overview_allowed,
             jamf_cli_written,
             csv_written,
@@ -6163,9 +6218,10 @@ class HtmlReport:
         """Fetch all data required for the report.
 
         Returns:
-            Dict with keys: overview, security, policies, macos_profiles,
-            ios_profiles, smart_groups, scripts, packages, categories,
-            device_enrollments, sites, buildings, departments.
+            Dict with keys: overview, security, mobile_inventory, mobile_devices,
+            policies, macos_profiles, ios_profiles, smart_groups, scripts,
+            packages, categories, device_enrollments, sites, buildings,
+            departments.
         """
         data: dict[str, Any] = {}
 
@@ -6181,6 +6237,8 @@ class HtmlReport:
         print("  Fetching data from Jamf Pro...")
         _safe_fetch("overview", self._bridge.overview)
         _safe_fetch("security", self._bridge.security_report)
+        _safe_fetch("mobile_inventory", self._bridge.mobile_device_inventory_details)
+        _safe_fetch("mobile_devices", self._bridge.mobile_devices_list)
         _safe_fetch("policies", self._bridge.classic_policies_list)
         _safe_fetch("macos_profiles", self._bridge.macos_profiles_list)
         _safe_fetch("ios_profiles", self._bridge.ios_profiles_list)
@@ -6319,6 +6377,23 @@ class HtmlReport:
         pairs = sorted(versions.items(), key=lambda x: x[0], reverse=True)
         return [p[0] for p in pairs], [p[1] for p in pairs]
 
+    @staticmethod
+    def _mobile_rows(items: Any) -> list[dict[str, Any]]:
+        """Return normalized mobile inventory rows for the HTML report."""
+        rows = [
+            _normalize_mobile_inventory_row(item)
+            for item in _extract_items(items)
+            if isinstance(item, dict)
+        ]
+        return [
+            row
+            for row in rows
+            if any(
+                str(row.get(key, "")).strip()
+                for key in ("Device Name", "Serial Number", "Model", "OS Version")
+            )
+        ]
+
     # ── HTML section renderers ───────────────────────────────────────────────
 
     def _css(self) -> str:
@@ -6391,6 +6466,17 @@ a:hover { text-decoration: underline; }
 }
 .dark-toggle:hover { background: rgba(255,255,255,.22); }
 .page { max-width: 1400px; margin: 0 auto; padding: 20px 20px 40px; }
+.section-block {
+    margin-top: 22px; padding-top: 8px; border-top: 1px solid var(--border);
+}
+.section-block:first-of-type { border-top: none; padding-top: 0; }
+.section-block-title {
+    font-size: 1.4rem; font-weight: 700; letter-spacing: -.02em;
+    color: var(--blue-dark); margin-bottom: 4px;
+}
+.section-block-subtitle {
+    font-size: .88rem; color: var(--muted); margin-bottom: 16px;
+}
 .section-title {
     font-size: .7rem; font-weight: 700; letter-spacing: .08em;
     text-transform: uppercase; color: var(--muted); margin: 28px 0 10px;
@@ -6697,6 +6783,82 @@ if (_ctx) {{
   <table class="data-table"><tbody>{rows}</tbody></table>
 </div>"""
 
+    def _render_counter_table(
+        self,
+        title: str,
+        left_header: str,
+        counter: Counter,
+        max_rows: int = 8,
+    ) -> str:
+        """Render a compact frequency table card."""
+        if not counter:
+            return f"""<div class="card card-sm">
+  <div class="chart-title">{title}</div>
+  <p style="color:var(--muted);font-size:.82rem">No data available.</p>
+</div>"""
+
+        rows = "".join(
+            f"<tr><td>{label}</td><td class='val'>{count}</td></tr>"
+            for label, count in counter.most_common(max_rows)
+        )
+        return f"""<div class="card card-sm">
+  <div class="chart-title">{title}</div>
+  <table class="data-table">
+    <thead><tr><th>{left_header}</th><th style="text-align:right">Count</th></tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>"""
+
+    def _render_mobile_inventory_table(
+        self,
+        rows: list[dict[str, Any]],
+        stale_days: int,
+    ) -> str:
+        """Render a table of the mobile devices needing the most review."""
+        if not rows:
+            return f"""<div class="section-title">Mobile Inventory Review</div>
+<div class="card"><p style="color:var(--muted);font-size:.82rem">
+  No mobile inventory rows were available.
+</p></div>"""
+
+        ranked = sorted(
+            rows,
+            key=lambda row: row.get("Days Since Inventory")
+            if isinstance(row.get("Days Since Inventory"), int) else -1,
+            reverse=True,
+        )[:12]
+
+        body = ""
+        for row in ranked:
+            days = row.get("Days Since Inventory")
+            days_label = str(days) if isinstance(days, int) else "N/A"
+            if isinstance(days, int) and days > stale_days:
+                days_html = f"<td class='val-err'>{days_label}</td>"
+            elif isinstance(days, int) and days > max(1, stale_days // 2):
+                days_html = f"<td class='val-warn'>{days_label}</td>"
+            else:
+                days_html = f"<td>{days_label}</td>"
+            user_label = row.get("Username") or row.get("Email") or "Unassigned"
+            body += (
+                f"<tr><td>{row.get('Device Name', '')}</td>"
+                f"<td>{row.get('Device Family', '')}</td>"
+                f"<td>{row.get('OS Version', '')}</td>"
+                f"<td>{user_label}</td>"
+                f"{days_html}"
+                f"<td>{row.get('Managed', '')}</td>"
+                f"<td>{row.get('Supervised', '')}</td></tr>"
+            )
+        return f"""<div class="section-title">Mobile Inventory Review</div>
+<div class="card">
+<table class="data-table">
+  <thead><tr>
+    <th>Device</th><th>Family</th><th>OS</th><th>User</th>
+    <th>Days Since Inventory</th><th>Managed</th><th>Supervised</th>
+  </tr></thead>
+  <tbody>{body}</tbody>
+</table>
+</div>"""
+
     # ── Top-level render ─────────────────────────────────────────────────────
 
     def _render(self, data: dict[str, Any]) -> str:
@@ -6710,6 +6872,16 @@ if (_ctx) {{
         """
         ov = data.get("overview", [])
         sec = data.get("security", [])
+        mobile_items = data.get("mobile_inventory") or data.get("mobile_devices", [])
+        mobile_rows = self._mobile_rows(mobile_items)
+        mobile_summary = _summarize_mobile_inventory(mobile_rows)
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+        mobile_stale = sum(
+            1
+            for row in mobile_rows
+            if isinstance(row.get("Days Since Inventory"), int)
+            and row["Days Since Inventory"] > stale_days
+        )
 
         # Overview fields
         instance_url = self._ov(ov, "Server URL")
@@ -6819,7 +6991,7 @@ if (_ctx) {{
 <body>
 
 <div class="topbar">
-  <div class="topbar-brand">Jamf Pro &mdash; Instance Report</div>
+  <div class="topbar-brand">Jamf Pro Reporting Snapshot</div>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <div class="topbar-meta">
       <strong>{instance_url}</strong><br>
@@ -6832,147 +7004,156 @@ if (_ctx) {{
 
 <div class="page">
 
-  <!-- Health strip -->
-  <div class="health-strip" style="margin-top:16px">
-    <div class="health-item">
-      <span class="health-label">Health</span>
-      <span class="badge {health_cls}">{health_status}</span>
+  <div class="section-block">
+    <div class="section-block-title">Overall Server Health</div>
+    <div class="section-block-subtitle">
+      Instance status, enrollment posture, organization footprint, and high-level services.
     </div>
-    <div class="health-item">
-      <span class="health-label">Active Alerts</span>
-      <span class="badge {alert_cls}">{active_alerts}</span>
-    </div>
-    <div class="health-item">
-      <span class="health-label">DEP Token Expires</span>
-      <span class="badge badge-dim">{dep_token_exp}</span>
-    </div>
-    <div class="health-item">
-      <span class="health-label">Built-in CA Expires</span>
-      <span class="badge badge-dim">{ca_expires}</span>
-    </div>
-    <div class="health-item">
-      <span class="health-label">DEP Sync</span>
-      <span class="badge badge-dim">{ade_sync}</span>
-    </div>
-  </div>
 
-  <!-- Fleet inventory cards -->
-  <div class="section-title">Fleet Inventory</div>
-  <div class="grid grid-6">
-    {self._render_stat_card("Managed Computers", managed_computers, "",
-        f"{console_url}/computers.html" if console_url else "", "Open in Jamf")}
-    {self._render_stat_card("Unmanaged Computers", unmanaged_computers)}
-    {self._render_stat_card("Managed Devices", managed_devices)}
-    {self._render_stat_card("Packages", str(pkg_count))}
-    {self._render_stat_card("Scripts", str(scr_count))}
-    {self._render_stat_card("Smart Groups", str(sg_count))}
-  </div>
-
-  <!-- Security posture + OS chart -->
-  <div class="section-title">Security Posture &amp; OS Distribution</div>
-  <div class="grid grid-2">
-    <div class="chart-card">
-      <div class="chart-title">Security Feature Compliance
-        <span class="badge badge-dim" style="margin-left:6px">{total_scanned} devices scanned</span>
+    <div class="health-strip" style="margin-top:16px">
+      <div class="health-item">
+        <span class="health-label">Health</span>
+        <span class="badge {health_cls}">{health_status}</span>
       </div>
-      {self._render_sec_bar("FileVault", fv_pct, "fill-fv")}
-      {self._render_sec_bar("Gatekeeper", gk_pct, "fill-gk")}
-      {self._render_sec_bar("SIP", sip_pct, "fill-sip")}
-      {self._render_sec_bar("Firewall", fw_pct, "fill-fw")}
+      <div class="health-item">
+        <span class="health-label">Active Alerts</span>
+        <span class="badge {alert_cls}">{active_alerts}</span>
+      </div>
+      <div class="health-item">
+        <span class="health-label">DEP Token Expires</span>
+        <span class="badge badge-dim">{dep_token_exp}</span>
+      </div>
+      <div class="health-item">
+        <span class="health-label">Built-in CA Expires</span>
+        <span class="badge badge-dim">{ca_expires}</span>
+      </div>
+      <div class="health-item">
+        <span class="health-label">DEP Sync</span>
+        <span class="badge badge-dim">{ade_sync}</span>
+      </div>
     </div>
-    <div class="chart-card">
-      <div class="chart-title">macOS Version Distribution</div>
-      <div class="chart-wrap"><canvas id="osChart"></canvas></div>
+
+    <div class="section-title">Instance Summary</div>
+    <div class="grid grid-4">
+      {self._render_stat_card("Jamf Pro Version", jamf_version)}
+      {self._render_stat_card("Health Status", health_status)}
+      {self._render_stat_card("Active Alerts", active_alerts)}
+      {self._render_stat_card("Check-In Frequency", checkin_freq)}
     </div>
+
+    <div class="section-title">Enrollment &amp; Configuration</div>
+    <div class="grid grid-5">
+      {self._render_stat_card("ADE Instances", ade_instances,
+          ", ".join(ade_names[:3]) + ("..." if len(ade_names) > 3 else "") if ade_names else "")}
+      {self._render_stat_card("VPP Locations", vpp_locations)}
+      {self._render_stat_card("LDAP / IdP Servers", ldap_servers)}
+      {self._render_stat_card("Computer Prestages", comp_prestages)}
+      {self._render_stat_card("Mobile Prestages", md_prestages)}
+    </div>
+    <div class="grid grid-4" style="margin-top:14px">
+      {self._render_stat_card("Webhooks", webhooks)}
+      {self._render_stat_card("JCDS Files", jcds_files)}
+      {self._render_stat_card("Patch Titles", patch_titles)}
+      {self._render_stat_card("App Installers", app_installers)}
+    </div>
+
+    <div class="section-title">Organisation</div>
+    <div class="grid grid-4">
+      {self._render_org_table("Sites", site_names)}
+      {self._render_org_table("Buildings", bldg_names)}
+      {self._render_org_table("Departments", dept_names)}
+      {self._render_org_table("Categories", cat_names)}
+    </div>
+
+    <div class="section-title">Enabled Features</div>
+    <div class="card card-sm">{feature_pills}</div>
+
+    {self._render_overview_table(ov)}
   </div>
 
-  <!-- Flagged devices -->
-  {self._render_flagged_table(flagged)}
+  <div class="section-block">
+    <div class="section-block-title">macOS Fleet</div>
+    <div class="section-block-subtitle">
+      Computer inventory, security posture, and deployment coverage for macOS endpoints.
+    </div>
 
-  <!-- Org & enrollment -->
-  <div class="section-title">Organisation &amp; Enrollment</div>
-  <div class="grid grid-4">
-    <div class="card card-sm stat-card">
-      <div class="stat-label">Sites</div>
-      <div class="stat-value">{len(site_names)}</div>
+    <div class="section-title">Computer Inventory</div>
+    <div class="grid grid-6">
+      {self._render_stat_card("Managed Computers", managed_computers, "",
+          f"{console_url}/computers.html" if console_url else "", "Open in Jamf")}
+      {self._render_stat_card("Unmanaged Computers", unmanaged_computers)}
+      {self._render_stat_card("Policies", str(pol_count))}
+      {self._render_stat_card("macOS Profiles", str(mcp_count))}
+      {self._render_stat_card("Packages", str(pkg_count))}
+      {self._render_stat_card("Smart Groups", str(sg_count))}
     </div>
-    <div class="card card-sm stat-card">
-      <div class="stat-label">Buildings</div>
-      <div class="stat-value">{len(bldg_names)}</div>
+    <div class="grid grid-3" style="margin-top:14px">
+      {self._render_stat_card("Scripts", str(scr_count))}
+      {self._render_stat_card("Patch Titles", patch_titles)}
+      {self._render_stat_card("Security Rows Scanned", total_scanned)}
     </div>
-    <div class="card card-sm stat-card">
-      <div class="stat-label">Departments</div>
-      <div class="stat-value">{len(dept_names)}</div>
+
+    <div class="section-title">Security Posture &amp; OS Distribution</div>
+    <div class="grid grid-2">
+      <div class="chart-card">
+        <div class="chart-title">Security Feature Compliance
+          <span class="badge badge-dim" style="margin-left:6px">{total_scanned} devices scanned</span>
+        </div>
+        {self._render_sec_bar("FileVault", fv_pct, "fill-fv")}
+        {self._render_sec_bar("Gatekeeper", gk_pct, "fill-gk")}
+        {self._render_sec_bar("SIP", sip_pct, "fill-sip")}
+        {self._render_sec_bar("Firewall", fw_pct, "fill-fw")}
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">macOS Version Distribution</div>
+        <div class="chart-wrap"><canvas id="osChart"></canvas></div>
+      </div>
     </div>
-    <div class="card card-sm stat-card">
-      <div class="stat-label">Categories</div>
-      <div class="stat-value">{len(cat_names)}</div>
-    </div>
-  </div>
-  <div class="grid grid-3" style="margin-top:14px">
-    <div class="card card-sm stat-card">
-      <div class="stat-label">ADE Instances</div>
-      <div class="stat-value">{ade_instances}</div>
-      <div class="stat-sub">{", ".join(ade_names[:3]) + ("..." if len(ade_names) > 3 else "")
-            if ade_names else ""}</div>
-    </div>
-    <div class="card card-sm stat-card">
-      <div class="stat-label">VPP Locations</div>
-      <div class="stat-value">{vpp_locations}</div>
-    </div>
-    <div class="card card-sm stat-card">
-      <div class="stat-label">LDAP / IdP Servers</div>
-      <div class="stat-value">{ldap_servers}</div>
-    </div>
-  </div>
-  <div class="grid grid-4" style="margin-top:14px">
-    <div class="card card-sm stat-card">
-      <div class="stat-label">Computer Prestages</div>
-      <div class="stat-value">{comp_prestages}</div>
-    </div>
-    <div class="card card-sm stat-card">
-      <div class="stat-label">Mobile Prestages</div>
-      <div class="stat-value">{md_prestages}</div>
-    </div>
-    <div class="card card-sm stat-card">
-      <div class="stat-label">Webhooks</div>
-      <div class="stat-value">{webhooks}</div>
-    </div>
-    <div class="card card-sm stat-card">
-      <div class="stat-label">JCDS Files</div>
-      <div class="stat-value">{jcds_files}</div>
-    </div>
+
+    {self._render_flagged_table(flagged)}
+    {self._render_hierarchy_section("Policies by Category", pol_groups)}
+    {self._render_hierarchy_section("macOS Config Profiles by Category", mcp_groups)}
+    {self._render_hierarchy_section("Scripts by Category", scr_groups)}
+    {self._render_hierarchy_section("Packages by Category", pkg_groups)}
   </div>
 
-  <!-- Enabled features -->
-  <div class="section-title">Enabled Features</div>
-  <div class="card card-sm">{feature_pills}</div>
+  <div class="section-block">
+    <div class="section-block-title">Mobile Devices</div>
+    <div class="section-block-subtitle">
+      Mobile inventory, supervision posture, and iOS configuration profile coverage.
+    </div>
 
-  <!-- Deployment counts -->
-  <div class="section-title">Deployment Summary</div>
-  <div class="grid grid-5">
-    {self._render_stat_card("Policies", str(pol_count))}
-    {self._render_stat_card("macOS Profiles", str(mcp_count))}
-    {self._render_stat_card("iOS Profiles", str(icp_count))}
-    {self._render_stat_card("Patch Titles", patch_titles)}
-    {self._render_stat_card("App Installers", app_installers)}
+    <div class="section-title">Mobile Inventory</div>
+    <div class="grid grid-6">
+      {self._render_stat_card("Total Mobile Devices", str(mobile_summary["total"]))}
+      {self._render_stat_card("Managed", str(mobile_summary["managed"]))}
+      {self._render_stat_card("Supervised", str(mobile_summary["supervised"]))}
+      {self._render_stat_card("Shared iPad", str(mobile_summary["shared_ipad"]))}
+      {self._render_stat_card("Assigned Users", str(mobile_summary["assigned"]))}
+      {self._render_stat_card("iOS Profiles", str(icp_count))}
+    </div>
+    <div class="grid grid-4" style="margin-top:14px">
+      {self._render_stat_card("Activation Lock Enabled", str(mobile_summary["activation_lock"]))}
+      {self._render_stat_card("Passcode Compliant", str(mobile_summary["passcode_compliant"]))}
+      {self._render_stat_card("Inventory Age Known", str(mobile_summary["inventory_age_known"]))}
+      {self._render_stat_card(f"Older Than {stale_days} Days", str(mobile_stale))}
+    </div>
+
+    <div class="section-title">Mobile Distribution</div>
+    <div class="grid grid-3">
+      {self._render_counter_table("Device Families", "Device Family", mobile_summary["families"])}
+      {self._render_counter_table("OS Versions", "OS Version", mobile_summary["os_versions"])}
+      {self._render_counter_table("Models", "Model", mobile_summary["models"])}
+    </div>
+
+    {self._render_hierarchy_section("iOS Config Profiles by Category", icp_groups)}
+    {self._render_mobile_inventory_table(mobile_rows, stale_days)}
   </div>
-
-  <!-- Deployment hierarchy -->
-  {self._render_hierarchy_section("Policies by Category", pol_groups)}
-  {self._render_hierarchy_section("macOS Config Profiles by Category", mcp_groups)}
-  {self._render_hierarchy_section("iOS Config Profiles by Category", icp_groups)}
-  {self._render_hierarchy_section("Scripts by Category", scr_groups)}
-  {self._render_hierarchy_section("Packages by Category", pkg_groups)}
-
-  <!-- Full overview table -->
-  {self._render_overview_table(ov)}
 
   <div class="footer">
-    Generated by jamf-reports-community &mdash;
+    Generated by jamf-reports-community.
     HTML report design based on
-    <a href="https://github.com/DevliegereM/" target="_blank">
-      Github.com/DevliegereM
+    <a href="https://github.com/DevliegereM/" target="_blank">Github.com/DevliegereM</a>
   </div>
 
 </div>
@@ -6997,6 +7178,8 @@ def cmd_html(
         out_file: Destination file path. Defaults to the output_dir from config.
         no_open: When True, do not auto-open the file after writing.
     """
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: html requires jamf_cli.enabled: true in config.yaml.")
     jamf_cli_cfg = config.jamf_cli
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
@@ -7035,19 +7218,24 @@ def _collect_snapshots(
     print(f"  config base dir: {config.base_dir}")
 
     collected = 0
+    jamf_cli_enabled = _jamf_cli_enabled(config)
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
-    live_overview_allowed = config.jamf_cli.get("allow_live_overview", True) is True
-    bridge = JamfCLIBridge(
-        save_output=True,
-        data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
-        profile=jamf_cli_profile,
-        use_cached_data=False,
+    live_overview_allowed = jamf_cli_enabled and (
+        config.jamf_cli.get("allow_live_overview", True) is True
     )
-    print(f"  jamf-cli data dir: {bridge._data_dir}")
-    if jamf_cli_profile:
-        print(f"  jamf-cli profile: {jamf_cli_profile}")
-    if bridge.is_available():
+    bridge: Optional[JamfCLIBridge] = None
+    if jamf_cli_enabled:
+        bridge = JamfCLIBridge(
+            save_output=True,
+            data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
+            profile=jamf_cli_profile,
+            use_cached_data=False,
+        )
+        print(f"  jamf-cli data dir: {bridge._data_dir}")
+        if jamf_cli_profile:
+            print(f"  jamf-cli profile: {jamf_cli_profile}")
+    if jamf_cli_enabled and bridge is not None and bridge.is_available():
         stale_days = int(config.thresholds.get("stale_device_days", 30))
         commands = []
         if live_overview_allowed:
@@ -7078,8 +7266,10 @@ def _collect_snapshots(
                 print(f"  [ok] {label}")
             except RuntimeError as exc:
                 print(f"  [skip] {label}: {exc}")
-    else:
+    elif jamf_cli_enabled:
         print("  jamf-cli: not found; skipping live snapshot collection.")
+    else:
+        print("  jamf-cli disabled in config; skipping live snapshot collection.")
 
     archived = False
     csv_path_obj = _resolve_cli_input_path(csv_path, config)
@@ -7109,6 +7299,11 @@ def cmd_collect(
     """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
     collected, archived = _collect_snapshots(config, csv_path, historical_csv_dir)
     if collected == 0 and not archived:
+        if not _jamf_cli_enabled(config):
+            raise SystemExit(
+                "Error: No snapshots collected. jamf-cli is disabled in config, so"
+                " pass --csv plus --historical-csv-dir to archive a CSV snapshot."
+            )
         raise SystemExit(
             "Error: No snapshots collected. Authenticate jamf-cli for live data or"
             " pass --csv plus --historical-csv-dir to archive a CSV snapshot."
@@ -7141,6 +7336,8 @@ def _automation_inventory_out_file(config: Config) -> Path:
 
 def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
     """Export a wide computer inventory CSV from jamf-cli inventory and EA data."""
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: inventory-csv requires jamf_cli.enabled: true in config.yaml.")
     output_cfg = config.output
     out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
     if out_dir is None:
@@ -7800,6 +7997,8 @@ def cmd_patch_managed(
         dry_run: If True, print what would change without making API calls.
         serials_file: Optional path to a file with one serial number per line.
     """
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: patch-managed requires jamf_cli.enabled: true in config.yaml.")
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
 
