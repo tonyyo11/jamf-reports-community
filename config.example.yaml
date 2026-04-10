@@ -184,6 +184,28 @@ jamf_cli:
 
 
 # =============================================================================
+# JAMF PROTECT
+# =============================================================================
+# Experimental Jamf Protect workbook support. This is opt-in because the
+# community project has not been fully validated against a live Protect tenant.
+# The report currently builds a single "Protect Overview" sheet from:
+#   - jamf-cli protect overview
+#   - jamf-cli protect computers list
+#   - jamf-cli protect analytics list
+#   - jamf-cli protect plans list
+#
+# jamf-cli uses the same profile flag (`-p/--profile`) for both Pro and Protect,
+# but Protect still requires its own setup/auth flow:
+#
+#   jamf-cli protect setup
+
+protect:
+  # Set true to enable the experimental Protect Overview sheet and snapshot
+  # collection for Jamf Protect commands.
+  enabled: false
+
+
+# =============================================================================
 # COMPLIANCE
 # =============================================================================
 # Tracks mSCP (macOS Security Compliance Project) audit results or any other

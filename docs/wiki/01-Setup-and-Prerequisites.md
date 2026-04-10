@@ -6,7 +6,9 @@ This project is designed for Jamf Pro reporting. It reads Jamf Pro CSV exports, 
 `jamf-cli` snapshots, or both.
 
 It has been tested on Jamf Pro only. `jamf-cli` supports more than Jamf Pro, but this
-community project does not currently validate Jamf Protect or future Platform API data.
+community project only has experimental Jamf Protect coverage today. The `Protect
+Overview` sheet is available as an opt-in path, but it has not been fully validated
+against a live Protect tenant or future Platform API data.
 
 ## Required Components
 
@@ -46,6 +48,14 @@ pip install matplotlib
 - Patch Compliance
 - `inventory-csv`
 - Cached JSON snapshots for offline reruns
+
+If you also want the experimental Jamf Protect workbook sheet, use `jamf-cli 1.6.0+`,
+run `jamf-cli protect setup`, and set:
+
+```yaml
+protect:
+  enabled: true
+```
 
 Primary references:
 
@@ -102,6 +112,10 @@ That bootstrap command creates a per-profile `config.yaml`, `jamf-cli-data/`,
 
 For interactive use, prefer `jamf-cli pro setup` so the client ID and secret are stored
 in the system keychain instead of shell history.
+
+If you enable Jamf Protect reporting, run `jamf-cli protect setup` as well. Protect uses
+its own API credentials even though `jamf-cli` still selects the profile with the same
+global `-p/--profile` flag.
 
 Validate the profile before running `inventory-csv` or `collect`:
 
