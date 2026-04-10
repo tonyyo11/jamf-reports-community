@@ -1847,6 +1847,96 @@ class JamfCLIBridge:
             args.extend(["--set", f"{field}={value}"])
         return self._run(args)
 
+    # ── List-endpoint methods used by the HTML report ────────────────────────
+
+    def classic_policies_list(self) -> Any:
+        """Fetch the classic policy list from jamf-cli pro classic-policies list."""
+        return self._run_and_save(
+            "classic-policies",
+            ["pro", "classic-policies", "list"],
+            ["classic-policies", "classic_policies"],
+        )
+
+    def macos_profiles_list(self) -> Any:
+        """Fetch the macOS config profile list from jamf-cli."""
+        return self._run_and_save(
+            "classic-macos-profiles",
+            ["pro", "classic-macos-config-profiles", "list"],
+            ["classic-macos-profiles", "classic_macos_profiles"],
+        )
+
+    def ios_profiles_list(self) -> Any:
+        """Fetch the iOS/mobile config profile list from jamf-cli."""
+        return self._run_and_save(
+            "classic-ios-profiles",
+            ["pro", "classic-mobile-config-profiles", "list"],
+            ["classic-ios-profiles", "classic_ios_profiles"],
+        )
+
+    def smart_groups_list(self) -> Any:
+        """Fetch the smart computer group list from jamf-cli."""
+        return self._run_and_save(
+            "smart-computer-groups",
+            ["pro", "smart-computer-groups", "list"],
+            ["smart-computer-groups", "smart_computer_groups"],
+        )
+
+    def scripts_list(self) -> Any:
+        """Fetch the script list from jamf-cli pro scripts list."""
+        return self._run_and_save(
+            "scripts",
+            ["pro", "scripts", "list"],
+            ["scripts"],
+        )
+
+    def packages_list(self) -> Any:
+        """Fetch the package list from jamf-cli pro packages list."""
+        return self._run_and_save(
+            "packages",
+            ["pro", "packages", "list"],
+            ["packages"],
+        )
+
+    def categories_list(self) -> Any:
+        """Fetch the category list from jamf-cli pro categories list."""
+        return self._run_and_save(
+            "categories",
+            ["pro", "categories", "list"],
+            ["categories"],
+        )
+
+    def device_enrollments_list(self) -> Any:
+        """Fetch the ADE/device enrollment list from jamf-cli."""
+        return self._run_and_save(
+            "device-enrollments",
+            ["pro", "device-enrollments", "list"],
+            ["device-enrollments", "device_enrollments"],
+        )
+
+    def sites_list(self) -> Any:
+        """Fetch the site list from jamf-cli pro sites list."""
+        return self._run_and_save(
+            "sites",
+            ["pro", "sites", "list"],
+            ["sites"],
+        )
+
+    def buildings_list(self) -> Any:
+        """Fetch the building list from jamf-cli pro buildings list."""
+        return self._run_and_save(
+            "buildings",
+            ["pro", "buildings", "list"],
+            ["buildings"],
+        )
+
+    def departments_list(self) -> Any:
+        """Fetch the department list from jamf-cli pro departments list."""
+        return self._run_and_save(
+            "departments",
+            ["pro", "departments", "list"],
+            ["departments"],
+        )
+
 
 # ---------------------------------------------------------------------------
 # Workbook format helpers
@@ -5314,6 +5404,938 @@ class ReportExporter:
             p.level = 1
 
 
+# ---------------------------------------------------------------------------
+# HTML report
+# ---------------------------------------------------------------------------
+#
+# Design credit: This HTML report is based on the work of DevliegereM
+# (https://github.com/DevliegereM/). The layout, colour
+# scheme, section structure, and Chart.js integration are adapted from that
+# project into Python with permission under the spirit of open-source sharing.
+# The original Bash/heredoc implementation inspired this Python port.
+# ---------------------------------------------------------------------------
+
+
+class HtmlReport:
+    """Generates a self-contained, management-facing HTML status report.
+
+    The report mirrors the structure pioneered by DevliegereM's
+    project: fleet inventory cards, security posture bars, OS distribution chart,
+    flagged devices table, org & enrollment data, deployment hierarchy, and a
+    full overview table.
+
+    Chart.js is loaded from CDN at view time; no local assets are required.
+    No external dependencies beyond the standard library are needed here —
+    the existing JamfCLIBridge handles all data fetching.
+
+    Args:
+        config: Loaded Config instance.
+        bridge: Initialised JamfCLIBridge instance.
+        out_file: Path for the generated HTML file.
+        no_open: When True, skip auto-opening the file in the browser.
+    """
+
+    _CHARTJS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+
+    def __init__(
+        self,
+        config: "Config",
+        bridge: JamfCLIBridge,
+        out_file: Path,
+        no_open: bool = False,
+    ) -> None:
+        self._config = config
+        self._bridge = bridge
+        self._out_file = out_file
+        self._no_open = no_open
+
+    # ── Public entry point ───────────────────────────────────────────────────
+
+    def generate(self) -> Path:
+        """Fetch data and write the HTML report to disk.
+
+        Returns:
+            Path to the generated HTML file.
+        """
+        print("\n--- HTML Report ---")
+        data = self._fetch_all()
+        html = self._render(data)
+        self._out_file.parent.mkdir(parents=True, exist_ok=True)
+        self._out_file.write_text(html, encoding="utf-8")
+        print(f"  Written: {self._out_file}")
+        if not self._no_open:
+            import subprocess as _sp
+            _sp.run(["open", str(self._out_file)], check=False)
+        return self._out_file
+
+    # ── Data fetching ────────────────────────────────────────────────────────
+
+    def _fetch_all(self) -> dict[str, Any]:
+        """Fetch all data required for the report.
+
+        Returns:
+            Dict with keys: overview, security, policies, macos_profiles,
+            ios_profiles, smart_groups, scripts, packages, categories,
+            device_enrollments, sites, buildings, departments.
+        """
+        data: dict[str, Any] = {}
+
+        def _safe_fetch(key: str, fn: Any) -> None:
+            try:
+                data[key] = fn()
+                count = len(data[key]) if isinstance(data[key], list) else 1
+                print(f"  [ok]   {key} ({count} records)")
+            except RuntimeError as exc:
+                print(f"  [warn] {key}: {exc}")
+                data[key] = []
+
+        print("  Fetching data from Jamf Pro...")
+        _safe_fetch("overview", self._bridge.overview)
+        _safe_fetch("security", self._bridge.security_report)
+        _safe_fetch("policies", self._bridge.classic_policies_list)
+        _safe_fetch("macos_profiles", self._bridge.macos_profiles_list)
+        _safe_fetch("ios_profiles", self._bridge.ios_profiles_list)
+        _safe_fetch("smart_groups", self._bridge.smart_groups_list)
+        _safe_fetch("scripts", self._bridge.scripts_list)
+        _safe_fetch("packages", self._bridge.packages_list)
+        _safe_fetch("categories", self._bridge.categories_list)
+        _safe_fetch("device_enrollments", self._bridge.device_enrollments_list)
+        _safe_fetch("sites", self._bridge.sites_list)
+        _safe_fetch("buildings", self._bridge.buildings_list)
+        _safe_fetch("departments", self._bridge.departments_list)
+        return data
+
+    # ── Overview value helpers ───────────────────────────────────────────────
+
+    @staticmethod
+    def _ov(overview: Any, resource: str) -> str:
+        """Extract a single value from the overview list by resource name."""
+        if not isinstance(overview, list):
+            return "N/A"
+        for item in overview:
+            if isinstance(item, dict) and item.get("resource") == resource:
+                val = item.get("value", "")
+                return str(val) if val not in (None, "") else "N/A"
+        return "N/A"
+
+    @staticmethod
+    def _sec(security: Any, key: str) -> str:
+        """Extract a value from the security report summary section."""
+        if not isinstance(security, list):
+            return "N/A"
+        for item in security:
+            if isinstance(item, dict) and item.get("section") == "summary":
+                val = item.get("data", {}).get(key, "")
+                return str(val) if val not in (None, "") else "N/A"
+        return "N/A"
+
+    @staticmethod
+    def _to_float(value: str) -> float:
+        """Parse a percentage string or numeric string to float."""
+        try:
+            return float(str(value).replace("%", "").strip())
+        except (ValueError, TypeError):
+            return 0.0
+
+    @staticmethod
+    def _list_names(items: Any, name_key: str = "name") -> list[str]:
+        """Extract a sorted list of names from a list of dicts."""
+        if not isinstance(items, list):
+            return []
+        return sorted(
+            str(item.get(name_key, "Unnamed"))
+            for item in items
+            if isinstance(item, dict)
+        )
+
+    @staticmethod
+    def _build_hierarchy(items: Any) -> list[dict[str, Any]]:
+        """Group items by category, using naming-convention prefix as fallback.
+
+        Follows the same pattern as DevliegereM's original Bash implementation:
+        for resources without an explicit category, the first token before ' - '
+        in the name is used as the category label.
+
+        Args:
+            items: List of dicts, each with 'name' and optionally 'category'.
+
+        Returns:
+            List of {category, count, items} dicts sorted by category name.
+        """
+        if not isinstance(items, list):
+            return []
+        groups: dict[str, list[str]] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "Unnamed"))
+            cat_raw = item.get("category", None)
+            if isinstance(cat_raw, dict):
+                category = str(cat_raw.get("name", "") or "No Category")
+            elif cat_raw and str(cat_raw).strip() not in ("", "None"):
+                category = str(cat_raw).strip()
+            else:
+                # Derive from naming convention "SCOPE - Vendor - Product"
+                parts = name.split(" - ")
+                category = parts[0].strip() if len(parts) > 1 else "No Category"
+            groups.setdefault(category, []).append(name)
+        return [
+            {"category": cat, "count": len(names), "items": sorted(names)}
+            for cat, names in sorted(groups.items())
+        ]
+
+    @staticmethod
+    def _flagged_devices(security: Any) -> list[dict[str, Any]]:
+        """Extract devices with at least one security concern from the security report."""
+        if not isinstance(security, list):
+            return []
+        flagged = []
+        for item in security:
+            if not isinstance(item, dict) or item.get("section") != "device":
+                continue
+            fv = str(item.get("filevault", ""))
+            gk = str(item.get("gatekeeper", ""))
+            sip = str(item.get("sip", ""))
+            fw = item.get("firewall", True)
+            issues = (
+                (fv not in ("ENCRYPTED", "") and fv)
+                or gk.upper() == "DISABLED"
+                or (sip not in ("ENABLED", "Enabled", "") and sip)
+                or fw is False
+            )
+            if issues:
+                flagged.append({
+                    "name": item.get("name", ""),
+                    "serial": item.get("serial", ""),
+                    "os": item.get("os_version", ""),
+                    "filevault": fv,
+                    "gatekeeper": gk,
+                    "sip": sip,
+                    "firewall": "No" if fw is False else str(fw),
+                })
+        return flagged
+
+    @staticmethod
+    def _os_chart_data(security: Any) -> tuple[list[str], list[int]]:
+        """Build OS version labels and counts for the donut chart."""
+        if not isinstance(security, list):
+            return [], []
+        versions: dict[str, int] = {}
+        for item in security:
+            if not isinstance(item, dict) or item.get("section") != "os_version":
+                continue
+            ver = str(item.get("os_version", "")).rstrip(".0") or "Unknown"
+            count = int(item.get("count", 0))
+            versions[ver] = versions.get(ver, 0) + count
+        pairs = sorted(versions.items(), key=lambda x: x[0], reverse=True)
+        return [p[0] for p in pairs], [p[1] for p in pairs]
+
+    # ── HTML section renderers ───────────────────────────────────────────────
+
+    def _css(self) -> str:
+        """Return the embedded CSS block.
+
+        Colour palette and layout are adapted from DevliegereM's jamf-html-reports
+        (github.com/DevliegereM/) with minor modifications for
+        the Python port (no emojis; text-only status indicators).
+        """
+        return """
+:root {
+    --blue-dark: #004165;
+    --blue:      #0076B6;
+    --blue-lt:   #e8f4fb;
+    --green:     #22c55e;
+    --amber:     #f59e0b;
+    --red:       #ef4444;
+    --purple:    #8b5cf6;
+    --cyan:      #06b6d4;
+    --bg:        #f0f4f8;
+    --surface:   #ffffff;
+    --border:    #e2e8f0;
+    --text:      #1e293b;
+    --muted:     #64748b;
+    --radius:    10px;
+    --shadow:    0 1px 4px rgba(0,0,0,.08);
+}
+body.dark {
+    --blue-dark: #5bb8e8; --blue: #7dcbf0; --blue-lt: #0f2d40;
+    --green: #4ade80; --amber: #fbbf24; --red: #f87171;
+    --purple: #a78bfa; --cyan: #22d3ee; --bg: #0f172a;
+    --surface: #1e293b; --border: #334155; --text: #e2e8f0;
+    --muted: #94a3b8; --shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+body.dark .topbar { background: #0d1f30; border-bottom: 1px solid #334155; }
+body.dark .data-table th { background: #162032; }
+body.dark .data-table tr:hover td { background: #243447; }
+body.dark .badge-ok  { background: #14532d; color: #4ade80; }
+body.dark .badge-warn{ background: #451a03; color: #fbbf24; }
+body.dark .badge-err { background: #450a0a; color: #f87171; }
+body.dark .badge-dim { background: #1e293b; color: #94a3b8; }
+body.dark .badge-blue{ background: #0f2d40; color: #7dcbf0; }
+body.dark .sec-bar-track { background: #334155; }
+body.dark .cat-toggle { background: #243447; border-color: #334155; }
+body.dark .item-node:hover { background: #1a3a52; }
+body.dark .feat-on { background: #14532d; color: #4ade80; border-color: #166534; }
+body.dark .feat-off { background: #1e293b; color: #94a3b8; border-color: #334155; }
+body.dark .stat-value { color: var(--blue); }
+body.dark .chart-title { color: var(--blue); }
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5;
+}
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.topbar {
+    background: var(--blue-dark); color: #fff; padding: 14px 24px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    justify-content: space-between;
+}
+.topbar-brand { font-size: 1.15rem; font-weight: 700; letter-spacing: -.3px; }
+.topbar-meta { font-size: .8rem; opacity: .75; text-align: right; }
+.topbar-meta strong { opacity: 1; font-size: .9rem; color: #fff; }
+.dark-toggle {
+    background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25);
+    color: #fff; border-radius: 20px; padding: 4px 12px; font-size: .78rem;
+    font-weight: 600; cursor: pointer; transition: background .2s;
+    white-space: nowrap; margin-left: 12px;
+}
+.dark-toggle:hover { background: rgba(255,255,255,.22); }
+.page { max-width: 1400px; margin: 0 auto; padding: 20px 20px 40px; }
+.section-title {
+    font-size: .7rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); margin: 28px 0 10px;
+}
+.grid { display: grid; gap: 14px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-5 { grid-template-columns: repeat(5, 1fr); }
+.grid-6 { grid-template-columns: repeat(6, 1fr); }
+@media(max-width:1100px) {
+    .grid-6,.grid-5 { grid-template-columns: repeat(3,1fr); }
+    .grid-4 { grid-template-columns: repeat(2,1fr); }
+}
+@media(max-width:700px) {
+    .grid-2,.grid-3,.grid-4,.grid-5,.grid-6 { grid-template-columns: 1fr; }
+}
+.card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
+}
+.card-sm { padding: 12px 14px; }
+.stat-card { display: flex; flex-direction: column; gap: 4px; }
+.stat-label { font-size: .73rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--muted); }
+.stat-value { font-size: 2rem; font-weight: 700; color: var(--blue-dark);
+    line-height: 1.1; }
+.stat-sub { font-size: .75rem; color: var(--muted); }
+.stat-link { font-size: .75rem; color: var(--blue); margin-top: 4px; }
+.badge {
+    display: inline-block; font-size: .7rem; font-weight: 600;
+    padding: 2px 8px; border-radius: 20px; letter-spacing: .03em; white-space: nowrap;
+}
+.badge-ok   { background: #dcfce7; color: #15803d; }
+.badge-warn { background: #fef3c7; color: #92400e; }
+.badge-err  { background: #fee2e2; color: #991b1b; }
+.badge-dim  { background: #f1f5f9; color: var(--muted); }
+.badge-blue { background: var(--blue-lt); color: var(--blue-dark); }
+.health-strip {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 20px;
+    display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
+}
+.health-item { display: flex; align-items: center; gap: 6px; font-size: .8rem; }
+.health-label { color: var(--muted); font-weight: 500; }
+.chart-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
+}
+.chart-title { font-size: .85rem; font-weight: 700; color: var(--blue-dark);
+    margin-bottom: 14px; }
+.chart-wrap { position: relative; height: 220px; }
+.sec-bar-row { margin-bottom: 12px; }
+.sec-bar-header { display: flex; justify-content: space-between;
+    align-items: center; margin-bottom: 4px; }
+.sec-bar-name { font-size: .8rem; font-weight: 600; color: var(--text); }
+.sec-bar-pct  { font-size: .8rem; color: var(--muted); }
+.sec-bar-track { background: #e2e8f0; border-radius: 4px; height: 10px; overflow: hidden; }
+.sec-bar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.fill-fv  { background: var(--green); }
+.fill-gk  { background: var(--blue); }
+.fill-sip { background: var(--purple); }
+.fill-fw  { background: var(--amber); }
+.data-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.data-table th {
+    text-align: left; padding: 7px 10px; background: #f8fafc;
+    border-bottom: 2px solid var(--border); color: var(--muted);
+    font-weight: 600; text-transform: uppercase; font-size: .68rem;
+    letter-spacing: .05em;
+}
+.data-table td { padding: 7px 10px; border-bottom: 1px solid var(--border);
+    vertical-align: top; }
+.data-table tr:last-child td { border-bottom: 0; }
+.data-table tr:hover td { background: #fafbfc; }
+.data-table .val { font-weight: 600; color: var(--blue-dark); text-align: right; }
+.data-table .val-warn { color: var(--amber); }
+.data-table .val-err  { color: var(--red); }
+.data-table .val-ok   { color: var(--green); }
+.cat-toggle {
+    cursor: pointer; background: #f8fafc; border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; margin-bottom: 4px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: 600; font-size: .82rem; user-select: none;
+}
+.cat-toggle:hover { border-color: var(--blue); }
+.cat-count { font-size: .75rem; color: var(--muted); font-weight: 400; }
+.cat-items { display: none; padding: 4px 0 8px 16px; }
+.cat-items.open { display: block; }
+.item-node { padding: 3px 8px; font-size: .78rem; border-radius: 4px; }
+.item-node:hover { background: var(--blue-lt); }
+.feat-pill {
+    display: inline-block; padding: 4px 10px; border-radius: 20px;
+    font-size: .75rem; font-weight: 600; border: 1px solid; margin: 3px;
+}
+.feat-on  { background: #dcfce7; color: #15803d; border-color: #86efac; }
+.feat-off { background: #f1f5f9; color: var(--muted); border-color: var(--border); }
+.overview-section-title {
+    font-size: .72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--muted); padding: 10px 10px 4px;
+    border-top: 1px solid var(--border); margin-top: 6px;
+}
+.overview-section-title:first-child { border-top: none; margin-top: 0; }
+.footer {
+    text-align: center; font-size: .72rem; color: var(--muted);
+    margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border);
+}
+"""
+
+    def _js(self, os_labels: list[str], os_counts: list[int]) -> str:
+        """Return the embedded JavaScript block including Chart.js configuration.
+
+        Args:
+            os_labels: macOS version strings for the donut chart.
+            os_counts: Device counts corresponding to each label.
+        """
+        palette = [
+            "#0076B6", "#22c55e", "#8b5cf6", "#f59e0b", "#ef4444",
+            "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#64748b",
+        ]
+        import json as _json
+        labels_js = _json.dumps(os_labels)
+        counts_js = _json.dumps(os_counts)
+        colors_js = _json.dumps((palette * ((len(os_labels) // len(palette)) + 1))[:len(os_labels)])
+        return f"""
+const _darkToggle = document.getElementById('darkToggle');
+_darkToggle.addEventListener('click', () => {{
+    document.body.classList.toggle('dark');
+    _darkToggle.textContent = document.body.classList.contains('dark')
+        ? 'Light mode' : 'Dark mode';
+}});
+
+document.querySelectorAll('.cat-toggle').forEach(el => {{
+    el.addEventListener('click', () => {{
+        const items = el.nextElementSibling;
+        if (items) items.classList.toggle('open');
+    }});
+}});
+
+const _ctx = document.getElementById('osChart');
+if (_ctx) {{
+    new Chart(_ctx, {{
+        type: 'doughnut',
+        data: {{
+            labels: {labels_js},
+            datasets: [{{
+                data: {counts_js},
+                backgroundColor: {colors_js},
+                borderWidth: 2,
+                borderColor: '#fff',
+            }}]
+        }},
+        options: {{
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {{
+                legend: {{ position: 'right', labels: {{ font: {{ size: 11 }} }} }}
+            }}
+        }}
+    }});
+}}
+"""
+
+    def _render_stat_card(self, label: str, value: str, sub: str = "",
+                          link_url: str = "", link_text: str = "") -> str:
+        """Render a single stat card HTML block."""
+        link_html = ""
+        if link_url and link_text:
+            link_html = f'<div class="stat-link"><a href="{link_url}" target="_blank">{link_text}</a></div>'
+        return f"""<div class="card stat-card">
+  <div class="stat-label">{label}</div>
+  <div class="stat-value">{value}</div>
+  {f'<div class="stat-sub">{sub}</div>' if sub else ''}
+  {link_html}
+</div>"""
+
+    def _render_sec_bar(self, name: str, pct: float, css_class: str) -> str:
+        """Render a security posture progress bar."""
+        pct_str = f"{pct:.1f}%"
+        return f"""<div class="sec-bar-row">
+  <div class="sec-bar-header">
+    <span class="sec-bar-name">{name}</span>
+    <span class="sec-bar-pct">{pct_str}</span>
+  </div>
+  <div class="sec-bar-track">
+    <div class="sec-bar-fill {css_class}" style="width:{min(pct,100):.1f}%"></div>
+  </div>
+</div>"""
+
+    def _render_hierarchy_section(self, title: str, groups: list[dict]) -> str:
+        """Render a collapsible deployment hierarchy section."""
+        if not groups:
+            return ""
+        items_html = ""
+        for group in groups:
+            cat = group["category"]
+            count = group["count"]
+            items = "".join(
+                f'<div class="item-node">{name}</div>'
+                for name in group["items"]
+            )
+            items_html += f"""<div class="cat-toggle">
+  <span>{cat}</span>
+  <span class="cat-count">{count} items</span>
+</div>
+<div class="cat-items">{items}</div>"""
+        return f"""<div class="section-title">{title}</div>
+<div class="card card-sm">{items_html}</div>"""
+
+    def _render_overview_table(self, overview: Any) -> str:
+        """Render the full overview data as a grouped table."""
+        if not isinstance(overview, list):
+            return ""
+        sections: dict[str, list[dict]] = {}
+        for item in overview:
+            if not isinstance(item, dict):
+                continue
+            section = str(item.get("section", "General"))
+            if section in ("Health & Alerts",):
+                continue
+            resource = str(item.get("resource", "") or "")
+            value = str(item.get("value", "") or "")
+            status = str(item.get("status", "") or "")
+            if not resource:
+                continue
+            sections.setdefault(section, []).append(
+                {"resource": resource, "value": value, "status": status}
+            )
+        if not sections:
+            return ""
+        rows_html = ""
+        for section_name, items in sections.items():
+            rows_html += f'<tr><td colspan="3" class="overview-section-title">{section_name}</td></tr>'
+            for item in items:
+                status = item["status"]
+                if status.lower() in ("enabled", "ok", "active", "successful", "success"):
+                    badge = f'<span class="badge badge-ok">{status}</span>'
+                elif status.lower() in ("disabled", "inactive", "not_required"):
+                    badge = f'<span class="badge badge-dim">{status}</span>'
+                elif status.lower() in ("warning", "degraded"):
+                    badge = f'<span class="badge badge-warn">{status}</span>'
+                elif status:
+                    badge = f'<span class="badge badge-blue">{status}</span>'
+                else:
+                    badge = ""
+                rows_html += (
+                    f"<tr><td>{item['resource']}</td>"
+                    f"<td class='val'>{item['value']}</td>"
+                    f"<td>{badge}</td></tr>"
+                )
+        return f"""<div class="section-title">Full Overview</div>
+<div class="card">
+<table class="data-table">
+  <thead><tr>
+    <th>Resource</th><th style="text-align:right">Value</th><th>Status</th>
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>
+</div>"""
+
+    def _render_flagged_table(self, flagged: list[dict]) -> str:
+        """Render the flagged devices security table."""
+        if not flagged:
+            return f"""<div class="section-title">Devices with Security Issues</div>
+<div class="card"><p style="color:var(--muted);font-size:.82rem">
+  No devices with security issues found.
+</p></div>"""
+        rows = ""
+        for dev in flagged:
+            fv = dev["filevault"]
+            gk = dev["gatekeeper"]
+            sip = dev["sip"]
+            fw = dev["firewall"]
+            fv_cls = "val-ok" if fv.upper() == "ENCRYPTED" else "val-err"
+            gk_cls = "val-ok" if gk.upper() not in ("DISABLED",) else "val-err"
+            sip_cls = "val-ok" if sip.upper() in ("ENABLED",) else "val-err"
+            fw_cls = "val-ok" if fw not in ("No", "false", "False") else "val-err"
+            rows += (
+                f"<tr><td>{dev['name']}</td><td>{dev['serial']}</td>"
+                f"<td>{dev['os']}</td>"
+                f"<td class='{fv_cls}'>{fv}</td>"
+                f"<td class='{gk_cls}'>{gk}</td>"
+                f"<td class='{sip_cls}'>{sip}</td>"
+                f"<td class='{fw_cls}'>{fw}</td></tr>"
+            )
+        return f"""<div class="section-title">Devices with Security Issues ({len(flagged)})</div>
+<div class="card">
+<table class="data-table">
+  <thead><tr>
+    <th>Name</th><th>Serial</th><th>OS</th>
+    <th>FileVault</th><th>Gatekeeper</th><th>SIP</th><th>Firewall</th>
+  </tr></thead>
+  <tbody>{rows}</tbody>
+</table>
+</div>"""
+
+    def _render_org_table(self, label: str, items: list[str]) -> str:
+        """Render a small org-item name list as a card."""
+        if not items:
+            return ""
+        rows = "".join(f"<tr><td>{name}</td></tr>" for name in items)
+        return f"""<div class="card card-sm" style="margin-bottom:10px">
+  <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--muted);margin-bottom:8px">{label}</div>
+  <table class="data-table"><tbody>{rows}</tbody></table>
+</div>"""
+
+    # ── Top-level render ─────────────────────────────────────────────────────
+
+    def _render(self, data: dict[str, Any]) -> str:
+        """Assemble the full HTML document from fetched data.
+
+        Args:
+            data: Dict returned by _fetch_all().
+
+        Returns:
+            Complete HTML string.
+        """
+        ov = data.get("overview", [])
+        sec = data.get("security", [])
+
+        # Overview fields
+        instance_url = self._ov(ov, "Server URL")
+        jamf_version = self._ov(ov, "Jamf Pro Version")
+        health_status = self._ov(ov, "Health Status")
+        active_alerts = self._ov(ov, "Active Alerts")
+        managed_computers = self._ov(ov, "Managed Computers")
+        unmanaged_computers = self._ov(ov, "Unmanaged Computers")
+        managed_devices = self._ov(ov, "Managed Devices")
+        checkin_freq = self._ov(ov, "Check-In Frequency")
+        dep_token_exp = self._ov(ov, "DEP Token Expires")
+        ca_expires = self._ov(ov, "Built-in CA Expires")
+        ade_sync = self._ov(ov, "DEP Sync Status")
+        vpp_locations = self._ov(ov, "VPP Locations")
+        comp_prestages = self._ov(ov, "Computer Prestages")
+        md_prestages = self._ov(ov, "Mobile Device Prestages")
+        app_installers = self._ov(ov, "App Installers")
+        webhooks = self._ov(ov, "Webhooks")
+        jcds_files = self._ov(ov, "JCDS Files")
+        patch_titles = self._ov(ov, "Patch Titles")
+        ldap_servers = self._ov(ov, "LDAP/IdP Servers")
+        mdm_renew_comp = self._ov(ov, "MDM Auto Renew (Computers)")
+        mdm_renew_md = self._ov(ov, "MDM Auto Renew (Mobile)")
+        sso = self._ov(ov, "SSO (SAML)")
+        sso_jamf = self._ov(ov, "Jamf SSO")
+        ade_instances = self._ov(ov, "DEP Instances")
+
+        # Security posture
+        fv_pct = self._to_float(self._sec(sec, "filevault_encrypted_pct"))
+        gk_pct = self._to_float(self._sec(sec, "gatekeeper_enabled_pct"))
+        sip_pct = self._to_float(self._sec(sec, "sip_enabled_pct"))
+        fw_pct = self._to_float(self._sec(sec, "firewall_enabled_pct"))
+        total_scanned = self._sec(sec, "total_devices")
+
+        # Chart data
+        os_labels, os_counts = self._os_chart_data(sec)
+
+        # Flagged devices
+        flagged = self._flagged_devices(sec)
+
+        # Hierarchy
+        pol_groups = self._build_hierarchy(data.get("policies", []))
+        mcp_groups = self._build_hierarchy(data.get("macos_profiles", []))
+        icp_groups = self._build_hierarchy(data.get("ios_profiles", []))
+        scr_raw = data.get("scripts", [])
+        scr_enriched = [
+            dict(item, category={"name": item.get("categoryName", "No Category")})
+            if isinstance(item, dict) else item
+            for item in (scr_raw if isinstance(scr_raw, list) else [])
+        ]
+        scr_groups = self._build_hierarchy(scr_enriched)
+        pkg_groups = self._build_hierarchy(data.get("packages", []))
+
+        # Org data
+        site_names = self._list_names(data.get("sites", []))
+        bldg_names = self._list_names(data.get("buildings", []))
+        dept_names = self._list_names(data.get("departments", []))
+        cat_names = self._list_names(data.get("categories", []))
+        ade_names = self._list_names(data.get("device_enrollments", []))
+
+        # Counts
+        pol_count = len(data.get("policies", []))
+        mcp_count = len(data.get("macos_profiles", []))
+        icp_count = len(data.get("ios_profiles", []))
+        scr_count = len(data.get("scripts", []))
+        pkg_count = len(data.get("packages", []))
+        sg_count = len(data.get("smart_groups", []))
+
+        # Badges
+        health_cls = (
+            "badge-ok" if any(kw in health_status.lower()
+                              for kw in ("ok", "online", "healthy", "operational"))
+            else ("badge-warn" if "degraded" in health_status.lower() else "badge-err")
+        )
+        alert_cls = "badge-ok" if active_alerts in ("None", "N/A", "0") else "badge-err"
+
+        report_date = datetime.now().strftime("%A %d %B %Y, %H:%M")
+        console_url = instance_url.rstrip("/") if instance_url != "N/A" else ""
+
+        # Feature pills
+        def feat(label: str, value: str) -> str:
+            on = "enabled" in value.lower() or value.lower() in ("yes", "true", "active")
+            cls = "feat-on" if on else "feat-off"
+            state = "enabled" if on else "disabled"
+            return f'<span class="feat-pill {cls}">{label} &mdash; {state}</span>'
+
+        feature_pills = (
+            feat("MDM Auto Renew (Computers)", mdm_renew_comp)
+            + feat("MDM Auto Renew (Mobile)", mdm_renew_md)
+            + feat("SSO (SAML)", sso)
+            + feat("Jamf SSO", sso_jamf)
+            + feat("Patch Management", "enabled" if patch_titles not in ("0", "N/A") else "disabled")
+        )
+
+        css = self._css()
+        js = self._js(os_labels, os_counts)
+
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jamf Pro Report &mdash; {instance_url}</title>
+<script src="{self._CHARTJS_CDN}"></script>
+<style>{css}</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand">Jamf Pro &mdash; Instance Report</div>
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div class="topbar-meta">
+      <strong>{instance_url}</strong><br>
+      Version {jamf_version} &nbsp;&bull;&nbsp; Generated {report_date}
+      &nbsp;&bull;&nbsp; Check-in {checkin_freq}
+    </div>
+    <button class="dark-toggle" id="darkToggle">Dark mode</button>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- Health strip -->
+  <div class="health-strip" style="margin-top:16px">
+    <div class="health-item">
+      <span class="health-label">Health</span>
+      <span class="badge {health_cls}">{health_status}</span>
+    </div>
+    <div class="health-item">
+      <span class="health-label">Active Alerts</span>
+      <span class="badge {alert_cls}">{active_alerts}</span>
+    </div>
+    <div class="health-item">
+      <span class="health-label">DEP Token Expires</span>
+      <span class="badge badge-dim">{dep_token_exp}</span>
+    </div>
+    <div class="health-item">
+      <span class="health-label">Built-in CA Expires</span>
+      <span class="badge badge-dim">{ca_expires}</span>
+    </div>
+    <div class="health-item">
+      <span class="health-label">DEP Sync</span>
+      <span class="badge badge-dim">{ade_sync}</span>
+    </div>
+  </div>
+
+  <!-- Fleet inventory cards -->
+  <div class="section-title">Fleet Inventory</div>
+  <div class="grid grid-6">
+    {self._render_stat_card("Managed Computers", managed_computers, "",
+        f"{console_url}/computers.html" if console_url else "", "Open in Jamf")}
+    {self._render_stat_card("Unmanaged Computers", unmanaged_computers)}
+    {self._render_stat_card("Managed Devices", managed_devices)}
+    {self._render_stat_card("Packages", str(pkg_count))}
+    {self._render_stat_card("Scripts", str(scr_count))}
+    {self._render_stat_card("Smart Groups", str(sg_count))}
+  </div>
+
+  <!-- Security posture + OS chart -->
+  <div class="section-title">Security Posture &amp; OS Distribution</div>
+  <div class="grid grid-2">
+    <div class="chart-card">
+      <div class="chart-title">Security Feature Compliance
+        <span class="badge badge-dim" style="margin-left:6px">{total_scanned} devices scanned</span>
+      </div>
+      {self._render_sec_bar("FileVault", fv_pct, "fill-fv")}
+      {self._render_sec_bar("Gatekeeper", gk_pct, "fill-gk")}
+      {self._render_sec_bar("SIP", sip_pct, "fill-sip")}
+      {self._render_sec_bar("Firewall", fw_pct, "fill-fw")}
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">macOS Version Distribution</div>
+      <div class="chart-wrap"><canvas id="osChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Flagged devices -->
+  {self._render_flagged_table(flagged)}
+
+  <!-- Org & enrollment -->
+  <div class="section-title">Organisation &amp; Enrollment</div>
+  <div class="grid grid-4">
+    <div class="card card-sm stat-card">
+      <div class="stat-label">Sites</div>
+      <div class="stat-value">{len(site_names)}</div>
+    </div>
+    <div class="card card-sm stat-card">
+      <div class="stat-label">Buildings</div>
+      <div class="stat-value">{len(bldg_names)}</div>
+    </div>
+    <div class="card card-sm stat-card">
+      <div class="stat-label">Departments</div>
+      <div class="stat-value">{len(dept_names)}</div>
+    </div>
+    <div class="card card-sm stat-card">
+      <div class="stat-label">Categories</div>
+      <div class="stat-value">{len(cat_names)}</div>
+    </div>
+  </div>
+  <div class="grid grid-3" style="margin-top:14px">
+    <div class="card card-sm stat-card">
+      <div class="stat-label">ADE Instances</div>
+      <div class="stat-value">{ade_instances}</div>
+      <div class="stat-sub">{", ".join(ade_names[:3]) + ("..." if len(ade_names) > 3 else "")
+            if ade_names else ""}</div>
+    </div>
+    <div class="card card-sm stat-card">
+      <div class="stat-label">VPP Locations</div>
+      <div class="stat-value">{vpp_locations}</div>
+    </div>
+    <div class="card card-sm stat-card">
+      <div class="stat-label">LDAP / IdP Servers</div>
+      <div class="stat-value">{ldap_servers}</div>
+    </div>
+  </div>
+  <div class="grid grid-4" style="margin-top:14px">
+    <div class="card card-sm stat-card">
+      <div class="stat-label">Computer Prestages</div>
+      <div class="stat-value">{comp_prestages}</div>
+    </div>
+    <div class="card card-sm stat-card">
+      <div class="stat-label">Mobile Prestages</div>
+      <div class="stat-value">{md_prestages}</div>
+    </div>
+    <div class="card card-sm stat-card">
+      <div class="stat-label">Webhooks</div>
+      <div class="stat-value">{webhooks}</div>
+    </div>
+    <div class="card card-sm stat-card">
+      <div class="stat-label">JCDS Files</div>
+      <div class="stat-value">{jcds_files}</div>
+    </div>
+  </div>
+
+  <!-- Enabled features -->
+  <div class="section-title">Enabled Features</div>
+  <div class="card card-sm">{feature_pills}</div>
+
+  <!-- Deployment counts -->
+  <div class="section-title">Deployment Summary</div>
+  <div class="grid grid-5">
+    {self._render_stat_card("Policies", str(pol_count))}
+    {self._render_stat_card("macOS Profiles", str(mcp_count))}
+    {self._render_stat_card("iOS Profiles", str(icp_count))}
+    {self._render_stat_card("Patch Titles", patch_titles)}
+    {self._render_stat_card("App Installers", app_installers)}
+  </div>
+
+  <!-- Deployment hierarchy -->
+  {self._render_hierarchy_section("Policies by Category", pol_groups)}
+  {self._render_hierarchy_section("macOS Config Profiles by Category", mcp_groups)}
+  {self._render_hierarchy_section("iOS Config Profiles by Category", icp_groups)}
+  {self._render_hierarchy_section("Scripts by Category", scr_groups)}
+  {self._render_hierarchy_section("Packages by Category", pkg_groups)}
+
+  <!-- Full overview table -->
+  {self._render_overview_table(ov)}
+
+  <div class="footer">
+    Generated by jamf-reports-community &mdash;
+    HTML report design based on
+    <a href="https://github.com/DevliegereM/" target="_blank">
+      Github.com/DevliegereM
+  </div>
+
+</div>
+
+<script>{js}</script>
+</body>
+</html>"""
+
+
+def cmd_html(
+    config: Config,
+    out_file: Optional[str],
+    no_open: bool = False,
+) -> None:
+    """Generate a self-contained HTML status report from jamf-cli data.
+
+    Requires jamf-cli to be installed and authenticated. Falls back to cached
+    data when live calls fail, subject to the jamf_cli.use_cached_data setting.
+
+    Args:
+        config: Loaded Config instance.
+        out_file: Destination file path. Defaults to the output_dir from config.
+        no_open: When True, do not auto-open the file after writing.
+    """
+    jamf_cli_cfg = config.jamf_cli
+    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
+    use_cached = bool(jamf_cli_cfg.get("use_cached_data", True))
+
+    bridge = JamfCLIBridge(
+        save_output=True,
+        data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
+        profile=profile,
+        use_cached_data=use_cached,
+    )
+    if not bridge.is_available():
+        print(
+            "  [warn] jamf-cli not found — will attempt to use cached data only.\n"
+            "         Install via: brew install Jamf-Concepts/tap/jamf-cli"
+        )
+
+    if out_file:
+        out_path = Path(out_file)
+    else:
+        out_dir = config.resolve_path("output", "output_dir") or Path("Generated Reports")
+        ts = _file_stamp()
+        out_path = out_dir / f"JamfReport_{ts}.html"
+
+    report = HtmlReport(config, bridge, out_path, no_open=no_open)
+    report.generate()
+
+
 def _collect_snapshots(
     config: Config,
     csv_path: Optional[str] = None,
@@ -6166,6 +7188,7 @@ def main() -> None:
         epilog=(
             "Commands:\n"
             "  generate      Build the Excel report\n"
+            "  html          Build a self-contained HTML status report for management\n"
             "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
             "  workspace-init Create a per-profile reporting workspace skeleton\n"
@@ -6181,6 +7204,7 @@ def main() -> None:
         "command",
         choices=[
             "generate",
+            "html",
             "collect",
             "inventory-csv",
             "workspace-init",
@@ -6323,6 +7347,11 @@ def main() -> None:
         action="store_true",
         help="Allow workspace-init to replace an existing workspace config.yaml",
     )
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        help="Do not auto-open the generated HTML file after writing (html command only)",
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
@@ -6389,6 +7418,8 @@ def main() -> None:
             args.status_file,
             args.notify,
         )
+    elif args.command == "html":
+        cmd_html(config, args.out_file, no_open=args.no_open)
     elif args.command == "generate":
         cmd_generate(
             config, args.csv, args.out_file, args.historical_csv_dir,

@@ -13,9 +13,9 @@ any changes.
 ## What This Project Is
 
 A single-file Python script (`jamf-reports-community.py`) that generates multi-sheet
-Excel workbooks from Jamf Pro CSV exports and/or jamf-cli JSON data. It is config-driven:
-users edit `config.yaml` to map their Jamf Pro column names to logical field names; no
-Python changes are needed for normal use.
+Excel workbooks and/or self-contained HTML reports from Jamf Pro CSV exports and/or
+jamf-cli JSON data. It is config-driven: users edit `config.yaml` to map their Jamf Pro
+column names to logical field names; no Python changes are needed for normal use.
 
 Target audience: Mac admins at any organization running Jamf Pro. The tool must work
 without any org-specific values in the code.
@@ -24,7 +24,7 @@ without any org-specific values in the code.
 
 ## Architecture
 
-The entire implementation lives in `jamf-reports-community.py` (~3,300 lines). There are
+The entire implementation lives in `jamf-reports-community.py` (~7,400 lines). There are
 no other Python files. Do not create additional modules — keep it single-file.
 
 ### Classes
@@ -37,6 +37,7 @@ no other Python files. Do not create additional modules — keep it single-file.
 | `CoreDashboard` | Generates sheets from jamf-cli JSON data: Fleet Overview, Inventory Summary, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures. No CSV required. |
 | `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Generates: Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance, plus one sheet per `custom_eas` entry. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
+| `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources (policies, profiles, scripts, packages, smart groups, org data). Uses Chart.js from CDN; no new Python dependencies. |
 
 ### Key top-level functions
 
@@ -51,6 +52,7 @@ no other Python files. Do not create additional modules — keep it single-file.
 | `cmd_scaffold(csv_path, out_path)` | Reads CSV headers, fuzzy-matches via `COLUMN_HINTS`/`COLUMN_EXCLUDES`, writes starter `config.yaml` |
 | `cmd_check(config, csv_path)` | Validates jamf-cli auth and all configured column names against actual CSV headers |
 | `cmd_generate(config, csv_path, out_file, historical_csv_dir)` | Main entry point — builds xlsx, generates charts |
+| `cmd_html(config, out_file, no_open)` | Builds the self-contained HTML instance report via `HtmlReport` |
 | `cmd_collect(config, csv_path, historical_csv_dir)` | Fetches live jamf-cli snapshots and optionally archives a CSV snapshot |
 | `cmd_inventory_csv(config, out_file)` | Exports a wide computer inventory CSV from jamf-cli computers list + EA results |
 
@@ -67,6 +69,8 @@ This prevents the mismatches that previously required manual post-scaffold corre
 python3 jamf-reports-community.py generate [--config config.yaml] [--csv export.csv]
                                            [--out-file report.xlsx]
                                            [--historical-csv-dir snapshots/]
+python3 jamf-reports-community.py html     [--config config.yaml] [--out-file report.html]
+                                           [--no-open]
 python3 jamf-reports-community.py collect  [--config config.yaml] [--csv export.csv]
                                            [--historical-csv-dir snapshots/]
 python3 jamf-reports-community.py inventory-csv [--config config.yaml]
@@ -74,6 +78,13 @@ python3 jamf-reports-community.py inventory-csv [--config config.yaml]
 python3 jamf-reports-community.py scaffold [--csv export.csv] [--out config.yaml]
 python3 jamf-reports-community.py check    [--csv export.csv]
 ```
+
+**`html`** — generate a self-contained HTML instance report intended for management
+review. Fetches: overview, security posture, policies, profiles, scripts, packages,
+smart groups, categories, ADE instances, and org data (sites, buildings, departments).
+Writes a single `.html` file with embedded Chart.js charts and a dark-mode toggle.
+Auto-opens in the default browser unless `--no-open` is passed.
+HTML design is adapted from [@DevliegereM](https://github.com/DevliegereM).
 
 **`collect`** — fetch live snapshots from jamf-cli and save to `jamf_cli.data_dir`. Also
 archives a CSV snapshot if `--csv` and `--historical-csv-dir` are both provided.
@@ -378,9 +389,12 @@ python3 jamf-reports-community.py collect
 
 # Export inventory CSV from jamf-cli
 python3 jamf-reports-community.py inventory-csv
+
+# Generate HTML instance report (requires jamf-cli auth or cached data)
+python3 jamf-reports-community.py html --no-open
 ```
 
-All five commands should exit without errors before any change is considered ready.
+All six commands should exit without errors before any change is considered ready.
 
 ### Dummy profile testing
 
