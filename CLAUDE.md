@@ -37,7 +37,7 @@ no other Python files. Do not create additional modules — keep it single-file.
 | `CoreDashboard` | Generates sheets from jamf-cli JSON data: Fleet Overview, Inventory Summary, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures. No CSV required. |
 | `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Generates: Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance, plus one sheet per `custom_eas` entry. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
-| `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from DevliegereM/jamf-html-reports. Fetches overview, security, and all list-type resources (policies, profiles, scripts, packages, smart groups, org data). Uses Chart.js from CDN; no new Python dependencies. |
+| `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources (policies, profiles, scripts, packages, smart groups, org data). Uses Chart.js from CDN; no new Python dependencies. |
 
 ### Key top-level functions
 
@@ -84,7 +84,7 @@ review. Fetches: overview, security posture, policies, profiles, scripts, packag
 smart groups, categories, ADE instances, and org data (sites, buildings, departments).
 Writes a single `.html` file with embedded Chart.js charts and a dark-mode toggle.
 Auto-opens in the default browser unless `--no-open` is passed.
-HTML design is adapted from [DevliegereM/jamf-html-reports](https://github.com/DevliegereM/jamf-html-reports).
+HTML design is adapted from [@DevliegereM](https://github.com/DevliegereM).
 
 **`collect`** — fetch live snapshots from jamf-cli and save to `jamf_cli.data_dir`. Also
 archives a CSV snapshot if `--csv` and `--historical-csv-dir` are both provided.
