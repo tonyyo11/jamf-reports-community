@@ -15,6 +15,9 @@ Primary `jamf-cli` references:
 Current high-value commands:
 
 - `jamf-cli pro overview`
+- `jamf-cli pro mobile-device-inventory-details list`
+- `jamf-cli pro mobile-devices list`
+- `jamf-cli pro classic-mobile-config-profiles list`
 - `jamf-cli pro report inventory-summary`
 - `jamf-cli pro report security`
 - `jamf-cli pro report device-compliance`
@@ -149,7 +152,9 @@ python3 jamf-reports-community.py generate --config config.yaml
 With `jamf-cli` available, the workbook can include:
 
 - Fleet Overview
+- Mobile Fleet Summary
 - Inventory Summary
+- Mobile Inventory
 - Security Posture
 - Device Compliance
 - EA Coverage
@@ -157,6 +162,7 @@ With `jamf-cli` available, the workbook can include:
 - Software Installs
 - Policy Health
 - Profile Status
+- Mobile Config Profiles
 - App Status (v1.2.0+)
 - Patch Compliance
 - Update Status (v1.2.0+)

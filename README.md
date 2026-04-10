@@ -23,8 +23,8 @@ Everything is config-driven: you edit `config.yaml` to match your Jamf Pro colum
 and the script handles the rest.
 
 **jamf-cli is optional.** The full report generates from a CSV export alone. jamf-cli
-integration adds live fleet, EA discovery, software inventory, and patch/compliance
-sheets for orgs that want them.
+integration adds live fleet, mobile-device visibility, EA discovery, software inventory,
+and patch/compliance sheets for orgs that want them.
 
 **Test scope:** this project is built and tested against Jamf Pro only. `jamf-cli` also
 supports Jamf Protect, but `jamf-reports-community` does not currently collect, parse, or
@@ -96,6 +96,8 @@ The API client used by jamf-cli needs the following Jamf Pro API roles:
 | Resource | Privileges needed |
 |----------|------------------|
 | Computers | Read |
+| Mobile Devices | Read |
+| Mobile Device Configuration Profiles | Read |
 | Computer Extension Attributes | Read |
 | Policies | Read |
 | Patch Management | Read |
@@ -474,14 +476,17 @@ Sheets appear only when the required config and data are present.
 | Custom EA sheets | `--csv`, `custom_eas` | One sheet per entry |
 | Charts | matplotlib plus CSV or jamf-cli history | PNG charts embedded in workbook, including CSV trend charts and jamf-cli-only adoption/device-state charts |
 | Fleet Overview | jamf-cli | Live device and OS summary from API |
+| Mobile Fleet Summary | jamf-cli | Mobile-device counts, ownership signals, and family/OS breakdown |
 | Security Posture | jamf-cli | FileVault/SIP/firewall rates from API |
 | Inventory Summary | jamf-cli | Model and OS breakdown from API |
+| Mobile Inventory | jamf-cli | iPhone/iPad inventory detail from Jamf Pro mobile-device endpoints |
 | Device Compliance | jamf-cli | Managed vs unmanaged and stale-check-in triage |
 | EA Coverage | jamf-cli | Fleet-wide EA population, coverage %, and top values |
 | EA Definitions | jamf-cli | EA metadata such as type, input source, and display mode |
 | Software Installs | jamf-cli | Application version distribution across devices |
 | Policy Health | jamf-cli | Policy count, config findings |
 | Profile Status | jamf-cli | Config profile deployment errors by profile and device |
+| Mobile Config Profiles | jamf-cli | Mobile configuration profile list and category distribution |
 | App Status | jamf-cli v1.2.0+ | Managed app deployment failures by app and device |
 | Patch Compliance | jamf-cli | Per-title patch compliance percentages |
 | Update Status | jamf-cli v1.2.0+ | Managed software update status summary and error device list |

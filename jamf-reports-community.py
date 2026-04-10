@@ -920,6 +920,342 @@ def _to_bool(value: Any) -> bool:
     return _normalized_text(value) in {"true", "1", "yes", "y"}
 
 
+MOBILE_INVENTORY_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "id": [
+        "id",
+        "mobileDeviceId",
+        "deviceId",
+        "general.id",
+        "general.mobileDeviceId",
+    ],
+    "name": [
+        "displayName",
+        "name",
+        "general.displayName",
+        "general.name",
+    ],
+    "serial": [
+        "serialNumber",
+        "serial",
+        "general.serialNumber",
+        "hardware.serialNumber",
+    ],
+    "model": [
+        "model",
+        "modelIdentifier",
+        "general.model",
+        "hardware.model",
+        "hardware.modelIdentifier",
+    ],
+    "os_version": [
+        "osVersion",
+        "operatingSystemVersion",
+        "general.osVersion",
+        "hardware.osVersion",
+    ],
+    "managed": [
+        "managed",
+        "isManaged",
+        "general.managed",
+        "general.isManaged",
+    ],
+    "supervised": [
+        "supervised",
+        "general.supervised",
+        "security.supervised",
+    ],
+    "shared_ipad": [
+        "sharedIpad",
+        "general.sharedIpad",
+    ],
+    "username": [
+        "username",
+        "userAndLocation.username",
+        "location.username",
+    ],
+    "email": [
+        "emailAddress",
+        "email",
+        "userAndLocation.emailAddress",
+        "location.emailAddress",
+    ],
+    "department": [
+        "department",
+        "userAndLocation.department",
+        "location.department",
+    ],
+    "building": [
+        "building",
+        "userAndLocation.building",
+        "location.building",
+    ],
+    "last_inventory": [
+        "lastInventoryUpdateDate",
+        "general.lastInventoryUpdateDate",
+    ],
+    "activation_lock": [
+        "activationLockEnabled",
+        "security.activationLockEnabled",
+    ],
+    "passcode_compliant": [
+        "passcodeCompliant",
+        "passcodeCompliantWithProfile",
+        "security.passcodeCompliant",
+        "security.passcodeCompliantWithProfile",
+    ],
+    "data_protection": [
+        "dataProtection",
+        "security.dataProtection",
+    ],
+    "jailbreak_status": [
+        "jailbreakStatus",
+        "security.jailbreakStatus",
+    ],
+    "ownership": [
+        "deviceOwnershipType",
+        "general.deviceOwnershipType",
+    ],
+}
+
+MOBILE_PROFILE_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "id": ["id", "general.id"],
+    "name": ["name", "general.name"],
+    "category": ["category.name", "categoryName", "category"],
+    "site": ["site.name", "siteName", "site"],
+    "description": ["description", "general.description"],
+}
+
+
+def _extract_items(raw: Any) -> list[Any]:
+    """Return a list payload from list- or envelope-shaped jamf-cli output."""
+    if isinstance(raw, list):
+        return raw
+    if not isinstance(raw, dict):
+        return []
+
+    for key in (
+        "results",
+        "items",
+        "rows",
+        "devices",
+        "mobileDevices",
+        "data",
+    ):
+        value = raw.get(key)
+        if isinstance(value, list):
+            return value
+
+    for value in raw.values():
+        if isinstance(value, list):
+            return value
+    return [raw] if raw else []
+
+
+def _flatten_record(data: Any, prefix: str = "") -> dict[str, Any]:
+    """Flatten nested dictionaries to dot-separated keys."""
+    if not isinstance(data, dict):
+        return {}
+
+    flattened: dict[str, Any] = {}
+    for key, value in data.items():
+        full_key = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            flattened.update(_flatten_record(value, full_key))
+        else:
+            flattened[full_key] = value
+    return flattened
+
+
+def _first_value(mapping: dict[str, Any], candidates: list[str], default: Any = "") -> Any:
+    """Return the first non-empty value present in mapping for candidate keys."""
+    for key in candidates:
+        value = mapping.get(key)
+        if value not in (None, "", []):
+            return value
+    return default
+
+
+def _optional_bool(value: Any) -> Optional[bool]:
+    """Parse a boolean-ish value, returning None when the value is unknown."""
+    if isinstance(value, bool):
+        return value
+
+    normalized = _normalized_text(value)
+    if normalized in {
+        "true",
+        "1",
+        "yes",
+        "y",
+        "enabled",
+        "on",
+        "managed",
+        "supervised",
+        "shared",
+        "compliant",
+        "present",
+        "activated",
+    }:
+        return True
+    if normalized in {
+        "false",
+        "0",
+        "no",
+        "n",
+        "disabled",
+        "off",
+        "unmanaged",
+        "unsupervised",
+        "not compliant",
+        "absent",
+        "deactivated",
+    }:
+        return False
+    return None
+
+
+def _yes_no_unknown(value: Any) -> str:
+    """Return a display-friendly boolean label."""
+    parsed = _optional_bool(value)
+    if parsed is None:
+        return "Unknown"
+    return "Yes" if parsed else "No"
+
+
+def _days_since_timestamp(value: Any) -> Optional[int]:
+    """Return whole days since a timestamp-like value, or None when unavailable."""
+    if value in (None, ""):
+        return None
+    parsed = pd.to_datetime(value, utc=True, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return max(0, int((datetime.now(timezone.utc) - parsed.to_pydatetime()).days))
+
+
+def _mobile_device_family(model: Any, name: Any) -> str:
+    """Infer a friendly device-family label from mobile model/name fields."""
+    text = f"{model} {name}".strip().lower()
+    if "ipad" in text:
+        return "iPad"
+    if "iphone" in text:
+        return "iPhone"
+    if "ipod" in text:
+        return "iPod"
+    if "appletv" in text or "apple tv" in text:
+        return "Apple TV"
+    if "vision" in text:
+        return "Vision"
+    return "Mobile"
+
+
+def _normalize_mobile_inventory_row(item: Any) -> dict[str, Any]:
+    """Normalize a mobile-device record from jamf-cli into report columns."""
+    flat = _flatten_record(item if isinstance(item, dict) else {})
+    model = _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["model"])
+    name = _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["name"])
+    last_inventory = _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["last_inventory"])
+
+    return {
+        "Jamf Pro ID": str(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["id"])).strip(),
+        "Device Name": str(name or "").strip(),
+        "Serial Number": str(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["serial"])).strip(),
+        "Device Family": _mobile_device_family(model, name),
+        "Managed": _yes_no_unknown(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["managed"])),
+        "Supervised": _yes_no_unknown(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["supervised"])
+        ),
+        "Shared iPad": _yes_no_unknown(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["shared_ipad"])
+        ),
+        "Model": str(model or "").strip(),
+        "OS Version": str(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["os_version"])
+        ).strip(),
+        "Username": str(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["username"])
+        ).strip(),
+        "Email": str(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["email"])).strip(),
+        "Department": str(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["department"])
+        ).strip(),
+        "Building": str(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["building"])).strip(),
+        "Last Inventory Update": str(last_inventory or "").strip(),
+        "Days Since Inventory": _days_since_timestamp(last_inventory),
+        "Activation Lock": _yes_no_unknown(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["activation_lock"])
+        ),
+        "Passcode Compliant": _yes_no_unknown(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["passcode_compliant"])
+        ),
+        "Data Protection": str(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["data_protection"])
+        ).strip(),
+        "Jailbreak Status": str(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["jailbreak_status"])
+        ).strip(),
+        "Ownership": str(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["ownership"])).strip(),
+    }
+
+
+def _normalize_mobile_profile_row(item: Any) -> dict[str, Any]:
+    """Normalize a mobile configuration profile row from jamf-cli."""
+    flat = _flatten_record(item if isinstance(item, dict) else {})
+    profile_id = _first_value(flat, MOBILE_PROFILE_FIELD_CANDIDATES["id"])
+    profile_name = _first_value(flat, MOBILE_PROFILE_FIELD_CANDIDATES["name"])
+    return {
+        "Profile ID": str(profile_id or "").strip(),
+        "Profile Name": str(profile_name or "").strip(),
+        "Category": str(_first_value(flat, MOBILE_PROFILE_FIELD_CANDIDATES["category"])).strip(),
+        "Site": str(_first_value(flat, MOBILE_PROFILE_FIELD_CANDIDATES["site"])).strip(),
+        "Description": str(_first_value(flat, MOBILE_PROFILE_FIELD_CANDIDATES["description"])).strip(),
+    }
+
+
+def _summarize_mobile_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate device-family, model, and status counts for mobile inventory rows."""
+    summary = {
+        "total": len(rows),
+        "managed": 0,
+        "unmanaged": 0,
+        "supervised": 0,
+        "shared_ipad": 0,
+        "assigned": 0,
+        "activation_lock": 0,
+        "passcode_compliant": 0,
+        "inventory_age_known": 0,
+        "families": Counter(),
+        "os_versions": Counter(),
+        "models": Counter(),
+    }
+    for row in rows:
+        if row.get("Managed") == "Yes":
+            summary["managed"] += 1
+        elif row.get("Managed") == "No":
+            summary["unmanaged"] += 1
+        if row.get("Supervised") == "Yes":
+            summary["supervised"] += 1
+        if row.get("Shared iPad") == "Yes":
+            summary["shared_ipad"] += 1
+        if row.get("Activation Lock") == "Yes":
+            summary["activation_lock"] += 1
+        if row.get("Passcode Compliant") == "Yes":
+            summary["passcode_compliant"] += 1
+        if row.get("Username") or row.get("Email"):
+            summary["assigned"] += 1
+        if isinstance(row.get("Days Since Inventory"), int):
+            summary["inventory_age_known"] += 1
+
+        family = str(row.get("Device Family", "")).strip()
+        if family:
+            summary["families"][family] += 1
+        os_version = str(row.get("OS Version", "")).strip()
+        if os_version:
+            summary["os_versions"][os_version] += 1
+        model = str(row.get("Model", "")).strip()
+        if model:
+            summary["models"][model] += 1
+    return summary
+
+
 def _security_control_is_compliant(logical: str, value: Any) -> bool:
     """Return True when a CSV value represents a compliant security control state."""
     normalized = _normalized_text(value)
@@ -1384,6 +1720,12 @@ class JamfCLIBridge:
                 "software_installs",
                 "computer-extension-attributes",
                 "computer_extension_attributes",
+                "mobile-devices-list",
+                "mobile_devices_list",
+                "mobile-device-inventory-details",
+                "mobile_device_inventory_details",
+                "classic-ios-profiles",
+                "classic_ios_profiles",
             ]
         ) is not None
 
@@ -1873,6 +2215,22 @@ class JamfCLIBridge:
             ["classic-ios-profiles", "classic_ios_profiles"],
         )
 
+    def mobile_devices_list(self) -> Any:
+        """Fetch the mobile-device list from jamf-cli."""
+        return self._run_and_save(
+            "mobile-devices-list",
+            ["pro", "mobile-devices", "list"],
+            ["mobile-devices-list", "mobile_devices_list"],
+        )
+
+    def mobile_device_inventory_details(self) -> Any:
+        """Fetch paginated mobile-device inventory details from jamf-cli."""
+        return self._run_and_save(
+            "mobile-device-inventory-details",
+            ["pro", "mobile-device-inventory-details", "list"],
+            ["mobile-device-inventory-details", "mobile_device_inventory_details"],
+        )
+
     def smart_groups_list(self) -> Any:
         """Fetch the smart computer group list from jamf-cli."""
         return self._run_and_save(
@@ -2126,6 +2484,9 @@ class CoreDashboard:
         self._bridge = bridge
         self._wb = workbook
         self._fmts = fmts
+        self._overview_rows_cache: Optional[list[dict[str, Any]]] = None
+        self._mobile_inventory_cache: Optional[tuple[list[dict[str, Any]], str]] = None
+        self._mobile_profile_cache: Optional[list[dict[str, Any]]] = None
 
     def _severity_fmt(self, value: int, warn: int, crit: int) -> Any:
         """Return red/yellow/normal cell format based on value vs thresholds.
@@ -2144,12 +2505,114 @@ class CoreDashboard:
             return self._fmts["yellow"]
         return self._fmts["cell"]
 
+    @staticmethod
+    def _overview_value(rows: list[dict[str, Any]], resource: str) -> Any:
+        """Return an overview value by resource label."""
+        for row in rows:
+            if row.get("resource") == resource:
+                return row.get("value", "")
+        return ""
+
+    def _overview_rows_cached(self) -> list[dict[str, Any]]:
+        """Return normalized overview rows, caching the result for this workbook."""
+        if self._overview_rows_cache is not None:
+            return self._overview_rows_cache
+
+        live_overview_allowed = self._config.jamf_cli.get("allow_live_overview", True) is True
+        data = self._bridge.overview(cached_only=not live_overview_allowed)
+        self._overview_rows_cache = self._overview_rows(data)
+        return self._overview_rows_cache
+
+    def _mobile_inventory_rows(self) -> tuple[list[dict[str, Any]], str]:
+        """Return normalized mobile inventory rows and the source command used."""
+        if self._mobile_inventory_cache is not None:
+            return self._mobile_inventory_cache
+
+        attempts = [
+            ("jamf-cli pro mobile-device-inventory-details list",
+             self._bridge.mobile_device_inventory_details),
+            ("jamf-cli pro mobile-devices list", self._bridge.mobile_devices_list),
+        ]
+        errors: list[str] = []
+        for source, fetcher in attempts:
+            try:
+                items = _extract_items(fetcher())
+            except RuntimeError as exc:
+                errors.append(str(exc))
+                continue
+
+            rows = [
+                _normalize_mobile_inventory_row(item)
+                for item in items
+                if isinstance(item, dict)
+            ]
+            rows = [
+                row
+                for row in rows
+                if any(
+                    str(row.get(key, "")).strip()
+                    for key in ("Device Name", "Serial Number", "Model", "OS Version")
+                )
+            ]
+            if rows:
+                self._mobile_inventory_cache = (rows, source)
+                return self._mobile_inventory_cache
+
+        self._mobile_inventory_cache = ([], "")
+        if errors:
+            raise RuntimeError(errors[0])
+        raise RuntimeError("jamf-cli returned no mobile device inventory rows")
+
+    def _mobile_profile_rows(self) -> list[dict[str, Any]]:
+        """Return normalized mobile configuration profile rows."""
+        if self._mobile_profile_cache is not None:
+            return self._mobile_profile_cache
+
+        raw = self._bridge.ios_profiles_list()
+        rows = [
+            _normalize_mobile_profile_row(item)
+            for item in _extract_items(raw)
+            if isinstance(item, dict)
+        ]
+        rows = [row for row in rows if row.get("Profile Name") or row.get("Profile ID")]
+        if not rows:
+            raise RuntimeError("jamf-cli returned no mobile configuration profiles")
+        self._mobile_profile_cache = rows
+        return rows
+
+    def _write_counter_block(
+        self,
+        ws: Any,
+        row: int,
+        title: str,
+        left_header: str,
+        counter: Counter,
+        max_rows: int = 15,
+    ) -> int:
+        """Write a title plus a two-column frequency table and return the last row used."""
+        if not counter:
+            return row
+
+        row += 1
+        _safe_write(ws, row, 0, title, self._fmts["header"])
+        row += 1
+        _safe_write(ws, row, 0, left_header, self._fmts["header"])
+        _safe_write(ws, row, 1, "Count", self._fmts["header"])
+        row += 1
+        for label, count in counter.most_common(max_rows):
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, count, self._fmts["cell"])
+            row += 1
+        return row - 1
+
     def write_all(self) -> list[str]:
         """Write all core sheets. Returns list of sheet names written."""
         written = []
         sheets = [
             ("Fleet Overview", self._write_overview),
+            ("Mobile Fleet Summary", self._write_mobile_fleet_summary),
             ("Inventory Summary", self._write_inventory_summary),
+            ("Mobile Inventory", self._write_mobile_inventory),
             ("Security Posture", self._write_security),
             ("Device Compliance", self._write_device_compliance),
             ("EA Coverage", self._write_ea_coverage),
@@ -2157,6 +2620,7 @@ class CoreDashboard:
             ("Software Installs", self._write_software_installs),
             ("Policy Health", self._write_policy),
             ("Profile Status", self._write_profile_status),
+            ("Mobile Config Profiles", self._write_mobile_config_profiles),
             ("App Status", self._write_app_status),
             ("Patch Compliance", self._write_patch),
             ("Patch Failures", self._write_patch_failures),
@@ -2176,10 +2640,9 @@ class CoreDashboard:
 
     def _write_overview(self) -> None:
         live_overview_allowed = self._config.jamf_cli.get("allow_live_overview", True) is True
-        data = self._bridge.overview(cached_only=not live_overview_allowed)
         ws = self._wb.add_worksheet("Fleet Overview")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        rows = self._overview_rows(data)
+        rows = self._overview_rows_cached()
         has_status = any(row["status"] for row in rows)
         age_label = self._bridge.snapshot_age_label(["overview"])
         if live_overview_allowed:
@@ -2212,6 +2675,232 @@ class CoreDashboard:
                 if item["status"] == "yellow":
                     status_fmt = self._fmts["yellow"]
                 _safe_write(ws, row, 3, item["status"], status_fmt)
+            row += 1
+
+    def _write_mobile_fleet_summary(self) -> None:
+        """Write a mobile-focused fleet summary using overview and mobile inventory sources."""
+        overview_rows: list[dict[str, Any]] = []
+        mobile_rows: list[dict[str, Any]] = []
+        profile_rows: list[dict[str, Any]] = []
+        source_parts: list[str] = []
+
+        try:
+            overview_rows = self._overview_rows_cached()
+            source_parts.append("jamf-cli pro overview")
+        except RuntimeError:
+            overview_rows = []
+
+        try:
+            mobile_rows, mobile_source = self._mobile_inventory_rows()
+            if mobile_source:
+                source_parts.append(mobile_source)
+        except RuntimeError:
+            mobile_rows = []
+
+        try:
+            profile_rows = self._mobile_profile_rows()
+            source_parts.append("jamf-cli pro classic-mobile-config-profiles list")
+        except RuntimeError:
+            profile_rows = []
+
+        if not overview_rows and not mobile_rows and not profile_rows:
+            raise RuntimeError("no mobile device sources were available")
+
+        summary = _summarize_mobile_inventory(mobile_rows) if mobile_rows else {}
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+        inventory_stale = sum(
+            1
+            for row_data in mobile_rows
+            if isinstance(row_data.get("Days Since Inventory"), int)
+            and row_data["Days Since Inventory"] > stale_days
+        )
+
+        ws = self._wb.add_worksheet("Mobile Fleet Summary")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        source_name = " + ".join(dict.fromkeys(source_parts)) or "jamf-cli mobile device sources"
+        row = _write_sheet_header(
+            ws,
+            "Mobile Fleet Summary",
+            f"Source: {source_name} | Generated: {ts}",
+            self._fmts,
+            ncols=3,
+        )
+        ws.set_column(0, 0, 30)
+        ws.set_column(1, 1, 20)
+        ws.set_column(2, 2, 20)
+
+        summary_rows: list[tuple[str, Any]] = []
+        for resource, label in [
+            ("Managed Devices", "Managed Mobile Devices"),
+            ("Unmanaged Devices", "Unmanaged Mobile Devices"),
+            ("Mobile Device Prestages", "Mobile Device Prestages"),
+            ("Mobile Device Smart Groups", "Mobile Device Smart Groups"),
+            ("MDM Auto Renew (Mobile)", "MDM Auto Renew (Mobile)"),
+            ("iOS Config Profiles", "iOS Config Profiles"),
+        ]:
+            value = self._overview_value(overview_rows, resource)
+            if value not in (None, ""):
+                summary_rows.append((label, value))
+
+        if mobile_rows:
+            summary_rows.extend(
+                [
+                    ("Inventory Rows Returned", summary.get("total", 0)),
+                    ("Managed Rows", summary.get("managed", 0)),
+                    ("Unmanaged Rows", summary.get("unmanaged", 0)),
+                    ("Supervised Devices", summary.get("supervised", 0)),
+                    ("Shared iPad Devices", summary.get("shared_ipad", 0)),
+                    ("Assigned Users", summary.get("assigned", 0)),
+                    ("Activation Lock Enabled", summary.get("activation_lock", 0)),
+                    ("Passcode Compliant", summary.get("passcode_compliant", 0)),
+                    (f"Inventory Older Than {stale_days} Days", inventory_stale),
+                ]
+            )
+        if profile_rows:
+            summary_rows.append(("Mobile Config Profiles (List)", len(profile_rows)))
+
+        for label, value in summary_rows:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, value, self._fmts["cell"])
+            row += 1
+
+        if mobile_rows:
+            row = self._write_counter_block(
+                ws,
+                row,
+                "Device Family Distribution",
+                "Device Family",
+                summary["families"],
+            )
+            row = self._write_counter_block(
+                ws,
+                row,
+                "OS Version Distribution",
+                "OS Version",
+                summary["os_versions"],
+            )
+            self._write_counter_block(ws, row, "Top Models", "Model", summary["models"], max_rows=10)
+
+    def _write_mobile_inventory(self) -> None:
+        """Write normalized mobile device inventory rows from jamf-cli."""
+        rows, source_name = self._mobile_inventory_rows()
+        if not rows:
+            raise RuntimeError("jamf-cli returned no mobile device inventory rows")
+
+        summary = _summarize_mobile_inventory(rows)
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+        inventory_stale = sum(
+            1
+            for row_data in rows
+            if isinstance(row_data.get("Days Since Inventory"), int)
+            and row_data["Days Since Inventory"] > stale_days
+        )
+
+        ws = self._wb.add_worksheet("Mobile Inventory")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Mobile Inventory",
+            f"Source: {source_name} | Generated: {ts}",
+            self._fmts,
+            ncols=20,
+        )
+        summary_rows = [
+            ("Total Mobile Devices", summary["total"]),
+            ("Managed", summary["managed"]),
+            ("Unmanaged", summary["unmanaged"]),
+            ("Supervised", summary["supervised"]),
+            ("Shared iPad", summary["shared_ipad"]),
+            ("Assigned Users", summary["assigned"]),
+            ("Inventory Older Than Threshold", inventory_stale),
+        ]
+        for label, value in summary_rows:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, value, self._fmts["cell"])
+            row += 1
+
+        row += 1
+        headers = list(rows[0].keys())
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        widths = [12, 26, 18, 14, 11, 11, 11, 24, 12, 18, 24, 18, 18, 22, 18, 16, 18, 18, 18, 14]
+        for col_i, width in enumerate(widths):
+            ws.set_column(col_i, col_i, width)
+
+        for item in sorted(
+            rows,
+            key=lambda current: (
+                str(current.get("Device Family", "")),
+                str(current.get("Device Name", "")),
+                str(current.get("Serial Number", "")),
+            ),
+        ):
+            for col_i, header in enumerate(headers):
+                value = item.get(header, "")
+                if header == "Days Since Inventory" and isinstance(value, int):
+                    fmt = self._severity_fmt(value, stale_days, stale_days * 2)
+                    _safe_write(ws, row, col_i, value, fmt)
+                else:
+                    _safe_write(ws, row, col_i, value, self._fmts["cell"])
+            row += 1
+
+    def _write_mobile_config_profiles(self) -> None:
+        """Write mobile configuration profile visibility from jamf-cli."""
+        rows = self._mobile_profile_rows()
+        if not rows:
+            raise RuntimeError("jamf-cli returned no mobile configuration profiles")
+
+        category_counts = Counter(row.get("Category") or "Uncategorized" for row in rows)
+        ws = self._wb.add_worksheet("Mobile Config Profiles")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Mobile Config Profiles",
+            "Source: jamf-cli pro classic-mobile-config-profiles list"
+            f" | Generated: {ts}",
+            self._fmts,
+            ncols=5,
+        )
+        ws.set_column(0, 0, 34)
+        ws.set_column(1, 1, 14)
+        ws.set_column(2, 2, 24)
+        ws.set_column(3, 3, 20)
+        ws.set_column(4, 4, 44)
+
+        for label, value in [
+            ("Total Profiles", len(rows)),
+            ("Unique Categories", len(category_counts)),
+            ("Uncategorized Profiles", category_counts.get("Uncategorized", 0)),
+        ]:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, value, self._fmts["cell"])
+            row += 1
+
+        row = self._write_counter_block(
+            ws,
+            row,
+            "Profiles by Category",
+            "Category",
+            category_counts,
+            max_rows=15,
+        )
+        row += 2
+
+        headers = ["Profile Name", "Profile ID", "Category", "Site", "Description"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+        for item in sorted(
+            rows,
+            key=lambda current: (
+                str(current.get("Category", "")),
+                str(current.get("Profile Name", "")),
+            ),
+        ):
+            for col_i, header in enumerate(headers):
+                _safe_write(ws, row, col_i, item.get(header, ""), self._fmts["cell"])
             row += 1
 
     def _flatten_dict(self, d: Any, prefix: str = "") -> dict[str, Any]:
@@ -6368,6 +7057,9 @@ def _collect_snapshots(
         commands.extend(
             [
                 ("Inventory Summary", bridge.inventory_summary),
+                ("Mobile Inventory", bridge.mobile_device_inventory_details),
+                ("Mobile Device List", bridge.mobile_devices_list),
+                ("Mobile Config Profiles", bridge.ios_profiles_list),
                 ("Security Posture", bridge.security_report),
                 ("Device Compliance", lambda: bridge.device_compliance(stale_days)),
                 ("EA Coverage", lambda: bridge.ea_results_report(include_all=True)),
