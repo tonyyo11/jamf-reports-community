@@ -184,6 +184,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "enabled": True,
         },
     },
+    "branding": {
+        "org_name": "",
+        "logo_path": "",
+        "accent_color": "#2D5EA2",
+        "accent_dark": "#004165",
+    },
 }
 
 # Fuzzy-match candidates for scaffold auto-detection
@@ -2525,7 +2531,7 @@ class JamfCLIBridge:
 # ---------------------------------------------------------------------------
 
 
-def _build_formats(wb: xlsxwriter.Workbook) -> dict[str, Any]:
+def _build_formats(wb: xlsxwriter.Workbook, accent_color: str = "#2D5EA2") -> dict[str, Any]:
     """Create and return a dict of named xlsxwriter formats.
 
     Args:
@@ -2538,7 +2544,7 @@ def _build_formats(wb: xlsxwriter.Workbook) -> dict[str, Any]:
         "title": wb.add_format({"bold": True, "font_size": 14}),
         "subtitle": wb.add_format({"italic": True, "font_color": "#595959", "font_size": 10}),
         "header": wb.add_format(
-            {"bold": True, "bg_color": "#2D5EA2", "font_color": "white", "border": 1}
+            {"bold": True, "bg_color": accent_color, "font_color": "white", "border": 1}
         ),
         "cell": wb.add_format({"border": 1}),
         "green": wb.add_format({"bg_color": "#C6EFCE", "border": 1}),
@@ -2577,6 +2583,19 @@ def _write_sheet_header(
     return 3
 
 
+def _org_title(org_name: str, base: str) -> str:
+    """Prefix a sheet title with the org name when configured.
+
+    Args:
+        org_name: Organisation name from branding config, or empty string.
+        base: The base sheet title (e.g. "Fleet Overview").
+
+    Returns:
+        "{org_name} \u2014 {base}" when org_name is set, otherwise base unchanged.
+    """
+    return f"{org_name} \u2014 {base}" if org_name else base
+
+
 def _pct_format(fmts: dict, pct: float) -> Any:
     """Return a color-coded percentage format based on value.
 
@@ -2607,19 +2626,30 @@ def _write_report_sources_sheet(
     jamf_cli_sheets: list[str],
     csv_sheets: list[str],
     chart_source: str,
+    org_name: str = "",
 ) -> None:
     """Write a workbook sheet describing the data sources used for the report."""
     ws = wb.add_worksheet("Report Sources")
     row = _write_sheet_header(
         ws,
-        "Report Sources",
+        _org_title(org_name, "Report Sources"),
         f"Generated: {generated_at}",
         fmts,
-        ncols=4,
+        ncols=6,
     )
     ws.set_column(0, 0, 24)
     ws.set_column(1, 1, 80)
     ws.set_column(2, 3, 18)
+
+    logo_path = config.resolve_path("branding", "logo_path")
+    if logo_path and logo_path.exists():
+        try:
+            ws.insert_image(
+                0, 5, str(logo_path),
+                {"x_scale": 0.25, "y_scale": 0.25, "object_position": 1},
+            )
+        except Exception:
+            pass  # logo insertion is best-effort; never block report generation
 
     if jamf_cli_sheets and csv_sheets:
         report_mode = "Mixed (jamf-cli + CSV)"
@@ -2728,6 +2758,15 @@ class CoreDashboard:
         self._overview_rows_cache: Optional[list[dict[str, Any]]] = None
         self._mobile_inventory_cache: Optional[tuple[list[dict[str, Any]], str]] = None
         self._mobile_profile_cache: Optional[list[dict[str, Any]]] = None
+
+    @property
+    def _org_name(self) -> str:
+        """Return the configured org name, or empty string."""
+        return (self._config.get("branding", "org_name") or "").strip()
+
+    def _t(self, base: str) -> str:
+        """Return sheet title prefixed with org name when configured."""
+        return _org_title(self._org_name, base)
 
     def _severity_fmt(self, value: int, warn: int, crit: int) -> Any:
         """Return red/yellow/normal cell format based on value vs thresholds.
@@ -2922,7 +2961,7 @@ class CoreDashboard:
                 source_name = "cached jamf-cli pro overview"
         row = _write_sheet_header(
             ws,
-            "Fleet Overview",
+            self._t("Fleet Overview"),
             f"Source: {source_name} | Generated: {ts}",
             self._fmts,
             ncols=4 if has_status else 3,
@@ -3140,7 +3179,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Protect Overview",
+            self._t("Protect Overview"),
             f"Source: {' + '.join(source_parts)} | Generated: {ts}",
             self._fmts,
             ncols=5,
@@ -3310,7 +3349,7 @@ class CoreDashboard:
         source_name = " + ".join(dict.fromkeys(source_parts)) or "jamf-cli mobile device sources"
         row = _write_sheet_header(
             ws,
-            "Mobile Fleet Summary",
+            self._t("Mobile Fleet Summary"),
             f"Source: {source_name} | Generated: {ts}",
             self._fmts,
             ncols=3,
@@ -3390,7 +3429,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Mobile Inventory",
+            self._t("Mobile Inventory"),
             f"Source: {source_name} | Generated: {ts}",
             self._fmts,
             ncols=20,
@@ -3447,7 +3486,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Mobile Config Profiles",
+            self._t("Mobile Config Profiles"),
             "Source: jamf-cli pro classic-mobile-config-profiles list"
             f" | Generated: {ts}",
             self._fmts,
@@ -3547,7 +3586,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Security Posture",
+            self._t("Security Posture"),
             f"Source: jamf-cli pro report security | Generated: {ts}",
             self._fmts,
             ncols=5,
@@ -3599,7 +3638,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Inventory Summary",
+            self._t("Inventory Summary"),
             f"Source: jamf-cli pro report inventory-summary | Generated: {ts}",
             self._fmts,
             ncols=3,
@@ -3641,7 +3680,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Device Compliance",
+            self._t("Device Compliance"),
             (
                 "Source: jamf-cli pro report device-compliance"
                 f" (--days-since-checkin {stale_days}) | Generated: {ts}"
@@ -3764,7 +3803,7 @@ class CoreDashboard:
             subtitle += " + computer-extension-attributes list"
         row = _write_sheet_header(
             ws,
-            "Extension Attribute Coverage",
+            self._t("Extension Attribute Coverage"),
             f"{subtitle} | Generated: {ts}",
             self._fmts,
             ncols=11,
@@ -3847,7 +3886,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Extension Attribute Definitions",
+            self._t("Extension Attribute Definitions"),
             "Source: jamf-cli pro computer-extension-attributes list"
             f" | Generated: {ts}",
             self._fmts,
@@ -3897,7 +3936,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Software Installs",
+            self._t("Software Installs"),
             "Source: jamf-cli pro report software-installs"
             f" | Generated: {ts}",
             self._fmts,
@@ -3947,7 +3986,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Policy Health",
+            self._t("Policy Health"),
             f"Source: jamf-cli pro report policy-status | Generated: {ts}",
             self._fmts,
             ncols=4,
@@ -4005,7 +4044,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Profile Status",
+            self._t("Profile Status"),
             f"Source: jamf-cli pro report profile-status | Generated: {ts}",
             self._fmts,
             ncols=7,
@@ -4082,7 +4121,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Patch Compliance",
+            self._t("Patch Compliance"),
             f"Source: jamf-cli pro report patch-status | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -4138,7 +4177,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Patch Failures",
+            self._t("Patch Failures"),
             f"Source: jamf-cli pro report patch-status --scan-failures | Generated: {ts}",
             self._fmts,
             ncols=8,
@@ -4194,7 +4233,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "App Status",
+            self._t("App Status"),
             f"Source: jamf-cli pro report app-status | Generated: {ts}",
             self._fmts,
             ncols=7,
@@ -4285,7 +4324,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Update Status",
+            self._t("Update Status"),
             f"Source: jamf-cli pro report update-status | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -4392,7 +4431,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Update Failures",
+            self._t("Update Failures"),
             (
                 "Source: jamf-cli pro report update-status --scan-failures"
                 f" (v1.6.0+) | Generated: {ts}"
@@ -4561,6 +4600,15 @@ class CSVDashboard:
             self._df = primary
             print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
 
+    @property
+    def _org_name(self) -> str:
+        """Return the configured org name, or empty string."""
+        return (self._config.get("branding", "org_name") or "").strip()
+
+    def _t(self, base: str) -> str:
+        """Return sheet title prefixed with org name when configured."""
+        return _org_title(self._org_name, base)
+
     def write_all(self) -> list[str]:
         """Write all CSV-derived sheets. Returns list of sheet names written."""
         written = []
@@ -4629,7 +4677,7 @@ class CSVDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
             ws,
-            "Device Inventory",
+            self._t("Device Inventory"),
             f"Active devices (checked in within {stale_days} days) | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -4659,7 +4707,7 @@ class CSVDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
             ws,
-            "Stale Devices",
+            self._t("Stale Devices"),
             f"Devices not checked in within {stale_days} days | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -4698,7 +4746,7 @@ class CSVDashboard:
         ws = self._wb.add_worksheet("Security Controls")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
-            ws, "Security Controls", f"Generated: {ts}", self._fmts, ncols=4
+            ws, self._t("Security Controls"), f"Generated: {ts}", self._fmts, ncols=4
         )
         headers = ["Control", "Enabled/Compliant", "Not Compliant", "Compliance %"]
         for c, h in enumerate(headers):
@@ -4727,7 +4775,7 @@ class CSVDashboard:
         ws = self._wb.add_worksheet("Security Agents")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
-            ws, "Security Agent Status", f"Generated: {ts}", self._fmts, ncols=5
+            ws, self._t("Security Agent Status"), f"Generated: {ts}", self._fmts, ncols=5
         )
         for agent in agents:
             col = agent.get("column", "")
@@ -4783,7 +4831,7 @@ class CSVDashboard:
         ws = self._wb.add_worksheet("Compliance")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
-            ws, label, f"Generated: {ts}", self._fmts, ncols=4
+            ws, self._t(label), f"Generated: {ts}", self._fmts, ncols=4
         )
         if count_col:
             counts = pd.to_numeric(self._df[count_col], errors="coerce").fillna(0)
@@ -6467,7 +6515,8 @@ def cmd_generate(
     print(f"  config base dir: {config.base_dir}")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     wb = xlsxwriter.Workbook(str(out_path))
-    fmts = _build_formats(wb)
+    accent_color = (config.get("branding", "accent_color") or "#2D5EA2").strip()
+    fmts = _build_formats(wb, accent_color)
     sheets_written = 0
     jamf_cli_written: list[str] = []
     csv_written: list[str] = []
@@ -6563,6 +6612,7 @@ def cmd_generate(
             jamf_cli_written,
             csv_written,
             chart_source,
+            org_name=config.get("branding", "org_name") or "",
         )
 
         wb.close()
@@ -6603,6 +6653,7 @@ def cmd_generate(
             generated_at,
             jamf_cli_written,
             csv_written,
+            org_name=config.get("branding", "org_name") or "",
         )
         pptx_path = exporter.export_pptx()
         if pptx_path:
@@ -6642,12 +6693,14 @@ class ReportExporter:
         generated_at: str,
         jamf_cli_sheets: list[str],
         csv_sheets: list[str],
+        org_name: str = "",
     ) -> None:
         self._output_dir = output_dir
         self._report_stem = report_stem
         self._generated_at = generated_at
         self._jamf_cli_sheets = jamf_cli_sheets
         self._csv_sheets = csv_sheets
+        self._org_name = org_name
 
     def export_pptx(self) -> Optional[Path]:
         """Generate the PPTX summary file.
@@ -6685,7 +6738,11 @@ class ReportExporter:
         """Add the opening title slide."""
         layout = prs.slide_layouts[0]   # Title Slide layout
         slide = prs.slides.add_slide(layout)
-        slide.shapes.title.text = "Jamf Pro Fleet Report"
+        slide.shapes.title.text = (
+            f"{self._org_name} — Jamf Pro Fleet Report"
+            if self._org_name
+            else "Jamf Pro Fleet Report"
+        )
         if len(slide.placeholders) > 1:
             slide.placeholders[1].text = self._generated_at
 
@@ -6989,7 +7046,17 @@ class HtmlReport:
         (github.com/DevliegereM/) with minor modifications for
         the Python port (no emojis; text-only status indicators).
         """
-        return """
+        accent = (self._config.get("branding", "accent_color") or "").strip()
+        accent_dark = (self._config.get("branding", "accent_dark") or "").strip()
+        overrides = ""
+        if accent or accent_dark:
+            parts = []
+            if accent_dark:
+                parts.append(f"    --blue-dark: {accent_dark};")
+            if accent:
+                parts.append(f"    --blue:      {accent};")
+            overrides = ":root {\n" + "\n".join(parts) + "\n}\n"
+        return overrides + """
 :root {
     --blue-dark: #004165;
     --blue:      #0076B6;
@@ -7170,6 +7237,24 @@ a:hover { text-decoration: underline; }
     margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border);
 }
 """
+
+    def _logo_html(self) -> str:
+        """Return an inline <img> tag with the logo base64-encoded, or empty string."""
+        logo_path = self._config.resolve_path("branding", "logo_path")
+        if not logo_path or not logo_path.exists():
+            return ""
+        try:
+            import base64
+            import mimetypes
+            mime = mimetypes.guess_type(str(logo_path))[0] or "image/png"
+            b64 = base64.b64encode(logo_path.read_bytes()).decode()
+            return (
+                f'<img src="data:{mime};base64,{b64}" alt="" '
+                f'style="height:28px;margin-right:10px;vertical-align:middle;'
+                f'border-radius:4px">'
+            )
+        except Exception:
+            return ""
 
     def _js(self, os_labels: list[str], os_counts: list[int]) -> str:
         """Return the embedded JavaScript block including Chart.js configuration.
@@ -7564,20 +7649,32 @@ if (_ctx) {{
 
         css = self._css()
         js = self._js(os_labels, os_counts)
+        org_name = (self._config.get("branding", "org_name") or "").strip()
+        brand_label = (
+            f"{org_name} \u2014 Jamf Pro Reporting Snapshot"
+            if org_name
+            else "Jamf Pro Reporting Snapshot"
+        )
+        page_title = (
+            f"{org_name} \u2014 Jamf Pro Report \u2014 {instance_url}"
+            if org_name
+            else f"Jamf Pro Report \u2014 {instance_url}"
+        )
+        logo_html = self._logo_html()
 
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Jamf Pro Report &mdash; {instance_url}</title>
+<title>{page_title}</title>
 <script src="{self._CHARTJS_CDN}"></script>
 <style>{css}</style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="topbar-brand">Jamf Pro Reporting Snapshot</div>
+  <div class="topbar-brand">{logo_html}{brand_label}</div>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <div class="topbar-meta">
       <strong>{instance_url}</strong><br>

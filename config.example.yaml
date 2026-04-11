@@ -186,6 +186,29 @@ jamf_cli:
   allow_live_overview: true
 
 
+# ---------------------------------------------------------------------------
+# Organisational branding (all fields optional)
+# ---------------------------------------------------------------------------
+branding:
+  # Your organisation's name. When set, it is prepended to every sheet title
+  # in the Excel workbook (e.g. "Acme Corp — Fleet Overview") and shown in
+  # the HTML report header and PPTX title slide.
+  org_name: ""
+
+  # Path to a PNG or JPEG logo file (relative to this config file, or absolute).
+  # The logo is embedded as a base64 image in the self-contained HTML report,
+  # and inserted on the Report Sources sheet of the Excel workbook.
+  logo_path: ""
+
+  # Hex colour used for Excel column headers and the HTML report's primary
+  # accent colour (topbar, links, stat-card values).  Default: #2D5EA2
+  accent_color: "#2D5EA2"
+
+  # Darker variant of accent_color — used for the HTML topbar background and
+  # dark-mode accent elements.  Default: #004165
+  accent_dark:  "#004165"
+
+
 # =============================================================================
 # JAMF PROTECT
 # =============================================================================
