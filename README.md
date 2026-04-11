@@ -24,11 +24,12 @@ and the script handles the rest.
 
 **jamf-cli is optional.** The full report generates from a CSV export alone. jamf-cli
 integration adds live fleet, mobile-device visibility, EA discovery, software inventory,
-and patch/compliance sheets for orgs that want them.
+and patch/compliance sheets for orgs that want them. There is also an opt-in,
+experimental `Protect Overview` sheet for Jamf Protect environments.
 
-**Test scope:** this project is built and tested against Jamf Pro only. `jamf-cli` also
-supports Jamf Protect, but `jamf-reports-community` does not currently collect, parse, or
-validate Protect data.
+**Test scope:** this project is built and tested against Jamf Pro. Jamf Protect support is
+new, opt-in, and based on the `jamf-cli 1.6` command surface, but it has not been fully
+validated against a live Protect tenant yet.
 
 **Open source direction:** this repo is intentionally meant to be extended. If your
 environment needs Jamf Protect, future Jamf Platform API data, deeper EA visualizations,
@@ -81,6 +82,23 @@ snapshots, the script can also reuse those as an offline cache.
 
 jamf-cli v1.2.0 is the minimum version that supports `app-status` and `update-status`.
 Builds before 1.2.0 will skip those sheets with a clear skip message.
+
+If you also want the experimental Jamf Protect sheet, use `jamf-cli 1.6.0+`, configure
+Protect separately, and then opt in from `config.yaml`:
+
+```bash
+jamf-cli protect setup
+```
+
+```yaml
+protect:
+  enabled: true
+```
+
+When `protect.enabled` is true, the workbook attempts to build a `Protect Overview` sheet
+from `jamf-cli protect overview`, `protect computers list`, `protect analytics list`, and
+`protect plans list`. This path is intentionally defensive and will skip cleanly if
+Protect auth or commands are unavailable.
 
 If you use multiple jamf-cli profiles, set `jamf_cli.profile` in `config.yaml` to the
 profile name you want this report to target. This is the same profile selected with

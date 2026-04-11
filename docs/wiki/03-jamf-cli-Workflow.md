@@ -15,6 +15,10 @@ Primary `jamf-cli` references:
 Current high-value commands:
 
 - `jamf-cli pro overview`
+- `jamf-cli protect overview` (experimental workbook support)
+- `jamf-cli protect computers list` (experimental workbook support)
+- `jamf-cli protect analytics list` (experimental workbook support)
+- `jamf-cli protect plans list` (experimental workbook support)
 - `jamf-cli pro mobile-device-inventory-details list`
 - `jamf-cli pro mobile-devices list`
 - `jamf-cli pro classic-mobile-config-profiles list`
@@ -43,6 +47,12 @@ Interactive setup:
 jamf-cli pro setup --url https://jamf.example.com
 ```
 
+If you want the experimental Jamf Protect sheet as well:
+
+```bash
+jamf-cli protect setup
+```
+
 If you use multiple instances, keep profile names explicit and map them in
 `jamf-reports-community` config:
 
@@ -59,6 +69,17 @@ jamf_cli:
   profile: "dummy"
   data_dir: "jamf-cli-data/dummy"
 ```
+
+To opt into Protect reporting:
+
+```yaml
+protect:
+  enabled: true
+```
+
+That path currently creates a single `Protect Overview` sheet. It is intentionally
+defensive and based on the `jamf-cli 1.6` Protect commands, but it has not been fully
+validated against a live Protect tenant.
 
 If you want the filesystem layout created for you, bootstrap one workspace per profile:
 
@@ -152,6 +173,7 @@ python3 jamf-reports-community.py generate --config config.yaml
 With `jamf-cli` available, the workbook can include:
 
 - Fleet Overview
+- Protect Overview (experimental, opt-in)
 - Mobile Fleet Summary
 - Inventory Summary
 - Mobile Inventory

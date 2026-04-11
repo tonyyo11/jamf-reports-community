@@ -14,12 +14,13 @@ It supports two primary data collection paths:
 - Jamf Pro CSV exports
 - `jamf-cli` live data plus cached JSON snapshots
 
-It is built and tested against Jamf Pro only. `jamf-cli` also supports Jamf Protect, but
-this project does not currently collect or validate Protect data.
+It is built and tested against Jamf Pro. Jamf Protect support now exists as an
+experimental, opt-in `Protect Overview` sheet driven by `jamf-cli 1.6`, but it has not
+been fully validated against a live Protect tenant.
 
 This project is open sourced intentionally. The goal is to give Mac admins a practical
-starting point they can extend for their own needs, including future Jamf Protect or
-Jamf Platform API work.
+starting point they can extend for their own needs, including deeper Jamf Protect or
+future Jamf Platform API work.
 
 ## Suggested Reading Order
 
