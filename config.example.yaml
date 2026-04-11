@@ -219,15 +219,24 @@ protect:
 # still emerging. It uses the same selected jamf-cli profile, but that profile
 # must also have working Platform gateway auth in the jamf-cli build you use.
 #
-# Set compliance_benchmark to the benchmark title or ID you want the workbook
-# to summarize. If you leave it blank, the workbook still includes blueprint
-# and DDM sheets, but skips the benchmark-specific compliance sheets.
+# List each benchmark title in compliance_benchmarks. Each entry generates two
+# sheets: one for per-rule pass/fail stats and one for per-device results.
+# Orgs commonly run multiple benchmarks (e.g. an enforced baseline and an audit
+# baseline, or separate baselines per department). Leave the list empty to skip
+# compliance sheets while still including the Blueprint and DDM Status sheets.
+#
+# Sheet names are derived from the benchmark title (truncated to fit Excel's
+# 31-character limit), e.g. "NIST 800-53r5 Moderate Rules" and
+# "NIST 800-53r5 Moderate Devices".
 
 platform:
   # Set true to enable the preview Platform API sheets.
   enabled: false
-  # Benchmark title or ID for the Platform compliance sheets.
-  compliance_benchmark: ""
+  # List of benchmark titles for the Platform compliance sheets.
+  # Each entry produces a Rules sheet and a Devices sheet.
+  compliance_benchmarks:
+    # - "NIST 800-53r5 Moderate"
+    # - "DISA STIG"
 
 
 # =============================================================================

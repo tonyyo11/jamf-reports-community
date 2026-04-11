@@ -135,7 +135,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "platform": {
         "enabled": False,
-        "compliance_benchmark": "",
+        "compliance_benchmarks": [],
     },
     "compliance": {
         "enabled": False,
@@ -1838,10 +1838,6 @@ class JamfCLIBridge:
                 [
                     "blueprint-status",
                     "blueprint_status",
-                    "compliance-rules",
-                    "compliance_rules",
-                    "compliance-devices",
-                    "compliance_devices",
                     "ddm-status",
                     "ddm_status",
                 ]
@@ -2273,10 +2269,12 @@ class JamfCLIBridge:
         if not benchmark:
             raise RuntimeError("platform compliance rules require a benchmark title or ID")
         self._require_report_command("compliance-rules", ["compliance-rules", "compliance_rules"])
+        slug = _benchmark_slug(benchmark)
+        cache_key = f"compliance-rules-{slug}"
         return self._run_and_save(
-            "compliance-rules",
+            cache_key,
             ["pro", "report", "compliance-rules", benchmark],
-            ["compliance-rules", "compliance_rules"],
+            [cache_key, "compliance-rules", "compliance_rules"],
         )
 
     def compliance_devices(self, benchmark_title: str) -> Any:
@@ -2288,10 +2286,12 @@ class JamfCLIBridge:
             "compliance-devices",
             ["compliance-devices", "compliance_devices"],
         )
+        slug = _benchmark_slug(benchmark)
+        cache_key = f"compliance-devices-{slug}"
         return self._run_and_save(
-            "compliance-devices",
+            cache_key,
             ["pro", "report", "compliance-devices", benchmark],
-            ["compliance-devices", "compliance_devices"],
+            [cache_key, "compliance-devices", "compliance_devices"],
         )
 
     def ddm_status(self) -> Any:
@@ -2652,6 +2652,37 @@ def _pct_format(fmts: dict, pct: float) -> Any:
     return fmts["pct_red"]
 
 
+def _benchmark_slug(title: str) -> str:
+    """Return a filesystem-safe slug from a benchmark title.
+
+    Used to build per-benchmark cache directory names so data from multiple
+    benchmarks does not overwrite each other during collect.
+
+    Args:
+        title: Benchmark title string (e.g. "NIST 800-53r5 Moderate").
+
+    Returns:
+        A lowercase, hyphen-separated slug truncated to 48 characters.
+    """
+    import re as _re
+    return _re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:48]
+
+
+def _excel_sheet_name(base: str, suffix: str, max_len: int = 31) -> str:
+    """Return an Excel-safe sheet name from base + suffix, truncating to max_len.
+
+    Args:
+        base: The primary label (e.g. benchmark title).
+        suffix: Short suffix appended after truncation room is reserved (e.g. " Rules").
+        max_len: Excel sheet name character limit (default 31).
+
+    Returns:
+        Combined string guaranteed to be <= max_len characters.
+    """
+    room = max_len - len(suffix)
+    return base[:room] + suffix
+
+
 def _write_report_sources_sheet(
     wb: xlsxwriter.Workbook,
     fmts: dict[str, Any],
@@ -2937,11 +2968,16 @@ class CoreDashboard:
             sheets.append(("Protect Overview", self._write_protect_overview))
         if self._platform_enabled():
             sheets.append(("Platform Blueprints", self._write_platform_blueprints))
-            if self._platform_benchmark_title():
-                sheets.append(("Platform Compliance Rules", self._write_platform_compliance_rules))
-                sheets.append(
-                    ("Platform Compliance Devices", self._write_platform_compliance_devices)
-                )
+            for bench in self._platform_benchmark_titles():
+                bench_label = bench[:25]
+                sheets.append((
+                    f"{bench_label} Rules",
+                    lambda b=bench: self._write_platform_compliance_rules(b),
+                ))
+                sheets.append((
+                    f"{bench_label} Devices",
+                    lambda b=bench: self._write_platform_compliance_devices(b),
+                ))
             sheets.append(("Platform DDM Status", self._write_platform_ddm_status))
         sheets.extend(
             [
@@ -3021,11 +3057,16 @@ class CoreDashboard:
         """Return True when preview Platform API reporting is enabled."""
         return self._config.get("platform", "enabled", default=False) is True
 
-    def _platform_benchmark_title(self) -> str:
-        """Return the configured Platform compliance benchmark title or ID."""
-        return str(
-            self._config.get("platform", "compliance_benchmark", default="") or ""
-        ).strip()
+    def _platform_benchmark_titles(self) -> list[str]:
+        """Return all configured Platform compliance benchmark titles.
+
+        Reads from platform.compliance_benchmarks (list). Returns an empty list
+        when the key is absent or empty, which causes compliance sheets to be skipped.
+        """
+        raw = self._config.get("platform", "compliance_benchmarks", default=[]) or []
+        if isinstance(raw, str):
+            raw = [raw]
+        return [str(t).strip() for t in raw if str(t).strip()]
 
     @staticmethod
     def _platform_rows(raw: Any) -> list[dict[str, Any]]:
@@ -3428,12 +3469,12 @@ class CoreDashboard:
             )
             row += 1
 
-    def _write_platform_compliance_rules(self) -> None:
-        """Write per-rule Platform compliance results for the configured benchmark."""
-        benchmark = self._platform_benchmark_title()
-        if not benchmark:
-            raise RuntimeError("set platform.compliance_benchmark to include benchmark sheets")
+    def _write_platform_compliance_rules(self, benchmark: str) -> None:
+        """Write per-rule Platform compliance results for a single benchmark.
 
+        Args:
+            benchmark: Benchmark title passed to jamf-cli compliance-rules.
+        """
         rows = self._platform_rows(self._bridge.compliance_rules(benchmark))
         if not rows:
             raise RuntimeError("jamf-cli compliance-rules returned no rows")
@@ -3445,11 +3486,13 @@ class CoreDashboard:
         rules_with_failures = sum(1 for item in rows if _to_int(item.get("failed", 0)) > 0)
         rules_with_unknown = sum(1 for item in rows if _to_int(item.get("unknown", 0)) > 0)
 
-        ws = self._wb.add_worksheet("Platform Compliance Rules")
+        sheet_title = "Compliance Rules"
+        sheet_name = _excel_sheet_name(benchmark, " Rules")
+        ws = self._wb.add_worksheet(sheet_name)
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Platform Compliance Rules",
+            sheet_title,
             f"Source: jamf-cli pro report compliance-rules {benchmark} | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -3499,12 +3542,12 @@ class CoreDashboard:
                 _safe_write(ws, row, 5, pass_rate, _pct_format(self._fmts, pass_rate))
             row += 1
 
-    def _write_platform_compliance_devices(self) -> None:
-        """Write failing Platform compliance devices for the configured benchmark."""
-        benchmark = self._platform_benchmark_title()
-        if not benchmark:
-            raise RuntimeError("set platform.compliance_benchmark to include benchmark sheets")
+    def _write_platform_compliance_devices(self, benchmark: str) -> None:
+        """Write failing Platform compliance devices for a single benchmark.
 
+        Args:
+            benchmark: Benchmark title passed to jamf-cli compliance-devices.
+        """
         rows = self._platform_rows(self._bridge.compliance_devices(benchmark))
         if not rows:
             raise RuntimeError("jamf-cli compliance-devices returned no rows")
@@ -3514,11 +3557,13 @@ class CoreDashboard:
             if ratio is not None
         ]
 
-        ws = self._wb.add_worksheet("Platform Compliance Devices")
+        sheet_title = "Compliance Devices"
+        sheet_name = _excel_sheet_name(benchmark, " Devices")
+        ws = self._wb.add_worksheet(sheet_name)
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Platform Compliance Devices",
+            sheet_title,
             f"Source: jamf-cli pro report compliance-devices {benchmark} | Generated: {ts}",
             self._fmts,
             ncols=5,
@@ -6438,13 +6483,15 @@ def _validate_config_structure(config: Config) -> None:
                 )
 
     platform_cfg = config.platform
-    if platform_cfg.get("enabled") and not str(
-        platform_cfg.get("compliance_benchmark", "") or ""
-    ).strip():
-        issues.append(
-            "platform.enabled is true but platform.compliance_benchmark is blank —"
-            " benchmark-specific platform sheets will be skipped"
-        )
+    if platform_cfg.get("enabled"):
+        benchmarks = platform_cfg.get("compliance_benchmarks") or []
+        if isinstance(benchmarks, str):
+            benchmarks = [benchmarks]
+        if not [str(t).strip() for t in benchmarks if str(t).strip()]:
+            issues.append(
+                "platform.enabled is true but platform.compliance_benchmarks is empty —"
+                " benchmark-specific compliance sheets will be skipped"
+            )
 
     # Custom EA type validation
     for ea in config.custom_eas:
@@ -6593,9 +6640,10 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     jamf_cli_cfg = config.jamf_cli
     protect_enabled = config.get("protect", "enabled", default=False) is True
     platform_enabled = config.get("platform", "enabled", default=False) is True
-    platform_benchmark = str(
-        config.get("platform", "compliance_benchmark", default="") or ""
-    ).strip()
+    _raw_benchmarks = config.get("platform", "compliance_benchmarks", default=[]) or []
+    if isinstance(_raw_benchmarks, str):
+        _raw_benchmarks = [_raw_benchmarks]
+    platform_benchmarks = [str(t).strip() for t in _raw_benchmarks if str(t).strip()]
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
     live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
@@ -6614,8 +6662,9 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
         print("  live overview: disabled (cached overview only)")
     print(f"  protect reporting: {'enabled' if protect_enabled else 'disabled'}")
     print(f"  platform reporting: {'enabled' if platform_enabled else 'disabled'}")
-    if platform_enabled and platform_benchmark:
-        print(f"  platform benchmark: {platform_benchmark}")
+    if platform_enabled and platform_benchmarks:
+        for bench in platform_benchmarks:
+            print(f"  platform benchmark: {bench}")
     if bridge.is_available():
         print(f"  jamf-cli: found -> {bridge._binary}")
         report_commands = bridge._report_commands()
@@ -6634,7 +6683,7 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             platform_required = {"blueprint-status", "ddm-status"} if platform_enabled else set()
             platform_benchmark_cmds = (
                 {"compliance-rules", "compliance-devices"}
-                if platform_enabled and platform_benchmark else set()
+                if platform_enabled and platform_benchmarks else set()
             )
             missing_platform = sorted(
                 (platform_required | platform_benchmark_cmds) - report_commands
@@ -6713,9 +6762,9 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                     print("  platform auth: ok (blueprint-status)")
                 else:
                     print("  platform auth: skipped — blueprint-status not available")
-                if platform_benchmark:
+                if platform_benchmarks:
                     if not report_commands or "compliance-rules" in report_commands:
-                        live_platform_bridge.compliance_rules(platform_benchmark)
+                        live_platform_bridge.compliance_rules(platform_benchmarks[0])
                         print("  platform benchmark: ok (compliance-rules)")
                     else:
                         print("  platform benchmark: skipped — compliance-rules not available")
@@ -6879,12 +6928,13 @@ def cmd_generate(
     if protect_enabled:
         print("  protect reporting: enabled (experimental)")
     if platform_enabled:
-        platform_benchmark = str(
-            config.get("platform", "compliance_benchmark", default="") or ""
-        ).strip()
+        _raw_gen_benchmarks = config.get("platform", "compliance_benchmarks", default=[]) or []
+        if isinstance(_raw_gen_benchmarks, str):
+            _raw_gen_benchmarks = [_raw_gen_benchmarks]
+        _gen_benchmarks = [str(t).strip() for t in _raw_gen_benchmarks if str(t).strip()]
         print("  platform reporting: enabled (preview)")
-        if platform_benchmark:
-            print(f"  platform benchmark: {platform_benchmark}")
+        for bench in _gen_benchmarks:
+            print(f"  platform benchmark: {bench}")
     if not live_overview_allowed:
         print("  live overview disabled; Fleet Overview will use cache only.")
     try:
@@ -8085,9 +8135,10 @@ def _collect_snapshots(
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
     protect_enabled = config.get("protect", "enabled", default=False) is True
     platform_enabled = config.get("platform", "enabled", default=False) is True
-    platform_benchmark = str(
-        config.get("platform", "compliance_benchmark", default="") or ""
-    ).strip()
+    _raw_collect_benchmarks = config.get("platform", "compliance_benchmarks", default=[]) or []
+    if isinstance(_raw_collect_benchmarks, str):
+        _raw_collect_benchmarks = [_raw_collect_benchmarks]
+    platform_benchmarks = [str(t).strip() for t in _raw_collect_benchmarks if str(t).strip()]
     live_overview_allowed = config.jamf_cli.get("allow_live_overview", True) is True
     bridge = JamfCLIBridge(
         save_output=True,
@@ -8100,8 +8151,8 @@ def _collect_snapshots(
         print(f"  jamf-cli profile: {jamf_cli_profile}")
     if platform_enabled:
         print("  platform reporting: enabled (preview)")
-        if platform_benchmark:
-            print(f"  platform benchmark: {platform_benchmark}")
+        for bench in platform_benchmarks:
+            print(f"  platform benchmark: {bench}")
     if bridge.is_available():
         stale_days = int(config.thresholds.get("stale_device_days", 30))
         commands = []
@@ -8142,22 +8193,24 @@ def _collect_snapshots(
                     ("Platform DDM Status", bridge.ddm_status),
                 ]
             )
-            if platform_benchmark:
-                commands.extend(
-                    [
-                        (
-                            "Platform Compliance Rules",
-                            lambda: bridge.compliance_rules(platform_benchmark),
-                        ),
-                        (
-                            "Platform Compliance Devices",
-                            lambda: bridge.compliance_devices(platform_benchmark),
-                        ),
-                    ]
-                )
+            if platform_benchmarks:
+                for bench in platform_benchmarks:
+                    bench_label = bench[:40]
+                    commands.extend(
+                        [
+                            (
+                                f"Compliance Rules: {bench_label}",
+                                lambda b=bench: bridge.compliance_rules(b),
+                            ),
+                            (
+                                f"Compliance Devices: {bench_label}",
+                                lambda b=bench: bridge.compliance_devices(b),
+                            ),
+                        ]
+                    )
             else:
                 print(
-                    "  [skip] Platform Compliance: platform.compliance_benchmark is blank"
+                    "  [skip] Platform Compliance: platform.compliance_benchmarks is empty"
                 )
         for label, command in commands:
             try:
