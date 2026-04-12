@@ -252,7 +252,7 @@ platform:
 
 compliance:
   enabled: true
-  baseline_label: "NIST 800-53r5 Moderate"
+  baseline_label: "mSCP Compliance"
   # EA column containing the integer count of failed rules.
   failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5"
   # EA column containing the pipe-delimited list of failed rule IDs.
@@ -381,8 +381,8 @@ output:
   # folder containing config.yaml. Created automatically if it does not exist.
   output_dir: "Generated Reports"
 
-  # Append a local date/time stamp to user-specified output filenames unless
-  # they already contain one. Auto-named outputs are always timestamped.
+  # Append a local date/time stamp to generated filenames unless they already
+  # contain one.
   timestamp_outputs: true
 
   # Automatically move older generated runs out of the main output folder.
