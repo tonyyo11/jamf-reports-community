@@ -3,12 +3,16 @@ config.yaml
 
 # Jamf CLI cached data
 jamf-cli-data/
+!tests/fixtures/jamf-cli-data/
+!tests/fixtures/jamf-cli-data/**
 
 # Generated report output
 Generated Reports/
 
 # Generated snapshot history
 snapshots/
+!tests/fixtures/snapshots/
+!tests/fixtures/snapshots/**
 
 # Local tenant workspaces for testing
 Dummy/

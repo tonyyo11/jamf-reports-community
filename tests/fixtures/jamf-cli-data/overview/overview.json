@@ -1,0 +1,210 @@
+[
+  {
+    "resource": "Health Status",
+    "section": "Health & Alerts",
+    "value": "ok"
+  },
+  {
+    "resource": "Active Alerts",
+    "section": "Health & Alerts",
+    "status": "red",
+    "value": "2 active"
+  },
+  {
+    "resource": "Alert Types",
+    "section": "Health & Alerts",
+    "status": "red",
+    "value": "Device count exceeds license"
+  },
+  {
+    "resource": "",
+    "section": "Health & Alerts",
+    "status": "red",
+    "value": "Patch extension attribute issue"
+  },
+  {
+    "resource": "Server URL",
+    "section": "Instance",
+    "value": "https://dummy.jamfcloud.com"
+  },
+  {
+    "resource": "Jamf Pro Version",
+    "section": "Instance",
+    "value": "11.26.1-t1774880441315"
+  },
+  {
+    "resource": "Managed Computers",
+    "section": "Fleet",
+    "value": "101"
+  },
+  {
+    "resource": "Unmanaged Computers",
+    "section": "Fleet",
+    "value": "0"
+  },
+  {
+    "resource": "Check-In Frequency",
+    "section": "Fleet",
+    "value": "15 min"
+  },
+  {
+    "resource": "Managed Devices",
+    "section": "Fleet",
+    "value": "85"
+  },
+  {
+    "resource": "Unmanaged Devices",
+    "section": "Fleet",
+    "value": "0"
+  },
+  {
+    "resource": "ADE Instances",
+    "section": "Enrollment & Certificates",
+    "value": "0"
+  },
+  {
+    "resource": "ADE Token Expires",
+    "section": "Enrollment & Certificates",
+    "value": "None configured"
+  },
+  {
+    "resource": "ADE Sync Status",
+    "section": "Enrollment & Certificates",
+    "value": "No ADE instances"
+  },
+  {
+    "resource": "Computer Prestages",
+    "section": "Enrollment & Certificates",
+    "value": "0"
+  },
+  {
+    "resource": "Mobile Device Prestages",
+    "section": "Enrollment & Certificates",
+    "value": "0"
+  },
+  {
+    "resource": "VPP Locations",
+    "section": "Enrollment & Certificates",
+    "value": "N/A"
+  },
+  {
+    "resource": "",
+    "section": "Enrollment & Certificates",
+    "value": ""
+  },
+  {
+    "resource": "APNs Certificate",
+    "section": "Enrollment & Certificates",
+    "value": "OK"
+  },
+  {
+    "resource": "Built-in CA Expires",
+    "section": "Enrollment & Certificates",
+    "value": "May 20, 2032"
+  },
+  {
+    "resource": "MDM Auto Renew (Computers)",
+    "section": "Enrollment & Certificates",
+    "value": "enabled"
+  },
+  {
+    "resource": "MDM Auto Renew (Mobile)",
+    "section": "Enrollment & Certificates",
+    "value": "enabled"
+  },
+  {
+    "resource": "Policies",
+    "section": "Configuration",
+    "value": "17"
+  },
+  {
+    "resource": "macOS Config Profiles",
+    "section": "Configuration",
+    "value": "1"
+  },
+  {
+    "resource": "iOS Config Profiles",
+    "section": "Configuration",
+    "value": "1"
+  },
+  {
+    "resource": "Packages",
+    "section": "Configuration",
+    "value": "12"
+  },
+  {
+    "resource": "App Installers",
+    "section": "Configuration",
+    "value": "N/A"
+  },
+  {
+    "resource": "Scripts",
+    "section": "Configuration",
+    "value": "11"
+  },
+  {
+    "resource": "eBooks",
+    "section": "Configuration",
+    "value": "1"
+  },
+  {
+    "resource": "Patch Titles",
+    "section": "Configuration",
+    "value": "2"
+  },
+  {
+    "resource": "Sites",
+    "section": "Organization",
+    "value": "0"
+  },
+  {
+    "resource": "Buildings",
+    "section": "Organization",
+    "value": "0"
+  },
+  {
+    "resource": "Departments",
+    "section": "Organization",
+    "value": "0"
+  },
+  {
+    "resource": "Categories",
+    "section": "Organization",
+    "value": "0"
+  },
+  {
+    "resource": "Computer Smart Groups",
+    "section": "Organization",
+    "value": "5"
+  },
+  {
+    "resource": "Computer Static Groups",
+    "section": "Organization",
+    "value": "34"
+  },
+  {
+    "resource": "Mobile Smart Groups",
+    "section": "Organization",
+    "value": "3"
+  },
+  {
+    "resource": "Mobile Static Groups",
+    "section": "Organization",
+    "value": "1"
+  },
+  {
+    "resource": "Static User Groups",
+    "section": "Organization",
+    "value": "0"
+  },
+  {
+    "resource": "Cloud Distribution",
+    "section": "Features",
+    "value": "enabled"
+  },
+  {
+    "resource": "Patch Management",
+    "section": "Features",
+    "value": "enabled"
+  }
+]
