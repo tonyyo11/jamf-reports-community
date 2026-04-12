@@ -319,10 +319,10 @@ python3 jamf-reports-community.py launchagent-setup --config config.yaml
 
 The setup command can build these workflow types:
 
-- `snapshot-only` — refresh jamf-cli snapshots and optional CSV history only
+- `snapshot-only` — refresh jamf-cli snapshots and archive per-family CSV history only
 - `jamf-cli-only` — generate a workbook from live or cached jamf-cli data
 - `jamf-cli-full` — build a jamf-cli baseline CSV, refresh snapshots, and generate a workbook
-- `csv-assisted` — prefer the newest CSV in an inbox folder and fall back to jamf-cli-only
+- `csv-assisted` — prefer a manifest-selected CSV first, then an inbox CSV, plus jamf-cli data
 
 Schedules currently support `daily`, `weekdays`, `weekly`, and `monthly`.
 
@@ -358,9 +358,12 @@ python3 jamf-reports-community.py generate \
 | `--out-file` | auto-named | Output path for the xlsx file. Timestamp appended by default if needed |
 | `--historical-csv-dir` | none | Directory of dated CSV snapshots for trend charts |
 
-If you omit `--csv`, the workbook is built from jamf-cli data only unless
-`report_families.computers` is enabled, in which case the newest matching computer-family
-CSV is selected automatically.
+If you omit `--csv`, the workbook is built from jamf-cli data only unless a matching
+report family is enabled. `report_families.computers` is preferred; if no computer
+family matches, `report_families.mobile` is used as a fallback. Mobile CSV workbook runs
+use `mobile_columns` and currently write dedicated mobile inventory/stale sheets plus
+`custom_eas`. CSV trend charts remain computer-focused, so mobile CSV runs keep charts on
+the jamf-cli side for now.
 
 Examples:
 
@@ -368,6 +371,9 @@ Examples:
 # Mixed workbook: create a baseline CSV, then build jamf-cli sheets plus CSV sheets
 python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file inventory.csv
 python3 jamf-reports-community.py generate --config config.yaml --csv inventory.csv
+
+# Mobile CSV workbook with dedicated mobile mappings
+python3 jamf-reports-community.py generate --config config.yaml --csv mobile_export.csv
 
 # jamf-cli-only workbook
 python3 jamf-reports-community.py generate --config config.yaml --out-file jamf_report_jamf_cli_only.xlsx
@@ -467,7 +473,7 @@ python3 jamf-reports-community.py workspace-init \
 ```bash
 python3 jamf-reports-community.py launchagent-setup \
     [--config config.yaml] \
-    [--mode csv-assisted] \
+    [--mode jamf-cli-only] \
     [--schedule weekdays] \
     [--time-of-day 07:00]
 ```
@@ -481,8 +487,9 @@ Why use it:
 - scheduled `collect` and `generate` runs build better historical data over time
 - LaunchAgents keep automation scoped to the same macOS user account that owns the
   `jamf-cli` profile and config
-- `csv-assisted` can consume emailed Jamf exports from a folder but still fall back to
-  jamf-cli-only output when no fresh CSV is present
+- `jamf-cli-only` is the default because it is the simplest and most reliable path
+- `csv-assisted` prefers `report_families` first, then can consume emailed Jamf exports
+  from an inbox folder, while still keeping jamf-cli as the primary backend
 
 Examples:
 
@@ -606,6 +613,27 @@ to skip the corresponding feature.
 For `manager`, use a real manager EA or directory-derived field. Do not map it to Jamf's
 built-in `Managed` / `Unmanaged` status column.
 
+### `mobile_columns`
+
+Maps logical field names to a mobile-device CSV export when you want workbook sheets from
+`report_families.mobile` or an explicit mobile `--csv` path.
+
+```yaml
+mobile_columns:
+  device_name: "Display Name"
+  serial_number: "Serial Number"
+  operating_system: "OS Version"
+  last_checkin: "Last Inventory Update"
+  email: "Email Address"
+  model: "Model"
+  device_family: "Device Family"
+  managed: "Managed"
+  supervised: "Supervised"
+```
+
+Keep this separate from `columns`. Mixed environments often need both computer and mobile
+families in one config, and one header mapping cannot credibly serve both schemas.
+
 ### `security_agents`
 
 A list of third-party security tools to track. Each entry drives a row in the Security
@@ -698,15 +726,18 @@ pointing one workbook at the entire archive root.
 
 Current behavior:
 - `report_families.computers` drives `check` and `generate` when `--csv` is omitted.
+- If no computers family matches, `report_families.mobile` is the fallback.
 - `collect` archives the newest matching CSV for every enabled family into that family's
   `historical_dir`.
-- `mobile` and `compliance` families are useful today for archival/discovery and future
-  automation, but they are not auto-merged into the workbook's CSV-driven sheets.
+- `mobile` can now drive dedicated mobile CSV workbook sheets when `mobile_columns` is
+  configured.
+- `compliance` remains useful for archival/discovery and future automation, but it is not
+  auto-merged into workbook CSV sheets yet.
 
 Practical guidance:
 - Keep one baseline computer inventory family for the main workbook.
-- Keep one mobile family if you want historical preservation, even though the CSV sheets
-  are still computer-centric today.
+- Keep one mobile family if you want either historical preservation or mobile CSV
+  workbooks.
 - Keep specialized searches like patching, local admin, or OS compliance in separate
   family folders instead of mixing them into the baseline computer history.
 

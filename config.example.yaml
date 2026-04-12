@@ -105,6 +105,43 @@ columns:
 
 
 # =============================================================================
+# MOBILE CSV COLUMN MAPPING
+# =============================================================================
+# Used when you want workbook CSV sheets from a mobile-device export instead of
+# a computer export. This is separate from `columns` because one config can keep
+# both families defined in `report_families` without forcing one header mapping
+# to fit both schemas.
+#
+# The first mobile CSV release writes dedicated Mobile Device Inventory and
+# Mobile Stale Devices sheets plus custom_eas sheets. Trend charts still remain
+# jamf-cli-driven or computer-CSV-driven.
+
+mobile_columns:
+
+  # --- Core identity fields (required for mobile CSV sheets) ---
+
+  # Device display name in the mobile-device export.
+  device_name: "Display Name"
+
+  # Hardware serial number.
+  serial_number: "Serial Number"
+
+  # iOS / iPadOS / tvOS version string.
+  operating_system: "OS Version"
+
+  # Last inventory update / check-in timestamp.
+  last_checkin: "Last Inventory Update"
+
+  # --- Useful optional fields ---
+
+  email: "Email Address"
+  model: "Model"
+  device_family: "Device Family"
+  managed: "Managed"
+  supervised: "Supervised"
+
+
+# =============================================================================
 # SECURITY AGENTS
 # =============================================================================
 # Defines which third-party security tools to track.
@@ -379,10 +416,12 @@ custom_eas:
 #
 # Current behavior:
 # - report_families.computers drives generate/check when --csv is omitted
+# - if no computers family matches, report_families.mobile is the fallback
 # - collect archives the newest matching CSV for every enabled family into that
 #   family's historical_dir
-# - mobile and compliance families are archival/discovery paths today; they are
-#   not automatically merged into the workbook's CSV-driven sheets
+# - mobile can drive dedicated mobile CSV workbook sheets when mobile_columns is
+#   configured
+# - compliance remains an archival/discovery path today
 
 report_families:
 
