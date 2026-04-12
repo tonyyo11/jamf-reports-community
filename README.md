@@ -240,18 +240,28 @@ This refreshes live `jamf-cli` JSON snapshots when auth is working and can also 
 the current CSV into `charts.historical_csv_dir` for trend charts. `collect` is the best
 way to build an append-only historical store for later weekly and monthly reporting.
 
-### Step 6 — Optional: bootstrap a per-profile workspace
+### Step 6 — Optional: bootstrap a per-tenant workspace (recommended)
 
-If you support more than one Jamf tenant or more than one `jamf-cli` profile, create one
-workspace per tenant before you automate anything.
+For all users, including MSPs, the recommended workflow is one workspace per tenant.
+That keeps `config.yaml`, `jamf-cli-data/`, `snapshots/`, `Generated Reports/`, and the
+tenant-specific CSV inbox isolated from other tenants.
+
+Create a live `jamf-cli` tenant workspace like this:
 
 ```bash
 python3 jamf-reports-community.py workspace-init \
-    --profile yourprofile \
-    --workspace-root ~/Jamf-Reports
+    --profile dummy \
+    --workspace-root Dummy
 ```
 
-That creates a profile-scoped folder tree such as:
+Create a CSV-only tenant workspace like this:
+
+```bash
+python3 jamf-reports-community.py workspace-init \
+    --workspace-root Harbor
+```
+
+A workspace created this way contains:
 
 - `config.yaml`
 - `jamf-cli-data/`
@@ -260,8 +270,27 @@ That creates a profile-scoped folder tree such as:
 - `csv-inbox/`
 - `automation/logs/`
 
-By default, the generated `config.yaml` resets path-bearing settings back to local
-workspace-relative defaults so each tenant’s data stays isolated.
+By default, `workspace-init` seeds `config.yaml` with local workspace-relative paths.
+That means the same repo can hold many tenant workspaces safely.
+
+If you already have a tenant workspace, run report commands from inside it whenever
+possible:
+
+```bash
+cd Dummy
+python3 ../jamf-reports-community.py generate --csv "Jamf Reports/Pro/my-export.csv"
+```
+
+Or run from the repo root and explicitly point to the tenant config:
+
+```bash
+python3 jamf-reports-community.py \
+    --config Dummy/config.yaml \
+    generate --csv "Dummy/Jamf Reports/Pro/my-export.csv"
+```
+
+If you are no longer using the root repo workspace, delete the root `config.yaml` and
+empty root folders such as `Jamf Reports/`, `jamf-cli-data/`, and `Generated Reports/`.
 
 ### Step 7 — Optional: automate collection and reporting with a LaunchAgent
 

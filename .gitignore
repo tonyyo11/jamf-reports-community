@@ -7,6 +7,13 @@ jamf-cli-data/
 # Generated report output
 Generated Reports/
 
+# Generated snapshot history
+snapshots/
+
+# Local tenant workspaces for testing
+Dummy/
+Harbor/
+
 # Python
 __pycache__/
 *.pyc
@@ -21,3 +28,4 @@ Community Edition Recap.rtf
 
 # Report files
 *.xlsx
+/.vscode
