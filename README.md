@@ -25,15 +25,17 @@ and the script handles the rest.
 **jamf-cli is optional.** The full report generates from a CSV export alone. jamf-cli
 integration adds live fleet, mobile-device visibility, EA discovery, software inventory,
 and patch/compliance sheets for orgs that want them. There is also an opt-in,
-experimental `Protect Overview` sheet for Jamf Protect environments.
+experimental `Protect Overview` sheet for Jamf Protect environments and preview Platform
+API sheets for blueprints, benchmark compliance, and DDM status.
 
 **Test scope:** this project is built and tested against Jamf Pro. Jamf Protect support is
 new, opt-in, and based on the `jamf-cli 1.6` command surface, but it has not been fully
-validated against a live Protect tenant yet.
+validated against a live Protect tenant yet. Platform API support is also preview-only
+and depends on a jamf-cli build that exposes the new `pro report` platform commands.
 
 **Open source direction:** this repo is intentionally meant to be extended. If your
-environment needs Jamf Protect, future Jamf Platform API data, deeper EA visualizations,
-or more opinionated compliance views, fork it and iterate.
+environment needs Jamf Protect, Jamf Platform API data, deeper EA visualizations, or more
+opinionated compliance views, fork it and iterate.
 
 ---
 
@@ -99,6 +101,27 @@ When `protect.enabled` is true, the workbook attempts to build a `Protect Overvi
 from `jamf-cli protect overview`, `protect computers list`, `protect analytics list`, and
 `protect plans list`. This path is intentionally defensive and will skip cleanly if
 Protect auth or commands are unavailable.
+
+If you also want the preview Platform API sheets, use a jamf-cli build that exposes these
+commands under `jamf-cli pro report`:
+
+- `blueprint-status`
+- `compliance-rules`
+- `compliance-devices`
+- `ddm-status`
+
+Then opt in from `config.yaml`:
+
+```yaml
+platform:
+  enabled: true
+  compliance_benchmark: "CIS Level 1"
+```
+
+When `platform.enabled` is true, the workbook attempts to build `Platform Blueprints`,
+`Platform DDM Status`, and, when `platform.compliance_benchmark` is set, benchmark-specific
+`Platform Compliance Rules` and `Platform Compliance Devices` sheets. This path is also
+defensive and will skip cleanly if Platform auth or report commands are unavailable.
 
 If you use multiple jamf-cli profiles, set `jamf_cli.profile` in `config.yaml` to the
 profile name you want this report to target. This is the same profile selected with
@@ -217,18 +240,28 @@ This refreshes live `jamf-cli` JSON snapshots when auth is working and can also 
 the current CSV into `charts.historical_csv_dir` for trend charts. `collect` is the best
 way to build an append-only historical store for later weekly and monthly reporting.
 
-### Step 6 — Optional: bootstrap a per-profile workspace
+### Step 6 — Optional: bootstrap a per-tenant workspace (recommended)
 
-If you support more than one Jamf tenant or more than one `jamf-cli` profile, create one
-workspace per tenant before you automate anything.
+For all users, including MSPs, the recommended workflow is one workspace per tenant.
+That keeps `config.yaml`, `jamf-cli-data/`, `snapshots/`, `Generated Reports/`, and the
+tenant-specific CSV inbox isolated from other tenants.
+
+Create a live `jamf-cli` tenant workspace like this:
 
 ```bash
 python3 jamf-reports-community.py workspace-init \
-    --profile yourprofile \
-    --workspace-root ~/Jamf-Reports
+    --profile dummy \
+    --workspace-root Dummy
 ```
 
-That creates a profile-scoped folder tree such as:
+Create a CSV-only tenant workspace like this:
+
+```bash
+python3 jamf-reports-community.py workspace-init \
+    --workspace-root Harbor
+```
+
+A workspace created this way contains:
 
 - `config.yaml`
 - `jamf-cli-data/`
@@ -237,8 +270,27 @@ That creates a profile-scoped folder tree such as:
 - `csv-inbox/`
 - `automation/logs/`
 
-By default, the generated `config.yaml` resets path-bearing settings back to local
-workspace-relative defaults so each tenant’s data stays isolated.
+By default, `workspace-init` seeds `config.yaml` with local workspace-relative paths.
+That means the same repo can hold many tenant workspaces safely.
+
+If you already have a tenant workspace, run report commands from inside it whenever
+possible:
+
+```bash
+cd Dummy
+python3 ../jamf-reports-community.py generate --csv "Jamf Reports/Pro/my-export.csv"
+```
+
+Or run from the repo root and explicitly point to the tenant config:
+
+```bash
+python3 jamf-reports-community.py \
+    --config Dummy/config.yaml \
+    generate --csv "Dummy/Jamf Reports/Pro/my-export.csv"
+```
+
+If you are no longer using the root repo workspace, delete the root `config.yaml` and
+empty root folders such as `Jamf Reports/`, `jamf-cli-data/`, and `Generated Reports/`.
 
 ### Step 7 — Optional: automate collection and reporting with a LaunchAgent
 
@@ -332,9 +384,11 @@ Uses live `jamf-cli` commands to refresh saved JSON snapshots in `jamf_cli.data_
 If `--csv` and a historical snapshot directory are available, it also archives the CSV
 for future trend analysis. This is the best command to schedule if you want offline
 report generation later. Snapshot collection includes EA coverage, EA definitions, and
-software install distribution when the installed jamf-cli build supports them. The saved
-JSON files are already timestamped; the generated report outputs can also auto-archive
-older runs out of the active output folder.
+software install distribution when the installed jamf-cli build supports them. When
+`platform.enabled` is true, `collect` also saves the Platform API report snapshots needed
+for the blueprint, DDM, and optional benchmark sheets. The saved JSON files are already
+timestamped; the generated report outputs can also auto-archive older runs out of the
+active output folder.
 
 ### `inventory-csv` — Export a wide inventory CSV from jamf-cli
 
@@ -508,6 +562,10 @@ Sheets appear only when the required config and data are present.
 | App Status | jamf-cli v1.2.0+ | Managed app deployment failures by app and device |
 | Patch Compliance | jamf-cli | Per-title patch compliance percentages |
 | Update Status | jamf-cli v1.2.0+ | Managed software update status summary and error device list |
+| Platform Blueprints | jamf-cli platform preview | Blueprint deployment state, scope, and failure/pending counts |
+| Platform Compliance Rules | jamf-cli platform preview + `platform.compliance_benchmark` | Per-rule benchmark pass/fail/unknown counts |
+| Platform Compliance Devices | jamf-cli platform preview + `platform.compliance_benchmark` | Devices with benchmark rule failures and aggregate compliance |
+| Platform DDM Status | jamf-cli platform preview | Declaration success vs unsuccessful counts by source |
 | Report Sources | always when data exists | Declares whether each sheet came from jamf-cli, CSV, or charts |
 
 ---
@@ -582,6 +640,20 @@ snapshots from different tenants separate. Set `allow_live_overview: false` only
 want Fleet Overview to rely on cached JSON for a specific environment. Set
 `enabled: false` when you want a strict CSV-only run that skips both live jamf-cli calls
 and cached jamf-cli sheets entirely.
+
+### `platform`
+
+Opt-in preview support for jamf-cli Platform API report commands.
+
+```yaml
+platform:
+  enabled: false
+  compliance_benchmark: ""
+```
+
+Set `enabled: true` to turn on the Platform sheets. Leave `compliance_benchmark` blank if
+you only want blueprint and DDM reporting. Set it to the benchmark title or ID you want
+the workbook to summarize when you also want the benchmark-specific compliance sheets.
 
 ### `compliance`
 

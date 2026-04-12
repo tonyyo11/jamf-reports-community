@@ -436,9 +436,9 @@ that reveal org-specific EA naming conventions.
 
 ## Reference: v3.6 Production Script
 
-This project was written fresh — not stripped from the private CBP/Akima production script
-(`jamf_reports_cli_v3.6.py`). However, that script contains reference implementations worth
-consulting when adding new features:
+This project was written fresh — not stripped from an internal production script
+(`jamf_reports_cli_v3.6.py`). However, that script contains reference implementations
+worth consulting when adding new features:
 
 - `JamfCLIBridge` subprocess pattern
 - `_safe_write()` sanitization approach
@@ -446,7 +446,7 @@ consulting when adding new features:
 - Certificate expiration sheet design
 - Tiered data collection via `collect.zsh` + LaunchAgent
 
-Do not port org-specific logic, hardcoded column names, or CBP-specific EA names.
+Do not port org-specific logic, hardcoded column names, or tenant-specific EA names.
 
 ---
 
