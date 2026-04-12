@@ -366,8 +366,9 @@ API-expensive: fetches full computer and mobile inventory plus per-plan events i
 
 ## Testing
 
-No automated test suite exists yet. The test CSV is `Jamf Reports/97 Computers.csv`
-(96 sanitized dummy devices). Manual test workflow:
+An automated pytest suite now exists under `tests/`, backed by committed fixtures in
+`tests/fixtures/`. Manual validation is still useful, especially for bigger end-to-end
+changes. Local manual test workflow:
 
 ```bash
 cd /path/to/jamf-reports-community
@@ -395,6 +396,25 @@ python3 jamf-reports-community.py html --no-open
 ```
 
 All six commands should exit without errors before any change is considered ready.
+
+### Automated fixtures
+
+Committed automated-test fixtures now live under `tests/fixtures/`. They are derived from
+Jamf-provided fake/demo data from the local `Dummy/` and `Harbor/` workspaces, not
+production or employer/client data, and are approved for commit.
+
+Keep the committed fixture corpus curated:
+
+- prefer stable filenames in `tests/fixtures/csv/` and `tests/fixtures/jamf-cli-data/`
+- keep dated filenames only in `tests/fixtures/snapshots/` where chart/trend logic needs them
+- keep one latest-good jamf-cli JSON sample per command shape unless a regression needs more
+- do not commit generated `.xlsx` or chart PNG outputs
+
+Run automated tests with:
+
+```bash
+python3 -m pytest tests -q
+```
 
 ### Dummy profile testing
 

@@ -5,6 +5,8 @@ a Jamf Pro CSV export — no Power BI, no custom infrastructure, no hardcoded cr
 
 Long-form setup and operations docs live in the [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki).
 
+Automated testing docs and fixture guidance live in [docs/testing.md](docs/testing.md).
+
 ---
 
 ## What This Is
@@ -36,6 +38,10 @@ and depends on a jamf-cli build that exposes the new `pro report` platform comma
 **Open source direction:** this repo is intentionally meant to be extended. If your
 environment needs Jamf Protect, Jamf Platform API data, deeper EA visualizations, or more
 opinionated compliance views, fork it and iterate.
+
+**Committed test data:** the automated tests use committed fixtures under `tests/fixtures/`.
+Those fixtures are derived from Jamf-provided fake/demo data from the local `Dummy/` and
+`Harbor/` workspaces, not production or customer data.
 
 ---
 
@@ -163,6 +169,26 @@ Jamf Reports/
 The community tool supports that layout, but does not require it.
 
 Use `python3 jamf-reports-community.py ...` in examples and automation.
+
+---
+
+## Automated Tests
+
+Install dev dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the automated suite:
+
+```bash
+python3 -m pytest tests -q
+```
+
+The committed fixture corpus is intentionally curated rather than keeping full timestamped
+workspace histories in git. See [docs/testing.md](docs/testing.md) for fixture provenance,
+refresh workflow, and how to add fresh dated snapshots for historical-trend testing.
 
 ---
 
