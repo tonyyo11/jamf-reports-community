@@ -19,6 +19,10 @@ Current high-value commands:
 - `jamf-cli protect computers list` (experimental workbook support)
 - `jamf-cli protect analytics list` (experimental workbook support)
 - `jamf-cli protect plans list` (experimental workbook support)
+- `jamf-cli pro report blueprint-status` (platform preview)
+- `jamf-cli pro report compliance-rules` (platform preview)
+- `jamf-cli pro report compliance-devices` (platform preview)
+- `jamf-cli pro report ddm-status` (platform preview)
 - `jamf-cli pro mobile-device-inventory-details list`
 - `jamf-cli pro mobile-devices list`
 - `jamf-cli pro classic-mobile-config-profiles list`
@@ -80,6 +84,19 @@ protect:
 That path currently creates a single `Protect Overview` sheet. It is intentionally
 defensive and based on the `jamf-cli 1.6` Protect commands, but it has not been fully
 validated against a live Protect tenant.
+
+To opt into the preview Platform API sheets:
+
+```yaml
+platform:
+  enabled: true
+  compliance_benchmark: "CIS Level 1"
+```
+
+That path currently creates `Platform Blueprints`, `Platform DDM Status`, and, when
+`platform.compliance_benchmark` is set, `Platform Compliance Rules` and `Platform
+Compliance Devices`. It depends on a jamf-cli build that already includes those Platform
+report commands and working Platform auth for the selected profile.
 
 If you want the filesystem layout created for you, bootstrap one workspace per profile:
 
@@ -174,6 +191,10 @@ With `jamf-cli` available, the workbook can include:
 
 - Fleet Overview
 - Protect Overview (experimental, opt-in)
+- Platform Blueprints (preview, opt-in)
+- Platform Compliance Rules (preview, opt-in, benchmark required)
+- Platform Compliance Devices (preview, opt-in, benchmark required)
+- Platform DDM Status (preview, opt-in)
 - Mobile Fleet Summary
 - Inventory Summary
 - Mobile Inventory
@@ -207,6 +228,7 @@ produce a workbook. Use it to:
 - Separate the live API call (which needs auth) from report generation (which can use cache)
 - Run on a schedule (cron or LaunchAgent) independently of report generation
 - Archive a dated CSV copy alongside the JSON snapshots
+- Refresh optional Protect and Platform report snapshots when those paths are enabled
 
 **`generate`** reads from already-saved snapshots (when `use_cached_data: true`) and
 optionally refreshes live data. Use it to:
