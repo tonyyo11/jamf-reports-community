@@ -371,6 +371,60 @@ custom_eas:
 
 
 # =============================================================================
+# REPORT FAMILIES
+# =============================================================================
+# Optional manifest for tenants that keep many emailed/exported Jamf CSVs.
+# Use this when you want one workspace to preserve multiple raw report streams
+# while still making it explicit which family drives the main workbook.
+#
+# Current behavior:
+# - report_families.computers drives generate/check when --csv is omitted
+# - collect archives the newest matching CSV for every enabled family into that
+#   family's historical_dir
+# - mobile and compliance families are archival/discovery paths today; they are
+#   not automatically merged into the workbook's CSV-driven sheets
+
+report_families:
+
+  computers:
+    enabled: false
+    # Folder where the current/raw computer-family exports land.
+    current_dir: "Jamf Reports/Pro"
+    # Historical store just for this family.
+    historical_dir: "snapshots/computers"
+    # Optional glob filters. Match on filename and path relative to current_dir.
+    include_globs:
+      - "*Computers*.csv"
+    exclude_globs:
+      - "*Portal - Applications*.csv"
+      - "*Out of date OS*.csv"
+    # Optional filename fragments used to prefer a baseline inventory export
+    # when multiple candidates match the include globs.
+    prefer_name_contains:
+      - "All Devices"
+      - "Checked in"
+
+  mobile:
+    enabled: false
+    current_dir: "Jamf Reports/Pro"
+    historical_dir: "snapshots/mobile"
+    include_globs:
+      - "*Mobile Devices*.csv"
+    exclude_globs: []
+    prefer_name_contains:
+      - "All Devices"
+
+  compliance:
+    enabled: false
+    current_dir: "Jamf Reports/Compliance"
+    historical_dir: "snapshots/compliance"
+    include_globs:
+      - "*Compliance*.csv"
+    exclude_globs: []
+    prefer_name_contains: []
+
+
+# =============================================================================
 # THRESHOLDS
 # =============================================================================
 # Global numeric thresholds used as defaults across multiple sheets.

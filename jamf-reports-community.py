@@ -39,6 +39,7 @@ import urllib.request
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Optional
 
@@ -73,6 +74,7 @@ AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
     "weekly": "One weekday each week at the chosen time",
     "monthly": "One day of the month at the chosen time",
 }
+REPORT_FAMILY_NAMES = ("computers", "mobile", "compliance")
 WEEKDAY_NAME_TO_VALUE: dict[str, int] = {
     "sun": 0,
     "sunday": 0,
@@ -150,6 +152,32 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "baseline_label": "mSCP Compliance",
     },
     "custom_eas": [],
+    "report_families": {
+        "computers": {
+            "enabled": False,
+            "current_dir": "",
+            "historical_dir": "",
+            "include_globs": [],
+            "exclude_globs": [],
+            "prefer_name_contains": [],
+        },
+        "mobile": {
+            "enabled": False,
+            "current_dir": "",
+            "historical_dir": "",
+            "include_globs": [],
+            "exclude_globs": [],
+            "prefer_name_contains": [],
+        },
+        "compliance": {
+            "enabled": False,
+            "current_dir": "",
+            "historical_dir": "",
+            "include_globs": [],
+            "exclude_globs": [],
+            "prefer_name_contains": [],
+        },
+    },
     "thresholds": {
         "stale_device_days": 30,
         "checkin_overdue_days": 7,
@@ -653,6 +681,217 @@ def _latest_csv_inbox_file(
             f"Newest CSV is stale ({age_days} day(s) old): {newest.name}"
         )
     return newest, f"Using newest CSV from inbox: {newest.name}"
+
+
+def _list_of_strings(value: Any) -> list[str]:
+    """Return a config value normalized to a list of non-empty strings."""
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if value is None:
+        return []
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _report_family_config(config: "Config", family_name: str) -> dict[str, Any]:
+    """Return one report-family config block."""
+    families = config.report_families
+    value = families.get(family_name, {})
+    return value if isinstance(value, dict) else {}
+
+
+def _report_family_label(family_name: str) -> str:
+    """Return a user-facing label for a report family key."""
+    return family_name.replace("_", " ").title()
+
+
+def _report_family_current_dir(config: "Config", family_name: str) -> Optional[Path]:
+    """Return the current/raw CSV directory for a report family."""
+    family = _report_family_config(config, family_name)
+    return config.resolve_path_value(family.get("current_dir", ""))
+
+
+def _report_family_historical_dir(config: "Config", family_name: str) -> Optional[Path]:
+    """Return the historical snapshot directory for a report family."""
+    family = _report_family_config(config, family_name)
+    return config.resolve_path_value(family.get("historical_dir", ""))
+
+
+def _report_family_matches(path: Path, base_dir: Path, patterns: list[str]) -> bool:
+    """Return True when a path matches any configured family glob pattern."""
+    if not patterns:
+        return False
+    relative = str(path.relative_to(base_dir))
+    name = path.name
+    return any(fnmatch(name, pattern) or fnmatch(relative, pattern) for pattern in patterns)
+
+
+def _report_family_header_score(
+    config: "Config",
+    family_name: str,
+    header_cols: list[str],
+) -> tuple[int, int]:
+    """Return a header-based specificity score for a report-family candidate."""
+    normalized_headers = {_normalized_text(item) for item in header_cols}
+    configured_core = [
+        str(config.columns.get(field, "") or "").strip()
+        for field in ("computer_name", "serial_number", "operating_system", "last_checkin")
+    ]
+    configured_all = [
+        str(value or "").strip()
+        for value in config.columns.values()
+        if str(value or "").strip()
+    ]
+
+    if family_name == "computers":
+        core_matches = sum(
+            1 for item in configured_core if item and _normalized_text(item) in normalized_headers
+        )
+        total_matches = sum(
+            1 for item in configured_all if item and _normalized_text(item) in normalized_headers
+        )
+        return core_matches, total_matches
+
+    if family_name == "mobile":
+        expected = [
+            "Display Name",
+            "Serial Number",
+            "OS Version",
+            "Model",
+            "Last Inventory Update",
+            "Email Address",
+        ]
+        total_matches = sum(
+            1 for item in expected if _normalized_text(item) in normalized_headers
+        )
+        return total_matches, total_matches
+
+    if family_name == "compliance":
+        expected = [
+            str(config.compliance.get("failures_count_column", "") or "").strip(),
+            str(config.compliance.get("failures_list_column", "") or "").strip(),
+            str(config.columns.get("computer_name", "") or "").strip(),
+            str(config.columns.get("serial_number", "") or "").strip(),
+        ]
+        total_matches = sum(
+            1 for item in expected if item and _normalized_text(item) in normalized_headers
+        )
+        return total_matches, total_matches
+
+    return 0, 0
+
+
+def _report_family_candidates(
+    config: "Config",
+    family_name: str,
+) -> tuple[list[Path], str]:
+    """Return matching CSV candidates for a configured report family."""
+    family = _report_family_config(config, family_name)
+    if family.get("enabled") is not True:
+        return [], f"report_families.{family_name} is disabled."
+
+    current_dir = _report_family_current_dir(config, family_name)
+    if current_dir is None:
+        return [], f"report_families.{family_name}.current_dir is not configured."
+    if not current_dir.is_dir():
+        return [], f"{_report_family_label(family_name)} current_dir not found: {current_dir}"
+
+    include_globs = _list_of_strings(family.get("include_globs", []))
+    exclude_globs = _list_of_strings(family.get("exclude_globs", []))
+    candidates = [
+        path for path in current_dir.rglob("*.csv")
+        if path.is_file()
+        and not path.name.startswith(".")
+        and (not include_globs or _report_family_matches(path, current_dir, include_globs))
+        and (not exclude_globs or not _report_family_matches(path, current_dir, exclude_globs))
+    ]
+    if not candidates:
+        return [], f"No CSV files matched report_families.{family_name} in {current_dir}"
+    return candidates, f"Found {len(candidates)} candidate CSV(s) for {family_name}"
+
+
+def _latest_report_family_file(
+    config: "Config",
+    family_name: str,
+) -> tuple[Optional[Path], str]:
+    """Return the best current CSV candidate for a report family."""
+    candidates, note = _report_family_candidates(config, family_name)
+    if not candidates:
+        return None, note
+
+    family = _report_family_config(config, family_name)
+    preferred_terms = [
+        item.casefold() for item in _list_of_strings(family.get("prefer_name_contains", []))
+    ]
+    scored: list[tuple[tuple[int, int, int, float, str], Path]] = []
+    for path in candidates:
+        try:
+            header_df = pd.read_csv(path, nrows=0, encoding="utf-8-sig")
+            header_cols = header_df.columns.tolist()
+        except Exception:
+            header_cols = []
+        preferred_hits = sum(1 for term in preferred_terms if term in path.name.casefold())
+        header_primary, header_secondary = _report_family_header_score(
+            config, family_name, header_cols,
+        )
+        key = (
+            header_primary,
+            preferred_hits,
+            header_secondary,
+            path.stat().st_mtime,
+            path.name,
+        )
+        scored.append((key, path))
+
+    best = max(scored, key=lambda item: item[0])[1]
+    return best, f"Using report_families.{family_name}: {best.name}"
+
+
+def _family_for_csv_path(config: "Config", csv_path: Path) -> Optional[str]:
+    """Return the matching report family for a CSV path, if any."""
+    for family_name in REPORT_FAMILY_NAMES:
+        family = _report_family_config(config, family_name)
+        if family.get("enabled") is not True:
+            continue
+        current_dir = _report_family_current_dir(config, family_name)
+        if current_dir is None:
+            continue
+        try:
+            csv_path.relative_to(current_dir)
+        except ValueError:
+            continue
+        include_globs = _list_of_strings(family.get("include_globs", []))
+        exclude_globs = _list_of_strings(family.get("exclude_globs", []))
+        if include_globs and not _report_family_matches(csv_path, current_dir, include_globs):
+            continue
+        if exclude_globs and _report_family_matches(csv_path, current_dir, exclude_globs):
+            continue
+        return family_name
+    return None
+
+
+def _default_generate_csv(config: "Config") -> tuple[Optional[Path], Optional[str], Optional[str]]:
+    """Return the default primary CSV and family for generate/check workflows."""
+    path, note = _latest_report_family_file(config, "computers")
+    if path is None:
+        return None, None, note
+    return path, "computers", note
+
+
+def _default_historical_dir(
+    config: "Config",
+    family_name: Optional[str],
+    fallback_value: Optional[str] = None,
+) -> Optional[Path]:
+    """Return the historical CSV directory for the current workflow."""
+    explicit = _cli_path(fallback_value)
+    if explicit is not None:
+        return explicit
+    if family_name:
+        family_hist = _report_family_historical_dir(config, family_name)
+        if family_hist is not None:
+            return family_hist
+    return config.resolve_path("charts", "historical_csv_dir")
 
 
 def _write_status_file(path_value: Optional[str], status: dict[str, Any]) -> None:
@@ -1812,6 +2051,11 @@ class Config:
     def custom_eas(self) -> list[dict]:
         value = self._data.get("custom_eas", [])
         return value if isinstance(value, list) else []
+
+    @property
+    def report_families(self) -> dict:
+        value = self._data.get("report_families") or {}
+        return value if isinstance(value, dict) else {}
 
     @property
     def compliance(self) -> dict:
@@ -7325,6 +7569,52 @@ def _validate_config_structure(config: Config) -> None:
                 " benchmark-specific compliance sheets will be skipped"
             )
 
+    report_families = config.report_families
+    if not isinstance(report_families, dict):
+        issues.append(
+            "report_families must be a mapping when present."
+            f" Current value: {type(report_families).__name__}"
+        )
+    else:
+        for family_name in REPORT_FAMILY_NAMES:
+            family = _report_family_config(config, family_name)
+            enabled = family.get("enabled", False)
+            if enabled not in (True, False):
+                issues.append(
+                    f"report_families.{family_name}.enabled must be true or false."
+                    f" Current value: {enabled!r}"
+                )
+            if enabled is not True:
+                continue
+            if not str(family.get("current_dir", "") or "").strip():
+                issues.append(
+                    f"report_families.{family_name}.current_dir is empty while the family"
+                    " is enabled"
+                )
+            if not str(family.get("historical_dir", "") or "").strip():
+                issues.append(
+                    f"report_families.{family_name}.historical_dir is empty while the family"
+                    " is enabled"
+                )
+            include_globs = family.get("include_globs", [])
+            if include_globs and not isinstance(include_globs, list):
+                issues.append(
+                    f"report_families.{family_name}.include_globs must be a list of glob"
+                    f" strings, not {type(include_globs).__name__}"
+                )
+            exclude_globs = family.get("exclude_globs", [])
+            if exclude_globs and not isinstance(exclude_globs, list):
+                issues.append(
+                    f"report_families.{family_name}.exclude_globs must be a list of glob"
+                    f" strings, not {type(exclude_globs).__name__}"
+                )
+            preferred = family.get("prefer_name_contains", [])
+            if preferred and not isinstance(preferred, list):
+                issues.append(
+                    f"report_families.{family_name}.prefer_name_contains must be a list of"
+                    f" strings, not {type(preferred).__name__}"
+                )
+
     # Custom EA type validation
     for ea in config.custom_eas:
         name = ea.get("name", "?")
@@ -7408,6 +7698,36 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             any_configured = True
     if not any_configured:
         print("  Note: No columns configured. Run scaffold or edit config.yaml to add mappings.")
+
+    print("\n--- Report Family Manifest ---")
+    manifest_found = False
+    for family_name in REPORT_FAMILY_NAMES:
+        family = _report_family_config(config, family_name)
+        if family.get("enabled") is not True:
+            continue
+        manifest_found = True
+        current_dir = _report_family_current_dir(config, family_name)
+        historical_dir = _report_family_historical_dir(config, family_name)
+        latest_path, note = _latest_report_family_file(config, family_name)
+        print(f"  {family_name}: enabled")
+        if current_dir is not None:
+            print(f"    current_dir: {current_dir}")
+        if historical_dir is not None:
+            print(f"    historical_dir: {historical_dir}")
+        if latest_path is not None:
+            print(f"    latest: {latest_path.name}")
+        else:
+            print(f"    latest: none")
+        print(f"    note: {note}")
+    if not manifest_found:
+        print("  No enabled report_families entries.")
+
+    if not csv_path:
+        manifest_csv, _, manifest_note = _default_generate_csv(config)
+        if manifest_csv is not None:
+            csv_path = str(manifest_csv)
+            print("\n  Using manifest-selected computers CSV for validation.")
+            print(f"  {manifest_note}")
 
     if csv_path:
         print("\n--- CSV column validation ---")
@@ -7745,7 +8065,18 @@ def cmd_generate(
         notify_url: Optional Teams incoming webhook URL for post-generation notification.
         csv_extra: Optional list of additional CSV paths to merge with csv_path.
     """
+    selected_family_name: Optional[str] = None
+    if not csv_path:
+        manifest_csv, selected_family_name, manifest_note = _default_generate_csv(config)
+        if manifest_csv is not None:
+            csv_path = str(manifest_csv)
+            print(f"Using manifest-selected computers CSV: {manifest_csv}")
+        elif manifest_note:
+            print(f"  [note] {manifest_note}")
+
     csv_path_obj = _resolve_cli_input_path(csv_path, config)
+    if csv_path_obj is not None and selected_family_name is None:
+        selected_family_name = _family_for_csv_path(config, csv_path_obj)
     csv_path_str = str(csv_path_obj) if csv_path_obj else None
 
     output_cfg = config.output
@@ -7850,9 +8181,11 @@ def cmd_generate(
             print("\nNo CSV provided — skipping inventory sheets.")
             print("  Pass --csv path/to/export.csv to enable inventory analysis.")
 
-        hist_dir_obj = _cli_path(historical_csv_dir)
-        if hist_dir_obj is None:
-            hist_dir_obj = config.resolve_path("charts", "historical_csv_dir")
+        hist_dir_obj = _default_historical_dir(
+            config,
+            selected_family_name,
+            historical_csv_dir,
+        )
         hist_dir = str(hist_dir_obj) if hist_dir_obj else None
         if hist_dir_obj:
             print(f"  historical CSV dir: {hist_dir_obj}")
@@ -9340,23 +9673,36 @@ def _collect_snapshots(
 
     archived = False
     csv_path_obj = _resolve_cli_input_path(csv_path, config)
-    hist_dir_obj = _cli_path(historical_csv_dir)
-    if hist_dir_obj is None:
-        hist_dir_obj = config.resolve_path("charts", "historical_csv_dir")
-    if hist_dir_obj:
-        print(f"  historical CSV dir: {hist_dir_obj}")
-    if (
-        csv_path_obj
-        and hist_dir_obj
-        and config.get("charts", "archive_current_csv") is not False
-    ):
-        archived_path, created = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
-        if archived_path:
-            archived = True
-            if created:
-                print(f"  [ok] Archived CSV snapshot: {archived_path}")
-            else:
-                print(f"  [ok] Reusing existing identical CSV snapshot: {archived_path}")
+    selected_family_name = _family_for_csv_path(config, csv_path_obj) if csv_path_obj else None
+    hist_dir_obj = _default_historical_dir(config, selected_family_name, historical_csv_dir)
+    if config.get("charts", "archive_current_csv") is not False:
+        if csv_path_obj and hist_dir_obj:
+            print(f"  historical CSV dir: {hist_dir_obj}")
+            archived_path, created = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
+            if archived_path:
+                archived = True
+                if created:
+                    print(f"  [ok] Archived CSV snapshot: {archived_path}")
+                else:
+                    print(f"  [ok] Reusing existing identical CSV snapshot: {archived_path}")
+        elif csv_path_obj is None:
+            for family_name in REPORT_FAMILY_NAMES:
+                family = _report_family_config(config, family_name)
+                if family.get("enabled") is not True:
+                    continue
+                latest_path, note = _latest_report_family_file(config, family_name)
+                hist_dir = _report_family_historical_dir(config, family_name)
+                print(f"  {family_name}: {note}")
+                if latest_path is None or hist_dir is None:
+                    continue
+                print(f"    historical dir: {hist_dir}")
+                archived_path, created = _archive_csv_snapshot(str(latest_path), str(hist_dir))
+                if archived_path:
+                    archived = True
+                    if created:
+                        print(f"    [ok] Archived: {archived_path}")
+                    else:
+                        print(f"    [ok] Reusing identical snapshot: {archived_path}")
 
     return collected, archived
 
@@ -9372,11 +9718,13 @@ def cmd_collect(
         if not _jamf_cli_enabled(config):
             raise SystemExit(
                 "Error: No snapshots collected. jamf-cli is disabled in config, so"
-                " pass --csv plus --historical-csv-dir to archive a CSV snapshot."
+                " pass --csv plus --historical-csv-dir or enable report_families to"
+                " archive CSV history."
             )
         raise SystemExit(
             "Error: No snapshots collected. Authenticate jamf-cli for live data or"
-            " pass --csv plus --historical-csv-dir to archive a CSV snapshot."
+            " pass --csv plus --historical-csv-dir or enable report_families to"
+            " archive CSV history."
         )
 
 

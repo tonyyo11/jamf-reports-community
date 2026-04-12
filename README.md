@@ -358,7 +358,9 @@ python3 jamf-reports-community.py generate \
 | `--out-file` | auto-named | Output path for the xlsx file. Timestamp appended by default if needed |
 | `--historical-csv-dir` | none | Directory of dated CSV snapshots for trend charts |
 
-If you omit `--csv`, the workbook is built from jamf-cli data only.
+If you omit `--csv`, the workbook is built from jamf-cli data only unless
+`report_families.computers` is enabled, in which case the newest matching computer-family
+CSV is selected automatically.
 
 Examples:
 
@@ -389,6 +391,9 @@ software install distribution when the installed jamf-cli build supports them. W
 for the blueprint, DDM, and optional benchmark sheets. The saved JSON files are already
 timestamped; the generated report outputs can also auto-archive older runs out of the
 active output folder.
+
+When `report_families` is enabled, `collect` also archives the newest matching CSV for
+each enabled family into that family's `historical_dir`, even when `--csv` is omitted.
 
 ### `inventory-csv` — Export a wide inventory CSV from jamf-cli
 
@@ -669,6 +674,41 @@ compliance:
 ```
 
 Set `enabled: false` to skip the Compliance sheet entirely.
+
+### `report_families`
+
+Optional manifest for tenants that keep many Jamf CSV families in one workspace.
+
+```yaml
+report_families:
+  computers:
+    enabled: true
+    current_dir: "Jamf Reports/Pro"
+    historical_dir: "snapshots/computers"
+    include_globs:
+      - "*Computers*.csv"
+    exclude_globs:
+      - "*Portal - Applications*.csv"
+    prefer_name_contains:
+      - "All Devices"
+```
+
+Use this when you want to preserve many raw emailed/exported report streams without
+pointing one workbook at the entire archive root.
+
+Current behavior:
+- `report_families.computers` drives `check` and `generate` when `--csv` is omitted.
+- `collect` archives the newest matching CSV for every enabled family into that family's
+  `historical_dir`.
+- `mobile` and `compliance` families are useful today for archival/discovery and future
+  automation, but they are not auto-merged into the workbook's CSV-driven sheets.
+
+Practical guidance:
+- Keep one baseline computer inventory family for the main workbook.
+- Keep one mobile family if you want historical preservation, even though the CSV sheets
+  are still computer-centric today.
+- Keep specialized searches like patching, local admin, or OS compliance in separate
+  family folders instead of mixing them into the baseline computer history.
 
 ### `custom_eas`
 
