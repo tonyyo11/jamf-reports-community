@@ -383,6 +383,11 @@ thresholds:
   # and excluded from compliance/security agent counts.
   stale_device_days: 30
 
+  # Devices not checked in within this many days are flagged overdue on the
+  # Check-in Health sheet. Separate from stale_device_days — this is a shorter
+  # operational threshold (default 7 days) vs the longer stale window.
+  checkin_overdue_days: 7
+
   # Default disk usage thresholds used when not set per-EA.
   warning_disk_percent: 80
   critical_disk_percent: 90
