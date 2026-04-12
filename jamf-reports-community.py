@@ -319,6 +319,15 @@ def _file_stamp() -> str:
     return datetime.now().strftime("%Y-%m-%d_%H%M%S")
 
 
+def _sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest for a file."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _path_has_timestamp(path: Path) -> bool:
     """Return True when the path stem already contains a date/time stamp."""
     return bool(re.search(r"\d{4}-\d{2}-\d{2}(?:[_T]\d{4,6})?", path.stem))
@@ -1487,18 +1496,27 @@ def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
     return warnings
 
 
-def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> Optional[Path]:
+def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[Path], bool]:
     """Copy the current CSV into the historical snapshot directory for future trend runs."""
     source = Path(csv_path)
     if not source.is_file():
-        return None
+        return None, False
 
     out_dir = Path(historical_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    source_digest = _sha256_file(source)
+    for existing in sorted(out_dir.rglob("*.csv")):
+        if not existing.is_file():
+            continue
+        try:
+            if _sha256_file(existing) == source_digest:
+                return existing, False
+        except OSError:
+            continue
     prefix = re.sub(r"[^a-z0-9]+", "_", source.stem.lower()).strip("_") or "inventory"
     dest = out_dir / f"{prefix}_{_file_stamp()}.csv"
     shutil.copy2(source, dest)
-    return dest
+    return dest, True
 
 
 def _site_name(site_value: Any) -> str:
@@ -6201,7 +6219,7 @@ class ChartGenerator:
 
     def _load_snapshots(self, charts_cfg: dict[str, Any]) -> list[tuple[datetime, Any]]:
         """Load all CSV snapshots sorted by date. Returns list of (date, DataFrame)."""
-        snapshots: list[tuple[datetime, Any]] = []
+        loaded: list[dict[str, Any]] = []
         relevant_columns: set[str] = set()
         os_col = self._config.columns.get("operating_system", "")
         if charts_cfg.get("os_adoption", {}).get("enabled", True) and os_col:
@@ -6225,21 +6243,77 @@ class ChartGenerator:
                 except Exception as exc:
                     print(f"  [warn] Skipping CSV snapshot {f.name}: {exc}")
                     continue
-                snapshots.append((dt, df))
+                loaded.append(
+                    {
+                        "date": dt,
+                        "df": df,
+                        "path": f,
+                        "schema": self._csv_snapshot_schema_key(df.columns),
+                        "rows": len(df),
+                    }
+                )
 
         if self._csv_path and Path(self._csv_path).is_file():
             current_dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            if not any(s[0].date() == current_dt.date() for s in snapshots):
-                try:
-                    df = pd.read_csv(
-                        self._csv_path, dtype=str, encoding="utf-8-sig"
-                    ).fillna("")
-                    snapshots.append((current_dt, df))
-                except Exception as exc:
-                    print(f"  [warn] Could not read current CSV: {exc}")
+            try:
+                df = pd.read_csv(
+                    self._csv_path, dtype=str, encoding="utf-8-sig"
+                ).fillna("")
+                loaded.append(
+                    {
+                        "date": current_dt,
+                        "df": df,
+                        "path": Path(self._csv_path),
+                        "schema": self._csv_snapshot_schema_key(df.columns),
+                        "rows": len(df),
+                    }
+                )
+            except Exception as exc:
+                print(f"  [warn] Could not read current CSV: {exc}")
 
+        snapshots = self._dedupe_csv_snapshots(loaded)
         snapshots.sort(key=lambda x: x[0])
         return snapshots
+
+    def _csv_snapshot_schema_key(self, columns: Any) -> tuple[str, ...]:
+        """Return a normalized schema key for a CSV snapshot."""
+        return tuple(_normalized_text(column) for column in columns)
+
+    def _dedupe_csv_snapshots(self, loaded: list[dict[str, Any]]) -> list[tuple[datetime, Any]]:
+        """Keep one canonical CSV snapshot per day and schema.
+
+        When multiple same-day exports share the same schema, prefer the one with
+        the most rows and then the newest file mtime. This keeps an "All Devices"
+        export ahead of smaller subset exports that landed in the same folder.
+        """
+        if not loaded:
+            return []
+
+        chosen: dict[tuple[Any, tuple[str, ...]], dict[str, Any]] = {}
+        skipped = 0
+        for item in loaded:
+            key = (item["date"].date(), item["schema"])
+            current = chosen.get(key)
+            if current is None:
+                chosen[key] = item
+                continue
+            item_rank = (item["rows"], item["path"].stat().st_mtime, str(item["path"]))
+            current_rank = (
+                current["rows"],
+                current["path"].stat().st_mtime,
+                str(current["path"]),
+            )
+            if item_rank > current_rank:
+                chosen[key] = item
+            skipped += 1
+
+        if skipped:
+            print(
+                "  [note] Historical CSV dedupe kept the largest snapshot per day and schema;"
+                f" ignored {skipped} same-day duplicate candidate(s)."
+            )
+
+        return [(item["date"], item["df"]) for item in chosen.values()]
 
     def _parse_date_from_path(self, path: Path) -> datetime:
         """Extract a timestamp from a filename, falling back to file mtime."""
@@ -6317,7 +6391,10 @@ class ChartGenerator:
         for dt, df in snapshots:
             if os_col not in df.columns:
                 continue
-            counts = df[os_col].str.strip().value_counts()
+            series = df[os_col].astype(str).str.strip()
+            counts = series[series != ""].value_counts()
+            if counts.empty:
+                continue
             row: dict[str, Any] = {"date": dt}
             row.update(counts.to_dict())
             records.append(row)
@@ -7781,9 +7858,12 @@ def cmd_generate(
             print(f"  historical CSV dir: {hist_dir_obj}")
         if csv_path_str and hist_dir and config.get("charts", "archive_current_csv") is not False:
             try:
-                archived_path = _archive_csv_snapshot(csv_path_str, hist_dir)
+                archived_path, created = _archive_csv_snapshot(csv_path_str, hist_dir)
                 if archived_path:
-                    print(f"  Archived CSV snapshot: {archived_path}")
+                    if created:
+                        print(f"  Archived CSV snapshot: {archived_path}")
+                    else:
+                        print(f"  Reusing existing identical CSV snapshot: {archived_path}")
             except OSError as exc:
                 print(f"  [warn] Could not archive CSV snapshot: {exc}")
 
@@ -9270,10 +9350,13 @@ def _collect_snapshots(
         and hist_dir_obj
         and config.get("charts", "archive_current_csv") is not False
     ):
-        archived_path = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
+        archived_path, created = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
         if archived_path:
             archived = True
-            print(f"  [ok] Archived CSV snapshot: {archived_path}")
+            if created:
+                print(f"  [ok] Archived CSV snapshot: {archived_path}")
+            else:
+                print(f"  [ok] Reusing existing identical CSV snapshot: {archived_path}")
 
     return collected, archived
 

@@ -816,6 +816,13 @@ filenames must contain a date in `YYYY-MM-DD`, `YYYYMMDD`, `YYYY-MM-DD_HHMMSS`, 
 `YYYY-MM-DDTHHMMSS` format. The script scans subfolders recursively and ignores CSV files
 that do not contain the configured chart columns.
 
+If you keep many Jamf exports in one folder, prefer one baseline computer inventory export
+and, if needed, one baseline mobile inventory export per cadence. Equivalent same-day CSVs
+with the same schema are deduped for trend charts by keeping the largest snapshot, so an
+all-devices export wins over smaller subset exports. Re-running `generate` with the same
+unchanged CSV also reuses the existing identical archived snapshot instead of creating
+another duplicate copy.
+
 #### Cached jamf-cli snapshots
 
 If you want the core jamf-cli sheets to keep working even when live auth breaks, leave

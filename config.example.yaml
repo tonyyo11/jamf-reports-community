@@ -462,10 +462,17 @@ charts:
 
   # Optional directory of dated CSV snapshots used for trend charts.
   # Relative paths resolve from the folder containing config.yaml.
+  # Best practice: keep one baseline computer inventory export (and optionally
+  # one baseline mobile inventory export) per cadence. If a single folder mixes
+  # equivalent exports like "Portal - Applications" and "Insights - All Devices",
+  # trend charts keep the largest same-day snapshot for that schema and ignore
+  # smaller duplicate candidates.
   historical_csv_dir: "snapshots"
 
   # When true, generate automatically copies the current --csv into
   # historical_csv_dir using a date/time-stamped filename.
+  # Re-running generate with the same unchanged CSV reuses the existing
+  # identical snapshot instead of copying another duplicate.
   archive_current_csv: true
 
   # macOS adoption charts: device counts per OS version over time.
