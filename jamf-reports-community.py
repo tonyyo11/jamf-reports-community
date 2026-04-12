@@ -152,6 +152,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "custom_eas": [],
     "thresholds": {
         "stale_device_days": 30,
+        "checkin_overdue_days": 7,
         "critical_disk_percent": 90,
         "warning_disk_percent": 80,
         "cert_warning_days": 90,
@@ -192,6 +193,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "device_state_trend": {
             "enabled": True,
         },
+    },
+    "branding": {
+        "org_name": "",
+        "logo_path": "",
+        "accent_color": "#2D5EA2",
+        "accent_dark": "#004165",
     },
 }
 
@@ -1938,6 +1945,12 @@ class JamfCLIBridge:
             "mobile_device_inventory_details",
             "classic-ios-profiles",
             "classic_ios_profiles",
+            "checkin-status",
+            "checkin_status",
+            "hardware-models",
+            "hardware_models",
+            "env-stats",
+            "env_stats",
         ]
         if include_protect:
             report_names.extend(
@@ -2480,6 +2493,81 @@ class JamfCLIBridge:
                 }]
             raise
 
+    def checkin_status(self, threshold_days: int = 7) -> Any:
+        """Fetch check-in health summary.
+
+        Tries jamf-cli pro report checkin-status (requires dashboard-era jamf-cli).
+        Falls back to device-compliance with threshold_days when that command is absent.
+
+        Native JSON shape:
+          {"computers": {"total": N, "overdue": N, "threshold_days": N},
+           "mobile": {"total": N, "overdue": N, "threshold_days": N}}
+
+        Fallback shape: same list as device_compliance() — sheet writer detects and
+        aggregates accordingly.
+
+        Args:
+            threshold_days: Overdue threshold used for the device-compliance fallback.
+        """
+        try:
+            self._require_report_command("checkin-status", ["checkin-status", "checkin_status"])
+            return self._run_and_save(
+                "checkin-status",
+                ["pro", "report", "checkin-status"],
+                ["checkin-status", "checkin_status"],
+            )
+        except RuntimeError:
+            pass
+        return self._run_and_save(
+            "device-compliance",
+            ["pro", "report", "device-compliance", "--days-since-checkin", str(threshold_days)],
+            ["device-compliance", "device_compliance"],
+        )
+
+    def hardware_models(self) -> Any:
+        """Fetch hardware model distribution by count.
+
+        Tries jamf-cli pro report hardware-models (requires dashboard-era jamf-cli).
+        Falls back to inventory-summary, which the sheet writer aggregates by model.
+
+        Native JSON shape:
+          {"computers": [{"model": "MacBook Pro 14-inch", "count": N}, ...],
+           "mobile": [{"model": "iPhone 15", "count": N}, ...]}
+
+        Fallback shape: same list as inventory_summary() — sheet writer detects and
+        aggregates accordingly.
+        """
+        try:
+            self._require_report_command("hardware-models", ["hardware-models", "hardware_models"])
+            return self._run_and_save(
+                "hardware-models",
+                ["pro", "report", "hardware-models"],
+                ["hardware-models", "hardware_models"],
+            )
+        except RuntimeError:
+            pass
+        return self._run_and_save(
+            "inventory-summary",
+            ["pro", "report", "inventory-summary"],
+            ["inventory-summary", "inventory_summary"],
+        )
+
+    def env_stats(self) -> Any:
+        """Fetch environment object counts (policies, profiles, scripts, packages, etc.).
+
+        Requires jamf-cli pro report env-stats (available in dashboard-era builds).
+        JSON shape:
+          {"policies": N, "config_profiles": N, "scripts": N, "packages": N,
+           "smart_groups_computer": N, "smart_groups_mobile": N,
+           "extension_attributes": N, "categories": N}
+        """
+        self._require_report_command("env-stats", ["env-stats", "env_stats"])
+        return self._run_and_save(
+            "env-stats",
+            ["pro", "report", "env-stats"],
+            ["env-stats", "env_stats"],
+        )
+
     def blueprint_status(self) -> Any:
         """Fetch blueprint deployment status from jamf-cli pro report blueprint-status."""
         self._require_report_command("blueprint-status", ["blueprint-status", "blueprint_status"])
@@ -2869,7 +2957,7 @@ def _build_jamf_cli_bridge(
 # ---------------------------------------------------------------------------
 
 
-def _build_formats(wb: xlsxwriter.Workbook) -> dict[str, Any]:
+def _build_formats(wb: xlsxwriter.Workbook, accent_color: str = "#2D5EA2") -> dict[str, Any]:
     """Create and return a dict of named xlsxwriter formats.
 
     Args:
@@ -2882,7 +2970,7 @@ def _build_formats(wb: xlsxwriter.Workbook) -> dict[str, Any]:
         "title": wb.add_format({"bold": True, "font_size": 14}),
         "subtitle": wb.add_format({"italic": True, "font_color": "#595959", "font_size": 10}),
         "header": wb.add_format(
-            {"bold": True, "bg_color": "#2D5EA2", "font_color": "white", "border": 1}
+            {"bold": True, "bg_color": accent_color, "font_color": "white", "border": 1}
         ),
         "cell": wb.add_format({"border": 1}),
         "green": wb.add_format({"bg_color": "#C6EFCE", "border": 1}),
@@ -2919,6 +3007,19 @@ def _write_sheet_header(
     ws.merge_range(0, 0, 0, ncols - 1, title, fmts["title"])
     ws.merge_range(1, 0, 1, ncols - 1, subtitle, fmts["subtitle"])
     return 3
+
+
+def _org_title(org_name: str, base: str) -> str:
+    """Prefix a sheet title with the org name when configured.
+
+    Args:
+        org_name: Organisation name from branding config, or empty string.
+        base: The base sheet title (e.g. "Fleet Overview").
+
+    Returns:
+        "{org_name} \u2014 {base}" when org_name is set, otherwise base unchanged.
+    """
+    return f"{org_name} \u2014 {base}" if org_name else base
 
 
 def _pct_format(fmts: dict, pct: float) -> Any:
@@ -3016,19 +3117,30 @@ def _write_report_sources_sheet(
     jamf_cli_sheets: list[str],
     csv_sheets: list[str],
     chart_source: str,
+    org_name: str = "",
 ) -> None:
     """Write a workbook sheet describing the data sources used for the report."""
     ws = wb.add_worksheet("Report Sources")
     row = _write_sheet_header(
         ws,
-        "Report Sources",
+        _org_title(org_name, "Report Sources"),
         f"Generated: {generated_at}",
         fmts,
-        ncols=4,
+        ncols=6,
     )
     ws.set_column(0, 0, 24)
     ws.set_column(1, 1, 80)
     ws.set_column(2, 3, 18)
+
+    logo_path = config.resolve_path("branding", "logo_path")
+    if logo_path and logo_path.exists():
+        try:
+            ws.insert_image(
+                0, 5, str(logo_path),
+                {"x_scale": 0.25, "y_scale": 0.25, "object_position": 1},
+            )
+        except Exception:
+            pass  # logo insertion is best-effort; never block report generation
 
     if jamf_cli_sheets and csv_sheets:
         report_mode = "Mixed (jamf-cli + CSV)"
@@ -3139,6 +3251,15 @@ class CoreDashboard:
         self._overview_source_label: str = ""
         self._mobile_inventory_cache: Optional[tuple[list[dict[str, Any]], str]] = None
         self._mobile_profile_cache: Optional[list[dict[str, Any]]] = None
+
+    @property
+    def _org_name(self) -> str:
+        """Return the configured org name, or empty string."""
+        return (self._config.get("branding", "org_name") or "").strip()
+
+    def _t(self, base: str) -> str:
+        """Return sheet title prefixed with org name when configured."""
+        return _org_title(self._org_name, base)
 
     def _severity_fmt(self, value: int, warn: int, crit: int) -> Any:
         """Return red/yellow/normal cell format based on value vs thresholds.
@@ -3307,10 +3428,13 @@ class CoreDashboard:
             [
                 ("Mobile Fleet Summary", self._write_mobile_fleet_summary),
                 ("Inventory Summary", self._write_inventory_summary),
+                ("Hardware Models", self._write_hardware_models),
                 ("Mobile Inventory", self._write_mobile_inventory),
                 ("Security Posture", self._write_security),
                 ("Device Compliance", self._write_device_compliance),
+                ("Check-in Health", self._write_checkin_health),
                 ("EA Coverage", self._write_ea_coverage),
+                ("Environment Stats", self._write_env_stats),
                 ("EA Definitions", self._write_ea_definitions),
                 ("Software Installs", self._write_software_installs),
                 ("Policy Health", self._write_policy),
@@ -3342,7 +3466,7 @@ class CoreDashboard:
         source_name = self._overview_source_label or self._bridge.overview_source_label()
         row = _write_sheet_header(
             ws,
-            "Fleet Overview",
+            self._t("Fleet Overview"),
             f"Source: {source_name} | Generated: {ts}",
             self._fmts,
             ncols=4 if has_status else 3,
@@ -3589,7 +3713,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Protect Overview",
+            self._t("Protect Overview"),
             f"Source: {' + '.join(source_parts)} | Generated: {ts}",
             self._fmts,
             ncols=5,
@@ -4041,7 +4165,7 @@ class CoreDashboard:
         source_name = " + ".join(dict.fromkeys(source_parts)) or "jamf-cli mobile device sources"
         row = _write_sheet_header(
             ws,
-            "Mobile Fleet Summary",
+            self._t("Mobile Fleet Summary"),
             f"Source: {source_name} | Generated: {ts}",
             self._fmts,
             ncols=3,
@@ -4121,7 +4245,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Mobile Inventory",
+            self._t("Mobile Inventory"),
             f"Source: {source_name} | Generated: {ts}",
             self._fmts,
             ncols=20,
@@ -4178,7 +4302,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Mobile Config Profiles",
+            self._t("Mobile Config Profiles"),
             "Source: jamf-cli pro classic-mobile-config-profiles list"
             f" | Generated: {ts}",
             self._fmts,
@@ -4278,7 +4402,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Security Posture",
+            self._t("Security Posture"),
             f"Source: jamf-cli pro report security | Generated: {ts}",
             self._fmts,
             ncols=5,
@@ -4330,7 +4454,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Inventory Summary",
+            self._t("Inventory Summary"),
             f"Source: jamf-cli pro report inventory-summary | Generated: {ts}",
             self._fmts,
             ncols=3,
@@ -4356,6 +4480,74 @@ class CoreDashboard:
             _safe_write(ws, row, 2, _to_int(item.get("count", 0)), self._fmts["cell"])
             row += 1
 
+    def _write_hardware_models(self) -> None:
+        """Write hardware model distribution from jamf-cli.
+
+        Consumes either the native hardware-models report shape (dashboard-era jamf-cli)
+        or inventory-summary rows (current jamf-cli), aggregating by model.
+
+        Native shape: {"computers": [{"model": ..., "count": N}], "mobile": [...]}
+        Fallback shape: [{"model": ..., "os_version": ..., "count": N}]
+        """
+        raw = self._bridge.hardware_models()
+
+        # Detect native hardware-models shape vs inventory-summary fallback.
+        if isinstance(raw, dict) and ("computers" in raw or "mobile" in raw):
+            computer_rows = [
+                {"model": r.get("model", "Unknown"), "count": _to_int(r.get("count", 0))}
+                for r in (raw.get("computers") or [])
+                if isinstance(r, dict)
+            ]
+            mobile_rows = [
+                {"model": r.get("model", "Unknown"), "count": _to_int(r.get("count", 0))}
+                for r in (raw.get("mobile") or [])
+                if isinstance(r, dict)
+            ]
+        else:
+            # inventory-summary: aggregate counts by model (sum across OS versions).
+            model_counts: dict[str, int] = {}
+            for item in (raw if isinstance(raw, list) else []):
+                if not isinstance(item, dict):
+                    continue
+                model = str(item.get("model") or "Unknown").strip()
+                model_counts[model] = model_counts.get(model, 0) + _to_int(item.get("count", 0))
+            computer_rows = sorted(
+                [{"model": m, "count": c} for m, c in model_counts.items()],
+                key=lambda r: -r["count"],
+            )
+            mobile_rows = []
+
+        if not computer_rows and not mobile_rows:
+            raise RuntimeError("hardware-models returned no rows")
+
+        ws = self._wb.add_worksheet("Hardware Models")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Hardware Models"),
+            f"Source: jamf-cli pro report hardware-models | Generated: {ts}",
+            self._fmts,
+            ncols=2,
+        )
+        ws.set_column(0, 0, 40)
+        ws.set_column(1, 1, 14)
+
+        top_n = 20
+        for section_label, section_rows in [
+            ("Computer Models", computer_rows),
+            ("Mobile Models", mobile_rows),
+        ]:
+            if not section_rows:
+                continue
+            _safe_write(ws, row, 0, section_label, self._fmts["header"])
+            _safe_write(ws, row, 1, "Count", self._fmts["header"])
+            row += 1
+            for item in section_rows[:top_n]:
+                _safe_write(ws, row, 0, item["model"], self._fmts["cell"])
+                _safe_write(ws, row, 1, item["count"], self._fmts["cell"])
+                row += 1
+            row += 1
+
     def _write_device_compliance(self) -> None:
         """Write a stale check-in summary and device detail table from jamf-cli."""
         stale_days = int(self._config.thresholds.get("stale_device_days", 30))
@@ -4372,7 +4564,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Device Compliance",
+            self._t("Device Compliance"),
             (
                 "Source: jamf-cli pro report device-compliance"
                 f" (--days-since-checkin {stale_days}) | Generated: {ts}"
@@ -4429,6 +4621,83 @@ class CoreDashboard:
             _safe_write(ws, row, 5, item.get("days_since_contact", ""), row_fmt)
             _safe_write(ws, row, 6, "Yes" if stale else "No", row_fmt)
             row += 1
+
+    def _write_checkin_health(self) -> None:
+        """Write a check-in health summary from jamf-cli.
+
+        Uses the native checkin-status report when available (dashboard-era jamf-cli),
+        otherwise derives the summary from device-compliance rows using the configured
+        checkin_overdue_days threshold.
+
+        Native shape: {"computers": {"total": N, "overdue": N, "threshold_days": N},
+                       "mobile": {"total": N, "overdue": N, "threshold_days": N}}
+        Fallback shape: same list as device_compliance() output.
+        """
+        threshold = int(self._config.thresholds.get("checkin_overdue_days", 7))
+        raw = self._bridge.checkin_status(threshold)
+
+        ws = self._wb.add_worksheet("Check-in Health")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Check-in Health"),
+            (
+                f"Source: jamf-cli pro report checkin-status"
+                f" (threshold: {threshold} days) | Generated: {ts}"
+            ),
+            self._fmts,
+            ncols=4,
+        )
+        ws.set_column(0, 0, 30)
+        ws.set_column(1, 3, 18)
+
+        def _write_checkin_section(
+            section_label: str,
+            total: int,
+            overdue: int,
+        ) -> None:
+            nonlocal row
+            current = total - overdue
+            pct_current = current / total if total > 0 else 0.0
+            _safe_write(ws, row, 0, section_label, self._fmts["header"])
+            _safe_write(ws, row, 1, "Count", self._fmts["header"])
+            _safe_write(ws, row, 2, "% of Total", self._fmts["header"])
+            row += 1
+            _safe_write(ws, row, 0, "Total Devices", self._fmts["cell"])
+            _safe_write(ws, row, 1, total, self._fmts["cell"])
+            _safe_write(ws, row, 2, "", self._fmts["cell"])
+            row += 1
+            _safe_write(ws, row, 0, f"Checked In (within {threshold} days)", self._fmts["cell"])
+            _safe_write(ws, row, 1, current, self._fmts["cell"])
+            _safe_write(ws, row, 2, pct_current, _pct_format(self._fmts, pct_current))
+            row += 1
+            overdue_pct = overdue / total if total > 0 else 0.0
+            overdue_fmt = self._fmts["red"] if overdue > 0 else self._fmts["cell"]
+            _safe_write(ws, row, 0, f"Overdue (>{threshold} days)", overdue_fmt)
+            _safe_write(ws, row, 1, overdue, overdue_fmt)
+            _safe_write(ws, row, 2, overdue_pct, overdue_fmt)
+            row += 2
+
+        # Native shape: dict with computers/mobile sub-dicts.
+        if isinstance(raw, dict) and ("computers" in raw or "mobile" in raw):
+            for section_key, label in (("computers", "Computers"), ("mobile", "Mobile Devices")):
+                sub = raw.get(section_key) or {}
+                if not isinstance(sub, dict):
+                    continue
+                total = _to_int(sub.get("total", 0))
+                overdue = _to_int(sub.get("overdue", 0))
+                if total == 0:
+                    continue
+                _write_checkin_section(label, total, overdue)
+            return
+
+        # Fallback: device-compliance list — compute summary from stale flags.
+        items = raw if isinstance(raw, list) else []
+        if not items:
+            raise RuntimeError("checkin-status returned no data")
+        total = len(items)
+        overdue = sum(1 for i in items if _to_bool(i.get("stale")))
+        _write_checkin_section("Computers", total, overdue)
 
     def _write_ea_coverage(self) -> None:
         """Write a fleet-wide extension attribute coverage summary from jamf-cli."""
@@ -4495,7 +4764,7 @@ class CoreDashboard:
             subtitle += " + computer-extension-attributes list"
         row = _write_sheet_header(
             ws,
-            "Extension Attribute Coverage",
+            self._t("Extension Attribute Coverage"),
             f"{subtitle} | Generated: {ts}",
             self._fmts,
             ncols=11,
@@ -4567,6 +4836,51 @@ class CoreDashboard:
             _safe_write(ws, row, 10, top_values, self._fmts["cell"])
             row += 1
 
+    def _write_env_stats(self) -> None:
+        """Write environment object counts from jamf-cli pro report env-stats.
+
+        Requires dashboard-era jamf-cli. Sheet is skipped when the command is absent.
+        JSON shape: {"policies": N, "config_profiles": N, "scripts": N, "packages": N,
+                     "smart_groups_computer": N, "smart_groups_mobile": N,
+                     "extension_attributes": N, "categories": N}
+        """
+        raw = self._bridge.env_stats()
+        if not isinstance(raw, dict) or not raw:
+            raise RuntimeError("env-stats returned no data")
+
+        display_fields = [
+            ("policies", "Policies"),
+            ("config_profiles", "Configuration Profiles"),
+            ("scripts", "Scripts"),
+            ("packages", "Packages"),
+            ("smart_groups_computer", "Smart Groups — Computer"),
+            ("smart_groups_mobile", "Smart Groups — Mobile"),
+            ("extension_attributes", "Extension Attributes"),
+            ("categories", "Categories"),
+        ]
+        rows = [(label, raw[key]) for key, label in display_fields if key in raw]
+        if not rows:
+            raise RuntimeError("env-stats contained no recognised fields")
+
+        ws = self._wb.add_worksheet("Environment Stats")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Environment Stats"),
+            f"Source: jamf-cli pro report env-stats | Generated: {ts}",
+            self._fmts,
+            ncols=2,
+        )
+        ws.set_column(0, 0, 36)
+        ws.set_column(1, 1, 14)
+        _safe_write(ws, row, 0, "Object Type", self._fmts["header"])
+        _safe_write(ws, row, 1, "Count", self._fmts["header"])
+        row += 1
+        for label, value in rows:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, _to_int(value), self._fmts["cell"])
+            row += 1
+
     def _write_ea_definitions(self) -> None:
         """Write computer extension attribute definitions from jamf-cli."""
         raw = self._bridge.computer_extension_attributes()
@@ -4578,7 +4892,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Extension Attribute Definitions",
+            self._t("Extension Attribute Definitions"),
             "Source: jamf-cli pro computer-extension-attributes list"
             f" | Generated: {ts}",
             self._fmts,
@@ -4628,7 +4942,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Software Installs",
+            self._t("Software Installs"),
             "Source: jamf-cli pro report software-installs"
             f" | Generated: {ts}",
             self._fmts,
@@ -4678,7 +4992,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Policy Health",
+            self._t("Policy Health"),
             f"Source: jamf-cli pro report policy-status | Generated: {ts}",
             self._fmts,
             ncols=4,
@@ -4736,7 +5050,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Profile Status",
+            self._t("Profile Status"),
             f"Source: jamf-cli pro report profile-status | Generated: {ts}",
             self._fmts,
             ncols=7,
@@ -4813,7 +5127,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Patch Compliance",
+            self._t("Patch Compliance"),
             f"Source: jamf-cli pro report patch-status | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -4869,7 +5183,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Patch Failures",
+            self._t("Patch Failures"),
             f"Source: jamf-cli pro report patch-status --scan-failures | Generated: {ts}",
             self._fmts,
             ncols=8,
@@ -4925,7 +5239,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "App Status",
+            self._t("App Status"),
             f"Source: jamf-cli pro report app-status | Generated: {ts}",
             self._fmts,
             ncols=7,
@@ -5016,7 +5330,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Update Status",
+            self._t("Update Status"),
             f"Source: jamf-cli pro report update-status | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -5123,7 +5437,7 @@ class CoreDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row = _write_sheet_header(
             ws,
-            "Update Failures",
+            self._t("Update Failures"),
             (
                 "Source: jamf-cli pro report update-status --scan-failures"
                 f" (v1.6.0+) | Generated: {ts}"
@@ -5292,6 +5606,15 @@ class CSVDashboard:
             self._df = primary
             print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
 
+    @property
+    def _org_name(self) -> str:
+        """Return the configured org name, or empty string."""
+        return (self._config.get("branding", "org_name") or "").strip()
+
+    def _t(self, base: str) -> str:
+        """Return sheet title prefixed with org name when configured."""
+        return _org_title(self._org_name, base)
+
     def write_all(self) -> list[str]:
         """Write all CSV-derived sheets. Returns list of sheet names written."""
         written = []
@@ -5360,7 +5683,7 @@ class CSVDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
             ws,
-            "Device Inventory",
+            self._t("Device Inventory"),
             f"Active devices (checked in within {stale_days} days) | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -5390,7 +5713,7 @@ class CSVDashboard:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
             ws,
-            "Stale Devices",
+            self._t("Stale Devices"),
             f"Devices not checked in within {stale_days} days | Generated: {ts}",
             self._fmts,
             ncols=6,
@@ -5429,7 +5752,7 @@ class CSVDashboard:
         ws = self._wb.add_worksheet("Security Controls")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
-            ws, "Security Controls", f"Generated: {ts}", self._fmts, ncols=4
+            ws, self._t("Security Controls"), f"Generated: {ts}", self._fmts, ncols=4
         )
         headers = ["Control", "Enabled/Compliant", "Not Compliant", "Compliance %"]
         for c, h in enumerate(headers):
@@ -5458,7 +5781,7 @@ class CSVDashboard:
         ws = self._wb.add_worksheet("Security Agents")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
-            ws, "Security Agent Status", f"Generated: {ts}", self._fmts, ncols=5
+            ws, self._t("Security Agent Status"), f"Generated: {ts}", self._fmts, ncols=5
         )
         for agent in agents:
             col = agent.get("column", "")
@@ -5514,7 +5837,7 @@ class CSVDashboard:
         ws = self._wb.add_worksheet("Compliance")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         row_i = _write_sheet_header(
-            ws, label, f"Generated: {ts}", self._fmts, ncols=4
+            ws, self._t(label), f"Generated: {ts}", self._fmts, ncols=4
         )
         if count_col:
             counts = pd.to_numeric(self._df[count_col], errors="coerce").fillna(0)
@@ -7400,7 +7723,8 @@ def cmd_generate(
     print(f"  config base dir: {config.base_dir}")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     wb = xlsxwriter.Workbook(str(out_path))
-    fmts = _build_formats(wb)
+    accent_color = (config.get("branding", "accent_color") or "#2D5EA2").strip()
+    fmts = _build_formats(wb, accent_color)
     sheets_written = 0
     jamf_cli_written: list[str] = []
     csv_written: list[str] = []
@@ -7502,6 +7826,7 @@ def cmd_generate(
             jamf_cli_written,
             csv_written,
             chart_source,
+            org_name=config.get("branding", "org_name") or "",
         )
 
         wb.close()
@@ -7542,6 +7867,7 @@ def cmd_generate(
             generated_at,
             jamf_cli_written,
             csv_written,
+            org_name=config.get("branding", "org_name") or "",
         )
         pptx_path = exporter.export_pptx()
         if pptx_path:
@@ -7581,12 +7907,14 @@ class ReportExporter:
         generated_at: str,
         jamf_cli_sheets: list[str],
         csv_sheets: list[str],
+        org_name: str = "",
     ) -> None:
         self._output_dir = output_dir
         self._report_stem = report_stem
         self._generated_at = generated_at
         self._jamf_cli_sheets = jamf_cli_sheets
         self._csv_sheets = csv_sheets
+        self._org_name = org_name
 
     def export_pptx(self) -> Optional[Path]:
         """Generate the PPTX summary file.
@@ -7624,7 +7952,11 @@ class ReportExporter:
         """Add the opening title slide."""
         layout = prs.slide_layouts[0]   # Title Slide layout
         slide = prs.slides.add_slide(layout)
-        slide.shapes.title.text = "Jamf Pro Fleet Report"
+        slide.shapes.title.text = (
+            f"{self._org_name} — Jamf Pro Fleet Report"
+            if self._org_name
+            else "Jamf Pro Fleet Report"
+        )
         if len(slide.placeholders) > 1:
             slide.placeholders[1].text = self._generated_at
 
@@ -7968,7 +8300,17 @@ class HtmlReport:
         (github.com/DevliegereM/) with minor modifications for
         the Python port (no emojis; text-only status indicators).
         """
-        return """
+        accent = (self._config.get("branding", "accent_color") or "").strip()
+        accent_dark = (self._config.get("branding", "accent_dark") or "").strip()
+        overrides = ""
+        if accent or accent_dark:
+            parts = []
+            if accent_dark:
+                parts.append(f"    --blue-dark: {accent_dark};")
+            if accent:
+                parts.append(f"    --blue:      {accent};")
+            overrides = ":root {\n" + "\n".join(parts) + "\n}\n"
+        return overrides + """
 :root {
     --blue-dark: #004165;
     --blue:      #0076B6;
@@ -8149,6 +8491,24 @@ a:hover { text-decoration: underline; }
     margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border);
 }
 """
+
+    def _logo_html(self) -> str:
+        """Return an inline <img> tag with the logo base64-encoded, or empty string."""
+        logo_path = self._config.resolve_path("branding", "logo_path")
+        if not logo_path or not logo_path.exists():
+            return ""
+        try:
+            import base64
+            import mimetypes
+            mime = mimetypes.guess_type(str(logo_path))[0] or "image/png"
+            b64 = base64.b64encode(logo_path.read_bytes()).decode()
+            return (
+                f'<img src="data:{mime};base64,{b64}" alt="" '
+                f'style="height:28px;margin-right:10px;vertical-align:middle;'
+                f'border-radius:4px">'
+            )
+        except Exception:
+            return ""
 
     def _js(self, os_labels: list[str], os_counts: list[int]) -> str:
         """Return the embedded JavaScript block including Chart.js configuration.
@@ -8549,20 +8909,32 @@ if (_ctx) {{
 
         css = self._css()
         js = self._js(os_labels, os_counts)
+        org_name = (self._config.get("branding", "org_name") or "").strip()
+        brand_label = (
+            f"{org_name} \u2014 Jamf Pro Reporting Snapshot"
+            if org_name
+            else "Jamf Pro Reporting Snapshot"
+        )
+        page_title = (
+            f"{org_name} \u2014 Jamf Pro Report \u2014 {instance_url}"
+            if org_name
+            else f"Jamf Pro Report \u2014 {instance_url}"
+        )
+        logo_html = self._logo_html()
 
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Jamf Pro Report &mdash; {self._html_text(instance_url)}</title>
+<title>{page_title}</title>
 <script src="{self._CHARTJS_CDN}"></script>
 <style>{css}</style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="topbar-brand">Jamf Pro Reporting Snapshot</div>
+  <div class="topbar-brand">{logo_html}{brand_label}</div>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <div class="topbar-meta">
       <strong>{self._html_text(instance_url, "N/A")}</strong><br>

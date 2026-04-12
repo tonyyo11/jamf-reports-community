@@ -825,6 +825,21 @@ The OS adoption chart can also use `inventory-summary` history, and the device s
 chart can use `device-compliance` history, so jamf-cli-only reporting no longer depends on
 CSV history for every chart.
 
+### `branding`
+
+All fields are optional. When `org_name` is set it is prepended to every sheet title in
+the Excel workbook and shown in the HTML report header and PPTX title slide.
+
+| Key | Default | Description |
+| --- | ------- | ----------- |
+| `org_name` | `""` | Organisation name, e.g. `"Acme Corp"` |
+| `logo_path` | `""` | Path to a PNG/JPEG logo (relative to config file or absolute) |
+| `accent_color` | `"#2D5EA2"` | Hex colour for Excel column headers and HTML primary accent |
+| `accent_dark` | `"#004165"` | Darker accent for HTML topbar and dark-mode elements |
+
+The logo is embedded as a base64 image in the self-contained HTML report and inserted on
+the Report Sources sheet of the Excel workbook.
+
 ---
 
 ## Adapting Column Names
