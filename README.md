@@ -186,9 +186,24 @@ Run the automated suite:
 python3 -m pytest tests -q
 ```
 
+Or use the repo wrapper:
+
+```bash
+./scripts/test.sh
+```
+
 The committed fixture corpus is intentionally curated rather than keeping full timestamped
 workspace histories in git. See [docs/testing.md](docs/testing.md) for fixture provenance,
 refresh workflow, and how to add fresh dated snapshots for historical-trend testing.
+
+If you want pushes to run the local test gate automatically, enable the repo-managed hook:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+That installs the committed `pre-push` hook, which runs `./scripts/test.sh` before git
+push completes.
 
 ---
 

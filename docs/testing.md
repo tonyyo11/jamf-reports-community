@@ -30,12 +30,36 @@ Run all tests:
 python3 -m pytest tests -q
 ```
 
+Or use the repo wrapper:
+
+```bash
+./scripts/test.sh
+```
+
 Recommended pre-commit check:
 
 ```bash
 python3 -c "import py_compile; py_compile.compile('jamf-reports-community.py', doraise=True)"
 python3 -m pytest tests -q
 ```
+
+## Optional Git Hook
+
+If you want pushes to run the local test gate automatically, point git at the committed
+hook directory:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+That enables `.githooks/pre-push`, which runs:
+
+```bash
+./scripts/test.sh
+```
+
+Use this when you want local enforcement before `git push`, but still keep GitHub Actions
+as the merge-time source of truth.
 
 ## How To Refresh Fixture Data
 
