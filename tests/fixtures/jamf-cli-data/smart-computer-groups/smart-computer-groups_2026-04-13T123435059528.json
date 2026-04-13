@@ -1,0 +1,37 @@
+[
+  {
+    "name": "All Managed Clients",
+    "id": "1",
+    "description": "",
+    "siteId": "-1",
+    "membershipCount": 101
+  },
+  {
+    "name": "All Managed Servers",
+    "id": "2",
+    "description": "",
+    "siteId": "-1",
+    "membershipCount": 0
+  },
+  {
+    "name": "App: Microsoft Outlook 2011",
+    "id": "3",
+    "description": "",
+    "siteId": "-1",
+    "membershipCount": 0
+  },
+  {
+    "name": "Compliance: No Inventory Report for 14 Days",
+    "id": "28",
+    "description": "",
+    "siteId": "-1",
+    "membershipCount": 101
+  },
+  {
+    "name": "Compliance: FileVault 2 Not Enabled",
+    "id": "38",
+    "description": "",
+    "siteId": "-1",
+    "membershipCount": 1
+  }
+]
