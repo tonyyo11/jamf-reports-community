@@ -10,6 +10,28 @@ Primary `jamf-cli` references:
 - [Jamf Concepts jamf-cli site](https://concepts.jamf.com/jamf-cli/)
 - [jamf-cli Documentation Wiki](https://github.com/Jamf-Concepts/jamf-cli/wiki)
 
+Related reading and adjacent tooling:
+
+- [Graham Pugh: jamf-cli, and how you can use it with AutoPkg to automate complex Jamf workflows](https://grahamrpugh.com/2026/04/12/jamf-cli-runner.html)
+- [grahampugh/jamf-upload wiki: jamf-upload.sh](https://github.com/grahampugh/jamf-upload/wiki/jamf-upload.sh)
+
+Those two links are worth reading alongside the official docs because they show how
+`jamf-cli` fits into broader Mac admin automation patterns:
+
+- Graham's April 12, 2026 post frames `jamf-cli` as a good fit for repeatable shell and
+  AutoPkg-driven workflows, and calls out areas where it is especially strong: single
+  task execution, multi-instance work, reporting and "power commands", scope changes,
+  unused-object discovery, and monolithic profile conversion.
+- The same post compares `jamf-cli` with older Jamf automation building blocks such as
+  `jamf-upload.sh`, JamfUploader, and Jamf API Utility, which is useful context if
+  you're migrating an existing packaging or object-management workflow rather than
+  starting from scratch.
+- `jamf-upload.sh` itself is not a `jamf-cli` tool. It is a wrapper around the
+  JamfUploader AutoPkg processors for standalone workflows. It remains a useful example
+  of the kinds of package upload, policy, group, profile, Slack, and Teams automation
+  that Mac admins have historically built around the Jamf APIs, and it helps clarify
+  where `jamf-cli` overlaps with or simplifies those older patterns.
+
 ## What jamf-reports-community Uses From jamf-cli
 
 Current high-value commands:
