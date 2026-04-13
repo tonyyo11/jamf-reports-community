@@ -3151,6 +3151,47 @@ class JamfCLIBridge:
             ["software-installs", "software_installs"],
         )
 
+    def groups(self) -> Any:
+        """Fetch smart and static group inventory from jamf-cli pro groups.
+
+        Returns a list of group objects. Confirmed available in jamf-cli v1.7.0.
+        Exact JSON shape must be validated against a live or test instance before
+        implementing the parser in CoreDashboard._write_smart_groups.
+
+        Expected shape (to confirm against fixture):
+            [
+              {
+                "id": "123",
+                "name": "All Managed Macs",
+                "type": "computer",           # "computer" | "mobile_device"
+                "is_smart": true,
+                "member_count": 142,
+                "criteria": [...]             # may be absent for static groups
+              },
+              ...
+            ]
+
+        TODO: Run `jamf-cli pro groups --output json` against a test instance,
+              confirm the JSON shape, commit the result as
+              tests/fixtures/jamf-cli-data/groups/groups.json,
+              then implement the bridge method body below.
+
+        Returns:
+            Parsed JSON list of group objects, or raises RuntimeError if unavailable.
+        """
+        # TODO: implement using _run_and_save once the command name is confirmed.
+        # Pattern to follow:
+        #   return self._run_and_save(
+        #       "groups",
+        #       ["pro", "groups", "--output", "json"],
+        #       ["groups"],
+        #   )
+        raise NotImplementedError(
+            "JamfCLIBridge.groups() requires fixture validation. "
+            "Run `jamf-cli pro groups --output json` and commit the result to "
+            "tests/fixtures/jamf-cli-data/groups/groups.json before implementing."
+        )
+
     def device_lookup(self, device_id: str) -> Any:
         """Fetch a per-device detail view from jamf-cli pro device.
 
@@ -3868,6 +3909,8 @@ class CoreDashboard:
                 ("Patch Failures", self._write_patch_failures),
                 ("Update Status", self._write_update_status),
                 ("Update Failures", self._write_update_failures),
+                # Smart Groups: wired but skipped until JamfCLIBridge.groups() is implemented.
+                ("Smart Groups", self._write_smart_groups),
             ]
         )
         for name, fn in sheets:
@@ -5952,6 +5995,88 @@ class CoreDashboard:
                 row += 1
         else:
             _safe_write(ws, row, 0, "No failed update plans found.", self._fmts["cell"])
+
+    def _write_smart_groups(self) -> None:
+        """Write a Smart Groups sheet from jamf-cli pro groups data.
+
+        Columns: Group Name | Type | Smart | Member Count | Delta | Prior Count |
+                 Scope Warning
+
+        Delta = member_count - prior_count, derived from comparing the current
+        groups JSON against the most-recent cached groups snapshot in the bridge's
+        data_dir. A zero-member smart group that was non-zero in the prior run is
+        highlighted in red (potential scope failure).
+
+        Requires: JamfCLIBridge.groups() to be implemented (pending fixture
+        validation). The sheet is automatically skipped via write_all's RuntimeError
+        guard when the method raises NotImplementedError.
+
+        JSON shape expected from jamf-cli pro groups --output json:
+            [
+              {
+                "id": "123",
+                "name": "All Managed Macs",
+                "type": "computer",          # "computer" | "mobile_device"
+                "is_smart": true,
+                "member_count": 142
+              },
+              ...
+            ]
+
+        TODO: Implement after:
+            1. Running `jamf-cli pro groups --output json` against a test instance
+            2. Committing the result to tests/fixtures/jamf-cli-data/groups/groups.json
+            3. Confirming the JSON shape matches the expected structure above
+            4. Implementing JamfCLIBridge.groups()
+            5. Adding a delta-comparison against the prior cached JSON
+
+        Raises:
+            RuntimeError: When groups data is unavailable or the bridge raises.
+        """
+        # Propagate NotImplementedError as RuntimeError so write_all skips gracefully.
+        try:
+            raw = self._bridge.groups()
+        except NotImplementedError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        if not raw or not isinstance(raw, list):
+            raise RuntimeError("groups returned no data")
+
+        ws = self._wb.add_worksheet("Smart Groups")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Smart Groups",
+            f"Source: jamf-cli pro groups | Generated: {ts}",
+            self._fmts,
+            ncols=7,
+        )
+        headers = [
+            "Group Name", "Type", "Smart Group", "Member Count",
+            "Delta", "Prior Count", "Note",
+        ]
+        for col_i, h in enumerate(headers):
+            _safe_write(ws, row, col_i, h, self._fmts["header"])
+        row += 1
+
+        # TODO: load prior cached groups JSON from data_dir for delta computation.
+        # For now, delta and prior_count are blank.
+        for item in sorted(raw, key=lambda g: g.get("name", "").casefold()):
+            count = item.get("member_count", "")
+            is_smart = item.get("is_smart", False)
+            is_zero = isinstance(count, int) and count == 0
+            row_fmt = self._fmts.get("row_red") or self._fmts["cell"] if is_zero else self._fmts["cell"]
+            _safe_write(ws, row, 0, item.get("name", ""), row_fmt)
+            _safe_write(ws, row, 1, item.get("type", ""), row_fmt)
+            _safe_write(ws, row, 2, "Yes" if is_smart else "No", row_fmt)
+            _safe_write(ws, row, 3, count, row_fmt)
+            _safe_write(ws, row, 4, "", row_fmt)       # Delta — TODO
+            _safe_write(ws, row, 5, "", row_fmt)       # Prior count — TODO
+            _safe_write(ws, row, 6, "Zero members" if is_zero else "", row_fmt)
+            row += 1
+
+        ws.set_column(0, 0, 40)
+        ws.set_column(1, 6, 16)
 
 
 # ---------------------------------------------------------------------------
