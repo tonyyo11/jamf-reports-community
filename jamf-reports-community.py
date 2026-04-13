@@ -8964,6 +8964,14 @@ class HtmlReport:
         return _escape(str(value), quote=True)
 
     @staticmethod
+    def _safe_href(url: str) -> str:
+        """Return url only if it uses https:// or http://; otherwise return '#'.
+
+        Prevents javascript: URI injection when external data is used as an href.
+        """
+        return url if url.startswith(("https://", "http://")) else "#"
+
+    @staticmethod
     def _health_badge_class(status: Any) -> str:
         """Map health text to a badge class using exact positive matches."""
         normalized = " ".join(str(status).lower().replace("_", " ").split())
@@ -9380,7 +9388,8 @@ if (_ctx) {{
         if link_url and link_text:
             link_html = (
                 '<div class="stat-link"><a href="'
-                f'{self._html_text(link_url)}" target="_blank" rel="noopener noreferrer">'
+                f'{self._html_text(self._safe_href(link_url))}"'
+                f' target="_blank" rel="noopener noreferrer">'
                 f'{self._html_text(link_text)}</a></div>'
             )
         return f"""<div class="card stat-card">
@@ -9533,7 +9542,7 @@ if (_ctx) {{
 </div>"""
 
         rows = "".join(
-            f"<tr><td>{label}</td><td class='val'>{count}</td></tr>"
+            f"<tr><td>{self._html_text(str(label))}</td><td class='val'>{count}</td></tr>"
             for label, count in counter.most_common(max_rows)
         )
         return f"""<div class="card card-sm">
@@ -9575,13 +9584,13 @@ if (_ctx) {{
                 days_html = f"<td>{days_label}</td>"
             user_label = row.get("Username") or row.get("Email") or "Unassigned"
             body += (
-                f"<tr><td>{row.get('Device Name', '')}</td>"
-                f"<td>{row.get('Device Family', '')}</td>"
-                f"<td>{row.get('OS Version', '')}</td>"
-                f"<td>{user_label}</td>"
+                f"<tr><td>{self._html_text(str(row.get('Device Name', '')))}</td>"
+                f"<td>{self._html_text(str(row.get('Device Family', '')))}</td>"
+                f"<td>{self._html_text(str(row.get('OS Version', '')))}</td>"
+                f"<td>{self._html_text(user_label)}</td>"
                 f"{days_html}"
-                f"<td>{row.get('Managed', '')}</td>"
-                f"<td>{row.get('Supervised', '')}</td></tr>"
+                f"<td>{self._html_text(str(row.get('Managed', '')))}</td>"
+                f"<td>{self._html_text(str(row.get('Supervised', '')))}</td></tr>"
             )
         return f"""<div class="section-title">Mobile Inventory Review</div>
 <div class="card">
