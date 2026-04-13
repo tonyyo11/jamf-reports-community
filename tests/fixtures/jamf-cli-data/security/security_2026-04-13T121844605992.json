@@ -1,0 +1,1038 @@
+[
+  {
+    "data": {
+      "filevault_encrypted": 100,
+      "filevault_encrypted_pct": "99.0%",
+      "firewall_enabled": 0,
+      "firewall_enabled_pct": "0.0%",
+      "gatekeeper_enabled": 100,
+      "gatekeeper_enabled_pct": "99.0%",
+      "sip_enabled": 1,
+      "sip_enabled_pct": "1.0%",
+      "total_devices": 101
+    },
+    "section": "summary"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Backancient",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Batgarnet",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Beetledent",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Bisonlead",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Bitegrove",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Boalime",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Boltpalm",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Bonesprout",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Bowweed",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Buffalomad",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Bunnysprout",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Burnevening",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Butterflycookie",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Catchersleet",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Choppermisty",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Collarlava",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Condorbead",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Condorscratch",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Cowlcoconut",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Cowlnova",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Crusherrapid",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Dancerquill",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Divebrook",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Doommuck",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Drifterfluff",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Falconpink",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Ferretash",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Fighterbevel",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Fighterspiral",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Fingereast",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Fingersleet",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Fishwest",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Flamebrindle",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Flyrelic",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Flysunrise",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Followerrain",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Friendoil",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Friendpond",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Gazelleroot",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Glazercypress",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Griffinfierce",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Harebrindle",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Hawkbig",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Hawkquiver",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Heronzest",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Hornnoble",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Horserelic",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Howlersouth",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Huntersour",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Jaguarruby",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Keeperthorn",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Kickercat",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Lightningcanyon",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Lightningsand",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Lizardash",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Marecitrine",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Mastergentle",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Mindbold",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Minnowlizard",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Oriolewool",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Palmfortune",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Panthercat",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Parrotpeach",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Piratequilt",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Rabbitfrill",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Raccoonpuddle",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Ratjungle",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Raycyber",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Rayhollow",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Rayriver",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Ridgetabby",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Ridgetide",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Rippercitrine",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Roarerviridian",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Robinlava",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Sagecyan",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Sagelavender",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Scaleorange",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Scorpionflame",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Sentryfish",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Sentrylava",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Sightsand",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Skullshallow",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Snakecrocus",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Snarlquilt",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Snoutshade",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Songsouth",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Spearsolar",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Spikespectrum",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Stalkerjelly",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Stingerash",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Stingfan",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Terrierwind",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "UNENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "DISABLED",
+    "name": "Tester Pro",
+    "os_version": "11.6.2",
+    "section": "device",
+    "serial": "C02M23PJFH05",
+    "sip": "ENABLED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Thunderindigo",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Toothtitanium",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Tradermica",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Voicerogue",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Voleheather",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Whimseyluck",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "filevault": "ENCRYPTED",
+    "firewall": false,
+    "gatekeeper": "NOT_COLLECTED",
+    "name": "Whimseyshy",
+    "os_version": "10.9.5",
+    "section": "device",
+    "serial": "",
+    "sip": "NOT_COLLECTED"
+  },
+  {
+    "count": 1,
+    "os_version": "11.6.2",
+    "pct": "1.0%",
+    "section": "os_version"
+  },
+  {
+    "count": 100,
+    "os_version": "10.9.5",
+    "pct": "99.0%",
+    "section": "os_version"
+  }
+]

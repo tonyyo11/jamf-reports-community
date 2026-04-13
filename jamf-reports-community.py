@@ -25,6 +25,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 import plistlib
 import re
@@ -8837,32 +8838,18 @@ class ReportExporter:
 #
 # Design credit: This HTML report is based on the work of DevliegereM
 # (https://github.com/DevliegereM/). The layout, colour
-# scheme, section structure, and Chart.js integration are adapted from that
-# project into Python with permission under the spirit of open-source sharing.
+# scheme, and section structure are adapted from that project into Python
+# with permission under the spirit of open-source sharing.
 # The original Bash/heredoc implementation inspired this Python port.
 # ---------------------------------------------------------------------------
 
 
 class HtmlReport:
-    """Generates a self-contained, management-facing HTML status report.
-
-    The report mirrors the structure pioneered by DevliegereM's
-    project: fleet inventory cards, security posture bars, OS distribution chart,
-    flagged devices table, org & enrollment data, deployment hierarchy, and a
-    full overview table.
-
-    Chart.js is loaded from CDN at view time; no local assets are required.
-    No external dependencies beyond the standard library are needed here —
-    the existing JamfCLIBridge handles all data fetching.
-
-    Args:
-        config: Loaded Config instance.
-        bridge: Initialised JamfCLIBridge instance.
-        out_file: Path for the generated HTML file.
-        no_open: When True, skip auto-opening the file in the browser.
-    """
-
-    _CHARTJS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+    """Generates a self-contained, management-facing HTML status report."""
+    _TREND_PALETTE = [
+        "#0076B6", "#22c55e", "#8b5cf6", "#f59e0b", "#ef4444",
+        "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#64748b",
+    ]
 
     def __init__(
         self,
@@ -8876,14 +8863,8 @@ class HtmlReport:
         self._out_file = out_file
         self._no_open = no_open
 
-    # ── Public entry point ───────────────────────────────────────────────────
-
     def generate(self) -> Path:
-        """Fetch data and write the HTML report to disk.
-
-        Returns:
-            Path to the generated HTML file.
-        """
+        """Fetch data and write the HTML report to disk."""
         print("\n--- HTML Report ---")
         data = self._fetch_all()
         html = self._render(data)
@@ -8891,32 +8872,36 @@ class HtmlReport:
         self._out_file.write_text(html, encoding="utf-8")
         print(f"  Written: {self._out_file}")
         if not self._no_open:
-            import subprocess as _sp
-            _sp.run(["open", str(self._out_file)], check=False)
+            subprocess.run(["open", str(self._out_file)], check=False)
         return self._out_file
 
-    # ── Data fetching ────────────────────────────────────────────────────────
-
     def _fetch_all(self) -> dict[str, Any]:
-        """Fetch all data required for the report.
-
-        Returns:
-            Dict with keys: overview, security, mobile_inventory, mobile_devices,
-            policies, macos_profiles, ios_profiles, smart_groups, scripts,
-            packages, categories, device_enrollments, sites, buildings,
-            departments.
-        """
+        """Fetch all data required for the report."""
         data: dict[str, Any] = {}
+        fetch_status: dict[str, dict[str, Any]] = {}
         live_overview_allowed = self._config.jamf_cli.get("allow_live_overview", True) is True
 
         def _safe_fetch(key: str, fn: Any) -> None:
             try:
                 data[key] = fn()
                 count = len(data[key]) if isinstance(data[key], list) else 1
+                source = self._bridge.source_info(key)
+                fetch_status[key] = {
+                    "status": "ok",
+                    "records": count,
+                    "source_mode": source.get("mode", ""),
+                    "cached_path": str(source.get("cached_path", "") or ""),
+                }
                 print(f"  [ok]   {key} ({count} records)")
             except RuntimeError as exc:
                 print(f"  [warn] {key}: {exc}")
                 data[key] = []
+                fetch_status[key] = {
+                    "status": "warn",
+                    "records": 0,
+                    "source_mode": "",
+                    "detail": str(exc),
+                }
 
         print("  Fetching data from Jamf Pro...")
         _safe_fetch(
@@ -8937,9 +8922,8 @@ class HtmlReport:
         _safe_fetch("sites", self._bridge.sites_list)
         _safe_fetch("buildings", self._bridge.buildings_list)
         _safe_fetch("departments", self._bridge.departments_list)
+        data["_fetch_status"] = fetch_status
         return data
-
-    # ── Overview value helpers ───────────────────────────────────────────────
 
     @staticmethod
     def _ov(overview: Any, resource: str) -> str:
@@ -8964,7 +8948,7 @@ class HtmlReport:
         return "N/A"
 
     @staticmethod
-    def _to_float(value: str) -> float:
+    def _to_float(value: Any) -> float:
         """Parse a percentage string or numeric string to float."""
         try:
             return float(str(value).replace("%", "").strip())
@@ -8982,11 +8966,21 @@ class HtmlReport:
 
     @staticmethod
     def _safe_href(url: str) -> str:
-        """Return url only if it uses https:// or http://; otherwise return '#'.
-
-        Prevents javascript: URI injection when external data is used as an href.
-        """
+        """Return url only if it uses https:// or http://; otherwise return '#'."""
         return url if url.startswith(("https://", "http://")) else "#"
+
+    @classmethod
+    def _safe_base_url(cls, url: Any) -> str:
+        """Return a safe absolute console base URL, or an empty string."""
+        candidate = str(url or "").strip().rstrip("/")
+        safe = cls._safe_href(candidate)
+        return "" if safe == "#" else safe
+
+    @staticmethod
+    def _json_text(value: Any) -> str:
+        """Serialize data for an inline script without allowing script breakout."""
+        text = json.dumps(value, ensure_ascii=False)
+        return text.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     @staticmethod
     def _health_badge_class(status: Any) -> str:
@@ -9028,18 +9022,7 @@ class HtmlReport:
 
     @staticmethod
     def _build_hierarchy(items: Any) -> list[dict[str, Any]]:
-        """Group items by category, using naming-convention prefix as fallback.
-
-        Follows the same pattern as DevliegereM's original Bash implementation:
-        for resources without an explicit category, the first token before ' - '
-        in the name is used as the category label.
-
-        Args:
-            items: List of dicts, each with 'name' and optionally 'category'.
-
-        Returns:
-            List of {category, count, items} dicts sorted by category name.
-        """
+        """Group items by category, using naming-convention prefix as fallback."""
         if not isinstance(items, list):
             return []
         groups: dict[str, list[str]] = {}
@@ -9053,7 +9036,6 @@ class HtmlReport:
             elif cat_raw and str(cat_raw).strip() not in ("", "None"):
                 category = str(cat_raw).strip()
             else:
-                # Derive from naming convention "SCOPE - Vendor - Product"
                 parts = name.split(" - ")
                 category = parts[0].strip() if len(parts) > 1 else "No Category"
             groups.setdefault(category, []).append(name)
@@ -9061,6 +9043,98 @@ class HtmlReport:
             {"category": cat, "count": len(names), "items": sorted(names)}
             for cat, names in sorted(groups.items())
         ]
+
+    @staticmethod
+    def _overview_sections(overview: Any) -> dict[str, list[dict[str, str]]]:
+        """Group overview rows by section for rendering."""
+        if not isinstance(overview, list):
+            return {}
+        sections: dict[str, list[dict[str, str]]] = {}
+        for item in overview:
+            if not isinstance(item, dict):
+                continue
+            section = str(item.get("section", "General"))
+            if section in ("Health & Alerts",):
+                continue
+            resource = str(item.get("resource", "") or "")
+            if not resource:
+                continue
+            sections.setdefault(section, []).append(
+                {
+                    "resource": resource,
+                    "value": str(item.get("value", "") or ""),
+                    "status": str(item.get("status", "") or ""),
+                }
+            )
+        return sections
+
+    @classmethod
+    def _resource_links(cls, console_url: str) -> dict[str, str]:
+        """Return known Jamf console links for overview resources."""
+        if not console_url:
+            return {}
+        base = console_url.rstrip("/")
+        rel = {
+            "Managed Computers": "/computers.html",
+            "Unmanaged Computers": "/computers.html",
+            "Managed Devices": "/mobileDevices.html",
+            "Unmanaged Devices": "/mobileDevices.html",
+            "Policies": "/policies.html",
+            "macOS Config Profiles": "/OSXConfigurationProfiles.html",
+            "iOS Config Profiles": "/mobileDeviceConfigurationProfiles.html",
+            "Packages": "/view/settings/computer-management/packages",
+            "Scripts": "/view/settings/computer-management/scripts",
+            "App Installers": "/app-installers.html",
+            "Patch Titles": "/patch.html",
+            "eBooks": "/eBooks.html",
+            "Webhooks": "/webhooks.html",
+            "Sites": "/sites.html",
+            "Buildings": "/view/settings/network-organization/buildings",
+            "Departments": "/view/settings/network-organization/departments",
+            "Categories": "/categories.html",
+            "Computer Smart Groups": "/smartComputerGroups.html",
+            "Computer Static Groups": "/staticComputerGroups.html",
+            "Mobile Smart Groups": "/smartMobileDeviceGroups.html",
+            "Mobile Static Groups": "/staticMobileDeviceGroups.html",
+            "Static User Groups": "/staticUserGroups.html",
+            "DEP Instances": "/deviceEnrollmentProgram.html",
+            "ADE Instances": "/deviceEnrollmentProgram.html",
+            "DEP Sync Status": "/deviceEnrollmentProgram.html",
+            "Computer Prestages": "/computerPrestages.html",
+            "Mobile Device Prestages": "/mobileDevicePrestages.html",
+            "VPP Locations": "/volumePurchaseProgram.html",
+            "Built-in CA Expires": "/view/settings/pki/certificate-authority",
+            "Active Alerts": "/notifications.html",
+            "Health Status": "/healthCheck.html",
+            "MDM Auto Renew (Computers)": "/view/settings/global-management/mdm-profile-settings",
+            "MDM Auto Renew (Mobile)": "/view/settings/global-management/mdm-profile-settings",
+            "SSO (SAML)": "/view/settings/system-settings/sso",
+            "LDAP/IdP Servers": "/ldapServers.html",
+            "Patch Management": "/patch.html",
+        }
+        return {label: f"{base}{path}" for label, path in rel.items()}
+
+    @classmethod
+    def _quick_links(cls, console_url: str) -> list[tuple[str, str]]:
+        """Return quick-link label/URL pairs."""
+        if not console_url:
+            return []
+        base = console_url.rstrip("/")
+        items = [
+            ("Computers", "/computers.html"),
+            ("Mobile Devices", "/mobileDevices.html"),
+            ("Policies", "/policies.html"),
+            ("macOS Profiles", "/OSXConfigurationProfiles.html"),
+            ("iOS Profiles", "/mobileDeviceConfigurationProfiles.html"),
+            ("Packages", "/view/settings/computer-management/packages"),
+            ("Scripts", "/view/settings/computer-management/scripts"),
+            ("Smart Groups", "/smartComputerGroups.html"),
+            ("Categories", "/categories.html"),
+            ("Patch Management", "/patch.html"),
+            ("Notifications", "/notifications.html"),
+            ("Check-In Settings", "/view/settings/computer-management/check-in"),
+        ]
+        return [(label, f"{base}{path}") for label, path in items]
 
     @staticmethod
     def _flagged_devices(security: Any) -> list[dict[str, Any]]:
@@ -9082,15 +9156,17 @@ class HtmlReport:
                 or fw is False
             )
             if issues:
-                flagged.append({
-                    "name": item.get("name", ""),
-                    "serial": item.get("serial", ""),
-                    "os": item.get("os_version", ""),
-                    "filevault": fv,
-                    "gatekeeper": gk,
-                    "sip": sip,
-                    "firewall": "No" if fw is False else str(fw),
-                })
+                flagged.append(
+                    {
+                        "name": item.get("name", ""),
+                        "serial": item.get("serial", ""),
+                        "os": item.get("os_version", ""),
+                        "filevault": fv,
+                        "gatekeeper": gk,
+                        "sip": sip,
+                        "firewall": "No" if fw is False else str(fw),
+                    }
+                )
         return flagged
 
     @staticmethod
@@ -9106,7 +9182,7 @@ class HtmlReport:
             count = int(item.get("count", 0))
             versions[ver] = versions.get(ver, 0) + count
         pairs = sorted(versions.items(), key=lambda x: x[0], reverse=True)
-        return [p[0] for p in pairs], [p[1] for p in pairs]
+        return [pair[0] for pair in pairs], [pair[1] for pair in pairs]
 
     @staticmethod
     def _mobile_rows(items: Any) -> list[dict[str, Any]]:
@@ -9125,7 +9201,410 @@ class HtmlReport:
             )
         ]
 
-    # ── HTML section renderers ───────────────────────────────────────────────
+    @staticmethod
+    def _trend_labels(dates: list[datetime]) -> list[str]:
+        """Format trend labels with time only when needed."""
+        if len({dt.date() for dt in dates}) < len(dates):
+            return [dt.strftime("%Y-%m-%d %H:%M") for dt in dates]
+        return [dt.strftime("%Y-%m-%d") for dt in dates]
+
+    def _chart_helper(self) -> "ChartGenerator":
+        """Return a chart helper so HTML can reuse snapshot-loading logic."""
+        hist_dir = self._config.resolve_path("charts", "historical_csv_dir")
+        jamf_cli_dir = self._config.resolve_path(
+            "jamf_cli", "data_dir", default="jamf-cli-data"
+        )
+        return ChartGenerator(
+            self._config,
+            None,
+            str(hist_dir) if hist_dir else None,
+            self._out_file.parent,
+            None,
+            jamf_cli_dir,
+            self._out_file.stem,
+        )
+
+    def _adoption_trend_payload(self) -> dict[str, Any]:
+        """Build trend payload for macOS adoption from existing snapshots."""
+        charts_cfg = self._config.get("charts") or {}
+        os_cfg = charts_cfg.get("os_adoption", {})
+        if not charts_cfg.get("enabled", True) or not os_cfg.get("enabled", True):
+            return {}
+
+        helper = self._chart_helper()
+        os_col = self._config.columns.get("operating_system", "")
+        ts = pd.DataFrame()
+        source = ""
+
+        if os_col:
+            csv_snapshots = helper._load_snapshots(charts_cfg)
+            if csv_snapshots:
+                ts = helper._build_os_timeseries(csv_snapshots, os_col)
+                if not ts.empty:
+                    source = "CSV snapshots"
+
+        if ts.empty:
+            inventory_snaps = helper._load_json_snapshots(
+                ["inventory-summary", "inventory_summary"]
+            )
+            ts = helper._build_inventory_summary_timeseries(inventory_snaps)
+            if not ts.empty:
+                source = "jamf-cli snapshots"
+
+        if ts.empty or len(ts.index) < 2:
+            return {}
+
+        major_series: dict[str, Any] = {}
+        for column in ts.columns:
+            major = helper._major_version(column)
+            if major in major_series:
+                major_series[major] = major_series[major] + ts[column]
+            else:
+                major_series[major] = ts[column]
+
+        majors = sorted(
+            major_series,
+            key=lambda item: (not str(item).isdigit(), int(item) if str(item).isdigit() else item),
+        )
+        series = []
+        for idx, major in enumerate(majors):
+            color = MAJOR_VERSION_COLORS.get(str(major), self._TREND_PALETTE[idx % len(self._TREND_PALETTE)])
+            series.append(
+                {
+                    "label": MACOS_NAMES.get(str(major), f"macOS {major}"),
+                    "data": [int(value) for value in major_series[major].tolist()],
+                    "borderColor": color,
+                    "backgroundColor": f"{color}22",
+                }
+            )
+
+        return {
+            "labels": self._trend_labels(list(ts.index)),
+            "series": series,
+            "source": source,
+        }
+
+    def _security_trend_payload(self) -> dict[str, Any]:
+        """Build trend payload for security posture from cached security snapshots."""
+        charts_cfg = self._config.get("charts") or {}
+        if not charts_cfg.get("enabled", True):
+            return {}
+
+        helper = self._chart_helper()
+        snapshots = helper._load_json_snapshots(["security"])
+        records: list[dict[str, Any]] = []
+
+        for dt, payload in snapshots:
+            if not isinstance(payload, list):
+                continue
+            total = self._sec(payload, "total_devices")
+            if total in ("", "N/A"):
+                continue
+            fv = self._to_float(self._sec(payload, "filevault_encrypted_pct"))
+            gk = self._to_float(self._sec(payload, "gatekeeper_enabled_pct"))
+            sip = self._to_float(self._sec(payload, "sip_enabled_pct"))
+            fw = self._to_float(self._sec(payload, "firewall_enabled_pct"))
+            records.append(
+                {
+                    "date": dt,
+                    "overall": round((fv + gk + sip + fw) / 4.0, 1),
+                    "filevault": fv,
+                    "gatekeeper": gk,
+                    "sip": sip,
+                    "firewall": fw,
+                }
+            )
+
+        if len(records) < 2:
+            return {}
+
+        labels = self._trend_labels([record["date"] for record in records])
+        return {
+            "labels": labels,
+            "series": [
+                {
+                    "label": "Overall",
+                    "data": [record["overall"] for record in records],
+                    "borderColor": "#004165",
+                    "backgroundColor": "#00416522",
+                    "fill": True,
+                    "borderWidth": 2.5,
+                },
+                {
+                    "label": "FileVault",
+                    "data": [record["filevault"] for record in records],
+                    "borderColor": "#22c55e",
+                    "backgroundColor": "#22c55e22",
+                    "fill": False,
+                    "borderWidth": 1.6,
+                },
+                {
+                    "label": "Gatekeeper",
+                    "data": [record["gatekeeper"] for record in records],
+                    "borderColor": "#0076B6",
+                    "backgroundColor": "#0076B622",
+                    "fill": False,
+                    "borderWidth": 1.6,
+                },
+                {
+                    "label": "SIP",
+                    "data": [record["sip"] for record in records],
+                    "borderColor": "#8b5cf6",
+                    "backgroundColor": "#8b5cf622",
+                    "fill": False,
+                    "borderWidth": 1.6,
+                },
+                {
+                    "label": "Firewall",
+                    "data": [record["firewall"] for record in records],
+                    "borderColor": "#f59e0b",
+                    "backgroundColor": "#f59e0b22",
+                    "fill": False,
+                    "borderWidth": 1.6,
+                },
+            ],
+            "source": "jamf-cli security snapshots",
+        }
+
+    def _trend_payload(self) -> dict[str, Any]:
+        """Return all trend payloads that can be rendered in HTML."""
+        return {
+            "adoption": self._adoption_trend_payload(),
+            "security": self._security_trend_payload(),
+        }
+
+    @staticmethod
+    def _source_mode_label(mode: Any) -> str:
+        """Return a concise human-readable label for a fetch source mode."""
+        normalized = str(mode or "").strip().lower()
+        if normalized == "live":
+            return "Live"
+        if normalized == "cached":
+            return "Cached"
+        if normalized == "cached-fallback":
+            return "Cached fallback"
+        return "Unavailable"
+
+    @staticmethod
+    def _source_badge_class(mode: Any, status: Any) -> str:
+        """Map fetch status and source mode to a badge class."""
+        if str(status or "").lower() == "warn":
+            return "badge-warn"
+        if str(mode or "").lower() == "live":
+            return "badge-ok"
+        if str(mode or "").lower() in {"cached", "cached-fallback"}:
+            return "badge-blue"
+        return "badge-dim"
+
+    @staticmethod
+    def _chart_step(values: list[float]) -> float:
+        """Return a rounded chart ceiling based on the maximum value."""
+        peak = max(values) if values else 0.0
+        if peak <= 0:
+            return 1.0
+        magnitude = 10 ** max(len(str(int(peak))) - 1, 0)
+        step = magnitude / 2 if peak / magnitude < 2 else magnitude
+        return math.ceil(peak / step) * step
+
+    @staticmethod
+    def _polyline_points(
+        values: list[float],
+        width: float,
+        height: float,
+        left: float,
+        top: float,
+        y_max: float,
+    ) -> list[tuple[float, float]]:
+        """Project chart series values into SVG coordinates."""
+        if not values:
+            return []
+        usable_width = max(width - left - 18.0, 1.0)
+        usable_height = max(height - top - 34.0, 1.0)
+        if len(values) == 1:
+            x_positions = [left + usable_width / 2.0]
+        else:
+            x_positions = [
+                left + (usable_width * idx / (len(values) - 1))
+                for idx in range(len(values))
+            ]
+        max_value = y_max if y_max > 0 else 1.0
+        points = []
+        for x_pos, value in zip(x_positions, values):
+            ratio = min(max(float(value) / max_value, 0.0), 1.0)
+            y_pos = top + usable_height - (ratio * usable_height)
+            points.append((round(x_pos, 1), round(y_pos, 1)))
+        return points
+
+    def _render_line_chart_svg(
+        self,
+        payload: dict[str, Any],
+        percent_scale: bool = False,
+    ) -> str:
+        """Render a lightweight self-contained SVG line chart."""
+        labels = payload.get("labels") or []
+        series = payload.get("series") or []
+        if len(labels) < 2 or not series:
+            return '<p class="empty-note">Trend data unavailable.</p>'
+
+        width = 760.0
+        height = 260.0
+        left = 44.0
+        top = 18.0
+        chart_bottom = height - 34.0
+        y_max = 100.0 if percent_scale else self._chart_step(
+            [float(value) for row in series for value in row.get("data", [])]
+        )
+        step_count = 4
+        grid = []
+        ticks = []
+        for idx in range(step_count + 1):
+            y = top + ((chart_bottom - top) * idx / step_count)
+            value = y_max - ((y_max / step_count) * idx)
+            label = f"{int(round(value))}% " if percent_scale else str(int(round(value)))
+            grid.append(
+                f'<line x1="{left}" y1="{y:.1f}" x2="{width - 18:.1f}" y2="{y:.1f}" '
+                'stroke="var(--border)" stroke-width="1"/>'
+            )
+            ticks.append(
+                f'<text x="{left - 8:.1f}" y="{y + 4:.1f}" text-anchor="end" '
+                f'class="svg-axis">{self._html_text(label.strip())}</text>'
+            )
+
+        axis = (
+            f'<line x1="{left}" y1="{chart_bottom:.1f}" x2="{width - 18:.1f}" y2="{chart_bottom:.1f}" '
+            'stroke="var(--muted)" stroke-width="1.2"/>'
+        )
+        label_step = max(1, math.ceil(len(labels) / 6))
+        x_labels = []
+        x_points = self._polyline_points([0.0] * len(labels), width, height, left, top, y_max)
+        for idx, (x_pos, _) in enumerate(x_points):
+            if idx % label_step != 0 and idx != len(labels) - 1:
+                continue
+            x_labels.append(
+                f'<text x="{x_pos:.1f}" y="{height - 10:.1f}" text-anchor="middle" class="svg-axis">'
+                f"{self._html_text(labels[idx])}</text>"
+            )
+
+        paths = []
+        for item in series:
+            values = [float(value) for value in item.get("data", [])]
+            points = self._polyline_points(values, width, height, left, top, y_max)
+            if not points:
+                continue
+            path = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
+            color = str(item.get("borderColor", "#0076B6"))
+            paths.append(
+                f'<polyline fill="none" stroke="{color}" stroke-width="{float(item.get("borderWidth", 2)):.1f}" '
+                f'stroke-linejoin="round" stroke-linecap="round" points="{path}"/>'
+            )
+            for x_pos, y_pos in points:
+                paths.append(
+                    f'<circle cx="{x_pos:.1f}" cy="{y_pos:.1f}" r="3.2" fill="{color}" />'
+                )
+
+        legend = "".join(
+            '<span class="chart-legend-item">'
+            f'<span class="chart-legend-swatch" style="background:{self._html_text(item.get("borderColor", "#0076B6"))}"></span>'
+            f'{self._html_text(item.get("label", "Series"))}</span>'
+            for item in series
+        )
+        return (
+            f'<svg class="trend-svg" viewBox="0 0 {int(width)} {int(height)}" '
+            'role="img" aria-label="Trend chart">'
+            f"{''.join(grid)}{axis}{''.join(ticks)}{''.join(x_labels)}{''.join(paths)}</svg>"
+            f'<div class="chart-legend">{legend}</div>'
+        )
+
+    def _render_os_distribution_card(self, labels: list[str], counts: list[int]) -> str:
+        """Render OS distribution as self-contained SVG plus a data table."""
+        if not labels or not counts:
+            return """<div class="chart-card">
+  <div class="chart-title">macOS Version Distribution</div>
+  <p class="empty-note">No macOS distribution data available.</p>
+</div>"""
+
+        colors = (self._TREND_PALETTE * ((len(labels) // len(self._TREND_PALETTE)) + 1))[:len(labels)]
+        total = sum(counts) or 1
+        max_count = max(counts) or 1
+        bars = []
+        rows = []
+        width = 360.0
+        height = max(140.0, float(len(labels) * 26 + 16))
+        for idx, (label, count) in enumerate(zip(labels, counts)):
+            y = 12.0 + (idx * 26.0)
+            pct = (count / total) * 100.0
+            bar_width = 90.0 + ((count / max_count) * 210.0)
+            color = colors[idx]
+            bars.append(
+                f'<rect x="46" y="{y:.1f}" width="{bar_width:.1f}" height="14" rx="7" fill="{color}" />'
+                f'<text x="12" y="{y + 11:.1f}" class="svg-axis">{idx + 1}</text>'
+                f'<text x="{min(330.0, 52.0 + bar_width):.1f}" y="{y + 11:.1f}" class="svg-axis">{count}</text>'
+            )
+            rows.append(
+                "<tr>"
+                f'<td><span class="os-dot" style="background:{self._html_text(color)}"></span>{self._html_text(label)}</td>'
+                f"<td>{count}</td>"
+                f"<td>{pct:.1f}%</td>"
+                "</tr>"
+            )
+        return f"""<div class="chart-card">
+  <div class="chart-title">macOS Version Distribution</div>
+  <svg class="trend-svg" viewBox="0 0 {int(width)} {int(height)}" role="img" aria-label="macOS version distribution">{''.join(bars)}</svg>
+  <table class="os-table">
+    <thead><tr><th>Version</th><th>Devices</th><th>%</th></tr></thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+</div>"""
+
+    def _render_source_status(self, fetch_status: dict[str, Any]) -> str:
+        """Render source provenance and partial-failure visibility for HTML data."""
+        if not fetch_status:
+            return ""
+        labels = {
+            "overview": "Overview",
+            "security": "Security",
+            "mobile_inventory": "Mobile Inventory",
+            "mobile_devices": "Mobile Devices",
+            "policies": "Policies",
+            "macos_profiles": "macOS Profiles",
+            "ios_profiles": "iOS Profiles",
+            "smart_groups": "Smart Groups",
+            "scripts": "Scripts",
+            "packages": "Packages",
+            "categories": "Categories",
+            "device_enrollments": "ADE Instances",
+            "sites": "Sites",
+            "buildings": "Buildings",
+            "departments": "Departments",
+        }
+        rows = []
+        for key, label in labels.items():
+            info = fetch_status.get(key, {})
+            badge_cls = self._source_badge_class(info.get("source_mode"), info.get("status"))
+            source_label = self._source_mode_label(info.get("source_mode"))
+            detail = info.get("detail", "")
+            cached_name = Path(str(info.get("cached_path") or "")).name
+            if cached_name:
+                detail = cached_name
+            if not detail:
+                detail = f"{int(info.get('records', 0))} records"
+            rows.append(
+                "<tr>"
+                f"<td>{self._html_text(label)}</td>"
+                f"<td><span class='badge {badge_cls}'>{self._html_text(source_label)}</span></td>"
+                f"<td>{self._html_text(detail)}</td>"
+                "</tr>"
+            )
+        return f"""<div class="section-title">Report Sources</div>
+<div class="card card-sm">
+  <div class="table-note" style="margin-bottom:10px">
+    Live and cached source state is shown here so partial-data runs are visible in the report itself.
+  </div>
+  <table class="data-table">
+    <thead><tr><th>Dataset</th><th>Source</th><th>Detail</th></tr></thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+</div>"""
 
     def _css(self) -> str:
         """Return the embedded CSS block.
@@ -9156,6 +9635,7 @@ class HtmlReport:
     --cyan:      #06b6d4;
     --bg:        #f0f4f8;
     --surface:   #ffffff;
+    --surface-2: #f8fafc;
     --border:    #e2e8f0;
     --text:      #1e293b;
     --muted:     #64748b;
@@ -9163,14 +9643,24 @@ class HtmlReport:
     --shadow:    0 1px 4px rgba(0,0,0,.08);
 }
 body.dark {
-    --blue-dark: #5bb8e8; --blue: #7dcbf0; --blue-lt: #0f2d40;
-    --green: #4ade80; --amber: #fbbf24; --red: #f87171;
-    --purple: #a78bfa; --cyan: #22d3ee; --bg: #0f172a;
-    --surface: #1e293b; --border: #334155; --text: #e2e8f0;
-    --muted: #94a3b8; --shadow: 0 1px 4px rgba(0,0,0,.4);
+    --blue-dark: #5bb8e8;
+    --blue: #7dcbf0;
+    --blue-lt: #0f2d40;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --purple: #a78bfa;
+    --cyan: #22d3ee;
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-2: #162032;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --shadow: 0 1px 4px rgba(0,0,0,.4);
 }
 body.dark .topbar { background: #0d1f30; border-bottom: 1px solid #334155; }
-body.dark .data-table th { background: #162032; }
+body.dark .data-table th { background: var(--surface-2); }
 body.dark .data-table tr:hover td { background: #243447; }
 body.dark .badge-ok  { background: #14532d; color: #4ade80; }
 body.dark .badge-warn{ background: #451a03; color: #fbbf24; }
@@ -9178,49 +9668,78 @@ body.dark .badge-err { background: #450a0a; color: #f87171; }
 body.dark .badge-dim { background: #1e293b; color: #94a3b8; }
 body.dark .badge-blue{ background: #0f2d40; color: #7dcbf0; }
 body.dark .sec-bar-track { background: #334155; }
-body.dark .cat-toggle { background: #243447; border-color: #334155; }
-body.dark .item-node:hover { background: #1a3a52; }
+body.dark .cat-toggle,
+body.dark .sg-node,
+body.dark .link-card { background: var(--surface-2); border-color: var(--border); }
+body.dark .item-node:hover,
+body.dark .link-card:hover { background: #1a3a52; }
 body.dark .feat-on { background: #14532d; color: #4ade80; border-color: #166534; }
 body.dark .feat-off { background: #1e293b; color: #94a3b8; border-color: #334155; }
 body.dark .stat-value { color: var(--blue); }
 body.dark .chart-title { color: var(--blue); }
+body.dark .tree-tab.active { background: #10263a; }
+body.dark .tree-search,
+body.dark .table-action,
+body.dark .table-sort { color: var(--text); }
+body.dark .os-table th,
+body.dark .os-table td { border-color: var(--border); }
 *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
 }
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
 .topbar {
-    background: var(--blue-dark); color: #fff; padding: 14px 24px;
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    background: var(--blue-dark);
+    color: #fff;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
     justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 .topbar-brand { font-size: 1.15rem; font-weight: 700; letter-spacing: -.3px; }
-.topbar-meta { font-size: .8rem; opacity: .75; text-align: right; }
+.topbar-meta { font-size: .8rem; opacity: .8; text-align: right; }
 .topbar-meta strong { opacity: 1; font-size: .9rem; color: #fff; }
 .dark-toggle {
-    background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25);
-    color: #fff; border-radius: 20px; padding: 4px 12px; font-size: .78rem;
-    font-weight: 600; cursor: pointer; transition: background .2s;
-    white-space: nowrap; margin-left: 12px;
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.25);
+    color: #fff;
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: .78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s;
+    white-space: nowrap;
 }
 .dark-toggle:hover { background: rgba(255,255,255,.22); }
 .page { max-width: 1400px; margin: 0 auto; padding: 20px 20px 40px; }
-.section-block {
-    margin-top: 22px; padding-top: 8px; border-top: 1px solid var(--border);
-}
+.section-block { margin-top: 22px; padding-top: 8px; border-top: 1px solid var(--border); }
 .section-block:first-of-type { border-top: none; padding-top: 0; }
 .section-block-title {
-    font-size: 1.4rem; font-weight: 700; letter-spacing: -.02em;
-    color: var(--blue-dark); margin-bottom: 4px;
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    color: var(--blue-dark);
+    margin-bottom: 4px;
 }
-.section-block-subtitle {
-    font-size: .88rem; color: var(--muted); margin-bottom: 16px;
-}
+.section-block-subtitle { font-size: .88rem; color: var(--muted); margin-bottom: 16px; }
 .section-title {
-    font-size: .7rem; font-weight: 700; letter-spacing: .08em;
-    text-transform: uppercase; color: var(--muted); margin: 28px 0 10px;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 28px 0 10px;
 }
 .grid { display: grid; gap: 14px; }
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
@@ -9235,21 +9754,34 @@ a:hover { text-decoration: underline; }
 @media(max-width:700px) {
     .grid-2,.grid-3,.grid-4,.grid-5,.grid-6 { grid-template-columns: 1fr; }
 }
-.card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
+.card,
+.chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
 }
 .card-sm { padding: 12px 14px; }
 .stat-card { display: flex; flex-direction: column; gap: 4px; }
-.stat-label { font-size: .73rem; font-weight: 600; text-transform: uppercase;
-    letter-spacing: .05em; color: var(--muted); }
-.stat-value { font-size: 2rem; font-weight: 700; color: var(--blue-dark);
-    line-height: 1.1; }
+.stat-label {
+    font-size: .73rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+}
+.stat-value { font-size: 2rem; font-weight: 700; color: var(--blue-dark); line-height: 1.1; }
 .stat-sub { font-size: .75rem; color: var(--muted); }
 .stat-link { font-size: .75rem; color: var(--blue); margin-top: 4px; }
 .badge {
-    display: inline-block; font-size: .7rem; font-weight: 600;
-    padding: 2px 8px; border-radius: 20px; letter-spacing: .03em; white-space: nowrap;
+    display: inline-block;
+    font-size: .7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: .03em;
+    white-space: nowrap;
 }
 .badge-ok   { background: #dcfce7; color: #15803d; }
 .badge-warn { background: #fef3c7; color: #92400e; }
@@ -9257,22 +9789,44 @@ a:hover { text-decoration: underline; }
 .badge-dim  { background: #f1f5f9; color: var(--muted); }
 .badge-blue { background: var(--blue-lt); color: var(--blue-dark); }
 .health-strip {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 14px 20px;
-    display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    align-items: center;
 }
 .health-item { display: flex; align-items: center; gap: 6px; font-size: .8rem; }
 .health-label { color: var(--muted); font-weight: 500; }
-.chart-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
-}
-.chart-title { font-size: .85rem; font-weight: 700; color: var(--blue-dark);
-    margin-bottom: 14px; }
+.chart-title { font-size: .85rem; font-weight: 700; color: var(--blue-dark); margin-bottom: 14px; }
+.chart-sub { font-size: .73rem; color: var(--muted); margin-top: 8px; }
 .chart-wrap { position: relative; height: 220px; }
+.chart-wrap-lg { position: relative; height: 280px; }
+.trend-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.svg-axis { font-size: 10px; fill: var(--muted); font-family: inherit; }
+.chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-top: 10px;
+}
+.chart-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .75rem;
+    color: var(--muted);
+}
+.chart-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    display: inline-block;
+}
 .sec-bar-row { margin-bottom: 12px; }
-.sec-bar-header { display: flex; justify-content: space-between;
-    align-items: center; margin-bottom: 4px; }
+.sec-bar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .sec-bar-name { font-size: .8rem; font-weight: 600; color: var(--text); }
 .sec-bar-pct  { font-size: .8rem; color: var(--muted); }
 .sec-bar-track { background: #e2e8f0; border-radius: 4px; height: 10px; overflow: hidden; }
@@ -9283,47 +9837,331 @@ a:hover { text-decoration: underline; }
 .fill-fw  { background: var(--amber); }
 .data-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
 .data-table th {
-    text-align: left; padding: 7px 10px; background: #f8fafc;
-    border-bottom: 2px solid var(--border); color: var(--muted);
-    font-weight: 600; text-transform: uppercase; font-size: .68rem;
+    text-align: left;
+    padding: 7px 10px;
+    background: var(--surface-2);
+    border-bottom: 2px solid var(--border);
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: .68rem;
     letter-spacing: .05em;
 }
-.data-table td { padding: 7px 10px; border-bottom: 1px solid var(--border);
-    vertical-align: top; }
+.data-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .data-table tr:last-child td { border-bottom: 0; }
 .data-table tr:hover td { background: #fafbfc; }
 .data-table .val { font-weight: 600; color: var(--blue-dark); text-align: right; }
 .data-table .val-warn { color: var(--amber); }
 .data-table .val-err  { color: var(--red); }
 .data-table .val-ok   { color: var(--green); }
-.cat-toggle {
-    cursor: pointer; background: #f8fafc; border: 1px solid var(--border);
-    border-radius: 6px; padding: 8px 12px; margin-bottom: 4px;
-    display: flex; justify-content: space-between; align-items: center;
-    font-weight: 600; font-size: .82rem; user-select: none;
-}
-.cat-toggle:hover { border-color: var(--blue); }
-.cat-count { font-size: .75rem; color: var(--muted); font-weight: 400; }
-.cat-items { display: none; padding: 4px 0 8px 16px; }
-.cat-items.open { display: block; }
-.item-node { padding: 3px 8px; font-size: .78rem; border-radius: 4px; }
-.item-node:hover { background: var(--blue-lt); }
-.feat-pill {
-    display: inline-block; padding: 4px 10px; border-radius: 20px;
-    font-size: .75rem; font-weight: 600; border: 1px solid; margin: 3px;
-}
-.feat-on  { background: #dcfce7; color: #15803d; border-color: #86efac; }
-.feat-off { background: #f1f5f9; color: var(--muted); border-color: var(--border); }
 .overview-section-title {
-    font-size: .72rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .07em; color: var(--muted); padding: 10px 10px 4px;
-    border-top: 1px solid var(--border); margin-top: 6px;
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--muted);
+    padding: 10px 10px 4px;
+    border-top: 1px solid var(--border);
+    margin-top: 6px;
 }
 .overview-section-title:first-child { border-top: none; margin-top: 0; }
-.footer {
-    text-align: center; font-size: .72rem; color: var(--muted);
-    margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border);
+.table-tools {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
 }
+.table-note { font-size: .75rem; color: var(--muted); }
+.table-action,
+.table-sort {
+    background: transparent;
+    border: 0;
+    color: var(--blue-dark);
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+}
+.table-action {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: var(--surface);
+    font-size: .76rem;
+    font-weight: 600;
+}
+.table-sort:hover,
+.table-action:hover { color: var(--blue); }
+.table-wrap { overflow-x: auto; }
+.tree-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.tree-tab {
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: .79rem;
+    font-weight: 600;
+}
+.tree-tab.active {
+    color: var(--blue-dark);
+    border-color: var(--blue);
+    background: var(--blue-lt);
+}
+.tree-pane { display: none; }
+.tree-pane.active { display: block; }
+.tree-search {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: .82rem;
+    margin-bottom: 10px;
+    background: var(--surface);
+    color: var(--text);
+}
+.tree-summary { font-size: .75rem; color: var(--muted); margin-bottom: 10px; }
+.cat-node { margin-bottom: 6px; }
+.cat-toggle {
+    cursor: pointer;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: .82rem;
+    user-select: none;
+}
+.cat-toggle:hover { border-color: var(--blue); }
+.cat-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cat-caret { display: inline-block; width: 10px; color: var(--muted); transition: transform .18s; }
+.cat-caret.open { transform: rotate(90deg); }
+.cat-count {
+    font-size: .72rem;
+    color: var(--blue-dark);
+    background: var(--blue-lt);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-weight: 700;
+}
+.cat-items { display: none; padding: 6px 0 8px 24px; }
+.cat-items.open { display: block; }
+.item-node,
+.sg-node {
+    padding: 6px 10px;
+    font-size: .79rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    margin-bottom: 6px;
+}
+.item-node:hover,
+.sg-node:hover { background: var(--blue-lt); }
+.item-hidden { display: none !important; }
+.os-table { width: 100%; border-collapse: collapse; font-size: .76rem; margin-top: 12px; }
+.os-table th,.os-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.os-table th {
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: .65rem;
+    background: var(--surface-2);
+}
+.os-table td:last-child { text-align: right; font-weight: 600; color: var(--blue-dark); }
+.os-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+.links-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+}
+.link-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 50px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: .8rem;
+    font-weight: 600;
+}
+.link-card:hover {
+    background: var(--blue-lt);
+    border-color: var(--blue);
+    text-decoration: none;
+}
+.empty-note { color: var(--muted); font-size: .82rem; }
+	.footer {
+	    text-align: center;
+    font-size: .72rem;
+    color: var(--muted);
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+	"""
+
+    def _js(self) -> str:
+        """Return the embedded JavaScript block for HTML interactivity."""
+        return """
+(() => {
+  const key = 'jamfReportsHtmlDarkMode';
+  const toggle = document.getElementById('darkToggle');
+  const applyDark = (enabled) => {
+    document.body.classList.toggle('dark', enabled);
+    if (toggle) toggle.textContent = enabled ? 'Light mode' : 'Dark mode';
+    try { localStorage.setItem(key, enabled ? '1' : '0'); } catch (err) {}
+  };
+  let saved = null;
+  try { saved = localStorage.getItem(key); } catch (err) {}
+  const prefersDark = window.matchMedia
+    && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyDark(saved === null ? prefersDark : saved === '1');
+  if (toggle) toggle.addEventListener('click', () => {
+    applyDark(!document.body.classList.contains('dark'));
+  });
+})();
+
+document.querySelectorAll('.cat-toggle').forEach((toggle) => {
+  toggle.addEventListener('click', () => {
+    const items = toggle.nextElementSibling;
+    const caret = toggle.querySelector('.cat-caret');
+    if (!items) return;
+    const open = items.classList.toggle('open');
+    if (caret) caret.classList.toggle('open', open);
+  });
+});
+
+document.querySelectorAll('.tree-tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    const targetId = tab.getAttribute('data-target');
+    if (!targetId) return;
+    document.querySelectorAll('.tree-tab').forEach((el) => el.classList.remove('active'));
+    document.querySelectorAll('.tree-pane').forEach((el) => el.classList.remove('active'));
+    tab.classList.add('active');
+    const pane = document.getElementById(targetId);
+    if (pane) pane.classList.add('active');
+  });
+});
+
+const filterTreePane = (container, query) => {
+  container.querySelectorAll('.cat-node').forEach((node) => {
+    const items = Array.from(node.querySelectorAll('.item-node'));
+    let visible = false;
+    items.forEach((item) => {
+      const match = !query || (item.dataset.name || '').includes(query);
+      item.classList.toggle('item-hidden', !match);
+      if (match) visible = true;
+    });
+    node.classList.toggle('item-hidden', !visible);
+    const children = node.querySelector('.cat-items');
+    const caret = node.querySelector('.cat-caret');
+    if (children && caret) {
+      children.classList.toggle('open', query ? visible : children.classList.contains('open'));
+      caret.classList.toggle('open', children.classList.contains('open'));
+    }
+  });
+};
+
+const filterFlatPane = (container, query) => {
+  container.querySelectorAll('.sg-node').forEach((node) => {
+    const match = !query || (node.dataset.name || '').includes(query);
+    node.classList.toggle('item-hidden', !match);
+  });
+};
+
+document.querySelectorAll('.tree-search').forEach((input) => {
+  input.addEventListener('input', () => {
+    const targetId = input.getAttribute('data-filter-target');
+    const kind = input.getAttribute('data-filter-kind');
+    if (!targetId || !kind) return;
+    const container = document.getElementById(targetId);
+    if (!container) return;
+    const query = input.value.toLowerCase().trim();
+    if (kind === 'tree') filterTreePane(container, query);
+    if (kind === 'flat') filterFlatPane(container, query);
+  });
+});
+
+(() => {
+  const tbody = document.getElementById('flaggedBody');
+  const searchInput = document.getElementById('flaggedSearch');
+  const exportBtn = document.getElementById('flaggedExport');
+  if (!tbody || !searchInput || !exportBtn) return;
+
+  const emptyRow = tbody.querySelector('.flagged-empty');
+  let sortKey = 'name';
+  let sortAsc = true;
+  const safeCsvValue = (value) => {
+    const cleaned = String(value ?? '').replace(/\r?\n/g, ' ').trim();
+    return /^[=+-@]/.test(cleaned) ? "'" + cleaned : cleaned;
+  };
+
+  const deviceRows = () => Array.from(tbody.querySelectorAll('tr.flagged-device'));
+  const applyFilter = () => {
+    const query = searchInput.value.toLowerCase().trim();
+    let visible = 0;
+    deviceRows().forEach((row) => {
+      const haystack = [row.dataset.name, row.dataset.serial, row.dataset.os].join(' ');
+      const match = !query || haystack.includes(query);
+      row.style.display = match ? '' : 'none';
+      if (match) visible += 1;
+    });
+    if (emptyRow) emptyRow.hidden = visible !== 0;
+  };
+
+  document.querySelectorAll('[data-flagged-sort]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const key = button.getAttribute('data-flagged-sort') || 'name';
+      sortAsc = sortKey === key ? !sortAsc : true;
+      sortKey = key;
+      const rows = deviceRows().sort((a, b) => {
+        const left = (a.dataset[sortKey] || '').toLowerCase();
+        const right = (b.dataset[sortKey] || '').toLowerCase();
+        return sortAsc ? left.localeCompare(right) : right.localeCompare(left);
+      });
+      rows.forEach((row) => tbody.appendChild(row));
+      if (emptyRow) tbody.appendChild(emptyRow);
+      applyFilter();
+    });
+  });
+
+  searchInput.addEventListener('input', applyFilter);
+  exportBtn.addEventListener('click', () => {
+    const headers = ['Device', 'Serial', 'macOS', 'FileVault', 'Gatekeeper', 'SIP', 'Firewall'];
+    const rows = [headers];
+    deviceRows()
+      .filter((row) => row.style.display !== 'none')
+      .forEach((row) => {
+        const cells = Array.from(row.querySelectorAll('td')).slice(0, 7);
+        rows.push(cells.map((cell) => safeCsvValue(cell.textContent)));
+      });
+    const csv = rows
+      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'flagged-devices-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  applyFilter();
+})();
 """
 
     def _logo_html(self) -> str:
@@ -9344,69 +10182,22 @@ a:hover { text-decoration: underline; }
         except Exception:
             return ""
 
-    def _js(self, os_labels: list[str], os_counts: list[int]) -> str:
-        """Return the embedded JavaScript block including Chart.js configuration.
-
-        Args:
-            os_labels: macOS version strings for the donut chart.
-            os_counts: Device counts corresponding to each label.
-        """
-        palette = [
-            "#0076B6", "#22c55e", "#8b5cf6", "#f59e0b", "#ef4444",
-            "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#64748b",
-        ]
-        import json as _json
-        labels_js = _json.dumps(os_labels)
-        counts_js = _json.dumps(os_counts)
-        colors_js = _json.dumps((palette * ((len(os_labels) // len(palette)) + 1))[:len(os_labels)])
-        return f"""
-const _darkToggle = document.getElementById('darkToggle');
-_darkToggle.addEventListener('click', () => {{
-    document.body.classList.toggle('dark');
-    _darkToggle.textContent = document.body.classList.contains('dark')
-        ? 'Light mode' : 'Dark mode';
-}});
-
-document.querySelectorAll('.cat-toggle').forEach(el => {{
-    el.addEventListener('click', () => {{
-        const items = el.nextElementSibling;
-        if (items) items.classList.toggle('open');
-    }});
-}});
-
-const _ctx = document.getElementById('osChart');
-if (_ctx) {{
-    new Chart(_ctx, {{
-        type: 'doughnut',
-        data: {{
-            labels: {labels_js},
-            datasets: [{{
-                data: {counts_js},
-                backgroundColor: {colors_js},
-                borderWidth: 2,
-                borderColor: '#fff',
-            }}]
-        }},
-        options: {{
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {{
-                legend: {{ position: 'right', labels: {{ font: {{ size: 11 }} }} }}
-            }}
-        }}
-    }});
-}}
-"""
-
-    def _render_stat_card(self, label: str, value: str, sub: str = "",
-                          link_url: str = "", link_text: str = "") -> str:
+    def _render_stat_card(
+        self,
+        label: str,
+        value: str,
+        sub: str = "",
+        link_url: str = "",
+        link_text: str = "",
+    ) -> str:
         """Render a single stat card HTML block."""
         link_html = ""
-        if link_url and link_text:
+        safe_link = self._safe_href(link_url) if link_url else ""
+        if safe_link and safe_link != "#" and link_text:
             link_html = (
                 '<div class="stat-link"><a href="'
-                f'{self._html_text(self._safe_href(link_url))}"'
-                f' target="_blank" rel="noopener noreferrer">'
+                f'{self._html_text(safe_link)}"'
+                ' target="_blank" rel="noopener noreferrer">'
                 f'{self._html_text(link_text)}</a></div>'
             )
         return f"""<div class="card stat-card">
@@ -9418,58 +10209,125 @@ if (_ctx) {{
 
     def _render_sec_bar(self, name: str, pct: float, css_class: str) -> str:
         """Render a security posture progress bar."""
-        pct_str = f"{pct:.1f}%"
         return f"""<div class="sec-bar-row">
   <div class="sec-bar-header">
     <span class="sec-bar-name">{self._html_text(name)}</span>
-    <span class="sec-bar-pct">{pct_str}</span>
+    <span class="sec-bar-pct">{pct:.1f}%</span>
   </div>
   <div class="sec-bar-track">
-    <div class="sec-bar-fill {css_class}" style="width:{min(pct,100):.1f}%"></div>
+    <div class="sec-bar-fill {css_class}" style="width:{min(pct, 100):.1f}%"></div>
   </div>
 </div>"""
 
-    def _render_hierarchy_section(self, title: str, groups: list[dict]) -> str:
-        """Render a collapsible deployment hierarchy section."""
+    def _render_hierarchy_tree_panel(
+        self,
+        pane_id: str,
+        search_placeholder: str,
+        groups: list[dict[str, Any]],
+    ) -> str:
+        """Render one grouped hierarchy pane."""
+        summary = f"{len(groups)} categories · {sum(group['count'] for group in groups)} items"
         if not groups:
-            return ""
-        items_html = ""
-        for group in groups:
-            cat = self._html_text(group["category"])
-            count = group["count"]
-            items = "".join(
-                f'<div class="item-node">{self._html_text(name)}</div>'
-                for name in group["items"]
-            )
-            items_html += f"""<div class="cat-toggle">
-  <span>{cat}</span>
-  <span class="cat-count">{count} items</span>
-</div>
-<div class="cat-items">{items}</div>"""
-        return f"""<div class="section-title">{self._html_text(title)}</div>
-<div class="card card-sm">{items_html}</div>"""
+            body = '<p class="empty-note">No data available.</p>'
+        else:
+            chunks = []
+            for group in groups:
+                items = "".join(
+                    '<div class="item-node" data-name="'
+                    f'{self._html_text(name.lower())}">{self._html_text(name)}</div>'
+                    for name in group["items"]
+                )
+                chunks.append(
+                    '<div class="cat-node"><div class="cat-toggle"><span class="cat-label">'
+                    '<span class="cat-caret">▶</span>'
+                    f'<span>{self._html_text(group["category"])}</span>'
+                    f'</span><span class="cat-count">{group["count"]}</span></div>'
+                    f'<div class="cat-items">{items}</div></div>'
+                )
+            body = "".join(chunks)
+        return f"""<div class="tree-pane" id="{self._html_text(pane_id)}">
+  <input class="tree-search" type="search"
+    placeholder="{self._html_text(search_placeholder)}"
+    data-filter-target="{self._html_text(pane_id)}-list" data-filter-kind="tree">
+  <div class="tree-summary">{self._html_text(summary)}</div>
+  <div id="{self._html_text(pane_id)}-list">{body}</div>
+</div>"""
 
-    def _render_overview_table(self, overview: Any) -> str:
-        """Render the full overview data as a grouped table."""
-        if not isinstance(overview, list):
-            return ""
-        sections: dict[str, list[dict]] = {}
-        for item in overview:
-            if not isinstance(item, dict):
-                continue
-            section = str(item.get("section", "General"))
-            if section in ("Health & Alerts",):
-                continue
-            resource = str(item.get("resource", "") or "")
-            value = str(item.get("value", "") or "")
-            status = str(item.get("status", "") or "")
-            if not resource:
-                continue
-            sections.setdefault(section, []).append(
-                {"resource": resource, "value": value, "status": status}
+    def _render_hierarchy_flat_panel(
+        self,
+        pane_id: str,
+        search_placeholder: str,
+        items: list[str],
+        label: str,
+    ) -> str:
+        """Render one flat searchable hierarchy pane."""
+        summary = f"{len(items)} {label}"
+        if not items:
+            body = '<p class="empty-note">No data available.</p>'
+        else:
+            body = "".join(
+                '<div class="sg-node" data-name="'
+                f'{self._html_text(item.lower())}">{self._html_text(item)}</div>'
+                for item in items
             )
+        return f"""<div class="tree-pane" id="{self._html_text(pane_id)}">
+  <input class="tree-search" type="search"
+    placeholder="{self._html_text(search_placeholder)}"
+    data-filter-target="{self._html_text(pane_id)}-list" data-filter-kind="flat">
+  <div class="tree-summary">{self._html_text(summary)}</div>
+  <div id="{self._html_text(pane_id)}-list">{body}</div>
+</div>"""
+
+    def _render_hierarchy_tabs(
+        self,
+        pol_groups: list[dict[str, Any]],
+        mcp_groups: list[dict[str, Any]],
+        icp_groups: list[dict[str, Any]],
+        scr_groups: list[dict[str, Any]],
+        pkg_groups: list[dict[str, Any]],
+        smart_groups: list[str],
+    ) -> str:
+        """Render the tabbed searchable deployment hierarchy."""
+        tabs = [
+            ("hier-policies", "Policies", sum(group["count"] for group in pol_groups)),
+            ("hier-macos", "macOS Profiles", sum(group["count"] for group in mcp_groups)),
+            ("hier-ios", "iOS Profiles", sum(group["count"] for group in icp_groups)),
+            ("hier-scripts", "Scripts", sum(group["count"] for group in scr_groups)),
+            ("hier-packages", "Packages", sum(group["count"] for group in pkg_groups)),
+            ("hier-smart-groups", "Smart Groups", len(smart_groups)),
+        ]
+        tab_html = "".join(
+            '<button type="button" class="tree-tab'
+            f'{" active" if idx == 0 else ""}" data-target="{self._html_text(tab_id)}">'
+            f'{self._html_text(label)} ({count})</button>'
+            for idx, (tab_id, label, count) in enumerate(tabs)
+        )
+        panes = [
+            self._render_hierarchy_tree_panel("hier-policies", "Search policies…", pol_groups),
+            self._render_hierarchy_tree_panel("hier-macos", "Search macOS profiles…", mcp_groups),
+            self._render_hierarchy_tree_panel("hier-ios", "Search iOS profiles…", icp_groups),
+            self._render_hierarchy_tree_panel("hier-scripts", "Search scripts…", scr_groups),
+            self._render_hierarchy_tree_panel("hier-packages", "Search packages…", pkg_groups),
+            self._render_hierarchy_flat_panel(
+                "hier-smart-groups",
+                "Search smart groups…",
+                smart_groups,
+                "smart groups",
+            ),
+        ]
+        panes[0] = panes[0].replace('class="tree-pane"', 'class="tree-pane active"', 1)
+        return f"""<div class="section-title">Deployment Hierarchy</div>
+<div class="card">
+  <div class="tree-tabs">{tab_html}</div>
+  {''.join(panes)}
+</div>"""
+
+    def _render_overview_table(self, overview: Any, console_url: str) -> str:
+        """Render the full overview data as a grouped table with deep links."""
+        sections = self._overview_sections(overview)
         if not sections:
             return ""
+        links = self._resource_links(console_url)
         rows_html = ""
         for section_name, items in sections.items():
             rows_html += (
@@ -9478,69 +10336,115 @@ if (_ctx) {{
             )
             for item in items:
                 badge = self._status_badge_html(item["status"])
+                resource = self._html_text(item["resource"])
+                link = links.get(item["resource"], "")
+                if link:
+                    resource = (
+                        f'<a href="{self._html_text(self._safe_href(link))}" target="_blank" '
+                        f'rel="noopener noreferrer">{resource}</a>'
+                    )
                 rows_html += (
-                    f"<tr><td>{self._html_text(item['resource'])}</td>"
+                    f"<tr><td>{resource}</td>"
                     f"<td class='val'>{self._html_text(item['value'])}</td>"
                     f"<td>{badge}</td></tr>"
                 )
         return f"""<div class="section-title">Full Overview</div>
 <div class="card">
-<table class="data-table">
-  <thead><tr>
-    <th>Resource</th><th style="text-align:right">Value</th><th>Status</th>
-  </tr></thead>
-  <tbody>{rows_html}</tbody>
-</table>
+  <table class="data-table">
+    <thead><tr>
+      <th>Resource</th><th style="text-align:right">Value</th><th>Status</th>
+    </tr></thead>
+    <tbody>{rows_html}</tbody>
+  </table>
 </div>"""
 
-    def _render_flagged_table(self, flagged: list[dict]) -> str:
-        """Render the flagged devices security table."""
+    def _render_quick_links(self, console_url: str) -> str:
+        """Render quick links back into the Jamf console."""
+        links = self._quick_links(console_url)
+        if not links:
+            return ""
+        cards = "".join(
+            f'<a class="link-card" href="{self._html_text(self._safe_href(url))}" '
+            f'target="_blank" rel="noopener noreferrer">{self._html_text(label)}</a>'
+            for label, url in links
+        )
+        return f"""<div class="section-title">Quick Links</div>
+<div class="links-grid">{cards}</div>"""
+
+    def _render_flagged_table(self, flagged: list[dict[str, Any]], console_url: str) -> str:
+        """Render the searchable and sortable flagged-devices table."""
         if not flagged:
-            return f"""<div class="section-title">Devices with Security Issues</div>
-<div class="card"><p style="color:var(--muted);font-size:.82rem">
-  No devices with security issues found.
-</p></div>"""
-        rows = ""
+            return """<div class="section-title">Devices with Security Issues</div>
+<div class="card"><p class="empty-note">No devices with security issues found.</p></div>"""
+
+        rows = []
         for dev in flagged:
             fv = self._html_text(dev["filevault"])
             gk = self._html_text(dev["gatekeeper"])
             sip = self._html_text(dev["sip"])
             fw = self._html_text(dev["firewall"])
-            fw_value = fw.casefold()
             fv_cls = "val-ok" if fv.upper() == "ENCRYPTED" else "val-err"
             gk_cls = "val-ok" if gk.upper() not in ("DISABLED",) else "val-err"
             sip_cls = "val-ok" if sip.upper() in ("ENABLED",) else "val-err"
-            fw_cls = "val-err" if fw_value in {"no", "false", "off", "disabled"} else "val-ok"
-            rows += (
-                f"<tr><td>{self._html_text(dev['name'])}</td>"
+            fw_cls = "val-err" if fw.casefold() in {"no", "false", "off", "disabled"} else "val-ok"
+            query_value = str(dev.get("serial") or dev.get("name") or "")
+            open_link = ""
+            if console_url and query_value:
+                query = urllib.parse.quote(query_value, safe="")
+                open_link = f"{console_url}/computers.html?query={query}&queryType=COMPUTERS&version="
+            link_html = (
+                f'<a href="{self._html_text(self._safe_href(open_link))}" target="_blank" '
+                'rel="noopener noreferrer">Open</a>'
+                if open_link
+                else "—"
+            )
+            rows.append(
+                "<tr class='flagged-device' data-name='"
+                f"{self._html_text(str(dev['name']).lower())}' data-serial='"
+                f"{self._html_text(str(dev['serial']).lower())}' data-os='"
+                f"{self._html_text(str(dev['os']).lower())}'>"
+                f"<td>{self._html_text(dev['name'])}</td>"
                 f"<td>{self._html_text(dev['serial'])}</td>"
                 f"<td>{self._html_text(dev['os'])}</td>"
                 f"<td class='{fv_cls}'>{fv}</td>"
                 f"<td class='{gk_cls}'>{gk}</td>"
                 f"<td class='{sip_cls}'>{sip}</td>"
-                f"<td class='{fw_cls}'>{fw}</td></tr>"
+                f"<td class='{fw_cls}'>{fw}</td>"
+                f"<td>{link_html}</td></tr>"
             )
+
         return f"""<div class="section-title">Devices with Security Issues ({len(flagged)})</div>
-<div class="card">
-<table class="data-table">
-  <thead><tr>
-    <th>Name</th><th>Serial</th><th>OS</th>
-    <th>FileVault</th><th>Gatekeeper</th><th>SIP</th><th>Firewall</th>
-  </tr></thead>
-  <tbody>{rows}</tbody>
-</table>
+<div class="card" style="padding:0">
+  <div class="table-tools">
+    <input class="tree-search" id="flaggedSearch" type="search"
+      placeholder="Filter by name, serial, or macOS…" style="margin:0;max-width:340px">
+    <span class="table-note">Click a column header to sort.</span>
+    <button type="button" class="table-action" id="flaggedExport">Export CSV</button>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table" id="flaggedTable">
+      <thead><tr>
+        <th><button type="button" class="table-sort" data-flagged-sort="name">Device ↕</button></th>
+        <th><button type="button" class="table-sort" data-flagged-sort="serial">Serial ↕</button></th>
+        <th><button type="button" class="table-sort" data-flagged-sort="os">macOS ↕</button></th>
+        <th>FileVault</th><th>Gatekeeper</th><th>SIP</th><th>Firewall</th><th>Link</th>
+      </tr></thead>
+      <tbody id="flaggedBody">
+        {''.join(rows)}
+        <tr class="flagged-empty" hidden><td colspan="8" class="empty-note">No matching devices.</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>"""
 
     def _render_org_table(self, label: str, items: list[str]) -> str:
         """Render a small org-item name list as a card."""
         if not items:
             return ""
-        rows = "".join(
-            f"<tr><td>{self._html_text(name)}</td></tr>" for name in items
-        )
+        rows = "".join(f"<tr><td>{self._html_text(name)}</td></tr>" for name in items)
         return f"""<div class="card card-sm" style="margin-bottom:10px">
   <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;
-              letter-spacing:.05em;color:var(--muted);margin-bottom:8px">{self._html_text(label)}</div>
+      letter-spacing:.05em;color:var(--muted);margin-bottom:8px">{self._html_text(label)}</div>
   <table class="data-table"><tbody>{rows}</tbody></table>
 </div>"""
 
@@ -9554,8 +10458,8 @@ if (_ctx) {{
         """Render a compact frequency table card."""
         if not counter:
             return f"""<div class="card card-sm">
-  <div class="chart-title">{title}</div>
-  <p style="color:var(--muted);font-size:.82rem">No data available.</p>
+  <div class="chart-title">{self._html_text(title)}</div>
+  <p class="empty-note">No data available.</p>
 </div>"""
 
         rows = "".join(
@@ -9563,9 +10467,9 @@ if (_ctx) {{
             for label, count in counter.most_common(max_rows)
         )
         return f"""<div class="card card-sm">
-  <div class="chart-title">{title}</div>
+  <div class="chart-title">{self._html_text(title)}</div>
   <table class="data-table">
-    <thead><tr><th>{left_header}</th><th style="text-align:right">Count</th></tr></thead>
+    <thead><tr><th>{self._html_text(left_header)}</th><th style="text-align:right">Count</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </div>"""
@@ -9577,10 +10481,8 @@ if (_ctx) {{
     ) -> str:
         """Render a table of the mobile devices needing the most review."""
         if not rows:
-            return f"""<div class="section-title">Mobile Inventory Review</div>
-<div class="card"><p style="color:var(--muted);font-size:.82rem">
-  No mobile inventory rows were available.
-</p></div>"""
+            return """<div class="section-title">Mobile Inventory Review</div>
+<div class="card"><p class="empty-note">No mobile inventory rows were available.</p></div>"""
 
         ranked = sorted(
             rows,
@@ -9611,26 +10513,43 @@ if (_ctx) {{
             )
         return f"""<div class="section-title">Mobile Inventory Review</div>
 <div class="card">
-<table class="data-table">
-  <thead><tr>
-    <th>Device</th><th>Family</th><th>OS</th><th>User</th>
-    <th>Days Since Inventory</th><th>Managed</th><th>Supervised</th>
-  </tr></thead>
-  <tbody>{body}</tbody>
-</table>
+  <table class="data-table">
+    <thead><tr>
+      <th>Device</th><th>Family</th><th>OS</th><th>User</th>
+      <th>Days Since Inventory</th><th>Managed</th><th>Supervised</th>
+    </tr></thead>
+    <tbody>{body}</tbody>
+  </table>
 </div>"""
 
-    # ── Top-level render ─────────────────────────────────────────────────────
+    def _render_trends_section(self, trends: dict[str, Any]) -> str:
+        """Render the HTML trend section when snapshot history is available."""
+        cards = []
+        adoption = trends.get("adoption") or {}
+        security = trends.get("security") or {}
+        if adoption.get("labels"):
+            cards.append(
+                f"""<div class="chart-card">
+  <div class="chart-title">macOS Adoption Trend</div>
+  {self._render_line_chart_svg(adoption)}
+  <div class="chart-sub">Source: {self._html_text(adoption.get("source", ""))}</div>
+</div>"""
+            )
+        if security.get("labels"):
+            cards.append(
+                f"""<div class="chart-card">
+  <div class="chart-title">Security Posture Trend</div>
+  {self._render_line_chart_svg(security, percent_scale=True)}
+  <div class="chart-sub">Source: {self._html_text(security.get("source", ""))}</div>
+</div>"""
+            )
+        if not cards:
+            return ""
+        return f"""<div class="section-title">Trends</div>
+<div class="grid grid-2">{''.join(cards)}</div>"""
 
     def _render(self, data: dict[str, Any]) -> str:
-        """Assemble the full HTML document from fetched data.
-
-        Args:
-            data: Dict returned by _fetch_all().
-
-        Returns:
-            Complete HTML string.
-        """
+        """Assemble the full HTML document from fetched data."""
         ov = data.get("overview", [])
         sec = data.get("security", [])
         mobile_items = data.get("mobile_inventory") or data.get("mobile_devices", [])
@@ -9644,8 +10563,8 @@ if (_ctx) {{
             and row["Days Since Inventory"] > stale_days
         )
 
-        # Overview fields
         instance_url = self._ov(ov, "Server URL")
+        console_url = self._safe_base_url(instance_url)
         jamf_version = self._ov(ov, "Jamf Pro Version")
         health_status = self._ov(ov, "Health Status")
         active_alerts = self._ov(ov, "Active Alerts")
@@ -9670,20 +10589,16 @@ if (_ctx) {{
         sso_jamf = self._ov(ov, "Jamf SSO")
         ade_instances = self._ov(ov, "DEP Instances")
 
-        # Security posture
         fv_pct = self._to_float(self._sec(sec, "filevault_encrypted_pct"))
         gk_pct = self._to_float(self._sec(sec, "gatekeeper_enabled_pct"))
         sip_pct = self._to_float(self._sec(sec, "sip_enabled_pct"))
         fw_pct = self._to_float(self._sec(sec, "firewall_enabled_pct"))
         total_scanned = self._sec(sec, "total_devices")
-
-        # Chart data
         os_labels, os_counts = self._os_chart_data(sec)
-
-        # Flagged devices
         flagged = self._flagged_devices(sec)
+        trends = self._trend_payload()
+        fetch_status = data.get("_fetch_status", {})
 
-        # Hierarchy
         pol_groups = self._build_hierarchy(data.get("policies", []))
         mcp_groups = self._build_hierarchy(data.get("macos_profiles", []))
         icp_groups = self._build_hierarchy(data.get("ios_profiles", []))
@@ -9695,15 +10610,14 @@ if (_ctx) {{
         ]
         scr_groups = self._build_hierarchy(scr_enriched)
         pkg_groups = self._build_hierarchy(data.get("packages", []))
+        smart_group_names = self._list_names(data.get("smart_groups", []))
 
-        # Org data
         site_names = self._list_names(data.get("sites", []))
         bldg_names = self._list_names(data.get("buildings", []))
         dept_names = self._list_names(data.get("departments", []))
         cat_names = self._list_names(data.get("categories", []))
         ade_names = self._list_names(data.get("device_enrollments", []))
 
-        # Counts
         pol_count = len(data.get("policies", []))
         mcp_count = len(data.get("macos_profiles", []))
         icp_count = len(data.get("ios_profiles", []))
@@ -9711,39 +10625,36 @@ if (_ctx) {{
         pkg_count = len(data.get("packages", []))
         sg_count = len(data.get("smart_groups", []))
 
-        # Badges
         health_cls = self._health_badge_class(health_status)
         alert_cls = "badge-ok" if active_alerts in ("None", "N/A", "0") else "badge-err"
-
         report_date = datetime.now().strftime("%A %d %B %Y, %H:%M")
-        console_url = instance_url.rstrip("/") if instance_url != "N/A" else ""
 
-        # Feature pills
         def feat(label: str, value: str) -> str:
             value_lc = str(value).lower()
-            on = "enabled" in value_lc or value_lc in ("yes", "true", "active")
-            cls = "feat-on" if on else "feat-off"
-            state = "enabled" if on else "disabled"
+            enabled = "enabled" in value_lc or value_lc in ("yes", "true", "active")
             return (
-                f'<span class="feat-pill {cls}">'
-                f'{self._html_text(label)} &mdash; {self._html_text(state)}</span>'
+                f'<span class="feat-pill {"feat-on" if enabled else "feat-off"}">'
+                f'{self._html_text(label)} &mdash; {self._html_text("enabled" if enabled else "disabled")}'
+                "</span>"
             )
 
         ade_preview = (
             ", ".join(ade_names[:3]) + ("..." if len(ade_names) > 3 else "")
             if ade_names else ""
         )
-
         feature_pills = (
             feat("MDM Auto Renew (Computers)", mdm_renew_comp)
             + feat("MDM Auto Renew (Mobile)", mdm_renew_md)
             + feat("SSO (SAML)", sso)
             + feat("Jamf SSO", sso_jamf)
-            + feat("Patch Management", "enabled" if patch_titles not in ("0", "N/A") else "disabled")
+            + feat(
+                "Patch Management",
+                "enabled" if patch_titles not in ("0", "N/A") else "disabled",
+            )
         )
 
         css = self._css()
-        js = self._js(os_labels, os_counts)
+        js = self._js()
         org_name = (self._config.get("branding", "org_name") or "").strip()
         brand_label = (
             f"{org_name} \u2014 Jamf Pro Reporting Snapshot"
@@ -9763,7 +10674,6 @@ if (_ctx) {{
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{page_title}</title>
-<script src="{self._CHARTJS_CDN}"></script>
 <style>{css}</style>
 </head>
 <body>
@@ -9773,7 +10683,8 @@ if (_ctx) {{
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <div class="topbar-meta">
       <strong>{self._html_text(instance_url, "N/A")}</strong><br>
-      Version {self._html_text(jamf_version, "N/A")} &nbsp;&bull;&nbsp; Generated {self._html_text(report_date)}
+      Version {self._html_text(jamf_version, "N/A")} &nbsp;&bull;&nbsp;
+      Generated {self._html_text(report_date)}
       &nbsp;&bull;&nbsp; Check-in {self._html_text(checkin_freq, "N/A")}
     </div>
     <button class="dark-toggle" id="darkToggle">Dark mode</button>
@@ -9791,25 +10702,23 @@ if (_ctx) {{
     <div class="health-strip" style="margin-top:16px">
       <div class="health-item">
         <span class="health-label">Health</span>
-        <span class="badge {health_cls}">{health_status}</span>
+        <span class="badge {health_cls}">{self._html_text(health_status)}</span>
       </div>
       <div class="health-item">
         <span class="health-label">Active Alerts</span>
-        <span class="badge {alert_cls}">{active_alerts}</span>
+        <span class="badge {alert_cls}">{self._html_text(active_alerts)}</span>
       </div>
       <div class="health-item">
         <span class="health-label">DEP Token Expires</span>
-        <span class="badge badge-dim">{dep_token_exp}</span>
+        <span class="badge badge-dim">{self._html_text(dep_token_exp)}</span>
       </div>
       <div class="health-item">
         <span class="health-label">Built-in CA Expires</span>
-        <span class="badge badge-dim">{ca_expires}</span>
+        <span class="badge badge-dim">{self._html_text(ca_expires)}</span>
       </div>
       <div class="health-item">
         <span class="health-label">DEP Sync</span>
-        <span class="badge badge-dim">{ade_sync}</span>
-      </div>
-
+        <span class="badge badge-dim">{self._html_text(ade_sync)}</span>
       </div>
     </div>
 
@@ -9823,8 +10732,7 @@ if (_ctx) {{
 
     <div class="section-title">Enrollment &amp; Configuration</div>
     <div class="grid grid-5">
-      {self._render_stat_card("ADE Instances", ade_instances,
-          ", ".join(ade_names[:3]) + ("..." if len(ade_names) > 3 else "") if ade_names else "")}
+      {self._render_stat_card("ADE Instances", ade_instances, ade_preview)}
       {self._render_stat_card("VPP Locations", vpp_locations)}
       {self._render_stat_card("LDAP / IdP Servers", ldap_servers)}
       {self._render_stat_card("Computer Prestages", comp_prestages)}
@@ -9848,7 +10756,9 @@ if (_ctx) {{
     <div class="section-title">Enabled Features</div>
     <div class="card card-sm">{feature_pills}</div>
 
-    {self._render_overview_table(ov)}
+    {self._render_source_status(fetch_status)}
+    {self._render_overview_table(ov, console_url)}
+    {self._render_quick_links(console_url)}
   </div>
 
   <div class="section-block">
@@ -9859,43 +10769,37 @@ if (_ctx) {{
 
     <div class="section-title">Computer Inventory</div>
     <div class="grid grid-6">
-      {self._render_stat_card("Managed Computers", managed_computers, "",
-          f"{console_url}/computers.html" if console_url else "", "Open in Jamf")}
+      {self._render_stat_card("Managed Computers", managed_computers, "", f"{console_url}/computers.html" if console_url else "", "Open in Jamf")}
       {self._render_stat_card("Unmanaged Computers", unmanaged_computers)}
-      {self._render_stat_card("Policies", str(pol_count))}
-      {self._render_stat_card("macOS Profiles", str(mcp_count))}
-      {self._render_stat_card("Packages", str(pkg_count))}
-      {self._render_stat_card("Smart Groups", str(sg_count))}
+      {self._render_stat_card("Policies", str(pol_count), "", f"{console_url}/policies.html" if console_url else "", "Open in Jamf")}
+      {self._render_stat_card("macOS Profiles", str(mcp_count), "", f"{console_url}/OSXConfigurationProfiles.html" if console_url else "", "Open in Jamf")}
+      {self._render_stat_card("Packages", str(pkg_count), "", f"{console_url}/view/settings/computer-management/packages" if console_url else "", "Open in Jamf")}
+      {self._render_stat_card("Smart Groups", str(sg_count), "", f"{console_url}/smartComputerGroups.html" if console_url else "", "Open in Jamf")}
     </div>
     <div class="grid grid-3" style="margin-top:14px">
-      {self._render_stat_card("Scripts", str(scr_count))}
+      {self._render_stat_card("Scripts", str(scr_count), "", f"{console_url}/view/settings/computer-management/scripts" if console_url else "", "Open in Jamf")}
       {self._render_stat_card("Patch Titles", patch_titles)}
-      {self._render_stat_card("Security Rows Scanned", total_scanned)}
+      {self._render_stat_card("Security Rows Scanned", total_scanned, f"{len(flagged)} flagged devices")}
     </div>
 
     <div class="section-title">Security Posture &amp; OS Distribution</div>
     <div class="grid grid-2">
       <div class="chart-card">
         <div class="chart-title">Security Feature Compliance
-          <span class="badge badge-dim" style="margin-left:6px">{total_scanned} devices scanned</span>
+          <span class="badge badge-dim" style="margin-left:6px">{self._html_text(total_scanned)} devices scanned</span>
+          <span class="badge badge-warn" style="margin-left:6px">{len(flagged)} flagged</span>
         </div>
         {self._render_sec_bar("FileVault", fv_pct, "fill-fv")}
         {self._render_sec_bar("Gatekeeper", gk_pct, "fill-gk")}
         {self._render_sec_bar("SIP", sip_pct, "fill-sip")}
         {self._render_sec_bar("Firewall", fw_pct, "fill-fw")}
       </div>
-      <div class="chart-card">
-        <div class="chart-title">macOS Version Distribution</div>
-        <div class="chart-wrap"><canvas id="osChart"></canvas></div>
-      </div>
-
+      {self._render_os_distribution_card(os_labels, os_counts)}
     </div>
 
-    {self._render_flagged_table(flagged)}
-    {self._render_hierarchy_section("Policies by Category", pol_groups)}
-    {self._render_hierarchy_section("macOS Config Profiles by Category", mcp_groups)}
-    {self._render_hierarchy_section("Scripts by Category", scr_groups)}
-    {self._render_hierarchy_section("Packages by Category", pkg_groups)}
+    {self._render_trends_section(trends)}
+    {self._render_flagged_table(flagged, console_url)}
+    {self._render_hierarchy_tabs(pol_groups, mcp_groups, icp_groups, scr_groups, pkg_groups, smart_group_names)}
   </div>
 
   <div class="section-block">
@@ -9911,7 +10815,7 @@ if (_ctx) {{
       {self._render_stat_card("Supervised", str(mobile_summary["supervised"]))}
       {self._render_stat_card("Shared iPad", str(mobile_summary["shared_ipad"]))}
       {self._render_stat_card("Assigned Users", str(mobile_summary["assigned"]))}
-      {self._render_stat_card("iOS Profiles", str(icp_count))}
+      {self._render_stat_card("iOS Profiles", str(icp_count), "", f"{console_url}/mobileDeviceConfigurationProfiles.html" if console_url else "", "Open in Jamf")}
     </div>
     <div class="grid grid-4" style="margin-top:14px">
       {self._render_stat_card("Activation Lock Enabled", str(mobile_summary["activation_lock"]))}
@@ -9927,7 +10831,6 @@ if (_ctx) {{
       {self._render_counter_table("Models", "Model", mobile_summary["models"])}
     </div>
 
-    {self._render_hierarchy_section("iOS Config Profiles by Category", icp_groups)}
     {self._render_mobile_inventory_table(mobile_rows, stale_days)}
   </div>
 
@@ -9935,7 +10838,6 @@ if (_ctx) {{
     Generated by jamf-reports-community.
     HTML report design based on
     <a href="https://github.com/DevliegereM/" target="_blank" rel="noopener noreferrer">Github.com/DevliegereM</a>
-
   </div>
 
 </div>
