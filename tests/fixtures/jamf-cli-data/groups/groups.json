@@ -1,0 +1,389 @@
+[
+  {
+    "groupPlatformId": "e09885a8-c9ab-4781-93cd-e46f9a3bdf47",
+    "groupJamfProId": "67",
+    "groupName": "3PL AMR Security Profile - 2.0 60 Minute Screensaver",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "23701f85-73b8-4ecc-bf0a-96bce01afe5b",
+    "groupJamfProId": "76",
+    "groupName": "All Clients: Automated Policy Exclusion",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 4,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "2ecfd09b-07e9-49b1-8492-26d47ee11277",
+    "groupJamfProId": "1",
+    "groupName": "All Managed Clients",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 101,
+    "smart": true
+  },
+  {
+    "groupPlatformId": "5b6f54e0-9997-4515-8a0b-7f3f71debb48",
+    "groupJamfProId": "3",
+    "groupName": "All Managed devices",
+    "groupDescription": "",
+    "groupType": "MOBILE",
+    "membershipCount": 105,
+    "smart": true
+  },
+  {
+    "groupPlatformId": "e42130fa-7415-4f4b-ad85-ef14873da8a8",
+    "groupJamfProId": "1",
+    "groupName": "All Managed iPads",
+    "groupDescription": "",
+    "groupType": "MOBILE",
+    "membershipCount": 41,
+    "smart": true
+  },
+  {
+    "groupPlatformId": "a528a7c9-2d98-4548-8c92-81e2bbeddbaa",
+    "groupJamfProId": "2",
+    "groupName": "All Managed iPhones",
+    "groupDescription": "",
+    "groupType": "MOBILE",
+    "membershipCount": 54,
+    "smart": true
+  },
+  {
+    "groupPlatformId": "b4c51231-2fea-4f46-a15c-c139beea59db",
+    "groupJamfProId": "2",
+    "groupName": "All Managed Servers",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": true
+  },
+  {
+    "groupPlatformId": "d855e8be-c453-4313-91c9-598b0944ebdc",
+    "groupJamfProId": "3",
+    "groupName": "App: Microsoft Outlook 2011",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": true
+  },
+  {
+    "groupPlatformId": "53a21c6e-9dbe-48bd-a257-a26604a3cf2b",
+    "groupJamfProId": "51",
+    "groupName": "back-end-macs",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "e28596c1-b51b-4efa-87ae-eec852f9dae5",
+    "groupJamfProId": "85",
+    "groupName": "breck-is-the-best",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "930bc0f7-8b58-4374-9bb5-80fa3b727acd",
+    "groupJamfProId": "53",
+    "groupName": "canalnoises-computer-group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "0141eb95-b6ac-41fb-bdf8-dce8f4b6708c",
+    "groupJamfProId": "38",
+    "groupName": "Compliance: FileVault 2 Not Enabled",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 1,
+    "smart": true
+  },
+  {
+    "groupPlatformId": "679ef186-1a77-4570-901b-acaf3330208b",
+    "groupJamfProId": "28",
+    "groupName": "Compliance: No Inventory Report for 14 Days",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 101,
+    "smart": true
+  },
+  {
+    "groupPlatformId": "ce057029-1790-480c-a104-96b05faf8b84",
+    "groupJamfProId": "54",
+    "groupName": "danam-test-computer-group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "0dbf292e-f4e0-4c2e-953d-6b6ddfcfc3c5",
+    "groupJamfProId": "58",
+    "groupName": "DanamVIP-Computers",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "3f6bf6c1-9e90-4e50-b948-c6d9ce2ad50e",
+    "groupJamfProId": "50",
+    "groupName": "group1",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "805c073e-26bf-495b-8ea8-395fdcc66c26",
+    "groupJamfProId": "59",
+    "groupName": "Honkytonk Wookie",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "8e2be1bc-6aa0-45c1-bb6c-ea548de57cc6",
+    "groupJamfProId": "71",
+    "groupName": "ligma",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "63207cab-8c7d-4b74-b11d-ee638cb6c50d",
+    "groupJamfProId": "83",
+    "groupName": "llaw-test-computer-group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "384ea21d-0b47-4e61-a9be-2d449101b5c6",
+    "groupJamfProId": "72",
+    "groupName": "merp",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "9af36182-695a-4bc3-9088-a060669edf23",
+    "groupJamfProId": "60",
+    "groupName": "merp-devices",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "0be446cc-09d8-499b-b801-4d33f83a16f1",
+    "groupJamfProId": "84",
+    "groupName": "My Test Group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "fb1bfe6c-465a-4a5b-a222-c90a24670e75",
+    "groupJamfProId": "78",
+    "groupName": "my-awesome-computer-group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "2b41e12f-a61e-4a9c-a5f6-e05918369e79",
+    "groupJamfProId": "56",
+    "groupName": "my-dopeaf-computer-group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "1bb88877-78f4-4423-9a4e-3b34cc49e934",
+    "groupJamfProId": "87",
+    "groupName": "my-xuxa-computer-group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "802b3040-68f0-4a54-981c-e8ee3be757b9",
+    "groupJamfProId": "82",
+    "groupName": "not-since-the-incident",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "5e256d47-0d25-48cc-8b55-404db1e3b599",
+    "groupJamfProId": "75",
+    "groupName": "nsintich-awesome-computer-group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "57d4a23c-2ad9-45fd-908b-e445e6f37284",
+    "groupJamfProId": "63",
+    "groupName": "PizzaPony-Computers",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "015fecdf-46b3-4a37-8e44-4cf1ab034ab6",
+    "groupJamfProId": "61",
+    "groupName": "Repairs",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "d678212a-d646-404e-9f03-dfbcc6be5b90",
+    "groupJamfProId": "64",
+    "groupName": "Repairs_api",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "12f06fd4-f5ad-4082-904c-8bf9e8393d9a",
+    "groupJamfProId": "69",
+    "groupName": "reverseGiraffe",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "aca2bf42-8741-49ce-b0c4-eecd44e80596",
+    "groupJamfProId": "81",
+    "groupName": "santa_cruz",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "5b3387ca-01e8-4608-9fbc-afed03ad1ea6",
+    "groupJamfProId": "80",
+    "groupName": "sednalk",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "cc50f7d5-f232-4ba2-8ba3-006bf3868c83",
+    "groupJamfProId": "77",
+    "groupName": "shawty got that existential narcissism",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "f63ddeb3-c495-4690-8c4f-06f96bb91970",
+    "groupJamfProId": "68",
+    "groupName": "shrimp-heaven-now",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "4fa97a6c-7423-41b0-8bf2-7543bae86878",
+    "groupJamfProId": "86",
+    "groupName": "shryock",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "e98d2f47-304c-4fe1-b5ec-5cb40f01860a",
+    "groupJamfProId": "65",
+    "groupName": "Software Approved - Keyshot 10",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "122defb7-6d14-4e4d-90a1-f497295a1a26",
+    "groupJamfProId": "66",
+    "groupName": "Staff: IT Test Group",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "101446e2-49da-4e5f-8f8f-81d28e9b512c",
+    "groupJamfProId": "55",
+    "groupName": "Staff: JAMF Nation Team",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "66da4fb9-bae5-4764-935c-0124657b841e",
+    "groupJamfProId": "70",
+    "groupName": "test",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "0edd2bc9-1154-49b3-87b6-65b015941ba1",
+    "groupJamfProId": "9",
+    "groupName": "Test Static Group",
+    "groupDescription": "",
+    "groupType": "MOBILE",
+    "membershipCount": 4,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "de73af73-c4bc-422e-868e-60c2fc544463",
+    "groupJamfProId": "74",
+    "groupName": "where-are-the-doggos",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  },
+  {
+    "groupPlatformId": "a09a387a-68cf-4915-b760-2e3f98ed6fcf",
+    "groupJamfProId": "73",
+    "groupName": "whodat",
+    "groupDescription": "",
+    "groupType": "COMPUTER",
+    "membershipCount": 0,
+    "smart": false
+  }
+]

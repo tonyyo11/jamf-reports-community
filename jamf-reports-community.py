@@ -3152,44 +3152,31 @@ class JamfCLIBridge:
         )
 
     def groups(self) -> Any:
-        """Fetch smart and static group inventory from jamf-cli pro groups.
+        """Fetch smart and static group inventory from jamf-cli pro groups list.
 
-        Returns a list of group objects. Confirmed available in jamf-cli v1.7.0.
-        Exact JSON shape must be validated against a live or test instance before
-        implementing the parser in CoreDashboard._write_smart_groups.
+        Returns a list of group objects. Validated against the committed fixture in
+        tests/fixtures/jamf-cli-data/groups/groups.json.
 
-        Expected shape (to confirm against fixture):
+        Confirmed fixture shape:
             [
               {
-                "id": "123",
-                "name": "All Managed Macs",
-                "type": "computer",           # "computer" | "mobile_device"
-                "is_smart": true,
-                "member_count": 142,
-                "criteria": [...]             # may be absent for static groups
+                "groupPlatformId": "uuid",
+                "groupJamfProId": "123",
+                "groupName": "All Managed Macs",
+                "groupType": "COMPUTER",      # "COMPUTER" | "MOBILE"
+                "membershipCount": 142,
+                "smart": true
               },
               ...
             ]
 
-        TODO: Run `jamf-cli pro groups --output json` against a test instance,
-              confirm the JSON shape, commit the result as
-              tests/fixtures/jamf-cli-data/groups/groups.json,
-              then implement the bridge method body below.
-
         Returns:
             Parsed JSON list of group objects, or raises RuntimeError if unavailable.
         """
-        # TODO: implement using _run_and_save once the command name is confirmed.
-        # Pattern to follow:
-        #   return self._run_and_save(
-        #       "groups",
-        #       ["pro", "groups", "--output", "json"],
-        #       ["groups"],
-        #   )
-        raise NotImplementedError(
-            "JamfCLIBridge.groups() requires fixture validation. "
-            "Run `jamf-cli pro groups --output json` and commit the result to "
-            "tests/fixtures/jamf-cli-data/groups/groups.json before implementing."
+        return self._run_and_save(
+            "groups",
+            ["pro", "groups", "list"],
+            ["groups"],
         )
 
     def device_lookup(self, device_id: str) -> Any:
@@ -3817,6 +3804,82 @@ class CoreDashboard:
             raise RuntimeError("jamf-cli returned no mobile configuration profiles")
         self._mobile_profile_cache = rows
         return rows
+
+    @staticmethod
+    def _group_record_key(item: dict[str, Any]) -> str:
+        """Return a stable identifier for a group record across snapshots."""
+        platform_id = str(
+            item.get("groupPlatformId", "") or item.get("platform_id", "")
+        ).strip()
+        if platform_id:
+            return platform_id
+        jamf_id = str(item.get("groupJamfProId", "") or item.get("id", "")).strip()
+        if jamf_id:
+            group_type = str(item.get("groupType", "") or item.get("type", "")).strip()
+            return f"{group_type}:{jamf_id}"
+        group_name = str(item.get("groupName", "") or item.get("name", "")).strip()
+        return f"name:{group_name.casefold()}"
+
+    @staticmethod
+    def _group_display_type(item: dict[str, Any]) -> str:
+        """Return a user-facing group type label."""
+        raw_type = _normalized_text(item.get("groupType", item.get("type", "")))
+        if raw_type in {"computer", "computers"}:
+            return "Computer"
+        if raw_type in {"mobile", "mobile_device", "mobile device", "ios"}:
+            return "Mobile"
+        return str(item.get("groupType", item.get("type", "")) or "").strip()
+
+    @staticmethod
+    def _group_name(item: dict[str, Any]) -> str:
+        """Return the group display name from either raw or normalized keys."""
+        return str(item.get("groupName", item.get("name", "")) or "").strip()
+
+    @staticmethod
+    def _group_is_smart(item: dict[str, Any]) -> bool:
+        """Return whether the group is smart from either raw or normalized keys."""
+        return _to_bool(item.get("smart", item.get("is_smart", False)))
+
+    @staticmethod
+    def _group_member_count(item: dict[str, Any]) -> int:
+        """Return the numeric group membership count from either key shape."""
+        return _to_int(item.get("membershipCount", item.get("member_count", 0)))
+
+    def _prior_group_counts(self) -> dict[str, int]:
+        """Return member counts from the most recent prior cached groups snapshot."""
+        report_dir = self._bridge._data_dir / "groups"
+        candidates: list[Path] = []
+        if report_dir.is_dir():
+            candidates.extend(
+                path for path in report_dir.rglob("*.json") if ".partial" not in path.name
+            )
+        elif self._bridge._data_dir.is_dir():
+            candidates.extend(
+                path
+                for path in self._bridge._data_dir.rglob("groups_*.json")
+                if ".partial" not in path.name
+            )
+        if len(candidates) < 2:
+            return {}
+
+        prior_path = sorted(
+            candidates,
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )[1]
+        try:
+            with open(prior_path, encoding="utf-8") as fh:
+                prior_data = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return {}
+        if not isinstance(prior_data, list):
+            return {}
+
+        return {
+            self._group_record_key(item): self._group_member_count(item)
+            for item in prior_data
+            if isinstance(item, dict)
+        }
 
     def _write_counter_block(
         self,
@@ -5997,7 +6060,7 @@ class CoreDashboard:
             _safe_write(ws, row, 0, "No failed update plans found.", self._fmts["cell"])
 
     def _write_smart_groups(self) -> None:
-        """Write a Smart Groups sheet from jamf-cli pro groups data.
+        """Write a Smart Groups sheet from jamf-cli pro groups list data.
 
         Columns: Group Name | Type | Smart | Member Count | Delta | Prior Count |
                  Scope Warning
@@ -6007,38 +6070,23 @@ class CoreDashboard:
         data_dir. A zero-member smart group that was non-zero in the prior run is
         highlighted in red (potential scope failure).
 
-        Requires: JamfCLIBridge.groups() to be implemented (pending fixture
-        validation). The sheet is automatically skipped via write_all's RuntimeError
-        guard when the method raises NotImplementedError.
-
-        JSON shape expected from jamf-cli pro groups --output json:
+        JSON shape validated from jamf-cli pro groups list --output json:
             [
               {
-                "id": "123",
-                "name": "All Managed Macs",
-                "type": "computer",          # "computer" | "mobile_device"
-                "is_smart": true,
-                "member_count": 142
+                "groupPlatformId": "uuid",
+                "groupJamfProId": "123",
+                "groupName": "All Managed Macs",
+                "groupType": "COMPUTER",     # "COMPUTER" | "MOBILE"
+                "membershipCount": 142,
+                "smart": true
               },
               ...
             ]
 
-        TODO: Implement after:
-            1. Running `jamf-cli pro groups --output json` against a test instance
-            2. Committing the result to tests/fixtures/jamf-cli-data/groups/groups.json
-            3. Confirming the JSON shape matches the expected structure above
-            4. Implementing JamfCLIBridge.groups()
-            5. Adding a delta-comparison against the prior cached JSON
-
         Raises:
             RuntimeError: When groups data is unavailable or the bridge raises.
         """
-        # Propagate NotImplementedError as RuntimeError so write_all skips gracefully.
-        try:
-            raw = self._bridge.groups()
-        except NotImplementedError as exc:
-            raise RuntimeError(str(exc)) from exc
-
+        raw = self._bridge.groups()
         if not raw or not isinstance(raw, list):
             raise RuntimeError("groups returned no data")
 
@@ -6047,7 +6095,7 @@ class CoreDashboard:
         row = _write_sheet_header(
             ws,
             "Smart Groups",
-            f"Source: jamf-cli pro groups | Generated: {ts}",
+            f"Source: jamf-cli pro groups list | Generated: {ts}",
             self._fmts,
             ncols=7,
         )
@@ -6059,20 +6107,35 @@ class CoreDashboard:
             _safe_write(ws, row, col_i, h, self._fmts["header"])
         row += 1
 
-        # TODO: load prior cached groups JSON from data_dir for delta computation.
-        # For now, delta and prior_count are blank.
-        for item in sorted(raw, key=lambda g: g.get("name", "").casefold()):
-            count = item.get("member_count", "")
-            is_smart = item.get("is_smart", False)
-            is_zero = isinstance(count, int) and count == 0
-            row_fmt = self._fmts.get("row_red") or self._fmts["cell"] if is_zero else self._fmts["cell"]
-            _safe_write(ws, row, 0, item.get("name", ""), row_fmt)
-            _safe_write(ws, row, 1, item.get("type", ""), row_fmt)
+        prior_counts = self._prior_group_counts()
+        for item in sorted(raw, key=lambda g: self._group_name(g).casefold()):
+            if not isinstance(item, dict):
+                continue
+            group_key = self._group_record_key(item)
+            count = self._group_member_count(item)
+            prior_count = prior_counts.get(group_key)
+            delta = count - prior_count if prior_count is not None else ""
+            is_smart = self._group_is_smart(item)
+            is_scope_failure = is_smart and count == 0 and (prior_count or 0) > 0
+            note = (
+                "Potential scope failure"
+                if is_scope_failure
+                else ("Zero members" if count == 0 else "")
+            )
+            row_fmt = self._fmts["red"] if is_scope_failure else self._fmts["cell"]
+            _safe_write(ws, row, 0, self._group_name(item), row_fmt)
+            _safe_write(ws, row, 1, self._group_display_type(item), row_fmt)
             _safe_write(ws, row, 2, "Yes" if is_smart else "No", row_fmt)
             _safe_write(ws, row, 3, count, row_fmt)
-            _safe_write(ws, row, 4, "", row_fmt)       # Delta — TODO
-            _safe_write(ws, row, 5, "", row_fmt)       # Prior count — TODO
-            _safe_write(ws, row, 6, "Zero members" if is_zero else "", row_fmt)
+            _safe_write(ws, row, 4, delta, row_fmt)
+            _safe_write(
+                ws,
+                row,
+                5,
+                prior_count if prior_count is not None else "",
+                row_fmt,
+            )
+            _safe_write(ws, row, 6, note, row_fmt)
             row += 1
 
         ws.set_column(0, 0, 40)

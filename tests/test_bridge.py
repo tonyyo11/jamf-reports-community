@@ -61,3 +61,19 @@ def test_update_device_failures_returns_empty_envelope_for_toggle_off(monkeypatc
     assert isinstance(result, list)
     assert result[0]["message"] == "No managed software update data found."
     assert result[0]["failed_plans"] == []
+
+
+def test_groups_uses_confirmed_list_command(monkeypatch, jrc) -> None:
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+    captured: list[str] = []
+
+    def fake_run(args):
+        captured.extend(args)
+        return [{"groupName": "All Managed Clients", "groupType": "COMPUTER"}]
+
+    monkeypatch.setattr(bridge, "_run", fake_run)
+
+    result = bridge.groups()
+
+    assert result == [{"groupName": "All Managed Clients", "groupType": "COMPUTER"}]
+    assert captured == ["pro", "groups", "list"]
