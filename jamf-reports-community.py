@@ -35,6 +35,7 @@ import sys
 import tempfile
 import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -676,7 +677,7 @@ def _latest_csv_inbox_file(
     candidates = sorted(
         (
             path for path in inbox_dir.rglob("*.csv")
-            if path.is_file() and not path.name.startswith(".")
+            if path.is_file() and not path.is_symlink() and not path.name.startswith(".")
         ),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
@@ -836,6 +837,7 @@ def _report_family_candidates(
     candidates = [
         path for path in current_dir.rglob("*.csv")
         if path.is_file()
+        and not path.is_symlink()
         and not path.name.startswith(".")
         and (not include_globs or _report_family_matches(path, current_dir, include_globs))
         and (not exclude_globs or not _report_family_matches(path, current_dir, exclude_globs))
@@ -1797,12 +1799,18 @@ def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[
 
     out_dir = Path(historical_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    source_size = source.stat().st_size
     source_digest = _sha256_file(source)
-    for existing in sorted(out_dir.rglob("*.csv")):
-        if not existing.is_file():
-            continue
+    # Compare against the 20 most-recent snapshots only. A full-corpus scan across
+    # hundreds of large CSVs would read gigabytes on each archive call.
+    recent = sorted(
+        (p for p in out_dir.rglob("*.csv") if p.is_file() and not p.is_symlink()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )[:20]
+    for existing in recent:
         try:
-            if _sha256_file(existing) == source_digest:
+            if existing.stat().st_size == source_size and _sha256_file(existing) == source_digest:
                 return existing, False
         except OSError:
             continue
@@ -2618,12 +2626,14 @@ class JamfCLIBridge:
             report_dir = self._data_dir / report_name
             if report_dir.is_dir():
                 candidates.extend(
-                    path for path in report_dir.rglob("*.json") if ".partial" not in path.name
+                    path for path in report_dir.rglob("*.json")
+                    if path.is_file() and not path.is_symlink() and ".partial" not in path.name
                 )
             elif self._data_dir.is_dir():
                 pattern = f"{report_name}_*.json"
                 candidates.extend(
-                    path for path in self._data_dir.rglob(pattern) if ".partial" not in path.name
+                    path for path in self._data_dir.rglob(pattern)
+                    if path.is_file() and not path.is_symlink() and ".partial" not in path.name
                 )
 
         if not candidates:
@@ -6741,7 +6751,10 @@ class ChartGenerator:
             relevant_columns.add(fail_col)
 
         if self._hist_dir and Path(self._hist_dir).is_dir():
-            for f in sorted(Path(self._hist_dir).rglob("*.csv")):
+            for f in sorted(
+                p for p in Path(self._hist_dir).rglob("*.csv")
+                if p.is_file() and not p.is_symlink()
+            ):
                 try:
                     header_df = pd.read_csv(f, nrows=0, encoding="utf-8-sig")
                 except Exception as exc:
@@ -8332,6 +8345,10 @@ def _post_teams_notification(
             }
         ],
     }
+    parsed_url = urllib.parse.urlparse(webhook_url)
+    if parsed_url.scheme not in ("https", "http"):
+        print("  [warn] Teams notification skipped: webhook URL must use https or http.")
+        return
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         webhook_url,
