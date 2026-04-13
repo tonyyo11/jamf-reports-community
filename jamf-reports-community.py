@@ -3179,6 +3179,42 @@ class JamfCLIBridge:
             ["groups"],
         )
 
+    def packages(self) -> Any:
+        """Fetch package inventory from jamf-cli (pro packages or classic-packages).
+
+        Returns a list of package objects with name, filename, upload date, and file
+        size. This is the data source for the Package Lifecycle Intelligence sheet.
+
+        Expected JSON shape (verify against a live instance before implementing):
+            [
+              {
+                "id": "42",
+                "name": "Firefox 130.0.pkg",
+                "filename": "Firefox 130.0.pkg",
+                "size": 112345678,           # bytes, or float in MB depending on version
+                "upload_date": "2026-01-15", # ISO date string; confirm exact field name
+                "notes": "..."
+              },
+              ...
+            ]
+
+        TODO: Run `jamf-cli pro packages --output json` against a test instance.
+              If that command is not available, try `jamf-cli pro classic-packages`.
+              Commit the result to tests/fixtures/jamf-cli-data/packages/packages.json.
+              Then implement this method with the appropriate _run_and_save call.
+
+        Returns:
+            Parsed JSON list of package objects.
+
+        Raises:
+            RuntimeError: Wraps NotImplementedError so write_all skips gracefully.
+        """
+        raise NotImplementedError(
+            "JamfCLIBridge.packages() requires fixture validation. "
+            "Run `jamf-cli pro packages --output json` (or classic-packages) and "
+            "commit to tests/fixtures/jamf-cli-data/packages/packages.json."
+        )
+
     def device_lookup(self, device_id: str) -> Any:
         """Fetch a per-device detail view from jamf-cli pro device.
 
@@ -3972,8 +4008,9 @@ class CoreDashboard:
                 ("Patch Failures", self._write_patch_failures),
                 ("Update Status", self._write_update_status),
                 ("Update Failures", self._write_update_failures),
-                # Smart Groups: wired but skipped until JamfCLIBridge.groups() is implemented.
                 ("Smart Groups", self._write_smart_groups),
+                # Package Lifecycle: wired but skipped until JamfCLIBridge.packages() is implemented.
+                ("Package Lifecycle", self._write_package_lifecycle),
             ]
         )
         for name, fn in sheets:
@@ -6140,6 +6177,111 @@ class CoreDashboard:
 
         ws.set_column(0, 0, 40)
         ws.set_column(1, 6, 16)
+
+    def _write_package_lifecycle(self) -> None:
+        """Write a Package Lifecycle sheet from jamf-cli package inventory data.
+
+        Columns: Package Name | Filename | Upload Date | Age (days) | Size (MB) |
+                 Age Bucket | Note
+
+        Age buckets: 0-30 days (green), 31-90 days (yellow), 91+ days (red).
+        Orphaned packages (Active Policy Count = 0) are highlighted — policy-scope
+        association is deferred to a future version pending Classic API support.
+
+        Roll-up summary row at top: total count, total size, orphan count (unknown
+        until policy association is implemented).
+
+        Requires: JamfCLIBridge.packages() to be implemented (pending fixture
+        validation). The sheet is automatically skipped when the method raises.
+
+        JSON shape expected from jamf-cli packages --output json:
+            [
+              {
+                "id": "42",
+                "name": "Firefox 130.0.pkg",
+                "filename": "Firefox 130.0.pkg",
+                "size": 112345678,           # bytes
+                "upload_date": "2026-01-15"  # ISO date
+              },
+              ...
+            ]
+
+        TODO: Implement after:
+            1. Confirming the jamf-cli command name (packages vs classic-packages)
+            2. Running it against a test instance and committing the fixture
+            3. Implementing JamfCLIBridge.packages()
+            4. Confirming the size field unit (bytes vs MB) and date field name
+            5. Adding policy-scope association (v2) via Classic API or pro policies
+
+        Raises:
+            RuntimeError: When package data is unavailable or unparseable.
+        """
+        try:
+            raw = self._bridge.packages()
+        except NotImplementedError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        if not raw or not isinstance(raw, list):
+            raise RuntimeError("packages returned no data")
+
+        ws = self._wb.add_worksheet("Package Lifecycle")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Package Lifecycle",
+            f"Source: jamf-cli pro packages | Generated: {ts}",
+            self._fmts,
+            ncols=7,
+        )
+        headers = [
+            "Package Name", "Filename", "Upload Date", "Age (days)", "Size (MB)",
+            "Age Bucket", "Note",
+        ]
+        for col_i, h in enumerate(headers):
+            _safe_write(ws, row, col_i, h, self._fmts["header"])
+        row += 1
+
+        today = datetime.now()
+        for pkg in sorted(raw, key=lambda p: p.get("name", "").casefold()):
+            name = pkg.get("name", "")
+            filename = pkg.get("filename", "")
+            upload_date_str = pkg.get("upload_date", "")
+            # TODO: confirm size field name and unit (bytes vs MB) from fixture
+            size_bytes = pkg.get("size", 0) or 0
+            size_mb = round(size_bytes / (1024 * 1024), 1) if size_bytes else ""
+
+            age_days: Optional[int] = None
+            if upload_date_str:
+                try:
+                    uploaded = datetime.fromisoformat(upload_date_str)
+                    age_days = (today - uploaded).days
+                except ValueError:
+                    pass
+
+            if age_days is None:
+                bucket = "Unknown"
+                row_fmt = self._fmts["cell"]
+            elif age_days <= 30:
+                bucket = "0-30 days"
+                row_fmt = self._fmts["cell"]
+            elif age_days <= 90:
+                bucket = "31-90 days"
+                row_fmt = self._fmts.get("row_warn") or self._fmts["cell"]
+            else:
+                bucket = "91+ days"
+                row_fmt = self._fmts.get("row_orange") or self._fmts["cell"]
+
+            _safe_write(ws, row, 0, name, row_fmt)
+            _safe_write(ws, row, 1, filename, row_fmt)
+            _safe_write(ws, row, 2, upload_date_str, row_fmt)
+            _safe_write(ws, row, 3, age_days if age_days is not None else "", row_fmt)
+            _safe_write(ws, row, 4, size_mb, row_fmt)
+            _safe_write(ws, row, 5, bucket, row_fmt)
+            _safe_write(ws, row, 6, "", row_fmt)  # Note: policy association in v2
+            row += 1
+
+        ws.set_column(0, 1, 40)
+        ws.set_column(2, 6, 16)
 
 
 # ---------------------------------------------------------------------------
