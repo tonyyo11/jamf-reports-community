@@ -1088,6 +1088,30 @@ def _days_since(date_str: str) -> Optional[int]:
     return None
 
 
+def _package_size_mb(raw_size: Any) -> Optional[float]:
+    """Return a package size in MB when jamf-cli provides a numeric byte count."""
+    if raw_size in (None, "", []):
+        return None
+    try:
+        size_bytes = float(raw_size)
+    except (TypeError, ValueError):
+        return None
+    if size_bytes <= 0:
+        return None
+    return round(size_bytes / (1024 * 1024), 1)
+
+
+def _package_note(pkg: dict[str, Any]) -> str:
+    """Return a concise note for a package inventory row."""
+    note = str(_first_value(pkg, ["notes"], default="") or "").strip()
+    if note.casefold() == "string":
+        note = ""
+
+    if _to_bool(pkg.get("rebootRequired")):
+        return f"{note} | Reboot required".strip(" |") if note else "Reboot required"
+    return note
+
+
 def _display_value(value: Any, empty_label: str = "Unknown / Not Reported") -> str:
     """Return a report-friendly label for a value, substituting blanks."""
     text = str(value or "").strip()
@@ -3179,6 +3203,10 @@ class JamfCLIBridge:
             ["groups"],
         )
 
+    def packages(self) -> Any:
+        """Fetch package inventory from jamf-cli pro packages list."""
+        return self.packages_list()
+
     def device_lookup(self, device_id: str) -> Any:
         """Fetch a per-device detail view from jamf-cli pro device.
 
@@ -3972,8 +4000,8 @@ class CoreDashboard:
                 ("Patch Failures", self._write_patch_failures),
                 ("Update Status", self._write_update_status),
                 ("Update Failures", self._write_update_failures),
-                # Smart Groups: wired but skipped until JamfCLIBridge.groups() is implemented.
                 ("Smart Groups", self._write_smart_groups),
+                ("Package Lifecycle", self._write_package_lifecycle),
             ]
         )
         for name, fn in sheets:
@@ -6140,6 +6168,96 @@ class CoreDashboard:
 
         ws.set_column(0, 0, 40)
         ws.set_column(1, 6, 16)
+
+    def _write_package_lifecycle(self) -> None:
+        """Write a Package Lifecycle sheet from jamf-cli package inventory data.
+
+        Columns: Package Name | Filename | Upload Date | Age (days) | Size (MB) |
+        Age Bucket | Note
+
+        Current jamf-cli fixture shape (`pro packages list`) exposes `packageName`,
+        `fileName`, freeform `notes`, and optional `size`. Demo fixtures do not
+        currently include an upload-date field, so age-related columns remain blank
+        until a tenant exposes those values.
+        """
+        raw = self._bridge.packages()
+        if not raw or not isinstance(raw, list):
+            raise RuntimeError("packages returned no data")
+
+        ws = self._wb.add_worksheet("Package Lifecycle")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Package Lifecycle",
+            f"Source: jamf-cli pro packages list | Generated: {ts}",
+            self._fmts,
+            ncols=7,
+        )
+        packages = sorted(
+            (item for item in raw if isinstance(item, dict)),
+            key=lambda pkg: str(_first_value(pkg, ["packageName", "name"], "")).casefold(),
+        )
+        known_sizes = [
+            size_mb for size_mb in (_package_size_mb(pkg.get("size")) for pkg in packages)
+            if size_mb is not None
+        ]
+        summary = [
+            ("Total Packages", len(packages)),
+            ("Known Sizes", len(known_sizes)),
+            ("Total Size (MB)", round(sum(known_sizes), 1) if known_sizes else "Unknown"),
+        ]
+        for col_i, (label, value) in enumerate(summary):
+            _safe_write(ws, row, col_i * 2, label, self._fmts["header"])
+            _safe_write(ws, row, col_i * 2 + 1, value, self._fmts["cell"])
+        row += 2
+
+        headers = [
+            "Package Name", "Filename", "Upload Date", "Age (days)", "Size (MB)",
+            "Age Bucket", "Note",
+        ]
+        for col_i, h in enumerate(headers):
+            _safe_write(ws, row, col_i, h, self._fmts["header"])
+        row += 1
+
+        for pkg in packages:
+            name = str(_first_value(pkg, ["packageName", "name"], default="") or "").strip()
+            filename = str(
+                _first_value(pkg, ["fileName", "filename"], default=name) or ""
+            ).strip()
+            upload_date_str = str(
+                _first_value(
+                    pkg,
+                    ["upload_date", "uploadDate", "dateUploaded", "created", "updated"],
+                    default="",
+                ) or ""
+            ).strip()
+            age_days = _days_since(upload_date_str)
+            size_mb = _package_size_mb(pkg.get("size"))
+            if age_days is None:
+                bucket = "Unknown"
+                row_fmt = self._fmts["cell"]
+            elif age_days <= 30:
+                bucket = "0-30 days"
+                row_fmt = self._fmts["green"]
+            elif age_days <= 90:
+                bucket = "31-90 days"
+                row_fmt = self._fmts["yellow"]
+            else:
+                bucket = "91+ days"
+                row_fmt = self._fmts["red"]
+
+            _safe_write(ws, row, 0, name, row_fmt)
+            _safe_write(ws, row, 1, filename, row_fmt)
+            _safe_write(ws, row, 2, upload_date_str, row_fmt)
+            _safe_write(ws, row, 3, age_days if age_days is not None else "", row_fmt)
+            _safe_write(ws, row, 4, size_mb if size_mb is not None else "", row_fmt)
+            _safe_write(ws, row, 5, bucket, row_fmt)
+            _safe_write(ws, row, 6, _package_note(pkg), row_fmt)
+            row += 1
+
+        ws.set_column(0, 1, 40)
+        ws.set_column(2, 5, 16)
+        ws.set_column(6, 6, 32)
 
 
 # ---------------------------------------------------------------------------

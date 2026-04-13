@@ -609,6 +609,7 @@ Sheets appear only when the required config and data are present.
 | EA Coverage | jamf-cli | Fleet-wide EA population, coverage %, and top values |
 | EA Definitions | jamf-cli | EA metadata such as type, input source, and display mode |
 | Software Installs | jamf-cli | Application version distribution across devices |
+| Package Lifecycle | jamf-cli | Package inventory with filename, optional age/size, and notes |
 | Policy Health | jamf-cli | Policy count, config findings |
 | Profile Status | jamf-cli | Config profile deployment errors by profile and device |
 | Mobile Config Profiles | jamf-cli | Mobile configuration profile list and category distribution |

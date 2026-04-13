@@ -29,6 +29,7 @@ def test_generate_from_committed_cached_jamf_cli_data(
         "Security Posture",
         "Inventory Summary",
         "Device Compliance",
+        "Package Lifecycle",
         "Patch Compliance",
         "Smart Groups",
         "Update Status",
@@ -43,6 +44,16 @@ def test_generate_from_committed_cached_jamf_cli_data(
     assert sheet["C5"].value == "No"
     assert sheet["D5"].value == 0
     assert sheet["G5"].value == "Zero members"
+
+    package_sheet = workbook["Package Lifecycle"]
+    assert package_sheet["A1"].value == "Package Lifecycle"
+    assert "jamf-cli pro packages list" in str(package_sheet["A2"].value)
+    assert package_sheet["A4"].value == "Total Packages"
+    assert package_sheet["B4"].value == 12
+    assert package_sheet["A6"].value == "Package Name"
+    assert package_sheet["A7"].value == "AdobeAcrobatPro11CC_2014-08-06.pkg"
+    notes = [package_sheet[f"G{row}"].value for row in range(7, 19)]
+    assert "Reboot required" in notes
 
 
 @pytest.mark.integration
