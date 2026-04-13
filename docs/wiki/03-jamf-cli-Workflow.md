@@ -203,6 +203,7 @@ With `jamf-cli` available, the workbook can include:
 - EA Coverage
 - EA Definitions
 - Software Installs
+- Package Lifecycle
 - Policy Health
 - Profile Status
 - Mobile Config Profiles

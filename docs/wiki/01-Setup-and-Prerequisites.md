@@ -46,6 +46,7 @@ pip install matplotlib
 - EA Coverage
 - EA Definitions
 - Software Installs
+- Package Lifecycle
 - Patch Compliance
 - `inventory-csv`
 - Cached JSON snapshots for offline reruns

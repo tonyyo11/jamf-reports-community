@@ -77,3 +77,25 @@ def test_groups_uses_confirmed_list_command(monkeypatch, jrc) -> None:
 
     assert result == [{"groupName": "All Managed Clients", "groupType": "COMPUTER"}]
     assert captured == ["pro", "groups", "list"]
+
+
+def test_packages_uses_pro_packages_list(monkeypatch, jrc) -> None:
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+    captured = {}
+
+    def fake_run_and_save(report_type, args, cache_names=None):
+        captured["report_type"] = report_type
+        captured["args"] = list(args)
+        captured["cache_names"] = list(cache_names or [])
+        return [{"id": "1"}]
+
+    monkeypatch.setattr(bridge, "_run_and_save", fake_run_and_save)
+
+    result = bridge.packages()
+
+    assert result == [{"id": "1"}]
+    assert captured == {
+        "report_type": "packages",
+        "args": ["pro", "packages", "list"],
+        "cache_names": ["packages"],
+    }
