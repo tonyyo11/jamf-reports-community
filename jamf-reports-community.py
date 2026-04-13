@@ -39,6 +39,7 @@ import urllib.request
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Optional
 
@@ -57,15 +58,15 @@ HAS_PPTX: Optional[bool] = None
 
 LAUNCHAGENT_LABEL_PREFIX = "com.github.tonyyo11.jamf-reports-community"
 DEFAULT_LAUNCHD_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-DEFAULT_AUTOMATION_MODE = "csv-assisted"
+DEFAULT_AUTOMATION_MODE = "jamf-cli-only"
 DEFAULT_AUTOMATION_SCHEDULE = "weekdays"
 DEFAULT_AUTOMATION_TIME_OF_DAY = "07:00"
 DEFAULT_CSV_FRESHNESS_DAYS = 14
 AUTOMATION_MODE_DESCRIPTIONS: dict[str, str] = {
-    "snapshot-only": "Refresh jamf-cli snapshots and optional CSV history without writing a workbook.",
+    "snapshot-only": "Refresh jamf-cli snapshots and archive per-family CSV history without writing a workbook.",
     "jamf-cli-only": "Generate a workbook from jamf-cli live data and/or cached JSON snapshots.",
-    "jamf-cli-full": "Build a jamf-cli inventory CSV, refresh snapshots, and generate a workbook.",
-    "csv-assisted": "Prefer the newest inbox CSV when present; otherwise fall back to jamf-cli-only.",
+    "jamf-cli-full": "Build a jamf-cli baseline CSV, refresh snapshots, and generate a workbook.",
+    "csv-assisted": "Prefer manifest-selected CSV input when available, then fall back to inbox CSV, plus jamf-cli data.",
 }
 AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
     "daily": "Every day at the chosen time",
@@ -73,6 +74,7 @@ AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
     "weekly": "One weekday each week at the chosen time",
     "monthly": "One day of the month at the chosen time",
 }
+REPORT_FAMILY_NAMES = ("computers", "mobile", "compliance")
 WEEKDAY_NAME_TO_VALUE: dict[str, int] = {
     "sun": 0,
     "sunday": 0,
@@ -128,6 +130,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "last_enrollment": "",
         "mdm_expiry": "",
     },
+    "mobile_columns": {
+        "device_name": "",
+        "serial_number": "",
+        "operating_system": "",
+        "last_checkin": "",
+        "email": "",
+        "model": "",
+        "device_family": "",
+        "managed": "",
+        "supervised": "",
+    },
     "security_agents": [],
     "jamf_cli": {
         "enabled": True,
@@ -150,6 +163,32 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "baseline_label": "mSCP Compliance",
     },
     "custom_eas": [],
+    "report_families": {
+        "computers": {
+            "enabled": False,
+            "current_dir": "",
+            "historical_dir": "",
+            "include_globs": [],
+            "exclude_globs": [],
+            "prefer_name_contains": [],
+        },
+        "mobile": {
+            "enabled": False,
+            "current_dir": "",
+            "historical_dir": "",
+            "include_globs": [],
+            "exclude_globs": [],
+            "prefer_name_contains": [],
+        },
+        "compliance": {
+            "enabled": False,
+            "current_dir": "",
+            "historical_dir": "",
+            "include_globs": [],
+            "exclude_globs": [],
+            "prefer_name_contains": [],
+        },
+    },
     "thresholds": {
         "stale_device_days": 30,
         "checkin_overdue_days": 7,
@@ -317,6 +356,15 @@ def _now_ts() -> str:
 def _file_stamp() -> str:
     """Return a local timestamp string suitable for output filenames."""
     return datetime.now().strftime("%Y-%m-%d_%H%M%S")
+
+
+def _sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest for a file."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _path_has_timestamp(path: Path) -> bool:
@@ -644,6 +692,260 @@ def _latest_csv_inbox_file(
             f"Newest CSV is stale ({age_days} day(s) old): {newest.name}"
         )
     return newest, f"Using newest CSV from inbox: {newest.name}"
+
+
+def _select_automation_csv(
+    config: "Config",
+    csv_inbox_dir: Optional[str],
+    freshness_days: int,
+) -> tuple[Optional[Path], Optional[str], str, str]:
+    """Select the best automation CSV, preferring report families over inbox files."""
+    manifest_csv, family_name, manifest_note = _default_generate_csv(config)
+    if manifest_csv is not None:
+        note = manifest_note or f"Using report_families.{family_name}: {manifest_csv.name}"
+        return manifest_csv, family_name, f"report_families.{family_name}", note
+
+    inbox_csv, inbox_note = _latest_csv_inbox_file(csv_inbox_dir, freshness_days)
+    if inbox_csv is not None:
+        return inbox_csv, None, "csv_inbox", inbox_note
+
+    note_parts = [part for part in [manifest_note, inbox_note] if part]
+    return None, None, "", " | ".join(note_parts)
+
+
+def _list_of_strings(value: Any) -> list[str]:
+    """Return a config value normalized to a list of non-empty strings."""
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if value is None:
+        return []
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _report_family_config(config: "Config", family_name: str) -> dict[str, Any]:
+    """Return one report-family config block."""
+    families = config.report_families
+    value = families.get(family_name, {})
+    return value if isinstance(value, dict) else {}
+
+
+def _report_family_label(family_name: str) -> str:
+    """Return a user-facing label for a report family key."""
+    return family_name.replace("_", " ").title()
+
+
+def _report_family_current_dir(config: "Config", family_name: str) -> Optional[Path]:
+    """Return the current/raw CSV directory for a report family."""
+    family = _report_family_config(config, family_name)
+    return config.resolve_path_value(family.get("current_dir", ""))
+
+
+def _report_family_historical_dir(config: "Config", family_name: str) -> Optional[Path]:
+    """Return the historical snapshot directory for a report family."""
+    family = _report_family_config(config, family_name)
+    return config.resolve_path_value(family.get("historical_dir", ""))
+
+
+def _report_family_matches(path: Path, base_dir: Path, patterns: list[str]) -> bool:
+    """Return True when a path matches any configured family glob pattern."""
+    if not patterns:
+        return False
+    relative = str(path.relative_to(base_dir))
+    name = path.name
+    return any(fnmatch(name, pattern) or fnmatch(relative, pattern) for pattern in patterns)
+
+
+def _report_family_header_score(
+    config: "Config",
+    family_name: str,
+    header_cols: list[str],
+) -> tuple[int, int]:
+    """Return a header-based specificity score for a report-family candidate."""
+    normalized_headers = {_normalized_text(item) for item in header_cols}
+    configured_core = [
+        str(config.columns.get(field, "") or "").strip()
+        for field in ("computer_name", "serial_number", "operating_system", "last_checkin")
+    ]
+    configured_all = [
+        str(value or "").strip()
+        for value in config.columns.values()
+        if str(value or "").strip()
+    ]
+
+    if family_name == "computers":
+        core_matches = sum(
+            1 for item in configured_core if item and _normalized_text(item) in normalized_headers
+        )
+        total_matches = sum(
+            1 for item in configured_all if item and _normalized_text(item) in normalized_headers
+        )
+        return core_matches, total_matches
+
+    if family_name == "mobile":
+        configured_mobile = [
+            str(value or "").strip()
+            for value in config.mobile_columns.values()
+            if str(value or "").strip()
+        ]
+        expected = configured_mobile or [
+            "Display Name",
+            "Serial Number",
+            "OS Version",
+            "Model",
+            "Last Inventory Update",
+            "Email Address",
+        ]
+        total_matches = sum(
+            1 for item in expected if _normalized_text(item) in normalized_headers
+        )
+        return total_matches, total_matches
+
+    if family_name == "compliance":
+        expected = [
+            str(config.compliance.get("failures_count_column", "") or "").strip(),
+            str(config.compliance.get("failures_list_column", "") or "").strip(),
+            str(config.columns.get("computer_name", "") or "").strip(),
+            str(config.columns.get("serial_number", "") or "").strip(),
+        ]
+        total_matches = sum(
+            1 for item in expected if item and _normalized_text(item) in normalized_headers
+        )
+        return total_matches, total_matches
+
+    return 0, 0
+
+
+def _report_family_candidates(
+    config: "Config",
+    family_name: str,
+) -> tuple[list[Path], str]:
+    """Return matching CSV candidates for a configured report family."""
+    family = _report_family_config(config, family_name)
+    if family.get("enabled") is not True:
+        return [], f"report_families.{family_name} is disabled."
+
+    current_dir = _report_family_current_dir(config, family_name)
+    if current_dir is None:
+        return [], f"report_families.{family_name}.current_dir is not configured."
+    if not current_dir.is_dir():
+        return [], f"{_report_family_label(family_name)} current_dir not found: {current_dir}"
+
+    include_globs = _list_of_strings(family.get("include_globs", []))
+    exclude_globs = _list_of_strings(family.get("exclude_globs", []))
+    candidates = [
+        path for path in current_dir.rglob("*.csv")
+        if path.is_file()
+        and not path.name.startswith(".")
+        and (not include_globs or _report_family_matches(path, current_dir, include_globs))
+        and (not exclude_globs or not _report_family_matches(path, current_dir, exclude_globs))
+    ]
+    if not candidates:
+        return [], f"No CSV files matched report_families.{family_name} in {current_dir}"
+    return candidates, f"Found {len(candidates)} candidate CSV(s) for {family_name}"
+
+
+def _latest_report_family_file(
+    config: "Config",
+    family_name: str,
+) -> tuple[Optional[Path], str]:
+    """Return the best current CSV candidate for a report family."""
+    candidates, note = _report_family_candidates(config, family_name)
+    if not candidates:
+        return None, note
+
+    family = _report_family_config(config, family_name)
+    preferred_terms = [
+        item.casefold() for item in _list_of_strings(family.get("prefer_name_contains", []))
+    ]
+    scored: list[tuple[tuple[int, int, int, float, str], Path]] = []
+    for path in candidates:
+        try:
+            header_df = pd.read_csv(path, nrows=0, encoding="utf-8-sig")
+            header_cols = header_df.columns.tolist()
+        except Exception:
+            header_cols = []
+        preferred_hits = sum(1 for term in preferred_terms if term in path.name.casefold())
+        header_primary, header_secondary = _report_family_header_score(
+            config, family_name, header_cols,
+        )
+        key = (
+            header_primary,
+            preferred_hits,
+            header_secondary,
+            path.stat().st_mtime,
+            path.name,
+        )
+        scored.append((key, path))
+
+    best = max(scored, key=lambda item: item[0])[1]
+    return best, f"Using report_families.{family_name}: {best.name}"
+
+
+def _family_for_csv_path(config: "Config", csv_path: Path) -> Optional[str]:
+    """Return the matching report family for a CSV path, if any."""
+    for family_name in REPORT_FAMILY_NAMES:
+        family = _report_family_config(config, family_name)
+        if family.get("enabled") is not True:
+            continue
+        current_dir = _report_family_current_dir(config, family_name)
+        if current_dir is None:
+            continue
+        try:
+            csv_path.relative_to(current_dir)
+        except ValueError:
+            continue
+        include_globs = _list_of_strings(family.get("include_globs", []))
+        exclude_globs = _list_of_strings(family.get("exclude_globs", []))
+        if include_globs and not _report_family_matches(csv_path, current_dir, include_globs):
+            continue
+        if exclude_globs and _report_family_matches(csv_path, current_dir, exclude_globs):
+            continue
+        return family_name
+    return None
+
+
+def _default_generate_csv(config: "Config") -> tuple[Optional[Path], Optional[str], Optional[str]]:
+    """Return the default primary CSV and family for generate/check workflows."""
+    notes: list[str] = []
+    for family_name in ("computers", "mobile"):
+        path, note = _latest_report_family_file(config, family_name)
+        if path is not None:
+            return path, family_name, note
+        if note:
+            notes.append(f"{family_name}: {note}")
+    return None, None, " | ".join(notes)
+
+
+def _guess_report_family_from_headers(
+    config: "Config",
+    header_cols: list[str],
+) -> Optional[str]:
+    """Infer the most likely report family from CSV headers."""
+    best_family: Optional[str] = None
+    best_score = (0, 0)
+    for family_name in REPORT_FAMILY_NAMES:
+        score = _report_family_header_score(config, family_name, header_cols)
+        if score > best_score:
+            best_family = family_name
+            best_score = score
+    return best_family if best_score > (0, 0) else None
+
+
+def _default_historical_dir(
+    config: "Config",
+    family_name: Optional[str],
+    fallback_value: Optional[str] = None,
+) -> Optional[Path]:
+    """Return the historical CSV directory for the current workflow."""
+    explicit = _cli_path(fallback_value)
+    if explicit is not None:
+        return explicit
+    if family_name:
+        family_hist = _report_family_historical_dir(config, family_name)
+        if family_hist is not None:
+            return family_hist
+    return config.resolve_path("charts", "historical_csv_dir")
 
 
 def _write_status_file(path_value: Optional[str], status: dict[str, Any]) -> None:
@@ -1487,18 +1789,74 @@ def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
     return warnings
 
 
-def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> Optional[Path]:
+def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[Path], bool]:
     """Copy the current CSV into the historical snapshot directory for future trend runs."""
     source = Path(csv_path)
     if not source.is_file():
-        return None
+        return None, False
 
     out_dir = Path(historical_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    source_digest = _sha256_file(source)
+    for existing in sorted(out_dir.rglob("*.csv")):
+        if not existing.is_file():
+            continue
+        try:
+            if _sha256_file(existing) == source_digest:
+                return existing, False
+        except OSError:
+            continue
     prefix = re.sub(r"[^a-z0-9]+", "_", source.stem.lower()).strip("_") or "inventory"
     dest = out_dir / f"{prefix}_{_file_stamp()}.csv"
     shutil.copy2(source, dest)
-    return dest
+    return dest, True
+
+
+def _age_label_from_seconds(total_seconds: int) -> str:
+    """Return a short human-readable age label from a second count."""
+    if total_seconds < 120:
+        return "just now"
+    if total_seconds < 3600:
+        return f"{total_seconds // 60}m ago"
+    if total_seconds < 86400:
+        return f"{total_seconds // 3600}h ago"
+    return f"{total_seconds // 86400}d ago"
+
+
+def _path_timestamp_label(path: Optional[Path]) -> str:
+    """Return an mtime timestamp for a file path, or an empty string."""
+    if path is None or not path.exists():
+        return ""
+    return datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+
+
+def _path_age_label(path: Optional[Path]) -> str:
+    """Return a short age label for a file path, or an empty string."""
+    if path is None or not path.exists():
+        return ""
+    delta = datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)
+    return _age_label_from_seconds(max(0, int(delta.total_seconds())))
+
+
+def _source_family_for_report_type(report_type: str) -> str:
+    """Return a broad family label for a jamf-cli report type."""
+    mobile_tokens = ("mobile", "ios")
+    compliance_tokens = ("compliance",)
+    report_type_lc = str(report_type or "").strip().casefold()
+    if any(token in report_type_lc for token in mobile_tokens):
+        return "mobile"
+    if any(token in report_type_lc for token in compliance_tokens):
+        return "compliance"
+    return "computers"
+
+
+def _source_kind_from_mode(mode: str) -> str:
+    """Return a normalized source-kind label for a jamf-cli source mode."""
+    if mode == "live":
+        return "jamf_cli_live"
+    if mode == "cached-fallback":
+        return "jamf_cli_cached_fallback"
+    return "jamf_cli_cached"
 
 
 def _site_name(site_value: Any) -> str:
@@ -1786,6 +2144,11 @@ class Config:
         return value if isinstance(value, dict) else {}
 
     @property
+    def mobile_columns(self) -> dict[str, str]:
+        value = self._data.get("mobile_columns", {})
+        return value if isinstance(value, dict) else {}
+
+    @property
     def security_agents(self) -> list[dict]:
         value = self._data.get("security_agents", [])
         return value if isinstance(value, list) else []
@@ -1794,6 +2157,11 @@ class Config:
     def custom_eas(self) -> list[dict]:
         value = self._data.get("custom_eas", [])
         return value if isinstance(value, list) else []
+
+    @property
+    def report_families(self) -> dict:
+        value = self._data.get("report_families") or {}
+        return value if isinstance(value, dict) else {}
 
     @property
     def compliance(self) -> dict:
@@ -1836,14 +2204,21 @@ class ColumnMapper:
 
     Args:
         config: Loaded Config instance.
+        section: Config section containing the logical-field mapping.
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, section: str = "columns") -> None:
         self._config = config
+        self._section = section
+
+    def _mapping(self) -> dict[str, str]:
+        if self._section == "mobile_columns":
+            return self._config.mobile_columns
+        return self._config.columns
 
     def get(self, logical: str) -> Optional[str]:
         """Return the configured column name for a logical field, or None."""
-        col = self._config.columns.get(logical, "")
+        col = self._mapping().get(logical, "")
         return col if col else None
 
     def extract(self, row: Any, logical: str) -> str:
@@ -2318,6 +2693,17 @@ class JamfCLIBridge:
         if age_label:
             return f"cached jamf-cli pro overview ({age_label})"
         return "cached jamf-cli pro overview"
+
+    def source_info(self, report_type: str) -> dict[str, Any]:
+        """Return recorded provenance info for one report type."""
+        return dict(self._last_source_info.get(report_type, {}))
+
+    def all_source_info(self) -> dict[str, dict[str, Any]]:
+        """Return recorded provenance info for all fetched report types."""
+        return {
+            report_type: dict(info)
+            for report_type, info in self._last_source_info.items()
+        }
 
     def _run_and_save(
         self,
@@ -3109,6 +3495,8 @@ def _write_report_sources_sheet(
     generated_at: str,
     config: Config,
     csv_path: Optional[str],
+    csv_family: str,
+    csv_origin: str,
     hist_dir: Optional[str],
     jamf_cli_dir: Optional[str],
     jamf_cli_profile: str,
@@ -3118,6 +3506,7 @@ def _write_report_sources_sheet(
     csv_sheets: list[str],
     chart_source: str,
     org_name: str = "",
+    source_details: Optional[list[dict[str, str]]] = None,
 ) -> None:
     """Write a workbook sheet describing the data sources used for the report."""
     ws = wb.add_worksheet("Report Sources")
@@ -3126,11 +3515,11 @@ def _write_report_sources_sheet(
         _org_title(org_name, "Report Sources"),
         f"Generated: {generated_at}",
         fmts,
-        ncols=6,
+        ncols=8,
     )
     ws.set_column(0, 0, 24)
     ws.set_column(1, 1, 80)
-    ws.set_column(2, 3, 18)
+    ws.set_column(2, 7, 18)
 
     logo_path = config.resolve_path("branding", "logo_path")
     if logo_path and logo_path.exists():
@@ -3153,6 +3542,8 @@ def _write_report_sources_sheet(
         ("Report Mode", report_mode),
         ("Config Base Dir", str(config.base_dir)),
         ("CSV Input", csv_path or ""),
+        ("CSV Family", csv_family),
+        ("CSV Origin", csv_origin),
         ("Historical CSV Dir", hist_dir or ""),
         ("jamf-cli Data Dir", jamf_cli_dir or ""),
         ("jamf-cli Profile", jamf_cli_profile),
@@ -3163,6 +3554,27 @@ def _write_report_sources_sheet(
         _safe_write(ws, row, 0, label, fmts["cell"])
         _safe_write(ws, row, 1, value, fmts["cell"])
         row += 1
+
+    if source_details:
+        row += 1
+        detail_headers = ["Scope", "Kind", "Origin", "Family", "Path", "Timestamp", "Age", "Notes"]
+        for col_i, header in enumerate(detail_headers):
+            _safe_write(ws, row, col_i, header, fmts["header"])
+        row += 1
+        for detail in source_details:
+            values = [
+                detail.get("scope", ""),
+                detail.get("kind", ""),
+                detail.get("origin", ""),
+                detail.get("family", ""),
+                detail.get("path", ""),
+                detail.get("timestamp", ""),
+                detail.get("age", ""),
+                detail.get("notes", ""),
+            ]
+            for col_i, value in enumerate(values):
+                _safe_write(ws, row, col_i, value, fmts["cell"])
+            row += 1
 
     row += 1
     headers = ["Sheet", "Source", "Included"]
@@ -5544,6 +5956,7 @@ class CSVDashboard:
         csv_path: Path to the primary CSV file.
         workbook: Active xlsxwriter Workbook.
         fmts: Format dict from _build_formats.
+        family_name: Report family driving CSV sheet generation.
         extra_csv_paths: Optional list of additional CSV paths to merge into the
             primary DataFrame.  Each extra CSV is loaded and concatenated; a
             "CSV Source" column is added to every row so downstream sheets can
@@ -5559,10 +5972,13 @@ class CSVDashboard:
         csv_path: str,
         workbook: xlsxwriter.Workbook,
         fmts: dict,
+        family_name: str = "computers",
         extra_csv_paths: Optional[list[str]] = None,
     ) -> None:
         self._config = config
-        self._mapper = ColumnMapper(config)
+        self._family_name = family_name
+        mapper_section = "mobile_columns" if family_name == "mobile" else "columns"
+        self._mapper = ColumnMapper(config, mapper_section)
         self._wb = workbook
         self._fmts = fmts
         try:
@@ -5618,13 +6034,19 @@ class CSVDashboard:
     def write_all(self) -> list[str]:
         """Write all CSV-derived sheets. Returns list of sheet names written."""
         written = []
-        sheets = [
-            ("Device Inventory", self._write_inventory),
-            ("Stale Devices", self._write_stale),
-            ("Security Controls", self._write_security_controls),
-            ("Security Agents", self._write_security_agents),
-            ("Compliance", self._write_compliance),
-        ]
+        if self._family_name == "mobile":
+            sheets = [
+                ("Mobile Device Inventory", self._write_mobile_inventory_csv),
+                ("Mobile Stale Devices", self._write_mobile_stale),
+            ]
+        else:
+            sheets = [
+                ("Device Inventory", self._write_inventory),
+                ("Stale Devices", self._write_stale),
+                ("Security Controls", self._write_security_controls),
+                ("Security Agents", self._write_security_agents),
+                ("Compliance", self._write_compliance),
+            ]
         for name, fn in sheets:
             try:
                 fn()
@@ -5654,7 +6076,7 @@ class CSVDashboard:
         return self._mapper.extract(row, logical)
 
     def _device_name(self, row: Any) -> str:
-        """Extract computer name from a DataFrame row using the configured column.
+        """Extract a device name from a DataFrame row using the configured column.
 
         Args:
             row: A pandas Series (DataFrame row) from self._df.iterrows().
@@ -5663,7 +6085,8 @@ class CSVDashboard:
             The device name string, or empty string if the column is not configured
             or not present in this row.
         """
-        col = self._col("computer_name")
+        logical = "device_name" if self._family_name == "mobile" else "computer_name"
+        col = self._col(logical)
         return str(row[col]) if col and col in row.index else ""
 
     def _write_inventory(self) -> None:
@@ -5736,6 +6159,113 @@ class CSVDashboard:
                 row_i += 1
         ws.set_column(0, 0, 30)
         ws.set_column(1, 5, 22)
+
+    def _write_mobile_inventory_csv(self) -> None:
+        """Write a mobile CSV inventory sheet using mobile_columns mappings."""
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+        name_col = self._col("device_name")
+        checkin_col = self._col("last_checkin")
+        if not name_col:
+            raise RuntimeError("mobile_columns.device_name is not configured")
+        active_rows = []
+        for _, row in self._df.iterrows():
+            checkin = str(row.get(checkin_col, "")) if checkin_col else ""
+            days = _days_since(checkin) if checkin else None
+            if days is not None and 0 <= days <= stale_days:
+                active_rows.append(row)
+
+        ws = self._wb.add_worksheet("Mobile Device Inventory")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_i = _write_sheet_header(
+            ws,
+            "Mobile Device Inventory",
+            f"Active devices (checked in within {stale_days} days) | Generated: {ts}",
+            self._fmts,
+            ncols=9,
+        )
+        logical_cols = [
+            "device_name",
+            "serial_number",
+            "operating_system",
+            "last_checkin",
+            "email",
+            "model",
+            "device_family",
+            "managed",
+            "supervised",
+        ]
+        headers = [
+            "Device Name",
+            "Serial Number",
+            "OS Version",
+            "Last Inventory Update",
+            "Email Address",
+            "Model",
+            "Device Family",
+            "Managed",
+            "Supervised",
+        ]
+        col_names = [self._col(logical) for logical in logical_cols]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row_i, col_i, header, self._fmts["header"])
+        row_i += 1
+        for row in active_rows:
+            for col_i, col_name in enumerate(col_names):
+                value = str(row[col_name]) if col_name and col_name in row.index else ""
+                _safe_write(ws, row_i, col_i, value, self._fmts["cell"])
+            row_i += 1
+        ws.set_column(0, 0, 30)
+        ws.set_column(1, 8, 22)
+
+    def _write_mobile_stale(self) -> None:
+        """Write stale mobile devices using mobile_columns mappings."""
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+        name_col = self._col("device_name")
+        checkin_col = self._col("last_checkin")
+        if not name_col or not checkin_col:
+            raise RuntimeError(
+                "mobile_columns.device_name or mobile_columns.last_checkin is not configured"
+            )
+        ws = self._wb.add_worksheet("Mobile Stale Devices")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_i = _write_sheet_header(
+            ws,
+            "Mobile Stale Devices",
+            f"Devices not checked in within {stale_days} days | Generated: {ts}",
+            self._fmts,
+            ncols=9,
+        )
+        headers = [
+            "Device Name",
+            "Serial Number",
+            "Days Stale",
+            "OS Version",
+            "Email Address",
+            "Model",
+            "Device Family",
+            "Managed",
+            "Supervised",
+        ]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row_i, col_i, header, self._fmts["header"])
+        row_i += 1
+        for _, row in self._df.iterrows():
+            checkin = str(row.get(checkin_col, ""))
+            days = _days_since(checkin)
+            if days is None or days <= stale_days:
+                continue
+            _safe_write(ws, row_i, 0, self._get(row, "device_name"), self._fmts["cell"])
+            _safe_write(ws, row_i, 1, self._get(row, "serial_number"), self._fmts["cell"])
+            _safe_write(ws, row_i, 2, days, self._fmts["int"])
+            _safe_write(ws, row_i, 3, self._get(row, "operating_system"), self._fmts["cell"])
+            _safe_write(ws, row_i, 4, self._get(row, "email"), self._fmts["cell"])
+            _safe_write(ws, row_i, 5, self._get(row, "model"), self._fmts["cell"])
+            _safe_write(ws, row_i, 6, self._get(row, "device_family"), self._fmts["cell"])
+            _safe_write(ws, row_i, 7, self._get(row, "managed"), self._fmts["cell"])
+            _safe_write(ws, row_i, 8, self._get(row, "supervised"), self._fmts["cell"])
+            row_i += 1
+        ws.set_column(0, 0, 30)
+        ws.set_column(1, 8, 22)
 
     def _write_security_controls(self) -> None:
         control_fields = [
@@ -6201,7 +6731,7 @@ class ChartGenerator:
 
     def _load_snapshots(self, charts_cfg: dict[str, Any]) -> list[tuple[datetime, Any]]:
         """Load all CSV snapshots sorted by date. Returns list of (date, DataFrame)."""
-        snapshots: list[tuple[datetime, Any]] = []
+        loaded: list[dict[str, Any]] = []
         relevant_columns: set[str] = set()
         os_col = self._config.columns.get("operating_system", "")
         if charts_cfg.get("os_adoption", {}).get("enabled", True) and os_col:
@@ -6225,21 +6755,77 @@ class ChartGenerator:
                 except Exception as exc:
                     print(f"  [warn] Skipping CSV snapshot {f.name}: {exc}")
                     continue
-                snapshots.append((dt, df))
+                loaded.append(
+                    {
+                        "date": dt,
+                        "df": df,
+                        "path": f,
+                        "schema": self._csv_snapshot_schema_key(df.columns),
+                        "rows": len(df),
+                    }
+                )
 
         if self._csv_path and Path(self._csv_path).is_file():
             current_dt = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            if not any(s[0].date() == current_dt.date() for s in snapshots):
-                try:
-                    df = pd.read_csv(
-                        self._csv_path, dtype=str, encoding="utf-8-sig"
-                    ).fillna("")
-                    snapshots.append((current_dt, df))
-                except Exception as exc:
-                    print(f"  [warn] Could not read current CSV: {exc}")
+            try:
+                df = pd.read_csv(
+                    self._csv_path, dtype=str, encoding="utf-8-sig"
+                ).fillna("")
+                loaded.append(
+                    {
+                        "date": current_dt,
+                        "df": df,
+                        "path": Path(self._csv_path),
+                        "schema": self._csv_snapshot_schema_key(df.columns),
+                        "rows": len(df),
+                    }
+                )
+            except Exception as exc:
+                print(f"  [warn] Could not read current CSV: {exc}")
 
+        snapshots = self._dedupe_csv_snapshots(loaded)
         snapshots.sort(key=lambda x: x[0])
         return snapshots
+
+    def _csv_snapshot_schema_key(self, columns: Any) -> tuple[str, ...]:
+        """Return a normalized schema key for a CSV snapshot."""
+        return tuple(_normalized_text(column) for column in columns)
+
+    def _dedupe_csv_snapshots(self, loaded: list[dict[str, Any]]) -> list[tuple[datetime, Any]]:
+        """Keep one canonical CSV snapshot per day and schema.
+
+        When multiple same-day exports share the same schema, prefer the one with
+        the most rows and then the newest file mtime. This keeps an "All Devices"
+        export ahead of smaller subset exports that landed in the same folder.
+        """
+        if not loaded:
+            return []
+
+        chosen: dict[tuple[Any, tuple[str, ...]], dict[str, Any]] = {}
+        skipped = 0
+        for item in loaded:
+            key = (item["date"].date(), item["schema"])
+            current = chosen.get(key)
+            if current is None:
+                chosen[key] = item
+                continue
+            item_rank = (item["rows"], item["path"].stat().st_mtime, str(item["path"]))
+            current_rank = (
+                current["rows"],
+                current["path"].stat().st_mtime,
+                str(current["path"]),
+            )
+            if item_rank > current_rank:
+                chosen[key] = item
+            skipped += 1
+
+        if skipped:
+            print(
+                "  [note] Historical CSV dedupe kept the largest snapshot per day and schema;"
+                f" ignored {skipped} same-day duplicate candidate(s)."
+            )
+
+        return [(item["date"], item["df"]) for item in chosen.values()]
 
     def _parse_date_from_path(self, path: Path) -> datetime:
         """Extract a timestamp from a filename, falling back to file mtime."""
@@ -6317,7 +6903,10 @@ class ChartGenerator:
         for dt, df in snapshots:
             if os_col not in df.columns:
                 continue
-            counts = df[os_col].str.strip().value_counts()
+            series = df[os_col].astype(str).str.strip()
+            counts = series[series != ""].value_counts()
+            if counts.empty:
+                continue
             row: dict[str, Any] = {"date": dt}
             row.update(counts.to_dict())
             records.append(row)
@@ -7167,6 +7756,7 @@ def _validate_config_structure(config: Config) -> None:
     raw_config = config.to_dict()
     section_types: dict[str, type] = {
         "columns": dict,
+        "mobile_columns": dict,
         "compliance": dict,
         "jamf_cli": dict,
         "protect": dict,
@@ -7174,6 +7764,7 @@ def _validate_config_structure(config: Config) -> None:
         "thresholds": dict,
         "output": dict,
         "charts": dict,
+        "report_families": dict,
         "security_agents": list,
         "custom_eas": list,
     }
@@ -7218,27 +7809,31 @@ def _validate_config_structure(config: Config) -> None:
                     " the Compliance sheet will fail at generate time"
                 )
 
-    configured_columns: dict[str, list[str]] = {}
-    for logical_field, raw_column in config.columns.items():
-        column_name = str(raw_column or "").strip()
-        if not column_name:
-            continue
-        configured_columns.setdefault(column_name.casefold(), []).append(logical_field)
-    duplicate_columns = {
-        column_key: fields
-        for column_key, fields in configured_columns.items()
-        if len(fields) > 1
-    }
-    if duplicate_columns:
-        for column_key, fields in duplicate_columns.items():
-            canonical_name = next(
-                (str(config.columns.get(field, "") or "").strip() for field in fields),
-                column_key,
-            )
-            issues.append(
-                f"columns mapping reuses {canonical_name!r} for {', '.join(fields)}"
-                " — each logical field should point to a unique CSV column"
-            )
+    for section_name, mapping in [
+        ("columns", config.columns),
+        ("mobile_columns", config.mobile_columns),
+    ]:
+        configured_columns: dict[str, list[str]] = {}
+        for logical_field, raw_column in mapping.items():
+            column_name = str(raw_column or "").strip()
+            if not column_name:
+                continue
+            configured_columns.setdefault(column_name.casefold(), []).append(logical_field)
+        duplicate_columns = {
+            column_key: fields
+            for column_key, fields in configured_columns.items()
+            if len(fields) > 1
+        }
+        if duplicate_columns:
+            for column_key, fields in duplicate_columns.items():
+                canonical_name = next(
+                    (str(mapping.get(field, "") or "").strip() for field in fields),
+                    column_key,
+                )
+                issues.append(
+                    f"{section_name} mapping reuses {canonical_name!r} for {', '.join(fields)}"
+                    " — each logical field should point to a unique CSV column"
+                )
 
     platform_cfg = config.platform
     if platform_cfg.get("enabled"):
@@ -7247,6 +7842,52 @@ def _validate_config_structure(config: Config) -> None:
                 "platform.enabled is true but platform.compliance_benchmarks is empty —"
                 " benchmark-specific compliance sheets will be skipped"
             )
+
+    report_families = config.report_families
+    if not isinstance(report_families, dict):
+        issues.append(
+            "report_families must be a mapping when present."
+            f" Current value: {type(report_families).__name__}"
+        )
+    else:
+        for family_name in REPORT_FAMILY_NAMES:
+            family = _report_family_config(config, family_name)
+            enabled = family.get("enabled", False)
+            if enabled not in (True, False):
+                issues.append(
+                    f"report_families.{family_name}.enabled must be true or false."
+                    f" Current value: {enabled!r}"
+                )
+            if enabled is not True:
+                continue
+            if not str(family.get("current_dir", "") or "").strip():
+                issues.append(
+                    f"report_families.{family_name}.current_dir is empty while the family"
+                    " is enabled"
+                )
+            if not str(family.get("historical_dir", "") or "").strip():
+                issues.append(
+                    f"report_families.{family_name}.historical_dir is empty while the family"
+                    " is enabled"
+                )
+            include_globs = family.get("include_globs", [])
+            if include_globs and not isinstance(include_globs, list):
+                issues.append(
+                    f"report_families.{family_name}.include_globs must be a list of glob"
+                    f" strings, not {type(include_globs).__name__}"
+                )
+            exclude_globs = family.get("exclude_globs", [])
+            if exclude_globs and not isinstance(exclude_globs, list):
+                issues.append(
+                    f"report_families.{family_name}.exclude_globs must be a list of glob"
+                    f" strings, not {type(exclude_globs).__name__}"
+                )
+            preferred = family.get("prefer_name_contains", [])
+            if preferred and not isinstance(preferred, list):
+                issues.append(
+                    f"report_families.{family_name}.prefer_name_contains must be a list of"
+                    f" strings, not {type(preferred).__name__}"
+                )
 
     # Custom EA type validation
     for ea in config.custom_eas:
@@ -7332,6 +7973,48 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     if not any_configured:
         print("  Note: No columns configured. Run scaffold or edit config.yaml to add mappings.")
 
+    mobile_required = ["device_name", "serial_number", "operating_system", "last_checkin"]
+    mobile_any_configured = False
+    for field in mobile_required:
+        val = config.mobile_columns.get(field, "")
+        status = "ok" if val else "not configured"
+        print(f"  mobile_columns.{field}: {status}" + (f" -> {val!r}" if val else ""))
+        if val:
+            mobile_any_configured = True
+    if not mobile_any_configured:
+        print("  Note: No mobile_columns configured. Mobile CSV validation will be limited.")
+
+    print("\n--- Report Family Manifest ---")
+    manifest_found = False
+    for family_name in REPORT_FAMILY_NAMES:
+        family = _report_family_config(config, family_name)
+        if family.get("enabled") is not True:
+            continue
+        manifest_found = True
+        current_dir = _report_family_current_dir(config, family_name)
+        historical_dir = _report_family_historical_dir(config, family_name)
+        latest_path, note = _latest_report_family_file(config, family_name)
+        print(f"  {family_name}: enabled")
+        if current_dir is not None:
+            print(f"    current_dir: {current_dir}")
+        if historical_dir is not None:
+            print(f"    historical_dir: {historical_dir}")
+        if latest_path is not None:
+            print(f"    latest: {latest_path.name}")
+        else:
+            print(f"    latest: none")
+        print(f"    note: {note}")
+    if not manifest_found:
+        print("  No enabled report_families entries.")
+
+    selected_csv_family: Optional[str] = None
+    if not csv_path:
+        manifest_csv, selected_csv_family, manifest_note = _default_generate_csv(config)
+        if manifest_csv is not None:
+            csv_path = str(manifest_csv)
+            print("\n  Using manifest-selected CSV for validation.")
+            print(f"  {manifest_note}")
+
     if csv_path:
         print("\n--- CSV column validation ---")
         csv_path_obj = _resolve_cli_input_path(csv_path, config)
@@ -7347,12 +8030,25 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             if checked:
                 print(f"  Checked: {checked}")
         else:
+            if selected_csv_family is None and csv_path_obj is not None:
+                selected_csv_family = _family_for_csv_path(config, csv_path_obj)
+            if selected_csv_family is None:
+                selected_csv_family = _guess_report_family_from_headers(config, headers)
+            mapping = config.mobile_columns if selected_csv_family == "mobile" else config.columns
+            mapping_label = "mobile_columns" if selected_csv_family == "mobile" else "columns"
+            if selected_csv_family:
+                print(f"  Detected CSV family: {selected_csv_family}")
+            if selected_csv_family == "mobile" and not any(str(value or "").strip() for value in mapping.values()):
+                print(
+                    "  [WARN] Detected a mobile CSV, but mobile_columns is empty."
+                    " Configure mobile_columns to validate or generate mobile CSV sheets."
+                )
             mismatches = []
-            for field, col in config.columns.items():
+            for field, col in mapping.items():
                 if not col:
                     continue
                 if col in csv_cols:
-                    print(f"  [ok] {field}: {col!r}")
+                    print(f"  [ok] {mapping_label}.{field}: {col!r}")
                     suggested_col, suggested_score = _best_header_match(headers, field)
                     configured_score = _column_match_score(col, field)
                     if (
@@ -7361,12 +8057,12 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                         and suggested_score > configured_score
                     ):
                         print(
-                            f"  [SUGGEST] {field}: {suggested_col!r} looks like a"
+                            f"  [SUGGEST] {mapping_label}.{field}: {suggested_col!r} looks like a"
                             f" better match than {col!r}"
                         )
                 else:
-                    print(f"  [MISSING] {field}: {col!r} — not found in CSV")
-                    mismatches.append((field, col))
+                    print(f"  [MISSING] {mapping_label}.{field}: {col!r} — not found in CSV")
+                    mismatches.append((f"{mapping_label}.{field}", col))
             for ea in config.custom_eas:
                 col = ea.get("column", "")
                 name = ea.get("name", "?")
@@ -7377,47 +8073,48 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                 else:
                     print(f"  [MISSING] custom_ea '{name}': {col!r} — not found in CSV")
                     mismatches.append((f"custom_ea:{name}", col))
-            for index, agent in enumerate(config.security_agents):
-                if not isinstance(agent, dict):
-                    print(
-                        f"  [MISSING] security_agents[{index}] is not a mapping —"
-                        " cannot validate column settings"
-                    )
-                    mismatches.append((f"security_agents[{index}]", ""))
-                    continue
-                name = str(agent.get("name", "") or "").strip() or f"security_agents[{index}]"
-                col = str(agent.get("column", "") or "").strip()
-                connected_value = str(agent.get("connected_value", "") or "").strip()
-                if not col:
-                    print(
-                        f"  [MISSING] security_agents '{name}': no column configured"
-                    )
-                    mismatches.append((f"security_agents:{name}", col))
-                elif col in csv_cols:
-                    print(f"  [ok] security_agents '{name}': {col!r}")
-                    if not connected_value:
+            if selected_csv_family != "mobile":
+                for index, agent in enumerate(config.security_agents):
+                    if not isinstance(agent, dict):
                         print(
-                            f"  [WARN] security_agents '{name}': connected_value is empty"
-                            " and any non-empty cell will count as connected"
+                            f"  [MISSING] security_agents[{index}] is not a mapping —"
+                            " cannot validate column settings"
                         )
-                else:
-                    print(
-                        f"  [MISSING] security_agents '{name}': {col!r} — not found in CSV"
-                    )
-                    mismatches.append((f"security_agents:{name}", col))
-            compliance_cols = [
-                ("failures_count_column", "compliance.failures_count_column"),
-                ("failures_list_column", "compliance.failures_list_column"),
-            ]
-            for key, label in compliance_cols:
-                col = str(config.compliance.get(key, "") or "").strip()
-                if not col:
-                    continue
-                if col in csv_cols:
-                    print(f"  [ok] {label}: {col!r}")
-                else:
-                    print(f"  [MISSING] {label}: {col!r} — not found in CSV")
-                    mismatches.append((label, col))
+                        mismatches.append((f"security_agents[{index}]", ""))
+                        continue
+                    name = str(agent.get("name", "") or "").strip() or f"security_agents[{index}]"
+                    col = str(agent.get("column", "") or "").strip()
+                    connected_value = str(agent.get("connected_value", "") or "").strip()
+                    if not col:
+                        print(
+                            f"  [MISSING] security_agents '{name}': no column configured"
+                        )
+                        mismatches.append((f"security_agents:{name}", col))
+                    elif col in csv_cols:
+                        print(f"  [ok] security_agents '{name}': {col!r}")
+                        if not connected_value:
+                            print(
+                                f"  [WARN] security_agents '{name}': connected_value is empty"
+                                " and any non-empty cell will count as connected"
+                            )
+                    else:
+                        print(
+                            f"  [MISSING] security_agents '{name}': {col!r} — not found in CSV"
+                        )
+                        mismatches.append((f"security_agents:{name}", col))
+                compliance_cols = [
+                    ("failures_count_column", "compliance.failures_count_column"),
+                    ("failures_list_column", "compliance.failures_list_column"),
+                ]
+                for key, label in compliance_cols:
+                    col = str(config.compliance.get(key, "") or "").strip()
+                    if not col:
+                        continue
+                    if col in csv_cols:
+                        print(f"  [ok] {label}: {col!r}")
+                    else:
+                        print(f"  [MISSING] {label}: {col!r} — not found in CSV")
+                        mismatches.append((label, col))
             if mismatches:
                 print(
                     f"\n  {len(mismatches)} column(s) not found."
@@ -7668,7 +8365,33 @@ def cmd_generate(
         notify_url: Optional Teams incoming webhook URL for post-generation notification.
         csv_extra: Optional list of additional CSV paths to merge with csv_path.
     """
+    selected_family_name: Optional[str] = None
+    selected_csv_origin = ""
+    if not csv_path:
+        manifest_csv, selected_family_name, manifest_note = _default_generate_csv(config)
+        if manifest_csv is not None:
+            csv_path = str(manifest_csv)
+            selected_csv_origin = f"report_families.{selected_family_name}"
+            print(f"Using manifest-selected {selected_family_name} CSV: {manifest_csv}")
+        elif manifest_note:
+            print(f"  [note] {manifest_note}")
+
     csv_path_obj = _resolve_cli_input_path(csv_path, config)
+    if csv_path_obj is not None and selected_family_name is None:
+        selected_family_name = _family_for_csv_path(config, csv_path_obj)
+    if csv_path_obj is not None and selected_family_name is None:
+        try:
+            header_df = pd.read_csv(csv_path_obj, nrows=0, encoding="utf-8-sig")
+            selected_family_name = _guess_report_family_from_headers(
+                config, header_df.columns.tolist()
+            )
+        except Exception:
+            selected_family_name = None
+    if csv_path_obj is not None and not selected_csv_origin:
+        if selected_family_name and _family_for_csv_path(config, csv_path_obj) == selected_family_name:
+            selected_csv_origin = f"report_families.{selected_family_name}"
+        else:
+            selected_csv_origin = "--csv"
     csv_path_str = str(csv_path_obj) if csv_path_obj else None
 
     output_cfg = config.output
@@ -7729,6 +8452,9 @@ def cmd_generate(
     jamf_cli_written: list[str] = []
     csv_written: list[str] = []
     chart_source = ""
+    source_details: list[dict[str, str]] = []
+    archived_csv_path: Optional[Path] = None
+    archived_csv_created: Optional[bool] = None
     if jamf_cli_enabled and bridge is not None:
         print(f"  jamf-cli data dir: {bridge._data_dir}")
         if jamf_cli_profile:
@@ -7762,7 +8488,14 @@ def cmd_generate(
         if csv_path_str:
             print("\nGenerating CSV sheets...")
             try:
-                csv_dash = CSVDashboard(config, csv_path_str, wb, fmts, extra_csv_paths=csv_extra)
+                csv_dash = CSVDashboard(
+                    config,
+                    csv_path_str,
+                    wb,
+                    fmts,
+                    family_name=selected_family_name or "computers",
+                    extra_csv_paths=csv_extra,
+                )
             except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
                 print(f"  [error] Cannot read CSV: {exc}")
                 print("  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export.")
@@ -7773,27 +8506,36 @@ def cmd_generate(
             print("\nNo CSV provided — skipping inventory sheets.")
             print("  Pass --csv path/to/export.csv to enable inventory analysis.")
 
-        hist_dir_obj = _cli_path(historical_csv_dir)
-        if hist_dir_obj is None:
-            hist_dir_obj = config.resolve_path("charts", "historical_csv_dir")
+        hist_dir_obj = _default_historical_dir(
+            config,
+            selected_family_name,
+            historical_csv_dir,
+        )
         hist_dir = str(hist_dir_obj) if hist_dir_obj else None
         if hist_dir_obj:
             print(f"  historical CSV dir: {hist_dir_obj}")
         if csv_path_str and hist_dir and config.get("charts", "archive_current_csv") is not False:
             try:
-                archived_path = _archive_csv_snapshot(csv_path_str, hist_dir)
-                if archived_path:
-                    print(f"  Archived CSV snapshot: {archived_path}")
+                archived_csv_path, archived_csv_created = _archive_csv_snapshot(csv_path_str, hist_dir)
+                if archived_csv_path:
+                    if archived_csv_created:
+                        print(f"  Archived CSV snapshot: {archived_csv_path}")
+                    else:
+                        print(f"  Reusing existing identical CSV snapshot: {archived_csv_path}")
             except OSError as exc:
                 print(f"  [warn] Could not archive CSV snapshot: {exc}")
 
         charts_enabled = config.get("charts", "enabled")
         if charts_enabled is None or charts_enabled:
             print("\nGenerating charts...")
+            chart_csv_path = csv_path_str if selected_family_name != "mobile" else None
+            chart_hist_dir = hist_dir if selected_family_name != "mobile" else None
+            if selected_family_name == "mobile":
+                print("  [note] Mobile CSV family selected; skipping CSV trend charts for this run.")
             chart_gen = ChartGenerator(
                 config,
-                csv_path_str,
-                hist_dir,
+                chart_csv_path,
+                chart_hist_dir,
                 out_path.parent,
                 wb,
                 jamf_cli_dir if jamf_cli_enabled else None,
@@ -7812,12 +8554,78 @@ def cmd_generate(
                 " --csv path/to/export.csv."
             )
 
+        if bridge is not None:
+            for report_type, info in sorted(bridge.all_source_info().items()):
+                mode = str(info.get("mode", "") or "").strip()
+                cached_path = info.get("cached_path")
+                cached_obj = cached_path if isinstance(cached_path, Path) else None
+                source_details.append(
+                    {
+                        "scope": report_type,
+                        "kind": _source_kind_from_mode(mode),
+                        "origin": f"jamf-cli {mode or 'cached'}".strip(),
+                        "family": _source_family_for_report_type(report_type),
+                        "path": str(cached_obj) if cached_obj else "",
+                        "timestamp": _path_timestamp_label(cached_obj),
+                        "age": _path_age_label(cached_obj),
+                        "notes": "live fetch" if mode == "live" else "",
+                    }
+                )
+        if csv_path_obj is not None:
+            source_details.append(
+                {
+                    "scope": "csv_inventory",
+                    "kind": (
+                        "csv_manifest_selected"
+                        if selected_csv_origin.startswith("report_families.")
+                        else "csv_cli_explicit"
+                    ),
+                    "origin": selected_csv_origin or "--csv",
+                    "family": selected_family_name or "",
+                    "path": str(csv_path_obj),
+                    "timestamp": _path_timestamp_label(csv_path_obj),
+                    "age": _path_age_label(csv_path_obj),
+                    "notes": "primary CSV input",
+                }
+            )
+        if archived_csv_path is not None:
+            archive_note = "archived current CSV snapshot"
+            if archived_csv_created is False:
+                archive_note = "reused existing identical snapshot"
+            source_details.append(
+                {
+                    "scope": "csv_archive",
+                    "kind": "csv_historical_archive",
+                    "origin": hist_dir or "historical_csv_dir",
+                    "family": selected_family_name or "",
+                    "path": str(archived_csv_path),
+                    "timestamp": _path_timestamp_label(archived_csv_path),
+                    "age": _path_age_label(archived_csv_path),
+                    "notes": archive_note,
+                }
+            )
+        if selected_family_name == "mobile":
+            source_details.append(
+                {
+                    "scope": "charts",
+                    "kind": "jamf_cli_or_cache_only",
+                    "origin": "mobile CSV workbook",
+                    "family": "mobile",
+                    "path": "",
+                    "timestamp": "",
+                    "age": "",
+                    "notes": "CSV trend charts are skipped for mobile CSV families in this release.",
+                }
+            )
+
         _write_report_sources_sheet(
             wb,
             fmts,
             generated_at,
             config,
             csv_path_str,
+            selected_family_name or "",
+            selected_csv_origin,
             hist_dir,
             str(bridge._data_dir) if bridge is not None else "",
             jamf_cli_profile if jamf_cli_enabled else "",
@@ -7827,6 +8635,7 @@ def cmd_generate(
             csv_written,
             chart_source,
             org_name=config.get("branding", "org_name") or "",
+            source_details=source_details,
         )
 
         wb.close()
@@ -9260,20 +10069,36 @@ def _collect_snapshots(
 
     archived = False
     csv_path_obj = _resolve_cli_input_path(csv_path, config)
-    hist_dir_obj = _cli_path(historical_csv_dir)
-    if hist_dir_obj is None:
-        hist_dir_obj = config.resolve_path("charts", "historical_csv_dir")
-    if hist_dir_obj:
-        print(f"  historical CSV dir: {hist_dir_obj}")
-    if (
-        csv_path_obj
-        and hist_dir_obj
-        and config.get("charts", "archive_current_csv") is not False
-    ):
-        archived_path = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
-        if archived_path:
-            archived = True
-            print(f"  [ok] Archived CSV snapshot: {archived_path}")
+    selected_family_name = _family_for_csv_path(config, csv_path_obj) if csv_path_obj else None
+    hist_dir_obj = _default_historical_dir(config, selected_family_name, historical_csv_dir)
+    if config.get("charts", "archive_current_csv") is not False:
+        if csv_path_obj and hist_dir_obj:
+            print(f"  historical CSV dir: {hist_dir_obj}")
+            archived_path, created = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
+            if archived_path:
+                archived = True
+                if created:
+                    print(f"  [ok] Archived CSV snapshot: {archived_path}")
+                else:
+                    print(f"  [ok] Reusing existing identical CSV snapshot: {archived_path}")
+        elif csv_path_obj is None:
+            for family_name in REPORT_FAMILY_NAMES:
+                family = _report_family_config(config, family_name)
+                if family.get("enabled") is not True:
+                    continue
+                latest_path, note = _latest_report_family_file(config, family_name)
+                hist_dir = _report_family_historical_dir(config, family_name)
+                print(f"  {family_name}: {note}")
+                if latest_path is None or hist_dir is None:
+                    continue
+                print(f"    historical dir: {hist_dir}")
+                archived_path, created = _archive_csv_snapshot(str(latest_path), str(hist_dir))
+                if archived_path:
+                    archived = True
+                    if created:
+                        print(f"    [ok] Archived: {archived_path}")
+                    else:
+                        print(f"    [ok] Reusing identical snapshot: {archived_path}")
 
     return collected, archived
 
@@ -9289,11 +10114,13 @@ def cmd_collect(
         if not _jamf_cli_enabled(config):
             raise SystemExit(
                 "Error: No snapshots collected. jamf-cli is disabled in config, so"
-                " pass --csv plus --historical-csv-dir to archive a CSV snapshot."
+                " pass --csv plus --historical-csv-dir or enable report_families to"
+                " archive CSV history."
             )
         raise SystemExit(
             "Error: No snapshots collected. Authenticate jamf-cli for live data or"
-            " pass --csv plus --historical-csv-dir to archive a CSV snapshot."
+            " pass --csv plus --historical-csv-dir or enable report_families to"
+            " archive CSV history."
         )
 
 
@@ -9735,6 +10562,8 @@ def cmd_launchagent_run(
         "mode": mode,
         "profile": str(config.jamf_cli.get("profile", "") or "").strip(),
         "report_path": None,
+        "selected_csv_family": None,
+        "selected_csv_origin": None,
         "selected_csv": None,
         "started_at": started_at,
         "status_file": status_file,
@@ -9747,25 +10576,31 @@ def cmd_launchagent_run(
 
     try:
         selected_csv: Optional[Path] = None
+        selected_family: Optional[str] = None
+        selected_origin = ""
         if mode in {"snapshot-only", "csv-assisted"}:
-            selected_csv, selection_note = _latest_csv_inbox_file(
+            selected_csv, selected_family, selected_origin, selection_note = _select_automation_csv(
+                config,
                 csv_inbox_dir,
                 csv_freshness_days,
             )
             print(selection_note)
             status["csv_selection_note"] = selection_note
+            status["selected_csv_family"] = selected_family
+            status["selected_csv_origin"] = selected_origin or None
             status["selected_csv"] = str(selected_csv) if selected_csv else None
 
         if mode == "snapshot-only":
+            snapshot_csv = str(selected_csv) if selected_origin == "csv_inbox" and selected_csv else None
             collected, archived = _collect_snapshots(
                 config,
-                str(selected_csv) if selected_csv else None,
+                snapshot_csv,
                 historical_csv_dir,
             )
             if collected == 0 and not archived:
                 raise SystemExit(
                     "Error: snapshot-only automation had nothing to collect."
-                    " Authenticate jamf-cli or provide a CSV inbox plus historical CSV directory."
+                    " Authenticate jamf-cli or configure report_families or a CSV inbox."
                 )
             status["collected_snapshots"] = collected
             status["archived_csv"] = archived

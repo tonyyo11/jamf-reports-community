@@ -105,6 +105,43 @@ columns:
 
 
 # =============================================================================
+# MOBILE CSV COLUMN MAPPING
+# =============================================================================
+# Used when you want workbook CSV sheets from a mobile-device export instead of
+# a computer export. This is separate from `columns` because one config can keep
+# both families defined in `report_families` without forcing one header mapping
+# to fit both schemas.
+#
+# The first mobile CSV release writes dedicated Mobile Device Inventory and
+# Mobile Stale Devices sheets plus custom_eas sheets. Trend charts still remain
+# jamf-cli-driven or computer-CSV-driven.
+
+mobile_columns:
+
+  # --- Core identity fields (required for mobile CSV sheets) ---
+
+  # Device display name in the mobile-device export.
+  device_name: "Display Name"
+
+  # Hardware serial number.
+  serial_number: "Serial Number"
+
+  # iOS / iPadOS / tvOS version string.
+  operating_system: "OS Version"
+
+  # Last inventory update / check-in timestamp.
+  last_checkin: "Last Inventory Update"
+
+  # --- Useful optional fields ---
+
+  email: "Email Address"
+  model: "Model"
+  device_family: "Device Family"
+  managed: "Managed"
+  supervised: "Supervised"
+
+
+# =============================================================================
 # SECURITY AGENTS
 # =============================================================================
 # Defines which third-party security tools to track.
@@ -371,6 +408,62 @@ custom_eas:
 
 
 # =============================================================================
+# REPORT FAMILIES
+# =============================================================================
+# Optional manifest for tenants that keep many emailed/exported Jamf CSVs.
+# Use this when you want one workspace to preserve multiple raw report streams
+# while still making it explicit which family drives the main workbook.
+#
+# Current behavior:
+# - report_families.computers drives generate/check when --csv is omitted
+# - if no computers family matches, report_families.mobile is the fallback
+# - collect archives the newest matching CSV for every enabled family into that
+#   family's historical_dir
+# - mobile can drive dedicated mobile CSV workbook sheets when mobile_columns is
+#   configured
+# - compliance remains an archival/discovery path today
+
+report_families:
+
+  computers:
+    enabled: false
+    # Folder where the current/raw computer-family exports land.
+    current_dir: "Jamf Reports/Pro"
+    # Historical store just for this family.
+    historical_dir: "snapshots/computers"
+    # Optional glob filters. Match on filename and path relative to current_dir.
+    include_globs:
+      - "*Computers*.csv"
+    exclude_globs:
+      - "*Portal - Applications*.csv"
+      - "*Out of date OS*.csv"
+    # Optional filename fragments used to prefer a baseline inventory export
+    # when multiple candidates match the include globs.
+    prefer_name_contains:
+      - "All Devices"
+      - "Checked in"
+
+  mobile:
+    enabled: false
+    current_dir: "Jamf Reports/Pro"
+    historical_dir: "snapshots/mobile"
+    include_globs:
+      - "*Mobile Devices*.csv"
+    exclude_globs: []
+    prefer_name_contains:
+      - "All Devices"
+
+  compliance:
+    enabled: false
+    current_dir: "Jamf Reports/Compliance"
+    historical_dir: "snapshots/compliance"
+    include_globs:
+      - "*Compliance*.csv"
+    exclude_globs: []
+    prefer_name_contains: []
+
+
+# =============================================================================
 # THRESHOLDS
 # =============================================================================
 # Global numeric thresholds used as defaults across multiple sheets.
@@ -462,10 +555,17 @@ charts:
 
   # Optional directory of dated CSV snapshots used for trend charts.
   # Relative paths resolve from the folder containing config.yaml.
+  # Best practice: keep one baseline computer inventory export (and optionally
+  # one baseline mobile inventory export) per cadence. If a single folder mixes
+  # equivalent exports like "Portal - Applications" and "Insights - All Devices",
+  # trend charts keep the largest same-day snapshot for that schema and ignore
+  # smaller duplicate candidates.
   historical_csv_dir: "snapshots"
 
   # When true, generate automatically copies the current --csv into
   # historical_csv_dir using a date/time-stamped filename.
+  # Re-running generate with the same unchanged CSV reuses the existing
+  # identical snapshot instead of copying another duplicate.
   archive_current_csv: true
 
   # macOS adoption charts: device counts per OS version over time.

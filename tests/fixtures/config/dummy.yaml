@@ -1,0 +1,86 @@
+columns:
+  computer_name: Computer Name
+  serial_number: Serial Number
+  operating_system: Operating System
+  last_checkin: Last Check-in
+  department: ""
+  manager: ""
+  email: ""
+  filevault: FileVault 2 Status
+  sip: System Integrity Protection
+  firewall: Firewall Enabled
+  gatekeeper: Gatekeeper
+  secure_boot: Secure Boot Level
+  bootstrap_token: Bootstrap Token Escrowed
+  disk_percent_full: Boot Drive Percentage Full
+  architecture: ""
+  model: Model
+  last_enrollment: Last Enrollment
+  mdm_expiry: MDM Profile Expiration Date
+
+mobile_columns:
+  device_name: ""
+  serial_number: ""
+  operating_system: ""
+  last_checkin: ""
+  email: ""
+  model: ""
+  device_family: ""
+  managed: ""
+  supervised: ""
+
+security_agents: []
+
+jamf_cli:
+  enabled: true
+  data_dir: ../jamf-cli-data
+  profile: dummy
+  use_cached_data: true
+  allow_live_overview: false
+
+protect:
+  enabled: false
+
+platform:
+  enabled: false
+  compliance_benchmarks: []
+
+compliance:
+  enabled: false
+  failures_count_column: ""
+  failures_list_column: ""
+  baseline_label: mSCP Compliance
+
+custom_eas: []
+
+thresholds:
+  stale_device_days: 30
+  critical_disk_percent: 90
+  warning_disk_percent: 80
+  cert_warning_days: 90
+
+output:
+  output_dir: Generated Reports
+  timestamp_outputs: false
+  archive_enabled: false
+  archive_dir: ""
+  keep_latest_runs: 2
+
+charts:
+  enabled: true
+  save_png: true
+  embed_in_xlsx: true
+  historical_csv_dir: ../snapshots/computers
+  archive_current_csv: false
+  os_adoption:
+    enabled: true
+    per_major_charts: true
+  compliance_trend:
+    enabled: true
+    bands:
+      - label: Pass
+        min_failures: 0
+        max_failures: 0
+        color: "#4472C4"
+  device_state_trend:
+    enabled: true

@@ -1,0 +1,228 @@
+Display Name,Shared iPad,Lost Mode Enabled,Full Name,Group,OS Rapid Security Response,Passcode Compliance,Passcode Status,Supervised,Capacity MB,EID,Serial Number,IP Address,Wi-Fi MAC Address,Last Enrollment,OS Version,OS Build,Asset Tag,Last Inventory Update,Available Space MB,Username,User Phone Number,Last Backup,Model,Managed,Used Space Percentage,Email Address,Battery Level,Hardware Encryption,Data Protection,Restrictions,Notes,Role
+Lobby Apple TV,No, ,,,Compliant,Not Present,Supervised,0,,C07T6QCZG9RM,38.126.164.226,08:66:98:D7:A6:D0,2017-06-06 15:43:44,10.2,14W265,,2017-11-06 08:27:09,0,,,1970-01-01 00:00:00,Apple TV 4th Generation,Managed,0,,0,Supported,False,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+ACME-F9FTFLUXHLF9,No,No,,,Compliant,Not Present,Supervised,27503,,F9FTFLUXHLF9,86.41.56.215,B4:9C:DF:9B:41:A8,2019-05-22 15:00:09,11.4.1,15G77,,2019-09-28 22:28:19,26217,,,1970-01-01 00:00:00,iPad 5th Generation (Wi-Fi),Managed,4,,25,Supported,False,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Non-Compliant iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+ACME-F18STQHVHG7K,No,No,,,Compliant,Present,Supervised,118116,,F18STQHVHG7K,83.202.103.186,D0:C5:F3:44:72:D6,2018-05-06 15:10:46,12.0,16A5308e,,2018-06-22 10:55:46,113208,,,1970-01-01 00:00:00,iPhone 7,Managed,4,,50,Supported,True,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPhones not in use
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+ACME-DY3T7WKAG9RM,No, ,,,Compliant,Not Present,Supervised,0,,DY3T7WKAG9RM,82.235.4.12,08:66:98:E0:F4:73,2018-07-16 08:23:23,13.4,17L256,,2020-05-05 04:06:10,0,,,1970-01-01 00:00:00,Apple TV 4th Generation,Managed,0,,0,Supported,False,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+Zoom-iPad-1,No,No,,,Compliant,Not Present,Supervised,118045,,G28WK12EHG7K,83.202.244.51,BC:E1:43:3E:C9:8C,2018-08-28 09:16:11,12.1.4,16D57,,2019-02-15 15:41:13,111921,,,1970-01-01 00:00:00,iPhone 7,Managed,5,,100,Supported,False,,,,Meeting Room iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPhones not in use
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+Zoom-iPad-2,No,No,,,Compliant,Not Present,Supervised,12251,,DLXQQ1QDGHK9,86.137.225.179,34:12:98:B4:58:3A,2018-10-25 15:53:34,11.4.1,15G77,,2018-12-17 12:18:15,11162,,,1970-01-01 00:00:00,iPad mini 4 (Wi-Fi),Managed,8,,0,Supported,False,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Meeting Room iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Non-Compliant iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+Zoom-iPad-3,No,No,,,Compliant,Not Present,Supervised,11601,,F9FR324CGHK9,188.29.165.29,04:52:F3:32:59:37,2019-07-19 13:36:54,12.3.1,16F203,,2019-07-19 13:37:17,10701,,,1970-01-01 00:00:00,iPad mini 4 (Wi-Fi),Managed,7,,2,Supported,False,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Meeting Room iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Non-Compliant iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+Zoom-iPad-4,No,No,,,Compliant,Not Present,Supervised,26886,,DMPT4S8SHG5D,86.137.225.179,50:32:37:10:63:A3,2018-10-25 16:25:46,12.1.1,16C50,,2018-12-17 00:37:29,24934,,,1970-01-01 00:00:00,iPad Air 2 (Wi-Fi),Managed,7,,49,Supported,False,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Meeting Room iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Non-Compliant iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+ACME-DLXS90W9HGJ2,No,No,,,Compliant,Not Present,Supervised,32768,,DLXS90W9HGJ2,92.184.110.216,E8:B2:AC:11:0F:EB,2020-11-10 09:41:19,14.1,18A8395,,2020-11-10 09:57:18,25414,,,1970-01-01 00:00:00,iPad mini 4 (Wi-Fi),Managed,22,,85,Supported,False,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Dummy Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Non-Compliant iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+HARBOR-H97F7GNLQ1GD,No,No,Ron Mante,,Compliant,Present,Supervised,32768,,H97F7GNLQ1GD,79.80.43.54,9C:FC:28:BE:9F:76,2023-07-24 09:00:52,26.3.1,23D8133,,2026-04-11 16:17:06,4013,ron.mante@jamfharbor.com,,1970-01-01 00:00:00,iPad 8th generation (Wi-Fi),Managed,87,ron.mante@jamfharbor.com,67,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Engineering Mobile Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+HARBOR-DMPF307BLM9C,No,No,Octavia Crist,(a),Compliant,Present,Supervised,262144,,DMPF307BLM9C,79.80.43.54,44:C6:5D:61:EF:ED,2023-08-23 20:51:35,26.3.1,23D8133,,2026-04-11 16:13:06,220725,octavia.crist@jamfharbor.com,,1970-01-01 00:00:00,iPad mini 5th generation (Wi-Fi),Managed,15,octavia.crist@jamfharbor.com,49,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+The Vision,No, ,,,Compliant,Not Present,Unsupervised,524288,,,100.11.133.218,,2024-07-22 16:37:03,2.0,22N5277g,,2024-07-22 16:37:12,469856,gary.jokesman,,1970-01-01 00:00:00,Apple Vision Pro,Unmanaged,10,gary.jokesman@acme.demo,8,Supported,False,,,, 
+Grady’s Personal iPad,No,No,Grady Archie,,Compliant,Not Present,Unsupervised,131072,,,79.80.43.54,,2024-11-28 14:39:55,15.8.3,19H386,,2025-01-22 11:15:47,120296,garchie@jamfdemo.it,,1970-01-01 00:00:00,iPad mini 4 (Wi-Fi),Unmanaged,8,garchie@jamfdemo.it,100,Supported,False,,,, 
+John’s Personal iPad,No,No,John Appleseed,,Compliant,Not Present,Unsupervised,131072,,,79.80.43.54,,2024-11-28 14:40:15,15.8.3,19H386,,2025-01-22 11:14:38,120158,jappleseed@jamfdemo.it,,1970-01-01 00:00:00,iPad mini 4 (Wi-Fi),Unmanaged,8,jappleseed@jamfdemo.it,100,Supported,False,,,, 
+Kathleen's iPhone XR,No,No,Kathleen Bruen,,Not Compliant,Present,Supervised,131072,89049032004008882600018002826917,FFWZN3E4KXK6,176.163.27.227,14:87:6A:6C:34:AF,2024-12-02 17:10:29,18.7.4,22H218,,2026-04-10 07:12:09,109739,kathleen.bruen@jamfharbor.com,,1970-01-01 00:00:00,iPhone XR,Managed,16,kathleen.bruen@jamfharbor.com,96,Supported,True,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Untrusted Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Active devices not running iOS 26.1.0
+iPhone,No,No,Sven Shanahan,,Compliant,Present,Supervised,32768,,DX3TFS8DHTVV,86.10.42.169,E4:E4:AB:7C:E9:ED,2024-12-12 16:22:44,15.8.3,19H386,,2025-08-05 10:50:25,21797,sven.shanahan@jamfharbor.com,,1970-01-01 00:00:00,iPhone SE,Managed,33,sven.shanahan@jamfharbor.com,65,Supported,True,,,,Last Inventory Update > 30 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Engineering Mobile Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Untrusted Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update > 7 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPhones not in use
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+iPhone,No,No,Gerard Daugherty,,Compliant,Present,Supervised,65536,,F4HQ9278GRY9,176.163.27.227,CC:20:E8:7B:26:35,2024-12-03 14:27:06,15.8.3,19H386,,2026-04-11 20:02:34,50870,gerard.daugherty@jamfharbor.com,,1970-01-01 00:00:00,iPhone 6S,Managed,22,gerard.daugherty@jamfharbor.com,100,Supported,True,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Untrusted Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Active devices not running iOS 26.1.0
+iPhone ,No,No,Gerard Daugherty,,Compliant,Present,Supervised,65536,,F4JQN3T4GRY9,176.163.27.227,38:CA:DA:C4:7C:25,2024-12-03 14:32:07,15.5,19F77,,2026-01-02 20:16:07,49827,gerard.daugherty@jamfharbor.com,,1970-01-01 00:00:00,iPhone 6S,Managed,23,gerard.daugherty@jamfharbor.com,100,Supported,True,,,,Last Inventory Update > 30 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Untrusted Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update > 7 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPhones not in use
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+Sven’s iPad,No,No,Sven Shanahan,,Compliant,Present,Supervised,131072,,F9FXH0PSGHKJ,86.10.42.169,54:99:63:10:06:80,2024-12-12 15:16:16,15.8.3,19H386,,2025-09-06 17:50:16,119456,sven.shanahan@jamfharbor.com,,1970-01-01 00:00:00,iPad mini 4 (Wi-Fi),Unmanaged,8,sven.shanahan@jamfharbor.com,85,Supported,True,,,, 
+iPhone,No,No,Sven Shanahan,,Compliant,Present,Supervised,262144,89049032006008882600110675452048,F17F53GL0D95,86.6.242.187,40:C7:11:79:D7:EA,2024-12-12 17:02:14,17.6.1,21G93,,2024-12-12 17:02:35,247767,sven.shanahan@jamfharbor.com,,1970-01-01 00:00:00,iPhone 12 Pro,Unmanaged,5,sven.shanahan@jamfharbor.com,79,Supported,True,,,, 
+Megan’s Super iPad,No,No,Megan Bower,,Compliant,Present,Unsupervised,131072,,,79.80.43.54,,2024-12-13 09:41:53,17.7.10,21H450,,2026-01-11 16:53:57,115508,mbower@jamfdemo.it,,1970-01-01 00:00:00,iPad 6th Generation (Wi-Fi),Unmanaged,11,mbower@jamfdemo.it,45,Supported,True,,,, 
+Gradie’s Test iPad,No,No,Grady Archie,,Not Compliant,Not Present,Unsupervised,32768,,,79.80.43.54,,2024-12-13 09:43:25,18.2.1,22C161,,2025-01-21 23:14:03,8760,garchie@jamfdemo.it,,1970-01-01 00:00:00,iPad 8th generation (Wi-Fi),Managed,73,garchie@jamfdemo.it,65,Supported,False,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update > 30 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Untrusted Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update > 7 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Personally Owned Devices - BYOD
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Non-Compliant iPads
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+Melyna’s iPad Pro,No,No,Melyna Boyer,,Compliant,Present,Unsupervised,65536,,DMPXJ66TKD6J,188.91.240.44,4C:56:9D:16:0C:64,2024-12-20 09:02:50,18.2,22C152,,2025-10-06 13:04:38,50611,melyna.boyer@jamfharbor.com,,1970-01-01 00:00:00,iPad Pro (11-inch Wi-Fi),Unmanaged,22,melyna.boyer@jamfharbor.com,100,Supported,True,,,, 
+iPhone de Thomas,No,No,Kathleen Bruen,,Not Compliant,Present,Supervised,65536,89049032005008882600033655382313,F17Z9987N6Y3,176.163.27.227,8C:86:1E:C6:6F:BC,2025-01-27 15:29:46,26.4,23E246,,2026-04-10 07:12:24,10237,kathleen.bruen@jamfharbor.com,,1970-01-01 00:00:00,iPhone 11 Pro,Managed,84,kathleen.bruen@jamfharbor.com,95,Supported,True,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+Apple Vision Pro de Vincent,No, ,John Appleseed,,Compliant,Not Present,Unsupervised,262144,,,79.80.43.54,,2025-01-21 15:52:25,2.2,22N842,,2025-01-21 15:52:31,222713,jappleseed@jamfdemo.it,,1970-01-01 00:00:00,Apple Vision Pro,Managed,15,jappleseed@jamfdemo.it,13,Supported,False,,,,Last Inventory Update > 30 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Engineering Mobile Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update > 7 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Personally Owned Devices - BYOD
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+Apple Vision Pro de Vincent,No, ,John Appleseed,,Compliant,Present,Unsupervised,262144,,J6GG3QTDR6,79.80.43.54,2C:57:CE:E1:C2:22,2025-01-21 16:25:58,2.2,22N842,,2025-01-21 16:30:05,221551,jappleseed@jamfdemo.it,,1970-01-01 00:00:00,Apple Vision Pro,Unmanaged,15,jappleseed@jamfdemo.it,17,Supported,True,,,, 
+Kavan’s iPhone,No,No,Megan Bower,,Compliant,Not Present,Unsupervised,131072,,,223.233.81.188,,2025-01-22 06:38:10,17.6.1,21G93,,2025-01-22 06:38:24,43335,mbower@jamfdemo.it,,1970-01-01 00:00:00,iPhone 13,Managed,66,mbower@jamfdemo.it,64,Supported,False,,,,Last Inventory Update > 30 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update > 7 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Personally Owned Devices - BYOD
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPhones not in use
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+HARBOR-H97F80LWQ1GD,No,No,Jameson Mayer,(a),Compliant,Present,Supervised,32768,,H97F80LWQ1GD,79.80.43.54,9C:FC:28:C9:74:C5,2025-06-24 07:44:43,26.3.1,23D8133,,2026-04-11 16:12:29,9202,jameson.mayer@jamfharbor.com,,1970-01-01 00:00:00,iPad 8th generation (Wi-Fi),Managed,71,jameson.mayer@jamfharbor.com,46,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Engineering Mobile Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+Marketing’s iPad,No,No,Sonia Koss,,Compliant,Present,Unsupervised,131072,,F9FXH0R4GHKJ,79.80.43.54,54:99:63:13:99:14,2025-01-22 16:37:00,15.8.3,19H386,,2025-09-21 22:12:50,85583,sonia.koss@jamfharbor.com,,1970-01-01 00:00:00,iPad mini 4 (Wi-Fi),Managed,34,sonia.koss@jamfharbor.com,9,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update > 30 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Untrusted Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update > 7 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Unsupervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+Engineering iPad,No,No,Marc Ratke,,Compliant,Present,Unsupervised,131072,,F9FXH00BGHKJ,79.80.43.54,54:99:63:04:C9:F8,2025-01-22 17:03:02,15.8.3,19H386,,2026-04-11 15:32:18,116073,marc.ratke@jamfharbor.com,,1970-01-01 00:00:00,iPad mini 4 (Wi-Fi),Managed,11,marc.ratke@jamfharbor.com,47,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Engineering Mobile Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Untrusted Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Unsupervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with vulnerable OS version
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Devices with updates
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Active devices not running iOS 26.1.0
+HARBOR-FH2XQ4XVN4,No,No,Samir Weissnat,,Not Compliant,Present,Supervised,65536,,FH2XQ4XVN4,158.41.63.10,F8:B1:DD:AD:70:44,2025-12-11 15:45:19,26.4,23E246,,2026-04-12 02:07:33,37531,samir.weissnat@jamfharbor.com,,1970-01-01 00:00:00,iPad mini 6th generation (Wi-Fi),Managed,42,samir.weissnat@jamfharbor.com,100,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+HARBOR-NGCTV3CJ2C,No,No,Kathleen Bruen,,Compliant,Present,Supervised,65536,,NGCTV3CJ2C,158.41.63.10,F8:B1:DD:AF:5D:E2,2025-12-11 15:53:08,26.4,23E246,,2026-04-12 02:23:33,36559,kathleen.bruen@jamfharbor.com,,1970-01-01 00:00:00,iPad mini 6th generation (Wi-Fi),Managed,44,kathleen.bruen@jamfharbor.com,99,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+HARBOR-H07Y59T01F,No,No,Hilbert Stracke,,Not Compliant,Present,Supervised,131072,,H07Y59T01F,158.41.63.10,7C:2A:CA:4F:E6:62,2025-12-11 16:00:23,26.4,23E246,,2026-04-11 17:51:41,102165,hilbert.stracke@jamfharbor.com,,1970-01-01 00:00:00,iPad Pro (11-inch) (4th generation),Managed,22,hilbert.stracke@jamfharbor.com,100,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+HARBOR-DMPZC63QKD6L,No,No,Shyann Greenholt,,Compliant,Present,Supervised,262144,,DMPZC63QKD6L,158.41.63.10,34:42:62:7F:C9:D2,2025-12-11 16:24:54,26.4,23E246,,2026-04-12 11:26:27,233838,shyann.greenholt@jamfharbor.com,,1970-01-01 00:00:00,iPad Pro (11-inch Wi-Fi),Managed,10,shyann.greenholt@jamfharbor.com,100,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS
+HARBOR-DLXY5331K7M9,No,No,Sonia Koss,,Compliant,Present,Supervised,65536,,DLXY5331K7M9,158.41.63.10,EC:2C:E2:9E:68:3B,2025-12-11 16:35:06,26.4,23E246,,2026-04-11 18:06:52,37258,sonia.koss@jamfharbor.com,,1970-01-01 00:00:00,iPad Pro (12.9-inch Wi-Fi) (3rd Generation),Managed,43,sonia.koss@jamfharbor.com,100,Supported,True,,,,iOS Device Compliance - Enrolment
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iOS Device Compliance - Fully Compliant
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Corporate Devices - Supervised
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,All Managed Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Data Protection Enabled
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Network Relay Capable Devices
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,Last Inventory Update < 2 days
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,iPads without POS

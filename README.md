@@ -5,6 +5,8 @@ a Jamf Pro CSV export — no Power BI, no custom infrastructure, no hardcoded cr
 
 Long-form setup and operations docs live in the [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki).
 
+Automated testing docs and fixture guidance live in [docs/testing.md](docs/testing.md).
+
 ---
 
 ## What This Is
@@ -36,6 +38,10 @@ and depends on a jamf-cli build that exposes the new `pro report` platform comma
 **Open source direction:** this repo is intentionally meant to be extended. If your
 environment needs Jamf Protect, Jamf Platform API data, deeper EA visualizations, or more
 opinionated compliance views, fork it and iterate.
+
+**Committed test data:** the automated tests use committed fixtures under `tests/fixtures/`.
+Those fixtures are derived from Jamf-provided fake/demo data from the local `Dummy/` and
+`Harbor/` workspaces, not production or customer data.
 
 ---
 
@@ -163,6 +169,41 @@ Jamf Reports/
 The community tool supports that layout, but does not require it.
 
 Use `python3 jamf-reports-community.py ...` in examples and automation.
+
+---
+
+## Automated Tests
+
+Install dev dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the automated suite:
+
+```bash
+python3 -m pytest tests -q
+```
+
+Or use the repo wrapper:
+
+```bash
+./scripts/test.sh
+```
+
+The committed fixture corpus is intentionally curated rather than keeping full timestamped
+workspace histories in git. See [docs/testing.md](docs/testing.md) for fixture provenance,
+refresh workflow, and how to add fresh dated snapshots for historical-trend testing.
+
+If you want pushes to run the local test gate automatically, enable the repo-managed hook:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+That installs the committed `pre-push` hook, which runs `./scripts/test.sh` before git
+push completes.
 
 ---
 
@@ -319,10 +360,10 @@ python3 jamf-reports-community.py launchagent-setup --config config.yaml
 
 The setup command can build these workflow types:
 
-- `snapshot-only` — refresh jamf-cli snapshots and optional CSV history only
+- `snapshot-only` — refresh jamf-cli snapshots and archive per-family CSV history only
 - `jamf-cli-only` — generate a workbook from live or cached jamf-cli data
 - `jamf-cli-full` — build a jamf-cli baseline CSV, refresh snapshots, and generate a workbook
-- `csv-assisted` — prefer the newest CSV in an inbox folder and fall back to jamf-cli-only
+- `csv-assisted` — prefer a manifest-selected CSV first, then an inbox CSV, plus jamf-cli data
 
 Schedules currently support `daily`, `weekdays`, `weekly`, and `monthly`.
 
@@ -358,7 +399,12 @@ python3 jamf-reports-community.py generate \
 | `--out-file` | auto-named | Output path for the xlsx file. Timestamp appended by default if needed |
 | `--historical-csv-dir` | none | Directory of dated CSV snapshots for trend charts |
 
-If you omit `--csv`, the workbook is built from jamf-cli data only.
+If you omit `--csv`, the workbook is built from jamf-cli data only unless a matching
+report family is enabled. `report_families.computers` is preferred; if no computer
+family matches, `report_families.mobile` is used as a fallback. Mobile CSV workbook runs
+use `mobile_columns` and currently write dedicated mobile inventory/stale sheets plus
+`custom_eas`. CSV trend charts remain computer-focused, so mobile CSV runs keep charts on
+the jamf-cli side for now.
 
 Examples:
 
@@ -366,6 +412,9 @@ Examples:
 # Mixed workbook: create a baseline CSV, then build jamf-cli sheets plus CSV sheets
 python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file inventory.csv
 python3 jamf-reports-community.py generate --config config.yaml --csv inventory.csv
+
+# Mobile CSV workbook with dedicated mobile mappings
+python3 jamf-reports-community.py generate --config config.yaml --csv mobile_export.csv
 
 # jamf-cli-only workbook
 python3 jamf-reports-community.py generate --config config.yaml --out-file jamf_report_jamf_cli_only.xlsx
@@ -389,6 +438,9 @@ software install distribution when the installed jamf-cli build supports them. W
 for the blueprint, DDM, and optional benchmark sheets. The saved JSON files are already
 timestamped; the generated report outputs can also auto-archive older runs out of the
 active output folder.
+
+When `report_families` is enabled, `collect` also archives the newest matching CSV for
+each enabled family into that family's `historical_dir`, even when `--csv` is omitted.
 
 ### `inventory-csv` — Export a wide inventory CSV from jamf-cli
 
@@ -462,7 +514,7 @@ python3 jamf-reports-community.py workspace-init \
 ```bash
 python3 jamf-reports-community.py launchagent-setup \
     [--config config.yaml] \
-    [--mode csv-assisted] \
+    [--mode jamf-cli-only] \
     [--schedule weekdays] \
     [--time-of-day 07:00]
 ```
@@ -476,8 +528,9 @@ Why use it:
 - scheduled `collect` and `generate` runs build better historical data over time
 - LaunchAgents keep automation scoped to the same macOS user account that owns the
   `jamf-cli` profile and config
-- `csv-assisted` can consume emailed Jamf exports from a folder but still fall back to
-  jamf-cli-only output when no fresh CSV is present
+- `jamf-cli-only` is the default because it is the simplest and most reliable path
+- `csv-assisted` prefers `report_families` first, then can consume emailed Jamf exports
+  from an inbox folder, while still keeping jamf-cli as the primary backend
 
 Examples:
 
@@ -601,6 +654,27 @@ to skip the corresponding feature.
 For `manager`, use a real manager EA or directory-derived field. Do not map it to Jamf's
 built-in `Managed` / `Unmanaged` status column.
 
+### `mobile_columns`
+
+Maps logical field names to a mobile-device CSV export when you want workbook sheets from
+`report_families.mobile` or an explicit mobile `--csv` path.
+
+```yaml
+mobile_columns:
+  device_name: "Display Name"
+  serial_number: "Serial Number"
+  operating_system: "OS Version"
+  last_checkin: "Last Inventory Update"
+  email: "Email Address"
+  model: "Model"
+  device_family: "Device Family"
+  managed: "Managed"
+  supervised: "Supervised"
+```
+
+Keep this separate from `columns`. Mixed environments often need both computer and mobile
+families in one config, and one header mapping cannot credibly serve both schemas.
+
 ### `security_agents`
 
 A list of third-party security tools to track. Each entry drives a row in the Security
@@ -669,6 +743,44 @@ compliance:
 ```
 
 Set `enabled: false` to skip the Compliance sheet entirely.
+
+### `report_families`
+
+Optional manifest for tenants that keep many Jamf CSV families in one workspace.
+
+```yaml
+report_families:
+  computers:
+    enabled: true
+    current_dir: "Jamf Reports/Pro"
+    historical_dir: "snapshots/computers"
+    include_globs:
+      - "*Computers*.csv"
+    exclude_globs:
+      - "*Portal - Applications*.csv"
+    prefer_name_contains:
+      - "All Devices"
+```
+
+Use this when you want to preserve many raw emailed/exported report streams without
+pointing one workbook at the entire archive root.
+
+Current behavior:
+- `report_families.computers` drives `check` and `generate` when `--csv` is omitted.
+- If no computers family matches, `report_families.mobile` is the fallback.
+- `collect` archives the newest matching CSV for every enabled family into that family's
+  `historical_dir`.
+- `mobile` can now drive dedicated mobile CSV workbook sheets when `mobile_columns` is
+  configured.
+- `compliance` remains useful for archival/discovery and future automation, but it is not
+  auto-merged into workbook CSV sheets yet.
+
+Practical guidance:
+- Keep one baseline computer inventory family for the main workbook.
+- Keep one mobile family if you want either historical preservation or mobile CSV
+  workbooks.
+- Keep specialized searches like patching, local admin, or OS compliance in separate
+  family folders instead of mixing them into the baseline computer history.
 
 ### `custom_eas`
 
@@ -815,6 +927,13 @@ into the historical snapshot directory using a date/time-stamped filename. Snaps
 filenames must contain a date in `YYYY-MM-DD`, `YYYYMMDD`, `YYYY-MM-DD_HHMMSS`, or
 `YYYY-MM-DDTHHMMSS` format. The script scans subfolders recursively and ignores CSV files
 that do not contain the configured chart columns.
+
+If you keep many Jamf exports in one folder, prefer one baseline computer inventory export
+and, if needed, one baseline mobile inventory export per cadence. Equivalent same-day CSVs
+with the same schema are deduped for trend charts by keeping the largest snapshot, so an
+all-devices export wins over smaller subset exports. Re-running `generate` with the same
+unchanged CSV also reuses the existing identical archived snapshot instead of creating
+another duplicate copy.
 
 #### Cached jamf-cli snapshots
 

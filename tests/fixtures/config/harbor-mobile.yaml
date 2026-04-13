@@ -1,0 +1,86 @@
+columns:
+  computer_name: ""
+  serial_number: ""
+  operating_system: ""
+  last_checkin: ""
+  department: ""
+  manager: ""
+  email: ""
+  filevault: ""
+  sip: ""
+  firewall: ""
+  gatekeeper: ""
+  secure_boot: ""
+  bootstrap_token: ""
+  disk_percent_full: ""
+  architecture: ""
+  model: ""
+  last_enrollment: ""
+  mdm_expiry: ""
+
+mobile_columns:
+  device_name: Display Name
+  serial_number: Serial Number
+  operating_system: OS Version
+  last_checkin: Last Inventory Update
+  email: Email Address
+  model: Model
+  device_family: ""
+  managed: Managed
+  supervised: Supervised
+
+security_agents: []
+
+jamf_cli:
+  enabled: false
+  data_dir: ../jamf-cli-data
+  profile: ""
+  use_cached_data: true
+  allow_live_overview: false
+
+protect:
+  enabled: false
+
+platform:
+  enabled: false
+  compliance_benchmarks: []
+
+compliance:
+  enabled: false
+  failures_count_column: ""
+  failures_list_column: ""
+  baseline_label: mSCP Compliance
+
+custom_eas: []
+
+thresholds:
+  stale_device_days: 30
+  critical_disk_percent: 90
+  warning_disk_percent: 80
+  cert_warning_days: 90
+
+output:
+  output_dir: Generated Reports
+  timestamp_outputs: false
+  archive_enabled: false
+  archive_dir: ""
+  keep_latest_runs: 2
+
+charts:
+  enabled: false
+  save_png: false
+  embed_in_xlsx: false
+  historical_csv_dir: ""
+  archive_current_csv: false
+  os_adoption:
+    enabled: false
+    per_major_charts: false
+  compliance_trend:
+    enabled: false
+    bands:
+      - label: Pass
+        min_failures: 0
+        max_failures: 0
+        color: "#4472C4"
+  device_state_trend:
+    enabled: false

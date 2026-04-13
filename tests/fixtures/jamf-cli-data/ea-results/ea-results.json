@@ -1,0 +1,608 @@
+[
+  {
+    "definition_id": "2",
+    "device": "Backancient",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Batgarnet",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Beetledent",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Bisonlead",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Bitegrove",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Boalime",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Boltpalm",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Bonesprout",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Bowweed",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Buffalomad",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Bunnysprout",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Burnevening",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Butterflycookie",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Catchersleet",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Choppermisty",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Collarlava",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Condorbead",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Condorscratch",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Cowlcoconut",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Cowlnova",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Crusherrapid",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Dancerquill",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Divebrook",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Doommuck",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Drifterfluff",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Falconpink",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Ferretash",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Fighterbevel",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Fighterspiral",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Fingereast",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Fingersleet",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Fishwest",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Flamebrindle",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Flyrelic",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Flysunrise",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Followerrain",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Friendoil",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Friendpond",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Gazelleroot",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Glazercypress",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Griffinfierce",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Harebrindle",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Hawkbig",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Hawkquiver",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Heronzest",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Hornnoble",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Horserelic",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Howlersouth",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Huntersour",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Jaguarruby",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Keeperthorn",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Kickercat",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Lightningcanyon",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Lightningsand",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Lizardash",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Marecitrine",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Mastergentle",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Mindbold",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Minnowlizard",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Oriolewool",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Palmfortune",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Panthercat",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Parrotpeach",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Piratequilt",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Rabbitfrill",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Raccoonpuddle",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Ratjungle",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Raycyber",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Rayhollow",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Rayriver",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Ridgetabby",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Ridgetide",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Rippercitrine",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Roarerviridian",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Robinlava",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Sagecyan",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Sagelavender",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Scaleorange",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Scorpionflame",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Sentryfish",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Sentrylava",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Sightsand",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Skullshallow",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Snakecrocus",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Snarlquilt",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Snoutshade",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Songsouth",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Spearsolar",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Spikespectrum",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Stalkerjelly",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Stingerash",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Stingfan",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Terrierwind",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Tester Pro",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Thunderindigo",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Toothtitanium",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Tradermica",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Voicerogue",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Voleheather",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Whimseyluck",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  },
+  {
+    "definition_id": "2",
+    "device": "Whimseyshy",
+    "ea_name": "JNUC-2019-LabUser",
+    "value": ""
+  }
+]

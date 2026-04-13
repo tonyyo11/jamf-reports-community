@@ -1,0 +1,20 @@
+[
+  {
+    "compliance_pct": "N/A",
+    "id": "1",
+    "latest": "11.26.1",
+    "on_latest": 0,
+    "on_other": 0,
+    "title": "Jamf Self Service for macOS",
+    "total": 0
+  },
+  {
+    "compliance_pct": "N/A",
+    "id": "2",
+    "latest": "149.0.2",
+    "on_latest": 0,
+    "on_other": 0,
+    "title": "Mozilla Firefox",
+    "total": 0
+  }
+]
