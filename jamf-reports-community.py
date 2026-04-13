@@ -1845,6 +1845,37 @@ def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[
     return dest, True
 
 
+def _load_prior_snapshot(
+    historical_dir: str,
+    current_csv_path: str,
+) -> tuple[Optional["pd.DataFrame"], Optional[str]]:
+    """Load the most-recent snapshot that is *not* the current CSV.
+
+    Used by Fleet Drift to compare the current run against the previous run.
+    Returns (dataframe, snapshot_path_str), or (None, None) when no prior
+    snapshot exists or when required columns are missing.
+
+    Args:
+        historical_dir: Path to the snapshot directory.
+        current_csv_path: Absolute path of the current-run CSV so it can be
+            excluded from the "prior" search (even if it was just archived
+            under a timestamped name).
+
+    Returns:
+        Tuple of (prior_df, prior_path_str), or (None, None).
+
+    TODO: Implement this function. Strategy:
+        1. List all .csv files in historical_dir sorted by mtime descending.
+        2. Exclude any file whose SHA-256 matches the current CSV (same content
+           as current run — use _sha256_file).
+        3. Return pd.read_csv on the first remaining candidate.
+        4. If the candidate has a different column schema, return (None, None)
+           with a warning rather than erroring.
+    """
+    # TODO: implement
+    raise NotImplementedError("_load_prior_snapshot is not yet implemented")
+
+
 def _age_label_from_seconds(total_seconds: int) -> str:
     """Return a short human-readable age label from a second count."""
     if total_seconds < 120:
@@ -6384,6 +6415,25 @@ class CSVDashboard:
                 print(f"  [skip] {ea_name}: {exc}")
             except Exception as exc:
                 print(f"  [skip] {ea_name}: unexpected error — {type(exc).__name__}: {exc}")
+
+        # Fleet Drift: compare current run against prior snapshot.
+        # Skipped when _prior_df is None (no historical dir, or no prior snapshot found).
+        # TODO: set self._prior_df and self._prior_label during __init__ once
+        #       _load_prior_snapshot is implemented.
+        prior_df = getattr(self, "_prior_df", None)
+        prior_label = getattr(self, "_prior_label", "")
+        if prior_df is not None:
+            try:
+                self._write_fleet_drift(prior_df, prior_label)
+                written.append("Fleet Drift")
+                print("  [ok] Fleet Drift")
+            except NotImplementedError:
+                pass  # scaffold: not yet implemented
+            except (KeyError, ValueError, RuntimeError) as exc:
+                print(f"  [skip] Fleet Drift: {exc}")
+            except Exception as exc:
+                print(f"  [skip] Fleet Drift: unexpected error — {type(exc).__name__}: {exc}")
+
         return written
 
     def _col(self, logical: str) -> Optional[str]:
@@ -6476,6 +6526,45 @@ class CSVDashboard:
                 row_i += 1
         ws.set_column(0, 0, 30)
         ws.set_column(1, 5, 22)
+
+    def _write_fleet_drift(self, prior_df: "pd.DataFrame", prior_label: str) -> None:
+        """Write a Fleet Drift sheet comparing current fleet snapshot to the prior run.
+
+        Sections (each skipped gracefully when required columns are absent):
+          - New Enrollments: devices in current CSV but not in prior
+          - Departed Devices: devices in prior CSV but not in current
+          - New Stale: devices active in prior run, stale in current
+          - Recovered Stale: devices stale in prior run, active in current
+          - OS Changed: devices whose OS version changed between runs
+          - Compliance Changed: devices whose failure count changed (requires
+            compliance.failures_count_column to be configured)
+
+        Sheet header includes the delta period (current date vs. prior snapshot date).
+
+        Args:
+            prior_df: DataFrame from the prior snapshot loaded by _load_prior_snapshot.
+            prior_label: Human-readable label for the prior snapshot (e.g. a filename
+                or date string) for display in the sheet header.
+
+        TODO: Implement this method. Design notes:
+            - Use serial_number as the join key (always present, always stable).
+            - Compute set differences: current_serials - prior_serials (new),
+              prior_serials - current_serials (departed).
+            - For stale transitions: compare _days_since(checkin) against
+              stale_device_days threshold in both DataFrames.
+            - For OS drift: join on serial_number, compare operating_system column.
+            - For compliance drift: join on serial_number, compare the numeric value
+              in failures_count_column. A device is "drifted" if it was 0 in prior
+              and >0 in current, or >0 in prior and 0 in current.
+            - Each section should be a separate sub-table within the same worksheet,
+              with a bold section header row and an empty separator row between sections.
+            - If a section has zero rows, print a "No changes" message row instead of
+              omitting the section header — this makes it clear the comparison ran.
+            - If a required column is missing from either DataFrame, skip that section
+              with a [skip] note rather than raising.
+        """
+        # TODO: implement
+        raise NotImplementedError("_write_fleet_drift is not yet implemented")
 
     def _write_mobile_inventory_csv(self) -> None:
         """Write a mobile CSV inventory sheet using mobile_columns mappings."""
