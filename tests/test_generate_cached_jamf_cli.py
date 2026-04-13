@@ -30,11 +30,19 @@ def test_generate_from_committed_cached_jamf_cli_data(
         "Inventory Summary",
         "Device Compliance",
         "Patch Compliance",
+        "Smart Groups",
         "Update Status",
         "Update Failures",
         "Report Sources",
     }
     assert expected.issubset(set(workbook.sheetnames))
+    sheet = workbook["Smart Groups"]
+    assert sheet["A4"].value == "Group Name"
+    assert sheet["A5"].value == "3PL AMR Security Profile - 2.0 60 Minute Screensaver"
+    assert sheet["B5"].value == "Computer"
+    assert sheet["C5"].value == "No"
+    assert sheet["D5"].value == 0
+    assert sheet["G5"].value == "Zero members"
 
 
 @pytest.mark.integration
