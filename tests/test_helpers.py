@@ -33,7 +33,7 @@ def test_safe_write_sanitizes_formula_control_chars_and_inf(tmp_path: Path, jrc)
 
     loaded = openpyxl.load_workbook(workbook_path, data_only=False)
     sheet = loaded["Sheet1"]
-    assert sheet["A1"].value == "=SUM(1,2)"
+    assert sheet["A1"].value == "\t=SUM(1,2)"
     assert sheet["A1"].data_type == "s"
     assert sheet["A2"].value == "helloworld"
     assert sheet["A3"].value == 0
