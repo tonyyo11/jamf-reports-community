@@ -314,10 +314,11 @@ def _safe_write(
         )
         value = value[:32000]
         if value.lstrip() and value.lstrip()[0] in ("=", "+", "-", "@"):
+            safe_value = "\t" + value
             if fmt:
-                worksheet.write_string(row, col, value, fmt)
+                worksheet.write_string(row, col, safe_value, fmt)
             else:
-                worksheet.write_string(row, col, value)
+                worksheet.write_string(row, col, safe_value)
             return
 
     if fmt:
@@ -443,7 +444,11 @@ def _archive_old_output_runs(
             dest = family_archive_dir / path.name
             if dest.exists():
                 dest = family_archive_dir / f"{path.stem}_{_file_stamp()}{path.suffix}"
-            shutil.move(str(path), str(dest))
+            try:
+                shutil.move(str(path), str(dest))
+            except OSError as e:
+                print(f"[warning] could not archive {path}: {e}")
+                continue
             moved.append(dest)
 
     return moved
@@ -956,10 +961,13 @@ def _write_status_file(path_value: Optional[str], status: dict[str, Any]) -> Non
     if not path_value:
         return
     path = Path(path_value).expanduser()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as fh:
-        json.dump(status, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as fh:
+            json.dump(status, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+    except OSError as e:
+        print(f"[warning] could not write status file {path}: {e}")
 
 
 def _require_existing_config_path(path_value: str) -> Path:
@@ -999,14 +1007,17 @@ def _load_workspace_seed_config(seed_config_path: Optional[str]) -> tuple["Confi
 
 def _find_jamf_cli_binary() -> Optional[str]:
     """Return the best available jamf-cli binary path."""
+    env_override = os.environ.get("JAMFCLI_PATH", "")
     candidates = [
-        os.environ.get("JAMFCLI_PATH", ""),
+        env_override,
         shutil.which("jamf-cli") or "",
         "/opt/homebrew/bin/jamf-cli",
         "/usr/local/bin/jamf-cli",
     ]
     for path in candidates:
         if path and Path(path).is_file() and os.access(path, os.X_OK):
+            if path == env_override:
+                print(f"[info] using JAMFCLI_PATH override: {path}")
             return path
     return None
 
@@ -4983,7 +4994,7 @@ class CoreDashboard:
         summary = next(
             (i.get("data", i) for i in items if i.get("section") == "summary"), {}
         )
-        total = int(summary.get("total_devices", 0))
+        total = _to_int(summary.get("total_devices", 0))
         os_rows = [i for i in items if i.get("section") == "os_version"]
 
         ws = self._wb.add_worksheet("Security Posture")
@@ -5009,7 +5020,7 @@ class CoreDashboard:
             ("Firewall", "firewall_enabled"),
         ]
         for label, key in controls:
-            compliant = int(summary.get(key, 0))
+            compliant = _to_int(summary.get(key, 0))
             non_compliant = total - compliant
             pct = compliant / total if total > 0 else 0.0
             _safe_write(ws, row, 0, label, self._fmts["cell"])
@@ -6723,6 +6734,11 @@ class CSVDashboard:
             col = agent.get("column", "")
             connected_val = _normalized_text(agent.get("connected_value", "connected"))
             if col not in self._df.columns:
+                name = agent.get("name", col)
+                print(
+                    f"[warning] security_agents: column '{col}' not found in CSV"
+                    f" — agent '{name}' skipped"
+                )
                 continue
             if not connected_val:
                 print(
@@ -7240,10 +7256,10 @@ class ChartGenerator:
         """Extract a timestamp from a filename, falling back to file mtime."""
         name = path.stem
         for pattern, fmt in (
-            (r"(\d{4}-\d{2}-\d{2}[T_]\d{6})", "%Y-%m-%dT%H%M%S"),
-            (r"(\d{4}-\d{2}-\d{2}[T_]\d{6})", "%Y-%m-%d_%H%M%S"),
-            (r"(\d{8}[T_]\d{6})", "%Y%m%dT%H%M%S"),
-            (r"(\d{8}[T_]\d{6})", "%Y%m%d_%H%M%S"),
+            (r"(\d{4}-\d{2}-\d{2}T\d{6})", "%Y-%m-%dT%H%M%S"),
+            (r"(\d{4}-\d{2}-\d{2}_\d{6})", "%Y-%m-%d_%H%M%S"),
+            (r"(\d{8}T\d{6})", "%Y%m%dT%H%M%S"),
+            (r"(\d{8}_\d{6})", "%Y%m%d_%H%M%S"),
         ):
             match = re.search(pattern, name)
             if not match:
@@ -8193,6 +8209,9 @@ def _validate_config_structure(config: Config) -> None:
         ("critical_disk_percent", "thresholds.critical_disk_percent"),
         ("warning_disk_percent", "thresholds.warning_disk_percent"),
         ("cert_warning_days", "thresholds.cert_warning_days"),
+        ("checkin_overdue_days", "thresholds.checkin_overdue_days"),
+        ("profile_error_critical", "thresholds.profile_error_critical"),
+        ("profile_error_warning", "thresholds.profile_error_warning"),
     ]:
         val = config.thresholds.get(key)
         if val is not None:
@@ -8742,8 +8761,8 @@ def _post_teams_notification(
         ],
     }
     parsed_url = urllib.parse.urlparse(webhook_url)
-    if parsed_url.scheme not in ("https", "http"):
-        print("  [warn] Teams notification skipped: webhook URL must use https or http.")
+    if parsed_url.scheme != "https":
+        print("  [warn] Teams notification skipped: webhook URL must use https://.")
         return
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -9266,7 +9285,7 @@ class HtmlReport:
         self._out_file.parent.mkdir(parents=True, exist_ok=True)
         self._out_file.write_text(html, encoding="utf-8")
         print(f"  Written: {self._out_file}")
-        if not self._no_open:
+        if not self._no_open and sys.platform == "darwin":
             subprocess.run(["open", str(self._out_file)], check=False)
         return self._out_file
 
