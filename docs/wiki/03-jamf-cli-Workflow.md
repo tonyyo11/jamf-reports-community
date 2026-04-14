@@ -112,13 +112,14 @@ To opt into the preview Platform API sheets:
 ```yaml
 platform:
   enabled: true
-  compliance_benchmark: "CIS Level 1"
+  compliance_benchmarks:
+    - "CIS Level 1"
 ```
 
 That path currently creates `Platform Blueprints`, `Platform DDM Status`, and, when
-`platform.compliance_benchmark` is set, `Platform Compliance Rules` and `Platform
-Compliance Devices`. It depends on a jamf-cli build that already includes those Platform
-report commands and working Platform auth for the selected profile.
+`platform.compliance_benchmarks` is non-empty, `Platform Compliance Rules` and
+`Platform Compliance Devices`. It depends on a jamf-cli build that already includes those
+Platform report commands and working Platform auth for the selected profile.
 
 If you want the filesystem layout created for you, bootstrap one workspace per profile:
 

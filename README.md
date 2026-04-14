@@ -124,13 +124,15 @@ Then opt in from `config.yaml`:
 ```yaml
 platform:
   enabled: true
-  compliance_benchmark: "CIS Level 1"
+  compliance_benchmarks:
+    - "CIS Level 1"
 ```
 
 When `platform.enabled` is true, the workbook attempts to build `Platform Blueprints`,
-`Platform DDM Status`, and, when `platform.compliance_benchmark` is set, benchmark-specific
-`Platform Compliance Rules` and `Platform Compliance Devices` sheets. This path is also
-defensive and will skip cleanly if Platform auth or report commands are unavailable.
+`Platform DDM Status`, and, when `platform.compliance_benchmarks` contains one or more
+entries, benchmark-specific `Platform Compliance Rules` and `Platform Compliance Devices`
+sheets. This path is also defensive and will skip cleanly if Platform auth or report
+commands are unavailable.
 
 The [Jamf Platform API](https://developer.jamf.com/platform-api/reference/getting-started-with-platform-api)
 is currently in public beta. This tool accesses it only through jamf-cli's preview
@@ -212,6 +214,40 @@ git config core.hooksPath .githooks
 
 That installs the committed `pre-push` hook, which runs `./scripts/test.sh` before git
 push completes.
+
+---
+
+## Releases
+
+Keep `main` as the full source repository, including `tests/` and `docs/`. For end-user
+downloads, build a smaller release bundle that contains just the runtime files:
+
+- `jamf-reports-community.py`
+- `requirements.txt`
+- `config.example.yaml`
+- `README.md`
+
+Build that zip locally with:
+
+```bash
+./scripts/build-release.sh v1.0.0
+```
+
+The script writes `dist/jamf-reports-community-v1.0.0.zip`.
+
+The repository also includes a tag-driven GitHub Actions workflow in
+`.github/workflows/release.yml`. Pushing a tag such as `v1.0.0` will:
+
+1. build the release zip
+2. upload it as a workflow artifact
+3. attach it to the GitHub Release for that tag
+
+Example:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
 
 ---
 
@@ -625,8 +661,8 @@ Sheets appear only when the required config and data are present.
 | Patch Compliance | jamf-cli | Per-title patch compliance percentages |
 | Update Status | jamf-cli v1.2.0+ | Managed software update status summary and error device list |
 | Platform Blueprints | jamf-cli platform preview | Blueprint deployment state, scope, and failure/pending counts |
-| Platform Compliance Rules | jamf-cli platform preview + `platform.compliance_benchmark` | Per-rule benchmark pass/fail/unknown counts |
-| Platform Compliance Devices | jamf-cli platform preview + `platform.compliance_benchmark` | Devices with benchmark rule failures and aggregate compliance |
+| Platform Compliance Rules | jamf-cli platform preview + `platform.compliance_benchmarks` | Per-rule benchmark pass/fail/unknown counts |
+| Platform Compliance Devices | jamf-cli platform preview + `platform.compliance_benchmarks` | Devices with benchmark rule failures and aggregate compliance |
 | Platform DDM Status | jamf-cli platform preview | Declaration success vs unsuccessful counts by source |
 | Report Sources | always when data exists | Declares whether each sheet came from jamf-cli, CSV, or charts |
 
@@ -731,12 +767,12 @@ Opt-in preview support for jamf-cli Platform API report commands.
 ```yaml
 platform:
   enabled: false
-  compliance_benchmark: ""
+  compliance_benchmarks: []
 ```
 
-Set `enabled: true` to turn on the Platform sheets. Leave `compliance_benchmark` blank if
-you only want blueprint and DDM reporting. Set it to the benchmark title or ID you want
-the workbook to summarize when you also want the benchmark-specific compliance sheets.
+Set `enabled: true` to turn on the Platform sheets. Leave `compliance_benchmarks` empty
+if you only want blueprint and DDM reporting. Add one or more benchmark titles or IDs to
+also generate the benchmark-specific compliance sheets.
 
 ### `compliance`
 

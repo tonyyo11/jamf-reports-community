@@ -33,3 +33,4 @@ Community Edition Recap.rtf
 # Report files
 *.xlsx
 /.vscode
+dist/

@@ -66,10 +66,11 @@ If you also want the preview Platform API sheets, use a jamf-cli build that expo
 ```yaml
 platform:
   enabled: true
-  compliance_benchmark: "CIS Level 1"
+  compliance_benchmarks:
+    - "CIS Level 1"
 ```
 
-Leave `platform.compliance_benchmark` blank if you only want the blueprint and DDM
+Leave `platform.compliance_benchmarks` empty if you only want the blueprint and DDM
 summary sheets.
 
 Primary references:

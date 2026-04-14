@@ -1,0 +1,49 @@
+name: Release Bundle
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to package, e.g. v1.0.0"
+        required: true
+        default: "v0.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build and attach release bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build bundle
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version || '' }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          fi
+          ./scripts/build-release.sh "$VERSION"
+          echo "ASSET_PATH=dist/jamf-reports-community-$VERSION.zip" >> "$GITHUB_ENV"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jamf-reports-community-release-${{ github.ref_name || github.event.inputs.version }}
+          path: ${{ env.ASSET_PATH }}
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET_PATH }}
+          generate_release_notes: true
