@@ -3,6 +3,8 @@
 Config-driven macOS fleet reporting for Jamf Pro. Generates formatted Excel workbooks from
 a Jamf Pro CSV export — no Power BI, no custom infrastructure, no hardcoded credentials.
 
+This tool is featured in the [jamf-cli Community Showcase](https://github.com/Jamf-Concepts/jamf-cli/wiki/Community-Showcase).
+
 Long-form setup and operations docs live in the [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki).
 
 Automated testing docs and fixture guidance live in [docs/testing.md](docs/testing.md).
@@ -75,8 +77,9 @@ If matplotlib is not installed, the script runs normally and skips chart generat
 
 **jamf-cli v1.2.0 or later** (optional — required only for live API, EA discovery, and software sheets)
 
-jamf-cli is a command-line interface for Jamf Pro. If you want the live API sheets, install
-it and run:
+jamf-cli is a command-line interface for Jamf Pro. Documentation and setup guides are at
+the [jamf-cli wiki](https://github.com/Jamf-Concepts/jamf-cli/wiki). If you want the live
+API sheets, install it and run:
 
 ```
 jamf-cli pro setup --url https://jamf.example.com
@@ -128,6 +131,11 @@ When `platform.enabled` is true, the workbook attempts to build `Platform Bluepr
 `Platform DDM Status`, and, when `platform.compliance_benchmark` is set, benchmark-specific
 `Platform Compliance Rules` and `Platform Compliance Devices` sheets. This path is also
 defensive and will skip cleanly if Platform auth or report commands are unavailable.
+
+The [Jamf Platform API](https://developer.jamf.com/platform-api/reference/getting-started-with-platform-api)
+is currently in public beta. This tool accesses it only through jamf-cli's preview
+`pro report` commands — it does not call the Platform API directly. Admins should review
+it, as it may affect future integrations and tooling in this space as it matures.
 
 If you use multiple jamf-cli profiles, set `jamf_cli.profile` in `config.yaml` to the
 profile name you want this report to target. This is the same profile selected with

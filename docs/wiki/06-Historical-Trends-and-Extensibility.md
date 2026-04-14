@@ -195,6 +195,11 @@ Likely next areas for community growth:
 - GitHub Actions or CI-driven reporting workflows
 - delivery integrations for Teams, Slack, email, or file shares
 
+The [Jamf Platform API](https://developer.jamf.com/platform-api/reference/getting-started-with-platform-api)
+is currently in public beta. This tool does not use it today — it uses jamf-cli, which
+wraps the Classic and Pro APIs. Admins planning future integrations or tooling should
+review the Platform API documentation as it matures.
+
 One important constraint remains:
 
 - The current community project has been tested on Jamf Pro only.
