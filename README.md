@@ -225,7 +225,11 @@ downloads, build a smaller release bundle that contains just the runtime files:
 - `jamf-reports-community.py`
 - `requirements.txt`
 - `config.example.yaml`
+- `CHANGELOG.md`
 - `README.md`
+
+Track user-visible changes in [CHANGELOG.md](CHANGELOG.md). Update the `Unreleased`
+section as part of normal development, then cut a versioned entry when you tag a release.
 
 Build that zip locally with:
 

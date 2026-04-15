@@ -459,6 +459,7 @@ Version` (version), `KerberosSSO - password_expires_date` (date), `EC - adBound`
 jamf-reports-community/
 ├── jamf-reports-community.py   # Entire implementation — single file
 ├── config.example.yaml         # Annotated example config — must stay in sync with DEFAULT_CONFIG
+├── CHANGELOG.md                # User-visible changes between commits and releases
 ├── COMMUNITY_README.md         # End-user setup and usage guide
 ├── CLAUDE.md                   # This file
 ├── AGENTS.md                   # Mirror of CLAUDE.md for OpenAI-compatible agents
@@ -473,6 +474,9 @@ jamf-reports-community/
 `config.yaml` is gitignored. Users create it via `scaffold` or by copying
 `config.example.yaml`. Never commit a real `config.yaml` — it will contain column names
 that reveal org-specific EA naming conventions.
+
+`CHANGELOG.md` tracks user-visible changes. Update `Unreleased` whenever a change affects
+end users, and roll those notes into a versioned section when cutting a release tag.
 
 ---
 
