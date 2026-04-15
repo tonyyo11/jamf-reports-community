@@ -13,18 +13,20 @@ any changes.
 ## What This Project Is
 
 A single-file Python script (`jamf-reports-community.py`) that generates multi-sheet
-Excel workbooks from Jamf Pro CSV exports and/or jamf-cli JSON data. It is config-driven:
-users edit `config.yaml` to map their Jamf Pro column names to logical field names; no
-Python changes are needed for normal use.
+Excel workbooks and/or self-contained HTML reports from Jamf Pro CSV exports and/or
+jamf-cli JSON data. As of v1.7-1.9 support, it also generates Jamf School reports from
+jamf-cli school data and/or Jamf School device CSV exports. It is config-driven: users
+edit `config.yaml` to map their column names to logical field names; no Python changes
+are needed for normal use.
 
-Target audience: Mac admins at any organization running Jamf Pro. The tool must work
-without any org-specific values in the code.
+Target audience: Mac/iPad admins at any organization running Jamf Pro or Jamf School.
+The tool must work without any org-specific values in the code.
 
 ---
 
 ## Architecture
 
-The entire implementation lives in `jamf-reports-community.py` (~3,300 lines). There are
+The entire implementation lives in `jamf-reports-community.py` (~13,600 lines). There are
 no other Python files. Do not create additional modules — keep it single-file.
 
 ### Classes
@@ -33,10 +35,14 @@ no other Python files. Do not create additional modules — keep it single-file.
 |-------|---------|
 | `Config` | Loads `config.yaml`, deep-merges with `DEFAULT_CONFIG`, exposes typed properties. `resolve_path()` resolves relative paths from the config file's directory. |
 | `ColumnMapper` | Resolves logical field names → CSV column names. `.get(field)` returns name or None. `.extract(row, field)` returns cell value or `""` |
-| `JamfCLIBridge` | Subprocess wrapper for jamf-cli. Saves JSON output to `jamf-cli-data/`. Optional — gracefully no-ops if jamf-cli is absent. Supports `profile` for multi-tenant use. Falls back to latest cached JSON when live calls fail (`use_cached_data=True`). |
-| `CoreDashboard` | Generates sheets from jamf-cli JSON data: Fleet Overview, Mobile Fleet Summary, Inventory Summary, Mobile Inventory, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, Mobile Config Profiles, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures. No CSV required. |
+| `JamfCLIBridge` | Subprocess wrapper for jamf-cli pro/protect commands. Saves JSON output to `jamf-cli-data/`. Optional — gracefully no-ops if jamf-cli is absent. Supports `profile` for multi-tenant use. Falls back to latest cached JSON when live calls fail (`use_cached_data=True`). |
+| `SchoolCLIBridge` | Subclass of `JamfCLIBridge` for `jamf-cli school` commands. Same caching/fallback infrastructure. Methods: `overview`, `devices_list`, `device_groups_list`, `users_list`, `groups_list`, `classes_list`, `apps_list`, `profiles_list`, `locations_list`. |
+| `CoreDashboard` | Generates sheets from jamf-cli data: Fleet Overview, Mobile Fleet Summary, Inventory Summary, Mobile Inventory, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, Mobile Config Profiles, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures. No CSV required. |
 | `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Generates: Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance, plus one sheet per `custom_eas` entry. |
+| `SchoolDashboard` | Generates sheets from Jamf School data (jamf-cli school or CSV export). Sheets: Device Inventory, OS Versions, Device Status, Stale Devices (CSV-driven); School Overview, Device Groups, Users, Classes, Apps, Profiles, Locations (bridge-driven). |
+| `SchoolColumnMapper` | Resolves `school_columns` config field names → Jamf School CSV column names. Same interface as `ColumnMapper`. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
+| `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources. Uses Chart.js from CDN; no new Python dependencies. |
 
 ### Key top-level functions
 
@@ -48,22 +54,29 @@ no other Python files. Do not create additional modules — keep it single-file.
 | `_archive_old_output_runs(...)` | Moves older timestamped report files into archive_dir |
 | `_archive_csv_snapshot(csv_path, hist_dir)` | Copies the current CSV into the historical snapshot dir with a timestamp |
 | `_semantic_warnings(config, df)` | Checks for likely column mapping mistakes before writing |
+| `_school_csv_load(csv_path)` | Loads a Jamf School CSV export, auto-detecting semicolon vs comma delimiter |
 | `cmd_scaffold(csv_path, out_path)` | Reads CSV headers, fuzzy-matches via `COLUMN_HINTS`/`COLUMN_EXCLUDES`, writes starter `config.yaml` |
 | `cmd_check(config, csv_path)` | Validates jamf-cli auth and all configured column names against actual CSV headers |
 | `cmd_generate(config, csv_path, out_file, historical_csv_dir)` | Main entry point — builds xlsx, generates charts |
 | `cmd_collect(config, csv_path, historical_csv_dir)` | Fetches live jamf-cli snapshots and optionally archives a CSV snapshot |
 | `cmd_inventory_csv(config, out_file)` | Exports a wide computer inventory CSV from jamf-cli computers list + EA results |
+| `cmd_school_scaffold(csv_path, out_path)` | Reads Jamf School CSV headers, fuzzy-matches via `SCHOOL_COLUMN_HINTS`, writes/appends `school_columns` block |
+| `cmd_school_check(config, csv_path)` | Validates school bridge availability and column mappings |
+| `cmd_school_collect(config)` | Fetches all jamf-cli school snapshots in parallel |
+| `cmd_school_generate(config, csv_path, out_file)` | Builds the Jamf School Excel report |
 
 ### Scaffold semantic matching
 
-`COLUMN_HINTS` maps each logical field to known-good header substrings.
-`COLUMN_EXCLUDES` maps each logical field to substrings that should never match (e.g.,
-"Bootstrap Token Allowed" is excluded from `bootstrap_token` — only "Escrowed" matches).
-This prevents the mismatches that previously required manual post-scaffold correction.
+`COLUMN_HINTS` / `COLUMN_EXCLUDES` — Jamf Pro CSV auto-detection.
+`SCHOOL_COLUMN_HINTS` / `SCHOOL_COLUMN_EXCLUDES` — Jamf School CSV auto-detection.
+
+Each maps logical field names to known-good/bad header substrings. The `EXCLUDES` dict
+prevents false positives (e.g., "Name" must not match "LocationName" for `device_name`).
 
 ### CLI commands
 
 ```
+# Jamf Pro
 python3 jamf-reports-community.py generate [--config config.yaml] [--csv export.csv]
                                            [--out-file report.xlsx]
                                            [--historical-csv-dir snapshots/]
@@ -73,6 +86,16 @@ python3 jamf-reports-community.py inventory-csv [--config config.yaml]
                                                 [--out-file inventory.csv]
 python3 jamf-reports-community.py scaffold [--csv export.csv] [--out config.yaml]
 python3 jamf-reports-community.py check    [--csv export.csv]
+
+# Jamf School (jamf-cli 1.7+)
+python3 jamf-reports-community.py school-generate [--config config.yaml]
+                                                  [--csv school_export.csv]
+                                                  [--out-file report.xlsx]
+python3 jamf-reports-community.py school-collect  [--config config.yaml]
+python3 jamf-reports-community.py school-scaffold [--csv school_export.csv]
+                                                  [--out config.yaml]
+python3 jamf-reports-community.py school-check    [--config config.yaml]
+                                                  [--csv school_export.csv]
 ```
 
 **`collect`** — fetch live snapshots from jamf-cli and save to `jamf_cli.data_dir`. Also
