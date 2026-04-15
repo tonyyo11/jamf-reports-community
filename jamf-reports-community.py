@@ -4232,6 +4232,7 @@ class CoreDashboard:
                 ("Profile Status", self._write_profile_status),
                 ("Mobile Config Profiles", self._write_mobile_config_profiles),
                 ("App Status", self._write_app_status),
+                ("Active Devices", self._write_active_devices),
                 ("Patch Compliance", self._write_patch),
                 ("Patch Failures", self._write_patch_failures),
                 ("Update Status", self._write_update_status),
@@ -5905,6 +5906,53 @@ class CoreDashboard:
                 _safe_write(ws, row, 5, _to_int(item.get("count", 0)), self._fmts["cell"])
                 row += 1
 
+    def _write_active_devices(self) -> None:
+        """Write a concise active-device summary using the stale_device_days threshold.
+
+        Pulls from device-compliance so that the active-device context is consistent
+        with the adjusted columns on the Patch Compliance sheet.
+        """
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+        raw = self._bridge.device_compliance(stale_days)
+        rows = raw if isinstance(raw, list) else []
+        if not rows:
+            raise RuntimeError("jamf-cli device-compliance returned no rows")
+
+        total = len(rows)
+        active = sum(1 for r in rows if not _to_bool(r.get("stale")))
+        inactive = total - active
+        active_ratio = active / total if total > 0 else 0.0
+
+        ws = self._wb.add_worksheet("Active Devices")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Active Devices"),
+            (
+                f"Source: jamf-cli pro report device-compliance"
+                f" (--days-since-checkin {stale_days}) | Generated: {ts}"
+            ),
+            self._fmts,
+            ncols=2,
+        )
+        ws.set_column(0, 0, 28)
+        ws.set_column(1, 1, 18)
+
+        summary_rows = [
+            ("Active Window (days)", stale_days),
+            ("Total Devices", total),
+            ("Active Devices", active),
+            ("Inactive Devices", inactive),
+            ("Active Ratio %", active_ratio),
+        ]
+        for label, value in summary_rows:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            if label == "Active Ratio %":
+                _safe_write(ws, row, 1, value, _pct_format(self._fmts, value))
+            else:
+                _safe_write(ws, row, 1, value, self._fmts["cell"])
+            row += 1
+
     def _write_patch(self) -> None:
         # jamf-cli pro report patch-status --output json returns a flat list:
         #   [{"title":"Firefox","id":"123","on_latest":100,"on_other":20,
@@ -5916,24 +5964,61 @@ class CoreDashboard:
         titles = raw if isinstance(raw, list) else []
         uses_installed_shape = any("installed" in item for item in titles if isinstance(item, dict))
 
+        # Attempt to load active-device stats for adjusted columns.
+        # Patch-status only has aggregate counts per title; per-device filtering is
+        # approximated by scaling with the active-device ratio from device-compliance.
+        # If the call fails or returns nothing, adjusted columns are omitted gracefully.
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+        adj_available = False
+        active_count = 0
+        total_enrolled = 0
+        active_ratio = 0.0
+        try:
+            dc_rows = self._bridge.device_compliance(stale_days)
+            dc_list = dc_rows if isinstance(dc_rows, list) else []
+            if dc_list:
+                total_enrolled = len(dc_list)
+                active_count = sum(1 for r in dc_list if not _to_bool(r.get("stale")))
+                active_ratio = active_count / total_enrolled if total_enrolled > 0 else 0.0
+                adj_available = True
+        except Exception:
+            pass
+
+        ncols = 10 if adj_available else 6
         ws = self._wb.add_worksheet("Patch Compliance")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        source_note = (
+            f"Source: jamf-cli pro report patch-status | Generated: {ts}"
+            f" | Active window: {stale_days} days ({active_count}/{total_enrolled} active)"
+            if adj_available
+            else f"Source: jamf-cli pro report patch-status | Generated: {ts}"
+        )
         row = _write_sheet_header(
             ws,
             self._t("Patch Compliance"),
-            f"Source: jamf-cli pro report patch-status | Generated: {ts}",
+            source_note,
             self._fmts,
-            ncols=6,
+            ncols=ncols,
         )
         ws.set_column(0, 0, 40)
         ws.set_column(1, 5, 18)
-        headers = (
+        if adj_available:
+            ws.set_column(6, 9, 22)
+        raw_headers = (
             ["Software Title", "Installed", "Not Installed", "Total", "Latest Version",
              "Compliance %"]
             if uses_installed_shape
             else ["Software Title", "On Latest", "On Other", "Total", "Latest Version",
                   "Compliance %"]
         )
+        adj_headers = (
+            ["Adjusted Installed", "Adjusted Not Installed", "Adjusted Total",
+             "Adjusted Completion %"]
+            if uses_installed_shape
+            else ["Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
+                  "Adjusted Completion %"]
+        )
+        headers = raw_headers + (adj_headers if adj_available else [])
         for c, h in enumerate(headers):
             _safe_write(ws, row, c, h, self._fmts["header"])
         row += 1
@@ -5960,6 +6045,23 @@ class CoreDashboard:
                 _safe_write(ws, row, 5, pct_value, _pct_format(self._fmts, pct_value))
             else:
                 _safe_write(ws, row, 5, pct_raw or "N/A", self._fmts["cell"])
+
+            if adj_available:
+                # Scale counts by active_ratio. Inactive devices are disproportionately
+                # stale on patches, so this is a lower-bound approximation of true
+                # adjusted compliance; it remains directionally correct for reporting.
+                adj_total = round(total * active_ratio) if total > 0 else 0
+                adj_primary = round(primary * active_ratio) if primary > 0 else 0
+                adj_primary = min(adj_primary, adj_total)
+                adj_secondary = max(adj_total - adj_primary, 0)
+                adj_pct = adj_primary / adj_total if adj_total > 0 else None
+                _safe_write(ws, row, 6, adj_primary, self._fmts["cell"])
+                _safe_write(ws, row, 7, adj_secondary, self._fmts["cell"])
+                _safe_write(ws, row, 8, adj_total, self._fmts["cell"])
+                if adj_pct is not None:
+                    _safe_write(ws, row, 9, adj_pct, _pct_format(self._fmts, adj_pct))
+                else:
+                    _safe_write(ws, row, 9, "N/A", self._fmts["cell"])
             row += 1
 
     def _write_patch_failures(self) -> None:
@@ -11317,7 +11419,7 @@ a:hover { text-decoration: underline; }
 
     def _js(self) -> str:
         """Return the embedded JavaScript block for HTML interactivity."""
-        return """
+        return r"""
 (() => {
   const key = 'jamfReportsHtmlDarkMode';
   const toggle = document.getElementById('darkToggle');

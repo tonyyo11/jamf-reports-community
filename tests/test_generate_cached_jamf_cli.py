@@ -30,6 +30,7 @@ def test_generate_from_committed_cached_jamf_cli_data(
         "Inventory Summary",
         "Device Compliance",
         "Package Lifecycle",
+        "Active Devices",
         "Patch Compliance",
         "Smart Groups",
         "Update Status",
@@ -37,6 +38,20 @@ def test_generate_from_committed_cached_jamf_cli_data(
         "Report Sources",
     }
     assert expected.issubset(set(workbook.sheetnames))
+
+    active_sheet = workbook["Active Devices"]
+    col_a = [active_sheet[f"A{r}"].value for r in range(1, 10)]
+    assert "Active Devices" in col_a
+    assert "Active Window (days)" in col_a
+    assert "Total Devices" in col_a
+    assert "Active Devices" in col_a
+    assert "Inactive Devices" in col_a
+    assert "Active Ratio %" in col_a
+
+    patch_sheet = workbook["Patch Compliance"]
+    patch_headers = [patch_sheet.cell(row=4, column=c).value for c in range(1, 11)]
+    assert "Adjusted Up To Date" in patch_headers or "Adjusted Installed" in patch_headers
+
     sheet = workbook["Smart Groups"]
     assert sheet["A4"].value == "Group Name"
     assert sheet["A5"].value == "3PL AMR Security Profile - 2.0 60 Minute Screensaver"

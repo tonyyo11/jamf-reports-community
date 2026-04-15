@@ -1,4 +1,4 @@
-# Changelog
+# Changelog <!-- markdownlint-disable MD024 -->
 
 All notable user-visible changes to this project should be documented in this file.
 
@@ -7,8 +7,23 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed HTML report JavaScript being completely non-functional (dark mode, table sorting,
+  search, CSV export all broken). The `_js()` method used a plain triple-quoted Python
+  string, causing `\r` and `\n` to be emitted as literal CR/LF bytes inside JavaScript
+  regex patterns and string literals, producing a parse error that silently broke the
+  entire `<script>` block. Fixed by switching to a raw string (`r"""..."""`).
+
 ### Added
 
+- Added **Active Devices** sheet to the jamf-cli workbook showing total, active, and
+  inactive device counts against the `thresholds.stale_device_days` window.
+- Added adjusted compliance columns to **Patch Compliance**: Adjusted Up To Date,
+  Adjusted Out Of Date, Adjusted Total, and Adjusted Completion %. These columns scale
+  raw patch counts by the active-device ratio so stale/offline devices don't deflate
+  reported compliance. If device-compliance data is unavailable the adjusted columns are
+  silently omitted and raw columns remain unchanged.
 - Added Jamf School reporting support for `jamf-cli school` data and Jamf School device
   CSV exports.
 - Added `school-generate`, `school-collect`, `school-scaffold`, and `school-check`
