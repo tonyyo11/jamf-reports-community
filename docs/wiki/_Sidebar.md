@@ -8,3 +8,4 @@
 - [Reporting Cadence and Operations](05-Reporting-Cadence-and-Operations)
 - [Historical Trends and Extensibility](06-Historical-Trends-and-Extensibility)
 - [LaunchAgent Automation](07-LaunchAgent-Automation)
+- [Jamf School Workflow](08-Jamf-School-Workflow)
