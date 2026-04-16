@@ -247,6 +247,22 @@ branding:
 
 
 # =============================================================================
+# HTML REPORT HISTORY
+# =============================================================================
+# When track_history is true, every `html` run appends an OS-version snapshot
+# to the history file.  Once two or more snapshots exist for an instance URL, a
+# macOS Adoption Timeline chart appears in the HTML report.
+#
+# history_file: path to the JSON file that persists snapshots across runs.
+#   Relative paths resolve from this config file's directory.
+#   Default (when blank): ~/.jamf-report-history.json
+#
+html:
+  track_history: false
+  history_file: ""
+
+
+# =============================================================================
 # JAMF PROTECT
 # =============================================================================
 # Experimental Jamf Protect workbook support. This is opt-in because the

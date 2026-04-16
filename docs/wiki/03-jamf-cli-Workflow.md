@@ -231,9 +231,21 @@ With `jamf-cli` available, the workbook can include:
 - Profile Status
 - Mobile Config Profiles
 - App Status (v1.2.0+)
+- Active Devices
 - Patch Compliance
+- Patch Failures
 - Update Status (v1.2.0+)
 - Report Sources
+
+**Active Devices** shows total, active, and inactive device counts against the
+`thresholds.stale_device_days` window. It uses the same `device-compliance` data as the
+Patch Compliance sheet so the active-device context is consistent.
+
+**Patch Compliance** includes adjusted columns when device-compliance data is available:
+Adjusted Up To Date, Adjusted Out Of Date, Adjusted Total, and Adjusted Completion %.
+These scale raw patch counts by the active-device ratio so stale or offline devices do not
+deflate reported compliance numbers. If device-compliance data is unavailable, the adjusted
+columns are silently omitted and raw counts remain unchanged.
 
 And the Charts sheet can now use jamf-cli snapshot history for:
 
@@ -267,6 +279,19 @@ Recommended pattern for scheduled reporting:
 2. Run `generate` weekly (or on demand) to produce the workbook from saved data.
 3. Keep `use_cached_data: true` so `generate` never fails due to a momentary auth issue.
 4. Use `inventory-csv` only when you need a fresh CSV baseline and know live auth is good.
+
+## Offline Demo
+
+To preview the jamf-cli workbook output without a live tenant or credentials:
+
+```bash
+./scripts/demo.sh xlsx
+```
+
+This generates a fixture-backed Jamf Pro workbook using committed JSON snapshots from
+`tests/fixtures/jamf-cli-data/`. Output goes to `Generated Reports/demo/`. Run
+`./scripts/demo.sh all` to generate HTML, Jamf Pro XLSX, mobile CSV, and Jamf School
+outputs in one step.
 
 ## Where To Use jamf-cli Directly
 

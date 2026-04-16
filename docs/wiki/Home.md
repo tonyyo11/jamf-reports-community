@@ -9,12 +9,13 @@ Use it when you want a full setup and operating guide instead of a quick-start.
 `jamf-reports-community` turns Jamf Pro inventory data into Excel workbooks, charts, and
 repeatable reporting workflows.
 
-It supports two primary data collection paths:
+It supports these data collection paths:
 
 - Jamf Pro CSV exports
 - `jamf-cli` live data plus cached JSON snapshots
+- Jamf School device CSV exports and `jamf-cli school` live data (jamf-cli 1.7+)
 
-It is built and tested against Jamf Pro. Jamf Protect support now exists as an
+It is built and tested against Jamf Pro and Jamf School. Jamf Protect support exists as an
 experimental, opt-in `Protect Overview` sheet driven by `jamf-cli 1.6`, but it has not
 been fully validated against a live Protect tenant. Platform API workbook support is
 also available as an opt-in preview when the selected jamf-cli build exposes the new
@@ -33,6 +34,17 @@ Jamf Platform API work.
 5. [Reporting Cadence and Operations](./05-Reporting-Cadence-and-Operations.md)
 6. [Historical Trends and Extensibility](./06-Historical-Trends-and-Extensibility.md)
 7. [LaunchAgent Automation](./07-LaunchAgent-Automation.md)
+
+## Try It Offline
+
+No live Jamf tenant needed. The repo includes committed demo fixtures:
+
+```bash
+./scripts/demo.sh all
+```
+
+This generates an HTML report, Jamf Pro workbook, mobile CSV workbook, and Jamf School
+workbook in `Generated Reports/demo/`. Run `./scripts/demo.sh help` for individual modes.
 
 ## Choose Your Starting Path
 

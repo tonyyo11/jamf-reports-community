@@ -147,6 +147,54 @@ Examples:
   CSV-only EAs.
 - Use `inventory-csv` to bootstrap a baseline CSV without going into Jamf Pro first.
 
+## HTML Report: macOS Adoption Timeline
+
+The HTML report can render a macOS Adoption Timeline chart when you have two or more
+point-in-time OS-version snapshots from the same Jamf instance.
+
+Enable snapshot collection in `config.yaml`:
+
+```yaml
+html:
+  track_history: true
+  history_file: ""    # defaults to ~/.jamf-report-history.json when blank
+```
+
+Each `html` run appends an OS-version snapshot to the history file. Once two or more
+snapshots exist for the same instance URL, the timeline chart appears automatically in
+the HTML report. With only one snapshot, the section is omitted.
+
+`history_file` accepts a relative path (resolved from the config file directory) or an
+absolute path. Keep the default `~/.jamf-report-history.json` when you have one tenant.
+Use explicit paths when you run multiple tenants or want history stored alongside the
+workspace.
+
+The chart normalises OS version labels (e.g., `14.0.0` becomes `14.0`) so minor patch
+releases with zero trailing components collapse correctly. Versions are sorted newest-first.
+
+## HTML Report: Cleanup Analysis
+
+The HTML report surfaces a Cleanup Analysis section when per-policy and per-profile detail
+JSON is present in the `jamf-cli-data/` cache. The section shows:
+
+- Disabled policies
+- Unscoped policies
+- Unscoped macOS configuration profiles
+- Unused packages
+- Unused scripts
+
+Each category appears in its own tab with a count badge. If no detail cache exists, the
+section is silently omitted — it will not appear for workbook-only runs or when the
+`collect` step has not been run.
+
+Detail JSON is populated by the `collect` command. Run collect on a regular cadence to
+keep the Cleanup Analysis current:
+
+```bash
+python3 jamf-reports-community.py collect --config config.yaml
+python3 jamf-reports-community.py html --config config.yaml --out-file report.html
+```
+
 ## Extending EA Visualization
 
 The community edition should stay generic, but it is intentionally open to enhancement.

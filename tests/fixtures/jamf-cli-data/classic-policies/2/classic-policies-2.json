@@ -1,0 +1,58 @@
+{
+  "general": {
+    "id": 2,
+    "name": "Adobe InCopy CC 2014",
+    "enabled": false,
+    "trigger": "",
+    "trigger_checkin": false,
+    "trigger_enrollment_complete": false,
+    "trigger_login": false,
+    "trigger_logout": false,
+    "trigger_network_state_changed": false,
+    "trigger_startup": false,
+    "trigger_other": "",
+    "frequency": "Once per computer",
+    "retry_event": "none",
+    "retry_attempts": -1,
+    "notify_on_each_failed_retry": false,
+    "location_user_only": false,
+    "target_drive": "/",
+    "offline": false,
+    "category": {
+      "id": -1,
+      "name": "No category assigned"
+    }
+  },
+  "scope": {
+    "all_computers": false,
+    "computers": [],
+    "computer_groups": [],
+    "buildings": [],
+    "departments": [],
+    "limit_to_users": {
+      "user_groups": []
+    },
+    "limitations": {
+      "users": [],
+      "user_groups": [],
+      "network_segments": [],
+      "ibeacons": []
+    },
+    "exclusions": {
+      "computers": [],
+      "computer_groups": [],
+      "buildings": [],
+      "departments": [],
+      "users": [],
+      "user_groups": [],
+      "network_segments": [],
+      "ibeacons": []
+    }
+  },
+  "scripts": [],
+  "package_configuration": {
+    "packages": [
+      {"id": "2", "name": "AdobeInCopyCC2014_2014-08-06.pkg", "action": "Install"}
+    ]
+  }
+}

@@ -182,6 +182,45 @@ Use `python3 jamf-reports-community.py ...` in examples and automation.
 
 ---
 
+## Try It Offline
+
+You do not need a live Jamf tenant, local `Dummy` or `Harbor` workspaces, or your own
+CSV export to preview the project. The repo includes committed demo fixtures that can
+generate offline reports immediately.
+
+Run every offline demo report:
+
+```bash
+./scripts/demo.sh
+```
+
+Or generate a specific demo:
+
+```bash
+./scripts/demo.sh html
+./scripts/demo.sh xlsx
+./scripts/demo.sh mobile
+./scripts/demo.sh school
+```
+
+By default the script writes output to `Generated Reports/demo/` in the repo root.
+Pass a second argument to override that directory:
+
+```bash
+./scripts/demo.sh all /tmp/jrc-demo
+```
+
+The demo runner uses only committed fixture files from `tests/fixtures/`:
+
+- `html` builds a self-contained Jamf Pro HTML report from cached `jamf-cli` JSON
+- `xlsx` builds the Jamf Pro jamf-cli workbook from cached `jamf-cli` JSON
+- `mobile` builds a mobile-device workbook from a committed CSV export
+- `school` builds a Jamf School workbook from a committed CSV export
+
+This is intended as the supported no-credentials preview path for the community repo.
+
+---
+
 ## Automated Tests
 
 Install dev dependencies:
@@ -339,15 +378,16 @@ Create a live `jamf-cli` tenant workspace like this:
 
 ```bash
 python3 jamf-reports-community.py workspace-init \
-    --profile dummy \
-    --workspace-root Dummy
+    --profile acme-demo \
+    --workspace-root ~/Jamf-Reports
 ```
 
 Create a CSV-only tenant workspace like this:
 
 ```bash
 python3 jamf-reports-community.py workspace-init \
-    --workspace-root Harbor
+    --workspace-root ~/Jamf-Reports \
+    --workspace-name csv-demo
 ```
 
 A workspace created this way contains:
@@ -366,16 +406,17 @@ If you already have a tenant workspace, run report commands from inside it whene
 possible:
 
 ```bash
-cd Dummy
-python3 ../jamf-reports-community.py generate --csv "Jamf Reports/Pro/my-export.csv"
+cd ~/Jamf-Reports/acme-demo
+python3 /path/to/jamf-reports-community/jamf-reports-community.py \
+    generate --csv "$HOME/Jamf Exports/my-export.csv"
 ```
 
 Or run from the repo root and explicitly point to the tenant config:
 
 ```bash
 python3 jamf-reports-community.py \
-    --config Dummy/config.yaml \
-    generate --csv "Dummy/Jamf Reports/Pro/my-export.csv"
+    --config ~/Jamf-Reports/acme-demo/config.yaml \
+    generate --csv "$HOME/Jamf Exports/my-export.csv"
 ```
 
 If you are no longer using the root repo workspace, delete the root `config.yaml` and
