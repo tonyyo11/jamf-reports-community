@@ -41,11 +41,17 @@ versions in this repository map to git tags.
   in its own tab with a count badge. The section appears only when per-policy and
   per-profile detail JSON is cached on disk (populated by the `collect` step). If no
   detail cache exists, the section is omitted silently.
+- Added `scripts/demo.sh` as a supported offline demo runner that generates fixture-backed
+  HTML, Jamf Pro workbook, mobile CSV workbook, and Jamf School workbook outputs without
+  requiring a live tenant or local maintainer workspaces.
 
 ### Changed
 
 - Extended the config and documentation surface to cover Jamf School mappings and
   workflows.
+- Documented the committed fixture corpus as the supported no-credentials demo path for
+  the community repo and replaced README workspace examples that implied local `Dummy/`
+  or `Harbor/` directories.
 
 ## [1.0.0] - 2026-04-14
 
