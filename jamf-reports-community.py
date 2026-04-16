@@ -267,6 +267,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "accent_color": "#2D5EA2",
         "accent_dark": "#004165",
     },
+    "html": {
+        "track_history": False,
+        # Defaults to ~/.jamf-report-history.json when blank.
+        "history_file": "",
+    },
 }
 
 # Fuzzy-match candidates for scaffold auto-detection
@@ -2742,19 +2747,24 @@ class JamfCLIBridge:
         ) from last_exc
 
     def _latest_cached_json(self, report_names: list[str]) -> Optional[Path]:
-        """Return the newest cached JSON snapshot for any of the supplied report names."""
+        """Return the newest cached JSON snapshot for any of the supplied report names.
+
+        Uses non-recursive glob so that per-ID detail subdirectories (e.g.
+        classic-policies/14/) are not mistaken for list-level cache files when
+        querying the parent directory (e.g. classic-policies/).
+        """
         candidates: list[Path] = []
         for report_name in report_names:
             report_dir = self._data_dir / report_name
             if report_dir.is_dir():
                 candidates.extend(
-                    path for path in report_dir.rglob("*.json")
+                    path for path in report_dir.glob("*.json")
                     if path.is_file() and not path.is_symlink() and ".partial" not in path.name
                 )
             elif self._data_dir.is_dir():
                 pattern = f"{report_name}_*.json"
                 candidates.extend(
-                    path for path in self._data_dir.rglob(pattern)
+                    path for path in self._data_dir.glob(pattern)
                     if path.is_file() and not path.is_symlink() and ".partial" not in path.name
                 )
 
@@ -3362,6 +3372,53 @@ class JamfCLIBridge:
             ["pro", "classic-macos-config-profiles", "list"],
             ["classic-macos-profiles", "classic_macos_profiles"],
         )
+
+    def classic_policy_detail(self, policy_id: str) -> Any:
+        """Load per-policy detail from cache only (no live call).
+
+        Detail JSON is stored under classic-policies/<id>/ by the collect step.
+        Returns None if no cached detail exists for this policy ID.
+
+        Args:
+            policy_id: Jamf Pro classic policy ID (as string).
+
+        Returns:
+            Parsed JSON dict, or None if not cached.
+        """
+        cache_names = [f"classic-policies/{policy_id}", f"classic_policy_{policy_id}"]
+        path = self._latest_cached_json(cache_names)
+        if path is None:
+            return None
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return None
+
+    def classic_macos_profile_detail(self, profile_id: str) -> Any:
+        """Load per-profile detail from cache only (no live call).
+
+        Detail JSON is stored under classic-macos-profiles/<id>/ by the collect step.
+        Returns None if no cached detail exists for this profile ID.
+
+        Args:
+            profile_id: Jamf Pro macOS config profile ID (as string).
+
+        Returns:
+            Parsed JSON dict, or None if not cached.
+        """
+        cache_names = [
+            f"classic-macos-profiles/{profile_id}",
+            f"classic_macos_profile_{profile_id}",
+        ]
+        path = self._latest_cached_json(cache_names)
+        if path is None:
+            return None
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, ValueError):
+            return None
 
     def ios_profiles_list(self) -> Any:
         """Fetch the iOS/mobile config profile list from jamf-cli."""
@@ -10269,10 +10326,94 @@ class HtmlReport:
         self._out_file = out_file
         self._no_open = no_open
 
+    def _history_file_path(self) -> str:
+        """Return the resolved absolute path for the history JSON file.
+
+        Relative paths in the config resolve from the config file's directory.
+        Falls back to ``~/.jamf-report-history.json`` when the config key is blank.
+
+        Returns:
+            Absolute path string.
+        """
+        resolved = self._config.resolve_path("html", "history_file")
+        if resolved is not None:
+            return str(resolved)
+        return str(Path("~/.jamf-report-history.json").expanduser())
+
+    def _append_history_snapshot(self, data: dict[str, Any]) -> None:
+        """Append an OS-version snapshot to the history file when tracking is on.
+
+        Reads the existing history file (or starts fresh), appends one entry for
+        the current instance, trims to 365 entries per instance, and writes back.
+        Failures are logged as warnings and never raise.
+
+        Args:
+            data: The full fetched data dict from ``_fetch_all()``.
+        """
+        html_cfg = self._config.get("html") or {}
+        if not html_cfg.get("track_history", False):
+            return
+
+        ov = data.get("overview", [])
+        instance_url = self._ov(ov, "Server URL")
+        if not instance_url or instance_url == "N/A":
+            print("  [warn] html history: no instance URL in overview; skipping snapshot.")
+            return
+
+        security = data.get("security", [])
+        versions = []
+        for item in security if isinstance(security, list) else []:
+            if not isinstance(item, dict) or item.get("section") != "os_version":
+                continue
+            raw_ver = str(item.get("os_version", ""))
+            ver = self._normalise_version(raw_ver)
+            count = int(item.get("count", 0))
+            if ver:
+                versions.append({"v": ver, "c": count})
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        new_entry: dict[str, Any] = {
+            "ts": ts,
+            "instance": instance_url,
+            "versions": versions,
+        }
+
+        history_path = Path(self._history_file_path())
+        try:
+            history: list[dict[str, Any]] = []
+            if history_path.exists():
+                raw = history_path.read_text(encoding="utf-8")
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    history = parsed
+
+            history.append(new_entry)
+
+            # Trim to 365 entries per instance.
+            instance_entries = [
+                e for e in history if e.get("instance") == instance_url
+            ]
+            other_entries = [
+                e for e in history if e.get("instance") != instance_url
+            ]
+            if len(instance_entries) > 365:
+                instance_entries = instance_entries[-365:]
+            history = other_entries + instance_entries
+
+            history_path.parent.mkdir(parents=True, exist_ok=True)
+            history_path.write_text(
+                json.dumps(history, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(f"  [ok]   html history: appended snapshot to {history_path}")
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print(f"  [warn] html history: could not update {history_path}: {exc}")
+
     def generate(self) -> Path:
         """Fetch data and write the HTML report to disk."""
         print("\n--- HTML Report ---")
         data = self._fetch_all()
+        self._append_history_snapshot(data)
         html = self._render(data)
         self._out_file.parent.mkdir(parents=True, exist_ok=True)
         self._out_file.write_text(html, encoding="utf-8")
@@ -11015,9 +11156,8 @@ class HtmlReport:
     def _css(self) -> str:
         """Return the embedded CSS block.
 
-        Colour palette and layout are adapted from DevliegereM's jamf-html-reports
-        (github.com/DevliegereM/) with minor modifications for
-        the Python port (no emojis; text-only status indicators).
+        Colour palette and layout inspired by DevliegereM/JamfReport.
+        See the code-level comment above the HtmlReport class for attribution.
         """
         accent = (self._config.get("branding", "accent_color") or "").strip()
         accent_dark = (self._config.get("branding", "accent_dark") or "").strip()
@@ -11954,6 +12094,389 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         return f"""<div class="section-title">Trends</div>
 <div class="grid grid-2">{''.join(cards)}</div>"""
 
+    @staticmethod
+    def _normalise_version(ver: str) -> str:
+        """Strip a trailing '.0' segment from a version string.
+
+        Args:
+            ver: Raw version string, e.g. "15.4.0".
+
+        Returns:
+            Normalised string, e.g. "15.4".
+        """
+        return ver.removesuffix(".0") if ver.endswith(".0") else ver
+
+    @staticmethod
+    def _version_sort_key(ver: str) -> tuple[int, ...]:
+        """Return a tuple of ints for semantic version comparison.
+
+        Non-numeric segments are mapped to 0 so sorting never raises.
+
+        Args:
+            ver: Normalised version string.
+
+        Returns:
+            Tuple of integer version components.
+        """
+        parts = []
+        for segment in ver.split("."):
+            try:
+                parts.append(int(segment))
+            except ValueError:
+                parts.append(0)
+        return tuple(parts)
+
+    def _build_timeline_data(
+        self, history_file: str, instance_url: str
+    ) -> Optional[dict[str, Any]]:
+        """Load persisted history and build timeline chart data for this instance.
+
+        Args:
+            history_file: Absolute path to the JSON history file.
+            instance_url: Jamf Pro server URL used as the instance key.
+
+        Returns:
+            Dict with ``labels``, ``datasets``, and ``entry_count`` keys, or
+            ``None`` when fewer than two snapshots exist for this instance.
+        """
+        try:
+            history_path = Path(history_file).expanduser()
+            if not history_path.exists():
+                return None
+            raw = history_path.read_text(encoding="utf-8")
+            history: list[dict[str, Any]] = json.loads(raw)
+            if not isinstance(history, list):
+                return None
+        except (OSError, json.JSONDecodeError, ValueError):
+            return None
+
+        entries = [
+            entry
+            for entry in history
+            if isinstance(entry, dict) and entry.get("instance") == instance_url
+        ]
+        if len(entries) < 2:
+            return None
+
+        all_versions: set[str] = set()
+        for entry in entries:
+            for ver_entry in entry.get("versions", []):
+                if isinstance(ver_entry, dict):
+                    all_versions.add(self._normalise_version(str(ver_entry.get("v", ""))))
+        all_versions.discard("")
+
+        sorted_versions = sorted(
+            all_versions,
+            key=self._version_sort_key,
+            reverse=True,
+        )
+
+        labels = [str(entry.get("ts", "")) for entry in entries]
+        palette = self._TREND_PALETTE
+        datasets = []
+        for idx, ver in enumerate(sorted_versions):
+            data_points = []
+            for entry in entries:
+                count = 0
+                for ver_entry in entry.get("versions", []):
+                    if (
+                        isinstance(ver_entry, dict)
+                        and self._normalise_version(str(ver_entry.get("v", ""))) == ver
+                    ):
+                        count += int(ver_entry.get("c", 0))
+                data_points.append(count)
+            major = ver.split(".")[0]
+            color = MAJOR_VERSION_COLORS.get(major, palette[idx % len(palette)])
+            datasets.append(
+                {
+                    "label": ver,
+                    "data": data_points,
+                    "color": color,
+                }
+            )
+
+        return {
+            "labels": labels,
+            "datasets": datasets,
+            "entry_count": len(entries),
+        }
+
+    def _render_timeline_section(
+        self, timeline: Optional[dict[str, Any]]
+    ) -> str:
+        """Render the macOS Adoption Timeline section card.
+
+        Args:
+            timeline: Output of ``_build_timeline_data``, or ``None`` to skip.
+
+        Returns:
+            HTML string for the section, or ``""`` when timeline is ``None``.
+        """
+        if not timeline:
+            return ""
+
+        labels = timeline.get("labels", [])
+        datasets = timeline.get("datasets", [])
+        entry_count = timeline.get("entry_count", 0)
+
+        if len(labels) < 2 or not datasets:
+            return ""
+
+        svg_payload: dict[str, Any] = {
+            "labels": labels,
+            "series": [
+                {
+                    "label": ds["label"],
+                    "data": ds["data"],
+                    "borderColor": ds["color"],
+                    "backgroundColor": f'{ds["color"]}22',
+                    "borderWidth": 2,
+                }
+                for ds in datasets
+            ],
+        }
+        chart_svg = self._render_line_chart_svg(svg_payload)
+
+        return f"""<div class="section-title">macOS Adoption Timeline</div>
+<div class="card card-sm">
+  <div class="chart-title">macOS Adoption Timeline
+    <span class="badge badge-dim" style="margin-left:6px">{entry_count} snapshots</span>
+  </div>
+  {chart_svg}
+</div>"""
+
+    def _build_cleanup_data(self, data: dict[str, Any]) -> Optional[dict[str, Any]]:
+        """Build cleanup analysis data from cached per-policy and per-profile detail.
+
+        Loads per-policy and per-profile detail from cache only — no live API calls.
+        Cross-references packages and scripts against policy detail to find unused items.
+
+        Args:
+            data: The fetched data dict from _fetch_all().
+
+        Returns:
+            A dict with keys disabled_policies, unscoped_policies, unscoped_profiles,
+            unused_packages, unused_scripts — or None if no detail cache is available.
+        """
+        policies = data.get("policies") or []
+        profiles = data.get("macos_profiles") or []
+        packages = data.get("packages") or []
+        scripts = data.get("scripts") or []
+
+        if not isinstance(policies, list) or not isinstance(profiles, list):
+            return None
+
+        # Load per-policy detail from cache; skip if none available at all
+        policy_details: list[dict[str, Any]] = []
+        for item in policies:
+            if not isinstance(item, dict):
+                continue
+            pol_id = str(item.get("id", ""))
+            if not pol_id:
+                continue
+            detail = self._bridge.classic_policy_detail(pol_id)
+            if isinstance(detail, dict):
+                policy_details.append(detail)
+
+        profile_details: list[dict[str, Any]] = []
+        for item in profiles:
+            if not isinstance(item, dict):
+                continue
+            prof_id = str(item.get("id", ""))
+            if not prof_id:
+                continue
+            detail = self._bridge.classic_macos_profile_detail(prof_id)
+            if isinstance(detail, dict):
+                profile_details.append(detail)
+
+        # If we found no detail for any policy or profile, skip the section
+        if not policy_details and not profile_details:
+            return None
+
+        disabled_policies = self._cleanup_disabled_policies(policy_details)
+        unscoped_policies = self._cleanup_unscoped_policies(policy_details)
+        unscoped_profiles = self._cleanup_unscoped_profiles(profile_details)
+        unused_packages = self._cleanup_unused_packages(packages, policy_details)
+        unused_scripts = self._cleanup_unused_scripts(scripts, policy_details)
+
+        return {
+            "disabled_policies": disabled_policies,
+            "unscoped_policies": unscoped_policies,
+            "unscoped_profiles": unscoped_profiles,
+            "unused_packages": unused_packages,
+            "unused_scripts": unused_scripts,
+            "policies_with_detail": len(policy_details),
+            "profiles_with_detail": len(profile_details),
+        }
+
+    @staticmethod
+    def _cleanup_disabled_policies(policy_details: list[dict[str, Any]]) -> list[str]:
+        """Return names of disabled classic policies from detail records."""
+        result = []
+        for detail in policy_details:
+            general = detail.get("general") or {}
+            if general.get("enabled") is False:
+                name = general.get("name") or detail.get("name") or ""
+                if name:
+                    result.append(name)
+        return sorted(result)
+
+    @staticmethod
+    def _cleanup_unscoped_policies(policy_details: list[dict[str, Any]]) -> list[str]:
+        """Return names of enabled policies with no scope targets."""
+        result = []
+        for detail in policy_details:
+            general = detail.get("general") or {}
+            if general.get("enabled") is False:
+                continue
+            scope = detail.get("scope") or {}
+            all_computers = scope.get("all_computers", False)
+            if all_computers:
+                continue
+            computers = scope.get("computers") or []
+            groups = scope.get("computer_groups") or []
+            buildings = scope.get("buildings") or []
+            departments = scope.get("departments") or []
+            if not any([computers, groups, buildings, departments]):
+                name = general.get("name") or detail.get("name") or ""
+                if name:
+                    result.append(name)
+        return sorted(result)
+
+    @staticmethod
+    def _cleanup_unscoped_profiles(profile_details: list[dict[str, Any]]) -> list[str]:
+        """Return names of macOS config profiles with no scope targets."""
+        result = []
+        for detail in profile_details:
+            general = detail.get("general") or {}
+            scope = detail.get("scope") or {}
+            all_computers = scope.get("all_computers", False)
+            if all_computers:
+                continue
+            computers = scope.get("computers") or []
+            groups = scope.get("computer_groups") or []
+            buildings = scope.get("buildings") or []
+            departments = scope.get("departments") or []
+            if not any([computers, groups, buildings, departments]):
+                name = general.get("name") or detail.get("name") or ""
+                if name:
+                    result.append(name)
+        return sorted(result)
+
+    @staticmethod
+    def _cleanup_unused_packages(
+        packages: list[Any],
+        policy_details: list[dict[str, Any]],
+    ) -> list[str]:
+        """Return package names not referenced in any cached policy detail."""
+        referenced_ids: set[str] = set()
+        for detail in policy_details:
+            pkg_config = detail.get("package_configuration") or {}
+            for pkg in pkg_config.get("packages") or []:
+                pkg_id = str(pkg.get("id", ""))
+                if pkg_id:
+                    referenced_ids.add(pkg_id)
+
+        result = []
+        for pkg in packages:
+            if not isinstance(pkg, dict):
+                continue
+            pkg_id = str(pkg.get("id", ""))
+            name = pkg.get("packageName") or pkg.get("name") or ""
+            if pkg_id and name and pkg_id not in referenced_ids:
+                result.append(name)
+        return sorted(result)
+
+    @staticmethod
+    def _cleanup_unused_scripts(
+        scripts: list[Any],
+        policy_details: list[dict[str, Any]],
+    ) -> list[str]:
+        """Return script names not referenced in any cached policy detail."""
+        referenced_ids: set[str] = set()
+        for detail in policy_details:
+            scripts_cfg = detail.get("scripts") or []
+            for scr in scripts_cfg:
+                scr_id = str(scr.get("id", ""))
+                if scr_id:
+                    referenced_ids.add(scr_id)
+
+        result = []
+        for scr in scripts:
+            if not isinstance(scr, dict):
+                continue
+            scr_id = str(scr.get("id", ""))
+            name = scr.get("name") or ""
+            if scr_id and name and scr_id not in referenced_ids:
+                result.append(name)
+        return sorted(result)
+
+    def _render_cleanup_section(self, cleanup: Optional[dict[str, Any]]) -> str:
+        """Render the Cleanup Analysis section with tabbed results.
+
+        Args:
+            cleanup: Output of _build_cleanup_data(), or None to skip the section.
+
+        Returns:
+            HTML string for the cleanup section, or "" if no data available.
+        """
+        if not cleanup:
+            return ""
+
+        categories = [
+            ("clean-disabled", "Disabled Policies", cleanup["disabled_policies"]),
+            ("clean-unscoped-pol", "Unscoped Policies", cleanup["unscoped_policies"]),
+            ("clean-unscoped-prof", "Unscoped Profiles", cleanup["unscoped_profiles"]),
+            ("clean-packages", "Unused Packages", cleanup["unused_packages"]),
+            ("clean-scripts", "Unused Scripts", cleanup["unused_scripts"]),
+        ]
+
+        def _tab_btn(idx: int, tab_id: str, label: str, items: list[str]) -> str:
+            active = " active" if idx == 0 else ""
+            badge_cls = "badge-warn" if items else "badge-ok"
+            return (
+                f'<button type="button" class="tree-tab{active}"'
+                f' data-target="{self._html_text(tab_id)}">'
+                f'{self._html_text(label)}'
+                f' <span class="badge {badge_cls}">{len(items)}</span>'
+                f'</button>'
+            )
+
+        tab_html = "".join(
+            _tab_btn(idx, tab_id, label, items)
+            for idx, (tab_id, label, items) in enumerate(categories)
+        )
+
+        panes = []
+        for idx, (pane_id, _label, items) in enumerate(categories):
+            active_cls = " active" if idx == 0 else ""
+            if items:
+                rows = "".join(
+                    f'<div class="sg-node">{self._html_text(name)}</div>'
+                    for name in items
+                )
+                body = f'<div id="{self._html_text(pane_id)}-list">{rows}</div>'
+            else:
+                body = (
+                    f'<div id="{self._html_text(pane_id)}-list">'
+                    '<p class="empty-note">None found — good!</p></div>'
+                )
+            panes.append(
+                f'<div class="tree-pane{active_cls}" id="{self._html_text(pane_id)}">'
+                f'{body}</div>'
+            )
+
+        detail_note = (
+            f"Based on {cleanup['policies_with_detail']} policies and "
+            f"{cleanup['profiles_with_detail']} profiles with cached detail."
+        )
+        return f"""<div class="section-title">Cleanup Analysis</div>
+<div class="card">
+  <div class="chart-sub" style="margin-bottom:10px">{self._html_text(detail_note)}</div>
+  <div class="tree-tabs">{tab_html}</div>
+  {''.join(panes)}
+</div>"""
+
     def _render(self, data: dict[str, Any]) -> str:
         """Assemble the full HTML document from fetched data."""
         ov = data.get("overview", [])
@@ -12003,6 +12526,8 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         os_labels, os_counts = self._os_chart_data(sec)
         flagged = self._flagged_devices(sec)
         trends = self._trend_payload()
+        cleanup = self._build_cleanup_data(data)
+        timeline = self._build_timeline_data(self._history_file_path(), instance_url)
         fetch_status = data.get("_fetch_status", {})
 
         pol_groups = self._build_hierarchy(data.get("policies", []))
@@ -12203,9 +12728,11 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_os_distribution_card(os_labels, os_counts)}
     </div>
 
+    {self._render_timeline_section(timeline)}
     {self._render_trends_section(trends)}
     {self._render_flagged_table(flagged, console_url)}
     {self._render_hierarchy_tabs(pol_groups, mcp_groups, icp_groups, scr_groups, pkg_groups, smart_group_names)}
+    {self._render_cleanup_section(cleanup)}
   </div>
 
   <div class="section-block">
@@ -12241,9 +12768,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
 
   <div class="footer">
-    Generated by jamf-reports-community.
-    HTML report design based on
-    <a href="https://github.com/DevliegereM/" target="_blank" rel="noopener noreferrer">Github.com/DevliegereM</a>
+    Generated by jamf-reports-community &mdash; Cloud Lake Technology
   </div>
 
 </div>

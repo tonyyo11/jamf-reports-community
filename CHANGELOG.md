@@ -7,6 +7,12 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Removed the DevliegereM attribution link from the HTML report footer. Credit is
+  retained in source-code comments. Public-facing documentation and the wiki continue
+  to credit the original project.
+
 ### Fixed
 
 - Fixed HTML report JavaScript being completely non-functional (dark mode, table sorting,
@@ -30,6 +36,11 @@ versions in this repository map to git tags.
   commands.
 - Added Jamf School workbook sheets for inventory, OS versions, device status, stale
   devices, overview, device groups, users, classes, apps, profiles, and locations.
+- Added **Cleanup Analysis** section to the HTML report. Surfaces disabled policies,
+  unscoped policies, unscoped macOS profiles, unused packages, and unused scripts — each
+  in its own tab with a count badge. The section appears only when per-policy and
+  per-profile detail JSON is cached on disk (populated by the `collect` step). If no
+  detail cache exists, the section is omitted silently.
 
 ### Changed
 

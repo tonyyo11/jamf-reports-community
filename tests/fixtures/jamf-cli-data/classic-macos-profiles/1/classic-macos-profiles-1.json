@@ -1,0 +1,44 @@
+{
+  "general": {
+    "id": 1,
+    "name": "WiFi Test",
+    "description": "",
+    "site": {
+      "id": -1,
+      "name": "None"
+    },
+    "category": {
+      "id": -1,
+      "name": "No category assigned"
+    },
+    "distribution_method": "Install Automatically",
+    "user_removable": false,
+    "level": "Computer",
+    "uuid": "00000000-0000-0000-0000-000000000001",
+    "redeployOnUpdate": "Newly Assigned",
+    "payloads": ""
+  },
+  "scope": {
+    "all_computers": false,
+    "computers": [],
+    "computer_groups": [],
+    "buildings": [],
+    "departments": [],
+    "limitations": {
+      "users": [],
+      "user_groups": [],
+      "network_segments": [],
+      "ibeacons": []
+    },
+    "exclusions": {
+      "computers": [],
+      "computer_groups": [],
+      "buildings": [],
+      "departments": [],
+      "users": [],
+      "user_groups": [],
+      "network_segments": [],
+      "ibeacons": []
+    }
+  }
+}
