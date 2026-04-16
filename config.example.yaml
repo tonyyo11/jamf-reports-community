@@ -592,3 +592,70 @@ charts:
   # over time from cached device-compliance snapshots.
   device_state_trend:
     enabled: true
+
+
+# =============================================================================
+# JAMF SCHOOL (optional — requires jamf-cli school setup)
+# =============================================================================
+# Configure this section to generate Jamf School reports.
+#
+# Setup:
+#   1. Run: jamf-cli school setup --profile-name school
+#   2. Set school_cli.enabled: true below
+#   3. Map school_columns to your Jamf School CSV headers:
+#        python3 jamf-reports-community.py school-scaffold --csv school_export.csv
+#   4. Generate a report:
+#        python3 jamf-reports-community.py school-generate --config config.yaml
+#      Or with a CSV export instead of live jamf-cli data:
+#        python3 jamf-reports-community.py school-generate --csv school_export.csv
+
+school_cli:
+  # Set true to use live jamf-cli school commands.
+  # When false, school-generate still works with --csv.
+  enabled: false
+  # Directory where jamf-cli school JSON snapshots are stored.
+  data_dir: "school-cli-data"
+  # Profile name configured via: jamf-cli school setup --profile-name <name>
+  profile: "school"
+  # Fall back to cached snapshots when live commands fail.
+  use_cached_data: true
+
+
+# ---------------------------------------------------------------------------
+# Jamf School column mapping
+# ---------------------------------------------------------------------------
+# Maps logical field names to the actual column headers in your Jamf School
+# CSV device export (the semicolon-delimited file from Device > Export).
+#
+# Run auto-scaffold to generate these mappings:
+#   python3 jamf-reports-community.py school-scaffold --csv school_export.csv
+#
+# Validate at any time:
+#   python3 jamf-reports-community.py school-check --csv school_export.csv
+
+school_columns:
+  # Device display name (e.g. "Jamf School exports this as 'Name'")
+  device_name: ""
+  serial_number: ""
+  os_version: ""
+  model: ""
+  # School/location name the device belongs to
+  location_name: ""
+  owner_email: ""
+  owner_first_name: ""
+  owner_last_name: ""
+  owner_username: ""
+  # Boolean columns — expected values: "true" / "false"
+  managed: ""
+  supervised: ""
+  shared: ""
+  lost_mode: ""
+  # Timestamps — ISO 8601 format expected
+  last_checkin: ""
+  enrollment_date: ""
+  # Enrollment method (dep, user, manual, etc.)
+  enroll_type: ""
+  # Pipe- or bracket-delimited list of device group memberships
+  member_of: ""
+  # Available storage capacity (float, GB)
+  available_capacity: ""

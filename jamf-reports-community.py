@@ -151,6 +151,32 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "use_cached_data": True,
         "allow_live_overview": True,
     },
+    "school_cli": {
+        "enabled": False,
+        "data_dir": "school-cli-data",
+        "profile": "school",
+        "use_cached_data": True,
+    },
+    "school_columns": {
+        "device_name": "",
+        "serial_number": "",
+        "os_version": "",
+        "model": "",
+        "location_name": "",
+        "owner_email": "",
+        "owner_first_name": "",
+        "owner_last_name": "",
+        "owner_username": "",
+        "managed": "",
+        "supervised": "",
+        "shared": "",
+        "lost_mode": "",
+        "last_checkin": "",
+        "enrollment_date": "",
+        "enroll_type": "",
+        "member_of": "",
+        "available_capacity": "",
+    },
     "protect": {
         "enabled": False,
     },
@@ -276,6 +302,35 @@ COLUMN_EXCLUDES: dict[str, list[str]] = {
     "secure_boot": ["external boot"],
     "bootstrap_token": ["allowed"],
     "disk_percent_full": ["available mb", "capacity mb", "free mb"],
+}
+
+# Fuzzy-match candidates for school scaffold auto-detection
+SCHOOL_COLUMN_HINTS: dict[str, list[str]] = {
+    "device_name": ["name", "devicename", "device name"],
+    "serial_number": ["serialnumber", "serial number", "serial"],
+    "os_version": ["osversion", "os version", "iosversion", "ios version"],
+    "model": ["model"],
+    "location_name": ["locationname", "location name", "location", "school"],
+    "owner_email": ["owneremail", "owner email", "email"],
+    "owner_first_name": ["ownerfirstname", "owner first name", "first name", "firstname"],
+    "owner_last_name": ["ownerlastname", "owner last name", "last name", "lastname"],
+    "owner_username": ["ownerusername", "owner username", "username"],
+    "managed": ["ismanaged", "managed"],
+    "supervised": ["issupervised", "supervised"],
+    "shared": ["isshared", "shared"],
+    "lost_mode": ["islostmodeenabled", "lost mode", "lostmode"],
+    "last_checkin": ["lastconnected", "last connected", "last checkin", "lastcheckin"],
+    "enrollment_date": ["enrollmentdate", "enrollment date", "enrolled"],
+    "enroll_type": ["enrolltype", "enroll type", "enrollment type"],
+    "member_of": ["memberof", "member of", "groups", "device groups"],
+    "available_capacity": ["availablecapacity", "available capacity", "available"],
+}
+
+SCHOOL_COLUMN_EXCLUDES: dict[str, list[str]] = {
+    "device_name": ["location", "first", "last", "owner", "school", "class"],
+    "owner_email": ["ownerfirstname", "ownerlastname", "ownerusername"],
+    "location_name": ["schoolnumber"],
+    "model": ["modelidentifier", "modelid"],
 }
 
 
@@ -3743,6 +3798,145 @@ def _protect_overview_has_data(raw: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# SchoolCLIBridge
+# ---------------------------------------------------------------------------
+
+
+class SchoolCLIBridge(JamfCLIBridge):
+    """Thin subprocess wrapper around jamf-cli school.
+
+    Inherits the full plumbing from JamfCLIBridge (_run, _run_and_save,
+    _latest_cached_json, snapshot_age_label, etc.) and adds school-specific
+    data-fetch methods. The key difference is that all commands use the
+    ``school`` product prefix instead of ``pro``.
+
+    Args:
+        save_output: If True, persist JSON output to the configured data_dir.
+        data_dir: Directory used to save or read cached JSON snapshots.
+        profile: jamf-cli profile name (default: "school").
+        use_cached_data: If True, fall back to saved snapshots when live calls fail.
+    """
+
+    def overview(self) -> Any:
+        """Fetch the Jamf School instance overview summary.
+
+        Returns:
+            Parsed JSON list of resource/value rows.
+        """
+        return self._run_and_save(
+            "school-overview",
+            ["school", "overview"],
+            cache_names=["school-overview", "school_overview"],
+        )
+
+    def devices_list(self) -> Any:
+        """Fetch all Jamf School devices.
+
+        Returns:
+            Parsed JSON list of device records.
+        """
+        return self._run_and_save(
+            "school-devices",
+            ["school", "devices", "list"],
+            cache_names=["school-devices", "school_devices"],
+        )
+
+    def device_groups_list(self) -> Any:
+        """Fetch all Jamf School device groups.
+
+        Returns:
+            Parsed JSON list of device group records.
+        """
+        return self._run_and_save(
+            "school-device-groups",
+            ["school", "device-groups", "list"],
+            cache_names=["school-device-groups", "school_device_groups"],
+        )
+
+    def users_list(self) -> Any:
+        """Fetch all Jamf School users.
+
+        Returns:
+            Parsed JSON list of user records.
+        """
+        return self._run_and_save(
+            "school-users",
+            ["school", "users", "list"],
+            cache_names=["school-users", "school_users"],
+        )
+
+    def groups_list(self) -> Any:
+        """Fetch all Jamf School user groups.
+
+        Returns:
+            Parsed JSON list of user group records.
+        """
+        return self._run_and_save(
+            "school-groups",
+            ["school", "groups", "list"],
+            cache_names=["school-groups", "school_groups"],
+        )
+
+    def classes_list(self) -> Any:
+        """Fetch all Jamf School classes.
+
+        Returns:
+            Parsed JSON list of class records.
+        """
+        return self._run_and_save(
+            "school-classes",
+            ["school", "classes", "list"],
+            cache_names=["school-classes", "school_classes"],
+        )
+
+    def apps_list(self) -> Any:
+        """Fetch all Jamf School apps.
+
+        Returns:
+            Parsed JSON list of app records.
+        """
+        return self._run_and_save(
+            "school-apps",
+            ["school", "apps", "list"],
+            cache_names=["school-apps", "school_apps"],
+        )
+
+    def profiles_list(self) -> Any:
+        """Fetch all Jamf School profiles.
+
+        Returns:
+            Parsed JSON list of profile records.
+        """
+        return self._run_and_save(
+            "school-profiles",
+            ["school", "profiles", "list"],
+            cache_names=["school-profiles", "school_profiles"],
+        )
+
+    def locations_list(self) -> Any:
+        """Fetch all Jamf School locations.
+
+        Returns:
+            Parsed JSON list of location records.
+        """
+        return self._run_and_save(
+            "school-locations",
+            ["school", "locations", "list"],
+            cache_names=["school-locations", "school_locations"],
+        )
+
+    def has_cached_school_data(self) -> bool:
+        """Return True when the data_dir contains at least one school snapshot."""
+        required = [
+            "school-overview",
+            "school_overview",
+            "school-devices",
+            "school_devices",
+        ]
+        return self._latest_cached_json(required) is not None
+
+
+# ---------------------------------------------------------------------------
 # CoreDashboard
 # ---------------------------------------------------------------------------
 
@@ -6978,6 +7172,702 @@ class CSVDashboard:
                 f"[WARN] EA '{ea_name}': no dates could be parsed from column '{col}'."
                 " Check the date format in your CSV."
             )
+
+
+# ---------------------------------------------------------------------------
+# SchoolDashboard
+# ---------------------------------------------------------------------------
+
+
+def _school_csv_load(csv_path: str) -> "pd.DataFrame":
+    """Load a Jamf School CSV export, auto-detecting semicolon vs comma delimiter.
+
+    Args:
+        csv_path: Path to the Jamf School device export CSV.
+
+    Returns:
+        DataFrame with original column names preserved.
+    """
+    path = Path(csv_path)
+    with open(path, encoding="utf-8-sig", errors="replace") as fh:
+        sample = fh.read(4096)
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+    df = pd.read_csv(path, sep=delimiter, dtype=str, encoding="utf-8-sig",
+                     encoding_errors="replace")
+    df.fillna("", inplace=True)
+    return df
+
+
+class SchoolColumnMapper:
+    """Resolves school_columns config field names to actual CSV column names.
+
+    Args:
+        config: Loaded Config instance.
+    """
+
+    def __init__(self, config: "Config") -> None:
+        self._mapping: dict[str, str] = {
+            k: str(v or "").strip()
+            for k, v in (config.get("school_columns") or {}).items()
+        }
+
+    def get(self, field: str) -> Optional[str]:
+        """Return the configured column name for a logical school field, or None."""
+        return self._mapping.get(field) or None
+
+    def extract(self, row: dict, field: str) -> str:
+        """Return the cell value for a logical field from a CSV row dict."""
+        col = self.get(field)
+        if col is None:
+            return ""
+        return str(row.get(col, "")).strip()
+
+
+class SchoolDashboard:
+    """Generates Excel sheets from Jamf School data.
+
+    Accepts either a SchoolCLIBridge (live/cached jamf-cli data) or a
+    pre-loaded DataFrame from a Jamf School CSV export. Both sources can
+    be provided simultaneously: live data drives the overview and relational
+    sheets while the CSV drives per-device detail.
+
+    Args:
+        config: Loaded Config instance.
+        workbook: Active xlsxwriter Workbook.
+        fmts: Format dict from _build_formats.
+        bridge: Optional SchoolCLIBridge instance for live/cached API data.
+        csv_df: Optional DataFrame from a Jamf School CSV export.
+    """
+
+    def __init__(
+        self,
+        config: "Config",
+        workbook: xlsxwriter.Workbook,
+        fmts: dict,
+        bridge: Optional[SchoolCLIBridge] = None,
+        csv_df: Optional["pd.DataFrame"] = None,
+    ) -> None:
+        self._config = config
+        self._wb = workbook
+        self._fmts = fmts
+        self._bridge = bridge
+        self._df = csv_df
+        self._col = SchoolColumnMapper(config)
+        self._stale_days = int(
+            config.get("thresholds", "stale_device_days", default=30) or 30
+        )
+
+    @property
+    def _org_name(self) -> str:
+        return (self._config.get("branding", "org_name") or "").strip()
+
+    def _t(self, base: str) -> str:
+        # School sheets use base names only — the org prefix would overflow
+        # Excel's 31-char sheet name limit with typical org names.
+        return base
+
+    def _sheet(self, title: str) -> xlsxwriter.workbook.Worksheet:
+        ws = self._wb.add_worksheet(title[:31])
+        ws.freeze_panes(1, 0)
+        return ws
+
+    def _header_row(self, ws: xlsxwriter.workbook.Worksheet, headers: list[str]) -> None:
+        for col_i, header in enumerate(headers):
+            ws.write(0, col_i, header, self._fmts["header"])
+
+    def build_all(self) -> None:
+        """Build all enabled school report sheets."""
+        sheets: list[tuple[str, Any]] = []
+
+        if self._bridge is not None:
+            sheets += [
+                (self._t("School Overview"), self._write_overview),
+                (self._t("Device Groups"), self._write_device_groups),
+                (self._t("Users"), self._write_users),
+                (self._t("Classes"), self._write_classes),
+                (self._t("Apps"), self._write_apps),
+                (self._t("Profiles"), self._write_profiles),
+                (self._t("Locations"), self._write_locations),
+            ]
+
+        if self._df is not None:
+            sheets += [
+                (self._t("Device Inventory"), self._write_device_inventory),
+                (self._t("OS Versions"), self._write_os_versions),
+                (self._t("Device Status"), self._write_device_status),
+                (self._t("Stale Devices"), self._write_stale_devices),
+            ]
+        elif self._bridge is not None:
+            # Build device sheets from live/cached bridge data
+            sheets += [
+                (self._t("Device Inventory"), self._write_device_inventory_from_bridge),
+                (self._t("OS Versions"), self._write_os_versions_from_bridge),
+                (self._t("Device Status"), self._write_device_status_from_bridge),
+                (self._t("Stale Devices"), self._write_stale_devices_from_bridge),
+            ]
+
+        for title, fn in sheets:
+            print(f"  sheet: {title}")
+            try:
+                fn(self._sheet(title))
+            except RuntimeError as exc:
+                ws = self._wb.get_worksheet_by_name(title)
+                if ws:
+                    ws.write(1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
+
+    # ------------------------------------------------------------------
+    # Bridge-driven sheets
+    # ------------------------------------------------------------------
+
+    def _write_overview(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write School Overview summary sheet from jamf-cli school overview."""
+        raw = self._bridge.overview()  # type: ignore[union-attr]
+        items = raw if isinstance(raw, list) else (raw.get("items") or [raw])
+
+        ws.set_column(0, 0, 36)
+        ws.set_column(1, 1, 24)
+        self._header_row(ws, ["Resource", "Value"])
+
+        row = 1
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for key, value in item.items():
+                if key in ("type", "id"):
+                    continue
+                _safe_write(ws, row, 0, str(key).replace("_", " ").title(), self._fmts["cell"])
+                _safe_write(ws, row, 1, value, self._fmts["cell"])
+                row += 1
+
+    def _write_device_groups(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Device Groups sheet from jamf-cli school device-groups list."""
+        raw = self._bridge.device_groups_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Name", "Type", "Device Count", "Description"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 40)
+        ws.set_column(1, 1, 16)
+        ws.set_column(2, 2, 14)
+        ws.set_column(3, 3, 50)
+
+        for row_i, item in enumerate(items, start=1):
+            flat = _flatten_record(item)
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["name", "group_name", "groupName"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["type", "group_type", "groupType"]),
+                        self._fmts["cell"])
+            count_raw = _first_value(flat, ["device_count", "deviceCount", "count",
+                                            "total_devices", "totalDevices"])
+            try:
+                count = int(count_raw) if count_raw else ""
+            except (ValueError, TypeError):
+                count = count_raw
+            _safe_write(ws, row_i, 2, count, self._fmts["cell"])
+            _safe_write(ws, row_i, 3,
+                        _first_value(flat, ["description", "notes"]),
+                        self._fmts["cell"])
+
+    def _write_users(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Users sheet from jamf-cli school users list."""
+        raw = self._bridge.users_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Username", "First Name", "Last Name", "Email", "Location", "Role"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 1, 20)
+        ws.set_column(2, 2, 20)
+        ws.set_column(3, 3, 32)
+        ws.set_column(4, 5, 24)
+
+        for row_i, item in enumerate(items, start=1):
+            flat = _flatten_record(item)
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["username", "userName", "user_name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["firstName", "first_name", "name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 2,
+                        _first_value(flat, ["lastName", "last_name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 3,
+                        _first_value(flat, ["email", "emailAddress", "email_address"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 4,
+                        _first_value(flat, ["locationName", "location_name", "location"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 5,
+                        _first_value(flat, ["role", "userRole", "user_role", "type"]),
+                        self._fmts["cell"])
+
+    def _write_classes(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Classes sheet from jamf-cli school classes list."""
+        raw = self._bridge.classes_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Name", "Location", "Teacher", "Student Count", "Description"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 36)
+        ws.set_column(1, 2, 24)
+        ws.set_column(3, 3, 14)
+        ws.set_column(4, 4, 48)
+
+        for row_i, item in enumerate(items, start=1):
+            flat = _flatten_record(item)
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["name", "className", "class_name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["locationName", "location_name", "location"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 2,
+                        _first_value(flat, ["teacher", "teacherName", "teacher_name"]),
+                        self._fmts["cell"])
+            count_raw = _first_value(flat, ["studentCount", "student_count",
+                                            "student_count", "students"])
+            try:
+                count = int(count_raw) if count_raw else ""
+            except (ValueError, TypeError):
+                count = count_raw
+            _safe_write(ws, row_i, 3, count, self._fmts["cell"])
+            _safe_write(ws, row_i, 4,
+                        _first_value(flat, ["description", "notes"]),
+                        self._fmts["cell"])
+
+    def _write_apps(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Apps sheet from jamf-cli school apps list."""
+        raw = self._bridge.apps_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Name", "Bundle ID", "Version", "Device Count", "Category"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 40)
+        ws.set_column(1, 1, 36)
+        ws.set_column(2, 3, 16)
+        ws.set_column(4, 4, 24)
+
+        for row_i, item in enumerate(items, start=1):
+            flat = _flatten_record(item)
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["name", "appName", "app_name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["bundleId", "bundle_id", "bundleIdentifier"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 2,
+                        _first_value(flat, ["version", "appVersion", "app_version"]),
+                        self._fmts["cell"])
+            count_raw = _first_value(flat, ["deviceCount", "device_count", "count",
+                                            "installedCount", "installed_count"])
+            try:
+                count = int(count_raw) if count_raw else ""
+            except (ValueError, TypeError):
+                count = count_raw
+            _safe_write(ws, row_i, 3, count, self._fmts["cell"])
+            _safe_write(ws, row_i, 4,
+                        _first_value(flat, ["category", "categoryName", "category_name"]),
+                        self._fmts["cell"])
+
+    def _write_profiles(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Profiles sheet from jamf-cli school profiles list."""
+        raw = self._bridge.profiles_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Name", "Type", "Level", "Device Count"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 48)
+        ws.set_column(1, 2, 20)
+        ws.set_column(3, 3, 14)
+
+        for row_i, item in enumerate(items, start=1):
+            flat = _flatten_record(item)
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["name", "profileName", "profile_name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["type", "profileType", "profile_type"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 2,
+                        _first_value(flat, ["level", "distribution_method", "scope"]),
+                        self._fmts["cell"])
+            count_raw = _first_value(flat, ["deviceCount", "device_count", "count"])
+            try:
+                count = int(count_raw) if count_raw else ""
+            except (ValueError, TypeError):
+                count = count_raw
+            _safe_write(ws, row_i, 3, count, self._fmts["cell"])
+
+    def _write_locations(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Locations sheet from jamf-cli school locations list."""
+        raw = self._bridge.locations_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Name", "School Number", "Region", "Device Count"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 40)
+        ws.set_column(1, 2, 20)
+        ws.set_column(3, 3, 14)
+
+        for row_i, item in enumerate(items, start=1):
+            flat = _flatten_record(item)
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["name", "locationName", "location_name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["schoolNumber", "school_number", "number"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 2,
+                        _first_value(flat, ["region", "district", "area"]),
+                        self._fmts["cell"])
+            count_raw = _first_value(flat, ["deviceCount", "device_count", "count"])
+            try:
+                count = int(count_raw) if count_raw else ""
+            except (ValueError, TypeError):
+                count = count_raw
+            _safe_write(ws, row_i, 3, count, self._fmts["cell"])
+
+    # ------------------------------------------------------------------
+    # CSV-driven sheets
+    # ------------------------------------------------------------------
+
+    def _device_rows(self) -> list[dict]:
+        """Return list of row dicts from the loaded CSV DataFrame."""
+        if self._df is None:
+            return []
+        return self._df.to_dict("records")
+
+    def _write_device_inventory(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Device Inventory sheet from Jamf School CSV export."""
+        rows = self._device_rows()
+        col = self._col
+
+        headers = [
+            "Device Name", "Serial Number", "Model", "OS Version",
+            "Location", "Owner", "Email", "Enrollment Type",
+            "Enrollment Date", "Last Check-in", "Managed", "Supervised",
+            "Shared", "Lost Mode", "Groups",
+        ]
+        self._header_row(ws, headers)
+        ws.set_column(0, 1, 28)
+        ws.set_column(2, 3, 24)
+        ws.set_column(4, 5, 28)
+        ws.set_column(6, 6, 32)
+        ws.set_column(7, 9, 20)
+        ws.set_column(10, 13, 12)
+        ws.set_column(14, 14, 48)
+
+        for row_i, row in enumerate(rows, start=1):
+            first = col.extract(row, "owner_first_name")
+            last = col.extract(row, "owner_last_name")
+            owner = f"{first} {last}".strip() if (first or last) else col.extract(row, "owner_username")
+            _safe_write(ws, row_i, 0, col.extract(row, "device_name"), self._fmts["cell"])
+            _safe_write(ws, row_i, 1, col.extract(row, "serial_number"), self._fmts["cell"])
+            _safe_write(ws, row_i, 2, col.extract(row, "model"), self._fmts["cell"])
+            _safe_write(ws, row_i, 3, col.extract(row, "os_version"), self._fmts["cell"])
+            _safe_write(ws, row_i, 4, col.extract(row, "location_name"), self._fmts["cell"])
+            _safe_write(ws, row_i, 5, owner, self._fmts["cell"])
+            _safe_write(ws, row_i, 6, col.extract(row, "owner_email"), self._fmts["cell"])
+            _safe_write(ws, row_i, 7, col.extract(row, "enroll_type"), self._fmts["cell"])
+            _safe_write(ws, row_i, 8, col.extract(row, "enrollment_date"), self._fmts["cell"])
+            _safe_write(ws, row_i, 9, col.extract(row, "last_checkin"), self._fmts["cell"])
+            _safe_write(ws, row_i, 10, col.extract(row, "managed"), self._fmts["cell"])
+            _safe_write(ws, row_i, 11, col.extract(row, "supervised"), self._fmts["cell"])
+            _safe_write(ws, row_i, 12, col.extract(row, "shared"), self._fmts["cell"])
+            _safe_write(ws, row_i, 13, col.extract(row, "lost_mode"), self._fmts["cell"])
+            _safe_write(ws, row_i, 14, col.extract(row, "member_of"), self._fmts["cell"])
+
+    def _write_os_versions(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write OS version distribution from CSV."""
+        rows = self._device_rows()
+        os_col = self._col.get("os_version")
+        if not os_col:
+            ws.write(1, 0, "[os_version column not mapped in school_columns]",
+                     self._fmts["cell"])
+            return
+
+        counter: Counter = Counter()
+        for row in rows:
+            ver = str(row.get(os_col, "")).strip()
+            if ver:
+                counter[ver] += 1
+
+        headers = ["OS Version", "Device Count", "% of Fleet"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 24)
+        ws.set_column(1, 2, 16)
+
+        total = sum(counter.values())
+        for row_i, (ver, count) in enumerate(
+            sorted(counter.items(), key=lambda x: x[1], reverse=True), start=1
+        ):
+            pct = f"{count / total * 100:.1f}%" if total else "0.0%"
+            _safe_write(ws, row_i, 0, ver, self._fmts["cell"])
+            _safe_write(ws, row_i, 1, count, self._fmts["cell"])
+            _safe_write(ws, row_i, 2, pct, self._fmts["cell"])
+
+    def _write_device_status(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Managed/Supervised/Shared/Lost Mode breakdown from CSV."""
+        rows = self._device_rows()
+        total = len(rows)
+
+        def _count_true(field: str) -> int:
+            col_name = self._col.get(field)
+            if not col_name:
+                return 0
+            return sum(
+                1 for r in rows
+                if str(r.get(col_name, "")).strip().lower() == "true"
+            )
+
+        managed_n = _count_true("managed")
+        supervised_n = _count_true("supervised")
+        shared_n = _count_true("shared")
+        lost_n = _count_true("lost_mode")
+
+        headers = ["Status", "Count", "% of Fleet"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 28)
+        ws.set_column(1, 2, 16)
+
+        rows_data = [
+            ("Total Devices", total, "100.0%"),
+            ("Managed", managed_n, f"{managed_n / total * 100:.1f}%" if total else "0.0%"),
+            ("Supervised", supervised_n,
+             f"{supervised_n / total * 100:.1f}%" if total else "0.0%"),
+            ("Shared Devices", shared_n,
+             f"{shared_n / total * 100:.1f}%" if total else "0.0%"),
+            ("Lost Mode Enabled", lost_n,
+             f"{lost_n / total * 100:.1f}%" if total else "0.0%"),
+            ("Unmanaged", total - managed_n,
+             f"{(total - managed_n) / total * 100:.1f}%" if total else "0.0%"),
+        ]
+        for row_i, (label, count, pct) in enumerate(rows_data, start=1):
+            fmt = self._fmts["red"] if label == "Lost Mode Enabled" and count > 0 else \
+                  self._fmts["yellow"] if label == "Unmanaged" and count > 0 else \
+                  self._fmts["cell"]
+            _safe_write(ws, row_i, 0, label, fmt)
+            _safe_write(ws, row_i, 1, count, fmt)
+            _safe_write(ws, row_i, 2, pct, fmt)
+
+    def _write_stale_devices(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Stale Devices sheet — devices not seen within stale_device_days."""
+        rows = self._device_rows()
+        checkin_col = self._col.get("last_checkin")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self._stale_days)
+
+        headers = [
+            "Device Name", "Serial Number", "Model", "OS Version",
+            "Location", "Last Check-in", "Days Since Check-in",
+        ]
+        self._header_row(ws, headers)
+        ws.set_column(0, 1, 28)
+        ws.set_column(2, 3, 24)
+        ws.set_column(4, 4, 28)
+        ws.set_column(5, 5, 24)
+        ws.set_column(6, 6, 22)
+
+        stale_count = 0
+        for row in rows:
+            if not checkin_col:
+                break
+            raw_ts = str(row.get(checkin_col, "")).strip()
+            if not raw_ts:
+                continue
+            try:
+                ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if ts >= cutoff:
+                continue
+
+            days_since = (datetime.now(timezone.utc) - ts).days
+            row_i = stale_count + 1
+            stale_count += 1
+            row_fmt = self._fmts["red"] if days_since >= self._stale_days * 3 else \
+                      self._fmts["yellow"] if days_since >= self._stale_days else \
+                      self._fmts["cell"]
+            _safe_write(ws, row_i, 0, self._col.extract(row, "device_name"), row_fmt)
+            _safe_write(ws, row_i, 1, self._col.extract(row, "serial_number"), row_fmt)
+            _safe_write(ws, row_i, 2, self._col.extract(row, "model"), row_fmt)
+            _safe_write(ws, row_i, 3, self._col.extract(row, "os_version"), row_fmt)
+            _safe_write(ws, row_i, 4, self._col.extract(row, "location_name"), row_fmt)
+            _safe_write(ws, row_i, 5, raw_ts, row_fmt)
+            _safe_write(ws, row_i, 6, days_since, row_fmt)
+
+        if stale_count == 0 and not checkin_col:
+            ws.write(1, 0, "[last_checkin column not mapped in school_columns]",
+                     self._fmts["cell"])
+        elif stale_count == 0:
+            ws.write(1, 0, f"No devices stale beyond {self._stale_days} days.",
+                     self._fmts["cell"])
+
+    # ------------------------------------------------------------------
+    # Bridge-only device sheets (when no CSV provided)
+    # ------------------------------------------------------------------
+
+    def _normalize_bridge_device(self, flat: dict) -> dict:
+        """Normalize a flattened jamf-cli school devices list record."""
+        return {
+            "Name": _first_value(flat, ["name", "deviceName", "device_name"]),
+            "Serial Number": _first_value(flat, ["serialNumber", "serial_number", "serial"]),
+            "Model": _first_value(flat, ["model", "deviceModel"]),
+            "OS Version": _first_value(flat, ["osVersion", "os_version", "iosVersion"]),
+            "Location": _first_value(flat, ["locationName", "location_name", "location"]),
+            "Owner": _first_value(flat, ["ownerName", "owner_name", "owner",
+                                          "userName", "user_name"]),
+            "Email": _first_value(flat, ["ownerEmail", "owner_email", "email"]),
+            "Managed": _first_value(flat, ["isManaged", "is_managed", "managed"]),
+            "Supervised": _first_value(flat, ["isSupervised", "is_supervised", "supervised"]),
+            "Lost Mode": _first_value(flat, ["isLostModeEnabled", "is_lost_mode_enabled",
+                                              "lostMode", "lost_mode"]),
+            "Last Check-in": _first_value(flat, ["lastConnected", "last_connected",
+                                                   "lastCheckin", "last_checkin"]),
+        }
+
+    def _write_device_inventory_from_bridge(
+        self, ws: xlsxwriter.workbook.Worksheet
+    ) -> None:
+        """Write Device Inventory sheet from jamf-cli school devices list."""
+        raw = self._bridge.devices_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Device Name", "Serial Number", "Model", "OS Version",
+                   "Location", "Owner", "Email", "Managed", "Supervised",
+                   "Lost Mode", "Last Check-in"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 1, 28)
+        ws.set_column(2, 3, 24)
+        ws.set_column(4, 5, 28)
+        ws.set_column(6, 6, 32)
+        ws.set_column(7, 9, 12)
+        ws.set_column(10, 10, 24)
+
+        for row_i, item in enumerate(items, start=1):
+            dev = self._normalize_bridge_device(_flatten_record(item))
+            for col_i, key in enumerate(headers):
+                _safe_write(ws, row_i, col_i, dev.get(key, ""), self._fmts["cell"])
+
+    def _write_os_versions_from_bridge(
+        self, ws: xlsxwriter.workbook.Worksheet
+    ) -> None:
+        """Write OS version distribution from jamf-cli school devices list."""
+        raw = self._bridge.devices_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        counter: Counter = Counter()
+        for item in items:
+            flat = _flatten_record(item)
+            ver = _first_value(flat, ["osVersion", "os_version", "iosVersion"])
+            if ver:
+                counter[str(ver)] += 1
+
+        headers = ["OS Version", "Device Count", "% of Fleet"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 24)
+        ws.set_column(1, 2, 16)
+
+        total = sum(counter.values())
+        for row_i, (ver, count) in enumerate(
+            sorted(counter.items(), key=lambda x: x[1], reverse=True), start=1
+        ):
+            pct = f"{count / total * 100:.1f}%" if total else "0.0%"
+            _safe_write(ws, row_i, 0, ver, self._fmts["cell"])
+            _safe_write(ws, row_i, 1, count, self._fmts["cell"])
+            _safe_write(ws, row_i, 2, pct, self._fmts["cell"])
+
+    def _write_device_status_from_bridge(
+        self, ws: xlsxwriter.workbook.Worksheet
+    ) -> None:
+        """Write Managed/Supervised/Lost Mode breakdown from bridge device list."""
+        raw = self._bridge.devices_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+        total = len(items)
+
+        def _count_flag(keys: list[str]) -> int:
+            return sum(
+                1 for item in items
+                if str(_first_value(_flatten_record(item), keys) or "").lower() == "true"
+            )
+
+        managed_n = _count_flag(["isManaged", "is_managed", "managed"])
+        supervised_n = _count_flag(["isSupervised", "is_supervised", "supervised"])
+        shared_n = _count_flag(["isShared", "is_shared", "shared"])
+        lost_n = _count_flag(["isLostModeEnabled", "is_lost_mode_enabled",
+                               "lostMode", "lost_mode"])
+
+        headers = ["Status", "Count", "% of Fleet"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 28)
+        ws.set_column(1, 2, 16)
+
+        rows_data = [
+            ("Total Devices", total, "100.0%"),
+            ("Managed", managed_n, f"{managed_n / total * 100:.1f}%" if total else "0.0%"),
+            ("Supervised", supervised_n,
+             f"{supervised_n / total * 100:.1f}%" if total else "0.0%"),
+            ("Shared Devices", shared_n,
+             f"{shared_n / total * 100:.1f}%" if total else "0.0%"),
+            ("Lost Mode Enabled", lost_n,
+             f"{lost_n / total * 100:.1f}%" if total else "0.0%"),
+        ]
+        for row_i, (label, count, pct) in enumerate(rows_data, start=1):
+            fmt = self._fmts["red"] if label == "Lost Mode Enabled" and count > 0 else \
+                  self._fmts["cell"]
+            _safe_write(ws, row_i, 0, label, fmt)
+            _safe_write(ws, row_i, 1, count, fmt)
+            _safe_write(ws, row_i, 2, pct, fmt)
+
+    def _write_stale_devices_from_bridge(
+        self, ws: xlsxwriter.workbook.Worksheet
+    ) -> None:
+        """Write Stale Devices sheet from jamf-cli school devices list."""
+        raw = self._bridge.devices_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self._stale_days)
+
+        headers = ["Device Name", "Serial Number", "Model", "OS Version",
+                   "Location", "Last Check-in", "Days Since Check-in"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 1, 28)
+        ws.set_column(2, 3, 24)
+        ws.set_column(4, 4, 28)
+        ws.set_column(5, 5, 24)
+        ws.set_column(6, 6, 22)
+
+        stale_count = 0
+        checkin_keys = ["lastConnected", "last_connected", "lastCheckin", "last_checkin"]
+        for item in items:
+            flat = _flatten_record(item)
+            raw_ts = _first_value(flat, checkin_keys)
+            if not raw_ts:
+                continue
+            try:
+                ts = datetime.fromisoformat(str(raw_ts).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if ts >= cutoff:
+                continue
+
+            days_since = (datetime.now(timezone.utc) - ts).days
+            stale_count += 1
+            dev = self._normalize_bridge_device(flat)
+            row_fmt = self._fmts["red"] if days_since >= self._stale_days * 3 else \
+                      self._fmts["yellow"] if days_since >= self._stale_days else \
+                      self._fmts["cell"]
+            _safe_write(ws, stale_count, 0, dev["Name"], row_fmt)
+            _safe_write(ws, stale_count, 1, dev["Serial Number"], row_fmt)
+            _safe_write(ws, stale_count, 2, dev["Model"], row_fmt)
+            _safe_write(ws, stale_count, 3, dev["OS Version"], row_fmt)
+            _safe_write(ws, stale_count, 4, dev["Location"], row_fmt)
+            _safe_write(ws, stale_count, 5, raw_ts, row_fmt)
+            _safe_write(ws, stale_count, 6, days_since, row_fmt)
+
+        if stale_count == 0:
+            ws.write(1, 0, f"No devices stale beyond {self._stale_days} days.",
+                     self._fmts["cell"])
 
 
 # ---------------------------------------------------------------------------
@@ -12239,6 +13129,253 @@ def cmd_patch_managed(
 
 
 # ---------------------------------------------------------------------------
+# School commands
+# ---------------------------------------------------------------------------
+
+
+def _build_school_bridge(config: Config) -> SchoolCLIBridge:
+    """Construct a SchoolCLIBridge from config school_cli settings.
+
+    Args:
+        config: Loaded Config instance.
+
+    Returns:
+        Configured SchoolCLIBridge.
+    """
+    school_cfg = config.get("school_cli") or {}
+    data_dir = str(config.resolve_path("school_cli", "data_dir",
+                                       default="school-cli-data"))
+    profile = str(school_cfg.get("profile") or "school").strip()
+    use_cached = bool(school_cfg.get("use_cached_data", True))
+    return SchoolCLIBridge(
+        save_output=True,
+        data_dir=data_dir,
+        profile=profile,
+        use_cached_data=use_cached,
+    )
+
+
+def cmd_school_scaffold(csv_path: str, out_path: str) -> None:
+    """Generate a starter school_columns config section from a Jamf School CSV.
+
+    Reads the CSV headers (auto-detecting semicolon delimiter), fuzzy-matches
+    them against SCHOOL_COLUMN_HINTS, and writes a school_columns block to
+    out_path (or appends if out_path already has other content).
+
+    Args:
+        csv_path: Path to a Jamf School device export CSV.
+        out_path: Path to write the starter school_columns YAML block.
+    """
+    df = _school_csv_load(csv_path)
+    headers = list(df.columns)
+
+    def _best_match(logical: str) -> str:
+        hints = SCHOOL_COLUMN_HINTS.get(logical, [])
+        excludes = SCHOOL_COLUMN_EXCLUDES.get(logical, [])
+        for hint in hints:
+            for h in headers:
+                h_lower = h.lower()
+                if any(ex in h_lower for ex in excludes):
+                    continue
+                if hint in h_lower:
+                    return h
+        return ""
+
+    mapping: dict[str, str] = {}
+    for field in DEFAULT_CONFIG["school_columns"]:
+        mapping[field] = _best_match(field)
+
+    # Build YAML block
+    lines = ["school_columns:"]
+    for field, matched in mapping.items():
+        comment = f"  # e.g. {matched}" if matched else "  # not matched"
+        value = f'"{matched}"' if matched else '""'
+        lines.append(f"  {field}: {value}{comment}")
+
+    output = "\n".join(lines) + "\n"
+
+    out_file = Path(out_path)
+    if out_file.exists():
+        existing = out_file.read_text(encoding="utf-8")
+        if "school_columns:" in existing:
+            print(f"[WARN] school_columns already exists in {out_path} — skipping write.")
+            print(output)
+            return
+        with open(out_file, "a", encoding="utf-8") as fh:
+            fh.write("\n# --- School columns (auto-scaffolded) ---\n")
+            fh.write(output)
+        print(f"Appended school_columns to {out_path}")
+    else:
+        out_file.write_text(output, encoding="utf-8")
+        print(f"Wrote school_columns scaffold to {out_path}")
+
+    matched_count = sum(1 for v in mapping.values() if v)
+    total = len(mapping)
+    print(f"Auto-matched {matched_count}/{total} school columns.")
+    unmatched = [f for f, v in mapping.items() if not v]
+    if unmatched:
+        print(f"Unmatched fields: {', '.join(unmatched)}")
+        print("  Edit the file and fill in the correct column names from your CSV.")
+
+
+def cmd_school_check(config: Config, csv_path: Optional[str] = None) -> None:
+    """Validate Jamf School config: bridge availability and column mappings.
+
+    Args:
+        config: Loaded Config instance.
+        csv_path: Optional path to a Jamf School CSV export to check columns against.
+    """
+    school_cfg = config.get("school_cli") or {}
+    enabled = school_cfg.get("enabled", False)
+    profile = str(school_cfg.get("profile") or "school").strip()
+
+    print(f"school_cli.enabled: {enabled}")
+    print(f"school_cli.profile: {profile!r}")
+
+    bridge = _build_school_bridge(config)
+    if bridge.is_available():
+        print(f"jamf-cli found: {bridge._binary}")
+        has_cached = bridge.has_cached_school_data()
+        print(f"Cached school data: {'yes' if has_cached else 'no'}")
+        if enabled:
+            print("Testing live school overview...")
+            try:
+                overview = bridge.overview()
+                items = overview if isinstance(overview, list) else []
+                print(f"  OK — {len(items)} overview item(s) returned.")
+            except RuntimeError as exc:
+                print(f"  WARN — live overview failed: {exc}")
+    else:
+        print("jamf-cli not found — school dashboard will require cached data or CSV.")
+
+    if csv_path:
+        df = _school_csv_load(csv_path)
+        print(f"\nCSV: {csv_path}  ({len(df)} rows, delimiter auto-detected)")
+        col = SchoolColumnMapper(config)
+        school_cols = config.get("school_columns") or {}
+        mapped = 0
+        for field in school_cols:
+            col_name = col.get(field)
+            if col_name:
+                if col_name in df.columns:
+                    mapped += 1
+                else:
+                    print(f"  [WARN] school_columns.{field} = {col_name!r} not in CSV headers")
+        print(f"  school_columns: {mapped}/{len(school_cols)} mapped and found in CSV")
+
+
+def cmd_school_collect(config: Config) -> None:
+    """Fetch and cache Jamf School snapshots via jamf-cli school commands.
+
+    Runs all school data-fetch commands in parallel and saves results
+    to the configured school_cli.data_dir directory.
+
+    Args:
+        config: Loaded Config instance.
+    """
+    bridge = _build_school_bridge(config)
+    if not bridge.is_available():
+        raise SystemExit("jamf-cli not found. Cannot collect school snapshots.")
+
+    fetchers: list[tuple[str, Any]] = [
+        ("overview", bridge.overview),
+        ("devices", bridge.devices_list),
+        ("device-groups", bridge.device_groups_list),
+        ("users", bridge.users_list),
+        ("groups", bridge.groups_list),
+        ("classes", bridge.classes_list),
+        ("apps", bridge.apps_list),
+        ("profiles", bridge.profiles_list),
+        ("locations", bridge.locations_list),
+    ]
+
+    print(f"Collecting {len(fetchers)} school snapshots (profile: {bridge._profile!r})...")
+    errors: list[str] = []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(fn): name for name, fn in fetchers}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                future.result()
+                print(f"  OK: {name}")
+            except RuntimeError as exc:
+                errors.append(f"  WARN: {name}: {exc}")
+
+    for msg in errors:
+        print(msg)
+
+    if not errors:
+        print("All school snapshots collected successfully.")
+    else:
+        print(f"{len(fetchers) - len(errors)}/{len(fetchers)} snapshots collected.")
+
+
+def cmd_school_generate(
+    config: Config,
+    csv_path: Optional[str] = None,
+    out_file: Optional[str] = None,
+) -> None:
+    """Build the Jamf School Excel report workbook.
+
+    Generates a workbook with device inventory, OS breakdown, managed/supervised
+    status, stale devices, device groups, users, classes, apps, profiles,
+    and locations — from jamf-cli school data and/or a CSV export.
+
+    Args:
+        config: Loaded Config instance.
+        csv_path: Optional path to a Jamf School device export CSV.
+        out_file: Optional explicit output path for the generated workbook.
+    """
+    school_cfg = config.get("school_cli") or {}
+    bridge: Optional[SchoolCLIBridge] = None
+
+    if school_cfg.get("enabled", False):
+        b = _build_school_bridge(config)
+        if b.is_available() or b.has_cached_school_data():
+            bridge = b
+
+    csv_df: Optional["pd.DataFrame"] = None
+    if csv_path:
+        print(f"Loading school CSV: {csv_path}")
+        csv_df = _school_csv_load(csv_path)
+        print(f"  {len(csv_df)} devices loaded.")
+
+    if bridge is None and csv_df is None:
+        raise SystemExit(
+            "No data source available. Either:\n"
+            "  • Set school_cli.enabled: true (and configure a school profile), or\n"
+            "  • Provide --csv with a Jamf School device export."
+        )
+
+    # Resolve output path
+    output_cfg = config.get("output") or {}
+    out_dir_raw = str(output_cfg.get("output_dir") or "Generated Reports")
+    out_dir = config.resolve_path("output", "output_dir", default=out_dir_raw)
+    timestamp_outputs = bool(output_cfg.get("timestamp_outputs", True))
+
+    if out_file:
+        out_path = Path(out_file)
+    else:
+        ts_suffix = f"_{_now_ts()}" if timestamp_outputs else ""
+        out_path = Path(out_dir) / f"school_report{ts_suffix}.xlsx"
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Building School report: {out_path}")
+    workbook = xlsxwriter.Workbook(str(out_path), {"remove_timezone": True})
+    fmts = _build_formats(workbook)
+
+    try:
+        dashboard = SchoolDashboard(config, workbook, fmts,
+                                    bridge=bridge, csv_df=csv_df)
+        dashboard.build_all()
+    finally:
+        workbook.close()
+
+    print(f"Done. Report written to: {out_path}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -12246,10 +13383,10 @@ def cmd_patch_managed(
 def main() -> None:
     """Parse arguments and dispatch to the appropriate command."""
     parser = argparse.ArgumentParser(
-        description="Community Jamf Pro reporting tool.",
+        description="Community Jamf reporting tool (Jamf Pro + Jamf School).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Commands:\n"
+            "Jamf Pro commands:\n"
             "  generate      Build the Excel report\n"
             "  html          Build a self-contained HTML status report for management\n"
             "  collect       Save jamf-cli snapshots and optional CSV history\n"
@@ -12257,10 +13394,16 @@ def main() -> None:
             "  workspace-init Create a per-profile reporting workspace skeleton\n"
             "  launchagent-setup Create a LaunchAgent for scheduled reporting\n"
             "  launchagent-run   Internal runner used by generated LaunchAgents\n"
-            "  scaffold      Generate a starter config.yaml from a CSV\n"
+            "  scaffold      Generate a starter config.yaml from a Jamf Pro CSV\n"
             "  check         Verify jamf-cli auth and config\n"
             "  device        Print a device detail view from jamf-cli pro device\n"
             "  patch-managed Set managed state on computers (requires jamf-cli v1.6.0+)\n"
+            "\n"
+            "Jamf School commands:\n"
+            "  school-generate  Build the Jamf School Excel report\n"
+            "  school-collect   Save jamf-cli school snapshots\n"
+            "  school-scaffold  Generate school_columns config from a School CSV\n"
+            "  school-check     Verify school config and column mappings\n"
         ),
     )
     parser.add_argument(
@@ -12277,6 +13420,10 @@ def main() -> None:
             "check",
             "device",
             "patch-managed",
+            "school-generate",
+            "school-collect",
+            "school-scaffold",
+            "school-check",
         ],
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
@@ -12423,6 +13570,12 @@ def main() -> None:
         cmd_scaffold(args.csv, args.out, interactive=args.interactive)
         return
 
+    if args.command == "school-scaffold":
+        if not args.csv:
+            parser.error("school-scaffold requires --csv")
+        cmd_school_scaffold(args.csv, args.out)
+        return
+
     if args.command == "device":
         if not args.id:
             parser.error("device requires --id")
@@ -12497,6 +13650,12 @@ def main() -> None:
             dry_run=args.dry_run,
             serials_file=args.serials_file,
         )
+    elif args.command == "school-check":
+        cmd_school_check(config, args.csv)
+    elif args.command == "school-collect":
+        cmd_school_collect(config)
+    elif args.command == "school-generate":
+        cmd_school_generate(config, args.csv, args.out_file)
 
 
 if __name__ == "__main__":
