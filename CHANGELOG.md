@@ -7,6 +7,20 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Tracked jamf-cli dependency updated to v1.11.0. No code changes required:
+  the field-candidate and fallback logic already handles the v1.10.0 change
+  where `pro mobile-devices list` switched to the detail endpoint with nested
+  `general.*` JSON fields; the `MOBILE_INVENTORY_FIELD_CANDIDATES` dictionary
+  already covers both flat and nested key shapes.
+- `pro computers-inventory` remains the primary command namespace in v1.10.0;
+  `computers` / `comp` are now registered as aliases pointing to it, so all
+  existing calls to `pro computers-inventory patch` continue to work unchanged.
+- New v1.11.0 subcommands `pro classic-account-users list` and
+  `pro classic-account-groups list` are not yet used by this tool; flagged here
+  for future consideration as a backup-coverage sheet.
+
 ## [1.1.0] - 2026-04-16
 
 ### Added
