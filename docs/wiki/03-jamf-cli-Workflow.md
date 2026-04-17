@@ -45,8 +45,8 @@ Current high-value commands:
 - `jamf-cli pro report compliance-rules` (platform preview)
 - `jamf-cli pro report compliance-devices` (platform preview)
 - `jamf-cli pro report ddm-status` (platform preview)
-- `jamf-cli pro mobile-device-inventory-details list`
-- `jamf-cli pro mobile-devices list`
+- `jamf-cli pro mobile-device-inventory-details list` (falls back to `mobile-devices list` if unavailable)
+- `jamf-cli pro mobile-devices list` (v1.10.0+: returns nested `general.*` JSON fields; both formats handled)
 - `jamf-cli pro classic-mobile-config-profiles list`
 - `jamf-cli pro report inventory-summary`
 - `jamf-cli pro report security`
@@ -58,6 +58,11 @@ Current high-value commands:
 - `jamf-cli pro report app-status` (v1.2.0+)
 - `jamf-cli pro report patch-status`
 - `jamf-cli pro report update-status` (v1.2.0+)
+
+Not yet used, available as of v1.11.0:
+
+- `jamf-cli pro classic-account-users list`
+- `jamf-cli pro classic-account-groups list`
 
 The important design point is that `jamf-reports-community` uses jamf-cli in two ways:
 
