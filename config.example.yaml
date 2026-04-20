@@ -675,3 +675,95 @@ school_columns:
   member_of: ""
   # Available storage capacity (float, GB)
   available_capacity: ""
+
+
+# =============================================================================
+# FILTERED CSV EXPORT REPORTS
+# =============================================================================
+# Generates dated CSV snapshots from the wide automation_inventory_*.csv
+# produced by launchagent-run --mode jamf-cli-full.  Each entry runs on its
+# own schedule and writes to a designated folder, replicating the outputs that
+# Jamf Pro's built-in Advanced Computer Search reports used to produce.
+#
+# These run automatically as the last step of launchagent-run --mode jamf-cli-full,
+# or manually via:
+#
+#   python3 jamf-reports-community.py export-reports [--csv inventory.csv]
+#
+# To force all reports regardless of schedule, delete:
+#   jamf-cli-data/state/export-<name>.last
+#
+# --- Schedule values ---
+#   daily           Run every time the tool fires (each weekday if using the default LaunchAgent)
+#   1st-of-month    Run only on the 1st of the month
+#   mon,wed,fri     Run on specific weekday(s); comma-separate multiple days
+#
+# --- Filter options (optional) ---
+#   within_days: N      Include only rows where <field> date is within N days of today
+#   exclude_values: []  Exclude rows where <field> value is in the provided list
+#
+# --- Column mapping ---
+#   columns:
+#     "Output Column Name": "Source Column Name in inventory CSV"
+#
+# Leave export_reports as an empty list [] to disable all filtered exports.
+
+export_reports:
+
+  # macOS version report — all managed devices, every weekday
+  - name: "macos_updates"
+    output_dir: "macOS_Updates"
+    filename: "{ts} - Report - macOS Operating System Report.csv"
+    schedule: daily
+    columns:
+      Computer Name: "Computer Name"
+      Model: "Model"
+      Serial Number: "Serial Number"
+      "Operating System Version": "Operating System"
+      "Email Address": "Email Address"
+      "Full Name": "Real Name"
+      "Last Inventory Update": "Last Report"
+
+  # All managed devices — minimal columns, every Monday
+  - name: "all_managed_macs"
+    output_dir: "All Managed Macs Report"
+    filename: "{ts} - Report - All Managed Macs.csv"
+    schedule: mon
+    columns:
+      Computer Name: "Computer Name"
+      "Email Address": "Email Address"
+      "Full Name": "Real Name"
+
+  # Active devices (checked in within 30 days) — 1st of each month
+  - name: "active_device_list"
+    output_dir: "Active Device List"
+    filename: "{ts} - Report - Devices Checked In (Last 30 Days).csv"
+    schedule: 1st-of-month
+    filter:
+      field: "Last Check-in"
+      within_days: 30
+    columns:
+      Computer Name: "Computer Name"
+      Model: "Model"
+      Serial Number: "Serial Number"
+      "Full Name": "Real Name"
+      "Operating System Version": "Operating System"
+      "Last Inventory Update": "Last Report"
+      "Last Check-in": "Last Check-in"
+
+  # New enrollments in the past 7 days — every Friday
+  - name: "new_system_builds"
+    output_dir: "New System Build Report"
+    filename: "{ts} - Report - New System Builds for Past Week.csv"
+    schedule: fri
+    filter:
+      field: "Last Enrollment"
+      within_days: 7
+    columns:
+      Computer Name: "Computer Name"
+      "Full Name": "Real Name"
+      "Last Enrollment": "Last Enrollment"
+      Username: "Username"
+      "Email Address": "Email Address"
+      "Operating System": "Operating System"
+      Position: "Position"

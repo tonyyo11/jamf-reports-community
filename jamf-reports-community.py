@@ -272,6 +272,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Defaults to ~/.jamf-report-history.json when blank.
         "history_file": "",
     },
+    "export_reports": [],
 }
 
 # Fuzzy-match candidates for scaffold auto-detection
@@ -2302,6 +2303,11 @@ class Config:
     def compliance(self) -> dict:
         value = self._data.get("compliance") or {}
         return value if isinstance(value, dict) else {}
+
+    @property
+    def export_reports(self) -> list[dict]:
+        value = self._data.get("export_reports", [])
+        return value if isinstance(value, list) else []
 
     @property
     def jamf_cli(self) -> dict:
@@ -13142,6 +13148,215 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
     return out_path
 
 
+# ---------------------------------------------------------------------------
+# Filtered CSV export reports (export_reports config section)
+# ---------------------------------------------------------------------------
+
+def _parse_jamf_field_date(value: str) -> Optional[datetime]:
+    """Parse a Jamf inventory CSV date cell into a datetime.
+
+    Handles ISO 8601 with/without Z and fractional seconds, as produced
+    by jamf-cli inventory-csv exports (e.g. 2026-04-09T21:01:40.769Z).
+    """
+    raw = (value or "").strip().rstrip("Z")
+    if not raw:
+        return None
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+        "%m/%d/%Y %I:%M %p",
+        "%m/%d/%Y",
+    ):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _export_schedule_is_due(schedule: str, today: Optional[datetime] = None) -> bool:
+    """Return True if this export_reports schedule fires today.
+
+    Schedule values (case-insensitive):
+      daily          — always fires
+      1st-of-month   — fires when today.day == 1
+      mon,wed,fri    — fires on those weekday(s); comma-separate multiple days
+    """
+    if today is None:
+        today = datetime.now()
+    key = schedule.strip().lower()
+    if key == "daily":
+        return True
+    if key == "1st-of-month":
+        return today.day == 1
+    # Python weekday(): 0=Mon … 6=Sun
+    py_map: dict[str, int] = {
+        "sun": 6, "sunday": 6,
+        "mon": 0, "monday": 0,
+        "tue": 1, "tues": 1, "tuesday": 1,
+        "wed": 2, "wednesday": 2,
+        "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
+        "fri": 4, "friday": 4,
+        "sat": 5, "saturday": 5,
+    }
+    target: set[int] = set()
+    for token in key.split(","):
+        token = token.strip()
+        if token in py_map:
+            target.add(py_map[token])
+    return today.weekday() in target if target else False
+
+
+def _export_state_file(config: Config, name: str) -> Path:
+    """Return the state-tracking file path for a named export report."""
+    data_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    if data_dir is None:
+        data_dir = config.base_dir / "jamf-cli-data"
+    state_dir = data_dir / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir / f"export-{name}.last"
+
+
+def _export_ran_today(config: Config, name: str) -> bool:
+    """Return True if this named export already ran today."""
+    sf = _export_state_file(config, name)
+    return sf.exists() and sf.read_text().strip() == datetime.now().strftime("%Y-%m-%d")
+
+
+def _export_mark_done(config: Config, name: str) -> None:
+    """Record today as the last run date for the named export."""
+    _export_state_file(config, name).write_text(datetime.now().strftime("%Y-%m-%d"))
+
+
+def cmd_export_reports(
+    config: Config,
+    inventory_csv: Optional[Path] = None,
+    force: bool = False,
+) -> list[Path]:
+    """Generate filtered CSV exports per the export_reports config section.
+
+    Each entry defines a named filtered slice of the wide automation inventory
+    CSV.  Entries are skipped when not scheduled for today or already written
+    today (unless force=True).
+
+    Args:
+        config: Loaded Config instance.
+        inventory_csv: Path to the wide inventory CSV.  When None, the most
+            recent automation_inventory_*.csv in the configured output_dir is
+            located automatically.
+        force: Ignore schedule and prior-run state; generate every entry.
+
+    Returns:
+        List of output CSV paths that were written.
+    """
+    definitions = config.export_reports
+    if not definitions:
+        return []
+
+    if inventory_csv is None:
+        out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
+        if out_dir is None:
+            out_dir = config.base_dir / "Generated Reports"
+        candidates = sorted(
+            out_dir.glob("automation_inventory_*.csv"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not candidates:
+            raise SystemExit(
+                "Error: export-reports could not find an automation_inventory_*.csv in"
+                f" {out_dir}.\n"
+                "Run inventory-csv first, or run launchagent-run --mode jamf-cli-full."
+            )
+        inventory_csv = candidates[0]
+
+    print(f"export-reports: loading {inventory_csv.name}")
+    try:
+        df = pd.read_csv(inventory_csv, dtype=str, encoding="utf-8-sig").fillna("")
+    except Exception as exc:  # noqa: BLE001
+        raise SystemExit(f"Error: failed to read inventory CSV: {exc}") from None
+
+    written: list[Path] = []
+    today = datetime.now()
+
+    for defn in definitions:
+        if not isinstance(defn, dict):
+            continue
+        name = str(defn.get("name", "")).strip()
+        if not name:
+            print("  [warn] export_reports entry missing 'name' — skipping")
+            continue
+
+        schedule = str(defn.get("schedule", "daily")).strip()
+        if not force and not _export_schedule_is_due(schedule, today):
+            print(f"  [skip] {name}: not scheduled today ({schedule})")
+            continue
+        if not force and _export_ran_today(config, name):
+            print(f"  [skip] {name}: already ran today")
+            continue
+
+        output_dir_raw = str(defn.get("output_dir", "")).strip()
+        if not output_dir_raw:
+            print(f"  [warn] {name}: missing 'output_dir' — skipping")
+            continue
+        output_dir = config.resolve_path_value(output_dir_raw)
+        if output_dir is None:
+            output_dir = config.base_dir / output_dir_raw
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = today.strftime("%Y-%m-%dT%H_%M_%S")
+        filename = str(defn.get("filename", f"{name}_{ts}.csv")).replace("{ts}", ts)
+        out_path = output_dir / filename
+
+        # Apply row filter
+        filtered = df
+        filter_cfg = defn.get("filter")
+        if isinstance(filter_cfg, dict):
+            field = str(filter_cfg.get("field", "")).strip()
+            if field not in df.columns:
+                print(
+                    f"  [warn] {name}: filter field '{field}' not in inventory CSV"
+                    " — writing unfiltered"
+                )
+            elif "within_days" in filter_cfg:
+                try:
+                    days = int(filter_cfg["within_days"])
+                except (TypeError, ValueError):
+                    days = 30
+                cutoff = today - timedelta(days=days)
+                mask = df[field].apply(
+                    lambda v, _c=cutoff: (
+                        (dt := _parse_jamf_field_date(v)) is not None and dt >= _c
+                    )
+                )
+                filtered = df[mask]
+            elif "exclude_values" in filter_cfg:
+                excl = {str(v) for v in (filter_cfg.get("exclude_values") or [])}
+                filtered = df[~df[field].isin(excl)]
+
+        # Select and rename columns
+        columns_cfg = defn.get("columns")
+        if isinstance(columns_cfg, dict) and columns_cfg:
+            out_df = pd.DataFrame(index=range(len(filtered)))
+            for out_name, src_name in columns_cfg.items():
+                src_name = str(src_name)
+                if src_name in filtered.columns:
+                    out_df[out_name] = filtered[src_name].values
+                else:
+                    out_df[out_name] = ""
+        else:
+            out_df = filtered.reset_index(drop=True)
+
+        out_df.to_csv(out_path, index=False, encoding="utf-8-sig")
+        print(f"  [ok] {name}: {len(out_df)} rows -> {out_path.name}")
+        _export_mark_done(config, name)
+        written.append(out_path)
+
+    return written
+
+
 def _resolve_time_choice(
     value: Optional[str],
     default: str = DEFAULT_AUTOMATION_TIME_OF_DAY,
@@ -13478,6 +13693,9 @@ def cmd_launchagent_run(
                 notify_url,
             )
             status["report_path"] = str(report_path)
+            exported = cmd_export_reports(config, inventory_path)
+            if exported:
+                status["exported_reports"] = [str(p) for p in exported]
         elif mode == "csv-assisted":
             _collect_snapshots(config, None, historical_csv_dir)
             report_path = cmd_generate(
@@ -14040,6 +14258,7 @@ def main() -> None:
             "html",
             "collect",
             "inventory-csv",
+            "export-reports",
             "workspace-init",
             "launchagent-setup",
             "launchagent-run",
@@ -14230,6 +14449,11 @@ def main() -> None:
         cmd_collect(config, args.csv, args.historical_csv_dir)
     elif args.command == "inventory-csv":
         cmd_inventory_csv(config, args.out_file)
+    elif args.command == "export-reports":
+        # --csv: explicit inventory CSV path; omit to auto-locate the latest one.
+        # To force all reports regardless of schedule, delete state files:
+        #   jamf-cli-data/state/export-<name>.last
+        cmd_export_reports(config, Path(args.csv) if args.csv else None)
     elif args.command == "launchagent-setup":
         cmd_launchagent_setup(
             config,

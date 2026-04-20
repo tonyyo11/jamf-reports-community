@@ -7,6 +7,21 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- **`export-reports` command** — generates dated, filtered CSV snapshots from the
+  wide `automation_inventory_*.csv` produced by `launchagent-run --mode jamf-cli-full`.
+  Configured via the new `export_reports` list in `config.yaml`.  Each entry defines
+  a name, output directory, filename template (`{ts}` is replaced with a timestamp),
+  schedule (`daily`, `mon,wed,fri`, `1st-of-month`, etc.), optional row filter
+  (`within_days` or `exclude_values`), and optional column selection/rename map.
+  State files in `jamf-cli-data/state/export-<name>.last` prevent double-writes
+  within the same day.
+- `export-reports` runs automatically as the final step of
+  `launchagent-run --mode jamf-cli-full` when `export_reports` entries are
+  configured; exported paths are recorded in the automation status JSON.
+- `Config.export_reports` property (returns `list[dict]`, empty list default).
+
 ### Changed
 
 - Tracked jamf-cli dependency updated to v1.11.0. No code changes required:
