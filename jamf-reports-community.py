@@ -150,6 +150,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "profile": "",
         "use_cached_data": True,
         "allow_live_overview": True,
+        "disabled_sheets": [],
     },
     "school_cli": {
         "enabled": False,
@@ -4304,7 +4305,12 @@ class CoreDashboard:
                 ("Package Lifecycle", self._write_package_lifecycle),
             ]
         )
+        disabled: list[str] = list(self._config.jamf_cli.get("disabled_sheets", []) or [])
+        disabled_lower = {s.strip().lower() for s in disabled}
         for name, fn in sheets:
+            if name.lower() in disabled_lower:
+                print(f"  [disabled] {name}: skipped via jamf_cli.disabled_sheets")
+                continue
             try:
                 fn()
                 written.append(name)
