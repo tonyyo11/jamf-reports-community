@@ -141,6 +141,33 @@ def test_generate_warns_for_unknown_sheet_skip(
 
 
 @pytest.mark.integration
+def test_generate_warns_for_unknown_sheet_only(
+    monkeypatch,
+    config_factory,
+    tmp_path,
+    capsys,
+    jrc,
+) -> None:
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = True
+    config._data["jamf_cli"]["allow_live_overview"] = False
+    config._data["sheets"] = {
+        "only": ["Fleet Overview", "Not A Real Sheet"],
+    }
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: None)
+
+    report_path = jrc.cmd_generate(config, None, str(tmp_path / "cached-jamf-cli-only.xlsx"))
+
+    captured = capsys.readouterr()
+    assert "sheets.only: unknown sheet 'Not A Real Sheet'" in captured.out
+
+    workbook = openpyxl.load_workbook(report_path, data_only=False)
+    assert "Fleet Overview" in workbook.sheetnames
+    assert "Report Sources" not in workbook.sheetnames
+    assert "Update Status" not in workbook.sheetnames
+
+
+@pytest.mark.integration
 def test_html_cleanup_section_with_cached_detail(
     monkeypatch,
     config_factory,

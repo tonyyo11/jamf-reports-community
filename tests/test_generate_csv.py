@@ -91,3 +91,27 @@ def test_generate_csv_workbook_respects_sheets_skip(
     assert "Stale Devices" in workbook.sheetnames
     assert "Report Sources" not in workbook.sheetnames
     assert "Charts" not in workbook.sheetnames
+
+
+@pytest.mark.integration
+def test_generate_csv_workbook_respects_sheets_only_and_precedence(
+    config_factory,
+    fixtures_root: Path,
+    tmp_path: Path,
+    jrc,
+) -> None:
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = False
+    config._data["sheets"] = {
+        "only": ["Stale Devices", "Report Sources"],
+        "skip": ["Stale Devices"],
+    }
+    csv_path = fixtures_root / "csv" / "dummy_all_macs.csv"
+
+    report_path = jrc.cmd_generate(config, str(csv_path), str(tmp_path / "allowlist-report.xlsx"))
+
+    workbook = openpyxl.load_workbook(report_path, data_only=False)
+    assert "Stale Devices" in workbook.sheetnames
+    assert "Report Sources" in workbook.sheetnames
+    assert "Device Inventory" not in workbook.sheetnames
+    assert "Charts" not in workbook.sheetnames

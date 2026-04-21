@@ -192,6 +192,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "custom_eas": [],
     "sheets": {
+        "only": [],
         "skip": [],
     },
     "report_families": {
@@ -3729,21 +3730,35 @@ def _normalized_sheet_name(value: Any) -> str:
     return str(value or "").strip().casefold()
 
 
-def _build_skipped_sheet_names(config: "Config", available_names: list[str]) -> set[str]:
-    """Return the configured sheet names to skip, warning on unknown values."""
-    configured = _list_of_strings(config.get("sheets", "skip", default=[]))
-    if not configured:
-        return set()
-
+def _resolve_selected_sheet_names(
+    config: "Config",
+    available_names: list[str],
+) -> tuple[Optional[set[str]], Optional[str]]:
+    """Return the selected workbook tab names and the config key that drove them."""
     available = {_normalized_sheet_name(name): name for name in available_names}
-    skipped: set[str] = set()
-    for raw_name in configured:
+    only = _list_of_strings(config.get("sheets", "only", default=[]))
+    if only:
+        selected: set[str] = set()
+        for raw_name in only:
+            normalized = _normalized_sheet_name(raw_name)
+            if normalized not in available:
+                print(f"  [warn] sheets.only: unknown sheet '{raw_name}'")
+                continue
+            selected.add(normalized)
+        return selected, "sheets.only"
+
+    skip = _list_of_strings(config.get("sheets", "skip", default=[]))
+    if not skip:
+        return None, None
+
+    selected = set(available)
+    for raw_name in skip:
         normalized = _normalized_sheet_name(raw_name)
         if normalized not in available:
             print(f"  [warn] sheets.skip: unknown sheet '{raw_name}'")
             continue
-        skipped.add(normalized)
-    return skipped
+        selected.discard(normalized)
+    return selected, "sheets.skip"
 
 
 def _write_report_sources_sheet(
@@ -4335,14 +4350,17 @@ class CoreDashboard:
         )
         return sheets
 
-    def write_all(self, skipped_names: Optional[set[str]] = None) -> list[str]:
+    def write_all(
+        self,
+        selected_names: Optional[set[str]] = None,
+        filter_label: Optional[str] = None,
+    ) -> list[str]:
         """Write all enabled core sheets. Returns list of sheet names written."""
         written = []
-        skipped_names = skipped_names or set()
         sheets = self.sheet_plan()
         for name, fn in sheets:
-            if _normalized_sheet_name(name) in skipped_names:
-                print(f"  [disabled] {name}: skipped via sheets.skip")
+            if selected_names is not None and _normalized_sheet_name(name) not in selected_names:
+                print(f"  [disabled] {name}: skipped via {filter_label or 'sheet filter'}")
                 continue
             try:
                 fn()
@@ -6817,13 +6835,16 @@ class CSVDashboard:
             ))
         return sheets
 
-    def write_all(self, skipped_names: Optional[set[str]] = None) -> list[str]:
+    def write_all(
+        self,
+        selected_names: Optional[set[str]] = None,
+        filter_label: Optional[str] = None,
+    ) -> list[str]:
         """Write all enabled CSV-derived sheets. Returns list of sheet names written."""
         written = []
-        skipped_names = skipped_names or set()
         for name, fn in self.sheet_plan():
-            if _normalized_sheet_name(name) in skipped_names:
-                print(f"  [disabled] {name}: skipped via sheets.skip")
+            if selected_names is not None and _normalized_sheet_name(name) not in selected_names:
+                print(f"  [disabled] {name}: skipped via {filter_label or 'sheet filter'}")
                 continue
             try:
                 fn()
@@ -7503,13 +7524,16 @@ class SchoolDashboard:
             ]
         return sheets
 
-    def build_all(self, skipped_names: Optional[set[str]] = None) -> list[str]:
+    def build_all(
+        self,
+        selected_names: Optional[set[str]] = None,
+        filter_label: Optional[str] = None,
+    ) -> list[str]:
         """Build all enabled school report sheets and return the names written."""
-        skipped_names = skipped_names or set()
         written: list[str] = []
         for title, fn in self.sheet_plan():
-            if _normalized_sheet_name(title) in skipped_names:
-                print(f"  [disabled] {title}: skipped via sheets.skip")
+            if selected_names is not None and _normalized_sheet_name(title) not in selected_names:
+                print(f"  [disabled] {title}: skipped via {filter_label or 'sheet filter'}")
                 continue
             print(f"  sheet: {title}")
             try:
@@ -10035,13 +10059,23 @@ def cmd_generate(
             available_sheet_names.extend(name for name, _ in csv_dash.sheet_plan())
         if charts_embed_enabled:
             available_sheet_names.append("Charts")
-        skipped_sheet_names = _build_skipped_sheet_names(config, available_sheet_names)
-        report_sources_enabled = _normalized_sheet_name("Report Sources") not in skipped_sheet_names
-        charts_sheet_enabled = _normalized_sheet_name("Charts") not in skipped_sheet_names
+        selected_sheet_names, filter_label = _resolve_selected_sheet_names(
+            config,
+            available_sheet_names,
+        )
+        report_sources_enabled = (
+            selected_sheet_names is None
+            or _normalized_sheet_name("Report Sources") in selected_sheet_names
+        )
+        charts_sheet_enabled = (
+            selected_sheet_names is None or _normalized_sheet_name("Charts") in selected_sheet_names
+        )
 
         if jamf_cli_enabled and bridge is not None and jamf_cli_ready:
             print("\nGenerating jamf-cli sheets...")
-            jamf_cli_written = core.write_all(skipped_sheet_names) if core is not None else []
+            jamf_cli_written = (
+                core.write_all(selected_sheet_names, filter_label) if core is not None else []
+            )
             sheets_written += len(jamf_cli_written)
         elif jamf_cli_enabled:
             print("\nWarning: jamf-cli not available — skipping core dashboard sheets.")
@@ -10058,7 +10092,7 @@ def cmd_generate(
                 print(f"  [error] Cannot read CSV: {csv_init_error}")
                 print("  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export.")
             else:
-                csv_written = csv_dash.write_all(skipped_sheet_names)
+                csv_written = csv_dash.write_all(selected_sheet_names, filter_label)
                 sheets_written += len(csv_written)
         else:
             print("\nNo CSV provided — skipping inventory sheets.")
@@ -10200,10 +10234,10 @@ def cmd_generate(
             )
             sheets_written += 1
         else:
-            print("  [disabled] Report Sources: skipped via sheets.skip")
+            print(f"  [disabled] Report Sources: skipped via {filter_label or 'sheet filter'}")
 
         if sheets_written == 0:
-            raise SystemExit("Error: sheets.skip removed every workbook tab for this run.")
+            raise SystemExit("Error: sheets filter removed every workbook tab for this run.")
 
         wb.close()
     except SystemExit:
@@ -14292,13 +14326,13 @@ def cmd_school_generate(
 
     try:
         dashboard = SchoolDashboard(config, workbook, fmts, bridge=bridge, csv_df=csv_df)
-        skipped_names = _build_skipped_sheet_names(
+        selected_names, filter_label = _resolve_selected_sheet_names(
             config,
             [name for name, _ in dashboard.sheet_plan()],
         )
-        written = dashboard.build_all(skipped_names)
+        written = dashboard.build_all(selected_names, filter_label)
         if not written:
-            raise SystemExit("Error: sheets.skip removed every school workbook tab for this run.")
+            raise SystemExit("Error: sheets filter removed every school workbook tab for this run.")
     finally:
         workbook.close()
 
