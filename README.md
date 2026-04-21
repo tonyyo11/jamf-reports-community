@@ -449,12 +449,16 @@ python3 jamf-reports-community.py launchagent-setup --config config.yaml
 
 The setup command can build these workflow types:
 
-- `snapshot-only` — refresh jamf-cli snapshots and archive per-family CSV history only
-- `jamf-cli-only` — generate a workbook from live or cached jamf-cli data
-- `jamf-cli-full` — build a jamf-cli baseline CSV, refresh snapshots, and generate a workbook
+- `snapshot-only` — refresh jamf-cli snapshots and archive per-family CSV history; optional xlsx/HTML output is controlled by `automation.*`
+- `jamf-cli-only` — generate configured automation outputs from live or cached jamf-cli data
+- `jamf-cli-full` — build a jamf-cli baseline CSV, refresh snapshots, and generate configured outputs
 - `csv-assisted` — prefer a manifest-selected CSV first, then an inbox CSV, plus jamf-cli data
 
 Schedules currently support `daily`, `weekdays`, `weekly`, and `monthly`.
+
+Set `automation.generate_xlsx`, `automation.generate_html`, and
+`automation.generate_inventory_csv` in `config.yaml` to control which artifacts each
+scheduled run produces.
 
 Reference guidance:
 

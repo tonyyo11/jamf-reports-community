@@ -21,6 +21,13 @@ versions in this repository map to git tags.
   `launchagent-run --mode jamf-cli-full` when `export_reports` entries are
   configured; exported paths are recorded in the automation status JSON.
 - `Config.export_reports` property (returns `list[dict]`, empty list default).
+- **`automation.generate_html` / `generate_xlsx` / `generate_inventory_csv`**
+  config flags — LaunchAgent automation can now produce timestamped HTML,
+  xlsx, and inventory CSV artifacts per scheduled run, including `snapshot-only`.
+- `launchagent-run` status JSON now records separate xlsx, HTML, and inventory
+  CSV output paths when those artifacts are produced.
+- `cmd_html()` now archives older timestamped HTML outputs using the same
+  `output.archive_enabled` / `keep_latest_runs` retention rules as xlsx reports.
 - **`jamf_cli.disabled_sheets`** config list — sheet names listed here are skipped
   entirely during `generate`, including the underlying API call. Useful for omitting
   API-expensive sheets (`Update Status`, `Update Failures`, `App Status`) on

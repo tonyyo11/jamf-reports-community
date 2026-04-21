@@ -115,6 +115,7 @@ What it does:
 - runs `collect`
 - refreshes jamf-cli JSON snapshots
 - optionally archives the newest CSV from the inbox into the historical snapshot folder
+- optionally runs `inventory-csv`, `generate`, and/or `html` based on `automation.*`
 
 Best for:
 
@@ -174,6 +175,22 @@ Important behavior:
 
 - fallback is based on CSV presence and age
 - a malformed CSV is not silently ignored; that should fail loudly so you notice it
+
+## Automation Output Flags
+
+Scheduled runs can also emit extra artifacts based on `config.yaml`:
+
+```yaml
+automation:
+  generate_xlsx: true
+  generate_html: false
+  generate_inventory_csv: false
+```
+
+- `generate_xlsx` keeps the existing workbook behavior for scheduled runs.
+- `generate_html` adds a timestamped HTML report using the same output retention rules.
+- `generate_inventory_csv` writes a timestamped automation inventory CSV; `snapshot-only`
+  can use that CSV as the workbook source when `generate_xlsx: true`.
 
 ## Schedule Presets
 
