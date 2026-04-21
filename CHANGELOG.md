@@ -28,6 +28,13 @@ versions in this repository map to git tags.
   `generate` and `school-generate`, including CSV-backed sheets, custom EA tabs,
   and auxiliary tabs such as `Report Sources` and `Charts`. Sheet names are
   matched case-insensitively and unknown names emit a warning.
+- **`automation.generate_html` / `generate_xlsx` / `generate_inventory_csv`**
+  config flags — LaunchAgent automation can now produce timestamped HTML,
+  xlsx, and inventory CSV artifacts per scheduled run, including `snapshot-only`.
+- `launchagent-run` status JSON now records separate xlsx, HTML, and inventory
+  CSV output paths when those artifacts are produced.
+- `cmd_html()` now archives older timestamped HTML outputs using the same
+  `output.archive_enabled` / `keep_latest_runs` retention rules as xlsx reports.
 
 ### Changed
 

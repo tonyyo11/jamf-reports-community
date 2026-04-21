@@ -93,6 +93,25 @@ For each tenant or export shape:
 If you start from jamf-cli instead of a Jamf export, use `inventory-csv` first so you can
 still take advantage of scaffold and config review.
 
+## Sheet Filtering
+
+Use the optional `sheets` block when you want to trim workbook output by tab name instead
+of changing the underlying data sources.
+
+```yaml
+sheets:
+  only:
+    - "Patch Compliance"
+    - "Patch Failures"
+  skip:
+    - "Report Sources"
+```
+
+- `only` takes precedence over `skip`
+- names are matched case-insensitively against the final workbook tab label
+- filtering applies to Jamf Pro sheets, CSV sheets, Jamf School sheets, custom EA sheets,
+  and helper tabs such as `Report Sources` and `Charts`
+
 ## Keep Config Stable
 
 Avoid changing export headers constantly. Stable CSV shapes make reporting more reliable

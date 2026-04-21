@@ -65,9 +65,9 @@ DEFAULT_AUTOMATION_SCHEDULE = "weekdays"
 DEFAULT_AUTOMATION_TIME_OF_DAY = "07:00"
 DEFAULT_CSV_FRESHNESS_DAYS = 14
 AUTOMATION_MODE_DESCRIPTIONS: dict[str, str] = {
-    "snapshot-only": "Refresh jamf-cli snapshots and archive per-family CSV history without writing a workbook.",
-    "jamf-cli-only": "Generate a workbook from jamf-cli live data and/or cached JSON snapshots.",
-    "jamf-cli-full": "Build a jamf-cli baseline CSV, refresh snapshots, and generate a workbook.",
+    "snapshot-only": "Refresh jamf-cli snapshots and archive history; optional xlsx/HTML outputs are controlled by config.",
+    "jamf-cli-only": "Use jamf-cli data to generate configured automation outputs.",
+    "jamf-cli-full": "Build an automation inventory CSV, refresh snapshots, and generate configured outputs.",
     "csv-assisted": "Prefer manifest-selected CSV input when available, then fall back to inbox CSV, plus jamf-cli data.",
 }
 AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
@@ -237,6 +237,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "archive_dir": "",
         "keep_latest_runs": 10,
         "export_pptx": False,
+    },
+    "automation": {
+        "generate_xlsx": True,
+        "generate_html": False,
+        "generate_inventory_csv": False,
     },
     "charts": {
         "enabled": True,
@@ -2341,6 +2346,11 @@ class Config:
     @property
     def output(self) -> dict:
         value = self._data.get("output") or {}
+        return value if isinstance(value, dict) else {}
+
+    @property
+    def automation(self) -> dict:
+        value = self._data.get("automation") or {}
         return value if isinstance(value, dict) else {}
 
 
@@ -12902,7 +12912,7 @@ def cmd_html(
     config: Config,
     out_file: Optional[str],
     no_open: bool = False,
-) -> None:
+) -> Path:
     """Generate a self-contained HTML status report from jamf-cli data.
 
     Requires jamf-cli to be installed and authenticated. Falls back to cached
@@ -12912,6 +12922,9 @@ def cmd_html(
         config: Loaded Config instance.
         out_file: Destination file path. Defaults to the output_dir from config.
         no_open: When True, do not auto-open the file after writing.
+
+    Returns:
+        Path to the generated HTML report.
     """
     if not _jamf_cli_enabled(config):
         raise SystemExit("Error: html requires jamf_cli.enabled: true in config.yaml.")
@@ -12924,6 +12937,8 @@ def cmd_html(
 
     output_cfg = config.output
     timestamp_outputs = output_cfg.get("timestamp_outputs", True) is not False
+    archive_enabled = output_cfg.get("archive_enabled", True) is not False
+    keep_latest_runs = _to_int(output_cfg.get("keep_latest_runs", 10), 10)
     run_stamp = _file_stamp()
     if out_file:
         out_path = _timestamped_output_path(
@@ -12941,6 +12956,21 @@ def cmd_html(
 
     report = HtmlReport(config, bridge, out_path, no_open=no_open)
     report.generate()
+    if archive_enabled:
+        archive_dir = config.resolve_path("output", "archive_dir")
+        if archive_dir is None:
+            archive_dir = out_path.parent / "archive"
+        family_base = _strip_timestamp_suffix(out_path.stem)
+        archived_paths = _archive_old_output_runs(
+            out_path.parent,
+            family_base,
+            {".html"},
+            keep_latest_runs,
+            archive_dir,
+        )
+        if archived_paths:
+            print(f"  Archived {len(archived_paths)} older HTML report(s) to {archive_dir}")
+    return out_path
 
 
 def _collect_snapshots(
@@ -13668,6 +13698,15 @@ def _launchagent_program_arguments(
     return args
 
 
+def _automation_output_flags(config: Config) -> tuple[bool, bool, bool]:
+    """Return configured automation output flags as (xlsx, html, inventory_csv)."""
+    automation_cfg = config.automation
+    generate_xlsx = automation_cfg.get("generate_xlsx", True) is not False
+    generate_html = automation_cfg.get("generate_html", False) is True
+    generate_inventory_csv = automation_cfg.get("generate_inventory_csv", False) is True
+    return generate_xlsx, generate_html, generate_inventory_csv
+
+
 def _write_launchagent_plist(
     plist_path: Path,
     label: str,
@@ -13749,6 +13788,8 @@ def cmd_launchagent_run(
         "finished_at": None,
         "mode": mode,
         "profile": str(config.jamf_cli.get("profile", "") or "").strip(),
+        "html_report_path": None,
+        "inventory_csv_path": None,
         "report_path": None,
         "selected_csv_family": None,
         "selected_csv_origin": None,
@@ -13756,6 +13797,7 @@ def cmd_launchagent_run(
         "started_at": started_at,
         "status_file": status_file,
         "success": False,
+        "xlsx_report_path": None,
     }
     if historical_csv_dir:
         status["historical_csv_dir"] = str(Path(historical_csv_dir).expanduser())
@@ -13766,6 +13808,12 @@ def cmd_launchagent_run(
         selected_csv: Optional[Path] = None
         selected_family: Optional[str] = None
         selected_origin = ""
+        generate_xlsx, generate_html, generate_inventory_csv = _automation_output_flags(config)
+        status["automation_outputs"] = {
+            "generate_html": generate_html,
+            "generate_inventory_csv": generate_inventory_csv,
+            "generate_xlsx": generate_xlsx,
+        }
         if mode in {"snapshot-only", "csv-assisted"}:
             selected_csv, selected_family, selected_origin, selection_note = _select_automation_csv(
                 config,
@@ -13792,34 +13840,83 @@ def cmd_launchagent_run(
                 )
             status["collected_snapshots"] = collected
             status["archived_csv"] = archived
+            report_csv = str(selected_csv) if selected_csv else None
+            if generate_inventory_csv:
+                inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
+                status["inventory_csv_path"] = str(inventory_path)
+                report_csv = str(inventory_path)
+            if generate_xlsx:
+                report_path = cmd_generate(
+                    config,
+                    report_csv,
+                    None,
+                    historical_csv_dir,
+                    notify_url,
+                )
+                status["report_path"] = str(report_path)
+                status["xlsx_report_path"] = str(report_path)
+            if generate_html:
+                html_path = cmd_html(config, None, no_open=True)
+                status["html_report_path"] = str(html_path)
         elif mode == "jamf-cli-only":
-            report_path = cmd_generate(config, None, None, historical_csv_dir, notify_url)
-            status["report_path"] = str(report_path)
+            if generate_inventory_csv:
+                inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
+                status["inventory_csv_path"] = str(inventory_path)
+            if generate_xlsx:
+                report_path = cmd_generate(config, None, None, historical_csv_dir, notify_url)
+                status["report_path"] = str(report_path)
+                status["xlsx_report_path"] = str(report_path)
+            if generate_html:
+                html_path = cmd_html(config, None, no_open=True)
+                status["html_report_path"] = str(html_path)
         elif mode == "jamf-cli-full":
-            inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
-            status["inventory_csv_path"] = str(inventory_path)
+            inventory_path: Optional[Path] = None
+            if generate_inventory_csv or generate_xlsx or bool(config.export_reports):
+                inventory_path = cmd_inventory_csv(
+                    config,
+                    str(_automation_inventory_out_file(config)),
+                )
+                status["inventory_csv_path"] = str(inventory_path)
             _collect_snapshots(config, None, historical_csv_dir)
-            report_path = cmd_generate(
-                config,
-                str(inventory_path),
-                None,
-                historical_csv_dir,
-                notify_url,
-            )
-            status["report_path"] = str(report_path)
-            exported = cmd_export_reports(config, inventory_path)
-            if exported:
-                status["exported_reports"] = [str(p) for p in exported]
+            if generate_xlsx:
+                report_path = cmd_generate(
+                    config,
+                    str(inventory_path) if inventory_path else None,
+                    None,
+                    historical_csv_dir,
+                    notify_url,
+                )
+                status["report_path"] = str(report_path)
+                status["xlsx_report_path"] = str(report_path)
+            if config.export_reports:
+                if inventory_path is None:
+                    raise SystemExit(
+                        "Error: export_reports requires an automation inventory CSV."
+                    )
+                exported = cmd_export_reports(config, inventory_path)
+                if exported:
+                    status["exported_reports"] = [str(p) for p in exported]
+            if generate_html:
+                html_path = cmd_html(config, None, no_open=True)
+                status["html_report_path"] = str(html_path)
         elif mode == "csv-assisted":
             _collect_snapshots(config, None, historical_csv_dir)
-            report_path = cmd_generate(
-                config,
-                str(selected_csv) if selected_csv else None,
-                None,
-                historical_csv_dir,
-                notify_url,
-            )
-            status["report_path"] = str(report_path)
+            if generate_inventory_csv:
+                inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
+                status["inventory_csv_path"] = str(inventory_path)
+            if generate_xlsx:
+                report_path = cmd_generate(
+                    config,
+                    str(selected_csv) if selected_csv else None,
+                    None,
+                    historical_csv_dir,
+                    notify_url,
+                )
+                status["report_path"] = str(report_path)
+                status["xlsx_report_path"] = str(report_path)
+            if generate_html:
+                html_path = cmd_html(config, None, no_open=True)
+                status["html_report_path"] = str(html_path)
         else:
             raise SystemExit(f"Error: unsupported automation mode: {mode}")
     except SystemExit as exc:

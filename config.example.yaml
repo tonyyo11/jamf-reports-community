@@ -573,6 +573,27 @@ output:
 
 
 # =============================================================================
+# AUTOMATION OUTPUTS
+# =============================================================================
+# Controls which extra artifacts launchagent-run writes on scheduled runs.
+# The LaunchAgent mode still controls how inputs are gathered; these flags
+# control whether automation also emits xlsx, HTML, and/or inventory CSV files.
+
+automation:
+  # Keep the existing behavior for jamf-cli-only / jamf-cli-full / csv-assisted:
+  # write a timestamped xlsx on each scheduled run.
+  generate_xlsx: true
+
+  # Also write a timestamped HTML report on each scheduled run. This calls the
+  # same html command logic and uses output.timestamp_outputs / archive_enabled.
+  generate_html: false
+
+  # Also export a timestamped jamf inventory CSV on each scheduled run.
+  # snapshot-only can use this as the CSV source for generate_xlsx runs.
+  generate_inventory_csv: false
+
+
+# =============================================================================
 # CHARTS
 # =============================================================================
 # Controls matplotlib PNG chart generation and embedding in the xlsx workbook.
