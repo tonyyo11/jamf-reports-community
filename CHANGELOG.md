@@ -21,6 +21,9 @@ versions in this repository map to git tags.
   `launchagent-run --mode jamf-cli-full` when `export_reports` entries are
   configured; exported paths are recorded in the automation status JSON.
 - `Config.export_reports` property (returns `list[dict]`, empty list default).
+- **`sheets.only`** config list — when non-empty, only the named workbook tabs
+  are written. This takes precedence over `sheets.skip` and supports focused
+  workbooks such as patch-only, security-only, or mobile-only exports.
 - **`sheets.skip`** config list — named workbook tabs can now be skipped during
   `generate` and `school-generate`, including CSV-backed sheets, custom EA tabs,
   and auxiliary tabs such as `Report Sources` and `Charts`. Sheet names are

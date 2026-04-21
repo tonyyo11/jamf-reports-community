@@ -227,6 +227,15 @@ jamf_cli:
 # Workbook sheet selection (optional)
 # ---------------------------------------------------------------------------
 sheets:
+  # When non-empty, only the named workbook tabs are written.
+  # This takes precedence over skip.
+  #
+  # Example:
+  #   only:
+  #     - "Patch Compliance"
+  #     - "Patch Failures"
+  only: []
+
   # Skip named workbook tabs during generate and school-generate.
   # Matching is case-insensitive against the final tab label.
   #
