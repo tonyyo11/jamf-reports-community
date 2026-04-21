@@ -39,6 +39,15 @@ versions in this repository map to git tags.
 - New v1.11.0 subcommands `pro classic-account-users list` and
   `pro classic-account-groups list` are not yet used by this tool; flagged here
   for future consideration as a backup-coverage sheet.
+- Tracked jamf-cli dependency updated to v1.12.0. No code changes required.
+  Notable upstream changes in v1.12.0: `apply` now works for PATCH-only resources
+  (vpp-locations, computers-inventory, adcs-settings, digi-cert-settings,
+  mobile-device-groups-static-groups, patch-software-title-configurations,
+  team-viewer-remote-administrations, venafis) — this tool does not use `apply`.
+  The `--rename` flag was renamed to `--name` for `device-enrollment-instances`
+  create/update/apply operations — this tool only uses `device-enrollment-instances list`
+  and is unaffected. `config show`, `config list`, and `config validate` now accept
+  `-o` for structured output (json, yaml, csv, table, plain) — additive, no impact.
 
 ## [1.1.0] - 2026-04-16
 
