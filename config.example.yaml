@@ -221,21 +221,25 @@ jamf_cli:
   # Fetch Fleet Overview live by default. Set false if you want overview to use
   # cached JSON only for a specific tenant or troubleshooting scenario.
   allow_live_overview: true
-  # Sheets to skip entirely during generate. Useful for omitting API-expensive
-  # sheets on servers with limited resources. The sheet name must match exactly
-  # (case-insensitive). Example — omit the two managed software update sheets:
+
+
+# ---------------------------------------------------------------------------
+# Workbook sheet selection (optional)
+# ---------------------------------------------------------------------------
+sheets:
+  # Skip named workbook tabs during generate and school-generate.
+  # Matching is case-insensitive against the final tab label.
   #
-  #   disabled_sheets:
+  # Example:
+  #   skip:
   #     - "Update Status"
   #     - "Update Failures"
+  #     - "Report Sources"
   #
-  # Valid sheet names: Fleet Overview, Mobile Fleet Summary, Inventory Summary,
-  # Hardware Models, Mobile Inventory, Security Posture, Device Compliance,
-  # Check-in Health, EA Coverage, Environment Stats, EA Definitions,
-  # Software Installs, Policy Health, Profile Status, Mobile Config Profiles,
-  # App Status, Active Devices, Patch Compliance, Patch Failures,
-  # Update Status, Update Failures, Smart Groups, Package Lifecycle
-  disabled_sheets: []
+  # This applies to Jamf Pro sheets, CSV-backed sheets, Jamf School sheets,
+  # custom EA tabs, and the auxiliary "Report Sources" / "Charts" tabs when
+  # they would otherwise be created.
+  skip: []
 
 
 # ---------------------------------------------------------------------------

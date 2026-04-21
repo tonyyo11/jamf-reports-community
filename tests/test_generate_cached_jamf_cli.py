@@ -96,6 +96,51 @@ def test_generate_self_contained_html_from_cached_jamf_cli_data(
 
 
 @pytest.mark.integration
+def test_generate_cached_jamf_cli_respects_sheets_skip(
+    monkeypatch,
+    config_factory,
+    tmp_path,
+    jrc,
+) -> None:
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = True
+    config._data["jamf_cli"]["allow_live_overview"] = False
+    config._data["sheets"] = {
+        "skip": ["Update Status", "Report Sources"],
+    }
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: None)
+
+    report_path = jrc.cmd_generate(config, None, str(tmp_path / "cached-jamf-cli-skip.xlsx"))
+
+    workbook = openpyxl.load_workbook(report_path, data_only=False)
+    assert "Update Status" not in workbook.sheetnames
+    assert "Report Sources" not in workbook.sheetnames
+    assert "Fleet Overview" in workbook.sheetnames
+
+
+@pytest.mark.integration
+def test_generate_warns_for_unknown_sheet_skip(
+    monkeypatch,
+    config_factory,
+    tmp_path,
+    capsys,
+    jrc,
+) -> None:
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = True
+    config._data["jamf_cli"]["allow_live_overview"] = False
+    config._data["sheets"] = {
+        "skip": ["Not A Real Sheet"],
+    }
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: None)
+
+    jrc.cmd_generate(config, None, str(tmp_path / "cached-jamf-cli-warning.xlsx"))
+
+    captured = capsys.readouterr()
+    assert "sheets.skip: unknown sheet 'Not A Real Sheet'" in captured.out
+
+
+@pytest.mark.integration
 def test_html_cleanup_section_with_cached_detail(
     monkeypatch,
     config_factory,
