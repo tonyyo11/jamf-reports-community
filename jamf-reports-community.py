@@ -150,7 +150,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "profile": "",
         "use_cached_data": True,
         "allow_live_overview": True,
-        "disabled_sheets": [],
     },
     "school_cli": {
         "enabled": False,
@@ -192,6 +191,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "baseline_label": "mSCP Compliance",
     },
     "custom_eas": [],
+    "sheets": {
+        "skip": [],
+    },
     "report_families": {
         "computers": {
             "enabled": False,
@@ -2296,6 +2298,11 @@ class Config:
         return value if isinstance(value, list) else []
 
     @property
+    def sheets(self) -> dict:
+        value = self._data.get("sheets") or {}
+        return value if isinstance(value, dict) else {}
+
+    @property
     def report_families(self) -> dict:
         value = self._data.get("report_families") or {}
         return value if isinstance(value, dict) else {}
@@ -3717,6 +3724,28 @@ def _excel_sheet_name(
         index += 1
 
 
+def _normalized_sheet_name(value: Any) -> str:
+    """Return a normalized workbook tab name for case-insensitive matching."""
+    return str(value or "").strip().casefold()
+
+
+def _build_skipped_sheet_names(config: "Config", available_names: list[str]) -> set[str]:
+    """Return the configured sheet names to skip, warning on unknown values."""
+    configured = _list_of_strings(config.get("sheets", "skip", default=[]))
+    if not configured:
+        return set()
+
+    available = {_normalized_sheet_name(name): name for name in available_names}
+    skipped: set[str] = set()
+    for raw_name in configured:
+        normalized = _normalized_sheet_name(raw_name)
+        if normalized not in available:
+            print(f"  [warn] sheets.skip: unknown sheet '{raw_name}'")
+            continue
+        skipped.add(normalized)
+    return skipped
+
+
 def _write_report_sources_sheet(
     wb: xlsxwriter.Workbook,
     fmts: dict[str, Any],
@@ -4259,9 +4288,8 @@ class CoreDashboard:
             row += 1
         return row - 1
 
-    def write_all(self) -> list[str]:
-        """Write all core sheets. Returns list of sheet names written."""
-        written = []
+    def sheet_plan(self) -> list[tuple[str, Any]]:
+        """Return the ordered core workbook sheet plan."""
         sheets = [("Fleet Overview", self._write_overview)]
         if self._protect_enabled():
             sheets.append(("Protect Overview", self._write_protect_overview))
@@ -4305,11 +4333,16 @@ class CoreDashboard:
                 ("Package Lifecycle", self._write_package_lifecycle),
             ]
         )
-        disabled: list[str] = list(self._config.jamf_cli.get("disabled_sheets", []) or [])
-        disabled_lower = {s.strip().lower() for s in disabled}
+        return sheets
+
+    def write_all(self, skipped_names: Optional[set[str]] = None) -> list[str]:
+        """Write all enabled core sheets. Returns list of sheet names written."""
+        written = []
+        skipped_names = skipped_names or set()
+        sheets = self.sheet_plan()
         for name, fn in sheets:
-            if name.lower() in disabled_lower:
-                print(f"  [disabled] {name}: skipped via jamf_cli.disabled_sheets")
+            if _normalized_sheet_name(name) in skipped_names:
+                print(f"  [disabled] {name}: skipped via sheets.skip")
                 continue
             try:
                 fn()
@@ -6755,9 +6788,8 @@ class CSVDashboard:
         """Return sheet title prefixed with org name when configured."""
         return _org_title(self._org_name, base)
 
-    def write_all(self) -> list[str]:
-        """Write all CSV-derived sheets. Returns list of sheet names written."""
-        written = []
+    def sheet_plan(self) -> list[tuple[str, Any]]:
+        """Return the ordered CSV workbook sheet plan."""
         if self._family_name == "mobile":
             sheets = [
                 ("Mobile Device Inventory", self._write_mobile_inventory_csv),
@@ -6771,45 +6803,38 @@ class CSVDashboard:
                 ("Security Agents", self._write_security_agents),
                 ("Compliance", self._write_compliance),
             ]
-        for name, fn in sheets:
+
+        for ea in self._config.custom_eas:
+            ea_name = ea.get("name", "Custom EA")
+            sheets.append((ea_name, lambda ea=ea: self._write_custom_ea(ea)))
+
+        prior_df = getattr(self, "_prior_df", None)
+        prior_label = getattr(self, "_prior_label", "")
+        if prior_df is not None:
+            sheets.append((
+                "Fleet Drift",
+                lambda df=prior_df, label=prior_label: self._write_fleet_drift(df, label),
+            ))
+        return sheets
+
+    def write_all(self, skipped_names: Optional[set[str]] = None) -> list[str]:
+        """Write all enabled CSV-derived sheets. Returns list of sheet names written."""
+        written = []
+        skipped_names = skipped_names or set()
+        for name, fn in self.sheet_plan():
+            if _normalized_sheet_name(name) in skipped_names:
+                print(f"  [disabled] {name}: skipped via sheets.skip")
+                continue
             try:
                 fn()
                 written.append(name)
                 print(f"  [ok] {name}")
+            except NotImplementedError:
+                pass
             except (KeyError, ValueError, RuntimeError) as exc:
                 print(f"  [skip] {name}: {exc}")
             except Exception as exc:
                 print(f"  [skip] {name}: unexpected error — {type(exc).__name__}: {exc}")
-
-        for ea in self._config.custom_eas:
-            ea_name = ea.get("name", "Custom EA")
-            try:
-                self._write_custom_ea(ea)
-                written.append(ea_name)
-                print(f"  [ok] {ea_name}")
-            except (KeyError, ValueError, RuntimeError) as exc:
-                print(f"  [skip] {ea_name}: {exc}")
-            except Exception as exc:
-                print(f"  [skip] {ea_name}: unexpected error — {type(exc).__name__}: {exc}")
-
-        # Fleet Drift: compare current run against prior snapshot.
-        # Skipped when _prior_df is None (no historical dir, or no prior snapshot found).
-        # TODO: set self._prior_df and self._prior_label during __init__ once
-        #       _load_prior_snapshot is implemented.
-        prior_df = getattr(self, "_prior_df", None)
-        prior_label = getattr(self, "_prior_label", "")
-        if prior_df is not None:
-            try:
-                self._write_fleet_drift(prior_df, prior_label)
-                written.append("Fleet Drift")
-                print("  [ok] Fleet Drift")
-            except NotImplementedError:
-                pass  # scaffold: not yet implemented
-            except (KeyError, ValueError, RuntimeError) as exc:
-                print(f"  [skip] Fleet Drift: {exc}")
-            except Exception as exc:
-                print(f"  [skip] Fleet Drift: unexpected error — {type(exc).__name__}: {exc}")
-
         return written
 
     def _col(self, logical: str) -> Optional[str]:
@@ -7446,8 +7471,8 @@ class SchoolDashboard:
         for col_i, header in enumerate(headers):
             ws.write(0, col_i, header, self._fmts["header"])
 
-    def build_all(self) -> None:
-        """Build all enabled school report sheets."""
+    def sheet_plan(self) -> list[tuple[str, Any]]:
+        """Return the ordered Jamf School workbook sheet plan."""
         sheets: list[tuple[str, Any]] = []
 
         if self._bridge is not None:
@@ -7476,15 +7501,26 @@ class SchoolDashboard:
                 (self._t("Device Status"), self._write_device_status_from_bridge),
                 (self._t("Stale Devices"), self._write_stale_devices_from_bridge),
             ]
+        return sheets
 
-        for title, fn in sheets:
+    def build_all(self, skipped_names: Optional[set[str]] = None) -> list[str]:
+        """Build all enabled school report sheets and return the names written."""
+        skipped_names = skipped_names or set()
+        written: list[str] = []
+        for title, fn in self.sheet_plan():
+            if _normalized_sheet_name(title) in skipped_names:
+                print(f"  [disabled] {title}: skipped via sheets.skip")
+                continue
             print(f"  sheet: {title}")
             try:
                 fn(self._sheet(title))
+                written.append(title)
             except RuntimeError as exc:
                 ws = self._wb.get_worksheet_by_name(title)
                 if ws:
                     ws.write(1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
+                    written.append(title)
+        return written
 
     # ------------------------------------------------------------------
     # Bridge-driven sheets
@@ -8144,6 +8180,7 @@ class ChartGenerator:
         workbook: xlsxwriter.Workbook,
         jamf_cli_dir: Optional[Path],
         output_stem: str,
+        embed_in_workbook: bool = True,
     ) -> None:
         self._config = config
         self._csv_path = csv_path
@@ -8153,15 +8190,16 @@ class ChartGenerator:
         self._wb = workbook
         self._jamf_cli_dir = jamf_cli_dir.expanduser() if jamf_cli_dir else None
         self._chart_prefix = _filename_component(output_stem)
+        self._embed_in_workbook = embed_in_workbook
 
-    def generate_all(self) -> tuple[list[str], list[str]]:
-        """Generate enabled charts and return (png_paths, source_labels)."""
+    def generate_all(self) -> tuple[list[str], list[str], bool]:
+        """Generate enabled charts and return (png_paths, source_labels, embedded_sheet)."""
         if not _load_matplotlib():
             print("  [skip] Charts: matplotlib not installed (pip install matplotlib)")
-            return [], []
+            return [], [], False
         charts_cfg = self._config.get("charts") or {}
         if not charts_cfg.get("enabled", True):
-            return [], []
+            return [], [], False
 
         save_png = charts_cfg.get("save_png", True) is not False
         temp_chart_dir: Optional[Path] = None
@@ -8202,12 +8240,14 @@ class ChartGenerator:
 
             if not png_paths:
                 print("  [skip] Charts: no CSV or jamf-cli snapshot history found")
-                return [], []
+                return [], [], False
 
-            if png_paths and charts_cfg.get("embed_in_xlsx", True):
+            embedded_sheet = False
+            if png_paths and charts_cfg.get("embed_in_xlsx", True) and self._embed_in_workbook:
                 self._embed_charts(png_paths)
+                embedded_sheet = True
 
-            return png_paths, sorted(chart_sources)
+            return png_paths, sorted(chart_sources), embedded_sheet
         finally:
             if temp_chart_dir:
                 shutil.rmtree(temp_chart_dir, ignore_errors=True)
@@ -9963,11 +10003,45 @@ def cmd_generate(
     else:
         print("  jamf-cli disabled in config; skipping live and cached jamf-cli sheets.")
     try:
+        charts_cfg = config.get("charts") or {}
+        charts_enabled = charts_cfg.get("enabled")
+        charts_embed_enabled = (
+            (charts_enabled is None or charts_enabled)
+            and charts_cfg.get("embed_in_xlsx", True) is not False
+        )
+        core: Optional[CoreDashboard] = None
         if jamf_cli_enabled and bridge is not None and jamf_cli_ready:
-
-            print("\nGenerating jamf-cli sheets...")
             core = CoreDashboard(config, bridge, wb, fmts)
-            jamf_cli_written = core.write_all()
+
+        csv_dash: Optional[CSVDashboard] = None
+        csv_init_error: Optional[Exception] = None
+        if csv_path_str:
+            try:
+                csv_dash = CSVDashboard(
+                    config,
+                    csv_path_str,
+                    wb,
+                    fmts,
+                    family_name=selected_family_name or "computers",
+                    extra_csv_paths=csv_extra,
+                )
+            except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
+                csv_init_error = exc
+
+        available_sheet_names = ["Report Sources"]
+        if core is not None:
+            available_sheet_names.extend(name for name, _ in core.sheet_plan())
+        if csv_dash is not None:
+            available_sheet_names.extend(name for name, _ in csv_dash.sheet_plan())
+        if charts_embed_enabled:
+            available_sheet_names.append("Charts")
+        skipped_sheet_names = _build_skipped_sheet_names(config, available_sheet_names)
+        report_sources_enabled = _normalized_sheet_name("Report Sources") not in skipped_sheet_names
+        charts_sheet_enabled = _normalized_sheet_name("Charts") not in skipped_sheet_names
+
+        if jamf_cli_enabled and bridge is not None and jamf_cli_ready:
+            print("\nGenerating jamf-cli sheets...")
+            jamf_cli_written = core.write_all(skipped_sheet_names) if core is not None else []
             sheets_written += len(jamf_cli_written)
         elif jamf_cli_enabled:
             print("\nWarning: jamf-cli not available — skipping core dashboard sheets.")
@@ -9980,20 +10054,11 @@ def cmd_generate(
 
         if csv_path_str:
             print("\nGenerating CSV sheets...")
-            try:
-                csv_dash = CSVDashboard(
-                    config,
-                    csv_path_str,
-                    wb,
-                    fmts,
-                    family_name=selected_family_name or "computers",
-                    extra_csv_paths=csv_extra,
-                )
-            except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
-                print(f"  [error] Cannot read CSV: {exc}")
+            if csv_dash is None:
+                print(f"  [error] Cannot read CSV: {csv_init_error}")
                 print("  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export.")
             else:
-                csv_written = csv_dash.write_all()
+                csv_written = csv_dash.write_all(skipped_sheet_names)
                 sheets_written += len(csv_written)
         else:
             print("\nNo CSV provided — skipping inventory sheets.")
@@ -10018,7 +10083,6 @@ def cmd_generate(
             except OSError as exc:
                 print(f"  [warn] Could not archive CSV snapshot: {exc}")
 
-        charts_enabled = config.get("charts", "enabled")
         if charts_enabled is None or charts_enabled:
             print("\nGenerating charts...")
             chart_csv_path = csv_path_str if selected_family_name != "mobile" else None
@@ -10033,14 +10097,17 @@ def cmd_generate(
                 wb,
                 jamf_cli_dir if jamf_cli_enabled else None,
                 out_path.stem,
+                embed_in_workbook=charts_sheet_enabled,
             )
-            png_paths, chart_sources = chart_gen.generate_all()
+            png_paths, chart_sources, charts_embedded = chart_gen.generate_all()
             if chart_sources:
                 chart_source = " + ".join(chart_sources)
             if png_paths and config.get("charts", "save_png") is not False:
                 print(f"  {len(png_paths)} PNG(s) saved to {out_path.parent}/")
+            if charts_embedded:
+                sheets_written += 1
 
-        if sheets_written == 0:
+        if core is None and csv_dash is None:
             raise SystemExit(
                 "Error: No data sources available. Enable jamf-cli in config and"
                 " authenticate jamf-cli (pro and protect if configured), or provide"
@@ -10111,25 +10178,32 @@ def cmd_generate(
                 }
             )
 
-        _write_report_sources_sheet(
-            wb,
-            fmts,
-            generated_at,
-            config,
-            csv_path_str,
-            selected_family_name or "",
-            selected_csv_origin,
-            hist_dir,
-            str(bridge._data_dir) if bridge is not None else "",
-            jamf_cli_profile if jamf_cli_enabled else "",
-            live_overview_allowed,
-            bridge.overview_source_label() if "Fleet Overview" in jamf_cli_written else "",
-            jamf_cli_written,
-            csv_written,
-            chart_source,
-            org_name=config.get("branding", "org_name") or "",
-            source_details=source_details,
-        )
+        if report_sources_enabled:
+            _write_report_sources_sheet(
+                wb,
+                fmts,
+                generated_at,
+                config,
+                csv_path_str,
+                selected_family_name or "",
+                selected_csv_origin,
+                hist_dir,
+                str(bridge._data_dir) if bridge is not None else "",
+                jamf_cli_profile if jamf_cli_enabled else "",
+                live_overview_allowed,
+                bridge.overview_source_label() if "Fleet Overview" in jamf_cli_written else "",
+                jamf_cli_written,
+                csv_written,
+                chart_source,
+                org_name=config.get("branding", "org_name") or "",
+                source_details=source_details,
+            )
+            sheets_written += 1
+        else:
+            print("  [disabled] Report Sources: skipped via sheets.skip")
+
+        if sheets_written == 0:
+            raise SystemExit("Error: sheets.skip removed every workbook tab for this run.")
 
         wb.close()
     except SystemExit:
@@ -14217,9 +14291,14 @@ def cmd_school_generate(
     fmts = _build_formats(workbook)
 
     try:
-        dashboard = SchoolDashboard(config, workbook, fmts,
-                                    bridge=bridge, csv_df=csv_df)
-        dashboard.build_all()
+        dashboard = SchoolDashboard(config, workbook, fmts, bridge=bridge, csv_df=csv_df)
+        skipped_names = _build_skipped_sheet_names(
+            config,
+            [name for name, _ in dashboard.sheet_plan()],
+        )
+        written = dashboard.build_all(skipped_names)
+        if not written:
+            raise SystemExit("Error: sheets.skip removed every school workbook tab for this run.")
     finally:
         workbook.close()
 
