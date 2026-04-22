@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-20
+
 ### Added
 
 - **`export-reports` command** — generates dated, filtered CSV snapshots from the
