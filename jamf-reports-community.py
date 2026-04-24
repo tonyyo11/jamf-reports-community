@@ -281,6 +281,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Defaults to ~/.jamf-report-history.json when blank.
         "history_file": "",
     },
+    "inventory_csv": {
+        # Max concurrent jamf-cli subprocesses when fetching per-device security details.
+        # Higher values reduce runtime on large fleets but may trigger Jamf Pro rate limiting.
+        # Recommended range: 15-25 for on-prem servers; 8-15 for cloud/slower connections.
+        "max_workers": 20,
+        # Set true to skip the per-device security detail enrichment entirely.
+        # Saves several minutes on large fleets when FileVault/SIP/Firewall columns
+        # are already present in a Jamf Pro CSV export and are not needed in the
+        # inventory CSV output.
+        "skip_security_enrichment": False,
+    },
     "export_reports": [],
 }
 
@@ -2149,6 +2160,7 @@ def _enrich_inventory_rows_with_security_details(
     bridge: "JamfCLIBridge",
     computers: list[dict[str, Any]],
     row_index: dict[str, list[dict[str, Any]]],
+    max_workers: int = 20,
 ) -> tuple[int, int, int]:
     """Merge per-device security posture values into inventory export rows."""
     targets: list[tuple[dict[str, Any], str]] = []
@@ -2168,8 +2180,7 @@ def _enrich_inventory_rows_with_security_details(
 
     enriched = 0
     failures = 0
-    max_workers = min(8, len(targets))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(targets))) as executor:
         future_map = {
             executor.submit(bridge.device_detail, identifier): row
             for row, identifier in targets
@@ -13217,13 +13228,24 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
         )
 
     row_index = _inventory_build_row_index(base_rows)
-    detail_enriched, detail_failures, detail_unresolved = (
-        _enrich_inventory_rows_with_security_details(
-            bridge,
-            computers,
-            row_index,
+    inv_cfg = config.get("inventory_csv") or {}
+    skip_enrichment = bool(inv_cfg.get("skip_security_enrichment", False))
+    enrich_workers = _to_int(inv_cfg.get("max_workers", 20), 20)
+    if skip_enrichment:
+        print(
+            f"  [skip] security detail enrichment"
+            f" (inventory_csv.skip_security_enrichment: true)"
         )
-    )
+        detail_enriched, detail_failures, detail_unresolved = 0, 0, 0
+    else:
+        detail_enriched, detail_failures, detail_unresolved = (
+            _enrich_inventory_rows_with_security_details(
+                bridge,
+                computers,
+                row_index,
+                max_workers=enrich_workers,
+            )
+        )
     ea_columns: set[str] = set()
     unmatched_ea_rows = 0
     ea_raw = bridge.ea_results(include_all=True)

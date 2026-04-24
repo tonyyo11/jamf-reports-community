@@ -727,6 +727,26 @@ school_columns:
 
 
 # =============================================================================
+# INVENTORY CSV PERFORMANCE
+# =============================================================================
+# Controls the per-device security detail enrichment step in inventory-csv.
+# This step fetches FileVault, SIP, Firewall, Bootstrap Token, and Gatekeeper
+# status for every computer via live jamf-cli API calls. On large fleets it
+# is the primary driver of run time.
+
+inventory_csv:
+  # Concurrent jamf-cli subprocesses when fetching per-device security details.
+  # Increasing this reduces wall-clock time on large fleets. Keep below ~25 to
+  # avoid overwhelming an on-prem Jamf Pro server.
+  max_workers: 20
+
+  # Set true to skip security detail enrichment entirely. Saves several minutes
+  # on fleets of 500+ devices when FileVault/SIP/Firewall data is already
+  # available from a Jamf Pro CSV export or is not needed in the inventory CSV.
+  skip_security_enrichment: false
+
+
+# =============================================================================
 # FILTERED CSV EXPORT REPORTS
 # =============================================================================
 # Generates dated CSV snapshots from the wide automation_inventory_*.csv
