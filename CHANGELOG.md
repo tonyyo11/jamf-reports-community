@@ -58,6 +58,15 @@ versions in this repository map to git tags.
   create/update/apply operations — this tool only uses `device-enrollment-instances list`
   and is unaffected. `config show`, `config list`, and `config validate` now accept
   `-o` for structured output (json, yaml, csv, table, plain) — additive, no impact.
+- Tracked jamf-cli dependency updated to v1.13.0. No code changes required.
+  Notable upstream changes in v1.13.0: `--installation-priority` added to package
+  upload commands — this tool does not upload packages. `--custom-payload-file` and
+  `--custom-payload-domain` added for classic macOS config profile create/update —
+  this tool only uses `classic-macos-config-profiles list` and is unaffected.
+  Help command examples now consistently include the `pro` prefix — cosmetic/docs
+  change, no impact on CLI syntax or on the help-output parser used for command
+  discovery. HTTP client internals (streaming multipart, shared transport) improved
+  with no CLI surface change.
 
 ## [1.1.0] - 2026-04-16
 
