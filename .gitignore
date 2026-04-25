@@ -34,3 +34,11 @@ Community Edition Recap.rtf
 *.xlsx
 /.vscode
 dist/
+
+# Swift / Xcode build artifacts (app/)
+app/.build/
+app/.swiftpm/
+app/Package.resolved
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
