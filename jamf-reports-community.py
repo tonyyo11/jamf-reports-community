@@ -3142,6 +3142,89 @@ class JamfCLIBridge:
             ["patch-device-failures", "patch_device_failures"],
         )
 
+    def patch_summaries(self) -> dict[str, Any]:
+        """Fetch release-date metadata for all patch software title configurations.
+
+        Calls ``patch-software-title-configurations list`` to get all configuration
+        IDs, then fetches ``patch-summary <id>`` for each in parallel (up to 10
+        concurrent subprocesses).
+
+        Returns:
+            Dict mapping title name -> patch-summary payload.  Keys match the
+            ``title`` field returned by ``patch_status()``.  Falls back to the
+            newest cached snapshot when a live fetch fails and ``use_cached_data``
+            is True.
+        """
+        cache_names = ["patch-summaries", "patch_summaries"]
+
+        try:
+            configs_raw = self._run(
+                ["pro", "patch-software-title-configurations", "list"],
+            )
+        except RuntimeError as exc:
+            if not self._use_cached_data:
+                raise
+            try:
+                return self._load_cached_json(
+                    cache_names,
+                    report_type="patch-summaries",
+                    source_mode="cached-fallback",
+                )
+            except RuntimeError as cache_exc:
+                raise RuntimeError(f"{exc} | cache fallback: {cache_exc}") from exc
+
+        configs = configs_raw if isinstance(configs_raw, list) else []
+        if not configs:
+            raise RuntimeError(
+                "patch-software-title-configurations list returned no results"
+            )
+
+        summaries: dict[str, Any] = {}
+
+        def _fetch_one(cfg: dict) -> tuple[str, Any]:
+            cfg_id = str(cfg.get("id", ""))
+            try:
+                result = self._run(
+                    [
+                        "pro",
+                        "patch-software-title-configurations",
+                        "patch-summary",
+                        cfg_id,
+                    ],
+                )
+                title = str(
+                    result.get("title") or cfg.get("displayName") or cfg.get("softwareTitleName") or ""
+                )
+                return title, result
+            except RuntimeError:
+                return str(cfg.get("displayName") or cfg.get("softwareTitleName") or ""), {}
+
+        valid_configs = [c for c in configs if isinstance(c, dict) and c.get("id")]
+        max_workers = min(10, len(valid_configs)) if valid_configs else 1
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_fetch_one, cfg): cfg for cfg in valid_configs}
+            for future in as_completed(futures):
+                try:
+                    title, data = future.result()
+                    if title and data:
+                        summaries[title] = data
+                except Exception:
+                    pass
+
+        self._set_source_info("patch-summaries", "live")
+        if self._save:
+            out_dir = self._data_dir / "patch-summaries"
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                final_path = out_dir / f"patch-summaries_{_now_ts()}.json"
+                tmp_path = final_path.with_suffix(".partial")
+                with open(tmp_path, "w", encoding="utf-8") as fh:
+                    json.dump(summaries, fh, indent=2)
+                tmp_path.rename(final_path)
+            except OSError as exc:
+                print(f"  [warn] Could not save patch-summaries snapshot: {exc}")
+        return summaries
+
     def app_status(self) -> Any:
         """Fetch managed app deployment report from jamf-cli pro report app-status."""
         self._require_report_command("app-status", ["app-status", "app_status"])
@@ -4538,6 +4621,7 @@ class CoreDashboard:
                 ("Mobile Config Profiles", self._write_mobile_config_profiles),
                 ("App Status", self._write_app_status),
                 ("Active Devices", self._write_active_devices),
+                ("Patch Summary Dashboard", self._write_patch_summary_dashboard),
                 ("Patch Compliance", self._write_patch),
                 ("Patch Failures", self._write_patch_failures),
                 ("Update Status", self._write_update_status),
@@ -6224,6 +6308,146 @@ class CoreDashboard:
                 _safe_write(ws, row, 5, _to_int(item.get("count", 0)), self._fmts["cell"])
                 row += 1
 
+    def _write_patch_summary_dashboard(self) -> None:
+        """Write a Patch Summary Dashboard sheet.
+
+        Combines fleet activity stats (from device-compliance) with patch compliance
+        metrics (from patch-status) to produce a management-facing overview:
+          - Fleet Overview: total/active/inactive device counts and ratio
+          - Patch Statistics: title count, average completion, risk distribution
+          - Compliance Distribution: bucketed title counts by completion tier
+          - Top 10 Critical Patches: lowest-completion titles by adjusted completion %
+        """
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+
+        dc_rows = self._bridge.device_compliance(stale_days)
+        dc_list = dc_rows if isinstance(dc_rows, list) else []
+        if not dc_list:
+            raise RuntimeError("device-compliance returned no rows; skipping summary dashboard")
+
+        total_enrolled = len(dc_list)
+        active_count = sum(1 for r in dc_list if not _to_bool(r.get("stale")))
+        inactive_count = total_enrolled - active_count
+        active_ratio = active_count / total_enrolled if total_enrolled > 0 else 0.0
+
+        raw = self._bridge.patch_status()
+        titles = raw if isinstance(raw, list) else []
+        uses_installed_shape = any("installed" in t for t in titles if isinstance(t, dict))
+
+        # Build per-title adjusted compliance values for statistics and top-10 table
+        patch_rows: list[dict[str, Any]] = []
+        for item in titles:
+            if not isinstance(item, dict):
+                continue
+            total = _to_int(item.get("total", 0))
+            if uses_installed_shape:
+                primary = _to_int(item.get("installed", 0))
+            else:
+                primary = _to_int(item.get("on_latest", 0))
+                if total == 0:
+                    total = primary + _to_int(item.get("on_other", 0))
+            adj_total = round(total * active_ratio) if total > 0 else 0
+            adj_primary = min(round(primary * active_ratio) if primary > 0 else 0, adj_total)
+            adj_pct = adj_primary / adj_total if adj_total > 0 else 0.0
+            patch_rows.append({
+                "title": item.get("title", ""),
+                "latest": item.get("latest", ""),
+                "adj_total": adj_total,
+                "adj_secondary": max(adj_total - adj_primary, 0),
+                "adj_pct": adj_pct,
+            })
+
+        total_titles = len(patch_rows)
+        avg_pct = (
+            sum(r["adj_pct"] for r in patch_rows) / total_titles if total_titles > 0 else 0.0
+        )
+        excellent = sum(1 for r in patch_rows if r["adj_pct"] >= 0.95)
+        good = sum(1 for r in patch_rows if 0.80 <= r["adj_pct"] < 0.95)
+        warning = sum(1 for r in patch_rows if 0.50 <= r["adj_pct"] < 0.80)
+        critical = sum(1 for r in patch_rows if r["adj_pct"] < 0.50)
+
+        top10 = sorted(patch_rows, key=lambda r: r["adj_pct"])[:10]
+
+        ws = self._wb.add_worksheet("Patch Summary Dashboard")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Patch Summary Dashboard"),
+            (
+                f"Source: jamf-cli pro report patch-status + device-compliance"
+                f" | Active window: {stale_days} days | Generated: {ts}"
+            ),
+            self._fmts,
+            ncols=9,
+        )
+        ws.set_column(0, 0, 32)
+        ws.set_column(1, 1, 20)
+        ws.set_column(8, 9, 24)
+
+        def _section(label: str) -> None:
+            nonlocal row
+            _safe_write(ws, row, 0, label, self._fmts["header"])
+            row += 1
+
+        def _kv(label: str, value: Any, fmt_key: str = "cell") -> None:
+            nonlocal row
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, value, self._fmts[fmt_key])
+            row += 1
+
+        # ── Fleet Overview ────────────────────────────────────────────────
+        _section("FLEET OVERVIEW")
+        _kv("Total Devices", total_enrolled)
+        _kv("Active Devices", active_count)
+        _kv("Inactive Devices", inactive_count)
+        _safe_write(ws, row, 0, "Active Device Ratio", self._fmts["cell"])
+        _safe_write(ws, row, 1, active_ratio, _pct_format(self._fmts, active_ratio))
+        row += 2
+
+        # ── Patch Statistics ──────────────────────────────────────────────
+        _section("PATCH STATISTICS")
+        _kv("Total Patch Titles", total_titles)
+        _safe_write(ws, row, 0, "Average Completion (Adjusted)", self._fmts["cell"])
+        _safe_write(ws, row, 1, avg_pct, _pct_format(self._fmts, avg_pct))
+        row += 1
+        _kv("Fully Compliant (≥95%)", excellent)
+        _kv("High Risk (<50%)", critical)
+        row += 1
+
+        # ── Compliance Distribution ───────────────────────────────────────
+        _section("COMPLIANCE DISTRIBUTION")
+        for hdr in ("Status", "Completion Range", "Titles"):
+            col = ("Status", "Completion Range", "Titles").index(hdr)
+            _safe_write(ws, row, col, hdr, self._fmts["header"])
+        row += 1
+        tiers = [
+            ("Excellent (≥95%)", "≥95%", excellent),
+            ("Good (80–95%)", "80–95%", good),
+            ("Warning (50–80%)", "50–80%", warning),
+            ("Critical (<50%)", "<50%", critical),
+        ]
+        for label, rng, count in tiers:
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, rng, self._fmts["cell"])
+            _safe_write(ws, row, 2, count, self._fmts["cell"])
+            row += 1
+        row += 1
+
+        # ── Top 10 Critical Patches ───────────────────────────────────────
+        _section("TOP 10 CRITICAL PATCHES (Lowest Adjusted Completion)")
+        top10_headers = ["Title", "Latest Version", "Adjusted Completion %", "Out of Date (Adj)"]
+        for c, h in enumerate(top10_headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        ws.set_column(0, 0, 44)
+        ws.set_column(1, 3, 22)
+        row += 1
+        for pr in top10:
+            _safe_write(ws, row, 0, pr["title"], self._fmts["cell"])
+            _safe_write(ws, row, 1, pr["latest"], self._fmts["cell"])
+            _safe_write(ws, row, 2, pr["adj_pct"], _pct_format(self._fmts, pr["adj_pct"]))
+            _safe_write(ws, row, 3, pr["adj_secondary"], self._fmts["cell"])
+            row += 1
+
     def _write_active_devices(self) -> None:
         """Write a concise active-device summary using the stale_device_days threshold.
 
@@ -6282,6 +6506,19 @@ class CoreDashboard:
         titles = raw if isinstance(raw, list) else []
         uses_installed_shape = any("installed" in item for item in titles if isinstance(item, dict))
 
+        # Attempt to load release-date metadata from patch-software-title-configurations.
+        # Falls back gracefully — Release Date column is omitted if unavailable.
+        release_dates: dict[str, str] = {}
+        try:
+            summaries = self._bridge.patch_summaries()
+            for title_name, summary in summaries.items():
+                raw_dt = str(summary.get("releaseDate") or "").strip()
+                if raw_dt:
+                    release_dates[title_name] = raw_dt[:10]  # ISO 8601 → "YYYY-MM-DD"
+        except Exception:
+            pass
+        release_date_available = bool(release_dates)
+
         # Attempt to load active-device stats for adjusted columns.
         # Patch-status only has aggregate counts per title; per-device filtering is
         # approximated by scaling with the active-device ratio from device-compliance.
@@ -6302,7 +6539,8 @@ class CoreDashboard:
         except Exception:
             pass
 
-        ncols = 10 if adj_available else 6
+        base_cols = 7 if release_date_available else 6
+        ncols = base_cols + (4 if adj_available else 0)
         ws = self._wb.add_worksheet("Patch Compliance")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         source_note = (
@@ -6319,27 +6557,39 @@ class CoreDashboard:
             ncols=ncols,
         )
         ws.set_column(0, 0, 40)
-        ws.set_column(1, 5, 18)
+        ws.set_column(1, base_cols - 1, 18)
         if adj_available:
-            ws.set_column(6, 9, 22)
-        raw_headers = (
-            ["Software Title", "Installed", "Not Installed", "Total", "Latest Version",
-             "Compliance %"]
-            if uses_installed_shape
-            else ["Software Title", "On Latest", "On Other", "Total", "Latest Version",
-                  "Compliance %"]
-        )
-        adj_headers = (
-            ["Adjusted Installed", "Adjusted Not Installed", "Adjusted Total",
-             "Adjusted Completion %"]
-            if uses_installed_shape
-            else ["Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
-                  "Adjusted Completion %"]
-        )
+            ws.set_column(base_cols, base_cols + 3, 22)
+
+        if uses_installed_shape:
+            raw_headers: list[str] = [
+                "Software Title", "Installed", "Not Installed", "Total", "Latest Version",
+            ]
+            adj_headers = [
+                "Adjusted Installed", "Adjusted Not Installed", "Adjusted Total",
+                "Adjusted Completion %",
+            ]
+        else:
+            raw_headers = [
+                "Software Title", "On Latest", "On Other", "Total", "Latest Version",
+            ]
+            adj_headers = [
+                "Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
+                "Adjusted Completion %",
+            ]
+
+        if release_date_available:
+            raw_headers.append("Release Date")
+        raw_headers.append("Compliance %")
+
         headers = raw_headers + (adj_headers if adj_available else [])
         for c, h in enumerate(headers):
             _safe_write(ws, row, c, h, self._fmts["header"])
         row += 1
+
+        compliance_col = 6 if release_date_available else 5
+        adj_start_col = compliance_col + 1
+
         for item in titles:
             total = _to_int(item.get("total", 0))
             if uses_installed_shape:
@@ -6354,15 +6604,18 @@ class CoreDashboard:
             pct_raw = str(item.get("compliance_pct", "")).strip()
             pct_match = re.fullmatch(r"(\d+(?:\.\d+)?)%", pct_raw)
             pct_value = float(pct_match.group(1)) / 100 if pct_match else None
-            _safe_write(ws, row, 0, item.get("title", ""), self._fmts["cell"])
+            title_name = item.get("title", "")
+            _safe_write(ws, row, 0, title_name, self._fmts["cell"])
             _safe_write(ws, row, 1, primary, self._fmts["cell"])
             _safe_write(ws, row, 2, secondary, self._fmts["cell"])
             _safe_write(ws, row, 3, total, self._fmts["cell"])
             _safe_write(ws, row, 4, item.get("latest", ""), self._fmts["cell"])
+            if release_date_available:
+                _safe_write(ws, row, 5, release_dates.get(title_name, ""), self._fmts["cell"])
             if pct_value is not None:
-                _safe_write(ws, row, 5, pct_value, _pct_format(self._fmts, pct_value))
+                _safe_write(ws, row, compliance_col, pct_value, _pct_format(self._fmts, pct_value))
             else:
-                _safe_write(ws, row, 5, pct_raw or "N/A", self._fmts["cell"])
+                _safe_write(ws, row, compliance_col, pct_raw or "N/A", self._fmts["cell"])
 
             if adj_available:
                 # Scale counts by active_ratio. Inactive devices are disproportionately
@@ -6373,13 +6626,15 @@ class CoreDashboard:
                 adj_primary = min(adj_primary, adj_total)
                 adj_secondary = max(adj_total - adj_primary, 0)
                 adj_pct = adj_primary / adj_total if adj_total > 0 else None
-                _safe_write(ws, row, 6, adj_primary, self._fmts["cell"])
-                _safe_write(ws, row, 7, adj_secondary, self._fmts["cell"])
-                _safe_write(ws, row, 8, adj_total, self._fmts["cell"])
+                _safe_write(ws, row, adj_start_col, adj_primary, self._fmts["cell"])
+                _safe_write(ws, row, adj_start_col + 1, adj_secondary, self._fmts["cell"])
+                _safe_write(ws, row, adj_start_col + 2, adj_total, self._fmts["cell"])
                 if adj_pct is not None:
-                    _safe_write(ws, row, 9, adj_pct, _pct_format(self._fmts, adj_pct))
+                    _safe_write(
+                        ws, row, adj_start_col + 3, adj_pct, _pct_format(self._fmts, adj_pct)
+                    )
                 else:
-                    _safe_write(ws, row, 9, "N/A", self._fmts["cell"])
+                    _safe_write(ws, row, adj_start_col + 3, "N/A", self._fmts["cell"])
             row += 1
 
     def _write_patch_failures(self) -> None:
@@ -13212,6 +13467,7 @@ def _collect_snapshots(
                 ("EA Definitions", bridge.computer_extension_attributes),
                 ("Software Installs", bridge.software_installs),
                 ("Patch Compliance", bridge.patch_status),
+                ("Patch Summaries", bridge.patch_summaries),
                 ("Patch Failures", bridge.patch_device_failures),
                 ("Policy Health", bridge.policy_status),
                 ("Profile Status", bridge.profile_status),

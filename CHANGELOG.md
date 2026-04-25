@@ -7,6 +7,18 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- **Patch Summary Dashboard** sheet: management-facing overview combining fleet activity
+  (active/inactive device counts and ratio) with patch compliance metrics
+  (title count, average adjusted completion, compliance distribution tiers, and a
+  Top 10 Critical Patches table sorted by lowest adjusted completion %).
+- **Release Date column** in Patch Compliance sheet: pulled from
+  `jamf-cli pro patch-software-title-configurations patch-summary` for each title.
+  Summaries are fetched in parallel (up to 10 concurrent subprocesses) and cached to
+  `jamf-cli-data/patch-summaries/`. The column is omitted gracefully if the endpoint
+  is unavailable. `collect` now includes patch-summaries in its snapshot run.
+
 ## [1.3.0] - 2026-04-24
 
 ### Fixed
