@@ -103,3 +103,20 @@ def test_packages_uses_pro_packages_list(monkeypatch, jrc) -> None:
         "args": ["pro", "packages", "list"],
         "cache_names": ["packages"],
     }
+
+
+def test_patch_summaries_fetches_configs_and_parses_release_dates(fixtures_root, jrc) -> None:
+    bridge = jrc.JamfCLIBridge(
+        save_output=False,
+        data_dir=str(fixtures_root / "jamf-cli-data"),
+        profile="dummy",
+        use_cached_data=True,
+    )
+
+    result = bridge.patch_summaries()
+
+    assert isinstance(result, dict)
+    assert "Jamf Self Service for macOS" in result
+    assert result["Jamf Self Service for macOS"].get("releaseDate") is not None
+    assert "Mozilla Firefox" in result
+    assert result["Mozilla Firefox"].get("releaseDate") is not None

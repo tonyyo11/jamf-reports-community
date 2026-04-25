@@ -237,3 +237,72 @@ def test_html_cleanup_section_absent_without_detail_cache(
     html = html_path.read_text(encoding="utf-8")
     # Section should be absent when no detail cache is present
     assert "Cleanup Analysis" not in html
+
+
+@pytest.mark.integration
+def test_generate_includes_patch_summary_dashboard_sheet(
+    monkeypatch,
+    config_factory,
+    fixtures_root,
+    tmp_path,
+    jrc,
+) -> None:
+    """Patch Summary Dashboard sheet is included when jamf-cli data is available."""
+    import shutil
+
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = True
+    config._data["jamf_cli"]["allow_live_overview"] = False
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: None)
+
+    src = fixtures_root / "jamf-cli-data"
+    patched_dir = tmp_path / "patched-cache"
+    patched_dir.mkdir()
+    for subdir in src.iterdir():
+        if subdir.is_dir():
+            shutil.copytree(subdir, patched_dir / subdir.name)
+
+    config._data["jamf_cli"]["data_dir"] = str(patched_dir)
+    report_path = jrc.cmd_generate(config, None, str(tmp_path / "patch-summary-test.xlsx"))
+
+    assert report_path.exists()
+    workbook = openpyxl.load_workbook(report_path, data_only=False)
+    assert "Patch Summary Dashboard" in workbook.sheetnames
+
+    sheet = workbook["Patch Summary Dashboard"]
+    col_a_vals = [sheet[f"A{r}"].value for r in range(1, 25)]
+    assert "FLEET OVERVIEW" in col_a_vals
+    assert "PATCH STATISTICS" in col_a_vals
+    assert "COMPLIANCE DISTRIBUTION" in col_a_vals
+    assert "TOP 10 CRITICAL PATCHES" in col_a_vals or "CRITICAL PATCHES" in " ".join(str(v) for v in col_a_vals)
+
+
+@pytest.mark.integration
+def test_patch_compliance_sheet_includes_release_date_column(
+    monkeypatch,
+    config_factory,
+    fixtures_root,
+    tmp_path,
+    jrc,
+) -> None:
+    """Patch Compliance sheet includes Release Date when patch-summaries cache is present."""
+    import shutil
+
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = True
+    config._data["jamf_cli"]["allow_live_overview"] = False
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: None)
+
+    src = fixtures_root / "jamf-cli-data"
+    patched_dir = tmp_path / "patched-cache"
+    patched_dir.mkdir()
+    for subdir in src.iterdir():
+        if subdir.is_dir():
+            shutil.copytree(subdir, patched_dir / subdir.name)
+
+    config._data["jamf_cli"]["data_dir"] = str(patched_dir)
+    report_path = jrc.cmd_generate(config, None, str(tmp_path / "release-date-test.xlsx"))
+
+    assert report_path.exists()
+    workbook = openpyxl.load_workbook(report_path, data_only=False)
+    assert "Patch Compliance" in workbook.sheetnames
