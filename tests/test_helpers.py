@@ -40,6 +40,31 @@ def test_safe_write_sanitizes_formula_control_chars_and_inf(tmp_path: Path, jrc)
     assert sheet["A4"].value is None
 
 
+def test_normalize_os_version_strips_prefix_and_trailing_zero(jrc) -> None:
+    normalize = jrc._normalize_os_version
+    # Trailing .0 collapses
+    assert normalize("14.6.0") == "14.6"
+    assert normalize("26.3.0") == "26.3"
+    # Non-zero patch preserved
+    assert normalize("26.3.1") == "26.3.1"
+    assert normalize("14.6.1") == "14.6.1"
+    # Already clean
+    assert normalize("14.6") == "14.6"
+    assert normalize("26.3") == "26.3"
+    # macOS CSV prefix stripped
+    assert normalize("macOS 14.6.0") == "14.6"
+    assert normalize("macOS 14.6") == "14.6"
+    assert normalize("macOS 26.3.0") == "26.3"
+    assert normalize("macOS 26.3.1") == "26.3.1"
+    assert normalize("Mac OS X 10.15.7") == "10.15.7"
+    # Jamf CSV and jamf-cli produce same key
+    assert normalize("macOS 14.6.0") == normalize("14.6.0") == normalize("14.6")
+    assert normalize("macOS 26.3.0") == normalize("26.3.0") == normalize("26.3")
+    # minimum two-component preservation — major.minor is always kept
+    assert normalize("15.0.0") == "15.0"  # strips one trailing .0, keeps major.minor
+    assert normalize("15.0") == "15.0"    # 2-component: no stripping
+
+
 def test_semantic_warnings_flags_managed_as_manager(jrc) -> None:
     config = jrc.Config(jrc.Config._WORKSPACE_INIT_DEFAULTS_NAME)
     config._data["columns"]["manager"] = "Managed"

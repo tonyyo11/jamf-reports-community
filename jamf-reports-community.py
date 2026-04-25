@@ -1387,6 +1387,36 @@ def _to_bool(value: Any) -> bool:
     return _normalized_text(value) in {"true", "1", "yes", "y"}
 
 
+# Jamf reports some macOS versions with the name prefix ("macOS 14.6.0") and some
+# without ("14.6"), and alternates between "14.6.0" and "14.6" for the same release.
+# All three forms must merge to the same key for charts and grouped stats.
+_OS_NAME_PREFIXES = ("Mac OS X ", "macOS ", "OS X ")
+
+
+def _normalize_os_version(ver: str) -> str:
+    """Normalize a macOS version string from Jamf inventory data.
+
+    Strips the OS name prefix that Jamf CSV exports include (e.g. "macOS ") and
+    collapses trailing .0 segments so that "14.6.0", "14.6", and "macOS 14.6.0"
+    all normalize to "14.6".  At least major.minor is always preserved.
+
+    Args:
+        ver: Raw version string from Jamf (CSV or jamf-cli JSON).
+
+    Returns:
+        Normalized version string, e.g. "14.6", "26.3.1".
+    """
+    ver = str(ver).strip()
+    for prefix in _OS_NAME_PREFIXES:
+        if ver.lower().startswith(prefix.lower()):
+            ver = ver[len(prefix):].strip()
+            break
+    parts = ver.split(".")
+    while len(parts) > 2 and parts[-1] == "0":
+        parts.pop()
+    return ".".join(parts)
+
+
 MOBILE_INVENTORY_FIELD_CANDIDATES: dict[str, list[str]] = {
     "id": [
         "id",
@@ -5592,7 +5622,17 @@ class CoreDashboard:
             (i.get("data", i) for i in items if i.get("section") == "summary"), {}
         )
         total = _to_int(summary.get("total_devices", 0))
-        os_rows = [i for i in items if i.get("section") == "os_version"]
+        # Normalize and merge: Jamf may return "14.6" and "14.6.0" as separate rows.
+        _os_merged: dict[str, int] = {}
+        for _i in items:
+            if not isinstance(_i, dict) or _i.get("section") != "os_version":
+                continue
+            _ver = _normalize_os_version(str(_i.get("os_version", "") or ""))
+            _os_merged[_ver] = _os_merged.get(_ver, 0) + _to_int(_i.get("count", 0))
+        os_rows = [
+            {"os_version": v, "count": c}
+            for v, c in sorted(_os_merged.items(), key=lambda x: x[0], reverse=True)
+        ]
 
         ws = self._wb.add_worksheet("Security Posture")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -5634,9 +5674,11 @@ class CoreDashboard:
             _safe_write(ws, row, 2, "% of Fleet", self._fmts["header"])
             row += 1
             for item in os_rows:
+                cnt = _to_int(item.get("count", 0))
+                pct = cnt / total if total > 0 else 0.0
                 _safe_write(ws, row, 0, item.get("os_version", ""), self._fmts["cell"])
-                _safe_write(ws, row, 1, item.get("count", 0), self._fmts["cell"])
-                _safe_write(ws, row, 2, item.get("pct", ""), self._fmts["cell"])
+                _safe_write(ws, row, 1, cnt, self._fmts["cell"])
+                _safe_write(ws, row, 2, pct, _pct_format(self._fmts, pct))
                 row += 1
 
     def _write_inventory_summary(self) -> None:
@@ -5645,6 +5687,15 @@ class CoreDashboard:
         rows = raw if isinstance(raw, list) else []
         if not rows:
             raise RuntimeError("jamf-cli inventory-summary returned no rows")
+
+        # Normalize and merge: Jamf may return "14.6" and "14.6.0" as separate rows.
+        merged_inv: dict[tuple[str, str], int] = {}
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            model = str(item.get("model", "") or "Unknown")
+            ver = _normalize_os_version(str(item.get("os_version", "") or "Unknown"))
+            merged_inv[(model, ver)] = merged_inv.get((model, ver), 0) + _to_int(item.get("count", 0))
 
         ws = self._wb.add_worksheet("Inventory Summary")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -5663,17 +5714,13 @@ class CoreDashboard:
             _safe_write(ws, row, col_i, header, self._fmts["header"])
         row += 1
 
-        for item in sorted(
-            rows,
-            key=lambda current: (
-                -_to_int(current.get("count", 0)),
-                str(current.get("model", "")),
-                str(current.get("os_version", "")),
-            ),
+        for (model, ver), count in sorted(
+            merged_inv.items(),
+            key=lambda kv: (-kv[1], kv[0][0], kv[0][1]),
         ):
-            _safe_write(ws, row, 0, item.get("model", "Unknown"), self._fmts["cell"])
-            _safe_write(ws, row, 1, item.get("os_version", "Unknown"), self._fmts["cell"])
-            _safe_write(ws, row, 2, _to_int(item.get("count", 0)), self._fmts["cell"])
+            _safe_write(ws, row, 0, model, self._fmts["cell"])
+            _safe_write(ws, row, 1, ver, self._fmts["cell"])
+            _safe_write(ws, row, 2, count, self._fmts["cell"])
             row += 1
 
     def _write_hardware_models(self) -> None:
@@ -8906,7 +8953,9 @@ class ChartGenerator:
         for dt, df in snapshots:
             if os_col not in df.columns:
                 continue
-            series = df[os_col].astype(str).str.strip()
+            series = (
+                df[os_col].astype(str).str.strip().map(_normalize_os_version)
+            )
             counts = series[series != ""].value_counts()
             if counts.empty:
                 continue
@@ -8936,7 +8985,7 @@ class ChartGenerator:
             for item in rows:
                 if not isinstance(item, dict):
                     continue
-                version = str(item.get("os_version", "") or "").strip()
+                version = _normalize_os_version(str(item.get("os_version", "") or "").strip())
                 if not version:
                     continue
                 row[version] = row.get(version, 0) + _to_int(item.get("count", 0))
@@ -11298,7 +11347,7 @@ class HtmlReport:
         for item in security:
             if not isinstance(item, dict) or item.get("section") != "os_version":
                 continue
-            ver = str(item.get("os_version", "")).removesuffix(".0") or "Unknown"
+            ver = _normalize_os_version(str(item.get("os_version", "") or "")) or "Unknown"
             count = int(item.get("count", 0))
             versions[ver] = versions.get(ver, 0) + count
         pairs = sorted(versions.items(), key=lambda x: x[0], reverse=True)
@@ -12669,15 +12718,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
 
     @staticmethod
     def _normalise_version(ver: str) -> str:
-        """Strip a trailing '.0' segment from a version string.
+        """Normalize a macOS version string (strips prefix and trailing .0).
 
         Args:
-            ver: Raw version string, e.g. "15.4.0".
+            ver: Raw version string, e.g. "macOS 15.4.0" or "15.4.0".
 
         Returns:
             Normalised string, e.g. "15.4".
         """
-        return ver.removesuffix(".0") if ver.endswith(".0") else ver
+        return _normalize_os_version(ver)
 
     @staticmethod
     def _version_sort_key(ver: str) -> tuple[int, ...]:

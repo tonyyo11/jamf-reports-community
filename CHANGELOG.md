@@ -7,6 +7,18 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- **OS version deduplication**: Jamf reports the same macOS release under multiple
+  strings — `"macOS 14.6.0"` (CSV export, with prefix), `"14.6.0"` (jamf-cli, no
+  prefix), and `"14.6"` (jamf-cli, no trailing `.0`). All three now normalize to
+  `"14.6"` via a new `_normalize_os_version()` function applied at every grouping site:
+  OS adoption chart timeseries (both CSV and jamf-cli paths), Security Posture OS
+  Version Distribution, Inventory Summary, and the HTML report. Rows that were
+  artificially split by this Jamf bug are re-aggregated before writing — no duplicate
+  lines in charts or sheets. The HTML report's `_normalise_version` method is updated
+  to use the same logic.
+
 ### Added
 
 - **Patch Summary Dashboard** sheet: management-facing overview combining fleet activity
