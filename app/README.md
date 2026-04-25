@@ -30,6 +30,19 @@ To open in Xcode for previews and the full runtime:
 open Package.swift
 ```
 
+To build a runnable `JamfReports.app` (with Dock icon and proper window
+behavior — needed because SwiftPM only emits a bare executable):
+
+```bash
+cd app
+./build-app.sh release             # → app/build/JamfReports.app
+open build/JamfReports.app
+```
+
+The script ad-hoc signs the bundle so Gatekeeper allows it on the local
+machine. For distribution to other Macs, replace the ad-hoc sign with a
+Developer ID signature and notarize.
+
 ## Design source
 
 Implemented from the [Claude Design](https://claude.ai/design) handoff — see

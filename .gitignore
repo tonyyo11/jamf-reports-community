@@ -39,6 +39,7 @@ dist/
 app/.build/
 app/.swiftpm/
 app/Package.resolved
+app/build/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
