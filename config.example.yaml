@@ -221,6 +221,14 @@ jamf_cli:
   # Fetch Fleet Overview live by default. Set false if you want overview to use
   # cached JSON only for a specific tenant or troubleshooting scenario.
   allow_live_overview: true
+  # Per-call timeout for jamf-cli subprocess invocations, in seconds. Raise this
+  # for slow Jamf Pro instances or large fleets. The default of 300s is a safe
+  # ceiling for routine report calls.
+  command_timeout_seconds: 300
+  # Override timeout for `pro report ea-results --all`, which queries every EA
+  # value for every device and is consistently the slowest jamf-cli call. Bump
+  # this when inventory-csv runs hit "jamf-cli timed out" errors.
+  ea_results_timeout_seconds: 600
 
 
 # ---------------------------------------------------------------------------

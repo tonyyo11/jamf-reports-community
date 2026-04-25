@@ -150,6 +150,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "profile": "",
         "use_cached_data": True,
         "allow_live_overview": True,
+        "command_timeout_seconds": 300,
+        "ea_results_timeout_seconds": 600,
     },
     "school_cli": {
         "enabled": False,
@@ -2022,42 +2024,183 @@ def _site_name(site_value: Any) -> str:
     return str(site_value or "").strip()
 
 
-def _inventory_export_row(computer: dict[str, Any]) -> dict[str, Any]:
-    """Return a wide CSV row built from jamf-cli `computers list` output."""
-    location = computer.get("location", {})
-    if not isinstance(location, dict):
-        location = {}
+INVENTORY_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "id": ["id", "general.id"],
+    "udid": ["udid", "general.udid"],
+    "name": ["general.name", "name", "general.displayName"],
+    "serial": [
+        "hardware.serialNumber",
+        "serialNumber",
+        "general.serialNumber",
+    ],
+    "managed": [
+        "general.remoteManagement.managed",
+        "general.managed",
+        "isManaged",
+        "managed",
+    ],
+    "os_version": [
+        "operatingSystem.version",
+        "operatingSystemVersion",
+        "general.osVersion",
+    ],
+    "os_build": [
+        "operatingSystem.build",
+        "operatingSystemBuild",
+        "general.osBuild",
+    ],
+    "os_rsr": [
+        "operatingSystem.rapidSecurityResponse",
+        "operatingSystemRapidSecurityResponse",
+    ],
+    "model": [
+        "hardware.modelIdentifier",
+        "hardware.model",
+        "modelIdentifier",
+        "general.model",
+    ],
+    "asset_tag": ["general.assetTag", "assetTag"],
+    "ip_address": [
+        "general.lastIpAddress",
+        "general.lastReportedIp",
+        "general.ipAddress",
+        "ipAddress",
+    ],
+    "last_checkin": [
+        "general.lastContactTime",
+        "general.lastContactDate",
+        "lastContactDate",
+    ],
+    "last_report": [
+        "general.reportDate",
+        "general.lastReportDate",
+        "lastReportDate",
+    ],
+    "last_enrollment": [
+        "general.lastEnrolledDate",
+        "lastEnrolledDate",
+    ],
+    "username": [
+        "userAndLocation.username",
+        "location.username",
+        "username",
+    ],
+    "real_name": [
+        "userAndLocation.realname",
+        "userAndLocation.realName",
+        "location.realName",
+        "realName",
+    ],
+    "email": [
+        "userAndLocation.email",
+        "userAndLocation.emailAddress",
+        "location.emailAddress",
+        "emailAddress",
+    ],
+    "position": [
+        "userAndLocation.position",
+        "location.position",
+        "position",
+    ],
+    "department": [
+        "userAndLocation.department",
+        "userAndLocation.departmentName",
+        "location.department",
+        "department",
+    ],
+    "building": [
+        "userAndLocation.building",
+        "userAndLocation.buildingName",
+        "location.building",
+        "building",
+    ],
+    "room": [
+        "userAndLocation.room",
+        "location.room",
+        "room",
+    ],
+    "site": ["general.site.name", "general.site", "site.name", "site"],
+    "management_id": [
+        "general.managementId",
+        "managementId",
+    ],
+    "filevault": [
+        "diskEncryption.bootPartitionEncryptionDetails.partitionFileVault2State",
+        "operatingSystem.fileVault2Status",
+        "diskEncryption.fileVault2Enabled",
+    ],
+    "sip": [
+        "security.sipStatus",
+        "security.systemIntegrityProtection",
+    ],
+    "firewall": [
+        "security.firewallEnabled",
+        "operatingSystem.activeDirectoryStatus.firewallEnabled",
+    ],
+    "bootstrap_token_escrowed": [
+        "security.bootstrapTokenEscrowed",
+        "security.bootstrapTokenAllowed",
+    ],
+    "bootstrap_token_allowed": [
+        "security.bootstrapTokenAllowed",
+    ],
+    "gatekeeper": [
+        "security.gatekeeperStatus",
+    ],
+}
 
-    name = str(computer.get("name", "")).strip()
+
+def _inventory_export_row(computer: dict[str, Any]) -> dict[str, Any]:
+    """Return a wide CSV row built from jamf-cli `computers list` output.
+
+    Handles both nested responses (jamf-cli ``pro computers list --section``)
+    and any flat shapes from older builds by resolving dot-separated paths
+    against a flattened view of the record.
+    """
+    flat = _flatten_record(computer if isinstance(computer, dict) else {})
+
+    def first(field: str) -> str:
+        value = _first_value(flat, INVENTORY_FIELD_CANDIDATES[field])
+        return str(value or "").strip()
+
+    name = first("name")
+    identifier = first("id")
     if not name:
-        name = f"Computer {computer.get('id', '')}".strip()
+        name = f"Computer {identifier}".strip() if identifier else ""
+
+    managed_raw = _first_value(flat, INVENTORY_FIELD_CANDIDATES["managed"])
+    site_raw = _first_value(flat, INVENTORY_FIELD_CANDIDATES["site"])
 
     return {
-        "Jamf Pro ID": str(computer.get("id", "")).strip(),
+        "Jamf Pro ID": identifier,
         "Computer Name": name,
-        "Serial Number": str(computer.get("serialNumber", "") or "").strip(),
-        "Managed": "Managed" if _to_bool(computer.get("isManaged")) else "Unmanaged",
-        "Operating System": str(computer.get("operatingSystemVersion", "") or "").strip(),
-        "OS Build": str(computer.get("operatingSystemBuild", "") or "").strip(),
-        "OS Rapid Security Response": str(
-            computer.get("operatingSystemRapidSecurityResponse", "") or ""
-        ).strip(),
-        "Model": str(computer.get("modelIdentifier", "") or "").strip(),
-        "Asset Tag": str(computer.get("assetTag", "") or "").strip(),
-        "IP Address": str(computer.get("ipAddress", "") or "").strip(),
-        "Last Check-in": str(computer.get("lastContactDate", "") or "").strip(),
-        "Last Report": str(computer.get("lastReportDate", "") or "").strip(),
-        "Last Enrollment": str(computer.get("lastEnrolledDate", "") or "").strip(),
-        "Username": str(location.get("username", "") or "").strip(),
-        "Real Name": str(location.get("realName", "") or "").strip(),
-        "Email Address": str(location.get("emailAddress", "") or "").strip(),
-        "Position": str(location.get("position", "") or "").strip(),
-        "Department": str(location.get("department", "") or "").strip(),
-        "Building": str(location.get("building", "") or "").strip(),
-        "Room": str(location.get("room", "") or "").strip(),
-        "Site": _site_name(computer.get("site")),
-        "UDID": str(computer.get("udid", "") or "").strip(),
-        "Management ID": str(computer.get("managementId", "") or "").strip(),
+        "Serial Number": first("serial"),
+        "Managed": "Managed" if _to_bool(managed_raw) else "Unmanaged",
+        "Operating System": first("os_version"),
+        "OS Build": first("os_build"),
+        "OS Rapid Security Response": first("os_rsr"),
+        "FileVault Status": first("filevault"),
+        "System Integrity Protection": first("sip"),
+        "Firewall Enabled": first("firewall"),
+        "Bootstrap Token Escrowed": first("bootstrap_token_escrowed"),
+        "Bootstrap Token Allowed": first("bootstrap_token_allowed"),
+        "Gatekeeper": first("gatekeeper"),
+        "Model": first("model"),
+        "Asset Tag": first("asset_tag"),
+        "IP Address": first("ip_address"),
+        "Last Check-in": first("last_checkin"),
+        "Last Report": first("last_report"),
+        "Last Enrollment": first("last_enrollment"),
+        "Username": first("username"),
+        "Real Name": first("real_name"),
+        "Email Address": first("email"),
+        "Position": first("position"),
+        "Department": first("department"),
+        "Building": first("building"),
+        "Room": first("room"),
+        "Site": _site_name(site_raw),
+        "UDID": first("udid"),
+        "Management ID": first("management_id"),
     }
 
 
@@ -2105,12 +2248,13 @@ def _inventory_resolve_row(
 
 def _inventory_detail_lookup_values(computer: dict[str, Any]) -> list[Any]:
     """Return the best identifiers for a per-device jamf-cli detail lookup."""
+    flat = _flatten_record(computer if isinstance(computer, dict) else {})
     return [
-        computer.get("id", ""),
-        computer.get("serialNumber", ""),
-        computer.get("udid", ""),
-        computer.get("managementId", ""),
-        computer.get("name", ""),
+        _first_value(flat, INVENTORY_FIELD_CANDIDATES["id"]),
+        _first_value(flat, INVENTORY_FIELD_CANDIDATES["serial"]),
+        _first_value(flat, INVENTORY_FIELD_CANDIDATES["udid"]),
+        _first_value(flat, INVENTORY_FIELD_CANDIDATES["management_id"]),
+        _first_value(flat, INVENTORY_FIELD_CANDIDATES["name"]),
     ]
 
 
@@ -2132,8 +2276,9 @@ def _inventory_ea_lookup_values(item: dict[str, Any]) -> list[Any]:
 
 def _inventory_detail_identifier(computer: dict[str, Any]) -> str:
     """Return the best jamf-cli identifier for per-device detail lookups."""
-    for key in ("id", "serialNumber", "name"):
-        value = str(computer.get(key, "") or "").strip()
+    flat = _flatten_record(computer if isinstance(computer, dict) else {})
+    for field in ("id", "serial", "name"):
+        value = str(_first_value(flat, INVENTORY_FIELD_CANDIDATES[field]) or "").strip()
         if value:
             return value
     return ""
@@ -2434,12 +2579,16 @@ class JamfCLIBridge:
         data_dir: str = "jamf-cli-data",
         profile: str = "",
         use_cached_data: bool = True,
+        command_timeout: int = 300,
+        ea_results_timeout: int = 600,
     ) -> None:
         self._binary = self._find_binary()
         self._save = save_output
         self._data_dir = Path(data_dir).expanduser()
         self._profile = str(profile).strip()
         self._use_cached_data = use_cached_data
+        self._command_timeout = max(1, int(command_timeout))
+        self._ea_results_timeout = max(1, int(ea_results_timeout))
         self._report_commands_cache: Optional[set[str]] = None
         self._protect_commands_cache: Optional[set[str]] = None
         self._last_source_info: dict[str, dict[str, Any]] = {}
@@ -2730,11 +2879,13 @@ class JamfCLIBridge:
             info["cached_path"] = cached_path
         self._last_source_info[report_type] = info
 
-    def _run(self, args: list[str]) -> Any:
+    def _run(self, args: list[str], timeout: Optional[int] = None) -> Any:
         """Run jamf-cli with args and return parsed JSON.
 
         Args:
             args: List of command arguments (excluding the binary itself).
+            timeout: Per-call timeout in seconds. Falls back to the bridge's
+                configured ``command_timeout`` when omitted.
 
         Returns:
             Parsed JSON object.
@@ -2750,13 +2901,16 @@ class JamfCLIBridge:
         if self._profile:
             cmd.extend(["-p", self._profile])
         cmd.extend(args)
+        effective_timeout = self._command_timeout if timeout is None else max(1, int(timeout))
         try:
             result = subprocess.run(
                 cmd, capture_output=True, text=True, check=True,
-                timeout=120, stdin=subprocess.DEVNULL,
+                timeout=effective_timeout, stdin=subprocess.DEVNULL,
             )
         except subprocess.TimeoutExpired as e:
-            raise RuntimeError(f"jamf-cli timed out after 120s: {e}") from e
+            raise RuntimeError(
+                f"jamf-cli timed out after {effective_timeout}s: {e}"
+            ) from e
         except PermissionError:
             raise RuntimeError("jamf-cli is not executable. Check file permissions.")
         except subprocess.CalledProcessError as exc:
@@ -2888,6 +3042,7 @@ class JamfCLIBridge:
         report_type: str,
         args: list[str],
         cache_names: Optional[list[str]] = None,
+        timeout: Optional[int] = None,
     ) -> Any:
         """Run a command and optionally save output to jamf-cli-data/.
 
@@ -2895,13 +3050,15 @@ class JamfCLIBridge:
             report_type: Subdirectory name under jamf-cli-data/.
             args: Arguments passed to _run.
             cache_names: Cache directory/file name candidates for fallback lookup.
+            timeout: Per-call timeout in seconds. Defaults to the bridge's
+                configured ``command_timeout``.
 
         Returns:
             Parsed JSON result.
         """
         cache_candidates = cache_names or [report_type]
         try:
-            data = self._run(args)
+            data = self._run(args, timeout=timeout)
         except RuntimeError as exc:
             if not self._use_cached_data:
                 raise
@@ -3234,11 +3391,22 @@ class JamfCLIBridge:
             raise RuntimeError("device detail lookup requires a non-empty identifier")
         return self._run(["pro", "device", ident])
 
-    def computers_list(self) -> Any:
-        """Fetch the lightweight computer inventory index from jamf-cli pro computers list."""
+    def computers_list(self, sections: Optional[list[str]] = None) -> Any:
+        """Fetch the computer inventory index from jamf-cli pro computers list.
+
+        Args:
+            sections: Inventory sections to request (e.g. ["GENERAL", "HARDWARE"]).
+                When omitted, jamf-cli returns only the General section, which
+                excludes hardware, OS, user/location, and security details.
+        """
+        args = ["pro", "computers", "list"]
+        for section in sections or []:
+            section_name = str(section).strip()
+            if section_name:
+                args.extend(["--section", section_name])
         return self._run_and_save(
             "computers-list",
-            ["pro", "computers", "list"],
+            args,
             ["computers-list", "computers_list"],
         )
 
@@ -3250,7 +3418,7 @@ class JamfCLIBridge:
             args.extend(["--name", name_filter])
         if include_all:
             args.append("--all")
-        return self._run(args)
+        return self._run(args, timeout=self._ea_results_timeout)
 
     def ea_results_report(self, name_filter: str = "", include_all: bool = True) -> Any:
         """Fetch and cache computer extension attribute values from jamf-cli."""
@@ -3260,7 +3428,12 @@ class JamfCLIBridge:
             args.extend(["--name", name_filter])
         if include_all:
             args.append("--all")
-        return self._run_and_save("ea-results", args, ["ea-results", "ea_results"])
+        return self._run_and_save(
+            "ea-results",
+            args,
+            ["ea-results", "ea_results"],
+            timeout=self._ea_results_timeout,
+        )
 
     def inventory_summary(self) -> Any:
         """Fetch hardware model and OS breakdown from jamf-cli pro report inventory-summary."""
@@ -3587,11 +3760,15 @@ def _build_jamf_cli_bridge(
         use_cached = jamf_cli_cfg.get("use_cached_data", True) is not False
     else:
         use_cached = use_cached_data
+    command_timeout = _to_int(jamf_cli_cfg.get("command_timeout_seconds", 300), 300)
+    ea_timeout = _to_int(jamf_cli_cfg.get("ea_results_timeout_seconds", 600), 600)
     return JamfCLIBridge(
         save_output=save_output,
         data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
         profile=str(jamf_cli_cfg.get("profile", "") or "").strip(),
         use_cached_data=use_cached,
+        command_timeout=command_timeout,
+        ea_results_timeout=ea_timeout,
     )
 
 
@@ -13201,7 +13378,16 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
     if not bridge.is_available():
         raise SystemExit("Error: jamf-cli not found. Install it or set JAMFCLI_PATH.")
 
-    computers_raw = bridge.computers_list()
+    computers_raw = bridge.computers_list(
+        sections=[
+            "GENERAL",
+            "HARDWARE",
+            "OPERATING_SYSTEM",
+            "USER_AND_LOCATION",
+            "DISK_ENCRYPTION",
+            "SECURITY",
+        ]
+    )
     computers = computers_raw if isinstance(computers_raw, list) else []
     if not computers:
         raise SystemExit("Error: jamf-cli returned no computers.")
