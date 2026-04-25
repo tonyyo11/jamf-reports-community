@@ -7,6 +7,52 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-24
+
+### Fixed
+
+- `cmd_inventory_csv` now reads `jamf-cli pro computers list` responses correctly.
+  Earlier versions read top-level keys (`name`, `serialNumber`, `operatingSystemVersion`,
+  `location.username`) but `jamf-cli` returns nested objects (`general.name`,
+  `hardware.serialNumber`, `operatingSystem.version`, `userAndLocation.username`) and,
+  by default, only includes the General section. The result was inventory CSVs where
+  every non-id/udid field was empty. The bridge now requests
+  `--section GENERAL --section HARDWARE --section OPERATING_SYSTEM
+  --section USER_AND_LOCATION --section DISK_ENCRYPTION --section SECURITY`, and
+  `_inventory_export_row()` resolves values through `_flatten_record` plus a new
+  `INVENTORY_FIELD_CANDIDATES` lookup table that handles both nested (current) and
+  flat (legacy) shapes.
+- Per-device `pro device <id>` enrichment is no longer the only source for FileVault,
+  SIP, Firewall, Bootstrap Token, and Gatekeeper columns — those values now come from
+  the inventory list's SECURITY section. Setting
+  `inventory_csv.skip_security_enrichment: true` is now safe with no data loss for
+  the standard security columns; it simply skips redundant per-device API calls.
+
+### Added
+
+- New `jamf_cli.command_timeout_seconds` config key (default `300`) sets the per-call
+  timeout for jamf-cli subprocess invocations. The previous hardcoded 120s timeout
+  was insufficient for slow Jamf Pro instances or large fleets.
+- New `jamf_cli.ea_results_timeout_seconds` config key (default `600`) sets a
+  longer timeout specifically for `pro report ea-results --all`, which is consistently
+  the slowest jamf-cli call because it queries every EA value across the fleet.
+- New `inventory_csv` config block with `max_workers` (default `20`) and
+  `skip_security_enrichment` (default `false`). Replaces the previous hardcoded
+  `max_workers=8` and provides an opt-out for the per-device security enrichment
+  loop now that the inventory list returns security fields directly.
+- `JamfCLIBridge.computers_list()` accepts a `sections` argument and converts it to
+  repeated `--section` flags. `_run()` and `_run_and_save()` accept an optional
+  `timeout` override.
+
+### Changed
+
+- Tracked jamf-cli dependency updated to v1.14.0. No code changes required.
+  Notable upstream changes in v1.14.0: added `-vv` (request headers) and `-vvv`
+  (request and response bodies) verbose levels — additive and orthogonal to this
+  tool's stdout JSON parsing. Generator command ingests Jamf Pro 11.27.0
+  monolith OpenAPI spec — improves command coverage upstream without affecting
+  any commands this tool already calls.
+
 ## [1.2.0] - 2026-04-20
 
 ### Added

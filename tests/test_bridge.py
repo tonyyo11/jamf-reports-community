@@ -10,7 +10,11 @@ def test_run_and_save_falls_back_to_committed_cache(monkeypatch, fixtures_root, 
         profile="dummy",
         use_cached_data=True,
     )
-    monkeypatch.setattr(bridge, "_run", lambda args: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        bridge,
+        "_run",
+        lambda args, timeout=None: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     data = bridge.overview()
 
@@ -22,7 +26,7 @@ def test_computers_inventory_patch_builds_expected_set_args(monkeypatch, jrc) ->
     bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
     captured: list[str] = []
 
-    def fake_run(args):
+    def fake_run(args, timeout=None):
         captured.extend(args)
         return {"ok": True}
 
@@ -67,7 +71,7 @@ def test_groups_uses_confirmed_list_command(monkeypatch, jrc) -> None:
     bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
     captured: list[str] = []
 
-    def fake_run(args):
+    def fake_run(args, timeout=None):
         captured.extend(args)
         return [{"groupName": "All Managed Clients", "groupType": "COMPUTER"}]
 
@@ -83,7 +87,7 @@ def test_packages_uses_pro_packages_list(monkeypatch, jrc) -> None:
     bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
     captured = {}
 
-    def fake_run_and_save(report_type, args, cache_names=None):
+    def fake_run_and_save(report_type, args, cache_names=None, timeout=None):
         captured["report_type"] = report_type
         captured["args"] = list(args)
         captured["cache_names"] = list(cache_names or [])

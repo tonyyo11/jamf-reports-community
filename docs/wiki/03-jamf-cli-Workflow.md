@@ -150,8 +150,12 @@ python3 jamf-reports-community.py inventory-csv --config config.yaml --out-file 
 
 That command combines:
 
-- `jamf-cli pro computers list`
-- `jamf-cli pro device <id>` for generic per-device security posture fields
+- `jamf-cli pro computers list --section GENERAL --section HARDWARE
+  --section OPERATING_SYSTEM --section USER_AND_LOCATION --section DISK_ENCRYPTION
+  --section SECURITY` — one paginated request that returns hardware, OS, user/location,
+  and security posture in addition to the General section
+- `jamf-cli pro device <id>` for optional per-device security posture enrichment
+  (skippable; see `inventory_csv.skip_security_enrichment` below)
 - `jamf-cli pro report ea-results --all`
 
 Use the resulting CSV as input for:
@@ -164,13 +168,37 @@ This is the bridge between jamf-cli-only collection and the broader CSV-driven r
 surface. It is the right move when you want security-agent, compliance, or custom-EA
 visualizations without building a Jamf Pro export first.
 
-Because the export now enriches each computer with generic security posture fields
-(FileVault, SIP, firewall, Gatekeeper, bootstrap token states), a scaffolded config from
-that CSV can populate the `Security Controls` sheet directly. Expect the command to run a
-bit longer on larger fleets because it performs a per-device detail lookup.
+Because the inventory list now returns FileVault, SIP, firewall, Gatekeeper, and
+bootstrap token state directly, a scaffolded config from that CSV can populate the
+`Security Controls` sheet without any extra round trips. The legacy per-device
+enrichment loop (`pro device <id>` per computer) remains as a fallback and can be
+disabled with `inventory_csv.skip_security_enrichment: true` once you confirm the
+inventory list response covers everything you need.
 
 `inventory-csv` is live-only. It does not reuse cached JSON snapshots, so validate auth
 first if you plan to depend on it in automation.
+
+### Tuning timeouts and concurrency
+
+Slow tenants or large fleets sometimes exceed jamf-cli's subprocess defaults. Two
+config keys under `jamf_cli` raise the per-call timeouts; one block under
+`inventory_csv` controls inventory enrichment:
+
+```yaml
+jamf_cli:
+  command_timeout_seconds: 300       # default for every jamf-cli call (was hardcoded 120s)
+  ea_results_timeout_seconds: 600    # override for `pro report ea-results --all`
+
+inventory_csv:
+  max_workers: 20                    # parallel `pro device <id>` calls during enrichment
+  skip_security_enrichment: false    # set true to skip the per-device loop entirely
+```
+
+Bump `command_timeout_seconds` first when you see `jamf-cli timed out after Ns` errors;
+bump `ea_results_timeout_seconds` only if the EA-results call itself is the one timing
+out. `skip_security_enrichment: true` is the most impactful single tuning knob — the
+inventory list response already includes the standard security columns, so the
+per-device loop usually adds runtime without adding data.
 
 ## Collect Snapshots
 
