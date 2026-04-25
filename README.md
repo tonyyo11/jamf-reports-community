@@ -308,13 +308,17 @@ inventory CSV from live `jamf-cli` data:
 python3 jamf-reports-community.py inventory-csv
 ```
 
-That export uses `jamf-cli pro computers list` plus `jamf-cli pro report ea-results --all`
+That export uses `jamf-cli pro computers list` (with `--section GENERAL --section
+HARDWARE --section OPERATING_SYSTEM --section USER_AND_LOCATION --section
+DISK_ENCRYPTION --section SECURITY`) plus `jamf-cli pro report ea-results --all`
 to create a wide CSV with one row per computer and one column per EA.
 
-The generated baseline CSV also attempts to add generic security posture columns from
-`jamf-cli pro device`, including FileVault, SIP, firewall, Gatekeeper, and bootstrap
-token states. That means a scaffolded config from `inventory-csv` can now populate the
-CSV-driven `Security Controls` sheet without requiring a Jamf UI export.
+Hardware, OS, user/location, FileVault, SIP, firewall, Gatekeeper, and bootstrap token
+state are returned directly by the inventory list response. An optional per-device
+enrichment loop (`pro device <id>` per computer) is available as a fallback and can be
+disabled with `inventory_csv.skip_security_enrichment: true` once you confirm the
+inventory list response has everything you need. A scaffolded config from this CSV
+can populate the `Security Controls` sheet without requiring a Jamf UI export.
 
 Before relying on jamf-cli-driven commands, validate the profile you expect to use:
 
@@ -543,14 +547,16 @@ python3 jamf-reports-community.py inventory-csv \
     [--out-file inventory.csv]
 ```
 
-Builds a local CSV from live Jamf Pro data using `jamf-cli pro computers list` plus
-`jamf-cli pro report ea-results --all`. This is the easiest way to feed the existing
-`scaffold`, `check`, and `generate` flow without hand-building a Jamf Advanced Search.
+Builds a local CSV from live Jamf Pro data using `jamf-cli pro computers list` (with
+GENERAL, HARDWARE, OPERATING_SYSTEM, USER_AND_LOCATION, DISK_ENCRYPTION, and SECURITY
+sections requested) plus `jamf-cli pro report ea-results --all`. This is the easiest
+way to feed the existing `scaffold`, `check`, and `generate` flow without hand-building
+a Jamf Advanced Search.
 
 This is a baseline export, not a perfect clone of every Jamf Pro CSV shape. It depends on
 computer names being unique so EA values can be joined back to device rows safely.
 
-The export is intentionally based on the lightweight `computers list` surface, so it is
+The export is intentionally based on the `computers list` surface, so it is
 best for bootstrap and general inventory reporting. It is not a full replacement for
 every possible Jamf Pro Advanced Search or every per-device field exposed by `jamf-cli
 pro device`.
@@ -558,10 +564,14 @@ pro device`.
 `inventory-csv` is a live-auth path. Unlike `generate`, it does not reuse cached JSON
 snapshots when jamf-cli auth is broken.
 
-Because the command now enriches each computer with `jamf-cli pro device` security
-details, it can take noticeably longer on larger fleets than a plain `computers list`
-export. The payoff is that scaffolded configs can auto-map FileVault, SIP, firewall,
-Gatekeeper, and bootstrap-token columns directly from the generated CSV.
+Hardware, OS, user/location, and standard security columns (FileVault, SIP, firewall,
+Gatekeeper, bootstrap token state) come directly from the inventory list response, so
+scaffolded configs can auto-map those columns without any extra round trips. An
+optional per-device `pro device <id>` enrichment loop is available as a fallback;
+disable it with `inventory_csv.skip_security_enrichment: true` once you confirm the
+inventory list response has the columns you need. Tune parallelism with
+`inventory_csv.max_workers` (default `20`) and per-call timeouts with
+`jamf_cli.command_timeout_seconds` / `ea_results_timeout_seconds`.
 
 If you want later commands to use `--csv inventory.csv`, create it explicitly with
 `inventory-csv --out-file inventory.csv`. If you omit `--out-file`, the export is written
@@ -799,6 +809,8 @@ jamf_cli:
   profile: ""
   use_cached_data: true
   allow_live_overview: true
+  command_timeout_seconds: 300
+  ea_results_timeout_seconds: 600
 ```
 
 The community default is a plain `jamf-cli-data/` folder next to the script. If you prefer
@@ -809,6 +821,29 @@ snapshots from different tenants separate. Set `allow_live_overview: false` only
 want Fleet Overview to rely on cached JSON for a specific environment. Set
 `enabled: false` when you want a strict CSV-only run that skips both live jamf-cli calls
 and cached jamf-cli sheets entirely.
+
+`command_timeout_seconds` is the per-call subprocess timeout for every jamf-cli
+invocation; raise it for slow Jamf Pro instances or large fleets that exceed the 300s
+default. `ea_results_timeout_seconds` overrides that ceiling specifically for
+`pro report ea-results --all`, which queries every EA value across the fleet and is
+consistently the slowest jamf-cli call — the 600s default has headroom for fleets with
+hundreds of EAs and thousands of devices.
+
+### `inventory_csv`
+
+Controls the `inventory-csv` command's per-device enrichment loop.
+
+```yaml
+inventory_csv:
+  max_workers: 20
+  skip_security_enrichment: false
+```
+
+`max_workers` sets the parallelism for the optional `pro device <id>` enrichment loop.
+`skip_security_enrichment: true` disables that loop entirely. The inventory list call
+already returns FileVault, SIP, firewall, Gatekeeper, and bootstrap token state via the
+SECURITY section, so skipping the per-device loop usually loses no data and is the most
+impactful single tuning knob for runtime on large fleets.
 
 ### `platform`
 
