@@ -1939,6 +1939,119 @@ def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[
     return dest, True
 
 
+def _emit_summary_json(config: Config, csv_dash: Optional[CSVDashboard], bridge: Optional[JamfCLIBridge], historical_dir: Optional[str]) -> None:
+    """Emit a summary JSON for the current run for GUI trend consumption.
+
+    Calculates 8 key metrics (FileVault, Compliance, OS Current, etc.) and writes
+    them to snapshots/summaries/summary_YYYY-MM-DD.json.
+    """
+    if not historical_dir:
+        return
+
+    summaries_dir = Path(historical_dir) / "summaries"
+    summaries_dir.mkdir(parents=True, exist_ok=True)
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    summary_file = summaries_dir / f"summary_{date_str}.json"
+
+    if summary_file.exists():
+        return  # Idempotent: don't overwrite if multiple runs happen in one day
+
+    df = getattr(csv_dash, "_df", None) if csv_dash else None
+    if df is None:
+        return
+
+    total_devices = len(df)
+    if total_devices == 0:
+        return
+
+    # 1. FileVault
+    fv_col = csv_dash._col("filevault")
+    fv_pct = 0.0
+    if fv_col and fv_col in df.columns:
+        compliant = df[fv_col].apply(lambda v: _security_control_is_compliant("filevault", v)).sum()
+        fv_pct = (compliant / total_devices * 100.0)
+
+    # 2. Compliance (NIST/CIS)
+    comp_cfg = config.compliance
+    count_col = comp_cfg.get("failures_count_column")
+    comp_pct = 0.0
+    if count_col and count_col in df.columns:
+        counts = pd.to_numeric(df[count_col], errors="coerce").fillna(0)
+        compliant = (counts == 0).sum()
+        comp_pct = (compliant / total_devices * 100.0)
+
+    # 3. Stale count (30d+)
+    checkin_col = csv_dash._col("last_checkin")
+    stale_days = int(config.thresholds.get("stale_device_days", 30))
+    stale_count = 0
+    if checkin_col and checkin_col in df.columns:
+        stale_count = int(df[checkin_col].apply(lambda v: (_days_since(v) or 0) > stale_days if v else True).sum())
+
+    # 4. OS Current
+    os_col = csv_dash._col("operating_system")
+    os_pct = 0.0
+    current_os_versions = []
+    for ea in config.custom_eas:
+        if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
+            current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
+            break
+    if os_col and os_col in df.columns and current_os_versions:
+        os_vals = df[os_col].fillna("").astype(str).str.lower()
+        is_current = os_vals.apply(lambda v: any(v.startswith(cv) for cv in current_os_versions))
+        os_pct = (is_current.sum() / total_devices * 100.0)
+
+    # 5. CrowdStrike
+    cs_pct = 0.0
+    for agent in config.security_agents:
+        if "crowdstrike" in str(agent.get("name", "")).lower():
+            col = agent.get("column")
+            val = agent.get("connected_value", "installed")
+            if col and col in df.columns:
+                connected_mask = _contains_case_insensitive(df[col].fillna("").astype(str), val)
+                cs_pct = (connected_mask.sum() / total_devices * 100.0)
+            break
+
+    # 6. Patch Compliance
+    patch_pct = 0.0
+    if bridge and bridge.is_available():
+        try:
+            patches = bridge.patch_status()
+            if patches:
+                valid_pcts = []
+                for p in patches:
+                    val = p.get("compliance_pct")
+                    if val:
+                        try:
+                            valid_pcts.append(float(str(val).replace("%", "")))
+                        except ValueError:
+                            pass
+                if valid_pcts:
+                    patch_pct = sum(valid_pcts) / len(valid_pcts)
+        except Exception:
+            pass
+
+    summary_data = {
+        "date": date_str,
+        "totalDevices": int(total_devices),
+        "fileVaultPct": round(fv_pct, 1),
+        "compliancePct": round(comp_pct, 1),
+        "staleCount": int(stale_count),
+        "osCurrentPct": round(os_pct, 1),
+        "crowdstrikePct": round(cs_pct, 1),
+        "patchPct": round(patch_pct, 1)
+    }
+
+    # Atomic write to avoid partial reads
+    try:
+        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(summaries_dir), suffix=".json") as tf:
+            json.dump(summary_data, tf, indent=2)
+            temp_path = Path(tf.name)
+        temp_path.replace(summary_file)
+    except Exception as exc:
+        print(f"  [warn] Could not emit summary.json: {exc}")
+
+
 def _load_prior_snapshot(
     historical_dir: str,
     current_csv_path: str,
@@ -10436,6 +10549,9 @@ def cmd_generate(
 
         if sheets_written == 0:
             raise SystemExit("Error: sheets filter removed every workbook tab for this run.")
+
+        # Emit summary.json for GUI trend consumption
+        _emit_summary_json(config, csv_dash, bridge, hist_dir)
 
         wb.close()
     except SystemExit:

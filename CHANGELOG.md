@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+- Emit per-run `summary.json` in `snapshots/summaries/` for macOS GUI trend consumption.
+- New `SummaryJSONParser` and `TrendStore` in the macOS app to parse historical summaries.
+- Real trend data visualization in `TrendsView` replacing synthetic demo data.
+
 ## [1.3.0] - 2026-04-24
 
 ### Fixed
