@@ -4,6 +4,7 @@ import Charts
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @State private var bridge = CLIBridge()
+    @State private var trendStore = TrendStore()
     @State private var runStatus: String? = nil
     @State private var isRunning = false
 
@@ -21,18 +22,31 @@ struct OverviewView: View {
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
         }
+        .onAppear {
+            if !workspace.demoMode {
+                trendStore.load(profile: workspace.profile, range: .w12)
+            }
+        }
+        .onChange(of: workspace.profile) { _, newValue in
+            if !workspace.demoMode {
+                trendStore.load(profile: newValue, range: .w12)
+            }
+        }
     }
 
     private var header: some View {
         PageHeader(
-            kicker: runStatus ?? "Snapshot · Apr 25, 2026 · 09:14",
+            kicker: runStatus ?? (workspace.demoMode ? "Snapshot · Apr 25, 2026 · 09:14" : "Snapshot · \(trendStore.filteredSummaries.last?.date ?? "No Data")"),
             title: "\(workspace.org.name) Fleet Overview",
-            subtitle: "524 Macs across 8 departments · 3 sites · NIST 800-53r5 Moderate baseline"
+            subtitle: workspace.demoMode ? "524 Macs across 8 departments · 3 sites · NIST 800-53r5 Moderate baseline" : "\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · NIST 800-53r5 Moderate baseline"
         ) {
             AnyView(
                 HStack(spacing: 8) {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
+                        if !workspace.demoMode {
+                            trendStore.load(profile: workspace.profile, range: .w12)
+                        }
                     }
                     PNPButton(
                         title: isRunning ? "Running…" : "Generate Report",
@@ -64,23 +78,62 @@ struct OverviewView: View {
         runStatus = exit == 0
             ? "Generate completed · exit 0"
             : "Generate failed · exit \(exit) · check Run History"
+            
+        if exit == 0 && !workspace.demoMode {
+            trendStore.load(profile: workspace.profile, range: .w12)
+        }
     }
 
     private var statRow: some View {
         HStack(spacing: 12) {
-            StatTile(label: "Active Devices", value: "524",
-                     delta: "+5 wk", deltaTrend: .up,
-                     sparkValues: DemoData.totalDevicesTrend, sparkColor: Theme.Colors.gold)
-            StatTile(label: "FileVault", value: "91.8%",
-                     delta: "+1.4pp", deltaTrend: .up,
-                     sparkValues: DemoData.trends[.fileVault], sparkColor: Theme.Colors.ok)
-            StatTile(label: "NIST Compliance", value: "80.6%",
-                     delta: "+3.2pp", deltaTrend: .up,
-                     sparkValues: DemoData.trends[.compliance], sparkColor: Theme.Colors.gold)
-            StatTile(label: "Stale (30d+)", value: "22",
-                     delta: "−4 wk", deltaTrend: .up,
-                     sparkValues: DemoData.trends[.stale], sparkColor: Theme.Colors.warn)
+            ForEach(workspace.selectedScoreCards) { metric in
+                scoreCard(for: metric)
+            }
         }
+    }
+
+    private func scoreCard(for metric: TrendSeries.Metric) -> some View {
+        let values: [Double] = workspace.demoMode ? 
+            (metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])) :
+            trendStore.values(metric: metric)
+        
+        let current = values.last ?? 0
+        let prev = values.count > 1 ? values[values.count - 2] : current
+        let diff = current - prev
+        
+        let valueStr: String = {
+            if metric.unit == "%" {
+                return "\(String(format: "%.1f", current))%"
+            } else {
+                return "\(Int(current))"
+            }
+        }()
+        
+        let deltaStr: String = {
+            let absDiff = abs(diff)
+            if metric.unit == "%" {
+                return "\(diff >= 0 ? "+" : "−")\(String(format: "%.1f", absDiff))pp"
+            } else {
+                return "\(diff >= 0 ? "+" : "−")\(Int(absDiff))"
+            }
+        }()
+        
+        let trend: StatTile.Trend = {
+            if diff == 0 { return .flat }
+            if metric == .stale {
+                return diff < 0 ? .up : .down // lower stale is good (up)
+            }
+            return diff > 0 ? .up : .down
+        }()
+
+        return StatTile(
+            label: metric.displayLabel,
+            value: valueStr,
+            delta: deltaStr,
+            deltaTrend: trend,
+            sparkValues: values,
+            sparkColor: Color(hex: metric.colorHex)
+        )
     }
 
     // MARK: OS distribution donut + Top failing rules

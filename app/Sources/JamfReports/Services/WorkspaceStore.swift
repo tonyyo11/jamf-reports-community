@@ -14,6 +14,7 @@ final class WorkspaceStore {
     var customEAs: [CustomEA]
     var columnMappings: [ColumnMapping]
     var demoMode: Bool
+    var selectedScoreCards: [TrendSeries.Metric]
 
     init(demoMode: Bool? = nil) {
         // Auto-detect demo mode: if no real workspace exists, fall back to demo.
@@ -30,6 +31,7 @@ final class WorkspaceStore {
         self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
+        self.selectedScoreCards = [.activeDevices, .fileVault, .compliance, .stale]
     }
 
     func setProfile(_ id: String) {

@@ -93,9 +93,55 @@ struct CustomizeView: View {
     private var rightRail: some View {
         VStack(spacing: 12) {
             workbookPreviewCard
+            scoreCardsCard
             chartsCard
         }
         .frame(width: 260)
+    }
+
+    private var scoreCardsCard: some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 0) {
+                SectionHeader(title: "Overview Score Cards", size: 13.5)
+                    .padding(.bottom, 10)
+                
+                Text("Select up to 4 metrics for the dashboard.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .padding(.bottom, 12)
+
+                ForEach(TrendSeries.Metric.allCases) { metric in
+                    let isOn = Binding<Bool>(
+                        get: { workspace.selectedScoreCards.contains(metric) },
+                        set: { newValue in
+                            if newValue {
+                                if workspace.selectedScoreCards.count < 4 {
+                                    workspace.selectedScoreCards.append(metric)
+                                }
+                            } else {
+                                workspace.selectedScoreCards.removeAll { $0 == metric }
+                            }
+                        }
+                    )
+                    
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text(metric.displayLabel)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Spacer()
+                            PNPToggle(isOn: isOn)
+                                .disabled(!isOn.wrappedValue && workspace.selectedScoreCards.count >= 4)
+                                .opacity(!isOn.wrappedValue && workspace.selectedScoreCards.count >= 4 ? 0.5 : 1.0)
+                        }
+                        .padding(.vertical, 6)
+                        if metric != TrendSeries.Metric.allCases.last {
+                            Divider().background(Theme.Colors.hairline)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private var workbookPreviewCard: some View {
