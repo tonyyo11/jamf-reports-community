@@ -13,6 +13,15 @@ versions in this repository map to git tags.
   workspace-local inventory CSV output with cached jamf-cli compliance and patch
   snapshots, then presents searchable device rows, stale filtering, macOS version
   breakdowns, and per-device patch/security detail.
+- SwiftUI macOS app scaffold with 10 design-faithful screens.
+- Trends hero feature built on Swift Charts for 26-week historical visualization.
+- Multi-profile workspace switching via sidebar profile chip.
+- LaunchAgent-based scheduling for background data collection and reporting.
+- NSWorkspace-bounded file actions for opening reports and revealing folders.
+- Spectrum-inspired app icon and brand-faithful IBM Plex Mono typography.
+- Emit per-run `summary.json` in `snapshots/summaries/` for macOS GUI trend consumption.
+- New `SummaryJSONParser` and `TrendStore` in the macOS app to parse historical summaries.
+- Real trend data visualization in `TrendsView` replacing synthetic demo data.
 
 ## [1.3.0] - 2026-04-24
 

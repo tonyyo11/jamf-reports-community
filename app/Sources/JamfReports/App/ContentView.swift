@@ -10,6 +10,16 @@ struct ContentView: View {
     }
 
     var body: some View {
+        if workspace.profiles.isEmpty && !workspace.demoMode {
+            OnboardingView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.Colors.winBG.ignoresSafeArea())
+        } else {
+            shell
+        }
+    }
+
+    private var shell: some View {
         HStack(spacing: 0) {
             if sidebarMode != .hidden {
                 Sidebar(activeTab: $tab, mode: sidebarMode)

@@ -418,38 +418,52 @@ private func valueLooksGood(_ value: String) -> Bool {
 
 struct TrendSeries: Identifiable, Sendable {
     enum Metric: String, CaseIterable, Identifiable, Sendable {
-        case compliance, fileVault, osCurrent, crowdstrike, stale, patch
+        case activeDevices, compliance, fileVault, osCurrent, crowdstrike, stale, patch
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
-            case .compliance:  "NIST 800-53r5 Moderate"
-            case .fileVault:   "FileVault Encryption"
-            case .osCurrent:   "On Current macOS"
-            case .crowdstrike: "CrowdStrike Installed"
-            case .stale:       "Stale Devices (30d+)"
-            case .patch:       "Patch Compliance"
+            case .activeDevices: return "Active Devices"
+            case .compliance:  return "NIST 800-53r5 Moderate"
+            case .fileVault:   return "FileVault Encryption"
+            case .osCurrent:   return "On Current macOS"
+            case .crowdstrike: return "CrowdStrike Installed"
+            case .stale:       return "Stale Devices (30d+)"
+            case .patch:       return "Patch Compliance"
             }
         }
-        var unit: String { self == .stale ? "" : "%" }
+        var unit: String { 
+            switch self {
+            case .stale, .activeDevices: return ""
+            default: return "%"
+            }
+        }
         var minY: Double {
             switch self {
-            case .compliance:  40
-            case .fileVault:   60
-            case .osCurrent:   30
-            case .crowdstrike: 70
-            case .stale:       0
-            case .patch:       40
+            case .activeDevices: return 0
+            case .compliance:  return 40
+            case .fileVault:   return 60
+            case .osCurrent:   return 30
+            case .crowdstrike: return 70
+            case .stale:       return 0
+            case .patch:       return 40
             }
         }
-        var maxY: Double { self == .stale ? 60 : 100 }
+        var maxY: Double { 
+            switch self {
+            case .activeDevices: return 1000
+            case .stale: return 60
+            default: return 100
+            }
+        }
         var colorHex: UInt32 {
             switch self {
-            case .compliance:  0xC9970A
-            case .fileVault:   0x30D158
-            case .osCurrent:   0x0A84FF
-            case .crowdstrike: 0x3A8A8A
-            case .stale:       0xFF9F0A
-            case .patch:       0xBF5AF2
+            case .activeDevices: return 0xE8B614
+            case .compliance:  return 0xC9970A
+            case .fileVault:   return 0x30D158
+            case .osCurrent:   return 0x0A84FF
+            case .crowdstrike: return 0x3A8A8A
+            case .stale:       return 0xFF9F0A
+            case .patch:       return 0xBF5AF2
             }
         }
     }
