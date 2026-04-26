@@ -42,7 +42,7 @@ no other Python files. Do not create additional modules — keep it single-file.
 | `SchoolDashboard` | Generates sheets from Jamf School data (jamf-cli school or CSV export). Sheets: Device Inventory, OS Versions, Device Status, Stale Devices (CSV-driven); School Overview, Device Groups, Users, Classes, Apps, Profiles, Locations (bridge-driven). |
 | `SchoolColumnMapper` | Resolves `school_columns` config field names → Jamf School CSV column names. Same interface as `ColumnMapper`. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
-| `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources. Uses Chart.js from CDN; no new Python dependencies. |
+| `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources (policies, profiles, scripts, packages, smart groups, org data). Uses Chart.js from CDN; no new Python dependencies. |
 
 ### Key top-level functions
 
@@ -58,6 +58,7 @@ no other Python files. Do not create additional modules — keep it single-file.
 | `cmd_scaffold(csv_path, out_path)` | Reads CSV headers, fuzzy-matches via `COLUMN_HINTS`/`COLUMN_EXCLUDES`, writes starter `config.yaml` |
 | `cmd_check(config, csv_path)` | Validates jamf-cli auth and all configured column names against actual CSV headers |
 | `cmd_generate(config, csv_path, out_file, historical_csv_dir)` | Main entry point — builds xlsx, generates charts |
+| `cmd_html(config, out_file, no_open)` | Builds the self-contained HTML instance report via `HtmlReport` |
 | `cmd_collect(config, csv_path, historical_csv_dir)` | Fetches live jamf-cli snapshots and optionally archives a CSV snapshot |
 | `cmd_inventory_csv(config, out_file)` | Exports a wide computer inventory CSV from jamf-cli computers list + EA results |
 | `cmd_school_scaffold(csv_path, out_path)` | Reads Jamf School CSV headers, fuzzy-matches via `SCHOOL_COLUMN_HINTS`, writes/appends `school_columns` block |
@@ -80,6 +81,8 @@ prevents false positives (e.g., "Name" must not match "LocationName" for `device
 python3 jamf-reports-community.py generate [--config config.yaml] [--csv export.csv]
                                            [--out-file report.xlsx]
                                            [--historical-csv-dir snapshots/]
+python3 jamf-reports-community.py html     [--config config.yaml] [--out-file report.html]
+                                           [--no-open]
 python3 jamf-reports-community.py collect  [--config config.yaml] [--csv export.csv]
                                            [--historical-csv-dir snapshots/]
 python3 jamf-reports-community.py inventory-csv [--config config.yaml]
@@ -98,12 +101,18 @@ python3 jamf-reports-community.py school-check    [--config config.yaml]
                                                   [--csv school_export.csv]
 ```
 
+**`html`** — generate a self-contained HTML instance report intended for management
+review. Fetches: overview, security posture, policies, profiles, scripts, packages,
+smart groups, categories, ADE instances, and org data (sites, buildings, departments).
+Writes a single `.html` file with embedded Chart.js charts and a dark-mode toggle.
+Auto-opens in the default browser unless `--no-open` is passed.
+HTML design is adapted from [@DevliegereM](https://github.com/DevliegereM).
+
 **`collect`** — fetch live snapshots from jamf-cli and save to `jamf_cli.data_dir`. Also
 archives a CSV snapshot if `--csv` and `--historical-csv-dir` are both provided.
 
-**`inventory-csv`** — export a wide CSV from jamf-cli `computers list` + per-device
-security details + EA results, suitable for use as a `--csv` source on systems without a
-Jamf Pro CSV export.
+**`inventory-csv`** — export a wide CSV from jamf-cli `computers list` + EA results,
+suitable for use as a `--csv` source on systems without a Jamf Pro CSV export.
 
 ### `--historical-csv-dir` usage
 
@@ -146,7 +155,6 @@ The config uses these names — use them exactly:
 | `columns` | `operating_system` | `os_version` |
 | `columns` | `last_checkin` | `last_contact` |
 | `columns` | `email` | `assigned_user_email` |
-| `columns` | `gatekeeper` | `gate_keeper` |
 | `jamf_cli` | `profile` | `jamf_profile` |
 | `jamf_cli` | `allow_live_overview` | `live_overview` |
 | `security_agents` | `connected_value` | `installed_value` |
@@ -404,9 +412,12 @@ python3 jamf-reports-community.py collect
 
 # Export inventory CSV from jamf-cli
 python3 jamf-reports-community.py inventory-csv
+
+# Generate HTML instance report (requires jamf-cli auth or cached data)
+python3 jamf-reports-community.py html --no-open
 ```
 
-All five commands should exit without errors before any change is considered ready.
+All six commands should exit without errors before any change is considered ready.
 
 ### Automated fixtures
 
@@ -450,8 +461,8 @@ jamf-reports-community/
 ├── config.example.yaml         # Annotated example config — must stay in sync with DEFAULT_CONFIG
 ├── CHANGELOG.md                # User-visible changes between commits and releases
 ├── COMMUNITY_README.md         # End-user setup and usage guide
-├── AGENTS.md                   # This file
-├── AGENTS.md                   # Mirror of AGENTS.md for OpenAI-compatible agents
+├── CLAUDE.md                   # This file
+├── AGENTS.md                   # Mirror of CLAUDE.md for OpenAI-compatible agents
 ├── PROJECT_CONTEXT.md          # Session context, known issues, enhancement backlog
 ├── requirements.txt            # xlsxwriter, pandas, pyyaml, matplotlib
 ├── docs/wiki/                  # GitHub Wiki source files

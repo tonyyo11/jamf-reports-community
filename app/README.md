@@ -103,22 +103,52 @@ app/
 
 ✅ All 10 screens render from demo data
 ✅ Sidebar collapse (expanded / compact / hidden) with `⌘0`
-✅ Profile switcher chip (visual)
+✅ Profile switcher chip and local workspace discovery (`~/Jamf-Reports/*/config.yaml`)
 ✅ Swift Charts for the Trends hero, multi-line comparison, stacked compliance bands
 ✅ `CLIBridge` discovers `jrc` / `jamf-cli` on PATH and runs subprocesses with
    live stdout streaming
+✅ `SystemActions` for "Reveal in Finder" and "Open Report" with secure path validation
+✅ `LaunchAgentService` for discovering and parsing existing scheduled jobs
 
 ## What's still stubbed (next on the punch list)
 
-- ⏳ `config.yaml` round-trip — needs Yams (or a hand-rolled YAML emitter for the
-  small set of keys the GUI touches)
-- ⏳ `LaunchAgent` plist round-trip in `~/Library/LaunchAgents/com.tonyyo.jrc.<profile>.<slug>.plist`
-- ⏳ Trend data parser — read each archived `.xlsx` summary or have `jrc` write
-  a sidecar `summary.json` per run (open question in the design README)
-- ⏳ App icon — the design handoff includes Spectrum (primary) and Patch (backup)
-  HTML mockups; export via Icon Composer in Xcode 16+ before shipping
+- ⏳ `config.yaml` round-trip — needs Yams or a hand-rolled YAML emitter
+- ⏳ `LaunchAgent` write/load/unload operations — currently read-only for safety
+- ⏳ Trend data parser — read each archived `.xlsx` summary or the new `summary.json`
+- ⏳ App icon — Spectrum assets exist but need final `.icns` assembly
 - ⏳ Actual run-now plumbing in `SchedulesView` — currently the table toggles
-  are read-only
+   are read-only
+
+## Build distribution
+
+The `./build-app.sh release` script performs ad-hoc signing (`codesign -s -`) so the
+bundle can run on the local development machine. For distribution to other Macs:
+
+1. **Signing:** The bundle must be signed with a valid **Developer ID Application**
+   certificate.
+2. **Notarization:** The signed bundle must be submitted to Apple's notary service
+   via `xcrun notarytool`.
+3. **Stapling:** The notarization ticket must be stapled to the bundle via
+   `xcrun stapler staple`.
+
+These steps are currently manual and not yet integrated into the `build-app.sh` script.
+
+## Security model
+
+The app is designed as a non-privileged GUI shell over the CLI tool:
+
+- **Path allow-list:** `NSWorkspace` file actions (Open/Reveal) are strictly
+  bounded to `~/Jamf-Reports`, `~/Library/LaunchAgents`, and standard user
+  folders. The app refuses to interact with paths outside this scope.
+- **Profile-name regex:** Workspace and profile names are validated against
+  `^[a-z0-9][a-z0-9._-]*$` to prevent path traversal and malformed plist labels.
+- **No-credentials-in-app:** The GUI never touches or stores API secrets. It
+  references `jamf-cli` profiles by name; secrets remain in the system keychain.
+- **UserAgents-only:** The app only manages `~/Library/LaunchAgents`. It never
+  requests `sudo` or attempts to install system-wide LaunchDaemons.
+- **Atomic-write policy:** (Planned) All configuration and plist updates will
+  use atomic-write patterns (`write(to:options:)` with `.atomic`) to prevent
+  data corruption during power loss or app crashes.
 
 ## Build verification
 
