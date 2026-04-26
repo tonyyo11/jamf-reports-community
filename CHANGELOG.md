@@ -8,6 +8,11 @@ versions in this repository map to git tags.
 ## [Unreleased]
 
 ### Added
+
+- macOS app Devices screen for current inventory review. It merges validated
+  workspace-local inventory CSV output with cached jamf-cli compliance and patch
+  snapshots, then presents searchable device rows, stale filtering, macOS version
+  breakdowns, and per-device patch/security detail.
 - SwiftUI macOS app scaffold with 10 design-faithful screens.
 - Trends hero feature built on Swift Charts for 26-week historical visualization.
 - Multi-profile workspace switching via sidebar profile chip.

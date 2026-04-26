@@ -21,6 +21,8 @@ Usage:
     python3 jamf-reports-community.py check [--csv path/to/export.csv]
 """
 
+from __future__ import annotations
+
 import argparse
 import copy
 import hashlib
