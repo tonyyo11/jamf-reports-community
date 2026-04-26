@@ -5,6 +5,20 @@ a Jamf Pro CSV export — no Power BI, no custom infrastructure, no hardcoded cr
 
 This tool is featured in the [jamf-cli Community Showcase](https://github.com/Jamf-Concepts/jamf-cli/wiki/Community-Showcase).
 
+## macOS App (preview)
+
+A native SwiftUI macOS application is currently in development on the `dev-app/2.0`
+branch. This GUI wraps the core CLI logic into a multi-profile workspace manager
+with a dedicated **Historical Trends** dashboard built on Swift Charts. Full
+details and build instructions are in [app/README.md](app/README.md).
+
+The app requires Xcode 16+ to build from source and can be packaged as a
+standalone bundle via `cd app && ./build-app.sh release`. Note that while local
+builds are ad-hoc signed, wider distribution requires a Developer ID signature
+and notarization (not yet integrated into the release workflow).
+
+<!-- TODO: screenshot -->
+
 Long-form setup and operations docs live in the [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki).
 
 Automated testing docs and fixture guidance live in [docs/testing.md](docs/testing.md).

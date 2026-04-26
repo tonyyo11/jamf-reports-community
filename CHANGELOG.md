@@ -7,6 +7,14 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+- SwiftUI macOS app scaffold with 10 design-faithful screens.
+- Trends hero feature built on Swift Charts for 26-week historical visualization.
+- Multi-profile workspace switching via sidebar profile chip.
+- LaunchAgent-based scheduling for background data collection and reporting.
+- NSWorkspace-bounded file actions for opening reports and revealing folders.
+- Spectrum-inspired app icon and brand-faithful IBM Plex Mono typography.
+- Per-run `summary.json` emit for easier GUI trend ingestion (pending task 5).
+
 ## [1.3.0] - 2026-04-24
 
 ### Fixed
