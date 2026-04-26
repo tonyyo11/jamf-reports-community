@@ -46,3 +46,4 @@ app/iconset/AppIcon-1024.png
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
+.codex/config.toml
