@@ -50,21 +50,18 @@ enum JamfProtectSnapshotService {
     }
 
     private static func candidateDataRoots(profile: String, workspace: URL?) -> [URL] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let workspaceRoot = workspace ?? ProfileService.workspacesRoot()
-            .appendingPathComponent(profile, isDirectory: true)
+        // Refuse any path construction unless ProfileService.workspaceURL accepted the profile.
+        // This is the only path-construction site in this service; without this gate, a caller
+        // that bypassed WorkspaceStore could pass `../../etc` and the JSON enumerator would
+        // happily walk it.
+        guard let workspaceRoot = workspace else { return [] }
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         return uniqueURLs([
             workspaceRoot.appendingPathComponent("jamf-cli-data", isDirectory: true),
             workspaceRoot.appendingPathComponent("jamf-protect-data", isDirectory: true),
             workspaceRoot.appendingPathComponent("protect", isDirectory: true),
             workspaceRoot,
-            home.appendingPathComponent("Jamf-Reports")
-                .appendingPathComponent(profile, isDirectory: true)
-                .appendingPathComponent("jamf-cli-data", isDirectory: true),
             cwd.appendingPathComponent("jamf-cli-data", isDirectory: true),
-            cwd.appendingPathComponent("jamf-cli-data")
-                .appendingPathComponent(profile, isDirectory: true),
         ])
     }
 

@@ -9,12 +9,18 @@ import Observation
 
     func load(profile: String, range: TrendRange) {
         if profile != currentProfile {
-            let home = FileManager.default.homeDirectoryForCurrentUser
-            let summariesDir = home.appendingPathComponent("Jamf-Reports/\(profile)/snapshots/summaries")
-            allSummaries = SummaryJSONParser.parseDirectory(summariesDir)
+            // Validate at the boundary — string-interpolating an unvalidated profile
+            // into a path component is a traversal vector.
+            if let workspace = ProfileService.workspaceURL(for: profile) {
+                let summariesDir = workspace
+                    .appendingPathComponent("snapshots/summaries", isDirectory: true)
+                allSummaries = SummaryJSONParser.parseDirectory(summariesDir)
+            } else {
+                allSummaries = []
+            }
             currentProfile = profile
         }
-        
+
         currentRange = range
         filterSummaries(range: range)
     }

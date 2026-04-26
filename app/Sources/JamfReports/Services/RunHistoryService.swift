@@ -31,12 +31,16 @@ enum RunHistoryService {
         ) else { return [] }
 
         let safeDirPath = logsDir.resolvingSymlinksInPath().path
+        let safeDirPrefix = safeDirPath + "/"
 
         return entries
             .filter { $0.pathExtension == "log" }
             .compactMap { url -> RunSummary? in
                 let resolved = url.resolvingSymlinksInPath()
-                guard resolved.path.hasPrefix(safeDirPath) else { return nil }
+                let resolvedPath = resolved.path
+                guard resolvedPath == safeDirPath || resolvedPath.hasPrefix(safeDirPrefix) else {
+                    return nil
+                }
 
                 let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
                     .contentModificationDate) ?? .distantPast

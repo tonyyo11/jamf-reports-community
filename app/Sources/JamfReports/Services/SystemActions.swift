@@ -39,8 +39,14 @@ enum SystemActions {
     /// one of the allowed parents. Returns nil otherwise.
     private static func canonicalize(_ url: URL) -> URL? {
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-        let allowed = allowedParents()
-        return allowed.contains(where: { resolved.path.hasPrefix($0.path) }) ? resolved : nil
+        let resolvedPath = resolved.path
+        for parent in allowedParents() {
+            let parentPath = parent.standardizedFileURL.path
+            if resolvedPath == parentPath || resolvedPath.hasPrefix(parentPath + "/") {
+                return resolved
+            }
+        }
+        return nil
     }
 
     private static func allowedParents() -> [URL] {

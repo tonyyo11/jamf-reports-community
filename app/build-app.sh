@@ -36,8 +36,31 @@ cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 
 # Resource bundle lives next to the executable so Bundle.module resolves correctly.
+# SwiftPM produces a flat directory; codesign requires an Info.plist before it
+# will treat the .bundle as a signable subcomponent.
 if [[ -d "$BUNDLE" ]]; then
   cp -R "$BUNDLE" "$APP_OUT/Contents/MacOS/"
+  COPIED_BUNDLE="$APP_OUT/Contents/MacOS/$(basename "$BUNDLE")"
+  if [[ ! -f "$COPIED_BUNDLE/Info.plist" ]]; then
+    cat > "$COPIED_BUNDLE/Info.plist" <<'BUNDLEPLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.tonyyo.jamfreports.resources</string>
+    <key>CFBundleName</key>
+    <string>JamfReports Resources</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>2.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>2.0.0</string>
+</dict>
+</plist>
+BUNDLEPLIST
+  fi
 fi
 
 # Regenerate the AppIcon.icns if missing (first-run convenience).
@@ -78,6 +101,15 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
     <false/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 Tony Young. Released under the project license.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSAllowsLocalNetworking</key>
+        <false/>
+    </dict>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSSupportsAutomaticTermination</key>
@@ -88,8 +120,18 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Ad-hoc sign so the app can run on this machine without Gatekeeper complaints.
-codesign --force --sign - --deep "$APP_OUT" >/dev/null 2>&1 || true
+# Ad-hoc sign with Hardened Runtime + explicit entitlements. Distribution still
+# requires Developer ID + notarization; this is the local-dev posture.
+ENTITLEMENTS="JamfReports.entitlements"
+if [[ -f "$ENTITLEMENTS" ]]; then
+  codesign --force --sign - \
+    --options runtime \
+    --entitlements "$ENTITLEMENTS" \
+    --deep "$APP_OUT" >/dev/null 2>&1 || true
+else
+  echo "✗ $ENTITLEMENTS missing — refusing to sign without entitlements" >&2
+  exit 1
+fi
 
 echo "✓ built $APP_OUT"
 echo "  open it with:  open $APP_OUT"
