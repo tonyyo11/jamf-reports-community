@@ -40,6 +40,9 @@ app/.build/
 app/.swiftpm/
 app/Package.resolved
 app/build/
+# Intermediate icon outputs — only the source script and AppIcon.icns are committed.
+app/iconset/AppIcon.iconset/
+app/iconset/AppIcon-1024.png
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/

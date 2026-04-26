@@ -3,6 +3,9 @@ import SwiftUI
 struct SchedulesView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @State private var profileFilter: String = "All"
+    @State private var bridge = CLIBridge()
+    @State private var isRunning = false
+    @State private var lastRunMessage: String? = nil
 
     private var profileCount: Int {
         Set(workspace.schedules.map(\.profile)).count
@@ -87,9 +90,27 @@ struct SchedulesView: View {
                     .foregroundStyle(Theme.Colors.fgMuted)
                 }
                 Spacer()
-                PNPButton(title: "Run now", icon: "play.fill")
+                PNPButton(
+                    title: isRunning ? "Running…" : "Run now",
+                    icon: isRunning ? "hourglass" : "play.fill"
+                ) {
+                    guard !isRunning else { return }
+                    Task { await runNextScheduledNow() }
+                }
             }
         }
+    }
+
+    private func runNextScheduledNow() async {
+        let target = workspace.schedules.first(where: \.enabled) ?? workspace.schedules.first
+        guard let target, ProfileService.isValid(target.profile) else { return }
+        isRunning = true
+        lastRunMessage = "Running \(target.name) (\(target.profile))…"
+        let exit = await bridge.collect(profile: target.profile) { _ in }
+        isRunning = false
+        lastRunMessage = exit == 0
+            ? "\(target.name) completed · exit 0"
+            : "\(target.name) failed · exit \(exit)"
     }
 
     private var schedulesTable: some View {

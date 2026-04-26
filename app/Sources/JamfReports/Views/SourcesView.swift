@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SourcesView: View {
+    @Environment(WorkspaceStore.self) private var workspace
+
     private struct CSVFile: Identifiable {
         let id = UUID()
         let name: String
@@ -145,8 +147,13 @@ struct SourcesView: View {
                     }
                 }
 
-                PNPButton(title: "Open in Finder", icon: "folder", size: .sm)
-                    .padding(.top, 4)
+                PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
+                    let url = (ProfileService.workspaceURL(for: workspace.profile)
+                                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Jamf-Reports"))
+                        .appendingPathComponent("csv-inbox", isDirectory: true)
+                    SystemActions.openFolder(url)
+                }
+                .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity)

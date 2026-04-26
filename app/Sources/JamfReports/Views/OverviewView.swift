@@ -3,6 +3,9 @@ import Charts
 
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @State private var bridge = CLIBridge()
+    @State private var runStatus: String? = nil
+    @State private var isRunning = false
 
     var body: some View {
         ScrollView {
@@ -22,17 +25,45 @@ struct OverviewView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "Snapshot · Apr 25, 2026 · 09:14",
+            kicker: runStatus ?? "Snapshot · Apr 25, 2026 · 09:14",
             title: "\(workspace.org.name) Fleet Overview",
             subtitle: "524 Macs across 8 departments · 3 sites · NIST 800-53r5 Moderate baseline"
         ) {
             AnyView(
                 HStack(spacing: 8) {
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise")
-                    PNPButton(title: "Generate Report", icon: "play.fill", style: .gold)
+                    PNPButton(title: "Refresh", icon: "arrow.clockwise") {
+                        workspace.reloadFromDisk()
+                    }
+                    PNPButton(
+                        title: isRunning ? "Running…" : "Generate Report",
+                        icon: isRunning ? "hourglass" : "play.fill",
+                        style: .gold
+                    ) {
+                        guard !isRunning else { return }
+                        Task { await runGenerate() }
+                    }
                 }
             )
         }
+    }
+
+    private func runGenerate() async {
+        guard ProfileService.isValid(workspace.profile) else {
+            runStatus = "Invalid profile name — generate aborted"
+            return
+        }
+        isRunning = true
+        runStatus = "jrc generate · profile=\(workspace.profile)"
+        let profile = workspace.profile
+        let exit = await bridge.generate(profile: profile, csvPath: nil) { line in
+            Task { @MainActor in
+                runStatus = "jrc · \(line.text)"
+            }
+        }
+        isRunning = false
+        runStatus = exit == 0
+            ? "Generate completed · exit 0"
+            : "Generate failed · exit \(exit) · check Run History"
     }
 
     private var statRow: some View {

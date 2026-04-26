@@ -1,7 +1,14 @@
 import SwiftUI
 
 struct ReportsView: View {
+    @Environment(WorkspaceStore.self) private var workspace
     @State private var filter: String = "All"
+
+    private var reportsDirectory: URL {
+        let workspace = ProfileService.workspaceURL(for: workspace.profile)
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Jamf-Reports")
+        return workspace.appendingPathComponent("Generated Reports", isDirectory: true)
+    }
 
     var body: some View {
         ScrollView {
@@ -47,7 +54,9 @@ struct ReportsView: View {
                         selection: $filter,
                         options: [("All", "All", nil), ("xlsx", "xlsx", nil), ("html", "html", nil), ("csv", "csv", nil)]
                     )
-                    PNPButton(title: "Reveal in Finder", icon: "folder")
+                    PNPButton(title: "Reveal in Finder", icon: "folder") {
+                        SystemActions.openFolder(reportsDirectory)
+                    }
                 }
             )
         }

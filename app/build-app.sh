@@ -40,6 +40,13 @@ if [[ -d "$BUNDLE" ]]; then
   cp -R "$BUNDLE" "$APP_OUT/Contents/MacOS/"
 fi
 
+# Regenerate the AppIcon.icns if missing (first-run convenience).
+if [[ ! -f "Resources/AppIcon.icns" ]]; then
+  echo "→ AppIcon.icns missing — running iconset/build-icon.sh"
+  ./iconset/build-icon.sh
+fi
+cp "Resources/AppIcon.icns" "$APP_OUT/Contents/Resources/AppIcon.icns"
+
 cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -49,6 +56,8 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>JamfReports</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.tonyyo.jamfreports</string>
     <key>CFBundleInfoDictionaryVersion</key>

@@ -15,21 +15,47 @@ final class WorkspaceStore {
     var columnMappings: [ColumnMapping]
     var demoMode: Bool
 
-    init(demoMode: Bool = true) {
-        self.demoMode = demoMode
+    init(demoMode: Bool? = nil) {
+        // Auto-detect demo mode: if no real workspace exists, fall back to demo.
+        // The Settings screen's Demo Mode toggle will overwrite this later.
+        let realProfiles = ProfileService.discoverLocal()
+        let realSchedules = LaunchAgentService.list()
+        let isDemo = demoMode ?? (realProfiles.isEmpty)
+
+        self.demoMode = isDemo
         self.org = DemoData.org
-        self.profile = DemoData.org.profile
-        self.profiles = DemoData.cliProfiles
-        self.schedules = DemoData.scheduledRuns
+        self.profile = isDemo ? DemoData.org.profile : (realProfiles.first?.name ?? DemoData.org.profile)
+        self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
+        self.schedules = isDemo ? DemoData.scheduledRuns : realSchedules
         self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
     }
 
     func setProfile(_ id: String) {
+        guard ProfileService.isValid(id) else { return }
         profile = id
-        // In a real workspace switch, we'd reload from
-        // ~/Jamf-Reports/<id>/{config.yaml, jamf-cli-data/, Generated Reports/}
+        if !demoMode {
+            // Reload real schedules for the new profile (filtered by label prefix).
+            schedules = LaunchAgentService.list().filter { $0.profile == id }
+        }
+    }
+
+    /// Reload from disk — called from the sidebar refresh and after onboarding.
+    func reloadFromDisk() {
+        let real = ProfileService.discoverLocal()
+        if real.isEmpty {
+            demoMode = true
+            profiles = DemoData.cliProfiles
+            schedules = DemoData.scheduledRuns
+        } else {
+            demoMode = false
+            profiles = real
+            schedules = LaunchAgentService.list()
+            if !real.contains(where: { $0.name == profile }) {
+                profile = real.first!.name
+            }
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct SettingsView: View {
     @State private var autoUpdate = true
@@ -143,12 +144,29 @@ struct SettingsView: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 6) {
-                    PNPButton(title: "View on GitHub", icon: "arrow.up.right.square")
-                    PNPButton(title: "Read the docs", icon: "chevron.left.forwardslash.chevron.right")
-                    PNPButton(title: "Release notes", icon: "bolt")
+                    PNPButton(title: "View on GitHub", icon: "arrow.up.right.square") {
+                        openURL("https://github.com/tonyyo11/jamf-reports-community")
+                    }
+                    PNPButton(title: "Read the docs", icon: "chevron.left.forwardslash.chevron.right") {
+                        openURL("https://github.com/tonyyo11/jamf-reports-community#readme")
+                    }
+                    PNPButton(title: "Release notes", icon: "bolt") {
+                        openURL("https://github.com/tonyyo11/jamf-reports-community/releases")
+                    }
                 }
             }
         }
+    }
+
+    /// Opens an `https://` URL in the default browser. We hard-validate the
+    /// scheme so a malformed string can't trick AppKit into launching anything
+    /// other than a web URL.
+    private func openURL(_ url: String) {
+        guard let parsed = URL(string: url),
+              parsed.scheme == "https",
+              let host = parsed.host, !host.isEmpty
+        else { return }
+        NSWorkspace.shared.open(parsed)
     }
 
     private func metaPair(label: String, value: String) -> some View {
