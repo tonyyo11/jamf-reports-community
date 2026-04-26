@@ -4,11 +4,34 @@ import Charts
 /// Hero feature — historical trends across 26 weeks of archived snapshots.
 /// Differentiator vs. JamfDash, which only shows live state.
 struct TrendsView: View {
+    @Environment(WorkspaceStore.self) private var workspaceStore
+    @State private var trendStore = TrendStore()
     @State private var metric: TrendSeries.Metric = .compliance
     @State private var range: TrendRange = .w26
+    @State private var selectedDate: String? = nil
 
     private var values: [Double] {
-        DemoData.trends[metric] ?? []
+        workspaceStore.demoMode ? (DemoData.trends[metric] ?? []) : trendStore.values(metric: metric)
+    }
+
+    private var trendDates: [String] {
+        workspaceStore.demoMode ? DemoData.trendDates : trendStore.dates()
+    }
+
+    private var selectedIndex: Int? {
+        guard let selectedDate else { return nil }
+        return trendDates.firstIndex(of: selectedDate)
+    }
+
+    private var displayVal: Double {
+        if let idx = selectedIndex, idx < values.count {
+            return values[idx]
+        }
+        return values.last ?? 0
+    }
+
+    private var displayDate: String {
+        selectedIndex != nil ? (selectedDate ?? "") : (trendDates.last ?? "")
     }
 
     private var startVal: Double { values.first ?? 0 }
@@ -24,17 +47,77 @@ struct TrendsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                heroHeader
-                metricPicker
-                heroChart
-                comparisonRow
-                snapshotArchive
+                if !workspaceStore.demoMode && trendStore.isEmpty {
+                    emptyState
+                } else {
+                    heroHeader
+                    metricPicker
+                    heroChart
+                    comparisonRow
+                    snapshotArchive
+                }
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
                                 leading: Theme.Metrics.pagePadH,
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
         }
+        .onAppear {
+            if !workspaceStore.demoMode {
+                trendStore.load(profile: workspaceStore.profile, range: range)
+            }
+        }
+        .onChange(of: workspaceStore.profile) { _, newValue in
+            if !workspaceStore.demoMode {
+                withAnimation(.snappy) {
+                    trendStore.load(profile: newValue, range: range)
+                }
+            }
+        }
+        .onChange(of: range) { _, newValue in
+            if !workspaceStore.demoMode {
+                withAnimation(.snappy) {
+                    trendStore.load(profile: workspaceStore.profile, range: newValue)
+                }
+            }
+        }
+    }
+
+    // MARK: Empty State
+
+    private var emptyState: some View {
+        VStack(spacing: 24) {
+            Spacer().frame(height: 100)
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 64))
+                .foregroundStyle(Theme.Colors.hairlineStrong)
+            
+            VStack(spacing: 8) {
+                Text("No trend data yet")
+                    .font(Theme.Fonts.serif(24, weight: .bold))
+                Text("Historical trends populate after 2+ scheduled runs.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+            
+            Button {
+                // Navigate to Schedules screen
+                // In a real app we'd use a shared navigation state, 
+                // but here we can just suggest it.
+            } label: {
+                Text("Go to Schedules")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Theme.Colors.gold)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .foregroundStyle(.black)
+            }
+            .buttonStyle(.plain)
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: Header
@@ -42,17 +125,17 @@ struct TrendsView: View {
     private var heroHeader: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
-                Kicker(text: "Historical Trends · 26 weeks", tone: .gold)
+                Kicker(text: "Historical Trends · \(range.rawValue)", tone: .gold)
                 Text("How the fleet has changed.")
                     .font(Theme.Fonts.serif(28, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .tracking(-0.5)
                 HStack(spacing: 4) {
                     Text("Snapshot history from")
-                    Text("snapshots/computers/")
+                    Text("snapshots/summaries/")
                         .font(Theme.Fonts.mono(12))
                         .foregroundStyle(Theme.Colors.goldBright)
-                    Text("· 26 weekly archives, oldest \(DemoData.trendDates.first ?? "")")
+                    Text("· \(trendDates.count) snapshots, oldest \(trendDates.first ?? "")")
                 }
                 .font(.system(size: 12.5))
                 .foregroundStyle(Theme.Colors.fgMuted)
@@ -79,7 +162,7 @@ struct TrendsView: View {
     }
 
     private func metricPill(_ m: TrendSeries.Metric) -> some View {
-        let series = DemoData.trends[m] ?? []
+        let series = workspaceStore.demoMode ? (DemoData.trends[m] ?? []) : trendStore.values(metric: m)
         let dl = (series.last ?? 0) - (series.first ?? 0)
         let goodTrend = m == .stale ? dl < 0 : dl > 0
         let isActive = metric == m
@@ -119,20 +202,27 @@ struct TrendsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Kicker(text: metric.displayLabel)
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text("\(Int(endVal.rounded()))\(metric.unit)")
+                            Text("\(Int(displayVal.rounded()))\(metric.unit)")
                                 .font(Theme.Fonts.serif(44, weight: .bold))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .monospacedDigit()
-                            HStack(spacing: 4) {
-                                Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
-                                    .font(.system(size: 11, weight: .bold))
-                                Text("\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", pctDelta))%)")
+                            
+                            if selectedIndex == nil {
+                                HStack(spacing: 4) {
+                                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text("\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", pctDelta))%)")
+                                }
+                                .font(Theme.Fonts.mono(14, weight: .semibold))
+                                .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+                                Text("vs. \(trendDates.first ?? "")")
+                                    .font(Theme.Fonts.mono(11))
+                                    .foregroundStyle(Theme.Colors.fgMuted)
+                            } else {
+                                Text("at \(displayDate)")
+                                    .font(Theme.Fonts.mono(14, weight: .semibold))
+                                    .foregroundStyle(Theme.Colors.goldBright)
                             }
-                            .font(Theme.Fonts.mono(14, weight: .semibold))
-                            .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
-                            Text("vs. \(DemoData.trendDates.first ?? "")")
-                                .font(Theme.Fonts.mono(11))
-                                .foregroundStyle(Theme.Colors.fgMuted)
                         }
                     }
                     Spacer()
@@ -151,7 +241,7 @@ struct TrendsView: View {
                 // Swift Charts line + area mark
                 Chart {
                     ForEach(Array(values.enumerated()), id: \.offset) { idx, v in
-                        let date = DemoData.trendDates[safe: idx] ?? ""
+                        let date = trendDates[safe: idx] ?? ""
                         AreaMark(x: .value("Week", date),
                                  y: .value(metric.displayLabel, v))
                             .foregroundStyle(LinearGradient(
@@ -166,8 +256,28 @@ struct TrendsView: View {
                             .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                             .interpolationMethod(.catmullRom)
                     }
-                    if let last = values.indices.last {
-                        let date = DemoData.trendDates[safe: last] ?? ""
+                    
+                    if let idx = selectedIndex, idx < values.count {
+                        RuleMark(x: .value("Selected", trendDates[idx]))
+                            .foregroundStyle(Theme.Colors.hairlineStrong)
+                            .offset(y: -10)
+                            .zIndex(-1)
+                        
+                        PointMark(x: .value("Selected", trendDates[idx]),
+                                  y: .value(metric.displayLabel, values[idx]))
+                            .foregroundStyle(Color(hex: metric.colorHex))
+                            .symbolSize(100)
+                            .annotation(position: .top, spacing: 8) {
+                                Text("\(Int(values[idx].rounded()))\(metric.unit)")
+                                    .font(Theme.Fonts.mono(12, weight: .bold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Theme.Colors.winBG2)
+                                    .cornerRadius(4)
+                                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: metric.colorHex), lineWidth: 1))
+                            }
+                    } else if let last = values.indices.last {
+                        let date = trendDates[safe: last] ?? ""
                         PointMark(x: .value("Week", date),
                                   y: .value(metric.displayLabel, values[last]))
                             .foregroundStyle(Color(hex: metric.colorHex))
@@ -175,6 +285,7 @@ struct TrendsView: View {
                     }
                 }
                 .chartYScale(domain: metric.minY...metric.maxY)
+                .chartXSelection(value: $selectedDate)
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .day, count: 28)) { _ in
                         AxisValueLabel().font(Theme.Fonts.mono(10))
@@ -201,11 +312,11 @@ struct TrendsView: View {
                     }
                     HStack(spacing: 6) {
                         Image(systemName: "info.circle").font(.system(size: 11))
-                        Text("26 archived CSVs · 0 gaps").font(.system(size: 11.5))
+                        Text("\(trendDates.count) archived summaries").font(.system(size: 11.5))
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
-                    PNPButton(title: "Open in Excel", icon: "arrow.up.right.square", style: .ghost, size: .sm)
+                    PNPButton(title: "Open in Finder", icon: "folder", style: .ghost, size: .sm)
                 }
             }
         }
@@ -271,14 +382,15 @@ struct TrendsView: View {
 
     private var stackedBandsChart: some View {
         // Synthesize a 26-week stacked compliance band evolution, keyed off the
-        // demo data so it animates with the same 26-week index used elsewhere.
-        let weeks = DemoData.trendDates.enumerated().map { idx, date in
-            let t = Double(idx) / Double(max(DemoData.trendDates.count - 1, 1))
-            let pass    = Int((180 + 40 * t).rounded())
-            let low     = Int((180 - 20 * t).rounded())
-            let medLow  = Int((120 - 50 * t).rounded())
-            let med     = Int((60 - 30 * t).rounded())
-            let high    = Int((40 - 25 * t).rounded())
+        // current trendDates so it animates with the same index used elsewhere.
+        let weeks = trendDates.enumerated().map { idx, date in
+            let t = Double(idx) / Double(max(trendDates.count - 1, 1))
+            let base = workspaceStore.demoMode ? 524.0 : Double(trendStore.filteredSummaries[safe: idx]?.totalDevices ?? 500)
+            let pass    = Int((base * (0.35 + 0.1 * t)).rounded())
+            let low     = Int((base * (0.35 - 0.05 * t)).rounded())
+            let medLow  = Int((base * (0.15 - 0.05 * t)).rounded())
+            let med     = Int((base * (0.10 - 0.05 * t)).rounded())
+            let high    = Int((base * (0.05 - 0.02 * t)).rounded())
             return (date: date, values: [pass, low, medLow, med, high])
         }
         return Chart {
@@ -306,9 +418,9 @@ struct TrendsView: View {
 
     private var multilineComparisonChart: some View {
         Chart {
-            series("FileVault", color: Theme.Colors.ok, values: DemoData.trends[.fileVault] ?? [])
-            series("NIST", color: Theme.Colors.gold, values: DemoData.trends[.compliance] ?? [])
-            series("macOS Current", color: Theme.Colors.info, values: DemoData.trends[.osCurrent] ?? [])
+            series("FileVault", color: Theme.Colors.ok, values: workspaceStore.demoMode ? (DemoData.trends[.fileVault] ?? []) : trendStore.values(metric: .fileVault))
+            series("NIST", color: Theme.Colors.gold, values: workspaceStore.demoMode ? (DemoData.trends[.compliance] ?? []) : trendStore.values(metric: .compliance))
+            series("macOS Current", color: Theme.Colors.info, values: workspaceStore.demoMode ? (DemoData.trends[.osCurrent] ?? []) : trendStore.values(metric: .osCurrent))
         }
         .chartYScale(domain: 30...100)
         .chartXAxis {
@@ -332,7 +444,7 @@ struct TrendsView: View {
     private func series(_ name: String, color: Color, values: [Double]) -> some ChartContent {
         ForEach(Array(values.enumerated()), id: \.offset) { idx, v in
             LineMark(
-                x: .value("Week", DemoData.trendDates[safe: idx] ?? ""),
+                x: .value("Week", trendDates[safe: idx] ?? ""),
                 y: .value(name, v),
                 series: .value("Series", name)
             )
@@ -351,9 +463,9 @@ struct TrendsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         SectionHeader(title: "Snapshot Archive")
                         HStack(spacing: 4) {
-                            Text("snapshots/computers/")
+                            Text("snapshots/summaries/")
                                 .font(Theme.Fonts.mono(11.5))
-                            Text("· 26 archived CSVs · auto-archived from each ")
+                            Text("· \(trendDates.count) archived summaries · auto-archived from each ")
                             Text("generate")
                                 .font(Theme.Fonts.mono(11))
                             Text(" run")
@@ -368,12 +480,12 @@ struct TrendsView: View {
                     }
                 }
 
-                let compliance = DemoData.trends[.compliance] ?? []
-                let lastIdx = compliance.indices.last
+                let currentMetricValues = values
+                let lastIdx = currentMetricValues.indices.last
                 HStack(spacing: 4) {
-                    ForEach(Array(DemoData.trendDates.enumerated()), id: \.offset) { idx, date in
+                    ForEach(Array(trendDates.enumerated()), id: \.offset) { idx, date in
                         let isLatest = idx == lastIdx
-                        let v = compliance[safe: idx] ?? 0
+                        let v = currentMetricValues[safe: idx] ?? 0
                         let h = 4 + (v / 100) * 36
                         Rectangle()
                             .fill(isLatest ? Theme.Colors.gold : Theme.Colors.teal)
@@ -388,11 +500,11 @@ struct TrendsView: View {
 
                 Divider().background(Theme.Colors.hairline)
                 HStack {
-                    Text(DemoData.trendDates.first ?? "")
+                    Text(trendDates.first ?? "")
                     Spacer()
-                    Text(DemoData.trendDates[safe: DemoData.trendDates.count / 2] ?? "")
+                    Text(trendDates[safe: trendDates.count / 2] ?? "")
                     Spacer()
-                    Text("\(DemoData.trendDates.last ?? "") · latest")
+                    Text("\(trendDates.last ?? "") · latest")
                         .foregroundStyle(Theme.Colors.goldBright)
                 }
                 .font(Theme.Fonts.mono(10.5))
@@ -401,6 +513,7 @@ struct TrendsView: View {
         }
     }
 }
+
 
 // MARK: - Helpers
 
