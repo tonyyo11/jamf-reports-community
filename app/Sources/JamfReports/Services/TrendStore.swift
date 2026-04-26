@@ -43,6 +43,7 @@ import Observation
     func values(metric: TrendSeries.Metric) -> [Double] {
         filteredSummaries.map { summary in
             switch metric {
+            case .activeDevices: return Double(summary.totalDevices)
             case .compliance:  return summary.compliancePct
             case .fileVault:   return summary.fileVaultPct
             case .osCurrent:   return summary.osCurrentPct
