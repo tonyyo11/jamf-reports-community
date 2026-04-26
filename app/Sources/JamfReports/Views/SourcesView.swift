@@ -2,14 +2,9 @@ import SwiftUI
 
 struct SourcesView: View {
     @Environment(WorkspaceStore.self) private var workspace
-
-    private struct CSVFile: Identifiable {
-        let id = UUID()
-        let name: String
-        let date: String
-        let size: String
-        let action: String
-    }
+    @State private var csvFiles: [InboxFile] = []
+    @State private var families: [SnapshotFamily] = []
+    @State private var inboxWatcher = CSVInboxService.DirectoryWatcher()
 
     private struct CLICommand: Identifiable {
         let id = UUID()
@@ -17,38 +12,36 @@ struct SourcesView: View {
         let status: String
     }
 
-    private struct ArchiveFamily: Identifiable {
-        let id = UUID()
-        let family: String
-        let glob: String
-        let snapshots: Int
-        let latest: String
-        let storage: String
-        let usedBy: String
+    private struct CLICommandDefinition {
+        let label: String
+        let cacheNames: [String]
     }
 
-    private let cliCommands: [CLICommand] = [
-        .init(label: "pro overview",                       status: "live"),
-        .init(label: "pro computers list",                 status: "524 devices"),
-        .init(label: "pro report ea-results --all",        status: "187 EAs"),
-        .init(label: "pro report patch-compliance",        status: "live"),
-        .init(label: "pro report app-status",              status: "live"),
-        .init(label: "pro report update-status",           status: "live"),
-        .init(label: "protect overview",                   status: "opt-in · disabled"),
+    private let cliCommandDefinitions: [CLICommandDefinition] = [
+        .init(label: "pro overview",                cacheNames: ["overview"]),
+        .init(
+            label: "pro computers list",
+            cacheNames: ["computers-list", "computers_list"]
+        ),
+        .init(label: "pro report ea-results --all", cacheNames: ["ea-results", "ea_results"]),
+        .init(label: "pro report patch-status",     cacheNames: ["patch-status", "patch_status"]),
+        .init(label: "pro report app-status",       cacheNames: ["app-status", "app_status"]),
+        .init(label: "pro report update-status",    cacheNames: ["update-status", "update_status"]),
+        .init(
+            label: "protect overview",
+            cacheNames: ["protect-overview", "protect_overview"]
+        ),
     ]
 
-    private let csvFiles: [CSVFile] = [
-        .init(name: "meridian_export_2026-04-25.csv", date: "Apr 25 04:30", size: "2.4 MB", action: "pending"),
-        .init(name: "mobile_export_2026-04-24.csv",   date: "Apr 24 04:30", size: "412 KB", action: "consumed"),
-        .init(name: "meridian_export_2026-04-18.csv", date: "Apr 18 04:30", size: "2.3 MB", action: "archived"),
-    ]
+    private var cliCommands: [CLICommand] {
+        cliCommandDefinitions.map { definition in
+            CLICommand(label: definition.label, status: cacheStatus(for: definition.cacheNames))
+        }
+    }
 
-    private let families: [ArchiveFamily] = [
-        .init(family: "computers",  glob: "*Computers*.csv",   snapshots: 26, latest: "Apr 25", storage: "24.1 MB", usedBy: "Trends · Compliance"),
-        .init(family: "mobile",     glob: "*Mobile*.csv",      snapshots: 14, latest: "Apr 24", storage: "5.2 MB",  usedBy: "Mobile Inventory"),
-        .init(family: "compliance", glob: "*NIST*.csv",        snapshots: 12, latest: "Apr 21", storage: "8.3 MB",  usedBy: "Future automation"),
-        .init(family: "patching",   glob: "*Patch*.csv",       snapshots: 18, latest: "Apr 24", storage: "6.8 MB",  usedBy: "Archive only"),
-    ]
+    private var cachedCLICommandCount: Int {
+        cliCommandDefinitions.filter { latestCacheDate(for: $0.cacheNames) != nil }.count
+    }
 
     var body: some View {
         ScrollView {
@@ -64,6 +57,21 @@ struct SourcesView: View {
                                 leading: Theme.Metrics.pagePadH,
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
+        }
+        .onAppear {
+            reload()
+            inboxWatcher.start(profile: workspace.profile) {
+                reload()
+            }
+        }
+        .onChange(of: workspace.profile) { _, _ in
+            reload()
+            inboxWatcher.start(profile: workspace.profile) {
+                reload()
+            }
+        }
+        .onDisappear {
+            inboxWatcher.stop()
         }
     }
 
@@ -87,12 +95,17 @@ struct SourcesView: View {
                         .font(.system(size: 16))
                     SectionHeader(title: "jamf-cli · live")
                     Spacer()
-                    Pill(text: "Connected", tone: .teal)
+                    Pill(
+                        text: cachedCLICommandCount == 0
+                            ? "No cache"
+                            : "\(cachedCLICommandCount) cached",
+                        tone: cachedCLICommandCount == 0 ? .muted : .teal
+                    )
                 }
                 HStack(spacing: 4) {
-                    Text("jamf-cli 1.6.2 · profile")
-                    Text("meridian-prod").foregroundStyle(Theme.Colors.goldBright)
-                    Text("· auth verified 09:14")
+                    Text("jamf-cli profile")
+                    Text(workspace.profile).foregroundStyle(Theme.Colors.goldBright)
+                    Text("· cache ~/Jamf-Reports/\(workspace.profile)/jamf-cli-data/")
                 }
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Colors.fgMuted)
@@ -102,7 +115,9 @@ struct SourcesView: View {
                         HStack {
                             Mono(text: c.label, color: Theme.Colors.fg2)
                             Spacer()
-                            Text(c.status).font(.system(size: 11)).foregroundStyle(Theme.Colors.fgMuted)
+                            Text(c.status)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.Colors.fgMuted)
                         }
                         .padding(.vertical, 6)
                         if idx < cliCommands.count - 1 {
@@ -123,33 +138,45 @@ struct SourcesView: View {
                         .font(.system(size: 16))
                     SectionHeader(title: "CSV inbox")
                     Spacer()
-                    Pill(text: "3 FILES", tone: .muted)
+                    Pill(text: "\(csvFiles.count) FILES", tone: .muted)
                 }
-                Mono(text: "~/Jamf-Reports/meridian-prod/csv-inbox/")
+                Mono(text: "~/Jamf-Reports/\(workspace.profile)/csv-inbox/")
 
-                VStack(spacing: 0) {
-                    ForEach(Array(csvFiles.enumerated()), id: \.element.id) { idx, f in
-                        HStack(spacing: 10) {
-                            Image(systemName: "doc.text")
-                                .foregroundStyle(f.action == "pending" ? Theme.Colors.gold : Theme.Colors.fgMuted)
-                                .font(.system(size: 12))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Mono(text: f.name, color: Theme.Colors.fg2)
-                                Mono(text: "\(f.date) · \(f.size)", size: 10.5)
+                if csvFiles.isEmpty {
+                    emptyCSVState
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(csvFiles.enumerated()), id: \.element.id) { idx, f in
+                            HStack(spacing: 10) {
+                                Image(systemName: "doc.text")
+                                    .foregroundStyle(
+                                        f.status == .pending
+                                            ? Theme.Colors.gold
+                                            : Theme.Colors.fgMuted
+                                    )
+                                    .font(.system(size: 12))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Mono(text: f.name, color: Theme.Colors.fg2)
+                                    Mono(
+                                        text: "\(FileDisplay.date(f.mtime)) · \(f.size)",
+                                        size: 10.5
+                                    )
+                                }
+                                Spacer()
+                                Pill(text: f.status.rawValue, tone: tone(for: f.status))
                             }
-                            Spacer()
-                            Pill(text: f.action, tone: f.action == "pending" ? .gold : .muted)
-                        }
-                        .padding(.vertical, 8)
-                        if idx < csvFiles.count - 1 {
-                            Divider().background(Theme.Colors.hairline)
+                            .padding(.vertical, 8)
+                            if idx < csvFiles.count - 1 {
+                                Divider().background(Theme.Colors.hairline)
+                            }
                         }
                     }
                 }
 
                 PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
                     let url = (ProfileService.workspaceURL(for: workspace.profile)
-                                ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Jamf-Reports"))
+                                ?? FileManager.default.homeDirectoryForCurrentUser
+                                    .appendingPathComponent("Jamf-Reports"))
                         .appendingPathComponent("csv-inbox", isDirectory: true)
                     SystemActions.openFolder(url)
                 }
@@ -167,25 +194,133 @@ struct SourcesView: View {
                         .font(.system(size: 16))
                     SectionHeader(title: "Snapshot Archive Families")
                     Spacer()
-                    PNPButton(title: "New family", icon: "plus", style: .gold, size: .sm)
-                }
-                Table(families) {
-                    TableColumn("Family") { f in
-                        Text(f.family)
-                            .font(Theme.Fonts.mono(12, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.goldBright)
-                    }
-                    TableColumn("Globs") { f in Mono(text: f.glob) }
-                    TableColumn("Snapshots") { f in Mono(text: "\(f.snapshots)") }
-                    TableColumn("Latest") { f in Mono(text: f.latest) }
-                    TableColumn("Storage") { f in Mono(text: f.storage) }
-                    TableColumn("Used By") { f in
-                        Text(f.usedBy).font(.system(size: 11.5)).foregroundStyle(Theme.Colors.fgMuted)
+                    PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
+                        let url = (ProfileService.workspaceURL(for: workspace.profile)
+                                    ?? FileManager.default.homeDirectoryForCurrentUser
+                                        .appendingPathComponent("Jamf-Reports"))
+                            .appendingPathComponent("snapshots", isDirectory: true)
+                        SystemActions.openFolder(url)
                     }
                 }
-                .frame(minHeight: 200)
-                .scrollContentBackground(.hidden)
+                if families.isEmpty {
+                    emptyFamiliesState
+                } else {
+                    Table(families) {
+                        TableColumn("Family") { f in
+                            Text(f.name)
+                                .font(Theme.Fonts.mono(12, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.goldBright)
+                        }
+                        TableColumn("Globs") { f in Mono(text: f.glob) }
+                        TableColumn("Snapshots") { f in Mono(text: "\(f.snapshotCount)") }
+                        TableColumn("Latest") { f in
+                            Mono(text: f.latestDate.map(FileDisplay.date) ?? "—")
+                        }
+                        TableColumn("Storage") { f in Mono(text: FileDisplay.size(f.totalBytes)) }
+                        TableColumn("Used By") { f in
+                            Text(f.usedBy.isEmpty ? "—" : f.usedBy)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                        }
+                    }
+                    .frame(minHeight: 200)
+                    .scrollContentBackground(.hidden)
+                }
             }
+        }
+    }
+
+    private var emptyCSVState: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("No CSV files in the inbox.")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Theme.Colors.fg)
+            Text("Drop Jamf exports here before running a CSV-assisted report.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.Colors.fgMuted)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private var emptyFamiliesState: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("No snapshot families yet.")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Theme.Colors.fg)
+            Text("Historical trend snapshots will appear after collection or CSV archival runs.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.Colors.fgMuted)
+        }
+        .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
+    }
+
+    private func reload() {
+        csvFiles = CSVInboxService().list(profile: workspace.profile)
+        families = SnapshotArchiveService().families(profile: workspace.profile)
+    }
+
+    private func tone(for status: InboxFileStatus) -> Pill.Tone {
+        switch status {
+        case .pending: .gold
+        case .consumed: .teal
+        case .archived: .muted
+        }
+    }
+
+    private func cacheStatus(for cacheNames: [String]) -> String {
+        guard let date = latestCacheDate(for: cacheNames) else { return "not cached" }
+        return "cached \(FileDisplay.date(date))"
+    }
+
+    private func latestCacheDate(for cacheNames: [String]) -> Date? {
+        guard let root = WorkspacePathGuard.root(for: workspace.profile) else { return nil }
+        let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        guard let validatedDataDir = WorkspacePathGuard.validate(dataDir, under: root) else {
+            return nil
+        }
+
+        let dates = cacheNames.flatMap { cacheName in
+            cacheDates(for: cacheName, dataDir: validatedDataDir, root: root)
+        }
+        return dates.max()
+    }
+
+    private func cacheDates(for cacheName: String, dataDir: URL, root: URL) -> [Date] {
+        let directory = dataDir.appendingPathComponent(cacheName, isDirectory: true)
+        var candidates: [URL] = []
+        if let validatedDirectory = WorkspacePathGuard.validate(directory, under: root),
+           let files = try? FileManager.default.contentsOfDirectory(
+            at: validatedDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+           ) {
+            candidates.append(contentsOf: files)
+        }
+
+        if let files = try? FileManager.default.contentsOfDirectory(
+            at: dataDir,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            candidates.append(
+                contentsOf: files.filter {
+                    $0.lastPathComponent.hasPrefix("\(cacheName)_")
+                        && $0.pathExtension.lowercased() == "json"
+                }
+            )
+        }
+
+        return candidates.compactMap { candidate in
+            guard candidate.pathExtension.lowercased() == "json",
+                  !candidate.lastPathComponent.contains(".partial"),
+                  let validated = WorkspacePathGuard.validate(candidate, under: root),
+                  let values = try? validated.resourceValues(
+                    forKeys: [.contentModificationDateKey, .isRegularFileKey]
+                  ),
+                  values.isRegularFile == true else {
+                return nil
+            }
+            return values.contentModificationDate
         }
     }
 }
