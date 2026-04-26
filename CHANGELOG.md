@@ -7,6 +7,13 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- macOS app Devices screen for current inventory review. It merges validated
+  workspace-local inventory CSV output with cached jamf-cli compliance and patch
+  snapshots, then presents searchable device rows, stale filtering, macOS version
+  breakdowns, and per-device patch/security detail.
+
 ## [1.3.0] - 2026-04-24
 
 ### Fixed

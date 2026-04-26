@@ -11,7 +11,7 @@ in Xcode 16+ for previews and runtime, or build from the command line with `swif
 ## Status
 
 - **Build target:** macOS 14+ (Sonoma), Swift 6
-- **State:** scaffold + all 10 screens implemented against the design handoff (Meridian
+- **State:** scaffold + all 11 screens implemented against the design handoff (Meridian
   Health demo data). CLI bridge wired to `Process` but `LaunchAgent` round-trip,
   config.yaml read/write, and live trend data parsing are TODO.
 
@@ -69,11 +69,13 @@ app/
 │   │   └── DemoData.swift              # Meridian Health fictional org
 │   ├── Services/
 │   │   ├── CLIBridge.swift             # Process wrapper for jrc / jamf-cli
+│   │   ├── DeviceInventoryService.swift # Read-only device inventory loader
 │   │   └── WorkspaceStore.swift        # @Observable state per profile
 │   ├── Views/
 │   │   ├── Sidebar.swift               # nav + workspace switcher chip
 │   │   ├── Titlebar.swift
 │   │   ├── OverviewView.swift
+│   │   ├── DevicesView.swift
 │   │   ├── TrendsView.swift            # ★ hero feature
 │   │   ├── ReportsView.swift
 │   │   ├── SchedulesView.swift
@@ -101,7 +103,8 @@ app/
 
 ## What's wired up
 
-✅ All 10 screens render from demo data
+✅ All 11 screens render from demo data
+✅ Devices screen reads current workspace inventory and cached patch/compliance data
 ✅ Sidebar collapse (expanded / compact / hidden) with `⌘0`
 ✅ Profile switcher chip (visual)
 ✅ Swift Charts for the Trends hero, multi-line comparison, stacked compliance bands

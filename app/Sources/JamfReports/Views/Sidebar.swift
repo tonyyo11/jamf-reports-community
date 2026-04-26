@@ -11,7 +11,7 @@ struct Sidebar: View {
     }
 
     private let groups: [NavGroup] = [
-        .init(group: "REPORTS", items: [.overview, .trends, .reports]),
+        .init(group: "REPORTS", items: [.overview, .devices, .trends, .reports]),
         .init(group: "AUTOMATION", items: [.schedules, .runs]),
         .init(group: "CONFIGURATION", items: [.config, .customize, .sources]),
         .init(group: "SYSTEM", items: [.settings]),

@@ -187,4 +187,132 @@ enum DemoData {
         .init(name: "MERIDIAN-PT-MBP", serial: "C02YK1N6P3Q8", os: "15.3.2", user: "p.tanaka@meridian.health",      dept: "Research",    lastSeen: "16 days",    fileVault: true,  fails: 18, model: "MacBook Pro 14\""),
         .init(name: "MERIDIAN-BS-MM",  serial: "FVFZL5M8N2K6", os: "15.4",   user: "b.singh@meridian.health",       dept: "Engineering", lastSeen: "1 hr ago",   fileVault: true,  fails: 0,  model: "Mac mini M4"),
     ]
+
+    static let patchTitleSummary: [PatchTitleSummary] = [
+        .init(title: "Google Chrome", latestVersion: "124.0.6367.119", compliant: 471, total: 524, complianceLabel: "89.9%"),
+        .init(title: "Mozilla Firefox", latestVersion: "125.0.2", compliant: 436, total: 488, complianceLabel: "89.3%"),
+        .init(title: "Jamf Self Service for macOS", latestVersion: "11.4.1", compliant: 514, total: 524, complianceLabel: "98.1%"),
+    ]
+
+    static let deviceInventory: [DeviceInventoryRecord] = [
+        inventoryDevice(
+            id: "C02XK9PHJG5J", name: "MERIDIAN-JS-MBP", serial: "C02XK9PHJG5J",
+            os: "15.4", model: "MacBook Pro 14\"", user: "j.silva",
+            email: "j.silva@meridian.health", dept: "Engineering", days: 0,
+            fileVault: "Encrypted", failedRules: 0, patchFailures: []
+        ),
+        inventoryDevice(
+            id: "FVFXK7H8Q6L4", name: "MERIDIAN-RC-MBA", serial: "FVFXK7H8Q6L4",
+            os: "15.3.2", model: "MacBook Air 13\"", user: "r.chen",
+            email: "r.chen@meridian.health", dept: "Design", days: 0,
+            fileVault: "Encrypted", failedRules: 3,
+            patchFailures: [
+                .init(title: "Mozilla Firefox", status: "Retrying", date: "2026-04-25", latestVersion: "125.0.2"),
+            ]
+        ),
+        inventoryDevice(
+            id: "C02ZL3M9KM7H", name: "MERIDIAN-AT-MBP", serial: "C02ZL3M9KM7H",
+            os: "15.4", model: "MacBook Pro 16\"", user: "a.thompson",
+            email: "a.thompson@meridian.health", dept: "Clinical", days: 0,
+            fileVault: "Encrypted", failedRules: 0, patchFailures: []
+        ),
+        inventoryDevice(
+            id: "FVFYK2N5P8R3", name: "MERIDIAN-DK-MBA", serial: "FVFYK2N5P8R3",
+            os: "14.7.4", model: "MacBook Air 15\"", user: "d.kim",
+            email: "d.kim@meridian.health", dept: "Finance", days: 0,
+            fileVault: "Encrypted", failedRules: 12,
+            patchFailures: [
+                .init(title: "Google Chrome", status: "Failed", date: "2026-04-25", latestVersion: "124.0.6367.119"),
+                .init(title: "Zoom Workplace", status: "Pending", date: "2026-04-24", latestVersion: "6.0.2"),
+            ]
+        ),
+        inventoryDevice(
+            id: "C02ZM4P7QN9K", name: "MERIDIAN-MR-MBP", serial: "C02ZM4P7QN9K",
+            os: "15.4", model: "MacBook Pro 14\"", user: "m.rodriguez",
+            email: "m.rodriguez@meridian.health", dept: "IT", days: 0,
+            fileVault: "Encrypted", failedRules: 0, patchFailures: []
+        ),
+        inventoryDevice(
+            id: "FVFXJ8L2R4M7", name: "MERIDIAN-LV-MBA", serial: "FVFXJ8L2R4M7",
+            os: "13.7.6", model: "MacBook Air 13\"", user: "l.vasquez",
+            email: "l.vasquez@meridian.health", dept: "Operations", days: 0,
+            fileVault: "Not Enabled", failedRules: 47,
+            patchFailures: [
+                .init(title: "Google Chrome", status: "Retrying", date: "2026-04-25", latestVersion: "124.0.6367.119"),
+                .init(title: "Mozilla Firefox", status: "Failed", date: "2026-04-25", latestVersion: "125.0.2"),
+                .init(title: "Jamf Self Service for macOS", status: "Pending", date: "2026-04-24", latestVersion: "11.4.1"),
+            ]
+        ),
+        inventoryDevice(
+            id: "C02YK1N6P3Q8", name: "MERIDIAN-PT-MBP", serial: "C02YK1N6P3Q8",
+            os: "15.3.2", model: "MacBook Pro 14\"", user: "p.tanaka",
+            email: "p.tanaka@meridian.health", dept: "Research", days: 16,
+            fileVault: "Encrypted", failedRules: 18,
+            patchFailures: [
+                .init(title: "Mozilla Firefox", status: "Retrying", date: "2026-04-21", latestVersion: "125.0.2"),
+            ]
+        ),
+        inventoryDevice(
+            id: "FVFZL5M8N2K6", name: "MERIDIAN-BS-MM", serial: "FVFZL5M8N2K6",
+            os: "15.4", model: "Mac mini M4", user: "b.singh",
+            email: "b.singh@meridian.health", dept: "Engineering", days: 0,
+            fileVault: "Encrypted", failedRules: 0, patchFailures: []
+        ),
+    ]
+
+    static let deviceSnapshot = DeviceInventorySnapshot(
+        devices: deviceInventory,
+        patchTitles: patchTitleSummary,
+        sourceFiles: [
+            "~/Jamf-Reports/meridian-prod/Generated Reports/automation_inventory_meridian-prod_2026-04-25_060155.csv",
+            "~/Jamf-Reports/meridian-prod/jamf-cli-data/patch-device-failures/patch-device-failures_2026-04-25T060155.json",
+        ],
+        warnings: [],
+        generatedAt: "Apr 25, 2026 06:01",
+        isDemo: true
+    )
+
+    private static func inventoryDevice(
+        id: String,
+        name: String,
+        serial: String,
+        os: String,
+        model: String,
+        user: String,
+        email: String,
+        dept: String,
+        days: Int,
+        fileVault: String,
+        failedRules: Int,
+        patchFailures: [DevicePatchFailure]
+    ) -> DeviceInventoryRecord {
+        DeviceInventoryRecord(
+            id: id,
+            name: name,
+            serial: serial,
+            osVersion: os,
+            model: model,
+            user: user,
+            email: email,
+            department: dept,
+            building: "HQ",
+            site: "Meridian East",
+            ipAddress: "10.42.\(days + 10).\(failedRules + 20)",
+            assetTag: "MH-\(String(serial.suffix(4)))",
+            managedState: "Managed",
+            lastContact: days == 0 ? "2026-04-25T09:14:00Z" : "\(days) days ago",
+            lastInventory: "2026-04-25T06:01:00Z",
+            daysSinceContact: days,
+            stale: days >= 30,
+            fileVault: fileVault,
+            sip: "Enabled",
+            firewall: "Enabled",
+            gatekeeper: "Enabled",
+            bootstrapToken: "Escrowed",
+            diskUsage: failedRules > 30 ? "91%" : "68%",
+            failedRules: failedRules,
+            patchFailures: patchFailures,
+            source: "demo"
+        )
+    }
 }

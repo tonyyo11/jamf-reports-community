@@ -62,7 +62,7 @@ final class WorkspaceStore {
 /// Routes the active screen. `Tab` is the source of truth for which detail view
 /// the `NavigationSplitView` renders, and the title shown in the toolbar.
 enum Tab: String, CaseIterable, Identifiable, Hashable {
-    case overview, trends, reports, schedules, runs
+    case overview, devices, trends, reports, schedules, runs
     case config, customize, sources, settings, onboarding
 
     var id: String { rawValue }
@@ -70,6 +70,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     var label: String {
         switch self {
         case .overview:   "Overview"
+        case .devices:    "Devices"
         case .trends:     "Trends"
         case .reports:    "Generated"
         case .schedules:  "Schedules"
@@ -86,6 +87,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     var sfSymbol: String {
         switch self {
         case .overview:   "house"
+        case .devices:    "laptopcomputer"
         case .trends:     "chart.line.uptrend.xyaxis"
         case .reports:    "doc.text"
         case .schedules:  "clock"
@@ -100,6 +102,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
 
     var badge: String? {
         switch self {
+        case .devices:   "inv"
         case .trends:    "26w"
         case .reports:   "47"
         case .schedules: "5"
