@@ -22,6 +22,12 @@ versions in this repository map to git tags.
 - Emit per-run `summary.json` in `snapshots/summaries/` for macOS GUI trend consumption.
 - New `SummaryJSONParser` and `TrendStore` in the macOS app to parse historical summaries.
 - Real trend data visualization in `TrendsView` replacing synthetic demo data.
+- `capabilities` command emits a deterministic app-facing manifest of supported Jamf
+  products, commands, data sources, current-status surfaces, historical/trend surfaces,
+  config sections, and known gaps. This gives the Swift app a stable contract instead
+  of hardcoding sheet/source support.
+- `--summary-json` for `generate`, `html`, `collect`, `school-generate`, and
+  `school-collect`, giving the Swift app stable machine-readable run summaries.
 
 ## [1.3.0] - 2026-04-24
 

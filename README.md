@@ -678,6 +678,31 @@ Generated LaunchAgents call `launchagent-run`. It is safe to run manually when
 troubleshooting, but most users should use `launchagent-setup` and let it compose the
 correct arguments.
 
+### `capabilities` — Print app/report capabilities
+
+```bash
+python3 jamf-reports-community.py capabilities --output json
+```
+
+Prints a deterministic JSON manifest for GUI clients and automation wrappers. The
+manifest lists supported Jamf products, commands, data sources, current-status surfaces,
+historical/trend surfaces, config sections, and known product gaps. It does not load
+`config.yaml`, probe the filesystem, or call `jamf-cli`.
+
+### App-facing run summaries
+
+```bash
+python3 jamf-reports-community.py generate --summary-json run-summary.json
+python3 jamf-reports-community.py collect --summary-json collect-summary.json
+python3 jamf-reports-community.py school-generate --summary-json school-summary.json
+python3 jamf-reports-community.py school-collect --summary-json school-collect-summary.json
+python3 jamf-reports-community.py html --summary-json html-summary.json
+```
+
+These commands can write deterministic JSON summaries for GUI clients and automation
+wrappers. The summaries include command metadata, output paths, counts, selected inputs,
+and source/archive information without changing the normal console output.
+
 ### `scaffold` — Generate a starter config from your CSV
 
 ```

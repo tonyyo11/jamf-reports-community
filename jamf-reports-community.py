@@ -17,6 +17,7 @@ Usage:
                                                         [--mode csv-assisted]
                                                         [--schedule weekdays]
                                                         [--time-of-day 07:00]
+    python3 jamf-reports-community.py capabilities [--output json|text]
     python3 jamf-reports-community.py scaffold [--csv path/to/export.csv] [--out config.yaml]
     python3 jamf-reports-community.py check [--csv path/to/export.csv]
 """
@@ -79,6 +80,8 @@ AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
     "monthly": "One day of the month at the chosen time",
 }
 REPORT_FAMILY_NAMES = ("computers", "mobile", "compliance")
+APP_CAPABILITIES_VERSION = 1
+COMMAND_SUMMARY_SCHEMA_VERSION = 1
 WEEKDAY_NAME_TO_VALUE: dict[str, int] = {
     "sun": 0,
     "sunday": 0,
@@ -1053,6 +1056,68 @@ def _write_status_file(path_value: Optional[str], status: dict[str, Any]) -> Non
             fh.write("\n")
     except OSError as e:
         print(f"[warning] could not write status file {path}: {e}")
+
+
+def _command_summary_base(command: str, config: "Config") -> dict[str, Any]:
+    """Return stable metadata shared by app-facing command summaries."""
+    started_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "schema_version": COMMAND_SUMMARY_SCHEMA_VERSION,
+        "command": command,
+        "status": "started",
+        "started_at": started_at,
+        "finished_at": None,
+        "config_path": str(config.path),
+        "config_base_dir": str(config.base_dir),
+        "profile": str(config.jamf_cli.get("profile", "") or "").strip(),
+    }
+
+
+def _summary_file_entry(kind: str, path: Optional[Path]) -> dict[str, Any]:
+    """Return a stable file descriptor for command summaries."""
+    entry: dict[str, Any] = {
+        "kind": kind,
+        "path": str(path) if path is not None else "",
+        "exists": False,
+        "size_bytes": None,
+        "modified_at": None,
+    }
+    if path is None:
+        return entry
+    try:
+        stat = path.stat()
+    except OSError:
+        return entry
+    entry["exists"] = True
+    entry["size_bytes"] = stat.st_size
+    entry["modified_at"] = datetime.fromtimestamp(
+        stat.st_mtime,
+        timezone.utc,
+    ).isoformat()
+    return entry
+
+
+def _finish_command_summary(summary: dict[str, Any], status: str = "ok") -> dict[str, Any]:
+    """Mark a command summary as complete."""
+    summary["status"] = status
+    summary["finished_at"] = datetime.now(timezone.utc).isoformat()
+    return summary
+
+
+def _write_summary_json(path_value: Optional[str], summary: dict[str, Any]) -> None:
+    """Atomically write a command summary JSON file when requested."""
+    if not path_value:
+        return
+    path = Path(path_value).expanduser()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(summary, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+        os.replace(tmp_path, path)
+    except OSError as exc:
+        print(f"[warning] could not write summary JSON {path}: {exc}")
 
 
 def _require_existing_config_path(path_value: str) -> Path:
@@ -2073,16 +2138,45 @@ def _load_prior_snapshot(
     Returns:
         Tuple of (prior_df, prior_path_str), or (None, None).
 
-    TODO: Implement this function. Strategy:
-        1. List all .csv files in historical_dir sorted by mtime descending.
-        2. Exclude any file whose SHA-256 matches the current CSV (same content
-           as current run — use _sha256_file).
-        3. Return pd.read_csv on the first remaining candidate.
-        4. If the candidate has a different column schema, return (None, None)
-           with a warning rather than erroring.
     """
-    # TODO: implement
-    raise NotImplementedError("_load_prior_snapshot is not yet implemented")
+    hist_path = Path(historical_dir).expanduser()
+    current_path = Path(current_csv_path).expanduser()
+    if not hist_path.is_dir() or not current_path.is_file():
+        return None, None
+
+    try:
+        current_digest = _sha256_file(current_path)
+        current_size = current_path.stat().st_size
+        current_header = pd.read_csv(current_path, nrows=0, encoding="utf-8-sig")
+    except Exception as exc:
+        print(f"  [warn] Fleet Drift: could not inspect current CSV: {exc}")
+        return None, None
+    current_schema = tuple(current_header.columns)
+
+    candidates = sorted(
+        (p for p in hist_path.rglob("*.csv") if p.is_file() and not p.is_symlink()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for candidate in candidates:
+        try:
+            if candidate.resolve() == current_path.resolve():
+                continue
+            if candidate.stat().st_size == current_size:
+                if _sha256_file(candidate) == current_digest:
+                    continue
+            header = pd.read_csv(candidate, nrows=0, encoding="utf-8-sig")
+            if tuple(header.columns) != current_schema:
+                print(
+                    "  [skip] Fleet Drift:"
+                    f" {candidate.name} schema differs from current CSV"
+                )
+                continue
+            prior_df = pd.read_csv(candidate, dtype=str, encoding="utf-8-sig").fillna("")
+            return prior_df, candidate.name
+        except Exception as exc:
+            print(f"  [warn] Fleet Drift: skipping {candidate.name}: {exc}")
+    return None, None
 
 
 def _age_label_from_seconds(total_seconds: int) -> str:
@@ -7052,6 +7146,8 @@ class CSVDashboard:
             filled with empty strings.  Column names must match across files for
             the config mapping to work correctly — the primary CSV's schema is
             authoritative.
+        historical_dir: Optional directory containing prior CSV snapshots.
+        current_csv_path: Current CSV path to exclude from Fleet Drift lookup.
     """
 
     def __init__(
@@ -7062,6 +7158,8 @@ class CSVDashboard:
         fmts: dict,
         family_name: str = "computers",
         extra_csv_paths: Optional[list[str]] = None,
+        historical_dir: Optional[str] = None,
+        current_csv_path: Optional[str] = None,
     ) -> None:
         self._config = config
         self._family_name = family_name
@@ -7109,6 +7207,15 @@ class CSVDashboard:
         else:
             self._df = primary
             print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
+
+        self._prior_df: Optional[pd.DataFrame] = None
+        self._prior_label = ""
+        if family_name != "mobile" and historical_dir and current_csv_path:
+            prior_df, prior_label = _load_prior_snapshot(historical_dir, current_csv_path)
+            if prior_df is not None and prior_label:
+                self._prior_df = prior_df
+                self._prior_label = prior_label
+                print(f"  Fleet Drift baseline: {prior_label}")
 
     @property
     def _org_name(self) -> str:
@@ -7262,6 +7369,50 @@ class CSVDashboard:
         ws.set_column(0, 0, 30)
         ws.set_column(1, 5, 22)
 
+    def _row_value(self, row: Any, column: Optional[str]) -> str:
+        """Return a string value from a DataFrame row by physical column name."""
+        if not column or column not in row.index:
+            return ""
+        return str(row.get(column, "") or "").strip()
+
+    def _serial_row_map(self, df: "pd.DataFrame", serial_col: str) -> dict[str, Any]:
+        """Return a serial-number keyed row map for a CSV snapshot."""
+        rows: dict[str, Any] = {}
+        if serial_col not in df.columns:
+            return rows
+        for _, row in df.iterrows():
+            serial = self._row_value(row, serial_col).upper()
+            if serial and serial not in rows:
+                rows[serial] = row
+        return rows
+
+    def _write_drift_section(
+        self,
+        ws: Any,
+        row_i: int,
+        title: str,
+        headers: list[str],
+        rows: list[list[Any]],
+        note: str = "",
+    ) -> int:
+        """Write one Fleet Drift sub-table and return the next row."""
+        _safe_write(ws, row_i, 0, title, self._fmts["title"])
+        if note:
+            _safe_write(ws, row_i, 1, note, self._fmts["cell"])
+        row_i += 1
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row_i, col_i, header, self._fmts["header"])
+        row_i += 1
+        if not rows:
+            _safe_write(ws, row_i, 0, "No changes", self._fmts["cell"])
+            row_i += 2
+            return row_i
+        for values in rows:
+            for col_i, value in enumerate(values):
+                _safe_write(ws, row_i, col_i, value, self._fmts["cell"])
+            row_i += 1
+        return row_i + 1
+
     def _write_fleet_drift(self, prior_df: "pd.DataFrame", prior_label: str) -> None:
         """Write a Fleet Drift sheet comparing current fleet snapshot to the prior run.
 
@@ -7280,26 +7431,112 @@ class CSVDashboard:
             prior_df: DataFrame from the prior snapshot loaded by _load_prior_snapshot.
             prior_label: Human-readable label for the prior snapshot (e.g. a filename
                 or date string) for display in the sheet header.
-
-        TODO: Implement this method. Design notes:
-            - Use serial_number as the join key (always present, always stable).
-            - Compute set differences: current_serials - prior_serials (new),
-              prior_serials - current_serials (departed).
-            - For stale transitions: compare _days_since(checkin) against
-              stale_device_days threshold in both DataFrames.
-            - For OS drift: join on serial_number, compare operating_system column.
-            - For compliance drift: join on serial_number, compare the numeric value
-              in failures_count_column. A device is "drifted" if it was 0 in prior
-              and >0 in current, or >0 in prior and 0 in current.
-            - Each section should be a separate sub-table within the same worksheet,
-              with a bold section header row and an empty separator row between sections.
-            - If a section has zero rows, print a "No changes" message row instead of
-              omitting the section header — this makes it clear the comparison ran.
-            - If a required column is missing from either DataFrame, skip that section
-              with a [skip] note rather than raising.
         """
-        # TODO: implement
-        raise NotImplementedError("_write_fleet_drift is not yet implemented")
+        serial_col = self._col("serial_number")
+        name_col = self._col("computer_name")
+        os_col = self._col("operating_system")
+        checkin_col = self._col("last_checkin")
+        dept_col = self._col("department")
+        fail_col = str(self._config.compliance.get("failures_count_column", "") or "")
+        if (
+            not serial_col
+            or serial_col not in self._df.columns
+            or serial_col not in prior_df.columns
+        ):
+            raise RuntimeError("serial_number column is required for Fleet Drift")
+
+        current = self._serial_row_map(self._df, serial_col)
+        prior = self._serial_row_map(prior_df, serial_col)
+        current_serials = set(current)
+        prior_serials = set(prior)
+        common_serials = sorted(current_serials & prior_serials)
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+
+        def device_row(row: Any, serial: str) -> list[Any]:
+            return [
+                self._row_value(row, name_col),
+                serial,
+                self._row_value(row, os_col),
+                self._row_value(row, checkin_col),
+                self._row_value(row, dept_col),
+            ]
+
+        def stale_state(row: Any) -> tuple[bool, Any]:
+            days = _days_since(self._row_value(row, checkin_col)) if checkin_col else None
+            return bool(days is not None and days > stale_days), days if days is not None else ""
+
+        new_rows = [device_row(current[s], s) for s in sorted(current_serials - prior_serials)]
+        departed_rows = [device_row(prior[s], s) for s in sorted(prior_serials - current_serials)]
+        new_stale: list[list[Any]] = []
+        recovered_stale: list[list[Any]] = []
+        os_changed: list[list[Any]] = []
+        compliance_changed: list[list[Any]] = []
+
+        for serial in common_serials:
+            cur_row = current[serial]
+            prev_row = prior[serial]
+            prev_stale, prev_days = stale_state(prev_row)
+            cur_stale, cur_days = stale_state(cur_row)
+            if not prev_stale and cur_stale:
+                new_stale.append([self._row_value(cur_row, name_col), serial, prev_days, cur_days])
+            elif prev_stale and not cur_stale:
+                recovered_stale.append([self._row_value(cur_row, name_col), serial, prev_days, cur_days])
+
+            prev_os = self._row_value(prev_row, os_col)
+            cur_os = self._row_value(cur_row, os_col)
+            if os_col and prev_os and cur_os and prev_os != cur_os:
+                os_changed.append([self._row_value(cur_row, name_col), serial, prev_os, cur_os])
+
+            if fail_col and fail_col in self._df.columns and fail_col in prior_df.columns:
+                prev_fail = _to_int(self._row_value(prev_row, fail_col), 0)
+                cur_fail = _to_int(self._row_value(cur_row, fail_col), 0)
+                if prev_fail != cur_fail:
+                    status = "Recovered" if cur_fail == 0 else "Regressed"
+                    if prev_fail and cur_fail:
+                        status = "Changed"
+                    compliance_changed.append(
+                        [self._row_value(cur_row, name_col), serial, prev_fail, cur_fail, status]
+                    )
+
+        ws = self._wb.add_worksheet("Fleet Drift")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_i = _write_sheet_header(
+            ws,
+            self._t("Fleet Drift"),
+            f"Current CSV vs {prior_label} | Generated: {ts}",
+            self._fmts,
+            ncols=6,
+        )
+        headers = ["Name", "Serial", "OS", "Last Check-in", "Department"]
+        row_i = self._write_drift_section(ws, row_i, "New Enrollments", headers, new_rows)
+        row_i = self._write_drift_section(ws, row_i, "Departed Devices", headers, departed_rows)
+        stale_headers = ["Name", "Serial", "Prior Days Stale", "Current Days Stale"]
+        row_i = self._write_drift_section(ws, row_i, "New Stale", stale_headers, new_stale)
+        row_i = self._write_drift_section(
+            ws,
+            row_i,
+            "Recovered Stale",
+            stale_headers,
+            recovered_stale,
+        )
+        row_i = self._write_drift_section(
+            ws,
+            row_i,
+            "OS Changed",
+            ["Name", "Serial", "Prior OS", "Current OS"],
+            os_changed,
+        )
+        note = "" if fail_col else "compliance.failures_count_column is not configured"
+        self._write_drift_section(
+            ws,
+            row_i,
+            "Compliance Changed",
+            ["Name", "Serial", "Prior Failures", "Current Failures", "Status"],
+            compliance_changed,
+            note,
+        )
+        ws.set_column(0, 0, 34)
+        ws.set_column(1, 5, 22)
 
     def _write_mobile_inventory_csv(self) -> None:
         """Write a mobile CSV inventory sheet using mobile_columns mappings."""
@@ -8518,6 +8755,7 @@ class ChartGenerator:
         jamf_cli_dir: Optional[Path],
         output_stem: str,
         embed_in_workbook: bool = True,
+        csv_family_name: str = "computers",
     ) -> None:
         self._config = config
         self._csv_path = csv_path
@@ -8528,6 +8766,10 @@ class ChartGenerator:
         self._jamf_cli_dir = jamf_cli_dir.expanduser() if jamf_cli_dir else None
         self._chart_prefix = _filename_component(output_stem)
         self._embed_in_workbook = embed_in_workbook
+        self._csv_family_name = csv_family_name
+        self._csv_columns = (
+            config.mobile_columns if csv_family_name == "mobile" else config.columns
+        )
 
     def generate_all(self) -> tuple[list[str], list[str], bool]:
         """Generate enabled charts and return (png_paths, source_labels, embedded_sheet)."""
@@ -8540,7 +8782,8 @@ class ChartGenerator:
 
         save_png = charts_cfg.get("save_png", True) is not False
         temp_chart_dir: Optional[Path] = None
-        if save_png:
+        embed_images = charts_cfg.get("embed_in_xlsx", True) and self._embed_in_workbook
+        if save_png or embed_images:
             self._chart_dir = self._out_dir
         else:
             temp_chart_dir = Path(tempfile.mkdtemp(prefix="jamf-reports-community-charts-"))
@@ -8558,7 +8801,7 @@ class ChartGenerator:
                     chart_sources.add(source_label)
 
             comp_cfg = charts_cfg.get("compliance_trend", {})
-            if comp_cfg.get("enabled", True):
+            if self._csv_family_name != "mobile" and comp_cfg.get("enabled", True):
                 fail_col = self._config.compliance.get("failures_count_column", "")
                 if csv_snapshots and fail_col:
                     path = self._generate_compliance_trend(csv_snapshots, fail_col, comp_cfg)
@@ -8593,7 +8836,7 @@ class ChartGenerator:
         """Load all CSV snapshots sorted by date. Returns list of (date, DataFrame)."""
         loaded: list[dict[str, Any]] = []
         relevant_columns: set[str] = set()
-        os_col = self._config.columns.get("operating_system", "")
+        os_col = self._csv_columns.get("operating_system", "")
         if charts_cfg.get("os_adoption", {}).get("enabled", True) and os_col:
             relevant_columns.add(os_col)
         fail_col = self._config.compliance.get("failures_count_column", "")
@@ -8816,11 +9059,15 @@ class ChartGenerator:
         """Generate OS adoption charts. Returns (PNG paths, source label)."""
         ts = pd.DataFrame()
         source_label = ""
-        os_col = self._config.columns.get("operating_system", "")
+        os_col = self._csv_columns.get("operating_system", "")
         if csv_snapshots and os_col:
             ts = self._build_os_timeseries(csv_snapshots, os_col)
             if not ts.empty:
-                source_label = "CSV snapshots"
+                source_label = (
+                    "Mobile CSV snapshots"
+                    if self._csv_family_name == "mobile"
+                    else "CSV snapshots"
+                )
 
         if ts.empty:
             inventory_snapshots = self._load_json_snapshots(
@@ -10224,6 +10471,7 @@ def cmd_generate(
     historical_csv_dir: Optional[str] = None,
     notify_url: Optional[str] = None,
     csv_extra: Optional[list[str]] = None,
+    summary_json: Optional[str] = None,
 ) -> Path:
     """Run all report generation and write the Excel file.
 
@@ -10234,7 +10482,9 @@ def cmd_generate(
         historical_csv_dir: Optional directory of dated CSV snapshots for trend charts.
         notify_url: Optional Teams incoming webhook URL for post-generation notification.
         csv_extra: Optional list of additional CSV paths to merge with csv_path.
+        summary_json: Optional path for an app-facing run summary JSON file.
     """
+    summary = _command_summary_base("generate", config)
     selected_family_name: Optional[str] = None
     selected_csv_origin = ""
     if not csv_path:
@@ -10263,6 +10513,12 @@ def cmd_generate(
         else:
             selected_csv_origin = "--csv"
     csv_path_str = str(csv_path_obj) if csv_path_obj else None
+    hist_dir_obj = _default_historical_dir(
+        config,
+        selected_family_name,
+        historical_csv_dir,
+    )
+    hist_dir = str(hist_dir_obj) if hist_dir_obj else None
 
     output_cfg = config.output
     out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
@@ -10322,9 +10578,13 @@ def cmd_generate(
     jamf_cli_written: list[str] = []
     csv_written: list[str] = []
     chart_source = ""
+    chart_png_paths: list[Path] = []
+    charts_embedded = False
     source_details: list[dict[str, str]] = []
     archived_csv_path: Optional[Path] = None
     archived_csv_created: Optional[bool] = None
+    archived_output_paths: list[Path] = []
+    report_sources_written = False
     if jamf_cli_enabled and bridge is not None:
         print(f"  jamf-cli data dir: {bridge._data_dir}")
         if jamf_cli_profile:
@@ -10361,6 +10621,8 @@ def cmd_generate(
                     fmts,
                     family_name=selected_family_name or "computers",
                     extra_csv_paths=csv_extra,
+                    historical_dir=hist_dir,
+                    current_csv_path=csv_path_str,
                 )
             except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
                 csv_init_error = exc
@@ -10411,17 +10673,14 @@ def cmd_generate(
             print("\nNo CSV provided — skipping inventory sheets.")
             print("  Pass --csv path/to/export.csv to enable inventory analysis.")
 
-        hist_dir_obj = _default_historical_dir(
-            config,
-            selected_family_name,
-            historical_csv_dir,
-        )
-        hist_dir = str(hist_dir_obj) if hist_dir_obj else None
         if hist_dir_obj:
             print(f"  historical CSV dir: {hist_dir_obj}")
         if csv_path_str and hist_dir and config.get("charts", "archive_current_csv") is not False:
             try:
-                archived_csv_path, archived_csv_created = _archive_csv_snapshot(csv_path_str, hist_dir)
+                archived_csv_path, archived_csv_created = _archive_csv_snapshot(
+                    csv_path_str,
+                    hist_dir,
+                )
                 if archived_csv_path:
                     if archived_csv_created:
                         print(f"  Archived CSV snapshot: {archived_csv_path}")
@@ -10432,21 +10691,19 @@ def cmd_generate(
 
         if charts_enabled is None or charts_enabled:
             print("\nGenerating charts...")
-            chart_csv_path = csv_path_str if selected_family_name != "mobile" else None
-            chart_hist_dir = hist_dir if selected_family_name != "mobile" else None
-            if selected_family_name == "mobile":
-                print("  [note] Mobile CSV family selected; skipping CSV trend charts for this run.")
             chart_gen = ChartGenerator(
                 config,
-                chart_csv_path,
-                chart_hist_dir,
+                csv_path_str,
+                hist_dir,
                 out_path.parent,
                 wb,
                 jamf_cli_dir if jamf_cli_enabled else None,
                 out_path.stem,
                 embed_in_workbook=charts_sheet_enabled,
+                csv_family_name=selected_family_name or "computers",
             )
             png_paths, chart_sources, charts_embedded = chart_gen.generate_all()
+            chart_png_paths = png_paths
             if chart_sources:
                 chart_source = " + ".join(chart_sources)
             if png_paths and config.get("charts", "save_png") is not False:
@@ -10515,13 +10772,16 @@ def cmd_generate(
             source_details.append(
                 {
                     "scope": "charts",
-                    "kind": "jamf_cli_or_cache_only",
+                    "kind": "mobile_csv_os_adoption",
                     "origin": "mobile CSV workbook",
                     "family": "mobile",
                     "path": "",
                     "timestamp": "",
                     "age": "",
-                    "notes": "CSV trend charts are skipped for mobile CSV families in this release.",
+                    "notes": (
+                        "Mobile CSV snapshots drive OS adoption trend charts;"
+                        " compliance trend remains computer-only."
+                    ),
                 }
             )
 
@@ -10546,6 +10806,7 @@ def cmd_generate(
                 source_details=source_details,
             )
             sheets_written += 1
+            report_sources_written = True
         else:
             print(f"  [disabled] Report Sources: skipped via {filter_label or 'sheet filter'}")
 
@@ -10579,6 +10840,7 @@ def cmd_generate(
             keep_latest_runs,
             archive_dir,
         )
+        archived_output_paths = archived_paths
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older output file(s) to {archive_dir}")
     print(f"\nReport written: {out_path}")
@@ -10598,6 +10860,57 @@ def cmd_generate(
         pptx_path = exporter.export_pptx()
         if pptx_path:
             print(f"  PPTX export: {pptx_path}")
+    summary.update(
+        {
+            "status": "ok",
+            "outputs": [_summary_file_entry("xlsx", out_path)],
+            "inputs": {
+                "csv": str(csv_path_obj) if csv_path_obj is not None else None,
+                "csv_extra": csv_extra or [],
+                "historical_csv_dir": hist_dir,
+                "selected_csv_family": selected_family_name,
+                "selected_csv_origin": selected_csv_origin,
+            },
+            "counts": {
+                "sheets_written": sheets_written,
+                "jamf_cli_sheets": len(jamf_cli_written),
+                "csv_sheets": len(csv_written),
+                "chart_pngs": len(chart_png_paths),
+                "archived_outputs": len(archived_output_paths),
+            },
+            "sheets": {
+                "all": (
+                    jamf_cli_written
+                    + csv_written
+                    + (["Charts"] if charts_embedded else [])
+                    + (["Report Sources"] if report_sources_written else [])
+                ),
+                "jamf_cli": jamf_cli_written,
+                "csv": csv_written,
+                "charts_embedded": charts_embedded,
+                "report_sources": report_sources_written,
+            },
+            "sources": source_details,
+            "charts": {
+                "source": chart_source,
+                "pngs": [str(path) for path in chart_png_paths],
+            },
+            "archives": {
+                "csv_snapshot": (
+                    _summary_file_entry("csv_snapshot", archived_csv_path)
+                    if archived_csv_path is not None
+                    else None
+                ),
+                "csv_snapshot_created": archived_csv_created,
+                "outputs": [
+                    _summary_file_entry("archived_output", path)
+                    for path in archived_output_paths
+                ],
+            },
+        }
+    )
+    _finish_command_summary(summary)
+    _write_summary_json(summary_json, summary)
     return out_path
 
 
@@ -13218,6 +13531,7 @@ def cmd_html(
     config: Config,
     out_file: Optional[str],
     no_open: bool = False,
+    summary_json: Optional[str] = None,
 ) -> Path:
     """Generate a self-contained HTML status report from jamf-cli data.
 
@@ -13228,10 +13542,12 @@ def cmd_html(
         config: Loaded Config instance.
         out_file: Destination file path. Defaults to the output_dir from config.
         no_open: When True, do not auto-open the file after writing.
+        summary_json: Optional path for an app-facing run summary JSON file.
 
     Returns:
         Path to the generated HTML report.
     """
+    summary = _command_summary_base("html", config)
     if not _jamf_cli_enabled(config):
         raise SystemExit("Error: html requires jamf_cli.enabled: true in config.yaml.")
     bridge = _build_jamf_cli_bridge(config, save_output=True)
@@ -13262,6 +13578,7 @@ def cmd_html(
 
     report = HtmlReport(config, bridge, out_path, no_open=no_open)
     report.generate()
+    archived_paths: list[Path] = []
     if archive_enabled:
         archive_dir = config.resolve_path("output", "archive_dir")
         if archive_dir is None:
@@ -13276,6 +13593,32 @@ def cmd_html(
         )
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older HTML report(s) to {archive_dir}")
+    history_path = report._history_file_path()
+    summary.update(
+        {
+            "status": "ok",
+            "outputs": [_summary_file_entry("html", out_path)],
+            "inputs": {
+                "jamf_cli_data_dir": str(getattr(bridge, "_data_dir", "")),
+                "no_open": no_open,
+            },
+            "counts": {
+                "archived_outputs": len(archived_paths),
+            },
+            "archives": {
+                "outputs": [
+                    _summary_file_entry("archived_output", path)
+                    for path in archived_paths
+                ],
+            },
+            "history": {
+                "path": history_path,
+                "tracking_enabled": bool((config.get("html") or {}).get("track_history", False)),
+            },
+        }
+    )
+    _finish_command_summary(summary)
+    _write_summary_json(summary_json, summary)
     return out_path
 
 
@@ -13422,8 +13765,10 @@ def cmd_collect(
     config: Config,
     csv_path: Optional[str] = None,
     historical_csv_dir: Optional[str] = None,
+    summary_json: Optional[str] = None,
 ) -> None:
     """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
+    summary = _command_summary_base("collect", config)
     collected, archived = _collect_snapshots(config, csv_path, historical_csv_dir)
     if collected == 0 and not archived:
         if not _jamf_cli_enabled(config):
@@ -13437,6 +13782,38 @@ def cmd_collect(
             " pass --csv plus --historical-csv-dir or enable report_families to"
             " archive CSV history."
         )
+    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    selected_csv_path = _resolve_cli_input_path(csv_path, config)
+    selected_family_name = (
+        _family_for_csv_path(config, selected_csv_path) if selected_csv_path else None
+    )
+    hist_dir_obj = _default_historical_dir(
+        config,
+        selected_family_name,
+        historical_csv_dir,
+    )
+    summary.update(
+        {
+            "status": "ok",
+            "outputs": [],
+            "inputs": {
+                "csv": str(selected_csv_path) if selected_csv_path is not None else None,
+                "historical_csv_dir": str(hist_dir_obj) if hist_dir_obj is not None else None,
+            },
+            "counts": {
+                "collected_snapshots": collected,
+                "archived_csv": 1 if archived else 0,
+            },
+            "sources": {
+                "jamf_cli_enabled": _jamf_cli_enabled(config),
+                "jamf_cli_data_dir": str(jamf_cli_dir) if jamf_cli_dir is not None else "",
+                "protect_enabled": config.get("protect", "enabled", default=False) is True,
+                "platform_enabled": config.get("platform", "enabled", default=False) is True,
+            },
+        }
+    )
+    _finish_command_summary(summary)
+    _write_summary_json(summary_json, summary)
 
 
 def _default_inventory_csv_out_file(config: Config) -> Path:
@@ -14646,7 +15023,7 @@ def cmd_school_check(config: Config, csv_path: Optional[str] = None) -> None:
         print(f"  school_columns: {mapped}/{len(school_cols)} mapped and found in CSV")
 
 
-def cmd_school_collect(config: Config) -> None:
+def cmd_school_collect(config: Config, summary_json: Optional[str] = None) -> None:
     """Fetch and cache Jamf School snapshots via jamf-cli school commands.
 
     Runs all school data-fetch commands in parallel and saves results
@@ -14654,7 +15031,9 @@ def cmd_school_collect(config: Config) -> None:
 
     Args:
         config: Loaded Config instance.
+        summary_json: Optional path for an app-facing run summary JSON file.
     """
+    summary = _command_summary_base("school-collect", config)
     bridge = _build_school_bridge(config)
     if not bridge.is_available():
         raise SystemExit("jamf-cli not found. Cannot collect school snapshots.")
@@ -14673,12 +15052,14 @@ def cmd_school_collect(config: Config) -> None:
 
     print(f"Collecting {len(fetchers)} school snapshots (profile: {bridge._profile!r})...")
     errors: list[str] = []
+    collected: list[str] = []
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(fn): name for name, fn in fetchers}
         for future in as_completed(futures):
             name = futures[future]
             try:
                 future.result()
+                collected.append(name)
                 print(f"  OK: {name}")
             except RuntimeError as exc:
                 errors.append(f"  WARN: {name}: {exc}")
@@ -14690,12 +15071,32 @@ def cmd_school_collect(config: Config) -> None:
         print("All school snapshots collected successfully.")
     else:
         print(f"{len(fetchers) - len(errors)}/{len(fetchers)} snapshots collected.")
+    summary.update(
+        {
+            "status": "partial" if errors else "ok",
+            "outputs": [],
+            "counts": {
+                "requested_snapshots": len(fetchers),
+                "collected_snapshots": len(collected),
+                "failed_snapshots": len(errors),
+            },
+            "snapshots": {
+                "collected": sorted(collected),
+                "errors": errors,
+                "data_dir": str(bridge._data_dir),
+                "profile": bridge._profile,
+            },
+        }
+    )
+    _finish_command_summary(summary, status="partial" if errors else "ok")
+    _write_summary_json(summary_json, summary)
 
 
 def cmd_school_generate(
     config: Config,
     csv_path: Optional[str] = None,
     out_file: Optional[str] = None,
+    summary_json: Optional[str] = None,
 ) -> None:
     """Build the Jamf School Excel report workbook.
 
@@ -14707,7 +15108,9 @@ def cmd_school_generate(
         config: Loaded Config instance.
         csv_path: Optional path to a Jamf School device export CSV.
         out_file: Optional explicit output path for the generated workbook.
+        summary_json: Optional path for an app-facing run summary JSON file.
     """
+    summary = _command_summary_base("school-generate", config)
     school_cfg = config.get("school_cli") or {}
     bridge: Optional[SchoolCLIBridge] = None
 
@@ -14760,6 +15163,268 @@ def cmd_school_generate(
         workbook.close()
 
     print(f"Done. Report written to: {out_path}")
+    summary.update(
+        {
+            "status": "ok",
+            "outputs": [_summary_file_entry("xlsx", out_path)],
+            "inputs": {
+                "csv": str(Path(csv_path).expanduser()) if csv_path else None,
+                "school_cli_enabled": school_cfg.get("enabled", False) is True,
+                "school_cli_data_dir": str(bridge._data_dir) if bridge is not None else "",
+            },
+            "counts": {
+                "sheets_written": len(written),
+                "csv_rows": len(csv_df) if csv_df is not None else 0,
+            },
+            "sheets": {
+                "school": written,
+            },
+        }
+    )
+    _finish_command_summary(summary)
+    _write_summary_json(summary_json, summary)
+
+
+def _capability(
+    identifier: str,
+    label: str,
+    products: list[str],
+    sources: list[str],
+    current: bool = True,
+    historical: bool = False,
+    status: str = "supported",
+    notes: str = "",
+) -> dict[str, Any]:
+    """Return one app-facing capability row."""
+    row: dict[str, Any] = {
+        "id": identifier,
+        "label": label,
+        "products": products,
+        "sources": sources,
+        "current": current,
+        "historical": historical,
+        "status": status,
+    }
+    if notes:
+        row["notes"] = notes
+    return row
+
+
+def _capability_products() -> list[dict[str, str]]:
+    """Return Jamf product rows known to the report engine."""
+    return [
+        {"id": "jamf_pro", "label": "Jamf Pro"},
+        {"id": "jamf_school", "label": "Jamf School"},
+        {"id": "jamf_protect", "label": "Jamf Protect"},
+        {"id": "jamf_platform", "label": "Jamf Platform"},
+    ]
+
+
+def _capability_commands() -> dict[str, list[str]]:
+    """Return report-engine commands grouped for GUI routing."""
+    return {
+        "jamf_pro": [
+            "generate", "html", "collect", "inventory-csv", "export-reports",
+            "scaffold", "check", "device", "patch-managed",
+        ],
+        "jamf_school": [
+            "school-generate", "school-collect", "school-scaffold", "school-check",
+        ],
+        "automation": ["workspace-init", "launchagent-setup", "launchagent-run"],
+    }
+
+
+def _capability_data_sources(
+    pro: list[str],
+    school: list[str],
+    protect: list[str],
+) -> list[dict[str, Any]]:
+    """Return supported current and historical input sources."""
+    return [
+        _capability(
+            "jamf-pro-csv", "Jamf Pro computer CSV", pro, ["csv"],
+            historical=True,
+            notes="Drives CSV-backed workbook sheets and CSV snapshot trends.",
+        ),
+        _capability(
+            "jamf-pro-mobile-csv", "Jamf Pro mobile-device CSV", pro, ["csv"],
+            historical=True,
+            notes="Drives current mobile CSV sheets and mobile OS adoption trend charts.",
+        ),
+        _capability(
+            "jamf-cli-pro-json", "jamf-cli Pro JSON snapshots", pro, ["jamf_cli"],
+            historical=True,
+            notes="Cached snapshots support current workbooks and selected trend charts.",
+        ),
+        _capability(
+            "jamf-cli-school-json", "jamf-cli School JSON snapshots", school, ["jamf_cli"],
+            notes="Current School workbook sheets only.",
+        ),
+        _capability(
+            "jamf-cli-protect-json", "jamf-cli Protect JSON snapshots", protect,
+            ["jamf_cli"],
+            status="experimental",
+            notes="Collected when protect.enabled is true; workbook surface only.",
+        ),
+        _capability(
+            "html-history-json", "HTML history JSON", pro, ["history_file"],
+            current=False,
+            historical=True,
+            notes="Separate optional OS adoption timeline used by the HTML report.",
+        ),
+        _capability(
+            "automation-status-json", "LaunchAgent status JSON", pro + school + protect,
+            ["status_file"],
+            notes="Records automation outputs and failures, not fleet metrics.",
+        ),
+    ]
+
+
+def _capability_report_surfaces(
+    pro: list[str],
+    school: list[str],
+    protect: list[str],
+    platform: list[str],
+) -> list[dict[str, Any]]:
+    """Return file/report outputs available from the report engine."""
+    return [
+        _capability("xlsx-pro-core", "Jamf Pro Excel workbook", pro, ["jamf_cli", "csv"]),
+        _capability("html-pro", "Jamf Pro HTML report", pro, ["jamf_cli"], historical=True),
+        _capability("xlsx-school", "Jamf School Excel workbook", school, ["jamf_cli", "csv"]),
+        _capability(
+            "xlsx-protect", "Jamf Protect workbook sheet", protect, ["jamf_cli"],
+            status="experimental",
+        ),
+        _capability(
+            "xlsx-platform", "Platform API workbook sheets", platform, ["jamf_cli"],
+            status="opt_in",
+        ),
+    ]
+
+
+def _capability_status_surfaces(
+    pro: list[str],
+    school: list[str],
+    protect: list[str],
+    platform: list[str],
+) -> list[dict[str, Any]]:
+    """Return current-status surfaces emitted by workbooks or HTML."""
+    return [
+        _capability("fleet-overview", "Fleet Overview", pro, ["jamf_cli"]),
+        _capability("security-posture", "Security Posture", pro, ["jamf_cli"], True, True),
+        _capability("inventory-summary", "Inventory Summary", pro, ["jamf_cli"], True, True),
+        _capability("device-compliance", "Device Compliance", pro, ["jamf_cli"], True, True),
+        _capability("checkin-health", "Check-in Health", pro, ["jamf_cli"]),
+        _capability("policy-health", "Policy Health", pro, ["jamf_cli"]),
+        _capability("profile-status", "Profile Status", pro, ["jamf_cli"]),
+        _capability("mobile-config-profiles", "Mobile Config Profiles", pro, ["jamf_cli"]),
+        _capability("app-status", "Managed App Status", pro, ["jamf_cli"]),
+        _capability("patch-compliance", "Patch Compliance", pro, ["jamf_cli"]),
+        _capability("patch-failures", "Patch Failures", pro, ["jamf_cli"]),
+        _capability("update-status", "Managed Software Update Status", pro, ["jamf_cli"]),
+        _capability("update-failures", "Managed Software Update Failures", pro, ["jamf_cli"]),
+        _capability("smart-groups", "Smart Groups", pro, ["jamf_cli"]),
+        _capability("package-lifecycle", "Package Lifecycle", pro, ["jamf_cli"]),
+        _capability("csv-device-inventory", "CSV Device Inventory", pro, ["csv"]),
+        _capability("csv-stale-devices", "CSV Stale Devices", pro, ["csv"]),
+        _capability("csv-security-controls", "CSV Security Controls", pro, ["csv"]),
+        _capability("csv-security-agents", "CSV Security Agents", pro, ["csv"]),
+        _capability("csv-compliance", "CSV Compliance", pro, ["csv"], True, True),
+        _capability("school-overview", "School Overview", school, ["jamf_cli"]),
+        _capability("school-devices", "School Device Inventory", school, ["jamf_cli", "csv"]),
+        _capability("school-os-versions", "School OS Versions", school, ["jamf_cli", "csv"]),
+        _capability("school-status", "School Device Status", school, ["jamf_cli", "csv"]),
+        _capability("protect-overview", "Protect Overview", protect, ["jamf_cli"]),
+        _capability("protect-computers", "Protect Computers", protect, ["jamf_cli"]),
+        _capability("protect-analytics", "Protect Analytics", protect, ["jamf_cli"]),
+        _capability("protect-plans", "Protect Plans", protect, ["jamf_cli"]),
+        _capability("platform-blueprints", "Platform Blueprints", platform, ["jamf_cli"]),
+        _capability("platform-ddm", "Platform DDM Status", platform, ["jamf_cli"]),
+        _capability("platform-compliance", "Platform Compliance", platform, ["jamf_cli"]),
+    ]
+
+
+def _capability_historical_surfaces(pro: list[str]) -> list[dict[str, Any]]:
+    """Return trend surfaces emitted from snapshots or HTML history."""
+    return [
+        _capability(
+            "os-adoption", "macOS Adoption Trend", pro, ["csv", "jamf_cli"],
+            current=False,
+            historical=True,
+        ),
+        _capability(
+            "compliance-trend", "Compliance Trend", pro, ["csv", "jamf_cli"],
+            current=False,
+            historical=True,
+        ),
+        _capability(
+            "device-state-trend", "Device State Trend", pro, ["jamf_cli"],
+            current=False,
+            historical=True,
+        ),
+        _capability(
+            "security-trend", "Security Posture Trend", pro, ["jamf_cli"],
+            current=False,
+            historical=True,
+        ),
+        _capability(
+            "html-os-timeline", "HTML OS Timeline", pro, ["history_file"],
+            current=False,
+            historical=True,
+        ),
+    ]
+
+
+def _capability_config_sections() -> list[str]:
+    """Return config sections exposed by the script's canonical config."""
+    return [
+        "columns", "mobile_columns", "security_agents", "jamf_cli", "school_cli",
+        "school_columns", "protect", "platform", "compliance", "custom_eas",
+        "sheets", "report_families", "thresholds", "output", "automation",
+        "charts", "branding", "html", "inventory_csv", "export_reports",
+    ]
+
+
+def _capabilities_manifest() -> dict[str, Any]:
+    """Return a stable manifest of reporting capabilities for GUI clients."""
+    pro = ["jamf_pro"]
+    school = ["jamf_school"]
+    protect = ["jamf_protect"]
+    platform = ["jamf_platform"]
+    return {
+        "schema_version": APP_CAPABILITIES_VERSION,
+        "products": _capability_products(),
+        "commands": _capability_commands(),
+        "data_sources": _capability_data_sources(pro, school, protect),
+        "report_surfaces": _capability_report_surfaces(pro, school, protect, platform),
+        "status_surfaces": _capability_status_surfaces(pro, school, protect, platform),
+        "historical_surfaces": _capability_historical_surfaces(pro),
+        "config_sections": _capability_config_sections(),
+        "known_gaps": [
+            "JSON summaries are opt-in and do not yet expose per-sheet row counts.",
+            "Jamf School has workbook output but no HTML or trend surface.",
+            "Jamf Protect is collected and rendered experimentally, without trends.",
+            "Fleet Drift currently compares CSV snapshots only, not jamf-cli JSON snapshots.",
+            "Mobile CSV snapshots drive OS adoption only; mobile compliance trends are not supported.",
+        ],
+    }
+
+
+def cmd_capabilities(output: str = "json") -> None:
+    """Print a machine-readable capability manifest for GUI clients."""
+    manifest = _capabilities_manifest()
+    if output == "text":
+        print("Products:")
+        for product in manifest["products"]:
+            print(f"  - {product['id']}: {product['label']}")
+        print("Current status surfaces:")
+        for surface in manifest["status_surfaces"]:
+            print(f"  - {surface['id']}: {surface['label']}")
+        print("Historical surfaces:")
+        for surface in manifest["historical_surfaces"]:
+            print(f"  - {surface['id']}: {surface['label']}")
+        return
+    print(json.dumps(manifest, indent=2, sort_keys=True))
 
 
 # ---------------------------------------------------------------------------
@@ -14781,6 +15446,7 @@ def main() -> None:
             "  workspace-init Create a per-profile reporting workspace skeleton\n"
             "  launchagent-setup Create a LaunchAgent for scheduled reporting\n"
             "  launchagent-run   Internal runner used by generated LaunchAgents\n"
+            "  capabilities Print machine-readable app/report capabilities\n"
             "  scaffold      Generate a starter config.yaml from a Jamf Pro CSV\n"
             "  check         Verify jamf-cli auth and config\n"
             "  device        Print a device detail view from jamf-cli pro device\n"
@@ -14804,6 +15470,7 @@ def main() -> None:
             "workspace-init",
             "launchagent-setup",
             "launchagent-run",
+            "capabilities",
             "scaffold",
             "check",
             "device",
@@ -14950,6 +15617,19 @@ def main() -> None:
         action="store_true",
         help="Do not auto-open the generated HTML file after writing (html command only)",
     )
+    parser.add_argument(
+        "--output",
+        choices=["json", "text"],
+        default="json",
+        help="Output format for commands that support structured metadata",
+    )
+    parser.add_argument(
+        "--summary-json",
+        help=(
+            "Write a stable app-facing summary JSON file"
+            " (generate, html, collect, school-generate, school-collect)"
+        ),
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
@@ -14981,6 +15661,10 @@ def main() -> None:
         )
         return
 
+    if args.command == "capabilities":
+        cmd_capabilities(args.output)
+        return
+
     if args.command in {"launchagent-setup", "launchagent-run"}:
         _require_existing_config_path(args.config)
     config = Config(args.config)
@@ -14988,7 +15672,7 @@ def main() -> None:
     if args.command == "check":
         cmd_check(config, args.csv)
     elif args.command == "collect":
-        cmd_collect(config, args.csv, args.historical_csv_dir)
+        cmd_collect(config, args.csv, args.historical_csv_dir, args.summary_json)
     elif args.command == "inventory-csv":
         cmd_inventory_csv(config, args.out_file)
     elif args.command == "export-reports":
@@ -15028,11 +15712,11 @@ def main() -> None:
             args.notify,
         )
     elif args.command == "html":
-        cmd_html(config, args.out_file, no_open=args.no_open)
+        cmd_html(config, args.out_file, no_open=args.no_open, summary_json=args.summary_json)
     elif args.command == "generate":
         cmd_generate(
             config, args.csv, args.out_file, args.historical_csv_dir,
-            args.notify, args.csv_extra,
+            args.notify, args.csv_extra, args.summary_json,
         )
     elif args.command == "patch-managed":
         if not args.managed:
@@ -15046,9 +15730,9 @@ def main() -> None:
     elif args.command == "school-check":
         cmd_school_check(config, args.csv)
     elif args.command == "school-collect":
-        cmd_school_collect(config)
+        cmd_school_collect(config, args.summary_json)
     elif args.command == "school-generate":
-        cmd_school_generate(config, args.csv, args.out_file)
+        cmd_school_generate(config, args.csv, args.out_file, args.summary_json)
 
 
 if __name__ == "__main__":

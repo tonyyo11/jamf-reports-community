@@ -1,7 +1,10 @@
 import SwiftUI
 
+// MARK: - ConfigView
+
 struct ConfigView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @State private var cli = CLIBridge()
 
     enum ConfigTab: String, CaseIterable {
         case columns, agents, eas, thresholds, platform, output
@@ -27,28 +30,15 @@ struct ConfigView: View {
         }
     }
 
+    // MARK: Save-status feedback pill
+
+    enum SaveStatus: Equatable {
+        case idle, saving, saved, error(String)
+    }
+
     @State private var tab: ConfigTab = .columns
-
-    // Output tab state
-    @State private var outputDir: String = "Generated Reports"
-    @State private var timestampOutputs: Bool = true
-    @State private var autoArchive: Bool = true
-    @State private var orgName: String = ""
-    @State private var accentColor: String = "#C9970A"
-    @State private var accentDark: String = "#8E6B06"
-
-    // Thresholds tab state
-    @State private var staleDeviceDays: String = "30"
-    @State private var warnDiskPct: String = "80"
-    @State private var critDiskPct: String = "90"
-    @State private var certWarningDays: String = "90"
-    @State private var baselineLabel: String = "NIST 800-53r5 Moderate"
-    @State private var failuresCountCol: String = "Compliance - Failed mSCP Results Count - NIST 800-53r5"
-    @State private var failuresListCol: String = "Compliance - Failed mSCP Result List - NIST 800-53r5"
-    @State private var complianceEnabled: Bool = true
-
-    // Platform tab state
-    @State private var platformEnabled: Bool = false
+    @State private var saveStatus: SaveStatus = .idle
+    @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -67,39 +57,103 @@ struct ConfigView: View {
                 trailing: Theme.Metrics.pagePadH
             ))
         }
+        .task(id: workspace.profile) {
+            do {
+                try await workspace.loadConfig()
+            } catch {
+                workspace.configError = error.localizedDescription
+            }
+        }
     }
+
+    // MARK: Header
 
     private var header: some View {
         PageHeader(
-            kicker: "Workspace · \(workspace.org.profile)",
+            kicker: "Workspace · \(workspace.profile)",
             title: "config.yaml",
-            subtitle: "~/Jamf-Reports/\(workspace.org.profile)/config.yaml · last edited 2 hr ago"
+            subtitle: "~/Jamf-Reports/\(workspace.profile)/config.yaml"
         ) {
             AnyView(
                 HStack(spacing: 8) {
+                    saveStatusPill
                     PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right")
-                    PNPButton(title: "Run check", icon: "flask")
-                    PNPButton(title: "Save", icon: "checkmark", style: .gold)
+                    PNPButton(title: "Run check", icon: "flask", action: runCheck)
+                    PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
                 }
             )
         }
     }
 
     @ViewBuilder
-    private var tabContent: some View {
-        switch tab {
-        case .columns:    columnsTab
-        case .agents:     agentsTab
-        case .eas:        easTab
-        case .thresholds: thresholdsTab
-        case .platform:   platformTab
-        case .output:     outputTab
+    private var saveStatusPill: some View {
+        switch saveStatus {
+        case .saved:
+            Pill(text: "saved", tone: .teal, icon: "checkmark")
+                .transition(.opacity)
+        case .error(let msg):
+            Pill(text: "error: \(msg)", tone: .danger)
+                .transition(.opacity)
+        case .saving:
+            Pill(text: "saving…", tone: .muted)
+                .transition(.opacity)
+        case .idle:
+            EmptyView()
         }
     }
 
-    // MARK: Columns tab
+    // MARK: Tab routing
 
-    private var columnsTab: some View {
+    @ViewBuilder
+    private var tabContent: some View {
+        switch tab {
+        case .columns:    ColumnsTab()
+        case .agents:     AgentsTab()
+        case .eas:        EasTab()
+        case .thresholds: ThresholdsTab()
+        case .platform:   PlatformTab()
+        case .output:     OutputTab()
+        }
+    }
+
+    // MARK: Button actions
+
+    private func save() {
+        saveTask?.cancel()
+        saveStatus = .saving
+        saveTask = Task { @MainActor in
+            do {
+                try await workspace.saveConfig()
+                withAnimation { saveStatus = .saved }
+            } catch {
+                withAnimation { saveStatus = .error(shortMessage(error)) }
+            }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation { saveStatus = .idle }
+        }
+    }
+
+    private func runCheck() {
+        guard let bin = cli.locate("jrc") else { return }
+        Task {
+            _ = await cli.run(executable: bin, arguments: ["check", "--profile", workspace.profile]) { _ in }
+        }
+    }
+
+    private func shortMessage(_ error: Error) -> String {
+        let full = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        return full.count > 60 ? String(full.prefix(57)) + "…" : full
+    }
+}
+
+// MARK: - Columns tab
+
+private struct ColumnsTab: View {
+    @Environment(WorkspaceStore.self) private var workspace
+
+    var body: some View {
+        @Bindable var ws = workspace
         HStack(alignment: .top, spacing: 14) {
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -107,26 +161,30 @@ struct ConfigView: View {
                         SectionHeader(title: "CSV Column Mappings")
                         Spacer()
                         Pill(
-                            text: "\(workspace.columnMappings.filter { $0.status == .ok }.count) OK · "
-                                + "\(workspace.columnMappings.filter { $0.status == .warn }.count) WARN",
+                            text: "\(ws.columnMappings.filter { $0.status == .ok }.count) OK · "
+                                + "\(ws.columnMappings.filter { $0.status == .warn }.count) WARN",
                             tone: .teal,
                             icon: "checkmark"
                         )
                     }
                     .padding(.bottom, 8)
 
-                    let csvName = "meridian_export_2026-04-25.csv"
                     HStack(spacing: 4) {
-                        Text("Mapping logical fields → headers in")
+                        Text("Mapping logical fields → column headers in your CSV export")
                             .font(.system(size: 11.5))
                             .foregroundStyle(Theme.Colors.fgMuted)
-                        Mono(text: csvName, size: 11.5, color: Theme.Colors.fg2)
                     }
                     .padding(.bottom, 12)
 
                     VStack(spacing: 0) {
-                        ForEach(workspace.columnMappings) { mapping in
-                            ColumnFieldRow(mapping: mapping)
+                        ForEach(ws.columnMappings.indices, id: \.self) { i in
+                            ColumnFieldRow(
+                                mapping: ws.columnMappings[i],
+                                value: Binding(
+                                    get: { ws.columnMappings[i].value },
+                                    set: { ws.columnMappings[i].value = $0 }
+                                )
+                            )
                         }
                     }
                 }
@@ -146,36 +204,22 @@ struct ConfigView: View {
             VStack(alignment: .leading, spacing: 0) {
                 SectionHeader(title: "Validation")
                     .padding(.bottom, 10)
-
+                let ok   = workspace.columnMappings.filter { $0.status == .ok }.count
+                let warn = workspace.columnMappings.filter { $0.status == .warn }.count
+                let skip = workspace.columnMappings.filter { $0.status == .skip }.count
                 VStack(alignment: .leading, spacing: 10) {
-                    validationRow(
-                        icon: "checkmark.circle.fill",
-                        color: Theme.Colors.ok,
-                        title: "\(workspace.columnMappings.filter { $0.status == .ok }.count) columns mapped",
-                        detail: "All required fields present"
-                    )
-                    validationRow(
-                        icon: "exclamationmark.triangle.fill",
-                        color: Theme.Colors.warn,
-                        title: nil,
-                        monoTitle: "bootstrap_token",
-                        titleSuffix: " column not found",
-                        detail: "Try \"Bootstrap Token Escrow\" — sheet will skip."
-                    )
-                    validationRow(
-                        icon: "info.circle",
-                        color: Theme.Colors.fgMuted,
-                        title: nil,
-                        monoTitle: "manager",
-                        titleSuffix: " intentionally unmapped",
-                        detail: "No EA in CSV; supervisor sheet skipped."
-                    )
+                    validationRow(icon: "checkmark.circle.fill", color: Theme.Colors.ok,
+                                  title: "\(ok) columns mapped", detail: "Required fields present")
+                    if warn > 0 {
+                        validationRow(icon: "exclamationmark.triangle.fill", color: Theme.Colors.warn,
+                                      title: "\(warn) warnings", detail: "Run check for details")
+                    }
+                    if skip > 0 {
+                        validationRow(icon: "minus.circle", color: Theme.Colors.fgMuted,
+                                      title: "\(skip) unmapped", detail: "Sheets that use these will be skipped")
+                    }
                 }
-
-                Divider()
-                    .background(Theme.Colors.hairline)
-                    .padding(.vertical, 12)
-
+                Divider().background(Theme.Colors.hairline).padding(.vertical, 12)
                 HStack(spacing: 6) {
                     PNPButton(title: "Re-check", icon: "arrow.clockwise", size: .sm)
                     PNPButton(title: "Open CSV", icon: "arrow.up.right.square", style: .ghost, size: .sm)
@@ -184,39 +228,15 @@ struct ConfigView: View {
         }
     }
 
-    private func validationRow(
-        icon: String,
-        color: Color,
-        title: String?,
-        monoTitle: String? = nil,
-        titleSuffix: String? = nil,
-        detail: String
-    ) -> some View {
+    private func validationRow(icon: String, color: Color, title: String, detail: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(color)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
-                if let title {
-                    Text(title)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(Theme.Colors.fg)
-                } else {
-                    HStack(spacing: 0) {
-                        if let mono = monoTitle {
-                            Mono(text: mono, size: 12, color: Theme.Colors.fg)
-                        }
-                        if let suffix = titleSuffix {
-                            Text(suffix)
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(Theme.Colors.fg)
-                        }
-                    }
-                }
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.Colors.fg)
+                Text(detail).font(.system(size: 11)).foregroundStyle(Theme.Colors.fgMuted)
             }
         }
     }
@@ -225,29 +245,29 @@ struct ConfigView: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(title: "Tip")
-                Text("Run ")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fg2)
-                + Text("scaffold")
-                    .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fg2)
-                + Text(" to auto-detect columns from any new CSV export. Existing config is preserved where possible.")
+                (Text("Run ") + Text("scaffold").font(Theme.Fonts.mono(11)) +
+                 Text(" to auto-detect columns from a new CSV export. Existing config is preserved."))
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.Colors.fg2)
                 PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm)
             }
         }
     }
+}
 
-    // MARK: Security Agents tab
+// MARK: - Agents tab
 
-    private var agentsTab: some View {
+private struct AgentsTab: View {
+    @Environment(WorkspaceStore.self) private var workspace
+
+    var body: some View {
+        @Bindable var ws = workspace
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     SectionHeader(title: "Security Agents")
                     Spacer()
-                    PNPButton(title: "Add agent", icon: "plus", style: .gold, size: .sm)
+                    PNPButton(title: "Add agent", icon: "plus", style: .gold, size: .sm, action: { ws.addSecurityAgent() })
                 }
                 agentsTable
             }
@@ -255,13 +275,19 @@ struct ConfigView: View {
     }
 
     private var agentsTable: some View {
-        VStack(spacing: 0) {
+        @Bindable var ws = workspace
+        return VStack(spacing: 0) {
             agentsHeader
             Divider().background(Theme.Colors.hairline)
-            ForEach(DemoData.securityAgents) { agent in
-                agentRow(agent)
-                if agent.id != DemoData.securityAgents.last?.id {
-                    Divider().background(Theme.Colors.hairline)
+            if ws.configState.securityAgents.isEmpty {
+                Text("No security agents configured. Add one to track install rates.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .padding(16)
+            } else {
+                ForEach(ws.configState.securityAgents.indices, id: \.self) { i in
+                    agentRow(i)
+                    if i < ws.configState.securityAgents.count - 1 { Divider().background(Theme.Colors.hairline) }
                 }
             }
         }
@@ -278,7 +304,6 @@ struct ConfigView: View {
             tableHeaderCell("Agent Name",      width: nil)
             tableHeaderCell("EA Column",       width: nil)
             tableHeaderCell("Connected Value", width: 140)
-            tableHeaderCell("Install Rate",    width: 160)
             Spacer().frame(width: 36)
         }
         .padding(.horizontal, 12)
@@ -292,113 +317,225 @@ struct ConfigView: View {
             .frame(maxWidth: width ?? .infinity, alignment: .leading)
     }
 
-    private func agentRow(_ agent: SecurityAgent) -> some View {
-        HStack(spacing: 0) {
-            Text(agent.name)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.Colors.fg)
+    private func agentRow(_ index: Int) -> some View {
+        @Bindable var ws = workspace
+        return HStack(spacing: 8) {
+            PNPTextField(value: $ws.configState.securityAgents[index].name)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Mono(text: agent.column, size: 11.5, color: Theme.Colors.fg2)
+            PNPTextField(value: $ws.configState.securityAgents[index].column, mono: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(1)
-            Mono(text: "Installed", size: 11.5, color: Theme.Colors.fg2)
+            PNPTextField(value: $ws.configState.securityAgents[index].connectedValue, mono: true)
                 .frame(width: 140, alignment: .leading)
-            agentBar(agent.pct)
-                .frame(width: 160)
-            PNPButton(title: "", icon: "ellipsis", style: .ghost, size: .sm)
-                .frame(width: 36)
+            Menu {
+                Button(role: .destructive) { workspace.removeSecurityAgent(at: index) } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .frame(width: 36, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
     }
+}
 
-    private func agentBar(_ pct: Double) -> some View {
-        let barColor: Color = pct > 90 ? Theme.Colors.ok : Theme.Colors.gold
-        return HStack(spacing: 8) {
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.05)).frame(width: 80, height: 4)
-                Capsule().fill(barColor).frame(width: 80 * pct / 100, height: 4)
-            }
-            Text(String(format: "%.0f%%", pct))
-                .font(Theme.Fonts.mono(11.5, weight: .semibold))
-                .foregroundStyle(Theme.Colors.fg)
-                .frame(width: 40, alignment: .trailing)
-        }
-    }
+// MARK: - Custom EAs tab
 
-    // MARK: Custom EAs tab
+private struct EasTab: View {
+    @Environment(WorkspaceStore.self) private var workspace
 
-    private var easTab: some View {
+    var body: some View {
+        @Bindable var ws = workspace
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     SectionHeader(title: "Custom Extension Attribute Sheets")
                     Spacer()
-                    PNPButton(title: "Add EA sheet", icon: "plus", style: .gold, size: .sm)
+                    PNPButton(title: "Add EA sheet", icon: "plus", style: .gold, size: .sm, action: { ws.addCustomEA() })
                 }
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    ForEach(workspace.customEAs) { ea in
-                        EACard(ea: ea)
+                if ws.configState.customEAs.isEmpty {
+                    Text("No custom EA sheets configured.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                } else {
+                    VStack(spacing: 12) {
+                        ForEach(ws.configState.customEAs.indices, id: \.self) { i in
+                            EACardEdit(index: i)
+                        }
                     }
                 }
             }
         }
     }
+}
 
-    // MARK: Thresholds tab
+private struct EACardEdit: View {
+    @Environment(WorkspaceStore.self) private var workspace
+    let index: Int
 
-    private var thresholdsTab: some View {
+    var body: some View {
+        @Bindable var ws = workspace
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    FieldLabel(label: "Sheet name")
+                    PNPTextField(value: $ws.configState.customEAs[index].name)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    FieldLabel(label: "EA Column")
+                    PNPTextField(value: $ws.configState.customEAs[index].column, mono: true)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    FieldLabel(label: "Type")
+                    Picker("", selection: $ws.configState.customEAs[index].type) {
+                        Text("Boolean").tag("boolean")
+                        Text("Percentage").tag("percentage")
+                        Text("Version").tag("version")
+                        Text("Text").tag("text")
+                        Text("Date").tag("date")
+                    }
+                    .labelsHidden()
+                    .frame(width: 120)
+                }
+                Button(role: .destructive) { workspace.removeCustomEA(at: index) } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(Theme.Colors.danger)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 24)
+            }
+
+            let type = ws.configState.customEAs[index].type
+            HStack(spacing: 16) {
+                if type == "boolean" {
+                    eaField(label: "True value", value: $ws.configState.customEAs[index].trueValue, help: "Value that means compliant")
+                } else if type == "percentage" {
+                    eaField(label: "Warning ≥", value: $ws.configState.customEAs[index].warningThreshold, unit: "%")
+                    eaField(label: "Critical ≥", value: $ws.configState.customEAs[index].criticalThreshold, unit: "%")
+                } else if type == "date" {
+                    eaField(label: "Warning days", value: $ws.configState.customEAs[index].warningDays, unit: "days")
+                } else if type == "version" {
+                    VStack(alignment: .leading, spacing: 4) {
+                        FieldLabel(label: "Current versions")
+                        Text("Comma-separated list").font(.system(size: 10)).foregroundStyle(Theme.Colors.fgMuted)
+                        PNPTextField(value: Binding(
+                            get: { ws.configState.customEAs[index].currentVersions.joined(separator: ", ") },
+                            set: { ws.configState.customEAs[index].currentVersions = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+                        ), mono: true)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.white.opacity(0.025))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+        )
+    }
+
+    private func eaField(label: String, value: Binding<String>, unit: String? = nil, help: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            FieldLabel(label: label)
+            HStack(spacing: 8) {
+                PNPTextField(value: value, mono: true).frame(width: 80)
+                if let unit {
+                    Text(unit).font(.system(size: 11)).foregroundStyle(Theme.Colors.fgMuted)
+                }
+            }
+            if let help {
+                FieldHelp(text: help)
+            }
+        }
+    }
+}
+
+// MARK: - Thresholds tab
+
+private struct ThresholdsTab: View {
+    @Environment(WorkspaceStore.self) private var workspace
+
+    var body: some View {
+        @Bindable var ws = workspace
         HStack(alignment: .top, spacing: 14) {
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionHeader(title: "Thresholds")
-                        .padding(.bottom, 14)
+                    SectionHeader(title: "General Thresholds").padding(.bottom, 14)
                     thresholdField(
                         label: "Stale device threshold", key: "stale_device_days",
-                        value: $staleDeviceDays, unit: "days",
+                        value: $ws.configState.staleDeviceDays, unit: "days",
                         help: "Days since last check-in before a device is flagged stale"
                     )
                     thresholdField(
+                        label: "Check-in overdue", key: "checkin_overdue_days",
+                        value: $ws.configState.checkinOverdueDays, unit: "days",
+                        help: "Yellow highlight on Check-in Health sheet"
+                    )
+                    thresholdField(
+                        label: "Cert expiry warning", key: "cert_warning_days",
+                        value: $ws.configState.certWarningDays, unit: "days",
+                        help: "Default expiry warning window for date EAs"
+                    )
+
+                    Divider().background(Theme.Colors.hairline).padding(.vertical, 14)
+                    SectionHeader(title: "Disk Usage").padding(.bottom, 14)
+                    thresholdField(
                         label: "Disk usage warning", key: "warning_disk_percent",
-                        value: $warnDiskPct, unit: "%",
+                        value: $ws.configState.warningDiskPercent, unit: "%",
                         help: "Yellow highlight in Disk Usage sheet"
                     )
                     thresholdField(
                         label: "Disk usage critical", key: "critical_disk_percent",
-                        value: $critDiskPct, unit: "%",
+                        value: $ws.configState.criticalDiskPercent, unit: "%",
                         help: "Red highlight in Disk Usage sheet"
-                    )
-                    thresholdField(
-                        label: "Cert expiry warning", key: "cert_warning_days",
-                        value: $certWarningDays, unit: "days",
-                        help: "Default expiry warning window for date EAs"
                     )
                 }
             }
 
-            Card(padding: 18) {
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Compliance Baseline")
-                        .padding(.bottom, 2)
-                    FieldLabel(label: "Baseline label")
-                    PNPTextField(value: $baselineLabel)
-                    FieldLabel(label: "Failures count column")
-                    PNPTextField(value: $failuresCountCol, mono: true)
-                    FieldLabel(label: "Failed-list column")
-                    PNPTextField(value: $failuresListCol, mono: true)
-
-                    Divider().background(Theme.Colors.hairline).padding(.top, 6)
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Generate compliance sheet")
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(Theme.Colors.fg)
-                            Text("Failed-rule counts per device")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+            VStack(spacing: 14) {
+                Card(padding: 18) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeader(title: "Compliance Baseline").padding(.bottom, 2)
+                        FieldLabel(label: "Baseline label")
+                        PNPTextField(value: $ws.configState.baselineLabel)
+                        FieldLabel(label: "Failures count column")
+                        PNPTextField(value: $ws.configState.failuresCountColumn, mono: true)
+                        FieldLabel(label: "Failed-list column")
+                        PNPTextField(value: $ws.configState.failuresListColumn, mono: true)
+                        Divider().background(Theme.Colors.hairline).padding(.top, 6)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Generate compliance sheet")
+                                    .font(.system(size: 12.5, weight: .medium))
+                                    .foregroundStyle(Theme.Colors.fg)
+                                Text("Failed-rule counts per device")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.Colors.fgMuted)
+                            }
+                            Spacer()
+                            PNPToggle(isOn: $ws.configState.complianceEnabled)
                         }
-                        Spacer()
-                        PNPToggle(isOn: $complianceEnabled)
+                    }
+                }
+
+                Card(padding: 18) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeader(title: "jamf-cli Errors").padding(.bottom, 2)
+                        thresholdField(
+                            label: "Profile error critical", key: "profile_error_critical",
+                            value: $ws.configState.profileErrorCritical, unit: "errors",
+                            help: "Red highlight on Profile Status sheet"
+                        )
+                        thresholdField(
+                            label: "Profile error warning", key: "profile_error_warning",
+                            value: $ws.configState.profileErrorWarning, unit: "errors",
+                            help: "Yellow highlight on Profile Status sheet"
+                        )
                     }
                 }
             }
@@ -411,42 +548,35 @@ struct ConfigView: View {
         VStack(alignment: .leading, spacing: 4) {
             FieldLabel(label: label, trailing: key)
             HStack(spacing: 8) {
-                PNPTextField(value: value, mono: true)
-                    .frame(width: 100)
-                Text(unit)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                PNPTextField(value: value, mono: true).frame(width: 100)
+                Text(unit).font(.system(size: 12)).foregroundStyle(Theme.Colors.fgMuted)
             }
             FieldHelp(text: help)
         }
         .padding(.bottom, 14)
     }
+}
 
-    // MARK: Platform API tab
+// MARK: - Platform API tab
 
-    private var platformTab: some View {
+private struct PlatformTab: View {
+    @Environment(WorkspaceStore.self) private var workspace
+
+    var body: some View {
+        @Bindable var ws = workspace
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center, spacing: 10) {
                     SectionHeader(title: "Jamf Platform API · Preview")
                     Pill(text: "PREVIEW", tone: .warn)
                 }
-                Text("Public beta · requires ")
+                (Text("Public beta · requires ")
+                 + Text("jamf-cli").font(Theme.Fonts.mono(11))
+                 + Text(" build with ")
+                 + Text("pro report").font(Theme.Fonts.mono(11))
+                 + Text(" commands."))
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.Colors.fgMuted)
-                + Text("jamf-cli")
-                    .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                + Text(" build with ")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                + Text("pro report")
-                    .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                + Text(" commands.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-
                 Divider().background(Theme.Colors.hairline)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -458,64 +588,99 @@ struct ConfigView: View {
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
-                    PNPToggle(isOn: $platformEnabled)
+                    PNPToggle(isOn: $ws.configState.platformEnabled)
                 }
-
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Compliance benchmarks")
-                    HStack(spacing: 6) {
-                        Pill(text: "CIS Level 1", tone: .muted)
-                        Pill(text: "NIST 800-171r3", tone: .muted)
-                        PNPButton(title: "Add benchmark", icon: "plus", style: .ghost, size: .sm)
+                    ForEach(ws.configState.complianceBenchmarks.indices, id: \.self) { i in
+                        HStack(spacing: 8) {
+                            PNPTextField(value: $ws.configState.complianceBenchmarks[i])
+                            Button(role: .destructive) { ws.removeComplianceBenchmark(at: i) } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(Theme.Colors.danger)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
+                    PNPButton(title: "Add benchmark", icon: "plus", style: .ghost, size: .sm, action: { ws.addComplianceBenchmark() })
                     FieldHelp(text: "Benchmark titles or IDs. Generates per-rule and per-device sheets.")
                 }
             }
         }
     }
+}
 
-    // MARK: Output tab
+// MARK: - Output tab
 
-    private var outputTab: some View {
+private struct OutputTab: View {
+    @Environment(WorkspaceStore.self) private var workspace
+
+    var body: some View {
+        @Bindable var ws = workspace
         HStack(alignment: .top, spacing: 14) {
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SectionHeader(title: "Output Directory")
-                        .padding(.bottom, 14)
+                    SectionHeader(title: "Output Directory").padding(.bottom, 14)
                     FieldLabel(label: "output_dir")
                     HStack(spacing: 6) {
-                        PNPTextField(value: $outputDir, mono: true)
+                        PNPTextField(value: $ws.configState.outputDir, mono: true)
                         PNPButton(title: "", icon: "folder", size: .md)
                     }
                     FieldHelp(text: "Relative paths resolve from config.yaml's folder")
+                    VStack(alignment: .leading, spacing: 4) {
+                        FieldLabel(label: "archive_dir")
+                        HStack(spacing: 6) {
+                            PNPTextField(value: $ws.configState.archiveDir, mono: true)
+                            PNPButton(title: "", icon: "folder", size: .md)
+                        }
+                        FieldHelp(text: "Optional. Leave blank to use 'archive' next to output_dir.")
+                    }
+                    .padding(.top, 14)
 
                     Divider().background(Theme.Colors.hairline).padding(.vertical, 14)
-
                     outputToggleRow(
                         title: "Timestamp output filenames",
                         detail: "_2026-04-25_091418",
-                        isOn: $timestampOutputs
+                        isOn: $ws.configState.timestampOutputs
                     )
                     Divider().background(Theme.Colors.hairline).padding(.vertical, 10)
                     outputToggleRow(
                         title: "Auto-archive older runs",
-                        detail: "Keep latest 10",
-                        isOn: $autoArchive
+                        detail: "Keep latest \(ws.configState.keepLatestRuns)",
+                        isOn: $ws.configState.archiveEnabled
+                    )
+                    Divider().background(Theme.Colors.hairline).padding(.vertical, 10)
+                    VStack(alignment: .leading, spacing: 4) {
+                        FieldLabel(label: "keep_latest_runs")
+                        PNPTextField(value: $ws.configState.keepLatestRuns, mono: true)
+                            .frame(width: 80)
+                    }
+                    Divider().background(Theme.Colors.hairline).padding(.vertical, 10)
+                    outputToggleRow(
+                        title: "Export PPTX Summary",
+                        detail: "PowerPoint executive summary deck",
+                        isOn: $ws.configState.exportPptx
                     )
                 }
             }
 
+            // Branding: keys ARE in config.example.yaml and DEFAULT_CONFIG.
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 14) {
                     SectionHeader(title: "Branding")
-                    // Logo upload intentionally omitted — removed per design review
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "Organisation name")
-                        PNPTextField(value: $orgName, placeholder: workspace.org.name)
+                        PNPTextField(value: $ws.configState.orgName, placeholder: ws.org.name)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        FieldLabel(label: "Logo path")
+                        PNPTextField(value: $ws.configState.logoPath, mono: true)
                     }
                     HStack(spacing: 8) {
-                        colorField(label: "Accent color", value: $accentColor, hexColor: Theme.Colors.gold)
-                        colorField(label: "Accent dark", value: $accentDark, hexColor: Theme.Colors.goldDim)
+                        colorField(label: "Accent color", value: $ws.configState.accentColor,
+                                   hexColor: Theme.Colors.gold)
+                        colorField(label: "Accent dark", value: $ws.configState.accentDark,
+                                   hexColor: Theme.Colors.goldDim)
                     }
                 }
             }
@@ -554,33 +719,25 @@ struct ConfigView: View {
 
 private struct ColumnFieldRow: View {
     let mapping: ColumnMapping
-    @State private var fieldValue: String
-
-    init(mapping: ColumnMapping) {
-        self.mapping = mapping
-        self._fieldValue = State(initialValue: mapping.value)
-    }
+    @Binding var value: String
 
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 4) {
                 Mono(text: mapping.key, size: 11.5, color: Theme.Colors.fg2)
                 if mapping.required {
-                    Text("*")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.Colors.goldBright)
+                    Text("*").font(.system(size: 10)).foregroundStyle(Theme.Colors.goldBright)
                 }
             }
             .frame(width: 180, alignment: .leading)
 
             PNPTextField(
-                value: $fieldValue,
+                value: $value,
                 placeholder: mapping.status == .skip ? "(unmapped — feature skipped)" : "",
                 mono: true
             )
 
-            statusIcon
-                .frame(width: 24)
+            statusIcon.frame(width: 24)
         }
         .padding(.vertical, 6)
     }
@@ -589,17 +746,13 @@ private struct ColumnFieldRow: View {
         Group {
             switch mapping.status {
             case .ok:
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Theme.Colors.ok)
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.Colors.ok)
             case .warn:
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.Colors.warn)
             case .skip:
-                Image(systemName: "minus.circle")
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                Image(systemName: "minus.circle").foregroundStyle(Theme.Colors.fgMuted)
             case .fail:
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(Theme.Colors.danger)
+                Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.Colors.danger)
             }
         }
         .font(.system(size: 12, weight: .semibold))
@@ -615,18 +768,13 @@ private struct EACard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ea.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.fg)
+                    Text(ea.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
                     Mono(text: ea.column, size: 11, color: Theme.Colors.fgMuted)
                 }
                 Spacer()
                 Pill(text: ea.type.rawValue, tone: pillTone)
             }
-
-            Text(eaDetail)
-                .font(.system(size: 11.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+            Text(eaDetail).font(.system(size: 11.5)).foregroundStyle(Theme.Colors.fgMuted)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -650,15 +798,11 @@ private struct EACard: View {
     private var eaDetail: String {
         switch ea.type {
         case .percentage:
-            let w = ea.warn.map { "\($0)" } ?? "—"
-            let c = ea.crit.map { "\($0)" } ?? "—"
-            return "Warning ≥ \(w)% · Critical ≥ \(c)%"
+            return "Warning ≥ \(ea.warn.map { "\($0)" } ?? "—")% · Critical ≥ \(ea.crit.map { "\($0)" } ?? "—")%"
         case .version:
-            let v = ea.currentVersions?.joined(separator: ", ") ?? "—"
-            return "Current: \(v)"
+            return "Current: \(ea.currentVersions?.joined(separator: ", ") ?? "—")"
         case .date:
-            let d = ea.warningDays.map { "\($0)" } ?? "—"
-            return "Warn within \(d) days · Past = expired"
+            return "Warn within \(ea.warningDays.map { "\($0)" } ?? "—") days · Past = expired"
         case .boolean:
             return "True value: \(ea.trueValue ?? "—")"
         case .text:
