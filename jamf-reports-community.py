@@ -9647,6 +9647,13 @@ def _render_scaffold_config(config_data: dict[str, Any], csv_path: Path) -> str:
                 if key in config_data["compliance"]:
                     rendered.append(f"  {key}: {_yaml_scalar(config_data['compliance'][key])}")
                     continue
+            if nested_match and current_section == "jamf_cli":
+                key = nested_match.group(2)
+                if key == "profile" and config_data.get("jamf_cli", {}).get("profile"):
+                    rendered.append(
+                        f"  profile: {_yaml_scalar(config_data['jamf_cli']['profile'])}"
+                    )
+                    continue
 
             rendered.append(raw_line)
 
@@ -9728,13 +9735,20 @@ def _interactive_column_mapping(
     return result
 
 
-def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> None:
+def cmd_scaffold(
+    csv_path: str,
+    out_path: str,
+    interactive: bool = False,
+    profile: Optional[str] = None,
+) -> None:
     """Auto-generate a starter config.yaml from CSV headers.
 
     Args:
         csv_path: Path to the CSV file to inspect.
         out_path: Output path for generated config.yaml.
         interactive: If True, prompt the user to review each column mapping before writing.
+        profile: Optional jamf-cli profile name to seed into ``jamf_cli.profile``.
+            Required for multi-tenant setups so generated reports hit the right tenant.
     """
     csv_path_obj = _cli_path(csv_path)
     out_path_obj = _cli_path(out_path)
@@ -9746,6 +9760,8 @@ def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> Non
             "Refusing to overwrite the file. Choose a different --out path or move"
             " the existing config aside first."
         )
+
+    profile_value = _validate_profile_override(profile or "")
 
     try:
         df = pd.read_csv(csv_path_obj, nrows=0, encoding="utf-8-sig")
@@ -9808,6 +9824,8 @@ def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> Non
         config_data["compliance"]["failures_count_column"]
         and config_data["compliance"]["failures_list_column"]
     )
+    if profile_value:
+        config_data.setdefault("jamf_cli", {})["profile"] = profile_value
 
     config_str = _render_scaffold_config(config_data, csv_path_obj)
     out_path_obj.parent.mkdir(parents=True, exist_ok=True)
@@ -15892,7 +15910,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--profile",
-        help="jamf-cli profile override for Jamf Pro commands; workspace-init target profile",
+        help=(
+            "jamf-cli profile override for Jamf Pro commands; workspace-init target"
+            " profile; for scaffold, seeds jamf_cli.profile in the generated config"
+        ),
     )
     parser.add_argument(
         "--schedule",
@@ -15987,7 +16008,12 @@ def main() -> None:
     if args.command == "scaffold":
         if not args.csv:
             parser.error("scaffold requires --csv")
-        cmd_scaffold(args.csv, args.out, interactive=args.interactive)
+        cmd_scaffold(
+            args.csv,
+            args.out,
+            interactive=args.interactive,
+            profile=args.profile,
+        )
         return
 
     if args.command == "school-scaffold":
