@@ -145,6 +145,7 @@ enum LaunchAgentWriter {
     // MARK: - Label helper (used by SchedulesView for consistent label derivation)
 
     static func label(for schedule: Schedule) -> String? {
+        guard ProfileService.isValid(schedule.profile) else { return nil }
         let slug = sanitizedSlug(from: schedule.name)
         guard isValidComponent(slug) else { return nil }
         return "com.tonyyo.jrc.\(schedule.profile).\(slug)"

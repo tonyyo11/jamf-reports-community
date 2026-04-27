@@ -337,17 +337,11 @@ struct TrendsView: View {
                         }
                         Spacer()
                     }
-                    stackedBandsChart
-                    HStack(spacing: 14) {
-                        ForEach(DemoData.complianceBands) { band in
-                            HStack(spacing: 6) {
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                    .fill(Color(hex: band.colorHex))
-                                    .frame(width: 10, height: 10)
-                                Text(band.label).font(.system(size: 11)).foregroundStyle(Theme.Colors.fg2)
-                                Text(band.range).font(Theme.Fonts.mono(10.5)).foregroundStyle(Theme.Colors.fgMuted)
-                            }
-                        }
+                    if workspaceStore.demoMode {
+                        stackedBandsChart
+                        complianceBandLegend
+                    } else {
+                        complianceBandUnavailable
                     }
                 }
             }
@@ -373,6 +367,37 @@ struct TrendsView: View {
         }
     }
 
+    private var complianceBandLegend: some View {
+        HStack(spacing: 14) {
+            ForEach(DemoData.complianceBands) { band in
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Color(hex: band.colorHex))
+                        .frame(width: 10, height: 10)
+                    Text(band.label).font(.system(size: 11)).foregroundStyle(Theme.Colors.fg2)
+                    Text(band.range).font(Theme.Fonts.mono(10.5)).foregroundStyle(Theme.Colors.fgMuted)
+                }
+            }
+        }
+    }
+
+    private var complianceBandUnavailable: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "chart.bar.doc.horizontal")
+                .font(.system(size: 28))
+                .foregroundStyle(Theme.Colors.hairlineStrong)
+            Text("Compliance band history is not available for live data yet.")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fg2)
+            Text("The summary cache does not include per-band failed-rule counts.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.Colors.fgMuted)
+        }
+        .frame(maxWidth: .infinity, minHeight: 200)
+        .background(Theme.Colors.codeBG)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     private func legendDot(color: Color, label: String) -> some View {
         HStack(spacing: 5) {
             Rectangle().fill(color).frame(width: 14, height: 2)
@@ -380,34 +405,9 @@ struct TrendsView: View {
         }
     }
 
-    @ViewBuilder
     private var stackedBandsChart: some View {
-        if workspaceStore.demoMode {
-            stackedBandsSyntheticChart
-        } else {
-            stackedBandsPlaceholder
-        }
-    }
-
-    private var stackedBandsPlaceholder: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "chart.bar.xaxis")
-                .font(.system(size: 22))
-                .foregroundStyle(Theme.Colors.fgMuted)
-            Text("Per-band data not yet available")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.Colors.fg2)
-            Text("Coming when Python emits per-band summaries")
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.Colors.fgMuted)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 200)
-    }
-
-    private var stackedBandsSyntheticChart: some View {
-        // Synthesize a 26-week stacked compliance band evolution, keyed off the
-        // current trendDates so it animates with the same index used elsewhere.
+        // Demo data only. Live mode renders an empty state until summaries carry
+        // real per-band failed-rule counts.
         let weeks = trendDates.enumerated().map { idx, date in
             let t = Double(idx) / Double(max(trendDates.count - 1, 1))
             let base = 524.0

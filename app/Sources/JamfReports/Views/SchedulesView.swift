@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Thread-safe accumulator for streaming log lines into @State after await returns.
+// Thread-safe accumulator for streaming log lines from CLIBridge callbacks.
 private final class LineBuffer: @unchecked Sendable {
     private let lock = NSLock()
     private var _lines: [CLIBridge.LogLine] = []
@@ -221,7 +221,7 @@ struct SchedulesView: View {
                 TableColumn("Schedule") { s in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(s.name).font(.system(size: 13, weight: .semibold))
-                        Mono(text: LaunchAgentWriter.label(for: s) ?? s.launchAgentLabel, size: 10.5)
+                        Mono(text: labelText(for: s), size: 10.5)
                     }
                 }
 
@@ -299,6 +299,9 @@ struct SchedulesView: View {
         let buf = LineBuffer()
         let exit = await bridge.runNow(profile: target.profile, mode: target.mode) { line in
             buf.append(line)
+            Task { @MainActor in
+                runLogLines = buf.lines
+            }
         }
         runLogLines = buf.lines
         isRunning = false
@@ -314,9 +317,13 @@ struct SchedulesView: View {
         }
 
         let original = workspace.schedules[idx].enabled
+        guard let agentLabel = LaunchAgentWriter.label(for: workspace.schedules[idx]) else {
+            writeError = "Schedule name or profile produces an invalid LaunchAgent label."
+            showWriteError = true
+            return
+        }
         workspace.schedules[idx].enabled.toggle()
         let nowEnabled = workspace.schedules[idx].enabled
-        let agentLabel = LaunchAgentWriter.label(for: workspace.schedules[idx]) ?? schedule.launchAgentLabel
 
         do {
             _ = try LaunchAgentWriter.write(workspace.schedules[idx], jrcPath: jrcPath)
@@ -337,7 +344,11 @@ struct SchedulesView: View {
     }
 
     private func deleteSchedule(_ schedule: Schedule) {
-        let label = LaunchAgentWriter.label(for: schedule) ?? schedule.launchAgentLabel
+        guard let label = LaunchAgentWriter.label(for: schedule) else {
+            writeError = "Schedule name or profile produces an invalid LaunchAgent label."
+            showWriteError = true
+            return
+        }
         Task {
             _ = await LaunchAgentWriter.unload(label)
             do {
@@ -358,8 +369,9 @@ struct SchedulesView: View {
         do {
             _ = try LaunchAgentWriter.write(schedule, jrcPath: jrcPath)
             if schedule.enabled {
-                let label = LaunchAgentWriter.label(for: schedule) ?? schedule.launchAgentLabel
-                _ = await LaunchAgentWriter.load(label)
+                if let label = LaunchAgentWriter.label(for: schedule) {
+                    _ = await LaunchAgentWriter.load(label)
+                }
             }
             workspace.reloadFromDisk()
         } catch {
@@ -375,6 +387,10 @@ struct SchedulesView: View {
         case .warn: Pill(text: "WARN", tone: .warn,   icon: "exclamationmark")
         case .fail: Pill(text: "FAIL", tone: .danger, icon: "xmark")
         }
+    }
+
+    private func labelText(for schedule: Schedule) -> String {
+        LaunchAgentWriter.label(for: schedule) ?? "(invalid label)"
     }
 
     private func logColor(for level: CLIBridge.LogLevel) -> Color {

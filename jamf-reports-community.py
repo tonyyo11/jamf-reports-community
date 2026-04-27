@@ -1114,19 +1114,24 @@ def _write_summary_json(path_value: Optional[str], summary: dict[str, Any]) -> N
     if not path_value:
         return
     path = Path(path_value).expanduser()
-    tmp_path: Optional[Path] = None
+    temp_path: Optional[Path] = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
-            "w", encoding="utf-8", delete=False, dir=str(path.parent), suffix=".tmp"
+            "w",
+            delete=False,
+            dir=str(path.parent),
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            encoding="utf-8",
         ) as fh:
             json.dump(summary, fh, indent=2, sort_keys=True)
             fh.write("\n")
-            tmp_path = Path(fh.name)
-        os.replace(tmp_path, path)
+            temp_path = Path(fh.name)
+        os.replace(temp_path, path)
     except OSError as exc:
-        if tmp_path is not None:
-            tmp_path.unlink(missing_ok=True)
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
         print(f"[warning] could not write summary JSON {path}: {exc}")
 
 
@@ -2136,7 +2141,12 @@ def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: Dict[st
     temp_path: Optional[Path] = None
     try:
         with tempfile.NamedTemporaryFile(
-            "w", delete=False, dir=str(summaries_dir), suffix=".tmp"
+            "w",
+            delete=False,
+            dir=str(summaries_dir),
+            prefix=f".{summary_file.stem}.",
+            suffix=".tmp",
+            encoding="utf-8",
         ) as tf:
             json.dump(data, tf, indent=2)
             temp_path = Path(tf.name)

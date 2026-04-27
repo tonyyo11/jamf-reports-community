@@ -47,11 +47,6 @@ struct Schedule: Identifiable, Sendable {
     var lastStatus: LastStatus
     var artifacts: [String]
     var enabled: Bool
-
-    var launchAgentLabel: String {
-        let slug = name.lowercased().replacing(/\s+/, with: "-")
-        return "com.tonyyo.jrc.\(profile).\(slug)"
-    }
 }
 
 // MARK: - OS distribution

@@ -252,7 +252,7 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 5) {
                     FieldLabel(label: "Profile name", trailing: "required")
-                    PNPTextField(value: binding(\.profileName), placeholder: "meridian-prod", mono: true)
+                    PNPTextField(value: binding(\.profileName), placeholder: "my-tenant", mono: true)
                     HStack(spacing: 6) {
                         Image(systemName: flow.isProfileNameValid ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundStyle(flow.isProfileNameValid ? Theme.Colors.ok : Theme.Colors.danger)

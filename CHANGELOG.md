@@ -58,6 +58,13 @@ versions in this repository map to git tags.
 - `--summary-json` for `generate`, `html`, `collect`, `school-generate`, and
   `school-collect`, giving the Swift app stable machine-readable run summaries.
 
+### Fixed
+
+- Hardened macOS app profile handling around connection validation, workspace
+  initialization, LaunchAgent labels, and live-mode trends so invalid profile or
+  schedule names are rejected consistently and live users are not shown synthetic
+  compliance-band chart data.
+
 ## [1.3.0] - 2026-04-24
 
 ### Fixed
