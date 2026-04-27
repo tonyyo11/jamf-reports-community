@@ -105,7 +105,7 @@ struct SourcesView: View {
                 HStack(spacing: 4) {
                     Text("jamf-cli profile")
                     Text(workspace.profile).foregroundStyle(Theme.Colors.goldBright)
-                    Text("· cache ~/Jamf-Reports/\(workspace.profile)/jamf-cli-data/")
+                    Text("· cache \(cliCacheDisplayPath)")
                 }
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Colors.fgMuted)
@@ -274,8 +274,9 @@ struct SourcesView: View {
 
     private func latestCacheDate(for cacheNames: [String]) -> Date? {
         guard let root = WorkspacePathGuard.root(for: workspace.profile) else { return nil }
-        let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        guard let validatedDataDir = WorkspacePathGuard.validate(dataDir, under: root) else {
+        let configured = WorkspacePaths.dataDir(for: workspace.profile)
+            ?? root.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        guard let validatedDataDir = WorkspacePathGuard.validate(configured, under: root) else {
             return nil
         }
 
@@ -283,6 +284,20 @@ struct SourcesView: View {
             cacheDates(for: cacheName, dataDir: validatedDataDir, root: root)
         }
         return dates.max()
+    }
+
+    private var cliCacheDisplayPath: String {
+        guard let root = WorkspacePathGuard.root(for: workspace.profile),
+              let dataDir = WorkspacePaths.dataDir(for: workspace.profile) else {
+            return "~/Jamf-Reports/\(workspace.profile)/jamf-cli-data/"
+        }
+        let rootPath = root.path
+        let dataPath = dataDir.path
+        if dataPath.hasPrefix(rootPath + "/") {
+            let suffix = String(dataPath.dropFirst(rootPath.count + 1))
+            return "~/Jamf-Reports/\(workspace.profile)/\(suffix)/"
+        }
+        return dataPath + "/"
     }
 
     private func cacheDates(for cacheName: String, dataDir: URL, root: URL) -> [Date] {

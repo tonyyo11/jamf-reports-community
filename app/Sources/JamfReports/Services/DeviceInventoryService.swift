@@ -172,22 +172,20 @@ fileprivate extension DeviceInventoryService {
             values = parseSimpleYAML(text)
         }
 
+        let profile = root.lastPathComponent
+        let jamfCLIDataDir = WorkspacePaths.dataDir(for: profile)
+            ?? resolvedDirectory("jamf-cli-data", fallback: "jamf-cli-data", root: root)
+        let historicalCSVDir = WorkspacePaths.historicalDir(for: profile)
+            ?? resolvedDirectory("snapshots", fallback: "snapshots", root: root)
+
         return ConfigHints(
-            jamfCLIDataDir: resolvedDirectory(
-                values["jamf_cli"]?["data_dir"],
-                fallback: "jamf-cli-data",
-                root: root
-            ),
+            jamfCLIDataDir: jamfCLIDataDir,
             outputDir: resolvedDirectory(
                 values["output"]?["output_dir"],
                 fallback: "Generated Reports",
                 root: root
             ),
-            historicalCSVDir: resolvedDirectory(
-                values["charts"]?["historical_csv_dir"],
-                fallback: "snapshots",
-                root: root
-            )
+            historicalCSVDir: historicalCSVDir
         )
     }
 

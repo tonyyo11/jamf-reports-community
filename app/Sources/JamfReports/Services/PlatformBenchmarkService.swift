@@ -183,8 +183,7 @@ enum PlatformBenchmarkService {
     }
 
     private static func jamfCLIDataDirectory(for profile: String) -> URL? {
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
-        return workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        WorkspacePaths.dataDir(for: profile)
     }
 
     private static func jsonFiles(in directory: URL) -> [URL] {

@@ -57,10 +57,12 @@ enum UnifiedHistoryService {
 
     static func index(profile: String) -> ProfileIndex? {
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
+        let dataDir = WorkspacePaths.dataDir(for: profile)
+            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
 
         var artifacts: [Artifact] = []
         artifacts += csvSnapshots(in: workspace)
-        artifacts += jamfCLIJSON(in: workspace)
+        artifacts += jamfCLIJSON(dataDir: dataDir)
         artifacts += htmlHistoryJSON(in: workspace)
         artifacts += generatedReports(in: workspace)
         artifacts += automationLogs(in: workspace)
@@ -105,10 +107,9 @@ enum UnifiedHistoryService {
         } }
     }
 
-    private static func jamfCLIJSON(in workspace: URL) -> [Artifact] {
-        let directory = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        return files(in: directory, extensions: ["json"]).map {
-            artifact(kind: .jamfCLIJSON, url: $0, family: familyName(for: $0, root: directory))
+    private static func jamfCLIJSON(dataDir: URL) -> [Artifact] {
+        return files(in: dataDir, extensions: ["json"]).map {
+            artifact(kind: .jamfCLIJSON, url: $0, family: familyName(for: $0, root: dataDir))
         }
     }
 
