@@ -233,6 +233,28 @@ final class CLIBridge {
         return await run(executable: command.executable, arguments: command.arguments + args, onLine: onLine)
     }
 
+    func initializeWorkspace(
+        profile: String,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
+        guard let command = resolveJRCCommand() else {
+            onLine(.init(
+                timestamp: Date(),
+                level: .fail,
+                text: "[error] jrc or jamf-reports-community.py not found"
+            ))
+            return -1
+        }
+        guard await ensureWorkspace(
+            profile: profile,
+            command: command,
+            onLine: onLine
+        ) != nil else {
+            return -1
+        }
+        return 0
+    }
+
     func resolveJRCCommand() -> (executable: URL, arguments: [String])? {
         if let jrc = locate("jrc") {
             return (jrc, [])

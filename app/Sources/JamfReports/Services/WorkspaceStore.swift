@@ -143,21 +143,38 @@ final class WorkspaceStore {
         }
     }
 
-    /// Run `jrc workspace-init` for the active profile so the user gets an
-    /// explicit Initialize action instead of waiting for the lazy bootstrap
-    /// that fires on the first run. Reloads from disk on success so badge
-    /// counts and the Trends screen pick up the new directory immediately.
+    /// Run `jrc workspace-init` first so the user gets a workspace even without
+    /// jamf-cli auth, then optionally chain a `collect` call when jamf-cli is
+    /// available. The two failure modes are reported separately so a collect
+    /// failure doesn't masquerade as a workspace-init failure.
     func initializeWorkspace() async {
         guard !demoMode, !isWorkspaceInitialized, !isInitializingWorkspace else { return }
         isInitializingWorkspace = true
         workspaceInitMessage = "Initializing workspace…"
-        let exit = await CLIBridge().collect(profile: profile) { _ in }
+        let bridge = CLIBridge()
+        let initExit = await bridge.initializeWorkspace(profile: profile) { _ in }
+        guard initExit == 0 else {
+            isInitializingWorkspace = false
+            workspaceInitMessage = "Workspace init failed · exit \(initExit)"
+            return
+        }
+        reloadFromDisk()
+
+        guard bridge.isJamfCLIAvailable else {
+            isInitializingWorkspace = false
+            workspaceInitMessage = "Workspace initialized · jamf-cli not installed"
+            return
+        }
+
+        workspaceInitMessage = "Workspace initialized · collecting jamf-cli snapshots…"
+        let collectExit = await bridge.collect(profile: profile) { _ in }
         isInitializingWorkspace = false
-        if exit == 0 {
+        if collectExit == 0 {
             workspaceInitMessage = "Workspace initialized · cached snapshots ready"
             reloadFromDisk()
         } else {
-            workspaceInitMessage = "Workspace init failed · exit \(exit)"
+            workspaceInitMessage =
+                "Workspace initialized · collect failed · exit \(collectExit) · check jamf-cli auth"
         }
     }
 
