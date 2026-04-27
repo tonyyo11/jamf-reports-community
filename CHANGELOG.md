@@ -9,6 +9,35 @@ versions in this repository map to git tags.
 
 ### Added
 
+- macOS app per-device drilldown now calls `jamf-cli pro device <identifier>`
+  for the selected row, caches the JSON under
+  `~/Jamf-Reports/<profile>/jamf-cli-data/devices/`, and renders grouped detail
+  rows in the Devices pane.
+- macOS app report, collection, backup, validation, and drilldown commands now
+  always pass the active workspace profile to `jrc` or `jamf-cli`; existing
+  workspace configs are reconciled so `jamf_cli.profile` matches the selected
+  profile.
+- The macOS app now prefers the bundled/current Python script over an installed
+  `jrc` shim when launching report commands, avoiding stale shim behavior after
+  app updates.
+- Onboarding now validates the newly registered `jamf-cli` profile with
+  `jamf-cli config validate` before continuing to CSV mapping and first report
+  generation.
+- `--profile` now works as a runtime Jamf Pro profile override for Python
+  commands that use `jamf_cli.profile`, while retaining its existing
+  `workspace-init` behavior.
+- `collect` now supports first-run Jamf CLI-only bootstrapping more completely,
+  saving computer inventory, app/update status, groups, packages, scripts, and
+  org metadata snapshots without requiring CSV or historical data.
+- `inventory-csv` now saves/falls back through the normal jamf-cli cache path
+  and still exports base computer inventory if extension attribute results are
+  temporarily unavailable.
+- New `backup` command wraps `jamf-cli pro backup --format json --output <dir>`
+  and writes atomic per-profile backups plus a `manifest.json` under
+  `~/Jamf-Reports/<profile>/backups/`.
+- macOS app Backups screen lists local backups, can run a new backup, reveal
+  backup folders, and diff two backups or an older backup against the latest
+  via `jamf-cli pro diff`.
 - macOS app Devices screen for current inventory review. It merges validated
   workspace-local inventory CSV output with cached jamf-cli compliance and patch
   snapshots, then presents searchable device rows, stale filtering, macOS version
