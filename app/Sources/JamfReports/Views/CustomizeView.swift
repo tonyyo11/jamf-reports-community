@@ -49,7 +49,11 @@ struct CustomizeView: View {
             AnyView(
                 HStack(spacing: 8) {
                     PNPButton(title: "Preset: Executive")
+                        .disabled(true)
+                        .help("Coming soon — workbook presets are not yet wired")
                     PNPButton(title: "Apply", icon: "checkmark", style: .gold)
+                        .disabled(true)
+                        .help("Coming soon — workbook presets are not yet wired")
                 }
             )
         }

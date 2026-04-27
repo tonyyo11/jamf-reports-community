@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - ConfigView
 
@@ -77,12 +78,19 @@ struct ConfigView: View {
             AnyView(
                 HStack(spacing: 8) {
                     saveStatusPill
-                    PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right")
+                    PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
                     PNPButton(title: "Run check", icon: "flask", action: runCheck)
                     PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
                 }
             )
         }
+    }
+
+    private func viewYAML() {
+        guard let url = ProfileService.workspaceURL(for: workspace.profile) else { return }
+        let config = url.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: config.path) else { return }
+        SystemActions.open(config)
     }
 
     @ViewBuilder
@@ -135,9 +143,8 @@ struct ConfigView: View {
     }
 
     private func runCheck() {
-        guard let bin = cli.locate("jrc") else { return }
         Task {
-            _ = await cli.run(executable: bin, arguments: ["check", "--profile", workspace.profile]) { _ in }
+            _ = await cli.check(profile: workspace.profile, csvPath: nil) { _ in }
         }
     }
 
@@ -151,6 +158,8 @@ struct ConfigView: View {
 
 private struct ColumnsTab: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @State private var cli = CLIBridge()
+    @State private var checkStatus: String? = nil
 
     var body: some View {
         @Bindable var ws = workspace
@@ -220,9 +229,14 @@ private struct ColumnsTab: View {
                     }
                 }
                 Divider().background(Theme.Colors.hairline).padding(.vertical, 12)
+                if let status = checkStatus {
+                    Mono(text: status, size: 10.5, color: Theme.Colors.fgMuted)
+                        .lineLimit(2)
+                        .padding(.bottom, 6)
+                }
                 HStack(spacing: 6) {
-                    PNPButton(title: "Re-check", icon: "arrow.clockwise", size: .sm)
-                    PNPButton(title: "Open CSV", icon: "arrow.up.right.square", style: .ghost, size: .sm)
+                    PNPButton(title: "Re-check", icon: "arrow.clockwise", size: .sm, action: runCheck)
+                    PNPButton(title: "Open CSV", icon: "arrow.up.right.square", style: .ghost, size: .sm, action: openCSV)
                 }
             }
         }
@@ -249,10 +263,65 @@ private struct ColumnsTab: View {
                  Text(" to auto-detect columns from a new CSV export. Existing config is preserved."))
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.Colors.fg2)
-                PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm)
+                PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm, action: runScaffold)
             }
         }
     }
+
+    private func runCheck() {
+        Task {
+            checkStatus = "Running check…"
+            let csvPath = newestCSVPath()
+            let exit = await cli.check(profile: workspace.profile, csvPath: csvPath) { line in
+                Task { @MainActor in checkStatus = line.text }
+            }
+            checkStatus = exit == 0 ? "Check passed · exit 0" : "Check failed · exit \(exit)"
+        }
+    }
+
+    private func openCSV() {
+        guard let url = newestCSVURL() else { return }
+        SystemActions.open(url)
+    }
+
+    private func runScaffold() {
+        guard let command = cli.resolveJRCCommand(),
+              let wsURL = ProfileService.workspaceURL(for: workspace.profile) else { return }
+        guard let csvURL = newestCSVURL() else { return }
+        let configOut = wsURL.appendingPathComponent("config.yaml")
+        let args = command.arguments + [
+            "scaffold",
+            "--csv", csvURL.path,
+            "--out", configOut.path,
+        ]
+        Task {
+            let exit = await cli.run(executable: command.executable, arguments: args) { _ in }
+            if exit == 0 {
+                workspace.reloadFromDisk()
+            }
+        }
+    }
+
+    private func newestCSVURL() -> URL? {
+        guard let wsURL = ProfileService.workspaceURL(for: workspace.profile) else { return nil }
+        let inbox = wsURL.appendingPathComponent("csv-inbox")
+        let dir = FileManager.default.fileExists(atPath: inbox.path) ? inbox : wsURL
+        return (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ))?
+        .filter { $0.pathExtension.lowercased() == "csv" }
+        .max {
+            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+                         .contentModificationDate) ?? .distantPast
+            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey])
+                         .contentModificationDate) ?? .distantPast
+            return a < b
+        }
+    }
+
+    private func newestCSVPath() -> String? { newestCSVURL()?.path }
 }
 
 // MARK: - Agents tab
@@ -624,14 +693,18 @@ private struct OutputTab: View {
                     FieldLabel(label: "output_dir")
                     HStack(spacing: 6) {
                         PNPTextField(value: $ws.configState.outputDir, mono: true)
-                        PNPButton(title: "", icon: "folder", size: .md)
+                        PNPButton(title: "", icon: "folder", size: .md) {
+                            pickFolder { ws.configState.outputDir = $0 }
+                        }
                     }
                     FieldHelp(text: "Relative paths resolve from config.yaml's folder")
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "archive_dir")
                         HStack(spacing: 6) {
                             PNPTextField(value: $ws.configState.archiveDir, mono: true)
-                            PNPButton(title: "", icon: "folder", size: .md)
+                            PNPButton(title: "", icon: "folder", size: .md) {
+                                pickFolder { ws.configState.archiveDir = $0 }
+                            }
                         }
                         FieldHelp(text: "Optional. Leave blank to use 'archive' next to output_dir.")
                     }
@@ -684,6 +757,18 @@ private struct OutputTab: View {
                     }
                 }
             }
+        }
+    }
+
+    private func pickFolder(completion: @escaping @MainActor (String) -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Select"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in completion(url.path) }
         }
     }
 

@@ -17,39 +17,25 @@ extension CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             return -1
         }
-        guard let bin = locate("jrc") else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc not found on PATH"))
+        guard resolveJRCCommand() != nil else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
             return -1
         }
-        let args = buildRunArgs(profile: profile, mode: mode, csvPath: csvPath)
-        return await run(executable: bin, arguments: args, onLine: onLine)
+        switch mode {
+        case .snapshotOnly:
+            return await collect(profile: profile, onLine: onLine)
+        case .jamfCLIOnly:
+            return await collectThenGenerate(profile: profile, csvPath: nil, onLine: onLine)
+        case .jamfCLIFull, .csvAssisted:
+            return await collectThenGenerate(
+                profile: profile,
+                csvPath: (csvPath ?? newestCSV(in: profile))?.path,
+                onLine: onLine
+            )
+        }
     }
 
     // MARK: - Private
-
-    private func buildRunArgs(profile: String, mode: Schedule.RunMode, csvPath: URL?) -> [String] {
-        switch mode {
-        case .snapshotOnly:
-            return ["collect", "--profile", profile]
-
-        case .jamfCLIOnly:
-            return ["generate", "--profile", profile]
-
-        case .jamfCLIFull:
-            var args = ["generate", "--profile", profile]
-            if let csv = csvPath ?? newestCSV(in: profile) {
-                args += ["--csv", csv.path]
-            }
-            return args
-
-        case .csvAssisted:
-            var args = ["generate", "--profile", profile]
-            if let csv = csvPath ?? newestCSV(in: profile) {
-                args += ["--csv", csv.path]
-            }
-            return args
-        }
-    }
 
     /// Newest `.csv` in the profile workspace (`csv-inbox/` preferred; falls back to root).
     private func newestCSV(in profile: String) -> URL? {

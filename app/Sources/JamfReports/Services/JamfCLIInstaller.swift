@@ -14,11 +14,16 @@ final class JamfCLIInstaller {
         if versionChecked { return cachedVersion }
         versionChecked = true
 
-        guard let binary = bridge.locate("jamf-cli") else {
-            cachedVersion = nil
-            return nil
-        }
+        cachedVersion = Self.installedVersion()
+        return cachedVersion
+    }
 
+    static func installedPath() -> String? {
+        ExecutableLocator.locate("jamf-cli")?.path
+    }
+
+    static func installedVersion() -> String? {
+        guard let binary = ExecutableLocator.locate("jamf-cli") else { return nil }
         let process = Process()
         process.executableURL = binary
         process.arguments = ["--version"]
@@ -32,7 +37,6 @@ final class JamfCLIInstaller {
             try process.run()
             process.waitUntilExit()
         } catch {
-            cachedVersion = nil
             return nil
         }
 
@@ -45,8 +49,7 @@ final class JamfCLIInstaller {
         .compactMap { $0 }
         .joined(separator: "\n")
 
-        cachedVersion = Self.parseVersion(from: text)
-        return cachedVersion
+        return parseVersion(from: text)
     }
 
     func brewInstallCommand() -> String {

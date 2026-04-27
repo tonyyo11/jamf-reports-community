@@ -20,6 +20,8 @@ struct JamfCLIProfile: Identifiable, Sendable {
     let url: String
     let schedules: Int
     let status: Status
+    var authMethod: String = ""
+    var isDefault: Bool = false
 }
 
 // MARK: - Schedules
@@ -339,6 +341,11 @@ struct DeviceInventorySnapshot: Sendable {
     var warnings: [String]
     var generatedAt: String
     var isDemo: Bool
+
+    static let empty = DeviceInventorySnapshot(
+        devices: [], patchTitles: [], sourceFiles: [], warnings: [],
+        generatedAt: "", isDemo: false
+    )
 
     var totalDevices: Int { devices.count }
     var patchIssueCount: Int { devices.filter { $0.patchFailureCount > 0 }.count }

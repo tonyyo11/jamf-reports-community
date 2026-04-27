@@ -15,6 +15,22 @@ final class WorkspaceStore {
     var columnMappings: [ColumnMapping]
     var demoMode: Bool
     var selectedScoreCards: [TrendSeries.Metric]
+    var jamfCLIPath: String?
+    var jamfCLIVersion: String?
+    var jrcPath: String?
+    var isInitializingWorkspace: Bool = false
+    var workspaceInitMessage: String?
+
+    /// True when the active profile has a `config.yaml` on disk under
+    /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
+    /// they don't have an on-disk workspace to initialize.
+    var isWorkspaceInitialized: Bool {
+        if demoMode { return true }
+        guard let url = ProfileService.workspaceURL(for: profile) else { return false }
+        return FileManager.default.fileExists(
+            atPath: url.appendingPathComponent("config.yaml").path
+        )
+    }
 
     // MARK: Config state
 
@@ -63,7 +79,7 @@ final class WorkspaceStore {
         let isDemo = demoMode ?? realProfiles.isEmpty
 
         self.demoMode = isDemo
-        self.org = DemoData.org
+        self.org = isDemo ? DemoData.org : Self.org(for: realProfiles.first)
         self.profile = isDemo ? DemoData.org.profile : (realProfiles.first?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
         self.schedules = isDemo ? DemoData.scheduledRuns : realSchedules
@@ -71,6 +87,9 @@ final class WorkspaceStore {
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
         self.selectedScoreCards = [.activeDevices, .fileVault, .compliance, .stale]
+        self.jamfCLIPath = ExecutableLocator.locate("jamf-cli")?.path
+        self.jamfCLIVersion = JamfCLIInstaller.installedVersion()
+        self.jrcPath = CLIBridge().jrcDisplayPath()
     }
 
     // MARK: Profile switching
@@ -78,6 +97,9 @@ final class WorkspaceStore {
     func setProfile(_ id: String) {
         guard ProfileService.isValid(id) else { return }
         profile = id
+        if !demoMode {
+            org = Self.org(for: profiles.first(where: { $0.name == id }))
+        }
         if !demoMode {
             schedules = LaunchAgentService.list().filter { $0.profile == id }
             Task {
@@ -90,9 +112,12 @@ final class WorkspaceStore {
 
     /// Reload from disk — called from the sidebar refresh and after onboarding.
     func reloadFromDisk() {
+        refreshToolStatus()
         let real = ProfileService.discoverLocal()
         if real.isEmpty {
             demoMode = true
+            org = DemoData.org
+            profile = DemoData.org.profile
             profiles = DemoData.cliProfiles
             schedules = DemoData.scheduledRuns
         } else {
@@ -102,7 +127,44 @@ final class WorkspaceStore {
             if !real.contains(where: { $0.name == profile }) {
                 profile = real.first!.name
             }
+            org = Self.org(for: real.first(where: { $0.name == profile }))
         }
+    }
+
+    func setDemoMode(_ enabled: Bool) {
+        if enabled {
+            demoMode = true
+            org = DemoData.org
+            profile = DemoData.org.profile
+            profiles = DemoData.cliProfiles
+            schedules = DemoData.scheduledRuns
+        } else {
+            reloadFromDisk()
+        }
+    }
+
+    /// Run `jrc workspace-init` for the active profile so the user gets an
+    /// explicit Initialize action instead of waiting for the lazy bootstrap
+    /// that fires on the first run. Reloads from disk on success so badge
+    /// counts and the Trends screen pick up the new directory immediately.
+    func initializeWorkspace() async {
+        guard !demoMode, !isWorkspaceInitialized, !isInitializingWorkspace else { return }
+        isInitializingWorkspace = true
+        workspaceInitMessage = "Initializing workspace…"
+        let exit = await CLIBridge().collect(profile: profile) { _ in }
+        isInitializingWorkspace = false
+        if exit == 0 {
+            workspaceInitMessage = "Workspace initialized · cached snapshots ready"
+            reloadFromDisk()
+        } else {
+            workspaceInitMessage = "Workspace init failed · exit \(exit)"
+        }
+    }
+
+    func refreshToolStatus() {
+        jamfCLIPath = ExecutableLocator.locate("jamf-cli")?.path
+        jamfCLIVersion = JamfCLIInstaller.installedVersion()
+        jrcPath = CLIBridge().jrcDisplayPath()
     }
 
     // MARK: Config I/O
@@ -222,6 +284,19 @@ final class WorkspaceStore {
                 trueValue: ea.trueValue.isEmpty ? nil : ea.trueValue
             )
         }
+    }
+
+    private static func org(for profile: JamfCLIProfile?) -> Org {
+        let name = profile?.name ?? "jamf-cli"
+        let url = profile?.url ?? "(jamf-cli profile)"
+        return Org(
+            name: name,
+            short: String(name.prefix(2)).uppercased(),
+            jamfURL: url,
+            profile: name,
+            apiClient: profile?.authMethod ?? "",
+            workspaceRoot: "~/Jamf-Reports/\(name)"
+        )
     }
 }
 

@@ -3,13 +3,17 @@ import Charts
 
 struct DevicesView: View {
     @Environment(WorkspaceStore.self) private var workspace
-    @State private var snapshot = DemoData.deviceSnapshot
+    @State private var snapshot = DeviceInventorySnapshot.empty
     @State private var query = ""
     @State private var filter: DeviceFilter = .all
     @State private var selectedID: DeviceInventoryRecord.ID?
     @State private var staleDays = 30
     @State private var osFilter: String?
     @State private var isLoading = false
+
+    private var activeSnapshot: DeviceInventorySnapshot {
+        workspace.demoMode ? DemoData.deviceSnapshot : snapshot
+    }
 
     private enum DeviceFilter: String, CaseIterable, Identifiable {
         case all, stale, patch, security
@@ -35,7 +39,7 @@ struct DevicesView: View {
     }
 
     private var filteredDevices: [DeviceInventoryRecord] {
-        snapshot.devices.filter { device in
+        activeSnapshot.devices.filter { device in
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                !device.searchableText.contains(query.lowercased()) {
                 return false
@@ -66,16 +70,20 @@ struct DevicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                controls
-                summary
-                HStack(alignment: .top, spacing: 14) {
-                    inventoryTable
-                    VStack(spacing: 14) {
-                        detailPanel(selectedDevice)
-                        osDistributionCard
-                        sourceCard
+                if !workspace.demoMode && activeSnapshot.devices.isEmpty && !isLoading {
+                    emptyState
+                } else {
+                    controls
+                    summary
+                    HStack(alignment: .top, spacing: 14) {
+                        inventoryTable
+                        VStack(spacing: 14) {
+                            detailPanel(selectedDevice)
+                            osDistributionCard
+                            sourceCard
+                        }
+                        .frame(width: 360)
                     }
-                    .frame(width: 360)
                 }
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -90,9 +98,9 @@ struct DevicesView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: isLoading ? "Loading inventory" : "Current Inventory · \(snapshot.generatedAt)",
+            kicker: isLoading ? "Loading inventory" : "Current Inventory · \(activeSnapshot.generatedAt)",
             title: "Devices",
-            subtitle: "\(snapshot.totalDevices) records · \(workspace.profile)"
+            subtitle: "\(activeSnapshot.totalDevices) records · \(workspace.profile)"
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -154,14 +162,14 @@ struct DevicesView: View {
 
     private var summary: some View {
         HStack(spacing: 12) {
-            StatTile(label: "Devices", value: "\(snapshot.totalDevices)",
-                     sub: snapshot.isDemo ? "Demo inventory" : "Current workspace")
-            StatTile(label: "Stale", value: "\(snapshot.staleCount(thresholdDays: staleDays))",
+            StatTile(label: "Devices", value: "\(activeSnapshot.totalDevices)",
+                     sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
+            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(thresholdDays: staleDays))",
                      sub: "\(staleDays)+ days since contact")
-            StatTile(label: "Patch Issues", value: "\(snapshot.patchIssueCount)",
-                     sub: "\(snapshot.patchTitles.count) patch titles")
-            StatTile(label: "FileVault", value: "\(Int(snapshot.fileVaultPercent.rounded()))%",
-                     sub: "\(snapshot.securityGapCount) security gaps")
+            StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
+                     sub: "\(activeSnapshot.patchTitles.count) patch titles")
+            StatTile(label: "FileVault", value: "\(Int(activeSnapshot.fileVaultPercent.rounded()))%",
+                     sub: "\(activeSnapshot.securityGapCount) security gaps")
         }
     }
 
@@ -310,15 +318,15 @@ struct DevicesView: View {
                 HStack {
                     SectionHeader(title: "macOS Versions")
                     Spacer()
-                    Pill(text: "\(snapshot.osDistribution.count)", tone: .muted)
+                    Pill(text: "\(activeSnapshot.osDistribution.count)", tone: .muted)
                 }
 
-                if snapshot.osDistribution.isEmpty {
+                if activeSnapshot.osDistribution.isEmpty {
                     Text("No OS data available.")
                         .font(.system(size: 12.5))
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
-                    Chart(snapshot.osDistribution.prefix(6)) { item in
+                    Chart(activeSnapshot.osDistribution.prefix(6)) { item in
                         BarMark(
                             x: .value("Devices", item.count),
                             y: .value("Version", item.version)
@@ -336,7 +344,7 @@ struct DevicesView: View {
                     .frame(height: 150)
 
                     VStack(spacing: 0) {
-                        ForEach(snapshot.osDistribution.prefix(5)) { item in
+                        ForEach(activeSnapshot.osDistribution.prefix(5)) { item in
                             Button {
                                 osFilter = osFilter == item.version ? nil : item.version
                             } label: {
@@ -369,15 +377,16 @@ struct DevicesView: View {
                 HStack {
                     SectionHeader(title: "Sources")
                     Spacer()
-                    Pill(text: snapshot.isDemo ? "Demo" : "Workspace", tone: snapshot.isDemo ? .gold : .teal)
+                    Pill(text: activeSnapshot.isDemo ? "Demo" : "Workspace",
+                         tone: activeSnapshot.isDemo ? .gold : .teal)
                 }
 
-                if snapshot.sourceFiles.isEmpty {
+                if activeSnapshot.sourceFiles.isEmpty {
                     Text("No current inventory, compliance, or patch snapshots were found.")
                         .font(.system(size: 12.5))
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
-                    ForEach(snapshot.sourceFiles, id: \.self) { file in
+                    ForEach(activeSnapshot.sourceFiles, id: \.self) { file in
                         HStack(spacing: 8) {
                             Image(systemName: file.hasSuffix(".csv") ? "tablecells" : "curlybraces")
                                 .font(.system(size: 11, weight: .semibold))
@@ -388,15 +397,31 @@ struct DevicesView: View {
                     }
                 }
 
-                if !snapshot.warnings.isEmpty {
+                if !activeSnapshot.warnings.isEmpty {
                     Divider().background(Theme.Colors.hairline)
-                    ForEach(snapshot.warnings, id: \.self) { warning in
+                    ForEach(activeSnapshot.warnings, id: \.self) { warning in
                         Text(warning)
                             .font(.system(size: 11.5))
                             .foregroundStyle(Theme.Colors.warn)
                     }
                 }
             }
+        }
+    }
+
+    private var emptyState: some View {
+        Card(padding: 32) {
+            VStack(spacing: 12) {
+                Image(systemName: "desktopcomputer.and.arrow.down")
+                    .font(.system(size: 40))
+                    .foregroundStyle(Theme.Colors.hairlineStrong)
+                Text("No device inventory yet")
+                    .font(Theme.Fonts.serif(18, weight: .bold))
+                Text("run Generate Report to populate")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 

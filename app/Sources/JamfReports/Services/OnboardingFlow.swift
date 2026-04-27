@@ -237,17 +237,17 @@ final class OnboardingFlow {
         do {
             let csvURL = try validatedCSVURL(url)
             guard let workspace = workspaceURL else { throw FlowError.missingWorkspace }
-            guard let jrc = CLIBridge().locate("jrc") else { throw FlowError.missingJRC }
+            let bridge = CLIBridge()
+            guard let command = bridge.resolveJRCCommand() else { throw FlowError.missingJRC }
 
             selectedCSVURL = csvURL
             isScaffoldingCSV = true
             defer { isScaffoldingCSV = false }
 
             let outputConfig = workspace.appendingPathComponent("config.yaml")
-            let bridge = CLIBridge()
             let exit = await bridge.run(
-                executable: jrc,
-                arguments: ["scaffold", "--csv", csvURL.path, "--out", outputConfig.path]
+                executable: command.executable,
+                arguments: command.arguments + ["scaffold", "--csv", csvURL.path, "--out", outputConfig.path]
             ) { [weak self] line in
                 Task { @MainActor in self?.csvOutput.append(line) }
             }
@@ -267,7 +267,8 @@ final class OnboardingFlow {
         firstReportExitCode = nil
         lastError = nil
 
-        guard let jrc = CLIBridge().locate("jrc") else {
+        let bridge = CLIBridge()
+        guard bridge.resolveJRCCommand() != nil else {
             lastError = FlowError.missingJRC.localizedDescription
             return
         }
@@ -275,11 +276,7 @@ final class OnboardingFlow {
         isRunningFirstReport = true
         defer { isRunningFirstReport = false }
 
-        let bridge = CLIBridge()
-        let exit = await bridge.run(
-            executable: jrc,
-            arguments: ["generate", "--profile", profileName.trimmed]
-        ) { [weak self] line in
+        let exit = await bridge.generate(profile: profileName.trimmed, csvPath: nil) { [weak self] line in
             Task { @MainActor in self?.firstReportOutput.append(line) }
         }
 

@@ -12,10 +12,17 @@ struct OverviewView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                if !workspace.demoMode, !workspace.isWorkspaceInitialized {
+                    workspaceInitBanner
+                }
                 statRow
-                osAndRules
-                securityAgents
-                recentActivity
+                if workspace.demoMode {
+                    osAndRules
+                    securityAgents
+                    recentActivity
+                } else {
+                    liveWorkspaceState
+                }
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
                                 leading: Theme.Metrics.pagePadH,
@@ -32,6 +39,94 @@ struct OverviewView: View {
                 trendStore.load(profile: newValue, range: .w12)
             }
         }
+    }
+
+    private var workspaceInitBanner: some View {
+        Card(padding: 16) {
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.gold)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Workspace not initialized")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                    Text(workspace.workspaceInitMessage
+                         ?? "~/Jamf-Reports/\(workspace.profile)/ does not exist yet. Initialize it to start collecting jamf-cli snapshots and historical trend summaries.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                if workspace.isInitializingWorkspace {
+                    ProgressView().controlSize(.small)
+                } else {
+                    PNPButton(title: "Initialize", style: .gold, size: .sm) {
+                        Task { await workspace.initializeWorkspace() }
+                    }
+                }
+            }
+        }
+    }
+
+    private var liveWorkspaceState: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    SectionHeader(title: "Live Workspace")
+                    Spacer()
+                    Pill(text: workspace.profile, tone: .gold)
+                }
+
+                HStack(spacing: 12) {
+                    liveStateTile(
+                        label: "jamf-cli",
+                        value: workspace.jamfCLIVersion ?? "Missing",
+                        sub: workspace.jamfCLIPath ?? "Not found",
+                        ok: workspace.jamfCLIPath != nil
+                    )
+                    liveStateTile(
+                        label: "jrc",
+                        value: workspace.jrcPath == nil ? "Missing" : "Available",
+                        sub: workspace.jrcPath ?? "No CLI entrypoint found",
+                        ok: workspace.jrcPath != nil
+                    )
+                    liveStateTile(
+                        label: "Trend summaries",
+                        value: "\(trendStore.filteredSummaries.count)",
+                        sub: "~/Jamf-Reports/\(workspace.profile)/",
+                        ok: !trendStore.filteredSummaries.isEmpty
+                    )
+                }
+
+                if trendStore.filteredSummaries.isEmpty {
+                    Divider().background(Theme.Colors.hairline)
+                    Text("No cached tenant summaries are available for this profile yet.")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                }
+            }
+        }
+    }
+
+    private func liveStateTile(label: String, value: String, sub: String, ok: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Kicker(text: label, tone: ok ? .teal : .muted)
+            Text(value)
+                .font(Theme.Fonts.serif(22, weight: .bold))
+                .foregroundStyle(Theme.Colors.fg)
+                .lineLimit(1)
+            Mono(text: sub, size: 10.5, color: Theme.Colors.fgMuted)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.025))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(ok ? Theme.Colors.hairlineStrong : Theme.Colors.warn.opacity(0.45), lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var header: some View {
@@ -67,9 +162,9 @@ struct OverviewView: View {
             return
         }
         isRunning = true
-        runStatus = "jrc generate · profile=\(workspace.profile)"
+        runStatus = "jrc collect + generate · profile=\(workspace.profile)"
         let profile = workspace.profile
-        let exit = await bridge.generate(profile: profile, csvPath: nil) { line in
+        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { line in
             Task { @MainActor in
                 runStatus = "jrc · \(line.text)"
             }
@@ -79,6 +174,9 @@ struct OverviewView: View {
             ? "Generate completed · exit 0"
             : "Generate failed · exit \(exit) · check Run History"
             
+        if exit == 0 {
+            workspace.reloadFromDisk()
+        }
         if exit == 0 && !workspace.demoMode {
             trendStore.load(profile: workspace.profile, range: .w12)
         }

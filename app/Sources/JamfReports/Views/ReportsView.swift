@@ -1,12 +1,17 @@
 import SwiftUI
+import AppKit
 
 struct ReportsView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @State private var bridge = CLIBridge()
     @State private var filter: String = "All"
     @State private var selectedReports = Set<Report.ID>()
     @State private var reports: [Report] = []
     @State private var reportStats = ReportLibrary.Stats(count: 0, totalBytes: 0, archivedCount: 0)
     @State private var snapshotFamilies: [SnapshotFamily] = []
+    @State private var isGeneratingHTML = false
+    @State private var isExportingCSV = false
+    @State private var reportError: String?
 
     private var reportsDirectory: URL {
         let workspace = ProfileService.workspaceURL(for: workspace.profile)
@@ -84,27 +89,52 @@ struct ReportsView: View {
     }
 
     private var header: some View {
-        PageHeader(
-            kicker: "Generated Reports",
-            title: "\(reports.count) reports archived",
-            subtitle: "~/Jamf-Reports/\(workspace.profile)/Generated Reports/"
-        ) {
-            AnyView(
-                HStack(spacing: 8) {
-                    SegmentedControl(
-                        selection: $filter,
-                        options: [
-                            ("All", "All", nil),
-                            ("xlsx", "xlsx", nil),
-                            ("html", "html", nil),
-                            ("csv", "csv", nil),
-                        ]
-                    )
-                    PNPButton(title: "Reveal in Finder", icon: "folder") {
-                        SystemActions.openFolder(reportsDirectory)
+        VStack(alignment: .leading, spacing: 8) {
+            PageHeader(
+                kicker: "Generated Reports",
+                title: "\(reports.count) reports archived",
+                subtitle: "~/Jamf-Reports/\(workspace.profile)/Generated Reports/"
+            ) {
+                AnyView(
+                    HStack(spacing: 8) {
+                        SegmentedControl(
+                            selection: $filter,
+                            options: [
+                                ("All", "All", nil),
+                                ("xlsx", "xlsx", nil),
+                                ("html", "html", nil),
+                                ("csv", "csv", nil),
+                            ]
+                        )
+                        PNPButton(title: "Reveal in Finder", icon: "folder") {
+                            SystemActions.openFolder(reportsDirectory)
+                        }
+                        PNPButton(
+                            title: isGeneratingHTML ? "Generating..." : "Generate HTML",
+                            icon: "safari",
+                            style: .gold
+                        ) {
+                            generateHTMLReport()
+                        }
+                        .disabled(workspace.demoMode || isGeneratingHTML || isExportingCSV)
+                        .help(workspace.demoMode ? "Available in live mode only" : "")
+                        PNPButton(
+                            title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
+                            icon: "doc.text",
+                            style: .neutral
+                        ) {
+                            runExportInventoryCSV()
+                        }
+                        .disabled(workspace.demoMode || isGeneratingHTML || isExportingCSV)
+                        .help(workspace.demoMode ? "Available in live mode only" : "")
                     }
-                }
-            )
+                )
+            }
+            if let err = reportError {
+                Text(err)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.Colors.danger)
+            }
         }
     }
 
@@ -179,6 +209,58 @@ struct ReportsView: View {
 
     private func requestOverviewTab() {
         NotificationCenter.default.post(name: .requestOverviewTab, object: nil)
+    }
+
+    @MainActor
+    private func generateHTMLReport() {
+        let profile = workspace.profile
+        let dateStr = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "jamf_report_\(profile)_\(dateStr).html"
+        panel.allowedContentTypes = [.html]
+        panel.directoryURL = reportsDirectory
+        panel.begin { response in
+            guard response == .OK, let dest = panel.url else { return }
+            let outPath = dest.path
+            isGeneratingHTML = true
+            reportError = nil
+            Task {
+                let code = await bridge.generateHTML(profile: profile, outFile: outPath) { _ in }
+                isGeneratingHTML = false
+                if code == 0 {
+                    SystemActions.open(dest)
+                    reload()
+                } else {
+                    reportError = "HTML generation failed (exit \(code))"
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func runExportInventoryCSV() {
+        let profile = workspace.profile
+        let dateStr = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "inventory_\(profile)_\(dateStr).csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.directoryURL = reportsDirectory
+        panel.begin { response in
+            guard response == .OK, let dest = panel.url else { return }
+            let outPath = dest.path
+            isExportingCSV = true
+            reportError = nil
+            Task {
+                let code = await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { _ in }
+                isExportingCSV = false
+                if code == 0 {
+                    SystemActions.reveal(dest)
+                    reload()
+                } else {
+                    reportError = "Inventory CSV export failed (exit \(code))"
+                }
+            }
+        }
     }
 }
 

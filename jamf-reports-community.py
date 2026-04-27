@@ -2026,6 +2026,10 @@ def _emit_summary_json(config: Config, csv_dash: Optional[CSVDashboard], bridge:
 
     df = getattr(csv_dash, "_df", None) if csv_dash else None
     if df is None:
+        summary_data = _build_summary_from_bridge(config, bridge, date_str)
+        if summary_data is None:
+            return
+        _atomic_write_summary(summary_file, summaries_dir, summary_data)
         return
 
     total_devices = len(df)
@@ -2106,17 +2110,129 @@ def _emit_summary_json(config: Config, csv_dash: Optional[CSVDashboard], bridge:
         "staleCount": int(stale_count),
         "osCurrentPct": round(os_pct, 1),
         "crowdstrikePct": round(cs_pct, 1),
-        "patchPct": round(patch_pct, 1)
+        "patchPct": round(patch_pct, 1),
+        "source": "csv",
     }
 
-    # Atomic write to avoid partial reads
+    _atomic_write_summary(summary_file, summaries_dir, summary_data)
+
+
+def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: Dict[str, Any]) -> None:
+    """Atomically write a summary.json under summaries_dir."""
     try:
         with tempfile.NamedTemporaryFile("w", delete=False, dir=str(summaries_dir), suffix=".json") as tf:
-            json.dump(summary_data, tf, indent=2)
+            json.dump(data, tf, indent=2)
             temp_path = Path(tf.name)
         temp_path.replace(summary_file)
     except Exception as exc:
         print(f"  [warn] Could not emit summary.json: {exc}")
+
+
+def _build_summary_from_bridge(
+    config: Config,
+    bridge: Optional["JamfCLIBridge"],
+    date_str: str,
+) -> Optional[Dict[str, Any]]:
+    """Compute the trend summary metrics from cached jamf-cli JSON when no CSV is present.
+
+    Pure-CLI users still need historical trend data. We mine the same JSON snapshots
+    that CoreDashboard already consumes (security, inventory-summary, device-compliance,
+    patch-status). Metrics that require CSV-only data (CrowdStrike agent column, etc.)
+    are emitted as 0.0 — TrendStore renders them as missing series rather than failing.
+    """
+    if not bridge or not bridge.is_available():
+        return None
+
+    total_devices = 0
+    fv_pct = 0.0
+    try:
+        sec = bridge.security_report() or []
+        for entry in sec:
+            if isinstance(entry, dict) and entry.get("section") == "summary":
+                data = entry.get("data") or {}
+                total_devices = int(data.get("total_devices") or 0)
+                fv_pct = _percent_string_to_float(data.get("filevault_encrypted_pct"))
+                break
+    except Exception:
+        pass
+
+    if total_devices == 0:
+        try:
+            inv = bridge.inventory_summary() or []
+            total_devices = sum(int(row.get("count") or 0) for row in inv if isinstance(row, dict))
+        except Exception:
+            pass
+
+    if total_devices == 0:
+        return None
+
+    stale_count = 0
+    try:
+        comp = bridge.device_compliance() or []
+        stale_count = sum(1 for row in comp if isinstance(row, dict) and row.get("stale"))
+    except Exception:
+        pass
+
+    os_pct = 0.0
+    current_os_versions: List[str] = []
+    for ea in config.custom_eas:
+        if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
+            current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
+            break
+    if current_os_versions:
+        try:
+            inv = bridge.inventory_summary() or []
+            current = 0
+            for row in inv:
+                if not isinstance(row, dict):
+                    continue
+                ver = str(row.get("os_version") or "").lower()
+                count = int(row.get("count") or 0)
+                if any(ver.startswith(cv) for cv in current_os_versions):
+                    current += count
+            if total_devices:
+                os_pct = (current / total_devices) * 100.0
+        except Exception:
+            pass
+
+    patch_pct = 0.0
+    try:
+        patches = bridge.patch_status()
+        if patches:
+            valid = []
+            for p in patches:
+                val = p.get("compliance_pct") if isinstance(p, dict) else None
+                if val:
+                    try:
+                        valid.append(float(str(val).replace("%", "")))
+                    except ValueError:
+                        pass
+            if valid:
+                patch_pct = sum(valid) / len(valid)
+    except Exception:
+        pass
+
+    return {
+        "date": date_str,
+        "totalDevices": int(total_devices),
+        "fileVaultPct": round(fv_pct, 1),
+        "compliancePct": 0.0,
+        "staleCount": int(stale_count),
+        "osCurrentPct": round(os_pct, 1),
+        "crowdstrikePct": 0.0,
+        "patchPct": round(patch_pct, 1),
+        "source": "jamf-cli",
+    }
+
+
+def _percent_string_to_float(raw: Any) -> float:
+    """Parse a `'99.0%'`-style value out of jamf-cli JSON, returning 0.0 on failure."""
+    if raw is None:
+        return 0.0
+    try:
+        return float(str(raw).replace("%", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _load_prior_snapshot(

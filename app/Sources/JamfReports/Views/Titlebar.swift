@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct Titlebar: View {
+    @Environment(WorkspaceStore.self) private var workspace
+
     let title: String
     var sub: String?
     let sidebarMode: SidebarMode
@@ -45,10 +47,10 @@ struct Titlebar: View {
 
             HStack(spacing: 6) {
                 Circle()
-                    .fill(Theme.Colors.ok)
+                    .fill(workspace.jamfCLIPath == nil ? Theme.Colors.warn : Theme.Colors.ok)
                     .frame(width: 6, height: 6)
-                    .shadow(color: Theme.Colors.ok.opacity(0.6), radius: 3)
-                Text("jamf-cli 1.6.2 · live")
+                    .shadow(color: (workspace.jamfCLIPath == nil ? Theme.Colors.warn : Theme.Colors.ok).opacity(0.6), radius: 3)
+                Text(cliStatusText)
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
@@ -71,5 +73,11 @@ struct Titlebar: View {
         .padding(.horizontal, 14)
         .frame(height: Theme.Metrics.titlebarHeight)
         .background(.ultraThinMaterial)
+    }
+
+    private var cliStatusText: String {
+        guard workspace.jamfCLIPath != nil else { return "jamf-cli missing" }
+        let version = workspace.jamfCLIVersion ?? "unknown"
+        return "jamf-cli \(version) · \(workspace.demoMode ? "demo" : "live")"
     }
 }

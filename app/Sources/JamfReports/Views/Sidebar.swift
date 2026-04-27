@@ -62,11 +62,15 @@ struct Sidebar: View {
                     .font(Theme.Fonts.mono(10.5, weight: .bold))
                     .tracking(1.4)
                     .foregroundStyle(Theme.Colors.fg)
-                Text("Jamf Reports · v2.4")
+                Text("Jamf Reports · v\(appVersion)")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
         }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
     // MARK: Nav section
@@ -111,7 +115,7 @@ struct Sidebar: View {
                         .font(.system(size: 13))
                         .foregroundStyle(isActive ? Theme.Colors.fg : Theme.Colors.fg2)
                     Spacer()
-                    if let badge = item.badge {
+                    if let badge = badge(for: item) {
                         Text(badge)
                             .font(Theme.Fonts.mono(10, weight: .semibold))
                             .foregroundStyle(item.badgeIsGold ? Theme.Colors.goldBright : Theme.Colors.fgMuted)
@@ -138,6 +142,29 @@ struct Sidebar: View {
         .buttonStyle(.plain)
     }
 
+    private func badge(for item: Tab) -> String? {
+        if workspace.demoMode { return item.badge }
+        switch item {
+        case .trends:
+            let count = liveTrendCount()
+            return count > 0 ? "\(count)" : nil
+        case .reports:
+            let count = ReportLibrary().stats(profile: workspace.profile).count
+            return count > 0 ? "\(count)" : nil
+        case .schedules:
+            let count = workspace.schedules.count
+            return count > 0 ? "\(count)" : nil
+        default:
+            return nil
+        }
+    }
+
+    private func liveTrendCount() -> Int {
+        guard let workspaceURL = ProfileService.workspaceURL(for: workspace.profile) else { return 0 }
+        let summariesDir = workspaceURL.appendingPathComponent("snapshots/summaries", isDirectory: true)
+        return SummaryJSONParser.parseDirectory(summariesDir).count
+    }
+
     // MARK: Workspace switcher chip (bottom of sidebar)
 
     @ViewBuilder
@@ -154,7 +181,7 @@ struct Sidebar: View {
                 }
             }
             Divider()
-            Button("Add workspace…") { /* opens onboarding step 4 */ }
+            Button("Add workspace…") { activeTab = .onboarding }
         } label: {
             HStack(spacing: 10) {
                 ZStack {

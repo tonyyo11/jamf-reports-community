@@ -2,22 +2,11 @@ import SwiftUI
 import AppKit
 
 struct SettingsView: View {
-    @State private var autoUpdate = true
-    @State private var demoMode = false
-
-    private struct Connection: Identifiable {
-        let id = UUID()
-        let name: String
-        let url: String
-        let type: String
-        let active: Bool
-    }
-
-    private let connections: [Connection] = [
-        .init(name: "meridian-prod",     url: "meridian.jamfcloud.com",         type: "Jamf Pro · API client", active: true),
-        .init(name: "meridian-stage",    url: "stage.jamfcloud.com",            type: "Jamf Pro · API client", active: false),
-        .init(name: "meridian-protect",  url: "meridian.protect.jamfcloud.com", type: "Jamf Protect",          active: false),
-    ]
+    @Environment(WorkspaceStore.self) private var workspace
+    @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
+    @State private var testingProfile: String? = nil
+    @State private var testResults: [String: Bool] = [:]
+    @State private var addConnectionMessage: String? = nil
 
     var body: some View {
         ScrollView {
@@ -41,6 +30,11 @@ struct SettingsView: View {
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
         }
+        .task {
+            workspace.refreshToolStatus()
+            workspace.reloadFromDisk()
+            testResults = [:]
+        }
     }
 
     private var cliCard: some View {
@@ -49,8 +43,11 @@ struct SettingsView: View {
                 SectionHeader(title: "jamf-cli")
                 settingsRow(
                     label: "Installed version",
-                    sub: "1.6.2 · /opt/homebrew/bin/jamf-cli",
-                    trailing: AnyView(PNPButton(title: "Check for updates", size: .sm))
+                    sub: jamfCLISubtitle,
+                    trailing: AnyView(PNPButton(title: "Refresh", size: .sm) {
+                        workspace.refreshToolStatus()
+                        workspace.reloadFromDisk()
+                    })
                 )
                 Divider().background(Theme.Colors.hairline)
                 settingsRow(
@@ -62,11 +59,23 @@ struct SettingsView: View {
                 settingsRow(
                     label: "Demo mode",
                     sub: "Synthetic data, no API calls",
-                    trailing: AnyView(PNPToggle(isOn: $demoMode))
+                    trailing: AnyView(PNPToggle(isOn: demoModeBinding))
                 )
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var jamfCLISubtitle: String {
+        guard let path = workspace.jamfCLIPath else { return "Not found in /opt/homebrew/bin or /usr/local/bin" }
+        return "\(workspace.jamfCLIVersion ?? "unknown") · \(path)"
+    }
+
+    private var demoModeBinding: Binding<Bool> {
+        Binding(
+            get: { workspace.demoMode },
+            set: { workspace.setDemoMode($0) }
+        )
     }
 
     private func settingsRow(label: String, sub: String, trailing: AnyView) -> some View {
@@ -87,30 +96,73 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Connections")
                 VStack(spacing: 0) {
-                    ForEach(Array(connections.enumerated()), id: \.element.id) { idx, c in
+                    ForEach(Array(workspace.profiles.enumerated()), id: \.element.id) { idx, c in
                         HStack(spacing: 10) {
                             Circle()
-                                .fill(c.active ? Theme.Colors.ok : Theme.Colors.fgDisabled)
+                                .fill(c.name == workspace.profile ? Theme.Colors.ok : Theme.Colors.fgDisabled)
                                 .frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(c.name).font(.system(size: 12.5, weight: .medium))
                                     .foregroundStyle(Theme.Colors.fg)
-                                Mono(text: "\(c.url) · \(c.type)", size: 10.5)
+                                Mono(text: "\(c.url) · \(profileType(c))", size: 10.5)
                             }
                             Spacer()
-                            if c.active { Pill(text: "ACTIVE", tone: .gold) }
+                            testControlView(for: c.name)
+                            if c.name == workspace.profile { Pill(text: "ACTIVE", tone: .gold) }
                         }
                         .padding(.vertical, 10)
-                        if idx < connections.count - 1 {
+                        if idx < workspace.profiles.count - 1 {
                             Divider().background(Theme.Colors.hairline)
                         }
                     }
+                    if workspace.profiles.isEmpty {
+                        Text("No local jamf-cli profiles found.")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 10)
+                    }
                 }
-                PNPButton(title: "Add connection", icon: "plus", style: .gold, size: .sm)
-                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    PNPButton(title: "Add connection", icon: "plus", style: .gold, size: .sm) {
+                        let process = Process()
+                        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                        process.arguments = ["-a", "Terminal", "-n"]
+                        try? process.run()
+                        SystemActions.copyToClipboard("jamf-cli config add-profile")
+                        addConnectionMessage = "Command copied. Run it in the Terminal window that just opened."
+                    }
+                    if let msg = addConnectionMessage {
+                        Text(msg)
+                            .font(Theme.Fonts.mono(10.5))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                }
+                .padding(.top, 4)
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func testControlView(for profileName: String) -> some View {
+        if testingProfile == profileName {
+            ProgressView().controlSize(.small)
+        } else if let passed = testResults[profileName] {
+            Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(passed ? Theme.Colors.ok : Theme.Colors.warn)
+                .font(.system(size: 14))
+        } else {
+            PNPButton(title: "Test", size: .sm) {
+                testingProfile = profileName
+                Task {
+                    let bridge = CLIBridge()
+                    let exit = await bridge.validateConnection(profile: profileName) { _ in }
+                    testResults[profileName] = exit == 0
+                    testingProfile = nil
+                }
+            }
+        }
     }
 
     private var aboutCard: some View {
@@ -135,8 +187,9 @@ struct SettingsView: View {
                         .frame(maxWidth: 620, alignment: .leading)
 
                     HStack(spacing: 14) {
-                        metaPair(label: "App:", value: "2.4.0")
-                        metaPair(label: "CLI:", value: "1.6.2")
+                        metaPair(label: "App:", value: appVersion)
+                        metaPair(label: "CLI:", value: workspace.jamfCLIVersion ?? "not found")
+                        metaPair(label: "jrc:", value: workspace.jrcPath == nil ? "not found" : "available")
                         metaPair(label: "Maintainer:", value: "@tonyyo11")
                         metaPair(label: "License:", value: "MIT")
                     }
@@ -167,6 +220,15 @@ struct SettingsView: View {
               let host = parsed.host, !host.isEmpty
         else { return }
         NSWorkspace.shared.open(parsed)
+    }
+
+    private func profileType(_ profile: JamfCLIProfile) -> String {
+        if profile.authMethod.isEmpty { return "Jamf Pro profile" }
+        return "Jamf Pro · \(profile.authMethod)"
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
     private func metaPair(label: String, value: String) -> some View {

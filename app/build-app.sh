@@ -70,6 +70,19 @@ if [[ ! -f "Resources/AppIcon.icns" ]]; then
 fi
 cp "Resources/AppIcon.icns" "$APP_OUT/Contents/Resources/AppIcon.icns"
 
+# Bundle the Python CLI script as a fallback when a `jrc` shim is not installed
+# on PATH. The GUI still shells out to the CLI source of truth; it does not
+# reimplement report generation in Swift.
+if [[ -f "../jamf-reports-community.py" ]]; then
+  cp "../jamf-reports-community.py" "$APP_OUT/Contents/Resources/jamf-reports-community.py"
+fi
+if [[ -f "../requirements.txt" ]]; then
+  cp "../requirements.txt" "$APP_OUT/Contents/Resources/requirements.txt"
+fi
+if [[ -f "../config.example.yaml" ]]; then
+  cp "../config.example.yaml" "$APP_OUT/Contents/Resources/config.example.yaml"
+fi
+
 cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

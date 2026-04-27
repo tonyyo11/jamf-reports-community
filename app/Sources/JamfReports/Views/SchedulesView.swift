@@ -107,6 +107,8 @@ struct SchedulesView: View {
             }
             Spacer()
             PNPButton(title: "Add profile", icon: "plus", size: .sm)
+                .disabled(true)
+                .help("Add connections in Settings · Connections")
         }
     }
 
@@ -304,8 +306,12 @@ struct SchedulesView: View {
     }
 
     private func toggleSchedule(_ schedule: Schedule) async {
-        guard let idx = workspace.schedules.firstIndex(where: { $0.id == schedule.id }),
-              let jrcPath = bridge.locate("jrc") else { return }
+        guard let idx = workspace.schedules.firstIndex(where: { $0.id == schedule.id }) else { return }
+        guard let jrcPath = bridge.locate("jrc") else {
+            writeError = "Schedules require the `jrc` shim on PATH. Install it with `brew install tonyyo11/jrc/jrc` or copy the script to /usr/local/bin/jrc."
+            showWriteError = true
+            return
+        }
 
         let original = workspace.schedules[idx].enabled
         workspace.schedules[idx].enabled.toggle()
@@ -345,7 +351,8 @@ struct SchedulesView: View {
 
     private func saveSchedule(_ form: ScheduleFormState) async {
         guard let jrcPath = bridge.locate("jrc") else {
-            writeError = "jrc not found on PATH"; showWriteError = true; return
+            writeError = "Schedules require the `jrc` shim on PATH. Install it with `brew install tonyyo11/jrc/jrc` or copy the script to /usr/local/bin/jrc."
+            showWriteError = true; return
         }
         let schedule = form.toSchedule()
         do {
