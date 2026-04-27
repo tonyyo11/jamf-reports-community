@@ -20,6 +20,7 @@ final class WorkspaceStore {
     var jrcPath: String?
     var isInitializingWorkspace: Bool = false
     var workspaceInitMessage: String?
+    var launchAgentCleanupMessage: String?
 
     /// True when the active profile has a `config.yaml` on disk under
     /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
@@ -74,6 +75,7 @@ final class WorkspaceStore {
     // MARK: Init
 
     init(demoMode: Bool? = nil) {
+        let cleanup = LaunchAgentService.cleanupLegacyAgents()
         let realProfiles = ProfileService.discoverLocal()
         let realSchedules = LaunchAgentService.list()
         let isDemo = demoMode ?? realProfiles.isEmpty
@@ -90,6 +92,7 @@ final class WorkspaceStore {
         self.jamfCLIPath = ExecutableLocator.locate("jamf-cli")?.path
         self.jamfCLIVersion = JamfCLIInstaller.installedVersion()
         self.jrcPath = CLIBridge().jrcDisplayPath()
+        self.launchAgentCleanupMessage = cleanup.message
     }
 
     // MARK: Profile switching

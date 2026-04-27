@@ -345,6 +345,46 @@ final class CLIBridge {
         return 0
     }
 
+    func setupLaunchAgent(
+        _ schedule: Schedule,
+        load: Bool,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
+        guard let command = resolveJRCCommand() else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+            return -1
+        }
+        guard let workspace = ProfileService.workspaceURL(for: schedule.profile),
+              let config = await ensureWorkspace(
+                profile: schedule.profile,
+                command: command,
+                onLine: onLine
+              ) else {
+            return -1
+        }
+
+        let plan: LaunchAgentWriter.SetupPlan
+        do {
+            plan = try LaunchAgentWriter.setupPlan(
+                for: schedule,
+                configURL: config,
+                workspaceURL: workspace,
+                load: load
+            )
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
+            return -1
+        }
+
+        let action = load ? "writing and loading" : "writing disabled"
+        onLine(.init(timestamp: Date(), level: .info, text: "[info] \(action) LaunchAgent \(plan.label)"))
+        return await run(
+            executable: command.executable,
+            arguments: command.arguments + plan.arguments,
+            onLine: onLine
+        )
+    }
+
     func resolveJRCCommand() -> (executable: URL, arguments: [String])? {
         if let script = resolveJRCScript(),
            let python = locate("python3") ?? locate("python") {

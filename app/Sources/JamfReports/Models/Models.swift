@@ -36,7 +36,7 @@ struct Schedule: Identifiable, Sendable {
     }
     enum LastStatus: String, Sendable { case ok, warn, fail }
 
-    var id: String { "\(profile)/\(name)" }
+    var id: String { launchAgentLabel ?? "\(profile)/\(name)" }
     var name: String
     var profile: String
     var schedule: String
@@ -47,6 +47,7 @@ struct Schedule: Identifiable, Sendable {
     var lastStatus: LastStatus
     var artifacts: [String]
     var enabled: Bool
+    var launchAgentLabel: String? = nil
 }
 
 // MARK: - OS distribution

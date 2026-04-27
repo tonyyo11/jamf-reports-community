@@ -128,13 +128,18 @@ enum RunHistoryService {
             && parts[2] == "logs"
     }
 
-    /// Convert a plist label like `com.tonyyo.jrc.profile.daily-snapshot` → `"Daily Snapshot"`.
+    /// Convert a plist/log label like
+    /// `com.github.tonyyo11.jamf-reports-community.profile.daily-snapshot.out`
+    /// to `"Daily Snapshot"`.
     private static func humanName(from label: String) -> String {
-        let prefix = "com.tonyyo.jrc."
+        let prefix = "\(LaunchAgentWriter.labelPrefix)."
         guard label.hasPrefix(prefix) else { return label }
         let tail = String(label.dropFirst(prefix.count))
         guard let dot = tail.firstIndex(of: ".") else { return tail }
-        let slug = String(tail[tail.index(after: dot)...])
+        var slug = String(tail[tail.index(after: dot)...])
+        if slug.hasSuffix(".out") || slug.hasSuffix(".err") {
+            slug = String(slug.dropLast(4))
+        }
         return slug.replacingOccurrences(of: "-", with: " ").capitalized
     }
 

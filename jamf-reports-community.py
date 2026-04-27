@@ -713,6 +713,24 @@ def _default_launchagent_label(config: "Config") -> str:
     return f"{LAUNCHAGENT_LABEL_PREFIX}.{_filename_component(slug_source)}"
 
 
+def _validate_launchagent_label(value: str) -> str:
+    """Return a validated LaunchAgent label under this tool's namespace."""
+    label = str(value).strip()
+    prefix = f"{LAUNCHAGENT_LABEL_PREFIX}."
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+    if (
+        not label.startswith(prefix)
+        or label.endswith(".")
+        or ".." in label
+        or any(ch not in allowed for ch in label)
+    ):
+        raise SystemExit(
+            f"Error: LaunchAgent label must start with {prefix}"
+            " and contain only letters, numbers, dots, underscores, or hyphens."
+        )
+    return label
+
+
 def _launchagent_schedule_items(
     schedule: str,
     hour: int,
@@ -14814,6 +14832,7 @@ def _write_launchagent_plist(
     schedule_items: list[dict[str, int]],
     stdout_path: Path,
     stderr_path: Path,
+    disabled: bool = False,
 ) -> None:
     """Write a LaunchAgent plist for the supplied automation plan."""
     payload = {
@@ -14823,6 +14842,7 @@ def _write_launchagent_plist(
         "EnvironmentVariables": _launchagent_environment(),
         "StartCalendarInterval": schedule_items,
         "RunAtLoad": False,
+        "Disabled": disabled,
         "StandardOutPath": str(stdout_path),
         "StandardErrorPath": str(stderr_path),
     }
@@ -14831,16 +14851,23 @@ def _write_launchagent_plist(
         plistlib.dump(payload, fh, sort_keys=True)
 
 
-def _load_launchagent(plist_path: Path, label: str, run_now: bool) -> str:
-    """Bootstrap a LaunchAgent into the current GUI session."""
+def _unload_launchagent(label: str) -> str:
+    """Boot out a LaunchAgent label from the current GUI session if it is loaded."""
     target = f"gui/{os.getuid()}"
-    label_target = f"{target}/{label}"
     subprocess.run(
-        ["launchctl", "bootout", target, str(plist_path)],
+        ["launchctl", "bootout", f"{target}/{label}"],
         capture_output=True,
         text=True,
         check=False,
     )
+    return target
+
+
+def _load_launchagent(plist_path: Path, label: str, run_now: bool) -> str:
+    """Bootstrap a LaunchAgent into the current GUI session."""
+    target = f"gui/{os.getuid()}"
+    label_target = f"{target}/{label}"
+    _unload_launchagent(label)
     try:
         subprocess.run(
             ["launchctl", "bootstrap", target, str(plist_path)],
@@ -15051,6 +15078,7 @@ def cmd_launchagent_setup(
     notify_url: Optional[str],
     skip_load: bool,
     run_now: bool,
+    disabled: bool,
 ) -> None:
     """Interactively create and optionally load a LaunchAgent automation job."""
     config_path = _require_existing_config_path(config_path_value)
@@ -15091,7 +15119,7 @@ def cmd_launchagent_setup(
         launchagents_dir or str(Path.home() / "Library" / "LaunchAgents"),
         automation_root,
     )
-    job_label = label or _default_launchagent_label(config)
+    job_label = _validate_launchagent_label(label or _default_launchagent_label(config))
     job_slug = _filename_component(job_label)
     automation_dir = automation_root / "automation"
     logs_dir = automation_dir / "logs"
@@ -15131,6 +15159,7 @@ def cmd_launchagent_setup(
         schedule_items,
         stdout_path,
         stderr_path,
+        disabled,
     )
 
     print("\nLaunchAgent setup summary")
@@ -15156,12 +15185,19 @@ def cmd_launchagent_setup(
     print(f"  stdout log: {stdout_path}")
     print(f"  stderr log: {stderr_path}")
     print(f"  status file: {status_path}")
+    if disabled:
+        print("  enabled: false")
     print(f"  command: {shlex.join(program_arguments)}")
     isolation_guidance = _profile_isolation_guidance(config)
     if isolation_guidance:
         print("  profile isolation guidance:")
         for item in isolation_guidance:
             print(f"    - {item}")
+
+    if disabled:
+        target = _unload_launchagent(job_label)
+        print(f"  LaunchAgent written disabled and unloaded from launchd target: {target}")
+        return
 
     if skip_load:
         print("  LaunchAgent not loaded (--skip-load).")
@@ -15998,6 +16034,11 @@ def main() -> None:
         help="Kickstart the LaunchAgent immediately after loading it",
     )
     parser.add_argument(
+        "--disabled",
+        action="store_true",
+        help="Write the LaunchAgent disabled and unload any existing instance",
+    )
+    parser.add_argument(
         "--seed-config",
         help="Seed config path for workspace-init; defaults to config.example.yaml when absent",
     )
@@ -16109,6 +16150,7 @@ def main() -> None:
             args.notify,
             args.skip_load,
             args.run_now,
+            args.disabled,
         )
     elif args.command == "launchagent-run":
         if not args.mode:

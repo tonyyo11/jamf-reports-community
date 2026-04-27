@@ -36,6 +36,9 @@ struct SchedulesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
+                if let message = workspace.launchAgentCleanupMessage {
+                    legacyCleanupBanner(message)
+                }
                 profileFilterStrip
                 nextUpCallout
                 schedulesTable
@@ -92,6 +95,19 @@ struct SchedulesView: View {
                     }
                 }
             )
+        }
+    }
+
+    private func legacyCleanupBanner(_ message: String) -> some View {
+        GlassPane(borderColor: Theme.Colors.warn.opacity(0.35)) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.Colors.warn)
+                Text(message)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Theme.Colors.fg2)
+                Spacer()
+            }
         }
     }
 
@@ -310,11 +326,6 @@ struct SchedulesView: View {
 
     private func toggleSchedule(_ schedule: Schedule) async {
         guard let idx = workspace.schedules.firstIndex(where: { $0.id == schedule.id }) else { return }
-        guard let jrcPath = bridge.locate("jrc") else {
-            writeError = "Schedules require the `jrc` shim on PATH. Install it with `brew install tonyyo11/jrc/jrc` or copy the script to /usr/local/bin/jrc."
-            showWriteError = true
-            return
-        }
 
         let original = workspace.schedules[idx].enabled
         guard let agentLabel = LaunchAgentWriter.label(for: workspace.schedules[idx]) else {
@@ -325,21 +336,17 @@ struct SchedulesView: View {
         workspace.schedules[idx].enabled.toggle()
         let nowEnabled = workspace.schedules[idx].enabled
 
-        do {
-            _ = try LaunchAgentWriter.write(workspace.schedules[idx], jrcPath: jrcPath)
-        } catch {
-            workspace.schedules[idx].enabled = original
-            writeError = error.localizedDescription; showWriteError = true
-            return
-        }
-
-        let exitCode = nowEnabled
-            ? await LaunchAgentWriter.load(agentLabel)
-            : await LaunchAgentWriter.unload(agentLabel)
+        let exitCode = await bridge.setupLaunchAgent(
+            workspace.schedules[idx],
+            load: nowEnabled
+        ) { _ in }
 
         if exitCode != 0 {
             workspace.schedules[idx].enabled = original
-            _ = try? LaunchAgentWriter.write(workspace.schedules[idx], jrcPath: jrcPath)
+            writeError = "Could not update LaunchAgent \(agentLabel) · exit \(exitCode)"
+            showWriteError = true
+        } else {
+            workspace.reloadFromDisk()
         }
     }
 
@@ -361,21 +368,13 @@ struct SchedulesView: View {
     }
 
     private func saveSchedule(_ form: ScheduleFormState) async {
-        guard let jrcPath = bridge.locate("jrc") else {
-            writeError = "Schedules require the `jrc` shim on PATH. Install it with `brew install tonyyo11/jrc/jrc` or copy the script to /usr/local/bin/jrc."
-            showWriteError = true; return
-        }
         let schedule = form.toSchedule()
-        do {
-            _ = try LaunchAgentWriter.write(schedule, jrcPath: jrcPath)
-            if schedule.enabled {
-                if let label = LaunchAgentWriter.label(for: schedule) {
-                    _ = await LaunchAgentWriter.load(label)
-                }
-            }
+        let exitCode = await bridge.setupLaunchAgent(schedule, load: schedule.enabled) { _ in }
+        if exitCode == 0 {
             workspace.reloadFromDisk()
-        } catch {
-            writeError = error.localizedDescription; showWriteError = true
+        } else {
+            writeError = "Could not create LaunchAgent · exit \(exitCode)"
+            showWriteError = true
         }
     }
 

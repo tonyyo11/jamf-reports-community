@@ -64,6 +64,10 @@ versions in this repository map to git tags.
   initialization, LaunchAgent labels, and live-mode trends so invalid profile or
   schedule names are rejected consistently and live users are not shown synthetic
   compliance-band chart data.
+- The macOS app now delegates scheduled-run LaunchAgent creation to Python's
+  `launchagent-setup`, using the shared status-file, log, CSV inbox, and
+  `com.github.tonyyo11.jamf-reports-community.*` plist format; old
+  `com.tonyyo.jrc.*` app-generated plists are removed on launch.
 
 ## [1.3.0] - 2026-04-24
 

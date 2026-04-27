@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import plistlib
 from pathlib import Path
 
 import pytest
@@ -166,3 +167,83 @@ def test_cmd_html_archives_older_timestamped_outputs(
     archived_names = {path.name for path in archive_dir.glob("*.html")}
     assert older_one.name in archived_names
     assert older_two.name in archived_names
+
+
+@pytest.mark.integration
+def test_launchagent_setup_writes_disabled_python_owned_plist(
+    config_factory,
+    tmp_path: Path,
+    monkeypatch,
+    jrc,
+) -> None:
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["profile"] = "dummy"
+    workspace_dir = tmp_path / "workspace"
+    agents_dir = tmp_path / "agents"
+    monkeypatch.setattr(jrc, "_unload_launchagent", lambda _label: "gui/test")
+
+    jrc.cmd_launchagent_setup(
+        config,
+        str(config.path),
+        None,
+        "csv-assisted",
+        "daily",
+        "06:15",
+        None,
+        None,
+        str(workspace_dir),
+        str(agents_dir),
+        None,
+        None,
+        None,
+        None,
+        True,
+        False,
+        True,
+    )
+
+    label = "com.github.tonyyo11.jamf-reports-community.dummy"
+    plist_path = agents_dir / f"{label}.plist"
+    payload = plistlib.loads(plist_path.read_bytes())
+
+    assert payload["Label"] == label
+    assert payload["Disabled"] is True
+    assert payload["StartCalendarInterval"] == [{"Hour": 6, "Minute": 15}]
+    assert payload["WorkingDirectory"] == str(config.base_dir)
+    assert payload["StandardOutPath"] == str(
+        workspace_dir / "automation" / "logs" / f"{label}.out.log"
+    )
+    assert payload["StandardErrorPath"] == str(
+        workspace_dir / "automation" / "logs" / f"{label}.err.log"
+    )
+    args = payload["ProgramArguments"]
+    assert "launchagent-run" in args
+    assert ["--mode", "csv-assisted"] == args[args.index("--mode") : args.index("--mode") + 2]
+    assert str(workspace_dir / "automation" / f"{label}_status.json") in args
+    assert str(workspace_dir / "csv-inbox") in args
+
+
+def test_launchagent_setup_rejects_legacy_swift_label(config_factory, tmp_path: Path, jrc) -> None:
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["profile"] = "dummy"
+
+    with pytest.raises(SystemExit, match="LaunchAgent label must start"):
+        jrc.cmd_launchagent_setup(
+            config,
+            str(config.path),
+            "com.tonyyo.jrc.dummy.daily",
+            "jamf-cli-only",
+            "daily",
+            "06:15",
+            None,
+            None,
+            str(tmp_path / "workspace"),
+            str(tmp_path / "agents"),
+            None,
+            None,
+            None,
+            None,
+            True,
+            False,
+            False,
+        )

@@ -32,8 +32,9 @@ enum ProfileService {
 
     /// `^[a-z0-9][a-z0-9._-]*$` — the regex from the design handoff. Profile
     /// names are used in path construction (`~/Jamf-Reports/<name>/`) and
-    /// LaunchAgent labels (`com.tonyyo.jrc.<name>.…`); a permissive pattern
-    /// would let attackers slip in path traversal or arbitrary plist labels.
+    /// LaunchAgent labels (`com.github.tonyyo11.jamf-reports-community.<name>.…`);
+    /// a permissive pattern would let attackers slip in path traversal or
+    /// arbitrary plist labels.
     static func isValid(_ name: String) -> Bool {
         guard let first = name.first, first.isLowercase || first.isNumber else { return false }
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
