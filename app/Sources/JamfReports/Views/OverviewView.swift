@@ -178,7 +178,7 @@ struct OverviewView: View {
             workspace.reloadFromDisk()
         }
         if exit == 0 && !workspace.demoMode {
-            trendStore.load(profile: workspace.profile, range: .w12)
+            trendStore.reload()
         }
     }
 

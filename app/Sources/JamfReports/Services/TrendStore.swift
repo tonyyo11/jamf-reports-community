@@ -9,20 +9,39 @@ import Observation
 
     func load(profile: String, range: TrendRange) {
         if profile != currentProfile {
-            // Validate at the boundary — string-interpolating an unvalidated profile
-            // into a path component is a traversal vector.
-            if let workspace = ProfileService.workspaceURL(for: profile) {
-                let summariesDir = workspace
-                    .appendingPathComponent("snapshots/summaries", isDirectory: true)
-                allSummaries = SummaryJSONParser.parseDirectory(summariesDir)
-            } else {
-                allSummaries = []
-            }
+            allSummaries = readSummaries(profile: profile)
             currentProfile = profile
         }
 
         currentRange = range
         filterSummaries(range: range)
+    }
+
+    /// Force a re-scan of the on-disk summaries directory for the active
+    /// profile. The cheap `load(profile:range:)` short-circuits when the
+    /// profile is unchanged; callers that just generated a new summary use
+    /// `reload()` to invalidate that cache.
+    func reload() {
+        guard let profile = currentProfile else { return }
+        allSummaries = readSummaries(profile: profile)
+        filterSummaries(range: currentRange)
+    }
+
+    /// Read summaries from the configured `charts.historical_csv_dir/summaries`
+    /// (or the workspace fallback if config is unavailable).
+    private func readSummaries(profile: String) -> [DailySummary] {
+        // Validate at the boundary — string-interpolating an unvalidated profile
+        // into a path component is a traversal vector.
+        guard let summariesDir = WorkspacePaths.summariesDir(for: profile)
+            ?? fallbackSummariesDir(for: profile) else {
+            return []
+        }
+        return SummaryJSONParser.parseDirectory(summariesDir)
+    }
+
+    private func fallbackSummariesDir(for profile: String) -> URL? {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
+        return workspace.appendingPathComponent("snapshots/summaries", isDirectory: true)
     }
 
     private func filterSummaries(range: TrendRange) {
@@ -37,7 +56,7 @@ import Observation
             case .all: return nil
             }
         }()
-        
+
         if let count = count {
             // Take newest N, then back to ascending for display
             filteredSummaries = Array(sorted.prefix(count)).reversed()
