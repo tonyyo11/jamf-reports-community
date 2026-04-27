@@ -179,6 +179,10 @@ final class CLIBridge {
     }
 
     nonisolated func validateConnection(profile: String, onLine: @Sendable @escaping (LogLine) -> Void) async -> Int32 {
+        guard ProfileService.isValid(profile) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            return -1
+        }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             return -1

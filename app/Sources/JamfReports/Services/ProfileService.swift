@@ -125,10 +125,9 @@ enum ProfileService {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
 
-        return decoded
-            .filter { isValid($0.name) }
-            .map { item in
-                JamfCLIProfile(
+        return decoded.map { item in
+            if isValid(item.name) {
+                return JamfCLIProfile(
                     name: item.name,
                     url: displayURL(item.url),
                     schedules: scheduleCounts[item.name] ?? 0,
@@ -137,6 +136,18 @@ enum ProfileService {
                     isDefault: item.isDefault
                 )
             }
+            // Surface invalid-named profiles so the user can see why they
+            // appear missing. They cannot be selected for workspace use until
+            // renamed in jamf-cli (see SettingsView for greyed-out rendering).
+            return JamfCLIProfile(
+                name: item.name,
+                url: displayURL(item.url),
+                schedules: 0,
+                status: .error,
+                authMethod: "(unsupported name — rename in jamf-cli)",
+                isDefault: false
+            )
+        }
     }
 
     private static func fallbackConfigProfiles(scheduleCounts: [String: Int]) -> [JamfCLIProfile] {

@@ -1105,18 +1105,28 @@ def _finish_command_summary(summary: dict[str, Any], status: str = "ok") -> dict
 
 
 def _write_summary_json(path_value: Optional[str], summary: dict[str, Any]) -> None:
-    """Atomically write a command summary JSON file when requested."""
+    """Atomically write a command summary JSON file when requested.
+
+    Uses ``tempfile.NamedTemporaryFile`` so concurrent calls from the same
+    process can't collide on a pid-based filename, and so an interrupted write
+    leaves a `.tmp` sibling rather than a partial real file.
+    """
     if not path_value:
         return
     path = Path(path_value).expanduser()
+    tmp_path: Optional[Path] = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        with open(tmp_path, "w", encoding="utf-8") as fh:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", delete=False, dir=str(path.parent), suffix=".tmp"
+        ) as fh:
             json.dump(summary, fh, indent=2, sort_keys=True)
             fh.write("\n")
+            tmp_path = Path(fh.name)
         os.replace(tmp_path, path)
     except OSError as exc:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
         print(f"[warning] could not write summary JSON {path}: {exc}")
 
 
@@ -2118,13 +2128,22 @@ def _emit_summary_json(config: Config, csv_dash: Optional[CSVDashboard], bridge:
 
 
 def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: Dict[str, Any]) -> None:
-    """Atomically write a summary.json under summaries_dir."""
+    """Atomically write a summary.json under summaries_dir.
+
+    Uses a `.tmp` suffix so an interrupted write doesn't leave a stray `.json`
+    sibling that downstream readers might mistake for a real summary.
+    """
+    temp_path: Optional[Path] = None
     try:
-        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(summaries_dir), suffix=".json") as tf:
+        with tempfile.NamedTemporaryFile(
+            "w", delete=False, dir=str(summaries_dir), suffix=".tmp"
+        ) as tf:
             json.dump(data, tf, indent=2)
             temp_path = Path(tf.name)
         temp_path.replace(summary_file)
     except Exception as exc:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
         print(f"  [warn] Could not emit summary.json: {exc}")
 
 
@@ -2137,8 +2156,10 @@ def _build_summary_from_bridge(
 
     Pure-CLI users still need historical trend data. We mine the same JSON snapshots
     that CoreDashboard already consumes (security, inventory-summary, device-compliance,
-    patch-status). Metrics that require CSV-only data (CrowdStrike agent column, etc.)
-    are emitted as 0.0 — TrendStore renders them as missing series rather than failing.
+    patch-status). Metrics that require CSV-only data (compliance failure counts,
+    CrowdStrike agent column) are omitted from the emitted JSON — TrendStore decodes
+    them as nil and skips them, rather than rendering a flat 0% line that users could
+    mistake for a real reading.
     """
     if not bridge or not bridge.is_available():
         return None
@@ -2216,10 +2237,8 @@ def _build_summary_from_bridge(
         "date": date_str,
         "totalDevices": int(total_devices),
         "fileVaultPct": round(fv_pct, 1),
-        "compliancePct": 0.0,
         "staleCount": int(stale_count),
         "osCurrentPct": round(os_pct, 1),
-        "crowdstrikePct": 0.0,
         "patchPct": round(patch_pct, 1),
         "source": "jamf-cli",
     }
