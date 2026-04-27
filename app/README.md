@@ -11,7 +11,7 @@ in Xcode 16+ for previews and runtime, or build from the command line with `swif
 ## Status
 
 - **Build target:** macOS 14+ (Sonoma), Swift 6
-- **State:** scaffold + all 11 screens implemented against the design handoff (Meridian
+- **State:** scaffold + all 12 screens implemented against the design handoff (Meridian
   Health demo data). CLI bridge wired to `Process` but `LaunchAgent` round-trip,
   config.yaml read/write, and live trend data parsing are TODO.
 
@@ -78,6 +78,7 @@ app/
 │   │   ├── DevicesView.swift
 │   │   ├── TrendsView.swift            # ★ hero feature
 │   │   ├── ReportsView.swift
+│   │   ├── BackupsView.swift
 │   │   ├── SchedulesView.swift
 │   │   ├── RunsView.swift
 │   │   ├── ConfigView.swift
@@ -103,13 +104,16 @@ app/
 
 ## What's wired up
 
-✅ All 11 screens render from demo data
+✅ All 12 screens render from demo data
 ✅ Devices screen reads current workspace inventory and cached patch/compliance data
+- Backups screen lists per-profile backups and wraps `jrc backup` / `jamf-cli pro diff`
 ✅ Sidebar collapse (expanded / compact / hidden) with `⌘0`
 ✅ Profile switcher chip and local workspace discovery (`~/Jamf-Reports/*/config.yaml`)
+✅ Active app profile is passed through every `jrc` / `jamf-cli` operation
+✅ Fresh workspaces can collect and generate from jamf-cli only, with no CSV/history
 ✅ Swift Charts for the Trends hero, multi-line comparison, stacked compliance bands
-✅ `CLIBridge` discovers `jrc` / `jamf-cli` on PATH and runs subprocesses with
-   live stdout streaming
+✅ `CLIBridge` prefers the bundled Python script, falls back to `jrc`, and runs
+   subprocesses with live stdout streaming
 ✅ `SystemActions` for "Reveal in Finder" and "Open Report" with secure path validation
 ✅ `LaunchAgentService` for discovering and parsing existing scheduled jobs
 

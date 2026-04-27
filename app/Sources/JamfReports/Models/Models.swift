@@ -109,6 +109,19 @@ struct Report: Identifiable, Sendable {
     let devices: Int
 }
 
+struct BackupRecord: Identifiable, Sendable, Hashable {
+    var id: String { name }
+    let name: String
+    let label: String
+    let created: Date
+    let sizeBytes: Int64
+    let fileCount: Int
+    let url: URL
+
+    var createdLabel: String { FileDisplay.date(created) }
+    var sizeLabel: String { FileDisplay.size(sizeBytes) }
+}
+
 // MARK: - Sheet catalog (for Customize screen)
 
 struct SheetGroup: Identifiable, Sendable {
@@ -386,6 +399,198 @@ struct DeviceInventorySnapshot: Sendable {
                     colorHex: colors[idx % colors.count]
                 )
             }
+    }
+}
+
+struct DeviceDetail: Identifiable, Sendable {
+    var id: String { lookupID }
+    let lookupID: String
+    let title: String
+    let sections: [DeviceDetailSection]
+    let warnings: [String]
+
+    static func decode(from data: Data, lookupID: String) throws -> DeviceDetail {
+        let object = try JSONSerialization.jsonObject(with: data)
+        let sections = buildSections(from: object)
+        return DeviceDetail(
+            lookupID: lookupID,
+            title: lookupID.isEmpty ? "Device Detail" : lookupID,
+            sections: sections,
+            warnings: sections.isEmpty ? ["jamf-cli returned no displayable detail rows."] : []
+        )
+    }
+}
+
+struct DeviceDetailSection: Identifiable, Sendable {
+    var id: String { title }
+    let title: String
+    let items: [DeviceDetailItem]
+}
+
+struct DeviceDetailItem: Identifiable, Sendable {
+    let id: UUID
+    let label: String
+    let value: String
+    let note: String
+
+    init(label: String, value: String, note: String = "") {
+        self.id = UUID()
+        self.label = label
+        self.value = value
+        self.note = note
+    }
+}
+
+private extension DeviceDetail {
+    static func buildSections(from object: Any) -> [DeviceDetailSection] {
+        var grouped: [String: [DeviceDetailItem]] = [:]
+        var order: [String] = []
+
+        func append(_ section: String, _ item: DeviceDetailItem) {
+            let title = cleaned(section).isEmpty ? "Details" : cleaned(section)
+            if grouped[title] == nil { order.append(title) }
+            grouped[title, default: []].append(item)
+        }
+
+        if let rows = object as? [[String: Any]] {
+            appendRows(rows, defaultSection: "Details", append: append)
+        } else if let dict = object as? [String: Any] {
+            appendDictionary(dict, append: append)
+        }
+
+        return order.compactMap { title in
+            guard let items = grouped[title], !items.isEmpty else { return nil }
+            return DeviceDetailSection(title: title, items: items)
+        }
+    }
+
+    static func appendDictionary(
+        _ dict: [String: Any],
+        append: (String, DeviceDetailItem) -> Void
+    ) {
+        for key in dict.keys.sorted() {
+            guard !metadataKeys.contains(key) else { continue }
+            let value = dict[key]
+            if let rows = value as? [[String: Any]] {
+                appendRows(rows, defaultSection: titleLabel(key), append: append)
+            } else if let nested = value as? [String: Any] {
+                appendNested(nested, section: titleLabel(key), prefix: "", append: append)
+            } else {
+                let display = displayValue(value)
+                if !display.isEmpty {
+                    append("Details", DeviceDetailItem(label: titleLabel(key), value: display))
+                }
+            }
+        }
+    }
+
+    static func appendNested(
+        _ dict: [String: Any],
+        section: String,
+        prefix: String,
+        append: (String, DeviceDetailItem) -> Void
+    ) {
+        for key in dict.keys.sorted() {
+            guard !metadataKeys.contains(key) else { continue }
+            let label = prefix.isEmpty ? titleLabel(key) : "\(prefix) / \(titleLabel(key))"
+            let value = dict[key]
+            if let nested = value as? [String: Any] {
+                appendNested(nested, section: section, prefix: label, append: append)
+            } else {
+                let display = displayValue(value)
+                if !display.isEmpty {
+                    append(section, DeviceDetailItem(label: label, value: display))
+                }
+            }
+        }
+    }
+
+    static func appendRows(
+        _ rows: [[String: Any]],
+        defaultSection: String,
+        append: (String, DeviceDetailItem) -> Void
+    ) {
+        for row in rows {
+            let section = firstString(row, ["section", "category", "group", "type"]) ?? defaultSection
+            let label = firstString(row, ["resource", "name", "label", "field", "key", "title"])
+                ?? fallbackLabel(row)
+            let value = firstString(row, ["value", "status", "result", "state", "last_action", "date"])
+                ?? fallbackValue(row)
+            let note = firstString(row, ["detail", "details", "message", "updated", "timestamp"]) ?? ""
+            let labelText = label ?? ""
+            let valueText = value ?? ""
+
+            if !labelText.isEmpty || !valueText.isEmpty {
+                append(
+                    section,
+                    DeviceDetailItem(
+                        label: labelText.isEmpty ? "Value" : labelText,
+                        value: valueText.isEmpty ? "N/A" : valueText,
+                        note: note
+                    )
+                )
+            } else if let data = row["data"] as? [String: Any] {
+                appendNested(data, section: section, prefix: "", append: append)
+            }
+        }
+    }
+
+    static func fallbackLabel(_ row: [String: Any]) -> String? {
+        for key in row.keys.sorted() where !metadataKeys.contains(key) {
+            if displayValue(row[key]).isEmpty { continue }
+            return titleLabel(key)
+        }
+        return nil
+    }
+
+    static func fallbackValue(_ row: [String: Any]) -> String? {
+        for key in row.keys.sorted() where !metadataKeys.contains(key) {
+            let value = displayValue(row[key])
+            if !value.isEmpty { return value }
+        }
+        return nil
+    }
+
+    static func firstString(_ row: [String: Any], _ keys: [String]) -> String? {
+        for key in keys {
+            let value = displayValue(row[key])
+            if !value.isEmpty { return value }
+        }
+        return nil
+    }
+
+    static func displayValue(_ value: Any?) -> String {
+        switch value {
+        case let value as String:
+            return cleaned(value)
+        case let value as Bool:
+            return value ? "true" : "false"
+        case let value as NSNumber:
+            return value.stringValue
+        case let value as [Any]:
+            return value.isEmpty ? "" : "\(value.count) items"
+        case let value as [String: Any]:
+            return value.isEmpty ? "" : "\(value.count) fields"
+        default:
+            return ""
+        }
+    }
+
+    static func titleLabel(_ value: String) -> String {
+        cleaned(value)
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { word in word.prefix(1).uppercased() + word.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    static func cleaned(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static var metadataKeys: Set<String> {
+        ["section", "category", "group", "type", "data"]
     }
 }
 

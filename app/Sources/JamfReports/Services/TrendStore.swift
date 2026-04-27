@@ -65,8 +65,12 @@ import Observation
         }
     }
 
+    /// Series values for `metric`. Optional metrics (compliance, crowdstrike)
+    /// are omitted when nil — bridge-mode summaries don't include them, and
+    /// rendering them as 0% would be misleading. Non-optional metrics return a
+    /// value for every summary.
     func values(metric: TrendSeries.Metric) -> [Double] {
-        filteredSummaries.map { summary in
+        filteredSummaries.compactMap { summary -> Double? in
             switch metric {
             case .activeDevices: return Double(summary.totalDevices)
             case .compliance:  return summary.compliancePct

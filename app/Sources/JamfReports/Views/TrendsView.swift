@@ -380,12 +380,37 @@ struct TrendsView: View {
         }
     }
 
+    @ViewBuilder
     private var stackedBandsChart: some View {
+        if workspaceStore.demoMode {
+            stackedBandsSyntheticChart
+        } else {
+            stackedBandsPlaceholder
+        }
+    }
+
+    private var stackedBandsPlaceholder: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 22))
+                .foregroundStyle(Theme.Colors.fgMuted)
+            Text("Per-band data not yet available")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.Colors.fg2)
+            Text("Coming when Python emits per-band summaries")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.Colors.fgMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 200)
+    }
+
+    private var stackedBandsSyntheticChart: some View {
         // Synthesize a 26-week stacked compliance band evolution, keyed off the
         // current trendDates so it animates with the same index used elsewhere.
         let weeks = trendDates.enumerated().map { idx, date in
             let t = Double(idx) / Double(max(trendDates.count - 1, 1))
-            let base = workspaceStore.demoMode ? 524.0 : Double(trendStore.filteredSummaries[safe: idx]?.totalDevices ?? 500)
+            let base = 524.0
             let pass    = Int((base * (0.35 + 0.1 * t)).rounded())
             let low     = Int((base * (0.35 - 0.05 * t)).rounded())
             let medLow  = Int((base * (0.15 - 0.05 * t)).rounded())

@@ -95,7 +95,10 @@ struct OnboardingView: View {
 
     private var stepHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Kicker(text: "Step \(flow.currentStep.number) of 6 - \(flow.currentStep.label)", tone: .gold)
+            Kicker(
+                text: "Step \(flow.currentStep.number) of \(OnboardingFlow.Step.allCases.count) - \(flow.currentStep.label)",
+                tone: .gold
+            )
             Text(headerTitle)
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
@@ -112,6 +115,7 @@ struct OnboardingView: View {
         case .installCLI: "Install the Jamf CLI."
         case .workspace: "Name the workspace."
         case .authenticate: "Connect to Jamf Pro."
+        case .validate: "Validate the profile."
         case .csvMapping: "Map your first CSV export."
         case .firstReport: "Generate the first report."
         }
@@ -127,6 +131,8 @@ struct OnboardingView: View {
             "The profile name becomes both the jamf-cli profile id and the folder under ~/Jamf-Reports."
         case .authenticate:
             "Jamf Reports passes the API client secret to jamf-cli over stdin and clears the field after the profile add command returns."
+        case .validate:
+            "jamf-cli validates the saved profile before report setup continues."
         case .csvMapping:
             "CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop, then jrc scaffold writes the workspace config."
         case .firstReport:
@@ -145,10 +151,40 @@ struct OnboardingView: View {
             workspaceStep
         case .authenticate:
             authenticateStep
+        case .validate:
+            validateStep
         case .csvMapping:
             csvMappingStep
         case .firstReport:
             firstReportStep
+        }
+    }
+
+    private var validateStep: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Card(padding: 18) {
+                HStack(spacing: 12) {
+                    Image(systemName: flow.connectionValidated ? "checkmark.circle.fill" : "network.badge.shield.half.filled")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(flow.connectionValidated ? Theme.Colors.ok : Theme.Colors.goldBright)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Validate profile \(flow.profileName.trimmedForView)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.fg)
+                        Mono(text: "jamf-cli -p \(flow.profileName.trimmedForView) config validate", size: 11.5)
+                    }
+                    Spacer()
+                    if let exit = flow.validationExitCode {
+                        Pill(text: "EXIT \(exit)", tone: exit == 0 ? .teal : .danger)
+                    }
+                }
+            }
+
+            logViewer(
+                title: flow.isValidatingConnection ? "jamf-cli validate running" : "jamf-cli validate output",
+                lines: flow.validationOutput,
+                exitCode: flow.validationExitCode
+            )
         }
     }
 
@@ -400,7 +436,7 @@ struct OnboardingView: View {
                 flow.previousStep()
             }
             .disabled(flow.currentStep == .welcome || flow.isRegisteringProfile ||
-                      flow.isScaffoldingCSV || flow.isRunningFirstReport)
+                      flow.isValidatingConnection || flow.isScaffoldingCSV || flow.isRunningFirstReport)
             .opacity(flow.currentStep == .welcome ? 0.45 : 1)
 
             Spacer()
@@ -424,6 +460,8 @@ struct OnboardingView: View {
         case .installCLI: "Next"
         case .workspace: "Create workspace"
         case .authenticate: flow.isRegisteringProfile ? "Verifying" : "Verify & continue"
+        case .validate:
+            if flow.isValidatingConnection { "Validating" } else { flow.connectionValidated ? "Continue" : "Validate" }
         case .csvMapping: flow.isScaffoldingCSV ? "Mapping" : "Continue"
         case .firstReport: flow.isRunningFirstReport ? "Running" : "Run now"
         }
@@ -435,6 +473,7 @@ struct OnboardingView: View {
         case .installCLI: "checkmark"
         case .workspace: "folder.badge.plus"
         case .authenticate: "checkmark"
+        case .validate: flow.connectionValidated ? "arrow.right" : "network.badge.shield.half.filled"
         case .csvMapping: "arrow.right"
         case .firstReport: "play.fill"
         }
@@ -458,6 +497,14 @@ struct OnboardingView: View {
                     flow.nextStep()
                 } catch {
                     flow.lastError = error.localizedDescription
+                }
+            }
+        case .validate:
+            if flow.connectionValidated {
+                flow.nextStep()
+            } else {
+                Task {
+                    await flow.validateRegisteredProfile()
                 }
             }
         case .csvMapping:

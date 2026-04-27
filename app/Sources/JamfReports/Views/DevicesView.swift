@@ -10,6 +10,16 @@ struct DevicesView: View {
     @State private var staleDays = 30
     @State private var osFilter: String?
     @State private var isLoading = false
+    @State private var deviceDetail: DeviceDetail?
+    @State private var deviceDetailState: DeviceDetailState = .idle
+    @State private var deviceDetailRequestKey = ""
+
+    private enum DeviceDetailState: Equatable {
+        case idle
+        case loading
+        case loaded
+        case unavailable(String)
+    }
 
     private var activeSnapshot: DeviceInventorySnapshot {
         workspace.demoMode ? DemoData.deviceSnapshot : snapshot
@@ -66,6 +76,15 @@ struct DevicesView: View {
         return filteredDevices.first
     }
 
+    private var deviceDetailTaskID: String {
+        guard !workspace.demoMode,
+              let selectedDevice,
+              let lookup = detailLookupID(for: selectedDevice) else {
+            return "\(workspace.profile)|\(workspace.demoMode)|none"
+        }
+        return "\(workspace.profile)|\(lookup)"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -93,6 +112,9 @@ struct DevicesView: View {
         }
         .task(id: "\(workspace.profile)-\(workspace.demoMode)") {
             await reload()
+        }
+        .task(id: deviceDetailTaskID) {
+            await loadSelectedDeviceDetail()
         }
     }
 
@@ -290,6 +312,8 @@ struct DevicesView: View {
                         }
                     }
 
+                    liveDeviceDetailSection(for: device)
+
                     Divider().background(Theme.Colors.hairline)
                     HStack {
                         Mono(text: device.source)
@@ -308,6 +332,90 @@ struct DevicesView: View {
                         .font(.system(size: 12.5))
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func liveDeviceDetailSection(for device: DeviceInventoryRecord) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionHeader(title: "jamf-cli Detail")
+                Spacer()
+                if workspace.demoMode {
+                    Pill(text: "Live mode only", tone: .muted)
+                } else if case .loaded = deviceDetailState {
+                    Pill(text: "Loaded", tone: .teal, icon: "checkmark")
+                }
+            }
+
+            if workspace.demoMode {
+                Text("Available in live mode only.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            } else {
+                switch deviceDetailState {
+                case .idle:
+                    Text("Select a device to load jamf-cli detail.")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                case .loading:
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading device detail...")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                case .loaded:
+                    if let deviceDetail {
+                        jamfDetailSections(deviceDetail)
+                    }
+                case .unavailable(let message):
+                    Text(message)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.Colors.warn)
+                }
+            }
+        }
+    }
+
+    private func jamfDetailSections(_ detail: DeviceDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(detail.sections.prefix(5)) { section in
+                VStack(alignment: .leading, spacing: 6) {
+                    SectionHeader(title: section.title)
+                    ForEach(section.items.prefix(8)) { item in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(item.label)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .frame(width: 112, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.value)
+                                    .font(.system(size: 12.2))
+                                    .foregroundStyle(Theme.Colors.fg2)
+                                    .lineLimit(3)
+                                if !item.note.isEmpty {
+                                    Mono(text: item.note, size: 10.5, color: Theme.Colors.fgMuted)
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    if section.items.count > 8 {
+                        Mono(text: "+ \(section.items.count - 8) more", size: 10.5)
+                    }
+                }
+            }
+            if detail.sections.count > 5 {
+                Mono(text: "+ \(detail.sections.count - 5) more sections", size: 10.5)
+            }
+            ForEach(detail.warnings, id: \.self) { warning in
+                Text(warning)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.Colors.warn)
             }
         }
     }
@@ -503,5 +611,55 @@ struct DevicesView: View {
             selectedID = loaded.devices.first?.id
         }
         isLoading = false
+    }
+
+    private func loadSelectedDeviceDetail() async {
+        guard !workspace.demoMode else {
+            deviceDetail = nil
+            deviceDetailState = .idle
+            return
+        }
+        guard let device = selectedDevice else {
+            deviceDetail = nil
+            deviceDetailState = .idle
+            return
+        }
+        guard let lookup = detailLookupID(for: device) else {
+            deviceDetail = nil
+            deviceDetailState = .unavailable("Device detail needs a serial number or device name.")
+            return
+        }
+
+        let profile = workspace.profile
+        let requestKey = "\(profile)|\(lookup)"
+        deviceDetailRequestKey = requestKey
+        deviceDetail = nil
+        deviceDetailState = .loading
+
+        guard let data = await CLIBridge().deviceDetail(profile: profile, deviceID: lookup) else {
+            if deviceDetailRequestKey == requestKey {
+                deviceDetailState = .unavailable("Device detail unavailable for \(lookup).")
+            }
+            return
+        }
+
+        do {
+            let decoded = try DeviceDetail.decode(from: data, lookupID: lookup)
+            if deviceDetailRequestKey == requestKey {
+                deviceDetail = decoded
+                deviceDetailState = .loaded
+            }
+        } catch {
+            if deviceDetailRequestKey == requestKey {
+                deviceDetailState = .unavailable("Could not decode device detail for \(lookup).")
+            }
+        }
+    }
+
+    private func detailLookupID(for device: DeviceInventoryRecord) -> String? {
+        let serial = device.serial.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !serial.isEmpty { return serial }
+        let name = device.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
 }

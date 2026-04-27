@@ -121,3 +121,43 @@ def test_school_collect_writes_summary_json(monkeypatch, tmp_path, jrc, fixtures
     assert payload["status"] == "ok"
     assert payload["counts"]["requested_snapshots"] == 9
     assert payload["counts"]["collected_snapshots"] == 9
+
+
+def test_build_summary_from_bridge_omits_csv_only_metrics(jrc, fixtures_root) -> None:
+    """Bridge-mode summaries omit fields that need CSV data.
+
+    `compliancePct` and `crowdstrikePct` cannot be derived from jamf-cli alone.
+    Emitting them as 0.0 produces a flat-line trend that users mistake for a
+    real reading. The Swift `DailySummary` decoder treats them as `Double?` and
+    `TrendStore` skips nil points; the Python side must therefore omit the keys
+    rather than emitting zeros.
+    """
+    config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
+
+    class StubBridge:
+        def is_available(self) -> bool:
+            return True
+
+        def security_report(self) -> list[dict[str, object]]:
+            return [{
+                "section": "summary",
+                "data": {"total_devices": 50, "filevault_encrypted_pct": "92.0%"},
+            }]
+
+        def inventory_summary(self) -> list[dict[str, object]]:
+            return [{"os_version": "15.7.3", "count": 50}]
+
+        def device_compliance(self) -> list[dict[str, object]]:
+            return [{"stale": True}, {"stale": False}]
+
+        def patch_status(self) -> list[dict[str, object]]:
+            return [{"compliance_pct": "80%"}]
+
+    summary = jrc._build_summary_from_bridge(config, StubBridge(), "2026-04-27")
+
+    assert summary is not None
+    assert summary["source"] == "jamf-cli"
+    assert "compliancePct" not in summary
+    assert "crowdstrikePct" not in summary
+    assert summary["totalDevices"] == 50
+    assert summary["fileVaultPct"] == 92.0

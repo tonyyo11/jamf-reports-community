@@ -60,6 +60,7 @@ struct ContentView: View {
         case .config:     ConfigView()
         case .customize:  CustomizeView()
         case .sources:    SourcesView()
+        case .backups:    BackupsView()
         case .settings:   SettingsView()
         case .onboarding: OnboardingView()
         }
@@ -75,6 +76,7 @@ struct ContentView: View {
         case .config:     "CONFIG.YAML"
         case .customize:  "SHEETS"
         case .sources:    "INPUTS"
+        case .backups:    "CONFIG SNAPSHOTS"
         case .settings:   "APP"
         case .onboarding: "FIRST RUN"
         case .reports:    nil

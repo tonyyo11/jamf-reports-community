@@ -157,6 +157,10 @@ If you use multiple jamf-cli profiles, set `jamf_cli.profile` in `config.yaml` t
 profile name you want this report to target. This is the same profile selected with
 `jamf-cli -p <name> ...`.
 
+You can also pass `--profile <name>` to Jamf Pro commands such as `generate`, `collect`,
+`html`, `inventory-csv`, `backup`, `check`, `device`, and `patch-managed`. That override
+is process-local and takes precedence over `jamf_cli.profile` in the config file.
+
 If a specific tenant has trouble with live overview collection, you can set
 `jamf_cli.allow_live_overview: false` to force Fleet Overview to use cached JSON only.
 
@@ -509,6 +513,7 @@ python3 jamf-reports-community.py generate \
 | `--csv` | none | Path to Jamf Pro CSV export (enables CSV sheets) |
 | `--out-file` | auto-named | Output path for the xlsx file. Timestamp appended by default if needed |
 | `--historical-csv-dir` | none | Directory of dated CSV snapshots for trend charts |
+| `--profile` | `jamf_cli.profile` | Runtime jamf-cli profile override for Jamf Pro commands |
 
 If you omit `--csv`, the workbook is built from jamf-cli data only unless a matching
 report family is enabled. `report_families.computers` is preferred; if no computer
@@ -550,6 +555,10 @@ for the blueprint, DDM, and optional benchmark sheets. The saved JSON files are 
 timestamped; the generated report outputs can also auto-archive older runs out of the
 active output folder.
 
+`collect` does not require a CSV or preexisting history. In a fresh workspace, it can
+bootstrap `jamf-cli-data/` from the selected Jamf Pro profile by saving inventory,
+security, compliance, app/update, group, package, script, and org metadata snapshots.
+
 When `report_families` is enabled, `collect` also archives the newest matching CSV for
 each enabled family into that family's `historical_dir`, even when `--csv` is omitted.
 
@@ -575,8 +584,10 @@ best for bootstrap and general inventory reporting. It is not a full replacement
 every possible Jamf Pro Advanced Search or every per-device field exposed by `jamf-cli
 pro device`.
 
-`inventory-csv` is a live-auth path. Unlike `generate`, it does not reuse cached JSON
-snapshots when jamf-cli auth is broken.
+`inventory-csv` uses live auth for the computer inventory list and writes that response
+to `jamf-cli-data/computers-list/`. Extension attribute results use the normal
+live-or-cached snapshot path; if EAs are temporarily unavailable, the command still
+writes the base inventory CSV and prints a warning.
 
 Hardware, OS, user/location, and standard security columns (FileVault, SIP, firewall,
 Gatekeeper, bootstrap token state) come directly from the inventory list response, so
@@ -590,6 +601,20 @@ inventory list response has the columns you need. Tune parallelism with
 If you want later commands to use `--csv inventory.csv`, create it explicitly with
 `inventory-csv --out-file inventory.csv`. If you omit `--out-file`, the export is written
 to `Generated Reports/` using the configured timestamp behavior.
+
+### `backup` — Snapshot Jamf Pro configuration objects
+
+```bash
+python3 jamf-reports-community.py backup \
+    [--config config.yaml] \
+    [--label before-change-window]
+```
+
+Runs `jamf-cli pro backup --format json` for the configured `jamf_cli.profile` and writes
+the result under `backups/<timestamp>-<label>/` next to the profile's `config.yaml`.
+Each backup includes a `manifest.json` with profile, timing, file count, byte size, and
+the exact jamf-cli command used. The macOS app's Backups screen can reveal these folders
+and compare two backups with `jamf-cli pro diff`.
 
 ### `workspace-init` — Create a per-profile workspace skeleton
 

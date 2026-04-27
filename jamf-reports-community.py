@@ -1105,18 +1105,28 @@ def _finish_command_summary(summary: dict[str, Any], status: str = "ok") -> dict
 
 
 def _write_summary_json(path_value: Optional[str], summary: dict[str, Any]) -> None:
-    """Atomically write a command summary JSON file when requested."""
+    """Atomically write a command summary JSON file when requested.
+
+    Uses ``tempfile.NamedTemporaryFile`` so concurrent calls from the same
+    process can't collide on a pid-based filename, and so an interrupted write
+    leaves a `.tmp` sibling rather than a partial real file.
+    """
     if not path_value:
         return
     path = Path(path_value).expanduser()
+    tmp_path: Optional[Path] = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        with open(tmp_path, "w", encoding="utf-8") as fh:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", delete=False, dir=str(path.parent), suffix=".tmp"
+        ) as fh:
             json.dump(summary, fh, indent=2, sort_keys=True)
             fh.write("\n")
+            tmp_path = Path(fh.name)
         os.replace(tmp_path, path)
     except OSError as exc:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
         print(f"[warning] could not write summary JSON {path}: {exc}")
 
 
@@ -2118,13 +2128,22 @@ def _emit_summary_json(config: Config, csv_dash: Optional[CSVDashboard], bridge:
 
 
 def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: Dict[str, Any]) -> None:
-    """Atomically write a summary.json under summaries_dir."""
+    """Atomically write a summary.json under summaries_dir.
+
+    Uses a `.tmp` suffix so an interrupted write doesn't leave a stray `.json`
+    sibling that downstream readers might mistake for a real summary.
+    """
+    temp_path: Optional[Path] = None
     try:
-        with tempfile.NamedTemporaryFile("w", delete=False, dir=str(summaries_dir), suffix=".json") as tf:
+        with tempfile.NamedTemporaryFile(
+            "w", delete=False, dir=str(summaries_dir), suffix=".tmp"
+        ) as tf:
             json.dump(data, tf, indent=2)
             temp_path = Path(tf.name)
         temp_path.replace(summary_file)
     except Exception as exc:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
         print(f"  [warn] Could not emit summary.json: {exc}")
 
 
@@ -2137,8 +2156,10 @@ def _build_summary_from_bridge(
 
     Pure-CLI users still need historical trend data. We mine the same JSON snapshots
     that CoreDashboard already consumes (security, inventory-summary, device-compliance,
-    patch-status). Metrics that require CSV-only data (CrowdStrike agent column, etc.)
-    are emitted as 0.0 — TrendStore renders them as missing series rather than failing.
+    patch-status). Metrics that require CSV-only data (compliance failure counts,
+    CrowdStrike agent column) are omitted from the emitted JSON — TrendStore decodes
+    them as nil and skips them, rather than rendering a flat 0% line that users could
+    mistake for a real reading.
     """
     if not bridge or not bridge.is_available():
         return None
@@ -2216,10 +2237,8 @@ def _build_summary_from_bridge(
         "date": date_str,
         "totalDevices": int(total_devices),
         "fileVaultPct": round(fv_pct, 1),
-        "compliancePct": 0.0,
         "staleCount": int(stale_count),
         "osCurrentPct": round(os_pct, 1),
-        "crowdstrikePct": 0.0,
         "patchPct": round(patch_pct, 1),
         "source": "jamf-cli",
     }
@@ -2733,6 +2752,17 @@ class Config:
         """Return a deep copy of the loaded config data."""
         return copy.deepcopy(self._data)
 
+    def override_jamf_cli_profile(self, profile: str) -> None:
+        """Override jamf_cli.profile for this process without rewriting config.yaml."""
+        profile_name = str(profile or "").strip()
+        if not profile_name:
+            return
+        jamf_cli = self._data.get("jamf_cli")
+        if not isinstance(jamf_cli, dict):
+            jamf_cli = {}
+        jamf_cli["profile"] = profile_name
+        self._data["jamf_cli"] = jamf_cli
+
     @property
     def base_dir(self) -> Path:
         """Return the directory relative config-managed paths should use."""
@@ -3222,9 +3252,10 @@ class JamfCLIBridge:
             raise RuntimeError(
                 "jamf-cli binary not found. Set JAMFCLI_PATH or install via Homebrew."
             )
-        cmd = [self._binary, "--output", "json", "--no-input"]
+        cmd = [self._binary]
         if self._profile:
             cmd.extend(["-p", self._profile])
+        cmd.extend(["--output", "json", "--no-input"])
         cmd.extend(args)
         effective_timeout = self._command_timeout if timeout is None else max(1, int(timeout))
         try:
@@ -9831,6 +9862,27 @@ def _resolve_workspace_profile_name(
     )
 
 
+def _validate_profile_override(profile: str) -> str:
+    """Return a validated jamf-cli profile override."""
+    profile_name = str(profile or "").strip()
+    if not profile_name:
+        return ""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", profile_name):
+        raise SystemExit(
+            "Error: --profile must match ^[a-z0-9][a-z0-9._-]*$"
+        )
+    return profile_name
+
+
+def _apply_profile_override(config: Config, profile: Optional[str], command: str) -> None:
+    """Apply --profile to Jamf Pro jamf-cli commands."""
+    if command.startswith("school-") or command == "workspace-init":
+        return
+    profile_name = _validate_profile_override(profile or "")
+    if profile_name:
+        config.override_jamf_cli_profile(profile_name)
+
+
 def _resolve_workspace_root_dir(
     workspace_root: Optional[str],
     seed_config: Config,
@@ -9950,7 +10002,7 @@ def cmd_workspace_init(
 
     print("\nNext steps")
     print(f"  1. Review {config_path}")
-    print(f"  2. jamf-cli config validate -p {shlex.quote(profile_name)}")
+    print(f"  2. jamf-cli -p {shlex.quote(profile_name)} config validate")
     print(
         "  3. python3 jamf-reports-community.py check"
         f" --config {shlex.quote(str(config_path))}"
@@ -13738,6 +13790,95 @@ def cmd_html(
     return out_path
 
 
+def _collect_jamf_cli_commands(
+    config: Config,
+    bridge: JamfCLIBridge,
+    live_overview_allowed: bool,
+) -> list[tuple[str, Any]]:
+    """Return Jamf Pro snapshot commands collected without CSV input."""
+    stale_days = int(config.thresholds.get("stale_device_days", 30))
+    commands: list[tuple[str, Any]] = []
+    if live_overview_allowed:
+        commands.append(("Fleet Overview", bridge.overview))
+    else:
+        print("  [skip] Fleet Overview: live overview disabled in config")
+    commands.extend(
+        [
+            ("Computer Inventory", lambda: bridge.computers_list(_inventory_computer_sections())),
+            ("Inventory Summary", bridge.inventory_summary),
+            ("Hardware Models", bridge.hardware_models),
+            ("Mobile Inventory", bridge.mobile_device_inventory_details),
+            ("Mobile Device List", bridge.mobile_devices_list),
+            ("Mobile Config Profiles", bridge.ios_profiles_list),
+            ("Security Posture", bridge.security_report),
+            ("Device Compliance", lambda: bridge.device_compliance(stale_days)),
+            ("Check-in Health", bridge.checkin_status),
+            ("EA Coverage", lambda: bridge.ea_results_report(include_all=True)),
+            ("EA Definitions", bridge.computer_extension_attributes),
+            ("Software Installs", bridge.software_installs),
+            ("Patch Compliance", bridge.patch_status),
+            ("Patch Failures", bridge.patch_device_failures),
+            ("Policy Health", bridge.policy_status),
+            ("Profile Status", bridge.profile_status),
+            ("App Status", bridge.app_status),
+            ("Update Status", bridge.update_status),
+            ("Update Failures", bridge.update_device_failures),
+            ("Group Inventory", bridge.groups),
+            ("Smart Computer Groups", bridge.smart_groups_list),
+            ("Package Lifecycle", bridge.packages),
+            ("Classic Policies", bridge.classic_policies_list),
+            ("macOS Config Profiles", bridge.macos_profiles_list),
+            ("Scripts", bridge.scripts_list),
+            ("Categories", bridge.categories_list),
+            ("Device Enrollments", bridge.device_enrollments_list),
+            ("Sites", bridge.sites_list),
+            ("Buildings", bridge.buildings_list),
+            ("Departments", bridge.departments_list),
+        ]
+    )
+    return commands
+
+
+def _archive_collect_csv_inputs(
+    config: Config,
+    csv_path: Optional[str],
+    historical_csv_dir: Optional[str],
+) -> bool:
+    """Archive CSV inputs for collect when any are configured."""
+    archived = False
+    csv_path_obj = _resolve_cli_input_path(csv_path, config)
+    selected_family_name = _family_for_csv_path(config, csv_path_obj) if csv_path_obj else None
+    hist_dir_obj = _default_historical_dir(config, selected_family_name, historical_csv_dir)
+    if config.get("charts", "archive_current_csv") is False:
+        return archived
+    if csv_path_obj and hist_dir_obj:
+        print(f"  historical CSV dir: {hist_dir_obj}")
+        archived_path, created = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
+        if archived_path:
+            archived = True
+            label = "Archived CSV snapshot" if created else "Reusing existing identical CSV snapshot"
+            print(f"  [ok] {label}: {archived_path}")
+        return archived
+    if csv_path_obj is not None:
+        return archived
+    for family_name in REPORT_FAMILY_NAMES:
+        family = _report_family_config(config, family_name)
+        if family.get("enabled") is not True:
+            continue
+        latest_path, note = _latest_report_family_file(config, family_name)
+        hist_dir = _report_family_historical_dir(config, family_name)
+        print(f"  {family_name}: {note}")
+        if latest_path is None or hist_dir is None:
+            continue
+        print(f"    historical dir: {hist_dir}")
+        archived_path, created = _archive_csv_snapshot(str(latest_path), str(hist_dir))
+        if archived_path:
+            archived = True
+            label = "Archived" if created else "Reusing identical snapshot"
+            print(f"    [ok] {label}: {archived_path}")
+    return archived
+
+
 def _collect_snapshots(
     config: Config,
     csv_path: Optional[str] = None,
@@ -13770,30 +13911,7 @@ def _collect_snapshots(
             for bench in platform_benchmarks:
                 print(f"  platform benchmark: {bench}")
     if jamf_cli_enabled and bridge is not None and bridge.is_available():
-
-        stale_days = int(config.thresholds.get("stale_device_days", 30))
-        commands = []
-        if live_overview_allowed:
-            commands.append(("Fleet Overview", bridge.overview))
-        else:
-            print("  [skip] Fleet Overview: live overview disabled in config")
-        commands.extend(
-            [
-                ("Inventory Summary", bridge.inventory_summary),
-                ("Mobile Inventory", bridge.mobile_device_inventory_details),
-                ("Mobile Device List", bridge.mobile_devices_list),
-                ("Mobile Config Profiles", bridge.ios_profiles_list),
-                ("Security Posture", bridge.security_report),
-                ("Device Compliance", lambda: bridge.device_compliance(stale_days)),
-                ("EA Coverage", lambda: bridge.ea_results_report(include_all=True)),
-                ("EA Definitions", bridge.computer_extension_attributes),
-                ("Software Installs", bridge.software_installs),
-                ("Patch Compliance", bridge.patch_status),
-                ("Patch Failures", bridge.patch_device_failures),
-                ("Policy Health", bridge.policy_status),
-                ("Profile Status", bridge.profile_status),
-            ]
-        )
+        commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed)
         if protect_enabled:
             commands.extend(
                 [
@@ -13841,40 +13959,7 @@ def _collect_snapshots(
     else:
         print("  jamf-cli disabled in config; skipping live snapshot collection.")
 
-    archived = False
-    csv_path_obj = _resolve_cli_input_path(csv_path, config)
-    selected_family_name = _family_for_csv_path(config, csv_path_obj) if csv_path_obj else None
-    hist_dir_obj = _default_historical_dir(config, selected_family_name, historical_csv_dir)
-    if config.get("charts", "archive_current_csv") is not False:
-        if csv_path_obj and hist_dir_obj:
-            print(f"  historical CSV dir: {hist_dir_obj}")
-            archived_path, created = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
-            if archived_path:
-                archived = True
-                if created:
-                    print(f"  [ok] Archived CSV snapshot: {archived_path}")
-                else:
-                    print(f"  [ok] Reusing existing identical CSV snapshot: {archived_path}")
-        elif csv_path_obj is None:
-            for family_name in REPORT_FAMILY_NAMES:
-                family = _report_family_config(config, family_name)
-                if family.get("enabled") is not True:
-                    continue
-                latest_path, note = _latest_report_family_file(config, family_name)
-                hist_dir = _report_family_historical_dir(config, family_name)
-                print(f"  {family_name}: {note}")
-                if latest_path is None or hist_dir is None:
-                    continue
-                print(f"    historical dir: {hist_dir}")
-                archived_path, created = _archive_csv_snapshot(str(latest_path), str(hist_dir))
-                if archived_path:
-                    archived = True
-                    if created:
-                        print(f"    [ok] Archived: {archived_path}")
-                    else:
-                        print(f"    [ok] Reusing identical snapshot: {archived_path}")
-
-    return collected, archived
+    return collected, _archive_collect_csv_inputs(config, csv_path, historical_csv_dir)
 
 
 def cmd_collect(
@@ -13932,6 +14017,109 @@ def cmd_collect(
     _write_summary_json(summary_json, summary)
 
 
+def _backup_directory_stats(path: Path) -> tuple[int, int]:
+    """Return file count and total byte size for a backup directory."""
+    file_count = 0
+    total_bytes = 0
+    for item in path.rglob("*"):
+        if not item.is_file():
+            continue
+        file_count += 1
+        total_bytes += item.stat().st_size
+    return file_count, total_bytes
+
+
+def _backup_destination(config: Config, label: Optional[str]) -> tuple[Path, Path]:
+    """Return final and temporary backup directories for a new backup run."""
+    backups_root = (config.base_dir / "backups").resolve()
+    stamp = _now_ts()
+    label_part = ""
+    if label and label.strip():
+        label_part = f"-{_filename_component(label)}"
+    name = f"{stamp}{label_part}"
+    final_dir = backups_root / name
+    suffix = 1
+    while final_dir.exists():
+        suffix += 1
+        final_dir = backups_root / f"{name}-{suffix}"
+    temp_dir = backups_root / f".{final_dir.name}.partial"
+    return final_dir, temp_dir
+
+
+def _write_backup_manifest(backup_dir: Path, manifest: dict[str, Any]) -> None:
+    """Atomically write the backup manifest JSON."""
+    manifest_path = backup_dir / "manifest.json"
+    tmp_path = manifest_path.with_suffix(".json.partial")
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    tmp_path.replace(manifest_path)
+
+
+def cmd_backup(config: Config, label: Optional[str] = None) -> Path:
+    """Run jamf-cli pro backup into the current profile workspace."""
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: jamf_cli.enabled is false; backup requires jamf-cli.")
+    binary = _find_jamf_cli_binary()
+    if not binary:
+        raise SystemExit("Error: jamf-cli binary not found. Install jamf-cli or set JAMFCLI_PATH.")
+
+    final_dir, temp_dir = _backup_destination(config, label)
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    temp_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    profile = str(config.jamf_cli.get("profile", "") or "").strip()
+    cmd = [binary]
+    if profile:
+        cmd.extend(["-p", profile])
+    cmd.append("--no-input")
+    cmd.extend(["pro", "backup", "--format", "json", "--output", str(temp_dir)])
+
+    timeout = _to_int(config.jamf_cli.get("command_timeout_seconds", 300), 300)
+    started = datetime.now(timezone.utc)
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        detail = (exc.stderr or exc.stdout).strip()
+        raise SystemExit(f"Error: jamf-cli pro backup failed ({exc.returncode}): {detail}") from exc
+    except subprocess.TimeoutExpired as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise SystemExit(f"Error: jamf-cli pro backup timed out after {timeout}s: {exc}") from exc
+
+    file_count, total_bytes = _backup_directory_stats(temp_dir)
+    manifest = {
+        "schema_version": 1,
+        "created_at": started.isoformat(),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "profile": profile,
+        "label": str(label or "").strip(),
+        "command": " ".join(shlex.quote(part) for part in cmd),
+        "file_count": file_count,
+        "size_bytes": total_bytes,
+        "stdout": (result.stdout or "").strip(),
+        "stderr": (result.stderr or "").strip(),
+    }
+    _write_backup_manifest(temp_dir, manifest)
+    temp_dir.rename(final_dir)
+
+    print("\nBackup summary")
+    print(f"  profile: {profile or '(default)'}")
+    print(f"  backup: {final_dir}")
+    print(f"  files: {file_count}")
+    print(f"  size: {total_bytes} bytes")
+    print("  [ok] backup complete")
+    return final_dir
+
+
 def _default_inventory_csv_out_file(config: Config) -> Path:
     """Return the default inventory CSV destination path before timestamping."""
     out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
@@ -13956,10 +14144,60 @@ def _automation_inventory_out_file(config: Config) -> Path:
     return out_dir / stem
 
 
-def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
-    """Export a wide computer inventory CSV from jamf-cli inventory and EA data."""
-    if not _jamf_cli_enabled(config):
-        raise SystemExit("Error: inventory-csv requires jamf_cli.enabled: true in config.yaml.")
+def _inventory_computer_sections() -> list[str]:
+    """Return Jamf Pro computer inventory sections used for CSV export."""
+    return [
+        "GENERAL",
+        "HARDWARE",
+        "OPERATING_SYSTEM",
+        "USER_AND_LOCATION",
+        "DISK_ENCRYPTION",
+        "SECURITY",
+    ]
+
+
+def _compact_error_text(exc: Exception, limit: int = 500) -> str:
+    """Return a single-line error string suitable for operator logs."""
+    text = " ".join(str(exc).split())
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}..."
+
+
+def _apply_inventory_ea_results(
+    bridge: JamfCLIBridge,
+    row_index: dict[str, list[dict[str, Any]]],
+) -> tuple[set[str], int, Optional[str]]:
+    """Apply jamf-cli EA result rows to inventory rows when available."""
+    try:
+        ea_raw = bridge.ea_results_report(include_all=True)
+    except RuntimeError as exc:
+        return set(), 0, _compact_error_text(exc)
+
+    ea_columns: set[str] = set()
+    unmatched_ea_rows = 0
+    ea_rows = ea_raw if isinstance(ea_raw, list) else []
+    for item in ea_rows:
+        if not isinstance(item, dict):
+            continue
+        device = str(item.get("device", "") or "").strip()
+        ea_name = str(item.get("ea_name", "") or "").strip()
+        if not device or not ea_name:
+            continue
+        row = _inventory_resolve_row(row_index, _inventory_ea_lookup_values(item))
+        if row is None:
+            unmatched_ea_rows += 1
+            continue
+        row[ea_name] = str(item.get("value", "") or "").strip()
+        ea_columns.add(ea_name)
+    return ea_columns, unmatched_ea_rows, None
+
+
+def _inventory_output_settings(
+    config: Config,
+    out_file: Optional[str],
+) -> tuple[Path, bool, int]:
+    """Return inventory CSV output path and archive settings."""
     output_cfg = config.output
     out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
     if out_dir is None:
@@ -13968,41 +14206,17 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
     timestamp_outputs = output_cfg.get("timestamp_outputs", True) is not False
     archive_enabled = output_cfg.get("archive_enabled", True) is not False
     keep_latest_runs = _to_int(output_cfg.get("keep_latest_runs", 10), 10)
-
     run_stamp = _file_stamp()
-    if out_file:
-        out_path = _timestamped_output_path(
-            Path(out_file).expanduser(), run_stamp, timestamp_outputs
-        )
-    else:
-        out_path = _timestamped_output_path(
-            _default_inventory_csv_out_file(config),
-            run_stamp,
-            timestamp_outputs,
-        )
+    raw_path = Path(out_file).expanduser() if out_file else _default_inventory_csv_out_file(config)
+    out_path = _timestamped_output_path(raw_path, run_stamp, timestamp_outputs)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    return out_path, archive_enabled, keep_latest_runs
 
-    print(f"Output: {out_path}")
-    print(f"  config base dir: {config.base_dir}")
 
-    bridge = _build_jamf_cli_bridge(config, save_output=False, use_cached_data=False)
-    if not bridge.is_available():
-        raise SystemExit("Error: jamf-cli not found. Install it or set JAMFCLI_PATH.")
-
-    computers_raw = bridge.computers_list(
-        sections=[
-            "GENERAL",
-            "HARDWARE",
-            "OPERATING_SYSTEM",
-            "USER_AND_LOCATION",
-            "DISK_ENCRYPTION",
-            "SECURITY",
-        ]
-    )
-    computers = computers_raw if isinstance(computers_raw, list) else []
-    if not computers:
-        raise SystemExit("Error: jamf-cli returned no computers.")
-
+def _inventory_base_rows(
+    computers: list[Any],
+) -> tuple[list[dict[str, Any]], list[str], dict[str, list[dict[str, Any]]]]:
+    """Build base inventory CSV rows and lookup indexes."""
     counts_by_name: dict[str, int] = {}
     base_rows: list[dict[str, Any]] = []
     for item in computers:
@@ -14012,10 +14226,89 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
         name = row["Computer Name"]
         counts_by_name[name] = counts_by_name.get(name, 0) + 1
         base_rows.append(row)
-
     duplicate_names = sorted(
         name for name, count in counts_by_name.items() if count > 1 and name
     )
+    return base_rows, duplicate_names, _inventory_build_row_index(base_rows)
+
+
+def _archive_inventory_output(config: Config, out_path: Path, keep_latest_runs: int) -> None:
+    """Archive older inventory CSV exports according to output settings."""
+    archive_dir = config.resolve_path("output", "archive_dir")
+    if archive_dir is None:
+        archive_dir = out_path.parent / "archive"
+    family_base = _strip_timestamp_suffix(out_path.stem)
+    archived_paths = _archive_old_output_runs(
+        out_path.parent,
+        family_base,
+        {".csv"},
+        keep_latest_runs,
+        archive_dir,
+    )
+    if archived_paths:
+        print(f"  Archived {len(archived_paths)} older inventory export(s) to {archive_dir}")
+
+
+def _print_inventory_export_summary(
+    row_count: int,
+    detail_enriched: int,
+    detail_failures: int,
+    detail_unresolved: int,
+    ea_columns: set[str],
+    unmatched_ea_rows: int,
+    ea_error: Optional[str],
+) -> None:
+    """Print a concise inventory CSV export summary."""
+    print(f"  [ok] Exported {row_count} computers")
+    print(
+        "  [ok] Added"
+        f" {len(INVENTORY_SECURITY_DETAIL_COLUMNS)} generic security detail column(s)"
+    )
+    if detail_enriched:
+        print(f"  [ok] Enriched security details for {detail_enriched} computer(s)")
+    if detail_failures:
+        print(
+            "  [warn] Could not enrich device security details for"
+            f" {detail_failures} computer(s)"
+        )
+    if detail_unresolved:
+        print(
+            "  [warn] Could not uniquely match security details for"
+            f" {detail_unresolved} computer(s)"
+        )
+    if ea_error:
+        print(f"  [warn] Extension attribute results unavailable; continuing: {ea_error}")
+    else:
+        print(f"  [ok] Included {len(ea_columns)} extension attribute columns")
+    if unmatched_ea_rows:
+        print(
+            "  [warn] Could not uniquely match"
+            f" {unmatched_ea_rows} EA row(s) to inventory rows"
+        )
+    print(
+        "  Note: this export is built from jamf-cli computers list plus"
+        " per-device security details and jamf-cli report ea-results."
+    )
+
+
+def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
+    """Export a wide computer inventory CSV from jamf-cli inventory and EA data."""
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: inventory-csv requires jamf_cli.enabled: true in config.yaml.")
+    out_path, archive_enabled, keep_latest_runs = _inventory_output_settings(config, out_file)
+    print(f"Output: {out_path}")
+    print(f"  config base dir: {config.base_dir}")
+
+    bridge = _build_jamf_cli_bridge(config, save_output=True)
+    if not bridge.is_available():
+        raise SystemExit("Error: jamf-cli not found. Install it or set JAMFCLI_PATH.")
+
+    computers_raw = bridge.computers_list(sections=_inventory_computer_sections())
+    computers = computers_raw if isinstance(computers_raw, list) else []
+    if not computers:
+        raise SystemExit("Error: jamf-cli returned no computers.")
+
+    base_rows, duplicate_names, row_index = _inventory_base_rows(computers)
     if duplicate_names:
         names_preview = ", ".join(duplicate_names[:5])
         print(
@@ -14024,7 +14317,6 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
             f" management ID before name: {names_preview}"
         )
 
-    row_index = _inventory_build_row_index(base_rows)
     inv_cfg = config.get("inventory_csv") or {}
     skip_enrichment = bool(inv_cfg.get("skip_security_enrichment", False))
     enrich_workers = _to_int(inv_cfg.get("max_workers", 20), 20)
@@ -14043,71 +14335,27 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
                 max_workers=enrich_workers,
             )
         )
-    ea_columns: set[str] = set()
-    unmatched_ea_rows = 0
-    ea_raw = bridge.ea_results(include_all=True)
-    ea_rows = ea_raw if isinstance(ea_raw, list) else []
-    for item in ea_rows:
-        if not isinstance(item, dict):
-            continue
-        device = str(item.get("device", "") or "").strip()
-        ea_name = str(item.get("ea_name", "") or "").strip()
-        if not device or not ea_name:
-            continue
-        row = _inventory_resolve_row(row_index, _inventory_ea_lookup_values(item))
-        if row is None:
-            unmatched_ea_rows += 1
-            continue
-        row[ea_name] = str(item.get("value", "") or "").strip()
-        ea_columns.add(ea_name)
+    ea_columns, unmatched_ea_rows, ea_error = _apply_inventory_ea_results(
+        bridge,
+        row_index,
+    )
 
     ordered_columns = INVENTORY_EXPORT_COLUMNS + sorted(
         column for column in ea_columns if column not in INVENTORY_EXPORT_COLUMNS
     )
     df = pd.DataFrame(base_rows, columns=ordered_columns).fillna("")
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
-
-    print(f"  [ok] Exported {len(df)} computers")
-    print(
-        "  [ok] Added"
-        f" {len(INVENTORY_SECURITY_DETAIL_COLUMNS)} generic security detail column(s)"
-    )
-    if detail_enriched:
-        print(f"  [ok] Enriched security details for {detail_enriched} computer(s)")
-    if detail_failures:
-        print(
-            "  [warn] Could not enrich device security details for"
-            f" {detail_failures} computer(s)"
-        )
-    if detail_unresolved:
-        print(
-            "  [warn] Could not uniquely match security details for"
-            f" {detail_unresolved} computer(s)"
-        )
-    print(f"  [ok] Included {len(ea_columns)} extension attribute columns")
-    if unmatched_ea_rows:
-        print(
-            "  [warn] Could not uniquely match"
-            f" {unmatched_ea_rows} EA row(s) to inventory rows"
-        )
-    print(
-        "  Note: this export is built from jamf-cli computers list plus"
-        " per-device security details and jamf-cli report ea-results."
+    _print_inventory_export_summary(
+        len(df),
+        detail_enriched,
+        detail_failures,
+        detail_unresolved,
+        ea_columns,
+        unmatched_ea_rows,
+        ea_error,
     )
     if archive_enabled:
-        archive_dir = config.resolve_path("output", "archive_dir")
-        if archive_dir is None:
-            archive_dir = out_path.parent / "archive"
-        family_base = _strip_timestamp_suffix(out_path.stem)
-        archived_paths = _archive_old_output_runs(
-            out_path.parent,
-            family_base,
-            {".csv"},
-            keep_latest_runs,
-            archive_dir,
-        )
-        if archived_paths:
-            print(f"  Archived {len(archived_paths)} older inventory export(s) to {archive_dir}")
+        _archive_inventory_output(config, out_path, keep_latest_runs)
     return out_path
 
 
@@ -14483,6 +14731,7 @@ def _launchagent_environment() -> dict[str, str]:
 def _launchagent_program_arguments(
     config_path: Path,
     mode: str,
+    profile: Optional[str],
     status_file: Path,
     historical_csv_dir: Optional[Path],
     csv_inbox_dir: Optional[Path],
@@ -14501,6 +14750,9 @@ def _launchagent_program_arguments(
         "--status-file",
         str(status_file),
     ]
+    profile_name = _validate_profile_override(profile or "")
+    if profile_name:
+        args.extend(["--profile", profile_name])
     if historical_csv_dir:
         args.extend(["--historical-csv-dir", str(historical_csv_dir)])
     if csv_inbox_dir:
@@ -14829,6 +15081,7 @@ def cmd_launchagent_setup(
     program_arguments = _launchagent_program_arguments(
         config_path,
         selected_mode,
+        str(config.jamf_cli.get("profile", "") or "").strip(),
         status_path,
         csv_history_dir,
         csv_inbox_path,
@@ -15341,7 +15594,7 @@ def _capability_commands() -> dict[str, list[str]]:
     return {
         "jamf_pro": [
             "generate", "html", "collect", "inventory-csv", "export-reports",
-            "scaffold", "check", "device", "patch-managed",
+            "backup", "scaffold", "check", "device", "patch-managed",
         ],
         "jamf_school": [
             "school-generate", "school-collect", "school-scaffold", "school-check",
@@ -15559,6 +15812,7 @@ def main() -> None:
             "  html          Build a self-contained HTML status report for management\n"
             "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
+            "  backup        Export Jamf Pro configuration objects to backups/\n"
             "  workspace-init Create a per-profile reporting workspace skeleton\n"
             "  launchagent-setup Create a LaunchAgent for scheduled reporting\n"
             "  launchagent-run   Internal runner used by generated LaunchAgents\n"
@@ -15583,6 +15837,7 @@ def main() -> None:
             "collect",
             "inventory-csv",
             "export-reports",
+            "backup",
             "workspace-init",
             "launchagent-setup",
             "launchagent-run",
@@ -15656,7 +15911,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--profile",
-        help="jamf-cli profile name (workspace-init only)",
+        help="jamf-cli profile override for Jamf Pro commands; workspace-init target profile",
     )
     parser.add_argument(
         "--schedule",
@@ -15678,7 +15933,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--label",
-        help="LaunchAgent label override (launchagent-setup only)",
+        help="LaunchAgent label override or backup label",
     )
     parser.add_argument(
         "--workspace-dir",
@@ -15764,6 +16019,7 @@ def main() -> None:
         if not args.id:
             parser.error("device requires --id")
         config = Config(args.config)
+        _apply_profile_override(config, args.profile, args.command)
         cmd_device(config, args.id)
         return
 
@@ -15784,6 +16040,7 @@ def main() -> None:
     if args.command in {"launchagent-setup", "launchagent-run"}:
         _require_existing_config_path(args.config)
     config = Config(args.config)
+    _apply_profile_override(config, args.profile, args.command)
 
     if args.command == "check":
         cmd_check(config, args.csv)
@@ -15791,6 +16048,8 @@ def main() -> None:
         cmd_collect(config, args.csv, args.historical_csv_dir, args.summary_json)
     elif args.command == "inventory-csv":
         cmd_inventory_csv(config, args.out_file)
+    elif args.command == "backup":
+        cmd_backup(config, args.label)
     elif args.command == "export-reports":
         # --csv: explicit inventory CSV path; omit to auto-locate the latest one.
         # To force all reports regardless of schedule, delete state files:

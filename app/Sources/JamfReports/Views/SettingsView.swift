@@ -97,20 +97,24 @@ struct SettingsView: View {
                 SectionHeader(title: "Connections")
                 VStack(spacing: 0) {
                     ForEach(Array(workspace.profiles.enumerated()), id: \.element.id) { idx, c in
+                        let isUnsupported = c.status == .error
                         HStack(spacing: 10) {
                             Circle()
-                                .fill(c.name == workspace.profile ? Theme.Colors.ok : Theme.Colors.fgDisabled)
+                                .fill(dotColor(for: c))
                                 .frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(c.name).font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(Theme.Colors.fg)
+                                    .foregroundStyle(isUnsupported ? Theme.Colors.fgDisabled : Theme.Colors.fg)
                                 Mono(text: "\(c.url) · \(profileType(c))", size: 10.5)
                             }
                             Spacer()
-                            testControlView(for: c.name)
+                            if !isUnsupported {
+                                testControlView(for: c.name)
+                            }
                             if c.name == workspace.profile { Pill(text: "ACTIVE", tone: .gold) }
                         }
                         .padding(.vertical, 10)
+                        .opacity(isUnsupported ? 0.55 : 1)
                         if idx < workspace.profiles.count - 1 {
                             Divider().background(Theme.Colors.hairline)
                         }
@@ -225,6 +229,11 @@ struct SettingsView: View {
     private func profileType(_ profile: JamfCLIProfile) -> String {
         if profile.authMethod.isEmpty { return "Jamf Pro profile" }
         return "Jamf Pro · \(profile.authMethod)"
+    }
+
+    private func dotColor(for profile: JamfCLIProfile) -> Color {
+        if profile.status == .error { return Theme.Colors.warn }
+        return profile.name == workspace.profile ? Theme.Colors.ok : Theme.Colors.fgDisabled
     }
 
     private var appVersion: String {

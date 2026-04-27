@@ -5,10 +5,14 @@ struct DailySummary: Codable, Identifiable, Sendable {
     let date: String         // YYYY-MM-DD
     let totalDevices: Int
     let fileVaultPct: Double
-    let compliancePct: Double
+    /// Omitted by Python when the source is `"jamf-cli"` (CSV-only metric).
+    /// Decoded as nil so `TrendStore.values(metric:)` skips the point rather
+    /// than emitting a misleading 0%.
+    let compliancePct: Double?
     let staleCount: Int
     let osCurrentPct: Double
-    let crowdstrikePct: Double
+    /// Omitted by Python when the source is `"jamf-cli"` (CSV-only metric).
+    let crowdstrikePct: Double?
     let patchPct: Double
 }
 

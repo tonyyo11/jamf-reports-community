@@ -9,6 +9,7 @@ final class OnboardingFlow {
         case installCLI
         case workspace
         case authenticate
+        case validate
         case csvMapping
         case firstReport
 
@@ -21,6 +22,7 @@ final class OnboardingFlow {
             case .installCLI: "Install jamf-cli"
             case .workspace: "Workspace"
             case .authenticate: "Authenticate"
+            case .validate: "Validate"
             case .csvMapping: "CSV mapping"
             case .firstReport: "First report"
             }
@@ -67,15 +69,19 @@ final class OnboardingFlow {
     var jamfCLIVersion: String?
     var workspaceCreated = false
     var profileRegistered = false
+    var connectionValidated = false
     var selectedCSVURL: URL?
     var csvScaffolded = false
     var firstReportExitCode: Int32?
 
     var isRegisteringProfile = false
+    var isValidatingConnection = false
     var isScaffoldingCSV = false
     var isRunningFirstReport = false
 
     var lastError: String?
+    var validationOutput: [CLIBridge.LogLine] = []
+    var validationExitCode: Int32?
     var csvOutput: [CLIBridge.LogLine] = []
     var firstReportOutput: [CLIBridge.LogLine] = []
 
@@ -106,6 +112,8 @@ final class OnboardingFlow {
         case .authenticate:
             isProfileNameValid && isJamfURLValid && !clientID.trimmed.isEmpty
                 && !clientSecret.isEmpty && !isRegisteringProfile
+        case .validate:
+            profileRegistered && !isValidatingConnection
         case .csvMapping:
             csvScaffolded && !isScaffoldingCSV
         case .firstReport:
@@ -225,7 +233,37 @@ final class OnboardingFlow {
         }
 
         profileRegistered = true
+        connectionValidated = false
+        validationExitCode = nil
+        validationOutput.removeAll()
         lastError = nil
+    }
+
+    func validateRegisteredProfile() async {
+        validationOutput.removeAll()
+        validationExitCode = nil
+        connectionValidated = false
+        lastError = nil
+
+        let profile = profileName.trimmed
+        guard ProfileService.isValid(profile) else {
+            lastError = FlowError.invalidProfile.localizedDescription
+            return
+        }
+
+        isValidatingConnection = true
+        defer { isValidatingConnection = false }
+
+        let exit = await CLIBridge().validateConnection(profile: profile) { [weak self] line in
+            Task { @MainActor in self?.validationOutput.append(line) }
+        }
+
+        validationExitCode = exit
+        if exit == 0 {
+            connectionValidated = true
+        } else {
+            lastError = "jamf-cli config validate failed for \(profile). Review the URL, client ID, secret, and API role privileges, then retry."
+        }
     }
 
     func scaffoldCSV(from url: URL) async {

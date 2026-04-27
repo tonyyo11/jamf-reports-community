@@ -323,7 +323,7 @@ final class WorkspaceStore {
 /// the `NavigationSplitView` renders, and the title shown in the toolbar.
 enum Tab: String, CaseIterable, Identifiable, Hashable {
     case overview, devices, trends, reports, schedules, runs
-    case config, customize, sources, settings, onboarding
+    case config, customize, sources, backups, settings, onboarding
 
     var id: String { rawValue }
 
@@ -338,6 +338,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .config:     "Config"
         case .customize:  "Customize"
         case .sources:    "Data Sources"
+        case .backups:    "Backups"
         case .settings:   "Settings"
         case .onboarding: "Onboarding"
         }
@@ -354,6 +355,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .config:     "wrench.and.screwdriver"
         case .customize:  "sparkles"
         case .sources:    "externaldrive"
+        case .backups:    "externaldrive.badge.timemachine"
         case .settings:   "gear"
         case .onboarding: "wand.and.stars"
         }
