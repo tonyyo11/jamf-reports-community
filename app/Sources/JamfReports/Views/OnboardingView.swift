@@ -335,7 +335,11 @@ struct OnboardingView: View {
                         PNPButton(title: "Choose CSV", icon: "folder") {
                             showingCSVImporter = true
                         }
-                        .disabled(flow.isScaffoldingCSV)
+                        .disabled(flow.isScaffoldingCSV || flow.isSkippingCSVMapping)
+                        PNPButton(title: "Skip for now", icon: "forward.fill") {
+                            Task { await flow.skipCSVMapping() }
+                        }
+                        .disabled(flow.isScaffoldingCSV || flow.isSkippingCSVMapping)
                     }
 
                     if let selected = flow.selectedCSVURL {
@@ -345,15 +349,31 @@ struct OnboardingView: View {
                             Mono(text: selected.path, size: 11.5, color: Theme.Colors.fg2)
                         }
                     }
+
+                    if flow.csvMappingSkipped {
+                        Pill(text: "MINIMAL CONFIG SEEDED", tone: .teal, icon: "checkmark")
+                    }
                 }
             }
 
             logViewer(
-                title: flow.isScaffoldingCSV ? "jrc scaffold running" : "jrc scaffold output",
+                title: csvLogViewerTitle,
                 lines: flow.csvOutput,
-                exitCode: flow.csvScaffolded ? 0 : nil
+                exitCode: csvLogViewerExitCode
             )
         }
+    }
+
+    private var csvLogViewerTitle: String {
+        if flow.isScaffoldingCSV { return "jrc scaffold running" }
+        if flow.isSkippingCSVMapping { return "jrc workspace-init running" }
+        if flow.csvMappingSkipped { return "jrc workspace-init output" }
+        return "jrc scaffold output"
+    }
+
+    private var csvLogViewerExitCode: Int32? {
+        if flow.csvScaffolded || flow.csvMappingSkipped { return 0 }
+        return nil
     }
 
     private var firstReportStep: some View {
@@ -436,7 +456,8 @@ struct OnboardingView: View {
                 flow.previousStep()
             }
             .disabled(flow.currentStep == .welcome || flow.isRegisteringProfile ||
-                      flow.isValidatingConnection || flow.isScaffoldingCSV || flow.isRunningFirstReport)
+                      flow.isValidatingConnection || flow.isScaffoldingCSV ||
+                      flow.isSkippingCSVMapping || flow.isRunningFirstReport)
             .opacity(flow.currentStep == .welcome ? 0.45 : 1)
 
             Spacer()
@@ -462,7 +483,10 @@ struct OnboardingView: View {
         case .authenticate: flow.isRegisteringProfile ? "Verifying" : "Verify & continue"
         case .validate:
             if flow.isValidatingConnection { "Validating" } else { flow.connectionValidated ? "Continue" : "Validate" }
-        case .csvMapping: flow.isScaffoldingCSV ? "Mapping" : "Continue"
+        case .csvMapping:
+            if flow.isScaffoldingCSV { "Mapping" }
+            else if flow.isSkippingCSVMapping { "Seeding" }
+            else { "Continue" }
         case .firstReport: flow.isRunningFirstReport ? "Running" : "Run now"
         }
     }

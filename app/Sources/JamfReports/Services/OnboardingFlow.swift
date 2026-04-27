@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Observation
 
@@ -72,11 +73,13 @@ final class OnboardingFlow {
     var connectionValidated = false
     var selectedCSVURL: URL?
     var csvScaffolded = false
+    var csvMappingSkipped = false
     var firstReportExitCode: Int32?
 
     var isRegisteringProfile = false
     var isValidatingConnection = false
     var isScaffoldingCSV = false
+    var isSkippingCSVMapping = false
     var isRunningFirstReport = false
 
     var lastError: String?
@@ -115,7 +118,7 @@ final class OnboardingFlow {
         case .validate:
             profileRegistered && !isValidatingConnection
         case .csvMapping:
-            csvScaffolded && !isScaffoldingCSV
+            (csvScaffolded || csvMappingSkipped) && !isScaffoldingCSV && !isSkippingCSVMapping
         case .firstReport:
             !isRunningFirstReport
         }
@@ -184,20 +187,10 @@ final class OnboardingFlow {
             try? fm.setAttributes(attrs, ofItemAtPath: url.path)
         }
 
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        if !fm.fileExists(atPath: configURL.path) {
-            if let bundled = Bundle.module.url(forResource: "config.example", withExtension: "yaml") {
-                try fm.copyItem(at: bundled, to: configURL)
-            } else {
-                try Self.minimalConfig(profile: profile).write(
-                    to: configURL,
-                    atomically: true,
-                    encoding: .utf8
-                )
-            }
-            try? fm.setAttributes([.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: configURL.path)
-        }
-
+        // config.yaml is intentionally not written here. The CSV mapping step
+        // produces it via `jrc scaffold`; the skip path produces it via
+        // `jrc workspace-init`. Writing a placeholder config here would block
+        // scaffold (which refuses to overwrite an existing file).
         workspaceCreated = true
         lastError = nil
     }
@@ -210,26 +203,30 @@ final class OnboardingFlow {
         isRegisteringProfile = true
         defer { isRegisteringProfile = false }
 
-        var secretData = Data((clientSecret + "\n").utf8)
+        // jamf-cli config add-profile only reads the Client ID and Client Secret
+        // from a controlling TTY (see golang.org/x/term). Allocate a pty so the
+        // GUI can drive the prompts without launching an interactive terminal.
+        // The "\n" terminator is what the term reader uses to delimit each value.
+        var stdinData = Data((clientID.trimmed + "\n" + clientSecret + "\n").utf8)
         defer {
-            secretData.resetBytes(in: 0..<secretData.count)
+            stdinData.resetBytes(in: 0..<stdinData.count)
             clearClientSecret()
         }
 
-        let result = try await Self.runProcess(
+        let result = try await Self.runWithPTY(
             executable: binary,
             arguments: [
-                "profile", "add",
-                "--name", profileName.trimmed,
+                "config", "add-profile", profileName.trimmed,
                 "--url", url.absoluteString,
-                "--client-id", clientID.trimmed,
+                "--auth-method", "oauth2",
+                "--no-color",
             ],
-            stdin: secretData
+            stdin: stdinData
         )
 
         guard result.exitCode == 0 else {
-            let stderr = result.stderr.trimmed
-            throw FlowError.processFailed(stderr.isEmpty ? "jamf-cli exited \(result.exitCode)." : stderr)
+            let combined = result.combined.trimmed
+            throw FlowError.processFailed(combined.isEmpty ? "jamf-cli exited \(result.exitCode)." : combined)
         }
 
         profileRegistered = true
@@ -269,12 +266,15 @@ final class OnboardingFlow {
     func scaffoldCSV(from url: URL) async {
         selectedCSVURL = nil
         csvScaffolded = false
+        csvMappingSkipped = false
         csvOutput.removeAll()
         lastError = nil
 
         do {
             let csvURL = try validatedCSVURL(url)
             guard let workspace = workspaceURL else { throw FlowError.missingWorkspace }
+            let profile = profileName.trimmed
+            guard ProfileService.isValid(profile) else { throw FlowError.invalidProfile }
             let bridge = CLIBridge()
             guard let command = bridge.resolveJRCCommand() else { throw FlowError.missingJRC }
 
@@ -283,9 +283,18 @@ final class OnboardingFlow {
             defer { isScaffoldingCSV = false }
 
             let outputConfig = workspace.appendingPathComponent("config.yaml")
+            // scaffold refuses to overwrite an existing file. Clear any prior
+            // attempt or skip-seeded config so users can re-enter the mapping
+            // step without leaving a half-written workspace behind.
+            try? FileManager.default.removeItem(at: outputConfig)
             let exit = await bridge.run(
                 executable: command.executable,
-                arguments: command.arguments + ["scaffold", "--csv", csvURL.path, "--out", outputConfig.path]
+                arguments: command.arguments + [
+                    "scaffold",
+                    "--csv", csvURL.path,
+                    "--out", outputConfig.path,
+                    "--profile", profile,
+                ]
             ) { [weak self] line in
                 Task { @MainActor in self?.csvOutput.append(line) }
             }
@@ -297,6 +306,53 @@ final class OnboardingFlow {
             }
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    /// Seed a minimal `config.yaml` via `jrc workspace-init` so the user can
+    /// skip CSV mapping and still produce a working workspace.
+    func skipCSVMapping() async {
+        selectedCSVURL = nil
+        csvScaffolded = false
+        csvMappingSkipped = false
+        csvOutput.removeAll()
+        lastError = nil
+
+        let profile = profileName.trimmed
+        guard ProfileService.isValid(profile) else {
+            lastError = FlowError.invalidProfile.localizedDescription
+            return
+        }
+        guard let workspace = workspaceURL else {
+            lastError = FlowError.missingWorkspace.localizedDescription
+            return
+        }
+        let bridge = CLIBridge()
+        guard let command = bridge.resolveJRCCommand() else {
+            lastError = FlowError.missingJRC.localizedDescription
+            return
+        }
+
+        isSkippingCSVMapping = true
+        defer { isSkippingCSVMapping = false }
+
+        let parent = workspace.deletingLastPathComponent()
+        let exit = await bridge.run(
+            executable: command.executable,
+            arguments: command.arguments + [
+                "workspace-init",
+                "--profile", profile,
+                "--workspace-root", parent.path,
+                "--workspace-name", workspace.lastPathComponent,
+            ]
+        ) { [weak self] line in
+            Task { @MainActor in self?.csvOutput.append(line) }
+        }
+
+        if exit == 0 {
+            csvMappingSkipped = true
+        } else {
+            lastError = "jrc workspace-init exited \(exit)."
         }
     }
 
@@ -352,74 +408,105 @@ final class OnboardingFlow {
         clientSecret.removeAll(keepingCapacity: false)
     }
 
-    private static func minimalConfig(profile: String) -> String {
-        """
-        # Generated by Jamf Reports onboarding.
-        jamf_cli:
-          data_dir: "jamf-cli-data"
-          profile: "\(profile)"
-          use_cached_data: true
-          allow_live_overview: true
-
-        output:
-          output_dir: "Generated Reports"
-          timestamp_outputs: true
-          archive_enabled: true
-          archive_dir: ""
-          keep_latest_runs: 10
-
-        charts:
-          enabled: true
-          save_png: true
-          embed_in_xlsx: true
-          historical_csv_dir: "snapshots"
-          archive_current_csv: true
-
-        columns: {}
-        security_agents: []
-        custom_eas: []
-        compliance:
-          failures_count_column: ""
-          failures_list_column: ""
-        """
-    }
-
-    private struct ProcessResult: Sendable {
+    private struct PTYResult: Sendable {
         let exitCode: Int32
-        let stdout: String
-        let stderr: String
+        let combined: String
     }
 
-    private nonisolated static func runProcess(
+    /// Run a child process with stdin/stdout/stderr attached to a pty so commands
+    /// that probe for a controlling terminal (e.g. `jamf-cli config add-profile`,
+    /// which reads credentials via `golang.org/x/term`) work without launching a
+    /// separate Terminal window.
+    private nonisolated static func runWithPTY(
         executable: URL,
         arguments: [String],
         stdin: Data
-    ) async throws -> ProcessResult {
+    ) async throws -> PTYResult {
         try await Task.detached(priority: .userInitiated) {
+            let master = Darwin.posix_openpt(O_RDWR | O_NOCTTY)
+            guard master >= 0 else {
+                throw FlowError.processFailed("posix_openpt failed: errno \(errno)")
+            }
+            guard Darwin.grantpt(master) == 0 else {
+                Darwin.close(master)
+                throw FlowError.processFailed("grantpt failed: errno \(errno)")
+            }
+            guard Darwin.unlockpt(master) == 0 else {
+                Darwin.close(master)
+                throw FlowError.processFailed("unlockpt failed: errno \(errno)")
+            }
+            guard let slaveCStr = Darwin.ptsname(master) else {
+                Darwin.close(master)
+                throw FlowError.processFailed("ptsname failed: errno \(errno)")
+            }
+            let slavePath = String(cString: slaveCStr)
+            let slave = Darwin.open(slavePath, O_RDWR | O_NOCTTY)
+            guard slave >= 0 else {
+                Darwin.close(master)
+                throw FlowError.processFailed("open(slave) failed: errno \(errno)")
+            }
+
+            let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
+            let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
+
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
+            process.standardInput = slaveHandle
+            process.standardOutput = slaveHandle
+            process.standardError = slaveHandle
 
-            let stdout = Pipe()
-            let stderr = Pipe()
-            let input = Pipe()
-            process.standardOutput = stdout
-            process.standardError = stderr
-            process.standardInput = input
+            do {
+                try process.run()
+            } catch {
+                Darwin.close(slave)
+                throw FlowError.processFailed("launch failed: \(error.localizedDescription)")
+            }
 
-            try process.run()
-            input.fileHandleForWriting.write(stdin)
-            try? input.fileHandleForWriting.close()
+            // Close the slave end in the parent so reads on master see EOF when
+            // the child exits.
+            Darwin.close(slave)
+
+            // Drain the master in a background task; jamf-cli writes prompts
+            // before consuming stdin, so we cannot block on a single sequential
+            // read/write pairing.
+            let collector = PTYOutputCollector()
+            let drain = Task.detached(priority: .userInitiated) {
+                while true {
+                    let chunk = masterHandle.availableData
+                    if chunk.isEmpty { break }
+                    await collector.append(chunk)
+                }
+            }
+
+            // Push credentials in. The child's term reader expects "\n" between
+            // values. If the write end has already closed (process exited
+            // early), suppress EPIPE.
+            stdin.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+                guard let base = bytes.baseAddress, !bytes.isEmpty else { return }
+                _ = Darwin.write(master, base, bytes.count)
+            }
+
             process.waitUntilExit()
+            // Closing the master ends the read loop in the drain task.
+            try? masterHandle.close()
+            await drain.value
 
-            let out = stdout.fileHandleForReading.readDataToEndOfFile()
-            let err = stderr.fileHandleForReading.readDataToEndOfFile()
-            return ProcessResult(
-                exitCode: process.terminationStatus,
-                stdout: String(data: out, encoding: .utf8) ?? "",
-                stderr: String(data: err, encoding: .utf8) ?? ""
-            )
+            let combined = await collector.snapshot()
+            return PTYResult(exitCode: process.terminationStatus, combined: combined)
         }.value
+    }
+}
+
+private actor PTYOutputCollector {
+    private var buffer = Data()
+
+    func append(_ data: Data) {
+        buffer.append(data)
+    }
+
+    func snapshot() -> String {
+        String(data: buffer, encoding: .utf8) ?? ""
     }
 }
 
