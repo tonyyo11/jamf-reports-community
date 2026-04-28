@@ -67,6 +67,9 @@ DEFAULT_AUTOMATION_MODE = "jamf-cli-only"
 DEFAULT_AUTOMATION_SCHEDULE = "weekdays"
 DEFAULT_AUTOMATION_TIME_OF_DAY = "07:00"
 DEFAULT_CSV_FRESHNESS_DAYS = 14
+# Error message constants for jamf-cli update-status
+NO_UPDATE_DATA_MESSAGE = "No managed software update data found."
+PLAN_TOGGLE_OFF_MESSAGE = "Managed Software Update Plans toggle is off."
 AUTOMATION_MODE_DESCRIPTIONS: dict[str, str] = {
     "snapshot-only": "Refresh jamf-cli snapshots and archive history; optional xlsx/HTML outputs are controlled by config.",
     "jamf-cli-only": "Use jamf-cli data to generate configured automation outputs.",
@@ -3547,11 +3550,11 @@ class JamfCLIBridge:
         except RuntimeError as exc:
             detail = str(exc)
             if (
-                "No managed software update data found." in detail
-                or "Managed Software Update Plans toggle is off." in detail
+                NO_UPDATE_DATA_MESSAGE in detail
+                or PLAN_TOGGLE_OFF_MESSAGE in detail
             ):
                 return {
-                    "message": "No managed software update data found.",
+                    "message": NO_UPDATE_DATA_MESSAGE,
                     "summary": {},
                     "ErrorDevices": [],
                 }
@@ -3584,11 +3587,11 @@ class JamfCLIBridge:
         except RuntimeError as exc:
             detail = str(exc)
             if (
-                "No managed software update data found." in detail
-                or "Managed Software Update Plans toggle is off." in detail
+                NO_UPDATE_DATA_MESSAGE in detail
+                or PLAN_TOGGLE_OFF_MESSAGE in detail
             ):
                 return [{
-                    "message": "No managed software update data found.",
+                    "message": NO_UPDATE_DATA_MESSAGE,
                     "total": 0,
                     "status_summary": [],
                     "error_devices": [],
