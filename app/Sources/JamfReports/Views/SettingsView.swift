@@ -51,6 +51,12 @@ struct SettingsView: View {
                 )
                 Divider().background(Theme.Colors.hairline)
                 settingsRow(
+                    label: "jamf-cli updates",
+                    sub: jamfCLIUpdateSubtitle,
+                    trailing: AnyView(jamfCLIUpdateControls)
+                )
+                Divider().background(Theme.Colors.hairline)
+                settingsRow(
                     label: "Auto-update jamf-cli",
                     sub: "Check on launch",
                     trailing: AnyView(PNPToggle(isOn: $autoUpdate))
@@ -68,7 +74,28 @@ struct SettingsView: View {
 
     private var jamfCLISubtitle: String {
         guard let path = workspace.jamfCLIPath else { return "Not found in /opt/homebrew/bin or /usr/local/bin" }
-        return "\(workspace.jamfCLIVersion ?? "unknown") · \(path)"
+        let source = workspace.jamfCLIInstallSource ?? "Unknown source"
+        return "\(workspace.jamfCLIVersion ?? "unknown") · \(source) · \(path)"
+    }
+
+    private var jamfCLIUpdateSubtitle: String {
+        workspace.jamfCLIUpdateMessage
+            ?? "Homebrew installs use brew; direct installs use GitHub releases"
+    }
+
+    private var jamfCLIUpdateControls: some View {
+        HStack(spacing: 8) {
+            if workspace.isUpdatingJamfCLI {
+                ProgressView().controlSize(.small)
+            } else {
+                PNPButton(title: "Check", size: .sm) {
+                    Task { await workspace.checkJamfCLIUpdate() }
+                }
+                PNPButton(title: "Update", icon: "arrow.down.circle", style: .gold, size: .sm) {
+                    Task { await workspace.updateJamfCLI() }
+                }
+            }
+        }
     }
 
     private var demoModeBinding: Binding<Bool> {

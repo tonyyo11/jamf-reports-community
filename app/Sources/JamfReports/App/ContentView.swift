@@ -45,6 +45,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cycleSidebar)) { _ in
             cycleSidebar()
         }
+        .task {
+            await workspace.autoUpdateJamfCLIIfNeeded()
+        }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
     }
 

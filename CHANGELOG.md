@@ -23,6 +23,9 @@ versions in this repository map to git tags.
 - Onboarding now validates the newly registered `jamf-cli` profile with
   `jamf-cli config validate` before continuing to CSV mapping and first report
   generation.
+- macOS app Settings now detects whether `jamf-cli` is managed by Homebrew or
+  installed directly from GitHub releases, and runs update checks through the
+  matching source instead of treating every install as Homebrew-managed.
 - `--profile` now works as a runtime Jamf Pro profile override for Python
   commands that use `jamf_cli.profile`, while retaining its existing
   `workspace-init` behavior.

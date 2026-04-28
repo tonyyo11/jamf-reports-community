@@ -17,10 +17,14 @@ final class WorkspaceStore {
     var selectedScoreCards: [TrendSeries.Metric]
     var jamfCLIPath: String?
     var jamfCLIVersion: String?
+    var jamfCLIInstallSource: String?
+    var jamfCLIUpdateMessage: String?
+    var isUpdatingJamfCLI: Bool = false
     var jrcPath: String?
     var isInitializingWorkspace: Bool = false
     var workspaceInitMessage: String?
     var launchAgentCleanupMessage: String?
+    private var didAutoUpdateJamfCLI = false
 
     /// True when the active profile has a `config.yaml` on disk under
     /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
@@ -89,8 +93,10 @@ final class WorkspaceStore {
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
         self.selectedScoreCards = [.activeDevices, .fileVault, .compliance, .stale]
-        self.jamfCLIPath = ExecutableLocator.locate("jamf-cli")?.path
-        self.jamfCLIVersion = JamfCLIInstaller.installedVersion()
+        let jamfCLI = JamfCLIInstaller.currentInstallation()
+        self.jamfCLIPath = jamfCLI?.path
+        self.jamfCLIVersion = jamfCLI?.version
+        self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jrcPath = CLIBridge().jrcDisplayPath()
         self.launchAgentCleanupMessage = cleanup.message
     }
@@ -182,9 +188,38 @@ final class WorkspaceStore {
     }
 
     func refreshToolStatus() {
-        jamfCLIPath = ExecutableLocator.locate("jamf-cli")?.path
-        jamfCLIVersion = JamfCLIInstaller.installedVersion()
+        let jamfCLI = JamfCLIInstaller.currentInstallation()
+        jamfCLIPath = jamfCLI?.path
+        jamfCLIVersion = jamfCLI?.version
+        jamfCLIInstallSource = jamfCLI?.source.label
         jrcPath = CLIBridge().jrcDisplayPath()
+    }
+
+    func checkJamfCLIUpdate() async {
+        guard !isUpdatingJamfCLI else { return }
+        isUpdatingJamfCLI = true
+        jamfCLIUpdateMessage = "Checking jamf-cli updates..."
+        let result = await JamfCLIInstaller().checkForUpdate()
+        jamfCLIUpdateMessage = result.message
+        isUpdatingJamfCLI = false
+        refreshToolStatus()
+    }
+
+    func updateJamfCLI() async {
+        guard !isUpdatingJamfCLI else { return }
+        isUpdatingJamfCLI = true
+        jamfCLIUpdateMessage = "Updating jamf-cli..."
+        let result = await JamfCLIInstaller().update()
+        jamfCLIUpdateMessage = result.message
+        isUpdatingJamfCLI = false
+        refreshToolStatus()
+    }
+
+    func autoUpdateJamfCLIIfNeeded() async {
+        guard !didAutoUpdateJamfCLI else { return }
+        didAutoUpdateJamfCLI = true
+        guard UserDefaults.standard.bool(forKey: "autoUpdateJamfCLI") else { return }
+        await updateJamfCLI()
     }
 
     // MARK: Config I/O
