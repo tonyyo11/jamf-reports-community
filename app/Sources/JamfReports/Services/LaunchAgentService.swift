@@ -49,6 +49,33 @@ enum LaunchAgentService {
         return LegacyCleanupResult(removedLabels: removed.sorted())
     }
 
+    /// Remove generated Python-owned LaunchAgents for a profile. Used when
+    /// leaving demo mode so synthetic demo schedules cannot appear in live mode.
+    static func removeAgents(profile: String) -> [String] {
+        guard ProfileService.isValid(profile) else { return [] }
+        let prefix = "\(LaunchAgentWriter.labelPrefix).\(profile)."
+        let urls = launchAgentEntries()
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+            .filter { $0.pathExtension == "plist" }
+
+        var removed: [String] = []
+        for url in urls {
+            guard let label = plistLabel(url),
+                  LaunchAgentWriter.isValidLabel(label),
+                  label.hasPrefix(prefix) else {
+                continue
+            }
+            _ = bootout(label)
+            do {
+                try FileManager.default.removeItem(at: url)
+                removed.append(label)
+            } catch {
+                continue
+            }
+        }
+        return removed.sorted()
+    }
+
     // MARK: - Private
 
     private static func launchAgentEntries() -> [URL] {
@@ -75,6 +102,10 @@ enum LaunchAgentService {
         let enabled = !((plist["Disabled"] as? Bool) ?? false)
         let cadence = describeCadence(plist["StartCalendarInterval"])
         let mode = runMode(from: args) ?? .jamfCLIOnly
+        let statusURL = statusFileURL(from: args, profile: profile, label: label)
+        let runStatus = readRunStatus(from: statusURL, profile: profile)
+        let logSummary = readLogSummary(from: plist, profile: profile)
+        let lastDate = runStatus?.finishedAt ?? logSummary.date
 
         return Schedule(
             name: humanName(from: slug, mode: mode),
@@ -82,10 +113,10 @@ enum LaunchAgentService {
             schedule: cadence,
             cadence: "custom",
             mode: mode,
-            next: "—",
-            last: "—",
-            lastStatus: .ok,
-            artifacts: [],
+            next: nextRunText(from: plist["StartCalendarInterval"], enabled: enabled),
+            last: lastDate.map(FileDisplay.date) ?? "—",
+            lastStatus: lastStatus(from: runStatus, logSummary: logSummary),
+            artifacts: runStatus?.artifacts ?? [],
             enabled: enabled,
             launchAgentLabel: label
         )
@@ -115,20 +146,85 @@ enum LaunchAgentService {
         return Schedule.RunMode(rawValue: args[idx + 1])
     }
 
+    // MARK: - Cadence / Next Run
+
     /// Convert a `StartCalendarInterval` value (dict or array of dicts) into a
     /// human-readable string for the table.
     private static func describeCadence(_ raw: Any?) -> String {
-        if let dict = raw as? [String: Int] {
-            return formatCalendar(dict)
-        }
-        if let array = raw as? [[String: Int]], let first = array.first {
-            if array.count == 5,
-               Set(array.compactMap { $0["Weekday"] }) == Set(1...5) {
+        let entries = calendarEntries(from: raw)
+        if let first = entries.first {
+            if entries.count == 5,
+               Set(entries.compactMap { $0["Weekday"] }) == Set(1...5) {
                 return "Weekdays \(formatTime(first))"
             }
-            return "\(array.count)× weekly · " + formatCalendar(first)
+            if entries.count > 1 {
+                return "\(entries.count)× weekly · " + formatCalendar(first)
+            }
+            return formatCalendar(first)
         }
         return "manual"
+    }
+
+    private static func nextRunText(from raw: Any?, enabled: Bool) -> String {
+        guard enabled, let next = nextRunDate(from: raw) else { return "—" }
+        return FileDisplay.date(next)
+    }
+
+    private static func nextRunDate(from raw: Any?, now: Date = Date()) -> Date? {
+        calendarEntries(from: raw)
+            .compactMap { nextDate(for: $0, after: now) }
+            .min()
+    }
+
+    private static func nextDate(for entry: [String: Int], after now: Date) -> Date? {
+        let cal = Calendar.current
+        var components = DateComponents()
+        components.hour = entry["Hour"] ?? 0
+        components.minute = entry["Minute"] ?? 0
+        components.second = 0
+        if let weekday = entry["Weekday"] {
+            components.weekday = calendarWeekday(fromLaunchdWeekday: weekday)
+        }
+        if let day = entry["Day"] {
+            components.day = day
+        }
+        return cal.nextDate(
+            after: now,
+            matching: components,
+            matchingPolicy: .nextTime,
+            repeatedTimePolicy: .first,
+            direction: .forward
+        )
+    }
+
+    private static func calendarWeekday(fromLaunchdWeekday value: Int) -> Int {
+        value == 0 || value == 7 ? 1 : value + 1
+    }
+
+    private static func calendarEntries(from raw: Any?) -> [[String: Int]] {
+        if let dict = raw as? [String: Int] {
+            return [dict]
+        }
+        if let dict = raw as? [String: Any] {
+            return [intDictionary(from: dict)]
+        }
+        if let array = raw as? [[String: Int]] {
+            return array
+        }
+        if let array = raw as? [[String: Any]] {
+            return array.map(intDictionary)
+        }
+        return []
+    }
+
+    private static func intDictionary(from dict: [String: Any]) -> [String: Int] {
+        dict.reduce(into: [:]) { result, item in
+            if let value = item.value as? Int {
+                result[item.key] = value
+            } else if let value = item.value as? NSNumber {
+                result[item.key] = value.intValue
+            }
+        }
     }
 
     private static func formatCalendar(_ d: [String: Int]) -> String {
@@ -160,6 +256,212 @@ enum LaunchAgentService {
             }
         }
         return slug.replacingOccurrences(of: "-", with: " ").capitalized
+    }
+
+    // MARK: - Run Status
+
+    private struct ParsedRunStatus {
+        let finishedAt: Date?
+        let success: Bool?
+        let artifacts: [String]
+    }
+
+    private struct ParsedLogSummary {
+        let date: Date?
+        let exitCode: Int32?
+        let hasFailureMarker: Bool
+    }
+
+    private static func statusFileURL(
+        from args: [String],
+        profile: String,
+        label: String
+    ) -> URL? {
+        guard let root = WorkspacePathGuard.root(for: profile) else { return nil }
+        let rawPath: String
+        if let idx = args.firstIndex(of: "--status-file"), idx + 1 < args.count {
+            rawPath = args[idx + 1]
+        } else {
+            rawPath = root
+                .appendingPathComponent("automation", isDirectory: true)
+                .appendingPathComponent("\(label)_status.json")
+                .path
+        }
+        return validatedWorkspaceURL(rawPath, profile: profile)
+    }
+
+    private static func readRunStatus(
+        from url: URL?,
+        profile: String
+    ) -> ParsedRunStatus? {
+        guard let root = WorkspacePathGuard.root(for: profile),
+              let url,
+              let safeURL = WorkspacePathGuard.validate(url, under: root),
+              let values = try? safeURL.resourceValues(forKeys: [.fileSizeKey]),
+              (values.fileSize ?? 0) <= 1_048_576,
+              let data = try? Data(contentsOf: safeURL),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return ParsedRunStatus(
+            finishedAt: dateValue(payload["finished_at"]),
+            success: payload["success"] as? Bool,
+            artifacts: artifactLabels(from: payload, root: root)
+        )
+    }
+
+    private static func readLogSummary(
+        from plist: [String: Any],
+        profile: String
+    ) -> ParsedLogSummary {
+        let urls = ["StandardOutPath", "StandardErrorPath"]
+            .compactMap { plist[$0] as? String }
+            .compactMap { validatedWorkspaceURL($0, profile: profile) }
+            .filter { fileSize($0) > 0 }
+
+        let newestDate = urls
+            .compactMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate }
+            .max()
+
+        var exitCode: Int32?
+        var hasFailureMarker = false
+        for url in urls {
+            let tail = parseLogTail(from: url)
+            if exitCode == nil {
+                exitCode = tail.exitCode
+            }
+            hasFailureMarker = hasFailureMarker || tail.hasFailureMarker
+        }
+        return ParsedLogSummary(
+            date: newestDate,
+            exitCode: exitCode,
+            hasFailureMarker: hasFailureMarker
+        )
+    }
+
+    private static func lastStatus(
+        from runStatus: ParsedRunStatus?,
+        logSummary: ParsedLogSummary
+    ) -> Schedule.LastStatus {
+        if let success = runStatus?.success {
+            return success ? .ok : .fail
+        }
+        if let exitCode = logSummary.exitCode {
+            return exitCode == 0 ? .ok : .fail
+        }
+        return logSummary.hasFailureMarker ? .fail : .ok
+    }
+
+    private static func artifactLabels(
+        from payload: [String: Any],
+        root: URL
+    ) -> [String] {
+        var labels: [String] = []
+        var seen: Set<String> = []
+        addArtifact("xlsx_report_path", as: "XLSX", from: payload, root: root, labels: &labels, seen: &seen)
+        addArtifact("html_report_path", as: "HTML", from: payload, root: root, labels: &labels, seen: &seen)
+        addArtifact("inventory_csv_path", as: "CSV", from: payload, root: root, labels: &labels, seen: &seen)
+        if labels.isEmpty {
+            addReportArtifact(from: payload["report_path"], root: root, labels: &labels, seen: &seen)
+        }
+        if let exported = payload["exported_reports"] as? [String],
+           exported.contains(where: { artifactExists($0, root: root) }) {
+            appendUnique("EXPORTS", labels: &labels, seen: &seen)
+        }
+        return labels
+    }
+
+    private static func addArtifact(
+        _ key: String,
+        as label: String,
+        from payload: [String: Any],
+        root: URL,
+        labels: inout [String],
+        seen: inout Set<String>
+    ) {
+        guard let raw = payload[key] as? String, artifactExists(raw, root: root) else { return }
+        appendUnique(label, labels: &labels, seen: &seen)
+    }
+
+    private static func addReportArtifact(
+        from raw: Any?,
+        root: URL,
+        labels: inout [String],
+        seen: inout Set<String>
+    ) {
+        guard let path = raw as? String,
+              artifactExists(path, root: root) else { return }
+        switch URL(fileURLWithPath: path).pathExtension.lowercased() {
+        case "xlsx": appendUnique("XLSX", labels: &labels, seen: &seen)
+        case "html": appendUnique("HTML", labels: &labels, seen: &seen)
+        case "csv": appendUnique("CSV", labels: &labels, seen: &seen)
+        default: appendUnique("OUTPUT", labels: &labels, seen: &seen)
+        }
+    }
+
+    private static func appendUnique(
+        _ label: String,
+        labels: inout [String],
+        seen: inout Set<String>
+    ) {
+        guard seen.insert(label).inserted else { return }
+        labels.append(label)
+    }
+
+    private static func artifactExists(_ rawPath: String, root: URL) -> Bool {
+        let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
+        guard let safeURL = WorkspacePathGuard.validate(url, under: root) else { return false }
+        return FileManager.default.fileExists(atPath: safeURL.path)
+    }
+
+    private static func dateValue(_ raw: Any?) -> Date? {
+        guard let text = raw as? String, !text.isEmpty else { return nil }
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFractional.date(from: text) {
+            return date
+        }
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+        return standard.date(from: text)
+    }
+
+    private static func parseLogTail(from url: URL) -> (exitCode: Int32?, hasFailureMarker: Bool) {
+        guard let fh = FileHandle(forReadingAtPath: url.path) else { return (nil, false) }
+        defer { fh.closeFile() }
+
+        let fileSize = fh.seekToEndOfFile()
+        let readSize = min(fileSize, 2_048)
+        fh.seek(toFileOffset: fileSize - readSize)
+        let data = fh.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8) else { return (nil, false) }
+
+        var hasFailureMarker = false
+        var exitCode: Int32? = nil
+        for line in text.components(separatedBy: "\n").reversed() {
+            let lower = line.lowercased()
+            hasFailureMarker = hasFailureMarker
+                || lower.contains("[fatal]")
+                || lower.contains("[error]")
+                || lower.contains("traceback")
+            if exitCode == nil {
+                if lower.contains("exit 0") { exitCode = 0 }
+                if lower.contains("exit 1") { exitCode = 1 }
+            }
+        }
+        return (exitCode, hasFailureMarker)
+    }
+
+    private static func fileSize(_ url: URL) -> Int {
+        (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+    }
+
+    private static func validatedWorkspaceURL(_ rawPath: String, profile: String) -> URL? {
+        guard let root = WorkspacePathGuard.root(for: profile) else { return nil }
+        let expanded = (rawPath as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: expanded)
+        return WorkspacePathGuard.validate(url, under: root)
     }
 
     private static func bootout(_ label: String) -> Int32 {

@@ -51,8 +51,7 @@ struct OverviewView: View {
                     Text("Workspace not initialized")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg)
-                    Text(workspace.workspaceInitMessage
-                         ?? "~/Jamf-Reports/\(workspace.profile)/ does not exist yet. Initialize it to start collecting jamf-cli snapshots and historical trend summaries.")
+                    Text(workspace.workspaceInitMessage ?? workspaceInitDefaultMessage)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -67,6 +66,17 @@ struct OverviewView: View {
                 }
             }
         }
+    }
+
+    private var workspaceInitDefaultMessage: String {
+        guard let url = ProfileService.workspaceURL(for: workspace.profile) else {
+            return "Invalid workspace profile. Choose another profile or rename it in jamf-cli."
+        }
+        let config = url.appendingPathComponent("config.yaml")
+        if FileManager.default.fileExists(atPath: url.path) {
+            return "\(config.path) is missing. Initialize it to seed config.yaml and helper folders."
+        }
+        return "\(url.path) does not exist yet. Initialize it to seed config.yaml and helper folders."
     }
 
     private var liveWorkspaceState: some View {

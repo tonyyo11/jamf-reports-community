@@ -8,6 +8,20 @@ import Foundation
 /// id, the URL, and the on-disk workspace folder.
 enum ProfileService {
 
+    enum CleanupError: Error, LocalizedError {
+        case invalidProfile(String)
+        case outsideWorkspaceRoot(URL)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidProfile(let profile):
+                "Invalid profile name: \(profile)"
+            case .outsideWorkspaceRoot(let url):
+                "Refusing to remove workspace outside ~/Jamf-Reports: \(url.path)"
+            }
+        }
+    }
+
     private struct JamfCLIConfigProfile: Decodable {
         let name: String
         let url: String?
@@ -94,6 +108,24 @@ enum ProfileService {
 
     static func defaultProfileName() -> String? {
         discoverLocal().first(where: \.isDefault)?.name
+    }
+
+    /// Remove one local workspace folder under `~/Jamf-Reports/<profile>`.
+    /// This never edits jamf-cli credentials or profiles; it only removes the
+    /// app's local workspace directory after path-boundary validation.
+    @discardableResult
+    static func removeLocalWorkspace(profile: String) throws -> Bool {
+        guard isValid(profile), let url = workspaceURL(for: profile) else {
+            throw CleanupError.invalidProfile(profile)
+        }
+        let root = workspacesRoot().resolvingSymlinksInPath().standardizedFileURL
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path == root.appendingPathComponent(profile, isDirectory: true).path else {
+            throw CleanupError.outsideWorkspaceRoot(url)
+        }
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        try FileManager.default.removeItem(at: url)
+        return true
     }
 
     private static func discoverJamfCLIProfiles(scheduleCounts: [String: Int]) -> [JamfCLIProfile] {

@@ -148,8 +148,38 @@ final class WorkspaceStore {
             profiles = DemoData.cliProfiles
             schedules = DemoData.scheduledRuns
         } else {
+            let cleanupMessage = cleanupDemoProfileArtifacts()
             reloadFromDisk()
+            if let cleanupMessage {
+                launchAgentCleanupMessage = cleanupMessage
+            }
         }
+    }
+
+    private func cleanupDemoProfileArtifacts() -> String? {
+        let demoProfile = DemoData.org.profile
+        let removedAgents = LaunchAgentService.removeAgents(profile: demoProfile)
+        do {
+            let removedWorkspace = try ProfileService.removeLocalWorkspace(profile: demoProfile)
+            if removedWorkspace || !removedAgents.isEmpty {
+                var parts: [String] = []
+                if removedWorkspace {
+                    parts.append("workspace \(demoProfile)")
+                }
+                if !removedAgents.isEmpty {
+                    parts.append("\(removedAgents.count) demo LaunchAgent\(removedAgents.count == 1 ? "" : "s")")
+                }
+                return "Removed demo \(parts.joined(separator: " and "))."
+            }
+        } catch {
+            if !removedAgents.isEmpty {
+                return "Removed \(removedAgents.count) demo LaunchAgent"
+                    + (removedAgents.count == 1 ? "" : "s")
+                    + ", but could not remove workspace \(demoProfile): \(error.localizedDescription)"
+            }
+            return "Could not remove demo workspace \(demoProfile): \(error.localizedDescription)"
+        }
+        return nil
     }
 
     /// Run `jrc workspace-init` first so the user gets a workspace even without

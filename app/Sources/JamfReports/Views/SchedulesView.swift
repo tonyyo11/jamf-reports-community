@@ -310,10 +310,14 @@ struct SchedulesView: View {
     private func runNextScheduledNow() async {
         let target = filteredSchedules.first(where: \.enabled) ?? filteredSchedules.first
         guard let target, ProfileService.isValid(target.profile) else { return }
+        guard let agentLabel = LaunchAgentWriter.label(for: target) else {
+            lastRunMessage = "invalid schedule label"
+            return
+        }
         isRunning = true
         runLogLines = []
         let buf = LineBuffer()
-        let exit = await bridge.runNow(profile: target.profile, mode: target.mode) { line in
+        let exit = await LaunchAgentWriter.runNow(agentLabel) { line in
             buf.append(line)
             Task { @MainActor in
                 runLogLines = buf.lines
@@ -322,6 +326,7 @@ struct SchedulesView: View {
         runLogLines = buf.lines
         isRunning = false
         lastRunMessage = "\(target.name) · exit \(exit)"
+        workspace.reloadFromDisk()
     }
 
     private func toggleSchedule(_ schedule: Schedule) async {

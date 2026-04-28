@@ -69,6 +69,15 @@ versions in this repository map to git tags.
 - Reduced macOS app file-opening and onboarding exposure by removing the unused
   `/Applications` allow-list entry and redacting profile credentials from
   registration failure output before it is shown in the UI.
+- macOS app report actions now choose a Python interpreter that can import the
+  bundled report dependencies, and the workspace banner now distinguishes a
+  missing `config.yaml` from a missing workspace directory.
+- macOS app scheduled runs now show computed next-run times and last-run status
+  from the generated LaunchAgent status/log files; manual "Run now" uses the
+  schedule's `launchagent-run` command so it records run history consistently.
+- Turning demo mode off now removes the synthetic `meridian-prod` local
+  workspace and any generated demo LaunchAgents so the demo profile does not
+  leak into live profile discovery.
 - Hardened macOS app profile handling around connection validation, workspace
   initialization, LaunchAgent labels, and live-mode trends so invalid profile or
   schedule names are rejected consistently and live users are not shown synthetic

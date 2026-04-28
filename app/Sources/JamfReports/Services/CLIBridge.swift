@@ -387,7 +387,7 @@ final class CLIBridge {
 
     func resolveJRCCommand() -> (executable: URL, arguments: [String])? {
         if let script = resolveJRCScript(),
-           let python = locate("python3") ?? locate("python") {
+           let python = locatePythonForJRC() {
             return (python, [script.path])
         }
         if let jrc = locate("jrc") {
@@ -406,6 +406,48 @@ final class CLIBridge {
         ].compactMap { $0 }
 
         return candidates.first { fm.fileExists(atPath: $0.path) }
+    }
+
+    private func locatePythonForJRC() -> URL? {
+        for candidate in pythonCandidates() where canRunJRC(candidate) {
+            return candidate
+        }
+        return locate("python3") ?? locate("python")
+    }
+
+    private func pythonCandidates() -> [URL] {
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let paths = [
+            "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
+            "/usr/local/bin/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/bin/python3",
+            cwd.appendingPathComponent("python3").path,
+        ]
+        var seen: Set<String> = []
+        return paths.compactMap { path in
+            guard !seen.contains(path), FileManager.default.isExecutableFile(atPath: path) else {
+                return nil
+            }
+            seen.insert(path)
+            return URL(fileURLWithPath: path)
+        }
+    }
+
+    private func canRunJRC(_ python: URL) -> Bool {
+        let process = Process()
+        process.executableURL = python
+        process.arguments = ["-c", "import pandas, xlsxwriter, yaml"]
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     private func ensureWorkspace(
