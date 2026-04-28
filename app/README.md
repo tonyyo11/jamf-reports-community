@@ -149,8 +149,10 @@ The app is designed as a non-privileged GUI shell over the CLI tool:
   folders. The app refuses to interact with paths outside this scope.
 - **Profile-name regex:** Workspace and profile names are validated against
   `^[a-z0-9][a-z0-9._-]*$` to prevent path traversal and malformed plist labels.
-- **No-credentials-in-app:** The GUI never touches or stores API secrets. It
-  references `jamf-cli` profiles by name; secrets remain in the system keychain.
+- **No persisted credentials in app:** During onboarding, the GUI passes the API
+  client secret to `jamf-cli` over stdin, redacts failure output, and clears the
+  field afterward. Persistent secrets remain in the system keychain through
+  `jamf-cli`; normal app flows reference profiles by name.
 - **UserAgents-only:** The app only manages `~/Library/LaunchAgents`. It never
   requests `sudo` or attempts to install system-wide LaunchDaemons.
 - **Atomic-write policy:** (Planned) All configuration and plist updates will

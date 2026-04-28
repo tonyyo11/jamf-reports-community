@@ -158,6 +158,9 @@ final class OnboardingFlow {
 
     func previousStep() {
         guard let previous = Step(rawValue: currentStep.rawValue - 1) else { return }
+        if currentStep == .authenticate {
+            clearClientSecret()
+        }
         currentStep = previous
         lastError = nil
     }
@@ -225,8 +228,9 @@ final class OnboardingFlow {
         )
 
         guard result.exitCode == 0 else {
-            let combined = result.combined.trimmed
-            throw FlowError.processFailed(combined.isEmpty ? "jamf-cli exited \(result.exitCode)." : combined)
+            let combined = redactedCredentialOutput(result.combined.trimmed)
+            let message = combined.isEmpty ? "jamf-cli exited \(result.exitCode)." : combined
+            throw FlowError.processFailed(message)
         }
 
         profileRegistered = true
@@ -406,6 +410,18 @@ final class OnboardingFlow {
         let count = clientSecret.count
         clientSecret = String(repeating: "\0", count: count)
         clientSecret.removeAll(keepingCapacity: false)
+    }
+
+    private func redactedCredentialOutput(_ text: String) -> String {
+        var redacted = text
+        if !clientSecret.isEmpty {
+            redacted = redacted.replacingOccurrences(of: clientSecret, with: "[redacted]")
+        }
+        let trimmedClientID = clientID.trimmed
+        if trimmedClientID.count >= 8 {
+            redacted = redacted.replacingOccurrences(of: trimmedClientID, with: "[redacted]")
+        }
+        return redacted
     }
 
     private struct PTYResult: Sendable {

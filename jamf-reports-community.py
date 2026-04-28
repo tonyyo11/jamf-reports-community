@@ -70,6 +70,72 @@ DEFAULT_CSV_FRESHNESS_DAYS = 14
 # Error message constants for jamf-cli update-status
 NO_UPDATE_DATA_MESSAGE = "No managed software update data found."
 PLAN_TOGGLE_OFF_MESSAGE = "Managed Software Update Plans toggle is off."
+
+
+def _update_no_data_detail_matches(detail: str) -> bool:
+    """Return True when jamf-cli says managed software update data is unavailable."""
+    return (
+        NO_UPDATE_DATA_MESSAGE in detail
+        or PLAN_TOGGLE_OFF_MESSAGE in detail
+    )
+
+
+def _jamf_error_detail(raw: Any) -> str:
+    """Extract human-readable error text from a Jamf API error JSON response."""
+    nodes = raw if isinstance(raw, list) else [raw]
+    details: list[str] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        for key in ("message", "detail", "description", "error"):
+            value = node.get(key)
+            if value:
+                details.append(str(value))
+        errors = node.get("errors")
+        if isinstance(errors, list):
+            for item in errors:
+                if isinstance(item, dict):
+                    for key in ("message", "detail", "description", "error"):
+                        value = item.get(key)
+                        if value:
+                            details.append(str(value))
+                elif item:
+                    details.append(str(item))
+    return "\n".join(details)
+
+
+def _is_update_no_data_response(raw: Any) -> bool:
+    """Return True for cached Jamf JSON that means update-status has no data."""
+    envelope = raw[0] if isinstance(raw, list) and raw else raw
+    if not isinstance(envelope, dict):
+        return False
+    if not any(key in envelope for key in ("errors", "httpStatus", "message")):
+        return False
+    return _update_no_data_detail_matches(_jamf_error_detail(raw))
+
+
+def _empty_update_status_envelope() -> dict[str, Any]:
+    """Return the normalized no-data envelope for update-status."""
+    return {
+        "message": NO_UPDATE_DATA_MESSAGE,
+        "summary": {},
+        "ErrorDevices": [],
+    }
+
+
+def _empty_update_failures_envelope() -> list[dict[str, Any]]:
+    """Return the normalized no-data envelope for update-status --scan-failures."""
+    return [{
+        "message": NO_UPDATE_DATA_MESSAGE,
+        "total": 0,
+        "status_summary": [],
+        "error_devices": [],
+        "plan_total": 0,
+        "plan_state_summary": [],
+        "failed_plans": [],
+    }]
+
+
 AUTOMATION_MODE_DESCRIPTIONS: dict[str, str] = {
     "snapshot-only": "Refresh jamf-cli snapshots and archive history; optional xlsx/HTML outputs are controlled by config.",
     "jamf-cli-only": "Use jamf-cli data to generate configured automation outputs.",
@@ -3542,23 +3608,19 @@ class JamfCLIBridge:
         """Fetch managed software update report from jamf-cli pro report update-status."""
         self._require_report_command("update-status", ["update-status", "update_status"])
         try:
-            return self._run_and_save(
+            data = self._run_and_save(
                 "update-status",
                 ["pro", "report", "update-status"],
                 ["update-status", "update_status"],
             )
         except RuntimeError as exc:
             detail = str(exc)
-            if (
-                NO_UPDATE_DATA_MESSAGE in detail
-                or PLAN_TOGGLE_OFF_MESSAGE in detail
-            ):
-                return {
-                    "message": NO_UPDATE_DATA_MESSAGE,
-                    "summary": {},
-                    "ErrorDevices": [],
-                }
+            if _update_no_data_detail_matches(detail):
+                return _empty_update_status_envelope()
             raise
+        if _is_update_no_data_response(data):
+            return _empty_update_status_envelope()
+        return data
 
     def update_device_failures(self) -> Any:
         """Fetch per-device update failures via pro report update-status --scan-failures.
@@ -3579,27 +3641,19 @@ class JamfCLIBridge:
         """
         self._require_report_command("update-status", ["update-status", "update_status"])
         try:
-            return self._run_and_save(
+            data = self._run_and_save(
                 "update-device-failures",
                 ["pro", "report", "update-status", "--scan-failures"],
                 ["update-device-failures", "update_device_failures"],
             )
         except RuntimeError as exc:
             detail = str(exc)
-            if (
-                NO_UPDATE_DATA_MESSAGE in detail
-                or PLAN_TOGGLE_OFF_MESSAGE in detail
-            ):
-                return [{
-                    "message": NO_UPDATE_DATA_MESSAGE,
-                    "total": 0,
-                    "status_summary": [],
-                    "error_devices": [],
-                    "plan_total": 0,
-                    "plan_state_summary": [],
-                    "failed_plans": [],
-                }]
+            if _update_no_data_detail_matches(detail):
+                return _empty_update_failures_envelope()
             raise
+        if _is_update_no_data_response(data):
+            return _empty_update_failures_envelope()
+        return data
 
     def checkin_status(self, threshold_days: int = 7) -> Any:
         """Fetch check-in health summary.

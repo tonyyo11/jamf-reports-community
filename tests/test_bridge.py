@@ -67,6 +67,51 @@ def test_update_device_failures_returns_empty_envelope_for_toggle_off(monkeypatc
     assert result[0]["failed_plans"] == []
 
 
+def test_update_status_normalizes_cached_toggle_off_response(monkeypatch, jrc) -> None:
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+    monkeypatch.setattr(bridge, "_require_report_command", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bridge, "_run_and_save", lambda *args, **kwargs: {
+        "httpStatus": 503,
+        "errors": [{
+            "description": (
+                "This endpoint cannot be used if the Managed Software Update Plans "
+                "toggle is off."
+            ),
+        }],
+    })
+
+    result = bridge.update_status()
+
+    assert result == {
+        "message": "No managed software update data found.",
+        "summary": {},
+        "ErrorDevices": [],
+    }
+
+
+def test_update_device_failures_normalizes_cached_toggle_off_response(
+    monkeypatch,
+    jrc,
+) -> None:
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+    monkeypatch.setattr(bridge, "_require_report_command", lambda *args, **kwargs: None)
+    monkeypatch.setattr(bridge, "_run_and_save", lambda *args, **kwargs: {
+        "httpStatus": 503,
+        "errors": [{
+            "description": (
+                "This endpoint cannot be used if the Managed Software Update Plans "
+                "toggle is off."
+            ),
+        }],
+    })
+
+    result = bridge.update_device_failures()
+
+    assert isinstance(result, list)
+    assert result[0]["message"] == "No managed software update data found."
+    assert result[0]["failed_plans"] == []
+
+
 def test_groups_uses_confirmed_list_command(monkeypatch, jrc) -> None:
     bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
     captured: list[str] = []

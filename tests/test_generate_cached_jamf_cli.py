@@ -39,6 +39,22 @@ def test_generate_from_committed_cached_jamf_cli_data(
     }
     assert expected.issubset(set(workbook.sheetnames))
 
+    update_status_values = [
+        cell.value
+        for row in workbook["Update Status"].iter_rows(min_row=1, max_row=8, max_col=2)
+        for cell in row
+    ]
+    assert "No Data" in update_status_values
+    assert "No managed software update data found." in update_status_values
+
+    update_failure_values = [
+        cell.value
+        for row in workbook["Update Failures"].iter_rows(min_row=1, max_row=8, max_col=2)
+        for cell in row
+    ]
+    assert "No Data" in update_failure_values
+    assert "No managed software update data found." in update_failure_values
+
     active_sheet = workbook["Active Devices"]
     col_a = [active_sheet[f"A{r}"].value for r in range(1, 10)]
     assert "Active Devices" in col_a

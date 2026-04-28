@@ -60,6 +60,12 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Cached Jamf managed-software-update endpoint errors are now normalized to the
+  same no-data workbook rows as live `jamf-cli` failures, so cached reports no
+  longer produce blank Update Status/Failures sheets when the tenant toggle is off.
+- Reduced macOS app file-opening and onboarding exposure by removing the unused
+  `/Applications` allow-list entry and redacting profile credentials from
+  registration failure output before it is shown in the UI.
 - Hardened macOS app profile handling around connection validation, workspace
   initialization, LaunchAgent labels, and live-mode trends so invalid profile or
   schedule names are rejected consistently and live users are not shown synthetic

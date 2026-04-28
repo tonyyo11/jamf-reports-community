@@ -2,6 +2,7 @@
 
 **Scope:** `app/Sources/JamfReports/`, `app/build-app.sh`, `app/iconset/`
 **Date:** 2026-04-26
+**Updated:** 2026-04-28
 **Branch:** `dev-app/2.0` (post-feature-merge)
 **Auditor:** Claude (Opus 4.7)
 
@@ -12,14 +13,15 @@
 | Severity | Count | Status |
 |----------|-------|--------|
 | MUST-FIX | 3 | All fixed in this audit |
-| SHOULD-FIX | 5 | 4 fixed, 1 deferred |
-| CONSIDER | 4 | Documented; not changed |
+| SHOULD-FIX | 5 | 4 fixed, 1 mitigated/deferred |
+| CONSIDER | 4 | 2 fixed/documented, 2 documented |
 
 The codebase already follows a strong defense-in-depth pattern: `ProfileService.isValid`,
 `WorkspacePathGuard`, atomic `replaceItem` writes, no shell invocation, plist label
 validation, and credential keys rejected at config load. The findings below close
 trailing-slash prefix bugs, plug a path-traversal hole in `JamfProtectSnapshotService`,
-and harden the build chain (Hardened Runtime + entitlements).
+shrink the file-opening allow-list, and harden the build chain (Hardened Runtime +
+entitlements).
 
 ---
 
@@ -121,10 +123,12 @@ URL values; no shell metacharacters can affect parsing because there is no shell
 - `OnboardingFlow.clientSecret` is never persisted. It is held in `@Observable`
   state during the onboarding flow only.
 - The secret is passed to `jamf-cli` over **stdin**, never as a process argument
-  (which would be visible in `ps`). See `OnboardingFlow.runProcess` lines 358–388.
+  (which would be visible in `ps`). See `OnboardingFlow.runWithPTY`.
 - After the `jamf-cli profile add` call returns, `clearClientSecret()` overwrites
   the in-memory `String` with NUL bytes and removes it. The `Data` buffer is also
   zeroed via `resetBytes`.
+- If profile registration fails, subprocess output is redacted before being shown
+  so a future `jamf-cli` behavior change cannot echo the client secret into the UI.
 - `ConfigService.rejectCredentialKeys` walks the parsed YAML and refuses to load
   any mapping containing `client_secret`, `password`, or `api_key`. Both load and
   save paths invoke this guard.
@@ -136,20 +140,26 @@ that the Observation framework, SwiftUI rendering, or autorelease pool retain
 will still hold the original bytes. Treating Swift strings as un-zeroable is
 the standard advice; users with this concern should rely on Keychain via
 `jamf-cli` (already the persistent store). Consider switching the input field
-to a transient `Data` buffer in a future revision. **No fix applied.**
+to a transient `Data` buffer in a future revision. **Full fix deferred.**
+
+**Mitigation applied:** clear the secret when navigating backward from the
+authentication step and redact client ID/secret values from profile-registration
+failure output before surfacing it in the UI.
 
 ### 6. URL opening
 
 | Site | Validation |
 |------|------------|
 | `SettingsView.openURL(_:)` (3 GitHub links) | Hard-coded constants, additionally validates `scheme == "https"` and non-empty host. ✓ |
-| `SystemActions.open(_:)` / `openFolder(_:)` | Uses `canonicalize(_:)`. After MUST-FIX 1, the allow-list (`~/Jamf-Reports`, `~/Library/LaunchAgents`, `~/Documents`, `~/Downloads`, `/tmp`, `/Applications`) only matches when the resolved path is exactly the parent or a true child. ✓ |
+| `SystemActions.open(_:)` / `openFolder(_:)` | Uses `canonicalize(_:)`. After MUST-FIX 1, the allow-list (`~/Jamf-Reports`, `~/Library/LaunchAgents`, `~/Documents`, `~/Downloads`, `/tmp`) only matches when the resolved path is exactly the parent or a true child. ✓ |
 | `SystemActions.reveal(_:)` | Same `canonicalize` guard. ✓ |
 
 **CONSIDER 1** — The `/Applications` entry in `SystemActions.allowedParents()` is
 broader than the app needs. The GUI never opens anything inside `/Applications`
 in current code paths. Removing it would shrink the surface, but doing so is a
-behavior change worth a separate PR. **No change.**
+behavior change worth a separate PR.
+
+**Fix applied:** removed `/Applications` from the allow-list.
 
 ### 7. Privilege escalation
 
@@ -186,10 +196,11 @@ config falling back to defaults. **No change.**
   client secrets; only the Jamf URL, profile name, file paths, and counts are
   emitted.
 - `RunHistoryService.parseLogTail` — last 1 KB of the log file from disk.
-- `OnboardingFlow.runProcess` — captures the `jamf-cli profile add` output.
+- `OnboardingFlow.runWithPTY` — captures the `jamf-cli profile add` output.
 
-`OnboardingFlow.runProcess` does pipe the secret over **stdin**, so it does not
+`OnboardingFlow.runWithPTY` does pipe the secret over **stdin**, so it does not
 appear in stdout/stderr unless `jamf-cli` echoes it back (it does not).
+Profile-registration failures are still redacted defensively before being shown.
 
 **CONSIDER 3** — Full `logURL.path` is rendered in the log header at
 `RunsView.swift:136` (with `home` replaced by `~`). This is intentional — users
@@ -230,7 +241,10 @@ already present.
 **CONSIDER 4** — `README.md` does not document that production distribution
 needs Developer ID + notarization (current build is `codesign --sign -`,
 i.e. ad-hoc, and `spctl -a` will reject it). Adding a "Distribution" note to
-the README is worth doing in a follow-up. **No change in this audit.**
+the README is worth doing in a follow-up.
+
+**Documentation applied:** root `README.md` and `app/README.md` now describe the
+Developer ID, notarization, and stapling requirements for distribution.
 
 ---
 
@@ -285,7 +299,7 @@ to `codesign`. `Info.plist` now has `NSHumanReadableCopyright` and a strict
 - **Distribution signing.** Ad-hoc signing only protects against tampering on
   the developer's machine. Distribution to other Macs requires Apple Developer
   ID + notarization; that is a release-engineering concern, not a code change.
-  README should be updated separately.
+  The requirements are documented in root `README.md` and `app/README.md`.
 - **Python `jamf-reports-community.py` (`jrc`) internals.** This audit only
   covers the Swift app and its build chain. The Python tool's own input handling,
   XML/YAML emit, and CLI argument parsing are out of scope.

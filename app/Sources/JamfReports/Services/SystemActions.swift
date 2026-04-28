@@ -4,9 +4,9 @@ import AppKit
 /// and "Copy to clipboard" actions wired throughout the UI.
 ///
 /// Every public method validates that the path exists and refuses to follow
-/// symlinks outside `~/Jamf-Reports` and `~/Library/LaunchAgents` — defense
-/// against an attacker who could plant a symlink in a workspace folder to
-/// trick the GUI into revealing or opening files outside the sandboxed scope.
+/// symlinks outside user data/report locations — defense against an attacker
+/// who could plant a symlink in a workspace folder to trick the GUI into
+/// revealing or opening files outside the sandboxed scope.
 enum SystemActions {
 
     /// Reveal a file or directory in Finder. No-op if the path doesn't exist.
@@ -57,7 +57,6 @@ enum SystemActions {
             home.appendingPathComponent("Documents"),
             home.appendingPathComponent("Downloads"),
             URL(fileURLWithPath: "/tmp"),
-            URL(fileURLWithPath: "/Applications"),
         ]
     }
 }
