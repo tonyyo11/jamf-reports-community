@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import plistlib
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -223,6 +224,80 @@ def test_launchagent_setup_writes_disabled_python_owned_plist(
     assert str(workspace_dir / "csv-inbox") in args
 
 
+def test_write_launchagent_plist_keeps_existing_file_when_replace_fails(
+    jrc,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    label = f"{_PREFIX}.dummy"
+    plist_path = tmp_path / f"{label}.plist"
+    old_payload = {"Label": label, "ProgramArguments": ["old"]}
+    plist_path.write_bytes(plistlib.dumps(old_payload, sort_keys=True))
+
+    real_replace = jrc.os.replace
+
+    def fake_replace(src, dst):  # noqa: ANN001 - mirrors os.replace
+        if Path(dst) == plist_path:
+            raise OSError("replace blocked")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(jrc.os, "replace", fake_replace)
+
+    with pytest.raises(OSError, match="replace blocked"):
+        jrc._write_launchagent_plist(
+            plist_path,
+            label,
+            ["new"],
+            tmp_path,
+            [{"Hour": 6, "Minute": 15}],
+            tmp_path / "out.log",
+            tmp_path / "err.log",
+        )
+
+    assert plistlib.loads(plist_path.read_bytes()) == old_payload
+    previous_path = jrc._launchagent_previous_plist_path(plist_path)
+    assert plistlib.loads(previous_path.read_bytes()) == old_payload
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_load_launchagent_restores_previous_plist_when_replacement_bootstrap_fails(
+    jrc,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    label = f"{_PREFIX}.dummy"
+    plist_path = tmp_path / f"{label}.plist"
+    previous_path = jrc._launchagent_previous_plist_path(plist_path)
+    old_payload = {"Label": label, "ProgramArguments": ["old"]}
+    new_payload = {"Label": label, "ProgramArguments": ["new"]}
+    plist_path.write_bytes(plistlib.dumps(new_payload, sort_keys=True))
+    previous_path.write_bytes(plistlib.dumps(old_payload, sort_keys=True))
+
+    calls: list[list[str]] = []
+    bootstrap_payloads: list[str] = []
+
+    def fake_run(cmd, **_kwargs):  # noqa: ANN001 - mirrors subprocess.run
+        calls.append(list(cmd))
+        if cmd[1] == "bootstrap":
+            payload = plistlib.loads(plist_path.read_bytes())
+            bootstrap_payloads.append(payload["ProgramArguments"][0])
+            if len(bootstrap_payloads) == 1:
+                raise subprocess.CalledProcessError(5, cmd, stderr="bad plist")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(jrc.subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit) as excinfo:
+        jrc._load_launchagent(plist_path, label, run_now=False)
+
+    assert "Error: launchctl bootstrap failed: bad plist" in str(excinfo.value)
+    assert "Previous LaunchAgent restored and reloaded." in str(excinfo.value)
+    assert [cmd[1] for cmd in calls] == ["bootout", "bootstrap", "bootstrap", "enable"]
+    assert bootstrap_payloads == ["new", "old"]
+    assert plistlib.loads(plist_path.read_bytes()) == old_payload
+    assert not previous_path.exists()
+
+
 def test_launchagent_setup_rejects_legacy_swift_label(config_factory, tmp_path: Path, jrc) -> None:
     config = config_factory("dummy.yaml")
     config._data["jamf_cli"]["profile"] = "dummy"
@@ -247,3 +322,71 @@ def test_launchagent_setup_rejects_legacy_swift_label(config_factory, tmp_path: 
             False,
             False,
         )
+
+
+# ---------------------------------------------------------------------------
+# _validate_launchagent_label — direct edge-case coverage
+# ---------------------------------------------------------------------------
+
+# The Swift app's ``LaunchAgentWriter.isValidLabel`` and the Python validator
+# must agree on the allowed character set ([a-z0-9._-]). Anything either side
+# accepts that the other rejects produces a plist that the GUI cannot load.
+
+_PREFIX = "com.github.tonyyo11.jamf-reports-community"
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        f"{_PREFIX}.dummy",
+        f"{_PREFIX}.dummy.daily",
+        f"{_PREFIX}.harbor-edu_v2",
+        f"{_PREFIX}.school-test.weekly-mon",
+    ],
+)
+def test_validate_launchagent_label_accepts_valid_labels(jrc, label: str) -> None:
+    assert jrc._validate_launchagent_label(label) == label
+
+
+@pytest.mark.parametrize(
+    "label,reason",
+    [
+        (f"{_PREFIX}.Dummy", "uppercase"),
+        (f"{_PREFIX}.DAILY", "uppercase"),
+        (f"{_PREFIX}.dummy.", "trailing dot"),
+        (f"{_PREFIX}.dummy..weekly", "double dot"),
+        (f"{_PREFIX}.dummy daily", "whitespace"),
+        (f"{_PREFIX}.dummy/weekly", "slash"),
+        ("com.example.other.dummy", "wrong prefix"),
+        (_PREFIX, "no namespace tail"),
+        (f"{_PREFIX}.", "empty tail"),
+    ],
+)
+def test_validate_launchagent_label_rejects_invalid_labels(jrc, label: str, reason: str) -> None:
+    del reason  # included for readable parametrize ids
+    with pytest.raises(SystemExit, match="LaunchAgent label"):
+        jrc._validate_launchagent_label(label)
+
+
+def test_validate_launchagent_label_strips_surrounding_whitespace(jrc) -> None:
+    label = f"  {_PREFIX}.dummy  "
+    assert jrc._validate_launchagent_label(label) == f"{_PREFIX}.dummy"
+
+
+def test_default_launchagent_label_lowercases_uppercase_profile_stem(jrc, tmp_path: Path) -> None:
+    """A config stem that contains uppercase still yields a Swift-loadable label.
+
+    Profiles are validated lowercase, but if the config has no profile and the
+    file stem is mixed-case (e.g. ``Dummy.yaml``), the auto-generated label
+    must still pass ``_validate_launchagent_label``.
+    """
+    cfg_path = tmp_path / "DummyTenant.yaml"
+    cfg_path.write_text("jamf_cli:\n  enabled: true\n", encoding="utf-8")
+    config = jrc.Config(str(cfg_path))
+    label = jrc._default_launchagent_label(config)
+    # Same string must round-trip through the validator without raising.
+    assert jrc._validate_launchagent_label(label) == label
+    assert label.startswith(f"{_PREFIX}.")
+    # Tail must contain only the Swift-allowed character set.
+    tail = label[len(_PREFIX) + 1:]
+    assert tail == tail.lower()

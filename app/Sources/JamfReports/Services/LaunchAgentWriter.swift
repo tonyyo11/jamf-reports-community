@@ -126,7 +126,8 @@ enum LaunchAgentWriter {
         guard ProfileService.isValid(schedule.profile) else { return nil }
         let slug = sanitizedSlug(from: schedule.name)
         guard isValidComponent(slug) else { return nil }
-        return "\(labelPrefix).\(schedule.profile).\(slug)"
+        let candidate = "\(labelPrefix).\(schedule.profile).\(slug)"
+        return isValidLabel(candidate) ? candidate : nil
     }
 
     // MARK: - Private helpers
@@ -155,6 +156,8 @@ enum LaunchAgentWriter {
         case unsupportedCommand(String)
         case unsafePath(String)
         case notExecutable(String)
+        case untrustedExecutable(String)
+        case untrustedScript(String)
 
         var errorDescription: String? {
             switch self {
@@ -164,7 +167,96 @@ enum LaunchAgentWriter {
             case .unsupportedCommand(let label): "LaunchAgent \(label) is not a generated JRC run command."
             case .unsafePath(let path):         "LaunchAgent path is outside the profile workspace: \(path)"
             case .notExecutable(let path):      "LaunchAgent executable is not runnable: \(path)"
+            case .untrustedExecutable(let path): "LaunchAgent executable is outside the trusted Python locations: \(path)"
+            case .untrustedScript(let path):    "LaunchAgent script is not the trusted JRC script: \(path)"
             }
+        }
+    }
+
+    /// Trusted Python interpreter locations for the manual Run-now flow.
+    ///
+    /// A tampered plist could otherwise point ``ProgramArguments[0]`` at any
+    /// executable on disk and use the GUI's `runNow` to launch it. The
+    /// allowlist limits us to system Python, Homebrew, the python.org framework
+    /// installer, Xcode developer tools, and ``pyenv`` shims. Exact binary
+    /// paths and directory roots are separate so a loose prefix such as
+    /// `/usr/local/bin/python` does not also trust `/usr/local/bin/python-evil`.
+    private static let trustedPythonExactPaths: Set<String> = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return Set([
+            "/usr/bin/python",
+            "/usr/bin/python3",
+            "/usr/local/bin/python",
+            "/usr/local/bin/python3",
+            "/opt/homebrew/bin/python",
+            "/opt/homebrew/bin/python3",
+            "/Applications/Xcode.app/Contents/Developer/usr/bin/python",
+            "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+            "\(home)/.pyenv/shims/python",
+            "\(home)/.pyenv/shims/python3",
+        ].map { canonicalPath($0) })
+    }()
+
+    private static let trustedPythonDirectoryRoots: [String] = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return [
+            "/Library/Frameworks/Python.framework/Versions",
+            "\(home)/.pyenv/versions/",
+        ].map { canonicalPath($0) }
+    }()
+
+    private static let trustedHomebrewRoots = [
+        "/opt/homebrew/opt",
+        "/opt/homebrew/Cellar",
+        "/usr/local/opt",
+        "/usr/local/Cellar",
+    ].map { canonicalPath($0) }
+
+    /// True when ``path`` resolves to a trusted Python interpreter.
+    static func isTrustedPythonExecutable(_ path: String) -> Bool {
+        let resolvedURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        guard isPythonExecutableName(resolvedURL.lastPathComponent) else { return false }
+        guard FileManager.default.isExecutableFile(atPath: resolvedURL.path) else { return false }
+        let resolved = resolvedURL.path
+        if let bundled = bundledPythonURL(), sameResolvedPath(resolvedURL, bundled) {
+            return true
+        }
+        return trustedPythonExactPaths.contains(resolved)
+            || trustedPythonDirectoryRoots.contains { isPath(resolved, inside: $0) }
+            || isHomebrewPythonPath(resolved)
+    }
+
+    private static func bundledPythonURL() -> URL? {
+        Bundle.main.resourceURL?
+            .appendingPathComponent("python", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+            .appendingPathComponent("python3")
+    }
+
+    /// Candidate JRC script paths used by the app bridge.
+    static func trustedJRCScriptCandidates() -> [URL] {
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        return [
+            cwd.appendingPathComponent("jamf-reports-community.py"),
+            cwd.deletingLastPathComponent().appendingPathComponent("jamf-reports-community.py"),
+            Bundle.main.resourceURL?.appendingPathComponent("jamf-reports-community.py"),
+        ].compactMap { $0 }
+    }
+
+    /// True when ``path`` is the same resolved file the app would invoke.
+    static func isTrustedJRCScript(_ path: String) -> Bool {
+        let fm = FileManager.default
+        let expanded = (path as NSString).expandingTildeInPath
+        let script = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL
+        guard script.lastPathComponent == "jamf-reports-community.py",
+              fm.fileExists(atPath: script.path) else {
+            return false
+        }
+        return trustedJRCScriptCandidates().contains { candidate in
+            let resolved = candidate.resolvingSymlinksInPath().standardizedFileURL
+            return fm.fileExists(atPath: resolved.path) && resolved.path == script.path
         }
     }
 
@@ -234,17 +326,30 @@ enum LaunchAgentWriter {
         }
         guard args[2] == "launchagent-run",
               args[1].hasSuffix("jamf-reports-community.py"),
-              args[0].lowercased().contains("python") else {
+              isPythonExecutableName(URL(fileURLWithPath: args[0]).lastPathComponent) else {
             throw ManualRunError.unsupportedCommand(label)
         }
-        guard argumentPath("--config", in: args, root: root) != nil,
-              argumentPath("--status-file", in: args, root: root) != nil else {
-            throw ManualRunError.unsafePath("config or status file")
+        guard isTrustedJRCScript(args[1]) else {
+            throw ManualRunError.untrustedScript(args[1])
+        }
+        guard let configURL = argumentPath("--config", in: args, root: root),
+              isExpectedConfigURL(configURL, root: root) else {
+            throw ManualRunError.unsafePath("config")
+        }
+        guard let statusURL = argumentPath("--status-file", in: args, root: root),
+              isExpectedStatusURL(statusURL, label: label, root: root) else {
+            throw ManualRunError.unsafePath("status file")
+        }
+        if let argProfile = argumentValue("--profile", in: args), argProfile != profile {
+            throw ManualRunError.malformedPlist("profile does not match label")
         }
 
         let executable = URL(fileURLWithPath: args[0])
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw ManualRunError.notExecutable(executable.path)
+        }
+        guard isTrustedPythonExecutable(executable.path) else {
+            throw ManualRunError.untrustedExecutable(executable.path)
         }
 
         let workingDirectory = validatedWorkspaceURL(
@@ -252,7 +357,9 @@ enum LaunchAgentWriter {
             root: root
         ) ?? root
         guard let stdoutURL = validatedWorkspaceURL(plist["StandardOutPath"] as? String, root: root),
-              let stderrURL = validatedWorkspaceURL(plist["StandardErrorPath"] as? String, root: root) else {
+              isExpectedStdoutURL(stdoutURL, label: label, root: root),
+              let stderrURL = validatedWorkspaceURL(plist["StandardErrorPath"] as? String, root: root),
+              isExpectedStderrURL(stderrURL, label: label, root: root) else {
             throw ManualRunError.unsafePath("stdout or stderr log")
         }
 
@@ -365,27 +472,143 @@ enum LaunchAgentWriter {
         return validatedWorkspaceURL(args[idx + 1], root: root)
     }
 
+    private static func argumentValue(_ flag: String, in args: [String]) -> String? {
+        guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else { return nil }
+        return args[idx + 1]
+    }
+
     private static func validatedWorkspaceURL(_ raw: String?, root: URL) -> URL? {
         guard let raw, !raw.isEmpty else { return nil }
         let expanded = (raw as NSString).expandingTildeInPath
         return WorkspacePathGuard.validate(URL(fileURLWithPath: expanded), under: root)
     }
 
-    private static func launchEnvironment(from plist: [String: Any]) -> [String: String] {
-        let raw = plist["EnvironmentVariables"] as? [String: Any] ?? [:]
-        var env = raw.reduce(into: [String: String]()) { result, item in
-            if let value = item.value as? String {
-                result[item.key] = value
+    static func isExpectedConfigURL(_ url: URL, root: URL) -> Bool {
+        sameResolvedPath(url, root.appendingPathComponent("config.yaml"))
+    }
+
+    static func expectedStatusURL(label: String, root: URL) -> URL {
+        root
+            .appendingPathComponent("automation", isDirectory: true)
+            .appendingPathComponent("\(filenameComponent(label))_status.json")
+    }
+
+    static func isExpectedStatusURL(_ url: URL, label: String, root: URL) -> Bool {
+        sameResolvedPath(url, expectedStatusURL(label: label, root: root))
+    }
+
+    static func expectedStdoutURL(label: String, root: URL) -> URL {
+        root
+            .appendingPathComponent("automation", isDirectory: true)
+            .appendingPathComponent("logs", isDirectory: true)
+            .appendingPathComponent("\(filenameComponent(label)).out.log")
+    }
+
+    static func expectedStderrURL(label: String, root: URL) -> URL {
+        root
+            .appendingPathComponent("automation", isDirectory: true)
+            .appendingPathComponent("logs", isDirectory: true)
+            .appendingPathComponent("\(filenameComponent(label)).err.log")
+    }
+
+    static func isExpectedStdoutURL(_ url: URL, label: String, root: URL) -> Bool {
+        sameResolvedPath(url, expectedStdoutURL(label: label, root: root))
+    }
+
+    static func isExpectedStderrURL(_ url: URL, label: String, root: URL) -> Bool {
+        sameResolvedPath(url, expectedStderrURL(label: label, root: root))
+    }
+
+    /// Swift twin of Python's `_filename_component` for generated status/log paths.
+    static func filenameComponent(_ text: String) -> String {
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+        var output = ""
+        var previousUnderscore = false
+        for scalar in text.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars {
+            if allowed.contains(scalar) {
+                output.append(String(scalar))
+                previousUnderscore = false
+            } else if !previousUnderscore {
+                output.append("_")
+                previousUnderscore = true
             }
         }
-        if env["HOME"] == nil {
-            env["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
+        let trimmed = output.trimmingCharacters(in: CharacterSet(charactersIn: "._"))
+        return trimmed.isEmpty ? "jamf_report" : trimmed
+    }
+
+    private static func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+    }
+
+    private static func sameResolvedPath(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.resolvingSymlinksInPath().standardizedFileURL.path
+            == rhs.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private static func isPath(_ path: String, inside root: String) -> Bool {
+        path == root || path.hasPrefix(root + "/")
+    }
+
+    private static func isHomebrewPythonPath(_ path: String) -> Bool {
+        trustedHomebrewRoots.contains { root in
+            guard isPath(path, inside: root) else { return false }
+            let relative = path.dropFirst(root.count).split(separator: "/")
+            guard let formula = relative.first else { return false }
+            return formula == "python" || formula.hasPrefix("python@")
         }
-        if env["PATH"] == nil {
-            env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    }
+
+    private static func isPythonExecutableName(_ name: String) -> Bool {
+        if name == "python" || name == "python3" { return true }
+        guard name.hasPrefix("python3.") else { return false }
+        return name.dropFirst("python3.".count).allSatisfy(\.isNumber)
+    }
+
+    private static let safeLaunchPath = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ].joined(separator: ":")
+
+    static func launchEnvironment(from plist: [String: Any]) -> [String: String] {
+        let raw = plist["EnvironmentVariables"] as? [String: Any] ?? [:]
+        var env = [
+            "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
+            "PATH": safeLaunchPath,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONUNBUFFERED": "1",
+        ]
+        if let xdgConfigHome = safeXDGConfigHome(raw["XDG_CONFIG_HOME"]) {
+            env["XDG_CONFIG_HOME"] = xdgConfigHome
         }
-        env["PYTHONUNBUFFERED"] = env["PYTHONUNBUFFERED"] ?? "1"
         return env
+    }
+
+    private static func safeXDGConfigHome(_ value: Any?) -> String? {
+        guard let raw = value as? String else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("\0") else { return nil }
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        guard expanded.hasPrefix("/") else { return nil }
+
+        let home = FileManager.default.homeDirectoryForCurrentUser
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        let candidate = URL(fileURLWithPath: expanded)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        guard isPath(candidate, inside: home) else { return nil }
+        return candidate
     }
 
     private static func appendHandle(for url: URL) throws -> FileHandle {

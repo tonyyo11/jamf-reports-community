@@ -1,0 +1,18 @@
+# Pinned python-build-standalone runtime selection for JamfReports.app.
+#
+# The build script can resolve the concrete asset URL from these values via the
+# GitHub releases API. Download, extract, and copy operations require the SHA256
+# fields to be filled after selecting the exact assets, or overridden in CI.
+
+PBS_REPO="astral-sh/python-build-standalone"
+PBS_RELEASE="20260414"
+PBS_PYTHON_SERIES="3.13"
+PBS_ARCHIVE_VARIANT="install_only_stripped"
+
+# Direct asset URLs. These avoid release-asset discovery during normal builds.
+PBS_ARM64_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.13.13%2B20260414-aarch64-apple-darwin-install_only_stripped.tar.gz"
+PBS_X86_64_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.13.13%2B20260414-x86_64-apple-darwin-install_only_stripped.tar.gz"
+
+# Required SHA256 checksums for download/extract/copy operations.
+PBS_ARM64_SHA256=""
+PBS_X86_64_SHA256=""

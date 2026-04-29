@@ -35,6 +35,38 @@ def test_generate_writes_summary_json(config_factory, monkeypatch, tmp_path, jrc
     assert "Report Sources" in payload["sheets"]["all"]
 
 
+def test_generate_skips_trend_summary_when_workbook_close_fails(
+    config_factory,
+    monkeypatch,
+    tmp_path,
+    jrc,
+    fixtures_root,
+) -> None:
+    """A failed xlsxwriter finalization must not leave a trend summary behind."""
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = False
+    config._data["charts"]["enabled"] = False
+
+    def fail_close(self) -> None:
+        raise RuntimeError("simulated workbook close failure")
+
+    monkeypatch.setattr(jrc.xlsxwriter.Workbook, "close", fail_close)
+
+    report_path = tmp_path / "broken-report.xlsx"
+    historical_dir = tmp_path / "snapshots"
+    with pytest.raises(RuntimeError, match="simulated workbook close failure"):
+        jrc.cmd_generate(
+            config,
+            str(fixtures_root / "csv" / "dummy_all_macs.csv"),
+            str(report_path),
+            str(historical_dir),
+        )
+
+    summaries_dir = historical_dir / "summaries"
+    assert not report_path.exists()
+    assert not summaries_dir.exists() or list(summaries_dir.glob("summary_*.json")) == []
+
+
 def test_collect_writes_summary_json(config_factory, monkeypatch, tmp_path, jrc) -> None:
     """collect can summarize snapshot and archive counts for the app."""
     config = config_factory("dummy.yaml")

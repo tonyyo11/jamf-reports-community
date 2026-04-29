@@ -105,13 +105,28 @@ def _jamf_error_detail(raw: Any) -> str:
 
 
 def _is_update_no_data_response(raw: Any) -> bool:
-    """Return True for cached Jamf JSON that means update-status has no data."""
+    """Return True for cached Jamf JSON that means update-status has no data.
+
+    Two shapes count as "no data":
+
+    * A real Jamf API error envelope — identified by ``errors`` or ``httpStatus``
+      and a detail string matching one of our sentinels.
+    * Our own synthesized empty envelopes from
+      :func:`_empty_update_status_envelope` and
+      :func:`_empty_update_failures_envelope`.
+
+    Plain ``"message"`` presence alone is not enough: real result rows can carry
+    that key without meaning "no data".
+    """
+    if raw == _empty_update_status_envelope() or raw == _empty_update_failures_envelope():
+        return True
     envelope = raw[0] if isinstance(raw, list) and raw else raw
     if not isinstance(envelope, dict):
         return False
-    if not any(key in envelope for key in ("errors", "httpStatus", "message")):
-        return False
-    return _update_no_data_detail_matches(_jamf_error_detail(raw))
+    has_error_envelope = "errors" in envelope or "httpStatus" in envelope
+    if has_error_envelope:
+        return _update_no_data_detail_matches(_jamf_error_detail(raw))
+    return False
 
 
 def _empty_update_status_envelope() -> dict[str, Any]:
@@ -776,17 +791,28 @@ def _parse_day_of_month(value: Any) -> int:
 
 
 def _default_launchagent_label(config: "Config") -> str:
-    """Return the default LaunchAgent label for a config/profile combination."""
+    """Return the default LaunchAgent label for a config/profile combination.
+
+    Lowercases the slug source because ``_validate_launchagent_label`` and the
+    Swift app both restrict labels to ``[a-z0-9._-]``. Profiles are already
+    validated lowercase, but config stems are not, and a generated label has
+    to stay loadable by the GUI.
+    """
     profile_name = str(config.jamf_cli.get("profile", "") or "").strip()
     slug_source = profile_name or config.path.stem or "default"
-    return f"{LAUNCHAGENT_LABEL_PREFIX}.{_filename_component(slug_source)}"
+    return f"{LAUNCHAGENT_LABEL_PREFIX}.{_filename_component(slug_source).lower()}"
 
 
 def _validate_launchagent_label(value: str) -> str:
-    """Return a validated LaunchAgent label under this tool's namespace."""
+    """Return a validated LaunchAgent label under this tool's namespace.
+
+    The Swift app validates labels against ``[a-z0-9._-]`` (see
+    ``LaunchAgentWriter.isValidLabel``). Allow only the same character set so
+    Python and the GUI agree about what plists are loadable.
+    """
     label = str(value).strip()
     prefix = f"{LAUNCHAGENT_LABEL_PREFIX}."
-    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789._-")
     if (
         not label.startswith(prefix)
         or label.endswith(".")
@@ -795,7 +821,8 @@ def _validate_launchagent_label(value: str) -> str:
     ):
         raise SystemExit(
             f"Error: LaunchAgent label must start with {prefix}"
-            " and contain only letters, numbers, dots, underscores, or hyphens."
+            " and contain only lowercase letters, numbers, dots, underscores,"
+            " or hyphens."
         )
     return label
 
@@ -1161,10 +1188,16 @@ def _command_summary_base(command: str, config: "Config") -> dict[str, Any]:
 
 
 def _summary_file_entry(kind: str, path: Optional[Path]) -> dict[str, Any]:
-    """Return a stable file descriptor for command summaries."""
+    """Return a stable file descriptor for command summaries.
+
+    The ``path`` field is ``None`` (JSON ``null``) when no path is available,
+    so downstream decoders can distinguish a missing artifact from one that
+    happened to resolve to an empty string. ``""`` would round-trip through
+    ``URL(string:)`` as a relative URL on the Swift side.
+    """
     entry: dict[str, Any] = {
         "kind": kind,
-        "path": str(path) if path is not None else "",
+        "path": str(path) if path is not None else None,
         "exists": False,
         "size_bytes": None,
         "modified_at": None,
@@ -1438,11 +1471,6 @@ def _load_pptx() -> bool:
 def _normalized_text(value: Any) -> str:
     """Return a lowercase, single-spaced representation of a header or cell value."""
     return re.sub(r"\s+", " ", str(value).strip().lower())
-
-
-def _header_tokens(value: Any) -> set[str]:
-    """Return lowercase alphanumeric tokens from a header or cell value."""
-    return set(re.findall(r"[a-z0-9]+", _normalized_text(value)))
 
 
 def _column_match_score(header: str, logical: str) -> int:
@@ -2108,11 +2136,25 @@ def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[
     return dest, True
 
 
-def _emit_summary_json(config: Config, csv_dash: Optional[CSVDashboard], bridge: Optional[JamfCLIBridge], historical_dir: Optional[str]) -> None:
+def _emit_summary_json(
+    config: Config,
+    csv_dash: Optional[CSVDashboard],
+    bridge: Optional[JamfCLIBridge],
+    historical_dir: Optional[str],
+    *,
+    force: bool = False,
+) -> None:
     """Emit a summary JSON for the current run for GUI trend consumption.
 
     Calculates 8 key metrics (FileVault, Compliance, OS Current, etc.) and writes
-    them to snapshots/summaries/summary_YYYY-MM-DD.json.
+    them to ``snapshots/summaries/summary_YYYY-MM-DD.json``.
+
+    Args:
+        force: Overwrite an existing same-day summary file. Default ``False``
+            keeps intraday runs idempotent (the first run of the day wins) so
+            an automation re-run doesn't accidentally overwrite a hand-edited
+            summary. Pass ``True`` from ``--force-summary`` when the user
+            explicitly wants the latest data to replace the existing entry.
     """
     if not historical_dir:
         return
@@ -2123,8 +2165,12 @@ def _emit_summary_json(config: Config, csv_dash: Optional[CSVDashboard], bridge:
     date_str = datetime.now().strftime("%Y-%m-%d")
     summary_file = summaries_dir / f"summary_{date_str}.json"
 
-    if summary_file.exists():
-        return  # Idempotent: don't overwrite if multiple runs happen in one day
+    if summary_file.exists() and not force:
+        print(
+            f"  [note] Trend summary for {date_str} already exists; "
+            f"re-run with --force-summary to overwrite ({summary_file})"
+        )
+        return
 
     df = getattr(csv_dash, "_df", None) if csv_dash else None
     if df is None:
@@ -10743,6 +10789,8 @@ def cmd_generate(
     notify_url: Optional[str] = None,
     csv_extra: Optional[list[str]] = None,
     summary_json: Optional[str] = None,
+    *,
+    force_summary: bool = False,
 ) -> Path:
     """Run all report generation and write the Excel file.
 
@@ -10754,6 +10802,8 @@ def cmd_generate(
         notify_url: Optional Teams incoming webhook URL for post-generation notification.
         csv_extra: Optional list of additional CSV paths to merge with csv_path.
         summary_json: Optional path for an app-facing run summary JSON file.
+        force_summary: When True, overwrite the per-day trend summary JSON
+            instead of leaving the existing entry in place.
     """
     summary = _command_summary_base("generate", config)
     selected_family_name: Optional[str] = None
@@ -11084,9 +11134,6 @@ def cmd_generate(
         if sheets_written == 0:
             raise SystemExit("Error: sheets filter removed every workbook tab for this run.")
 
-        # Emit summary.json for GUI trend consumption
-        _emit_summary_json(config, csv_dash, bridge, hist_dir)
-
         wb.close()
     except SystemExit:
         wb.close()
@@ -11099,6 +11146,8 @@ def cmd_generate(
             pass
         out_path.unlink(missing_ok=True)
         raise
+    # Emit trend summary JSON only after xlsxwriter has finalized the workbook.
+    _emit_summary_json(config, csv_dash, bridge, hist_dir, force=force_summary)
     if archive_enabled:
         archive_dir = config.resolve_path("output", "archive_dir")
         if archive_dir is None:
@@ -11542,12 +11591,6 @@ class HtmlReport:
         candidate = str(url or "").strip().rstrip("/")
         safe = cls._safe_href(candidate)
         return "" if safe == "#" else safe
-
-    @staticmethod
-    def _json_text(value: Any) -> str:
-        """Serialize data for an inline script without allowing script breakout."""
-        text = json.dumps(value, ensure_ascii=False)
-        return text.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     @staticmethod
     def _health_badge_class(status: Any) -> str:
@@ -14149,6 +14192,43 @@ def _backup_destination(config: Config, label: Optional[str]) -> tuple[Path, Pat
     return final_dir, temp_dir
 
 
+def _safe_remove_partial_backup(temp_dir: Path, backups_root: Path) -> None:
+    """Remove a leftover ``*.partial`` backup directory, refusing risky paths.
+
+    This guards the destructive ``shutil.rmtree`` in :func:`cmd_backup` against
+    three failure modes:
+
+    * ``temp_dir`` resolves outside ``backups_root`` (a symlink or ``..``
+      injection from a malformed label).
+    * ``temp_dir`` is a symlink — following it would let ``rmtree`` escape the
+      backups directory.
+    * ``temp_dir`` is missing the ``.partial`` suffix, which marks it as a
+      leftover from an interrupted run rather than a finished backup.
+    """
+    if not temp_dir.exists() and not temp_dir.is_symlink():
+        return
+    if temp_dir.is_symlink() or not temp_dir.name.endswith(".partial"):
+        raise SystemExit(
+            f"Error: refusing to remove unexpected backup temp dir: {temp_dir}"
+        )
+    backups_root_resolved = backups_root.resolve()
+    resolved = temp_dir.resolve(strict=False)
+    inside_backups = (
+        resolved == backups_root_resolved
+        or backups_root_resolved in resolved.parents
+    )
+    if not inside_backups:
+        raise SystemExit(
+            f"Error: refusing to remove backup temp dir outside backups root: {temp_dir}"
+        )
+    try:
+        shutil.rmtree(temp_dir)
+    except OSError as exc:
+        raise SystemExit(
+            f"Error: failed to remove backup temp dir {temp_dir}: {exc}"
+        ) from exc
+
+
 def _write_backup_manifest(backup_dir: Path, manifest: dict[str, Any]) -> None:
     """Atomically write the backup manifest JSON."""
     manifest_path = backup_dir / "manifest.json"
@@ -14168,9 +14248,22 @@ def cmd_backup(config: Config, label: Optional[str] = None) -> Path:
         raise SystemExit("Error: jamf-cli binary not found. Install jamf-cli or set JAMFCLI_PATH.")
 
     final_dir, temp_dir = _backup_destination(config, label)
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir)
+    backups_root = (config.base_dir / "backups").resolve()
+    _safe_remove_partial_backup(temp_dir, backups_root)
     temp_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    def abort_after_partial_cleanup(message: str, exc: BaseException) -> None:
+        temp_existed = temp_dir.exists() or temp_dir.is_symlink()
+        try:
+            _safe_remove_partial_backup(temp_dir, backups_root)
+        except SystemExit as cleanup_exc:
+            raise SystemExit(
+                f"{message}; additionally failed to remove temp backup "
+                f"{temp_dir}: {cleanup_exc}"
+            ) from exc
+        if temp_existed:
+            raise SystemExit(f"{message}; removed temp backup {temp_dir}") from exc
+        raise SystemExit(f"{message}; temp backup already absent: {temp_dir}") from exc
 
     profile = str(config.jamf_cli.get("profile", "") or "").strip()
     cmd = [binary]
@@ -14191,28 +14284,38 @@ def cmd_backup(config: Config, label: Optional[str] = None) -> Path:
             stdin=subprocess.DEVNULL,
         )
     except subprocess.CalledProcessError as exc:
-        shutil.rmtree(temp_dir, ignore_errors=True)
         detail = (exc.stderr or exc.stdout).strip()
-        raise SystemExit(f"Error: jamf-cli pro backup failed ({exc.returncode}): {detail}") from exc
+        abort_after_partial_cleanup(
+            f"Error: jamf-cli pro backup failed ({exc.returncode}): {detail}",
+            exc,
+        )
     except subprocess.TimeoutExpired as exc:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        raise SystemExit(f"Error: jamf-cli pro backup timed out after {timeout}s: {exc}") from exc
+        abort_after_partial_cleanup(
+            f"Error: jamf-cli pro backup timed out after {timeout}s: {exc}",
+            exc,
+        )
 
-    file_count, total_bytes = _backup_directory_stats(temp_dir)
-    manifest = {
-        "schema_version": 1,
-        "created_at": started.isoformat(),
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-        "profile": profile,
-        "label": str(label or "").strip(),
-        "command": " ".join(shlex.quote(part) for part in cmd),
-        "file_count": file_count,
-        "size_bytes": total_bytes,
-        "stdout": (result.stdout or "").strip(),
-        "stderr": (result.stderr or "").strip(),
-    }
-    _write_backup_manifest(temp_dir, manifest)
-    temp_dir.rename(final_dir)
+    try:
+        file_count, total_bytes = _backup_directory_stats(temp_dir)
+        manifest = {
+            "schema_version": 1,
+            "created_at": started.isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "profile": profile,
+            "label": str(label or "").strip(),
+            "command": " ".join(shlex.quote(part) for part in cmd),
+            "file_count": file_count,
+            "size_bytes": total_bytes,
+            "stdout": (result.stdout or "").strip(),
+            "stderr": (result.stderr or "").strip(),
+        }
+        _write_backup_manifest(temp_dir, manifest)
+        temp_dir.rename(final_dir)
+    except Exception as exc:
+        abort_after_partial_cleanup(
+            f"Error: backup finalization failed after jamf-cli completed: {exc}",
+            exc,
+        )
 
     print("\nBackup summary")
     print(f"  profile: {profile or '(default)'}")
@@ -14352,6 +14455,31 @@ def _archive_inventory_output(config: Config, out_path: Path, keep_latest_runs: 
         print(f"  Archived {len(archived_paths)} older inventory export(s) to {archive_dir}")
 
 
+def _write_inventory_csv_atomic(df: pd.DataFrame, out_path: Path) -> None:
+    """Write an inventory CSV via a temporary file in the destination directory."""
+    temp_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=out_path.parent,
+            prefix=f".{out_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+        df.to_csv(temp_path, index=False, encoding="utf-8-sig")
+        temp_path.replace(out_path)
+    except Exception as exc:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                raise SystemExit(
+                    f"Error: failed to write inventory CSV {out_path}: {exc}; "
+                    f"also failed to remove temp file {temp_path}: {cleanup_exc}"
+                ) from exc
+        raise SystemExit(f"Error: failed to write inventory CSV {out_path}: {exc}") from exc
+
+
 def _print_inventory_export_summary(
     row_count: int,
     detail_enriched: int,
@@ -14447,7 +14575,7 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
         column for column in ea_columns if column not in INVENTORY_EXPORT_COLUMNS
     )
     df = pd.DataFrame(base_rows, columns=ordered_columns).fillna("")
-    df.to_csv(out_path, index=False, encoding="utf-8-sig")
+    _write_inventory_csv_atomic(df, out_path)
     _print_inventory_export_summary(
         len(df),
         detail_enriched,
@@ -14820,6 +14948,8 @@ def _launchagent_environment() -> dict[str, str]:
     env = {
         "HOME": str(Path.home()),
         "PATH": DEFAULT_LAUNCHD_PATH,
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
         "PYTHONUNBUFFERED": "1",
     }
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME", "").strip()
@@ -14881,6 +15011,35 @@ def _automation_output_flags(config: Config) -> tuple[bool, bool, bool]:
     return generate_xlsx, generate_html, generate_inventory_csv
 
 
+def _launchagent_previous_plist_path(plist_path: Path) -> Path:
+    """Return the sibling path used to preserve a replaceable LaunchAgent plist."""
+    return plist_path.with_name(f".{plist_path.name}.previous")
+
+
+def _write_launchagent_bytes(path: Path, payload: bytes, mode: int = 0o644) -> None:
+    """Atomically write bytes to a LaunchAgent-adjacent file."""
+    temp_path: Optional[Path] = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "wb",
+            delete=False,
+            dir=str(path.parent),
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        ) as fh:
+            temp_path = Path(fh.name)
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(temp_path, mode)
+        os.replace(temp_path, path)
+    except OSError:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
+
+
 def _write_launchagent_plist(
     plist_path: Path,
     label: str,
@@ -14904,8 +15063,14 @@ def _write_launchagent_plist(
         "StandardErrorPath": str(stderr_path),
     }
     plist_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(plist_path, "wb") as fh:
-        plistlib.dump(payload, fh, sort_keys=True)
+    previous_path = _launchagent_previous_plist_path(plist_path)
+    mode = 0o644
+    if plist_path.exists():
+        mode = plist_path.stat().st_mode & 0o777
+        _write_launchagent_bytes(previous_path, plist_path.read_bytes(), mode)
+    else:
+        previous_path.unlink(missing_ok=True)
+    _write_launchagent_bytes(plist_path, plistlib.dumps(payload, sort_keys=True), mode)
 
 
 def _unload_launchagent(label: str) -> str:
@@ -14934,13 +15099,48 @@ def _load_launchagent(plist_path: Path, label: str, run_now: bool) -> str:
         )
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout).strip()
-        raise SystemExit(f"Error: launchctl bootstrap failed: {detail}") from None
+        previous_path = _launchagent_previous_plist_path(plist_path)
+        if not previous_path.exists():
+            raise SystemExit(f"Error: launchctl bootstrap failed: {detail}") from None
+        try:
+            os.replace(previous_path, plist_path)
+            subprocess.run(
+                ["launchctl", "bootstrap", target, str(plist_path)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            subprocess.run(
+                ["launchctl", "enable", label_target],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as restore_exc:
+            raise SystemExit(
+                f"Error: launchctl bootstrap failed: {detail}. "
+                f"Previous LaunchAgent plist restore failed: {restore_exc}"
+            ) from None
+        except subprocess.CalledProcessError as restore_exc:
+            restore_detail = (restore_exc.stderr or restore_exc.stdout).strip()
+            raise SystemExit(
+                f"Error: launchctl bootstrap failed: {detail}. "
+                f"Previous LaunchAgent restored, but bootstrap failed: {restore_detail}"
+            ) from None
+        raise SystemExit(
+            f"Error: launchctl bootstrap failed: {detail}. "
+            "Previous LaunchAgent restored and reloaded."
+        ) from None
     subprocess.run(
         ["launchctl", "enable", label_target],
         capture_output=True,
         text=True,
         check=False,
     )
+    try:
+        _launchagent_previous_plist_path(plist_path).unlink(missing_ok=True)
+    except OSError:
+        pass
     if run_now:
         try:
             subprocess.run(
@@ -16130,6 +16330,14 @@ def main() -> None:
             " (generate, html, collect, school-generate, school-collect)"
         ),
     )
+    parser.add_argument(
+        "--force-summary",
+        action="store_true",
+        help=(
+            "Overwrite the per-day trend summary JSON if it already exists"
+            " (generate command only)"
+        ),
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
@@ -16227,6 +16435,7 @@ def main() -> None:
         cmd_generate(
             config, args.csv, args.out_file, args.historical_csv_dir,
             args.notify, args.csv_extra, args.summary_json,
+            force_summary=args.force_summary,
         )
     elif args.command == "patch-managed":
         if not args.managed:

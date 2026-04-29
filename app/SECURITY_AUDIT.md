@@ -2,7 +2,7 @@
 
 **Scope:** `app/Sources/JamfReports/`, `app/build-app.sh`, `app/iconset/`
 **Date:** 2026-04-26
-**Updated:** 2026-04-28
+**Updated:** 2026-04-29
 **Branch:** `dev-app/2.0` (post-feature-merge)
 **Auditor:** Claude (Opus 4.7)
 
@@ -19,9 +19,9 @@
 The codebase already follows a strong defense-in-depth pattern: `ProfileService.isValid`,
 `WorkspacePathGuard`, atomic `replaceItem` writes, no shell invocation, plist label
 validation, and credential keys rejected at config load. The findings below close
-trailing-slash prefix bugs, plug a path-traversal hole in `JamfProtectSnapshotService`,
-shrink the file-opening allow-list, and harden the build chain (Hardened Runtime +
-entitlements).
+trailing-slash prefix bugs, remove an unwired Protect snapshot prototype that had an
+invalid-profile path fallback, shrink the file-opening allow-list, and harden the build
+chain (Hardened Runtime + entitlements).
 
 ---
 
@@ -36,14 +36,12 @@ and pass canonicalization. Combined with `NSWorkspace.shared.open` this allows t
 GUI to be coerced into opening files outside the workspace.
 **Fix applied:** require `path == base || path.hasPrefix(base + "/")`.
 
-**MUST-FIX 2** — `Services/JamfProtectSnapshotService.swift:53–55`
-`candidateDataRoots` falls back to
-`ProfileService.workspacesRoot().appendingPathComponent(profile, …)` when
-`ProfileService.workspaceURL(for:)` returns `nil` (i.e. the profile is invalid).
-This means an attacker-controlled `profile` of `../../etc` resolves outside the
-workspace and the snapshot service then enumerates and reads JSON from there,
-exposing file contents in the UI metric cards.
-**Fix applied:** return an empty list when `workspaceURL` is nil.
+**MUST-FIX 2** — removed Protect snapshot prototype invalid-profile fallback
+An unwired Protect cache status prototype previously constructed a workspace path
+from an invalid profile name, which could have let a future route enumerate JSON
+outside `~/Jamf-Reports`. The view and its single-consumer snapshot service were
+removed during dead-code cleanup.
+**Fix applied:** removed the unreachable prototype surface and service.
 
 **MUST-FIX 3** — `Services/TrendStore.swift:13`
 `load(profile:range:)` does string-interpolation
@@ -62,10 +60,9 @@ target resolves to a sibling directory like `…/automation/logsXXX` would pass.
 
 Other path-construction sites (`ConfigService.configURL`, `LaunchAgentWriter.write`,
 `DeviceInventoryService.validatedWorkspaceRoot`, `WorkspacePathGuard.validate`,
-`ReportLibrary.list`, `CSVInboxService.list`, `RunHistoryService.isInsideLogsDir`,
-`PlatformBenchmarkService.jsonFiles`, `UnifiedHistoryService.files`) either validate
-the profile, append `"/"` to the prefix, or constrain paths through `WorkspacePathGuard`.
-No additional findings.
+`ReportLibrary.list`, `CSVInboxService.list`, `RunHistoryService.isInsideLogsDir`)
+either validate the profile, append `"/"` to the prefix, or constrain paths through
+`WorkspacePathGuard`. No additional findings.
 
 ### 2. Profile / slug sanitization
 
@@ -79,12 +76,10 @@ No additional findings.
 - `OnboardingFlow.createWorkspace`, `registerJamfCLIProfile`, `scaffoldCSV` ✓
 - `RunHistoryService.list(profile:)` ✓
 - `DeviceInventoryService.validatedWorkspaceRoot` ✓
-- `PlatformBenchmarkService.jamfCLIDataDirectory(for:)` ✓
-- `JamfSchoolSnapshotService.candidateCacheDirectories(profile:)` ✓
 - `CLIBridge+Run.runNow(...)` ✓
 
 **Missing before this audit:**
-- `JamfProtectSnapshotService.candidateDataRoots` (MUST-FIX 2 above)
+- removed Protect snapshot prototype invalid-profile fallback (MUST-FIX 2 above)
 - `TrendStore.load(profile:)` (MUST-FIX 3 above)
 
 Slug sanitization (`LaunchAgentWriter.sanitizedSlug` + `isValidComponent`) matches
@@ -260,17 +255,12 @@ return allowed.contains(where: { resolved.path.hasPrefix($0.path) }) ? resolved 
 `/Users/me/Jamf-Reports-evil/data` matched `/Users/me/Jamf-Reports`. Fixed by
 requiring an exact match or a true child (`hasPrefix(base + "/")`).
 
-### MUST-FIX 2 — `JamfProtectSnapshotService.candidateDataRoots`
+### MUST-FIX 2 — removed Protect snapshot prototype invalid-profile fallback
 
-```swift
-// Before
-let workspaceRoot = workspace ?? ProfileService.workspacesRoot()
-    .appendingPathComponent(profile, isDirectory: true)
-```
-
-`ProfileService.workspaceURL(for: profile)` already returns nil for invalid
-names. The fallback re-introduced an unvalidated path. Fixed by returning an
-empty list when the workspace URL is nil.
+The unwired Protect status prototype previously fell back to constructing a
+workspace URL from an invalid profile name. The entire prototype view and its
+single-consumer snapshot service were removed during dead-code cleanup, so the
+path no longer exists.
 
 ### MUST-FIX 3 — `TrendStore.load(profile:range:)`
 
@@ -311,7 +301,8 @@ to `codesign`. `Info.plist` now has `NSHumanReadableCopyright` and a strict
 ## Hardening fixes implemented
 
 1. `Services/SystemActions.swift` — exact-match-or-child prefix in `canonicalize`.
-2. `Services/JamfProtectSnapshotService.swift` — bail on invalid profile.
+2. Removed the unwired Protect snapshot prototype that had an invalid-profile
+   fallback path.
 3. `Services/TrendStore.swift` — validate profile via `ProfileService`.
 4. `Services/RunHistoryService.swift` — `path + "/"` prefix in `list`.
 5. `app/JamfReports.entitlements` — explicit, restrictive entitlements.

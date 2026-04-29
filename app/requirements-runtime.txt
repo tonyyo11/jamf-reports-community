@@ -1,0 +1,6 @@
+# Runtime dependencies bundled into JamfReports.app's private Python.
+# Keep pinned so release builds are repeatable.
+XlsxWriter==3.2.9
+pandas==2.3.3
+PyYAML==6.0.3
+matplotlib==3.10.8

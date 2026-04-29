@@ -108,15 +108,6 @@ enum DemoData {
         .init(name: "prod",          url: "prod-msp.jamfcloud.com", schedules: 0, status: .idle),
     ]
 
-    static let recentReports: [Report] = [
-        .init(name: "meridian_jamf_report_2026-04-20_070218.xlsx", size: "1.2 MB", date: "Apr 20, 07:02", source: "Weekly Executive",   sheets: 18, devices: 524),
-        .init(name: "meridian_jamf_report_2026-04-13_070141.xlsx", size: "1.2 MB", date: "Apr 13, 07:01", source: "Weekly Executive",   sheets: 18, devices: 519),
-        .init(name: "meridian_compliance_2026-04-01_061412.xlsx",  size: "986 KB", date: "Apr 01, 06:14", source: "Monthly Compliance", sheets: 14, devices: 511),
-        .init(name: "meridian_jamf_report_2026-04-06_070108.xlsx", size: "1.1 MB", date: "Apr 06, 07:01", source: "Weekly Executive",   sheets: 18, devices: 514),
-        .init(name: "meridian_mobile_2026-04-24_073312.xlsx",      size: "412 KB", date: "Apr 24, 07:33", source: "Mobile Inventory",   sheets:  4, devices: 142),
-        .init(name: "meridian_jamf_report_2026-03-30_070055.xlsx", size: "1.1 MB", date: "Mar 30, 07:00", source: "Weekly Executive",   sheets: 18, devices: 509),
-    ]
-
     static let sheetCatalog: [SheetGroup] = [
         .init(group: "CSV-driven", items: [
             .init(name: "Device Inventory",    req: "csv", on: true),

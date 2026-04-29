@@ -39,6 +39,13 @@ cd app
 open build/JamfReports.app
 ```
 
+Release builds bundle a private Python runtime by default. For a fast local
+debug package without downloading Python, run:
+
+```bash
+JRC_BUNDLE_PYTHON=0 ./build-app.sh debug
+```
+
 The script ad-hoc signs the bundle so Gatekeeper allows it on the local
 machine. For distribution to other Macs, replace the ad-hoc sign with a
 Developer ID signature and notarize.
@@ -106,25 +113,27 @@ app/
 
 ✅ All 12 screens render from demo data
 ✅ Devices screen reads current workspace inventory and cached patch/compliance data
-- Backups screen lists per-profile backups and wraps `jrc backup` / `jamf-cli pro diff`
+✅ Backups screen lists per-profile backups and wraps `jrc backup` / `jamf-cli pro diff`
 ✅ Sidebar collapse (expanded / compact / hidden) with `⌘0`
 ✅ Profile switcher chip and local workspace discovery (`~/Jamf-Reports/*/config.yaml`)
 ✅ Active app profile is passed through every `jrc` / `jamf-cli` operation
 ✅ Fresh workspaces can collect and generate from jamf-cli only, with no CSV/history
 ✅ Swift Charts for the Trends hero, multi-line comparison, stacked compliance bands
-✅ `CLIBridge` prefers the bundled Python script, falls back to `jrc`, and runs
-   subprocesses with live stdout streaming
+✅ `CLIBridge` prefers the bundled Python runtime + bundled CLI script, falls
+   back to external Python/`jrc`, and streams subprocess stdout live
 ✅ `SystemActions` for "Reveal in Finder" and "Open Report" with secure path validation
 ✅ `LaunchAgentService` for discovering and parsing existing scheduled jobs
+✅ Scheduled-run setup delegates to Python `launchagent-setup`; Run Now validates
+   and executes generated `launchagent-run` jobs
+✅ Real trend data parser for `summary.json` history
+✅ App icon generation and `.icns` bundling
 
-## What's still stubbed (next on the punch list)
+## Remaining work
 
-- ⏳ `config.yaml` round-trip — needs Yams or a hand-rolled YAML emitter
-- ⏳ `LaunchAgent` write/load/unload operations — currently read-only for safety
-- ⏳ Trend data parser — read each archived `.xlsx` summary or the new `summary.json`
-- ⏳ App icon — Spectrum assets exist but need final `.icns` assembly
-- ⏳ Actual run-now plumbing in `SchedulesView` — currently the table toggles
-   are read-only
+- Full arbitrary `config.yaml` round-trip remains scoped to fields exposed by
+  the GUI.
+- Developer ID signing, notarization, and stapling remain manual distribution
+  steps.
 
 ## Build distribution
 
@@ -139,6 +148,33 @@ bundle can run on the local development machine. For distribution to other Macs:
    `xcrun stapler staple`.
 
 These steps are currently manual and not yet integrated into the `build-app.sh` script.
+
+### Bundled Python runtime
+
+`build-app.sh release` invokes `scripts/build-python-runtime.sh` unless
+`JRC_BUNDLE_PYTHON=0` is set. The runtime flow is:
+
+1. Read `python-runtime.lock` for the pinned `python-build-standalone` release,
+   Python series, archive variant, direct asset URLs, and SHA256 checksums.
+2. Download the matching macOS `install_only_stripped` archive for the host
+   architecture.
+3. Install pinned packages from `requirements-runtime.txt` into that private
+   runtime at build time.
+4. Copy the finished runtime to
+   `JamfReports.app/Contents/Resources/python`.
+5. Smoke-test imports for `pandas`, `xlsxwriter`, `yaml`, and `matplotlib`.
+
+Useful controls:
+
+```bash
+JRC_BUNDLE_PYTHON=0 ./build-app.sh debug       # skip runtime bundling
+JRC_BUNDLE_PYTHON=1 ./build-app.sh release     # require runtime bundling
+JRC_PYTHON_CACHE_DIR=/tmp/jrc-python-cache ./build-app.sh release
+```
+
+Fill in `PBS_ARM64_SHA256` and `PBS_X86_64_SHA256` in `python-runtime.lock`
+after selecting the exact assets. The script refuses to download, extract, or
+copy a runtime until the matching checksum is present.
 
 ## Security model
 

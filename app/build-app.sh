@@ -79,8 +79,30 @@ fi
 if [[ -f "../requirements.txt" ]]; then
   cp "../requirements.txt" "$APP_OUT/Contents/Resources/requirements.txt"
 fi
+if [[ -f "requirements-runtime.txt" ]]; then
+  cp "requirements-runtime.txt" "$APP_OUT/Contents/Resources/requirements-runtime.txt"
+fi
 if [[ -f "../config.example.yaml" ]]; then
   cp "../config.example.yaml" "$APP_OUT/Contents/Resources/config.example.yaml"
+fi
+
+if [[ -z "${JRC_BUNDLE_PYTHON:-}" ]]; then
+  if [[ "$CONFIG" == "release" ]]; then
+    JRC_BUNDLE_PYTHON=1
+  else
+    JRC_BUNDLE_PYTHON=auto
+  fi
+fi
+
+if [[ "$JRC_BUNDLE_PYTHON" != "0" ]]; then
+  echo "→ bundling private Python runtime"
+  if ! ./scripts/build-python-runtime.sh "$ARCH" "$APP_OUT/Contents/Resources"; then
+    if [[ "$JRC_BUNDLE_PYTHON" == "1" ]]; then
+      echo "✗ Python runtime bundling failed" >&2
+      exit 1
+    fi
+    echo "⚠ Python runtime bundling skipped; app will use external Python if available" >&2
+  fi
 fi
 
 cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
@@ -137,10 +159,27 @@ PLIST
 # requires Developer ID + notarization; this is the local-dev posture.
 ENTITLEMENTS="JamfReports.entitlements"
 if [[ -f "$ENTITLEMENTS" ]]; then
-  codesign --force --sign - \
+  if [[ -d "$APP_OUT/Contents/Resources/python" ]]; then
+    echo "→ signing bundled Python components"
+    while IFS= read -r -d '' file; do
+      case "$file" in
+        *.so|*.dylib|*/python|*/python3|*/python3.*)
+          if ! codesign --force --sign - --options runtime "$file" >/dev/null; then
+            echo "✗ codesign failed for $file" >&2
+            exit 1
+          fi
+          ;;
+      esac
+    done < <(find "$APP_OUT/Contents/Resources/python" -type f -print0)
+  fi
+  echo "→ signing $APP_OUT"
+  if ! codesign --force --sign - \
     --options runtime \
     --entitlements "$ENTITLEMENTS" \
-    --deep "$APP_OUT" >/dev/null 2>&1 || true
+    --deep "$APP_OUT" >/dev/null; then
+    echo "✗ codesign failed for $APP_OUT" >&2
+    exit 1
+  fi
 else
   echo "✗ $ENTITLEMENTS missing — refusing to sign without entitlements" >&2
   exit 1

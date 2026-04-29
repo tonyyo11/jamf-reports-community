@@ -16,6 +16,11 @@ let package = Package(
             resources: [
                 .process("Resources")
             ]
+        ),
+        .testTarget(
+            name: "JamfReportsTests",
+            dependencies: ["JamfReports"],
+            path: "Tests/JamfReportsTests"
         )
     ]
 )

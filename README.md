@@ -13,9 +13,11 @@ with a dedicated **Historical Trends** dashboard built on Swift Charts. Full
 details and build instructions are in [app/README.md](app/README.md).
 
 The app requires Xcode 16+ to build from source and can be packaged as a
-standalone bundle via `cd app && ./build-app.sh release`. Note that while local
-builds are ad-hoc signed, wider distribution requires a Developer ID signature
-and notarization (not yet integrated into the release workflow).
+standalone bundle via `cd app && ./build-app.sh release`. Release app builds
+bundle a private `python-build-standalone` runtime plus the pinned Python
+dependencies, so end users do not need to install Python separately. Note that
+while local builds are ad-hoc signed, wider distribution requires a Developer ID
+signature and notarization (not yet integrated into the release workflow).
 
 <!-- TODO: screenshot -->
 

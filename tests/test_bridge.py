@@ -2,6 +2,38 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
+
+class _InventoryCsvBridge:
+    """Minimal bridge double for inventory-csv command tests."""
+
+    def is_available(self) -> bool:
+        return True
+
+    def computers_list(self, sections=None):
+        return [{
+            "general": {
+                "id": "1",
+                "name": "Mac-001",
+                "serialNumber": "C02TEST001",
+                "remoteManagement": {"managed": True},
+            },
+        }]
+
+    def ea_results_report(self, include_all=True):
+        return []
+
+
+def _inventory_csv_config(config_factory):
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = True
+    config._data["inventory_csv"]["skip_security_enrichment"] = True
+    config._data["output"]["archive_enabled"] = False
+    return config
+
 
 def test_run_and_save_falls_back_to_committed_cache(monkeypatch, fixtures_root, jrc) -> None:
     bridge = jrc.JamfCLIBridge(
@@ -20,6 +52,81 @@ def test_run_and_save_falls_back_to_committed_cache(monkeypatch, fixtures_root, 
 
     assert isinstance(data, list)
     assert bridge.source_info("overview")["mode"] == "cached-fallback"
+
+
+def test_inventory_csv_writes_temp_file_before_replacing_final(
+    monkeypatch,
+    config_factory,
+    tmp_path,
+    jrc,
+) -> None:
+    config = _inventory_csv_config(config_factory)
+    out_path = tmp_path / "inventory.csv"
+    to_csv_paths: list[Path] = []
+    original_to_csv = jrc.pd.DataFrame.to_csv
+
+    monkeypatch.setattr(
+        jrc,
+        "_build_jamf_cli_bridge",
+        lambda *args, **kwargs: _InventoryCsvBridge(),
+    )
+
+    def recording_to_csv(self, path_or_buf=None, *args, **kwargs):
+        to_csv_paths.append(Path(path_or_buf))
+        return original_to_csv(self, path_or_buf, *args, **kwargs)
+
+    monkeypatch.setattr(jrc.pd.DataFrame, "to_csv", recording_to_csv)
+
+    result = jrc.cmd_inventory_csv(config, str(out_path))
+
+    assert result == out_path
+    assert out_path.exists()
+    assert "Mac-001" in out_path.read_text(encoding="utf-8-sig")
+    assert len(to_csv_paths) == 1
+    temp_path = to_csv_paths[0]
+    assert temp_path.parent == out_path.parent
+    assert temp_path.name.startswith(f".{out_path.name}.")
+    assert temp_path.suffix == ".tmp"
+    assert temp_path != out_path
+    assert not temp_path.exists()
+    assert not list(out_path.parent.glob(".inventory.csv.*.tmp"))
+
+
+def test_inventory_csv_write_failure_removes_temp_and_preserves_final(
+    monkeypatch,
+    config_factory,
+    tmp_path,
+    jrc,
+) -> None:
+    config = _inventory_csv_config(config_factory)
+    out_path = tmp_path / "inventory.csv"
+    out_path.write_text("existing\n", encoding="utf-8")
+    temp_paths: list[Path] = []
+
+    monkeypatch.setattr(
+        jrc,
+        "_build_jamf_cli_bridge",
+        lambda *args, **kwargs: _InventoryCsvBridge(),
+    )
+
+    def failing_to_csv(self, path_or_buf=None, *args, **kwargs):
+        temp_path = Path(path_or_buf)
+        temp_paths.append(temp_path)
+        temp_path.write_text("partial\n", encoding="utf-8")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(jrc.pd.DataFrame, "to_csv", failing_to_csv)
+
+    with pytest.raises(SystemExit) as exc_info:
+        jrc.cmd_inventory_csv(config, str(out_path))
+
+    message = str(exc_info.value)
+    assert "Error: failed to write inventory CSV" in message
+    assert "disk full" in message
+    assert out_path.read_text(encoding="utf-8") == "existing\n"
+    assert len(temp_paths) == 1
+    assert not temp_paths[0].exists()
+    assert not list(out_path.parent.glob(".inventory.csv.*.tmp"))
 
 
 def test_computers_inventory_patch_builds_expected_set_args(monkeypatch, jrc) -> None:
@@ -110,6 +217,26 @@ def test_update_device_failures_normalizes_cached_toggle_off_response(
     assert isinstance(result, list)
     assert result[0]["message"] == "No managed software update data found."
     assert result[0]["failed_plans"] == []
+
+
+def test_update_no_data_response_accepts_only_errors_or_exact_empty_envelopes(jrc) -> None:
+    """A regular payload with a matching message must not be dropped as no-data."""
+    status_empty = jrc._empty_update_status_envelope()
+    failures_empty = jrc._empty_update_failures_envelope()
+    real_payload_with_message = {
+        "message": "No managed software update data found.",
+        "total": 1,
+        "status_summary": [{"status": "FAILED", "count": 1}],
+    }
+
+    assert jrc._is_update_no_data_response(status_empty) is True
+    assert jrc._is_update_no_data_response(failures_empty) is True
+    assert jrc._is_update_no_data_response({
+        "httpStatus": 503,
+        "errors": [{"description": "Managed Software Update Plans toggle is off."}],
+    }) is True
+    assert jrc._is_update_no_data_response(real_payload_with_message) is False
+    assert jrc._is_update_no_data_response([real_payload_with_message]) is False
 
 
 def test_groups_uses_confirmed_list_command(monkeypatch, jrc) -> None:

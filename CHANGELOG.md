@@ -60,9 +60,35 @@ versions in this repository map to git tags.
   of hardcoding sheet/source support.
 - `--summary-json` for `generate`, `html`, `collect`, `school-generate`, and
   `school-collect`, giving the Swift app stable machine-readable run summaries.
+- macOS app release packaging can now bundle a private, pinned Python runtime
+  using `python-runtime.lock` and `requirements-runtime.txt`.
+- GitHub Actions now builds and tests the Swift macOS app on macOS in addition
+  to the Python test matrix.
 
 ### Fixed
 
+- macOS app builds now fail fast when component or bundle signing fails instead
+  of continuing with a partially signed app.
+- Bundled Python runtime builds now require a pinned SHA256 before downloading,
+  extracting, or copying a runtime asset.
+- Swift jamf-cli install/update subprocesses now drain stdout and stderr while
+  the process is running, avoiding hangs when a command emits enough output to
+  fill a pipe buffer.
+- Manual scheduled "Run now" execution now rejects tampered LaunchAgent plists
+  whose Python executable, script path, config/status paths, log paths, or
+  profile do not match the generated command contract.
+- LaunchAgent environments are now rebuilt from a small trusted set instead of
+  inheriting plist-controlled `PATH`, `JAMFCLI_PATH`, `PYTHONHOME`, or
+  `PYTHONPATH` values.
+- `launchagent-setup` now writes LaunchAgent plists atomically and restores the
+  previous plist if `launchctl bootstrap` fails.
+- `backup` now removes partial backup directories on subprocess, stats,
+  manifest, or final rename failures and reports cleanup failures explicitly.
+- `inventory-csv` now writes through a destination-local temp file before
+  replacing the final CSV, preserving an existing export if the write fails.
+- `generate` now emits trend summary JSON only after the workbook closes
+  successfully, and `--force-summary` can explicitly replace an existing
+  same-day summary.
 - Cached Jamf managed-software-update endpoint errors are now normalized to the
   same no-data workbook rows as live `jamf-cli` failures, so cached reports no
   longer produce blank Update Status/Failures sheets when the tenant toggle is off.
@@ -86,6 +112,12 @@ versions in this repository map to git tags.
   `launchagent-setup`, using the shared status-file, log, CSV inbox, and
   `com.github.tonyyo11.jamf-reports-community.*` plist format; old
   `com.tonyyo.jrc.*` app-generated plists are removed on launch.
+
+### Removed
+
+- Removed unwired Swift prototype status/history/benchmark screens, their
+  orphaned single-consumer services, unused demo fixtures, unused theme tokens,
+  and unused private Python helpers.
 
 ## [1.3.0] - 2026-04-24
 

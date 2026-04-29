@@ -30,3 +30,18 @@ jobs:
 
       - name: Run tests
         run: python3 -m pytest tests -q
+
+  swift-app:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build Swift app
+        working-directory: app
+        run: swift build
+
+      - name: Run Swift tests
+        working-directory: app
+        run: swift test

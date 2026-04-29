@@ -40,17 +40,6 @@ enum ExecutableLocator {
 @Observable
 final class CLIBridge {
 
-    enum BridgeError: Error, LocalizedError {
-        case binaryNotFound(String)
-        case launchFailed(String)
-        var errorDescription: String? {
-            switch self {
-            case .binaryNotFound(let bin): "Could not locate \(bin) on PATH."
-            case .launchFailed(let msg):   "Failed to launch process: \(msg)"
-            }
-        }
-    }
-
     enum LogLevel: String, Sendable { case info, ok, warn, fail }
     struct LogLine: Sendable, Identifiable {
         let id = UUID()
@@ -63,7 +52,6 @@ final class CLIBridge {
         ExecutableLocator.locate(binary)
     }
 
-    var isJRCAvailable: Bool { resolveJRCCommand() != nil }
     var isJamfCLIAvailable: Bool { locate("jamf-cli") != nil }
 
     func jrcDisplayPath() -> String? {
@@ -84,7 +72,11 @@ final class CLIBridge {
             process.executableURL = executable
             process.arguments = arguments
             if let cwd { process.currentDirectoryURL = cwd }
-            if let environment { process.environment = environment }
+            if let environment {
+                process.environment = environment
+            } else if let bundled = Self.environmentForBundledPython(executable) {
+                process.environment = bundled
+            }
 
             let stdout = Pipe()
             let stderr = Pipe()
@@ -408,6 +400,34 @@ final class CLIBridge {
         return candidates.first { fm.fileExists(atPath: $0.path) }
     }
 
+    private nonisolated static func bundledPythonURL() -> URL? {
+        Bundle.main.resourceURL?
+            .appendingPathComponent("python", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+            .appendingPathComponent("python3")
+    }
+
+    private nonisolated static func environmentForBundledPython(_ executable: URL) -> [String: String]? {
+        guard let bundled = bundledPythonURL(),
+              sameResolvedPath(executable, bundled) else {
+            return nil
+        }
+        var env = ProcessInfo.processInfo.environment
+        env.removeValue(forKey: "PYTHONHOME")
+        env.removeValue(forKey: "PYTHONPATH")
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        env["PYTHONNOUSERSITE"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
+        let pythonBin = bundled.deletingLastPathComponent().path
+        env["PATH"] = "\(pythonBin):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        return env
+    }
+
+    private nonisolated static func sameResolvedPath(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.resolvingSymlinksInPath().standardizedFileURL.path
+            == rhs.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
     private func locatePythonForJRC() -> URL? {
         for candidate in pythonCandidates() where canRunJRC(candidate) {
             return candidate
@@ -417,13 +437,16 @@ final class CLIBridge {
 
     private func pythonCandidates() -> [URL] {
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let paths = [
+        var paths = [
             "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
             "/usr/local/bin/python3",
             "/opt/homebrew/bin/python3",
             "/usr/bin/python3",
             cwd.appendingPathComponent("python3").path,
         ]
+        if let bundled = Self.bundledPythonURL() {
+            paths.insert(bundled.path, at: 0)
+        }
         var seen: Set<String> = []
         return paths.compactMap { path in
             guard !seen.contains(path), FileManager.default.isExecutableFile(atPath: path) else {
@@ -438,6 +461,9 @@ final class CLIBridge {
         let process = Process()
         process.executableURL = python
         process.arguments = ["-c", "import pandas, xlsxwriter, yaml"]
+        if let environment = Self.environmentForBundledPython(python) {
+            process.environment = environment
+        }
         process.standardOutput = Pipe()
         process.standardError = Pipe()
 

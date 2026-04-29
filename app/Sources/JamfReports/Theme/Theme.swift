@@ -21,9 +21,7 @@ enum Theme {
         static let winBG       = Color(hex: 0x1D1D1F)
         static let winBG2      = Color(hex: 0x232326)
         static let winBG3      = Color(hex: 0x2A2A2E)
-        static let winBG4      = Color(hex: 0x36363A)
         static let titlebar    = Color(hex: 0x28282C, opacity: 0.72)
-        static let sidebarBG   = Color(hex: 0x1C1C20, opacity: 0.78)
         static let codeBG      = Color(hex: 0x0E0F12)
 
         // Text
@@ -31,7 +29,6 @@ enum Theme {
         static let fg2         = Color(hex: 0xD8D8DD)
         static let fgMuted     = Color(hex: 0x8E8E93)
         static let fgDisabled  = Color(hex: 0x5A5A60)
-        static let fgHeading   = Color(hex: 0xF4F1EA)
 
         // Hairlines
         static let hairline       = Color.white.opacity(0.07)
@@ -75,7 +72,6 @@ enum Theme {
         static let cardRadius: CGFloat = 10
         static let largeCardRadius: CGFloat = 14
         static let buttonRadius: CGFloat = 6
-        static let pillRadius: CGFloat = 10
         static let sidebarWidthExpanded: CGFloat = 232
         static let sidebarWidthCompact: CGFloat = 64
         static let titlebarHeight: CGFloat = 38

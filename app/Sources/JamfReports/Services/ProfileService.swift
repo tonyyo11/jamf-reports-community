@@ -106,10 +106,6 @@ enum ProfileService {
         return profiles.sorted(by: profileSort)
     }
 
-    static func defaultProfileName() -> String? {
-        discoverLocal().first(where: \.isDefault)?.name
-    }
-
     /// Remove one local workspace folder under `~/Jamf-Reports/<profile>`.
     /// This never edits jamf-cli credentials or profiles; it only removes the
     /// app's local workspace directory after path-boundary validation.

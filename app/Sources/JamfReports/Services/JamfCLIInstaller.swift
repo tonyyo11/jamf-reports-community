@@ -1,6 +1,57 @@
 import Darwin
 import Foundation
 
+private final class ProcessPipeDrainer: @unchecked Sendable {
+    private let handle: FileHandle
+    private let lock = NSLock()
+    private var buffer = Data()
+    private var isFinishing = false
+
+    init(pipe: Pipe) {
+        handle = pipe.fileHandleForReading
+    }
+
+    func start() {
+        handle.readabilityHandler = { [weak self] fileHandle in
+            self?.drainAvailableData(from: fileHandle)
+        }
+    }
+
+    func cancel() {
+        handle.readabilityHandler = nil
+    }
+
+    func finish() -> Data {
+        handle.readabilityHandler = nil
+
+        lock.lock()
+        isFinishing = true
+        let remaining = handle.readDataToEndOfFile()
+        if !remaining.isEmpty {
+            buffer.append(remaining)
+        }
+        let data = buffer
+        lock.unlock()
+
+        return data
+    }
+
+    private func drainAvailableData(from fileHandle: FileHandle) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !isFinishing else { return }
+
+        let data = fileHandle.availableData
+        guard !data.isEmpty else {
+            fileHandle.readabilityHandler = nil
+            return
+        }
+
+        buffer.append(data)
+    }
+}
+
 @MainActor
 final class JamfCLIInstaller {
     enum InstallSource: String, Sendable {
@@ -82,10 +133,6 @@ final class JamfCLIInstaller {
 
         cachedVersion = Self.currentInstallation()?.version
         return cachedVersion
-    }
-
-    static func installedPath() -> String? {
-        currentInstallation()?.path
     }
 
     static func installedVersion() -> String? {
@@ -557,9 +604,14 @@ final class JamfCLIInstaller {
             process.standardOutput = stdout
             process.standardError = stderr
 
+            let stdoutDrainer = ProcessPipeDrainer(pipe: stdout)
+            let stderrDrainer = ProcessPipeDrainer(pipe: stderr)
+            stdoutDrainer.start()
+            stderrDrainer.start()
+
             process.terminationHandler = { proc in
-                let out = stdout.fileHandleForReading.readDataToEndOfFile()
-                let err = stderr.fileHandleForReading.readDataToEndOfFile()
+                let out = stdoutDrainer.finish()
+                let err = stderrDrainer.finish()
                 continuation.resume(
                     returning: CommandResult(
                         exitCode: proc.terminationStatus,
@@ -572,6 +624,8 @@ final class JamfCLIInstaller {
             do {
                 try process.run()
             } catch {
+                stdoutDrainer.cancel()
+                stderrDrainer.cancel()
                 continuation.resume(
                     returning: CommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
                 )
