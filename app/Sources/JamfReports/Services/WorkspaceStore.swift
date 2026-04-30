@@ -25,6 +25,7 @@ final class WorkspaceStore {
     var workspaceInitMessage: String?
     var launchAgentCleanupMessage: String?
     private var didAutoUpdateJamfCLI = false
+    private static let forceDemoModeKey = "com.jamfreports.forceDemoMode"
 
     /// True when the active profile has a `config.yaml` on disk under
     /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
@@ -120,10 +121,12 @@ final class WorkspaceStore {
     }
 
     /// Reload from disk — called from the sidebar refresh and after onboarding.
+    /// Respects an explicit user demo-mode preference set via `setDemoMode(_:)`.
     func reloadFromDisk() {
         refreshToolStatus()
         let real = ProfileService.discoverLocal()
-        if real.isEmpty {
+        let userForcedDemo = UserDefaults.standard.bool(forKey: Self.forceDemoModeKey)
+        if real.isEmpty || userForcedDemo {
             demoMode = true
             org = DemoData.org
             profile = DemoData.org.profile
@@ -141,6 +144,7 @@ final class WorkspaceStore {
     }
 
     func setDemoMode(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Self.forceDemoModeKey)
         if enabled {
             demoMode = true
             org = DemoData.org

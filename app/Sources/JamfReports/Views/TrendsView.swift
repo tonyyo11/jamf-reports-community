@@ -6,9 +6,11 @@ import Charts
 struct TrendsView: View {
     @Environment(WorkspaceStore.self) private var workspaceStore
     @State private var trendStore = TrendStore()
+    @State private var bridge = CLIBridge()
     @State private var metric: TrendSeries.Metric = .compliance
     @State private var range: TrendRange = .w26
     @State private var selectedDate: String? = nil
+    @State private var isArchiving = false
 
     private var values: [Double] {
         workspaceStore.demoMode ? (DemoData.trends[metric] ?? []) : trendStore.values(metric: metric)
@@ -101,9 +103,11 @@ struct TrendsView: View {
             }
             
             Button {
-                // Navigate to Schedules screen
-                // In a real app we'd use a shared navigation state, 
-                // but here we can just suggest it.
+                NotificationCenter.default.post(
+                    name: .navigateToTab,
+                    object: nil,
+                    userInfo: ["tab": Tab.schedules.rawValue]
+                )
             } label: {
                 Text("Go to Schedules")
                     .font(.system(size: 13, weight: .semibold))
@@ -147,6 +151,8 @@ struct TrendsView: View {
                     options: TrendRange.allCases.map { ($0, $0.rawValue, nil) }
                 )
                 PNPButton(title: "Export PNG", icon: "arrow.down.circle")
+                    .disabled(true)
+                    .help("PNG export is not yet available")
             }
         }
     }
@@ -316,7 +322,11 @@ struct TrendsView: View {
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
-                    PNPButton(title: "Open in Finder", icon: "folder", style: .ghost, size: .sm)
+                    PNPButton(title: "Open in Finder", icon: "folder", style: .ghost, size: .sm) {
+                        if let dir = WorkspacePaths.summariesDir(for: workspaceStore.profile) {
+                            SystemActions.openFolder(dir)
+                        }
+                    }
                 }
             }
         }
@@ -500,8 +510,20 @@ struct TrendsView: View {
                     }
                     Spacer()
                     HStack(spacing: 8) {
-                        PNPButton(title: "Show in Finder", icon: "folder", size: .sm)
-                        PNPButton(title: "Archive now", icon: "icloud.and.arrow.up", style: .gold, size: .sm)
+                        PNPButton(title: "Show in Finder", icon: "folder", size: .sm) {
+                            if let dir = WorkspacePaths.summariesDir(for: workspaceStore.profile) {
+                                SystemActions.openFolder(dir)
+                            }
+                        }
+                        PNPButton(
+                            title: isArchiving ? "Collecting…" : "Archive now",
+                            icon: isArchiving ? "hourglass" : "icloud.and.arrow.up",
+                            style: .gold,
+                            size: .sm
+                        ) {
+                            guard !isArchiving else { return }
+                            Task { await archiveNow() }
+                        }
                     }
                 }
 
@@ -535,6 +557,17 @@ struct TrendsView: View {
                 .font(Theme.Fonts.mono(10.5))
                 .foregroundStyle(Theme.Colors.fgMuted)
             }
+        }
+    }
+    // MARK: Archive
+
+    private func archiveNow() async {
+        let profile = workspaceStore.profile
+        isArchiving = true
+        _ = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { _ in }
+        isArchiving = false
+        withAnimation(.snappy) {
+            trendStore.load(profile: profile, range: range)
         }
     }
 }

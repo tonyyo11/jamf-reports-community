@@ -32,4 +32,5 @@ struct JamfReportsApp: App {
 
 extension Notification.Name {
     static let cycleSidebar = Notification.Name("JamfReports.cycleSidebar")
+    static let navigateToTab = Notification.Name("JamfReports.navigateToTab")
 }

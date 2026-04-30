@@ -229,6 +229,9 @@ jamf_cli:
   # value for every device and is consistently the slowest jamf-cli call. Bump
   # this when inventory-csv runs hit "jamf-cli timed out" errors.
   ea_results_timeout_seconds: 600
+  # Maximum age of a cached snapshot used on live-call fallback, in hours.
+  # 0 disables the check (any cached file is accepted).
+  max_cache_age_hours: 0    # 0 = no limit; raise an error if cached fallback is older than N hours
 
 
 # ---------------------------------------------------------------------------

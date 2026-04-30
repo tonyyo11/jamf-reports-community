@@ -7,8 +7,37 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- When `--csv` is explicitly provided but the file is unreadable, `generate`
+  now exits with an error instead of silently producing a workbook with no
+  CSV sheets.
+- When the Compliance sheet is enabled in config but fails during generation,
+  `generate` now exits with an error rather than silently skipping the sheet.
+- The output workbook is now written to a `.partial` temp file and atomically
+  renamed to the final path only after a successful `wb.close()`, preventing
+  partially-written `.xlsx` files from being left on disk if the process is
+  interrupted mid-write.
+- Compliance failure counts of `""` or `"N/A"` no longer silently count as
+  passing. Unparseable values are excluded from the compliant count in both
+  the summary JSON and the Compliance sheet. The sheet now shows an
+  "Unparseable (excluded)" row when any values could not be parsed, making
+  the data quality issue visible.
+- Merging multiple CSVs via `--csv` now deduplicates rows by serial number.
+  If the same serial appeared in more than one input file, the first
+  occurrence is kept and a warning is printed.
+- Fleet Drift comparison now warns when a historical CSV snapshot contains
+  duplicate serial numbers, rather than silently discarding them.
+- Unexpected exceptions that escape a command (e.g. network errors, malformed
+  JSON) now print a clean `Error: <type>: <message>` line to stderr and exit 1,
+  instead of surfacing a raw Python traceback with local paths.
+
 ### Added
 
+- `jamf_cli.max_cache_age_hours` config option (default `0` = no limit). When
+  set, `generate` raises an error instead of using a cached snapshot older than
+  the configured number of hours. Useful when stale compliance data must not
+  silently pass through to the report.
 - macOS app per-device drilldown now calls `jamf-cli pro device <identifier>`
   for the selected row, caches the JSON under
   `~/Jamf-Reports/<profile>/jamf-cli-data/devices/`, and renders grouped detail

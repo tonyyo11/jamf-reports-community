@@ -45,6 +45,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cycleSidebar)) { _ in
             cycleSidebar()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToTab)) { note in
+            if let raw = note.userInfo?["tab"] as? String, let newTab = Tab(rawValue: raw) {
+                tab = newTab
+            }
+        }
         .task {
             await workspace.autoUpdateJamfCLIIfNeeded()
         }

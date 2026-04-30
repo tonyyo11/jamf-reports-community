@@ -40,6 +40,7 @@ struct ConfigView: View {
     @State private var tab: ConfigTab = .columns
     @State private var saveStatus: SaveStatus = .idle
     @State private var saveTask: Task<Void, Never>?
+    @State private var triggerColumnsCheck = false
 
     var body: some View {
         ScrollView {
@@ -79,7 +80,10 @@ struct ConfigView: View {
                 HStack(spacing: 8) {
                     saveStatusPill
                     PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
-                    PNPButton(title: "Run check", icon: "flask", action: runCheck)
+                    PNPButton(title: "Run check", icon: "flask") {
+                        tab = .columns
+                        triggerColumnsCheck = true
+                    }
                     PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
                 }
             )
@@ -115,7 +119,7 @@ struct ConfigView: View {
     @ViewBuilder
     private var tabContent: some View {
         switch tab {
-        case .columns:    ColumnsTab()
+        case .columns:    ColumnsTab(triggerCheck: $triggerColumnsCheck)
         case .agents:     AgentsTab()
         case .eas:        EasTab()
         case .thresholds: ThresholdsTab()
@@ -142,12 +146,6 @@ struct ConfigView: View {
         }
     }
 
-    private func runCheck() {
-        Task {
-            _ = await cli.check(profile: workspace.profile, csvPath: nil) { _ in }
-        }
-    }
-
     private func shortMessage(_ error: Error) -> String {
         let full = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         return full.count > 60 ? String(full.prefix(57)) + "…" : full
@@ -157,6 +155,7 @@ struct ConfigView: View {
 // MARK: - Columns tab
 
 private struct ColumnsTab: View {
+    @Binding var triggerCheck: Bool
     @Environment(WorkspaceStore.self) private var workspace
     @State private var cli = CLIBridge()
     @State private var checkStatus: String? = nil
@@ -205,6 +204,11 @@ private struct ColumnsTab: View {
                 scaffoldTipCard
             }
             .frame(width: 240)
+        }
+        .onChange(of: triggerCheck) { _, triggered in
+            guard triggered else { return }
+            triggerCheck = false
+            runCheck()
         }
     }
 

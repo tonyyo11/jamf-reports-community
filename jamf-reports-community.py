@@ -241,6 +241,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "allow_live_overview": True,
         "command_timeout_seconds": 300,
         "ea_results_timeout_seconds": 600,
+        "max_cache_age_hours": 0,   # 0 = no limit; set to enforce freshness on cache fallback
     },
     "school_cli": {
         "enabled": False,
@@ -2196,9 +2197,9 @@ def _emit_summary_json(
     count_col = comp_cfg.get("failures_count_column")
     comp_pct = 0.0
     if count_col and count_col in df.columns:
-        counts = pd.to_numeric(df[count_col], errors="coerce").fillna(0)
-        compliant = (counts == 0).sum()
-        comp_pct = (compliant / total_devices * 100.0)
+        numeric = pd.to_numeric(df[count_col], errors="coerce")
+        compliant = int((numeric == 0).sum())
+        comp_pct = (compliant / total_devices * 100.0) if total_devices > 0 else 0.0
 
     # 3. Stale count (30d+)
     checkin_col = csv_dash._col("last_checkin")
@@ -3069,6 +3070,8 @@ class JamfCLIBridge:
         data_dir: Directory used to save or read cached jamf-cli JSON snapshots.
         profile: Optional jamf-cli profile name passed as -p to every command.
         use_cached_data: If True, fall back to saved snapshots when live commands fail.
+        max_cache_age_hours: Raise an error on cache fallback if the snapshot is older
+            than this many hours. 0 disables the check.
     """
 
     def __init__(
@@ -3079,6 +3082,7 @@ class JamfCLIBridge:
         use_cached_data: bool = True,
         command_timeout: int = 300,
         ea_results_timeout: int = 600,
+        max_cache_age_hours: int = 0,
     ) -> None:
         self._binary = self._find_binary()
         self._save = save_output
@@ -3087,6 +3091,7 @@ class JamfCLIBridge:
         self._use_cached_data = use_cached_data
         self._command_timeout = max(1, int(command_timeout))
         self._ea_results_timeout = max(1, int(ea_results_timeout))
+        self._max_cache_age_hours = max(0, int(max_cache_age_hours))
         self._report_commands_cache: Optional[set[str]] = None
         self._protect_commands_cache: Optional[set[str]] = None
         self._last_source_info: dict[str, dict[str, Any]] = {}
@@ -3562,6 +3567,19 @@ class JamfCLIBridge:
             if not self._use_cached_data:
                 raise
             try:
+                if self._max_cache_age_hours > 0:
+                    cached_path = self._latest_cached_json(cache_candidates)
+                    if cached_path is not None:
+                        age = datetime.now() - datetime.fromtimestamp(
+                            cached_path.stat().st_mtime
+                        )
+                        if age > timedelta(hours=self._max_cache_age_hours):
+                            age_h = age.total_seconds() / 3600
+                            raise RuntimeError(
+                                f"cached snapshot is too old ({age_h:.1f}h >"
+                                f" {self._max_cache_age_hours}h limit):"
+                                f" {cached_path}"
+                            ) from exc
                 return self._load_cached_json(
                     cache_candidates,
                     report_type=report_type,
@@ -4249,6 +4267,7 @@ def _build_jamf_cli_bridge(
         use_cached = use_cached_data
     command_timeout = _to_int(jamf_cli_cfg.get("command_timeout_seconds", 300), 300)
     ea_timeout = _to_int(jamf_cli_cfg.get("ea_results_timeout_seconds", 600), 600)
+    max_cache_age = _to_int(jamf_cli_cfg.get("max_cache_age_hours", 0), 0)
     return JamfCLIBridge(
         save_output=save_output,
         data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
@@ -4256,6 +4275,7 @@ def _build_jamf_cli_bridge(
         use_cached_data=use_cached,
         command_timeout=command_timeout,
         ea_results_timeout=ea_timeout,
+        max_cache_age_hours=max_cache_age,
     )
 
 
@@ -7478,6 +7498,15 @@ class CSVDashboard:
                         f" other CSVs — those cells will be empty: {names}{suffix}"
                     )
             self._df = pd.concat(frames, ignore_index=True).fillna("")
+            serial_col = self._mapper.get("serial_number")
+            if serial_col and serial_col in self._df.columns:
+                before = len(self._df)
+                self._df = self._df.drop_duplicates(subset=[serial_col], keep="first")
+                removed = before - len(self._df)
+                if removed:
+                    print(
+                        f"  [warn] Removed {removed} duplicate serial number row(s) across merged CSVs."
+                    )
             print(
                 f"  Loaded {len(frames)} CSV(s): {len(self._df)} rows total,"
                 f" {len(self._df.columns)} columns"
@@ -7540,6 +7569,8 @@ class CSVDashboard:
     ) -> list[str]:
         """Write all enabled CSV-derived sheets. Returns list of sheet names written."""
         written = []
+        required_failures: list[str] = []
+        compliance_enabled = bool(self._config.compliance.get("enabled"))
         for name, fn in self.sheet_plan():
             if selected_names is not None and _normalized_sheet_name(name) not in selected_names:
                 print(f"  [disabled] {name}: skipped via {filter_label or 'sheet filter'}")
@@ -7550,10 +7581,26 @@ class CSVDashboard:
                 print(f"  [ok] {name}")
             except NotImplementedError:
                 pass
-            except (KeyError, ValueError, RuntimeError) as exc:
-                print(f"  [skip] {name}: {exc}")
+            except RuntimeError as exc:
+                msg = str(exc)
+                if name == "Compliance" and compliance_enabled and "not enabled" not in msg:
+                    required_failures.append(f"{name}: {msg}")
+                    print(f"  [fail] {name}: {msg}")
+                else:
+                    print(f"  [skip] {name}: {msg}")
+            except (KeyError, ValueError) as exc:
+                if name == "Compliance" and compliance_enabled:
+                    required_failures.append(f"{name}: {type(exc).__name__}: {exc}")
+                    print(f"  [fail] {name}: {type(exc).__name__}: {exc}")
+                else:
+                    print(f"  [skip] {name}: {exc}")
             except Exception as exc:
                 print(f"  [skip] {name}: unexpected error — {type(exc).__name__}: {exc}")
+        if required_failures:
+            raise SystemExit(
+                "Error: required sheet(s) failed:\n"
+                + "\n".join(f"  {f}" for f in required_failures)
+            )
         return written
 
     def _col(self, logical: str) -> Optional[str]:
@@ -7658,10 +7705,19 @@ class CSVDashboard:
         rows: dict[str, Any] = {}
         if serial_col not in df.columns:
             return rows
+        dup_count = 0
         for _, row in df.iterrows():
             serial = self._row_value(row, serial_col).upper()
-            if serial and serial not in rows:
-                rows[serial] = row
+            if serial:
+                if serial in rows:
+                    dup_count += 1
+                else:
+                    rows[serial] = row
+        if dup_count:
+            print(
+                f"  [warn] Fleet Drift: {dup_count} duplicate serial(s) in snapshot"
+                " — first occurrence used for drift comparison."
+            )
         return rows
 
     def _write_drift_section(
@@ -8031,13 +8087,17 @@ class CSVDashboard:
             ws, self._t(label), f"Generated: {ts}", self._fmts, ncols=4
         )
         if count_col:
-            counts = pd.to_numeric(self._df[count_col], errors="coerce").fillna(0)
-            compliant = int((counts == 0).sum())
-            non_compliant = int((counts > 0).sum())
+            numeric = pd.to_numeric(self._df[count_col], errors="coerce")
+            unparseable = int(numeric.isna().sum())
+            compliant = int((numeric == 0).sum())
+            non_compliant = int((numeric > 0).sum())
             total = len(self._df)
             pct = compliant / total if total > 0 else 0.0
-            for lbl, val in [("Fully Compliant", compliant), ("Has Failures", non_compliant),
-                             ("Total Devices", total)]:
+            rows_to_write = [("Fully Compliant", compliant), ("Has Failures", non_compliant),
+                             ("Total Devices", total)]
+            if unparseable:
+                rows_to_write.append(("Unparseable (excluded)", unparseable))
+            for lbl, val in rows_to_write:
                 _safe_write(ws, row_i, 0, lbl, self._fmts["cell"])
                 _safe_write(ws, row_i, 1, val, self._fmts["cell"])
                 row_i += 1
@@ -10892,7 +10952,8 @@ def cmd_generate(
     print(f"Output: {out_path}")
     print(f"  config base dir: {config.base_dir}")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    wb = xlsxwriter.Workbook(str(out_path))
+    tmp_path = out_path.with_name("." + out_path.name + ".partial")
+    wb = xlsxwriter.Workbook(str(tmp_path))
     accent_color = (config.get("branding", "accent_color") or "#2D5EA2").strip()
     fmts = _build_formats(wb, accent_color)
     sheets_written = 0
@@ -10983,13 +11044,13 @@ def cmd_generate(
             print("\njamf-cli disabled in config — skipping core dashboard sheets.")
 
         if csv_path_str:
-            print("\nGenerating CSV sheets...")
             if csv_dash is None:
-                print(f"  [error] Cannot read CSV: {csv_init_error}")
-                print("  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export.")
-            else:
-                csv_written = csv_dash.write_all(selected_sheet_names, filter_label)
-                sheets_written += len(csv_written)
+                raise SystemExit(
+                    f"Error: cannot read explicit CSV '{csv_path_str}': {csv_init_error}"
+                )
+            print("\nGenerating CSV sheets...")
+            csv_written = csv_dash.write_all(selected_sheet_names, filter_label)
+            sheets_written += len(csv_written)
         else:
             print("\nNo CSV provided — skipping inventory sheets.")
             print("  Pass --csv path/to/export.csv to enable inventory analysis.")
@@ -11135,16 +11196,17 @@ def cmd_generate(
             raise SystemExit("Error: sheets filter removed every workbook tab for this run.")
 
         wb.close()
+        os.replace(tmp_path, out_path)
     except SystemExit:
         wb.close()
-        out_path.unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
         raise
     except Exception:
         try:
             wb.close()
         except Exception:
             pass
-        out_path.unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
         raise
     # Emit trend summary JSON only after xlsxwriter has finalized the workbook.
     _emit_summary_json(config, csv_dash, bridge, hist_dir, force=force_summary)
@@ -16384,74 +16446,80 @@ def main() -> None:
     config = Config(args.config)
     _apply_profile_override(config, args.profile, args.command)
 
-    if args.command == "check":
-        cmd_check(config, args.csv)
-    elif args.command == "collect":
-        cmd_collect(config, args.csv, args.historical_csv_dir, args.summary_json)
-    elif args.command == "inventory-csv":
-        cmd_inventory_csv(config, args.out_file)
-    elif args.command == "backup":
-        cmd_backup(config, args.label)
-    elif args.command == "export-reports":
-        # --csv: explicit inventory CSV path; omit to auto-locate the latest one.
-        # To force all reports regardless of schedule, delete state files:
-        #   jamf-cli-data/state/export-<name>.last
-        cmd_export_reports(config, Path(args.csv) if args.csv else None)
-    elif args.command == "launchagent-setup":
-        cmd_launchagent_setup(
-            config,
-            args.config,
-            args.label,
-            args.mode,
-            args.schedule,
-            args.time_of_day,
-            args.weekday,
-            args.day_of_month,
-            args.workspace_dir,
-            args.launchagents_dir,
-            args.csv_inbox_dir,
-            args.csv_freshness_days,
-            args.historical_csv_dir,
-            args.notify,
-            args.skip_load,
-            args.run_now,
-            args.disabled,
-        )
-    elif args.command == "launchagent-run":
-        if not args.mode:
-            parser.error("launchagent-run requires --mode")
-        cmd_launchagent_run(
-            config,
-            args.mode,
-            args.csv_inbox_dir,
-            _resolve_csv_freshness_days(args.csv_freshness_days),
-            args.historical_csv_dir,
-            args.status_file,
-            args.notify,
-        )
-    elif args.command == "html":
-        cmd_html(config, args.out_file, no_open=args.no_open, summary_json=args.summary_json)
-    elif args.command == "generate":
-        cmd_generate(
-            config, args.csv, args.out_file, args.historical_csv_dir,
-            args.notify, args.csv_extra, args.summary_json,
-            force_summary=args.force_summary,
-        )
-    elif args.command == "patch-managed":
-        if not args.managed:
-            parser.error("patch-managed requires --managed true|false")
-        cmd_patch_managed(
-            config,
-            managed_value=args.managed == "true",
-            dry_run=args.dry_run,
-            serials_file=args.serials_file,
-        )
-    elif args.command == "school-check":
-        cmd_school_check(config, args.csv)
-    elif args.command == "school-collect":
-        cmd_school_collect(config, args.summary_json)
-    elif args.command == "school-generate":
-        cmd_school_generate(config, args.csv, args.out_file, args.summary_json)
+    try:
+        if args.command == "check":
+            cmd_check(config, args.csv)
+        elif args.command == "collect":
+            cmd_collect(config, args.csv, args.historical_csv_dir, args.summary_json)
+        elif args.command == "inventory-csv":
+            cmd_inventory_csv(config, args.out_file)
+        elif args.command == "backup":
+            cmd_backup(config, args.label)
+        elif args.command == "export-reports":
+            # --csv: explicit inventory CSV path; omit to auto-locate the latest one.
+            # To force all reports regardless of schedule, delete state files:
+            #   jamf-cli-data/state/export-<name>.last
+            cmd_export_reports(config, Path(args.csv) if args.csv else None)
+        elif args.command == "launchagent-setup":
+            cmd_launchagent_setup(
+                config,
+                args.config,
+                args.label,
+                args.mode,
+                args.schedule,
+                args.time_of_day,
+                args.weekday,
+                args.day_of_month,
+                args.workspace_dir,
+                args.launchagents_dir,
+                args.csv_inbox_dir,
+                args.csv_freshness_days,
+                args.historical_csv_dir,
+                args.notify,
+                args.skip_load,
+                args.run_now,
+                args.disabled,
+            )
+        elif args.command == "launchagent-run":
+            if not args.mode:
+                parser.error("launchagent-run requires --mode")
+            cmd_launchagent_run(
+                config,
+                args.mode,
+                args.csv_inbox_dir,
+                _resolve_csv_freshness_days(args.csv_freshness_days),
+                args.historical_csv_dir,
+                args.status_file,
+                args.notify,
+            )
+        elif args.command == "html":
+            cmd_html(config, args.out_file, no_open=args.no_open, summary_json=args.summary_json)
+        elif args.command == "generate":
+            cmd_generate(
+                config, args.csv, args.out_file, args.historical_csv_dir,
+                args.notify, args.csv_extra, args.summary_json,
+                force_summary=args.force_summary,
+            )
+        elif args.command == "patch-managed":
+            if not args.managed:
+                parser.error("patch-managed requires --managed true|false")
+            cmd_patch_managed(
+                config,
+                managed_value=args.managed == "true",
+                dry_run=args.dry_run,
+                serials_file=args.serials_file,
+            )
+        elif args.command == "school-check":
+            cmd_school_check(config, args.csv)
+        elif args.command == "school-collect":
+            cmd_school_collect(config, args.summary_json)
+        elif args.command == "school-generate":
+            cmd_school_generate(config, args.csv, args.out_file, args.summary_json)
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except Exception as exc:
+        print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
