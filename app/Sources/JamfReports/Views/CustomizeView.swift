@@ -11,6 +11,12 @@ struct CustomizeView: View {
     @State private var chartPerMajor: Bool = true
     @State private var chartSavePNGs: Bool = false
 
+    @State private var applySaved = false
+
+    private static let executiveSheets: Set<String> = [
+        "Fleet Overview", "Security Posture", "Compliance", "Patch Compliance",
+    ]
+
     private var enabledCount: Int {
         sheets.flatMap(\.items).filter(\.on).count
     }
@@ -36,8 +42,16 @@ struct CustomizeView: View {
             ))
         }
         .onAppear {
-            if sheets.isEmpty { sheets = workspace.sheetCatalog }
+            if sheets.isEmpty { loadFromWorkspace() }
         }
+    }
+
+    private func loadFromWorkspace() {
+        sheets = workspace.sheetCatalog
+        let all = sheets.flatMap(\.items)
+        chartOSAdoption = all.first(where: { $0.name == "OS Adoption" })?.on ?? true
+        chartComplianceTrend = all.first(where: { $0.name == "Compliance Trend" })?.on ?? true
+        chartDeviceStateTrend = all.first(where: { $0.name == "Device State Trend" })?.on ?? true
     }
 
     private var header: some View {
@@ -48,12 +62,16 @@ struct CustomizeView: View {
         ) {
             AnyView(
                 HStack(spacing: 8) {
-                    PNPButton(title: "Preset: Executive")
-                        .disabled(true)
-                        .help("Coming soon — workbook presets are not yet wired")
-                    PNPButton(title: "Apply", icon: "checkmark", style: .gold)
-                        .disabled(true)
-                        .help("Coming soon — workbook presets are not yet wired")
+                    PNPButton(title: "Preset: Executive") {
+                        applyExecutivePreset()
+                    }
+                    PNPButton(
+                        title: applySaved ? "Saved" : "Apply",
+                        icon: applySaved ? "checkmark.circle" : "checkmark",
+                        style: .gold
+                    ) {
+                        applyAndSave()
+                    }
                 }
             )
         }
@@ -252,6 +270,49 @@ struct CustomizeView: View {
             if hasDivider {
                 Divider().background(Theme.Colors.hairline)
             }
+        }
+    }
+
+    // MARK: Actions
+
+    private func applyExecutivePreset() {
+        sheets = sheets.map { group in
+            var g = group
+            g.items = g.items.map { item in
+                var i = item
+                i.on = Self.executiveSheets.contains(item.name)
+                return i
+            }
+            return g
+        }
+        chartOSAdoption = false
+        chartComplianceTrend = false
+        chartDeviceStateTrend = false
+    }
+
+    private func applyAndSave() {
+        var updatedSheets = sheets
+        let chartNameToToggle: [String: Bool] = [
+            "OS Adoption": chartOSAdoption,
+            "Compliance Trend": chartComplianceTrend,
+            "Device State Trend": chartDeviceStateTrend,
+        ]
+        for gi in updatedSheets.indices {
+            for ii in updatedSheets[gi].items.indices {
+                let name = updatedSheets[gi].items[ii].name
+                if let toggle = chartNameToToggle[name] {
+                    updatedSheets[gi].items[ii].on = toggle
+                }
+            }
+        }
+        workspace.sheetCatalog = updatedSheets
+        sheets = updatedSheets
+
+        Task {
+            try? await workspace.saveConfig()
+            applySaved = true
+            try? await Task.sleep(for: .seconds(2))
+            applySaved = false
         }
     }
 }

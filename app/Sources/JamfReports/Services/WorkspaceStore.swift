@@ -19,6 +19,7 @@ final class WorkspaceStore {
     var jamfCLIVersion: String?
     var jamfCLIInstallSource: String?
     var jamfCLIUpdateMessage: String?
+    var jamfCLIUpdateAvailable: Bool = false
     var isUpdatingJamfCLI: Bool = false
     var jrcPath: String?
     var isInitializingWorkspace: Bool = false
@@ -235,6 +236,7 @@ final class WorkspaceStore {
         jamfCLIUpdateMessage = "Checking jamf-cli updates..."
         let result = await JamfCLIInstaller().checkForUpdate()
         jamfCLIUpdateMessage = result.message
+        jamfCLIUpdateAvailable = result.updateAvailable
         isUpdatingJamfCLI = false
         refreshToolStatus()
     }
@@ -245,6 +247,7 @@ final class WorkspaceStore {
         jamfCLIUpdateMessage = "Updating jamf-cli..."
         let result = await JamfCLIInstaller().update()
         jamfCLIUpdateMessage = result.message
+        jamfCLIUpdateAvailable = false
         isUpdatingJamfCLI = false
         refreshToolStatus()
     }
@@ -394,7 +397,7 @@ final class WorkspaceStore {
 /// Routes the active screen. `Tab` is the source of truth for which detail view
 /// the `NavigationSplitView` renders, and the title shown in the toolbar.
 enum Tab: String, CaseIterable, Identifiable, Hashable {
-    case overview, devices, trends, reports, schedules, runs
+    case overview, devices, trends, audit, reports, schedules, runs
     case config, customize, sources, backups, settings, onboarding
 
     var id: String { rawValue }
@@ -404,6 +407,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .overview:   "Overview"
         case .devices:    "Devices"
         case .trends:     "Trends"
+        case .audit:      "Health Audit"
         case .reports:    "Generated"
         case .schedules:  "Schedules"
         case .runs:       "Run History"
@@ -421,6 +425,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .overview:   "house"
         case .devices:    "laptopcomputer"
         case .trends:     "chart.line.uptrend.xyaxis"
+        case .audit:      "shield.checkered"
         case .reports:    "doc.text"
         case .schedules:  "clock"
         case .runs:       "terminal"

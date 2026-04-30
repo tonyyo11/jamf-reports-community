@@ -97,7 +97,7 @@ enum RunHistoryService {
             lines.append(.init(timestamp: Date(), level: .warn, text: "[truncated — showing tail]"))
         }
         for raw in text.components(separatedBy: "\n") where !raw.isEmpty {
-            lines.append(.init(timestamp: Date(), level: classifyLine(raw), text: raw))
+            lines.append(.init(timestamp: Date(), level: CLIBridge.LogLevel.from(line: raw), text: raw))
         }
         return lines
     }
@@ -159,11 +159,11 @@ enum RunHistoryService {
         var exitCode: Int32? = nil
 
         for line in text.components(separatedBy: "\n").reversed() {
-            let l = line.lowercased()
-            if l.contains("[fatal]") || l.contains("[error]") { hasFatal = true }
+            let level = CLIBridge.LogLevel.from(line: line)
+            if level == .fail { hasFatal = true }
             if exitCode == nil {
-                if l.contains("exit 0") { exitCode = 0; break }
-                if l.contains("exit 1") { exitCode = 1; break }
+                if line.contains("exit 0") { exitCode = 0; break }
+                if line.contains("exit 1") { exitCode = 1; break }
             }
             if duration == nil,
                let r = line.range(of: #"\d+m \d+s|\d+s"#, options: .regularExpression) {
@@ -171,13 +171,5 @@ enum RunHistoryService {
             }
         }
         return (exitCode ?? (hasFatal ? 1 : 0), duration)
-    }
-
-    private static func classifyLine(_ line: String) -> CLIBridge.LogLevel {
-        let l = line.lowercased()
-        if l.contains("[ok]")    { return .ok }
-        if l.contains("[warn]")  { return .warn }
-        if l.contains("[fatal]") || l.contains("[error]") || l.contains("traceback") { return .fail }
-        return .info
     }
 }

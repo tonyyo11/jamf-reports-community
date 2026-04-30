@@ -15,8 +15,12 @@ enum SystemActions {
         NSWorkspace.shared.activateFileViewerSelecting([resolved])
     }
 
-    /// Open a file with the default application.
+    /// Open a file with the default application or a URL in the default browser.
     static func open(_ url: URL) {
+        if let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) {
+            NSWorkspace.shared.open(url)
+            return
+        }
         guard let resolved = canonicalize(url) else { return }
         NSWorkspace.shared.open(resolved)
     }

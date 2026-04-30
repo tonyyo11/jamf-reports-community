@@ -79,6 +79,7 @@ final class JamfCLIInstaller {
     struct UpdateResult: Sendable {
         let succeeded: Bool
         let message: String
+        var updateAvailable: Bool = false
     }
 
     private struct CommandResult: Sendable {
@@ -293,7 +294,7 @@ final class JamfCLIInstaller {
                 message: "Homebrew jamf-cli is current at \(installation.version ?? "unknown")."
             )
         }
-        return UpdateResult(succeeded: true, message: "Homebrew update available for jamf-cli.")
+        return UpdateResult(succeeded: true, message: "Homebrew update available for jamf-cli.", updateAvailable: true)
     }
 
     private static func updateHomebrew(_ installation: Installation) async -> UpdateResult {
@@ -332,7 +333,8 @@ final class JamfCLIInstaller {
             if compareVersions(local, release.tagName) == .orderedAscending {
                 return UpdateResult(
                     succeeded: true,
-                    message: "GitHub release \(release.tagName) is available for \(installation.path)."
+                    message: "GitHub release \(release.tagName) is available for \(installation.path).",
+                    updateAvailable: true
                 )
             }
             return UpdateResult(succeeded: true, message: "GitHub jamf-cli is current at \(local).")

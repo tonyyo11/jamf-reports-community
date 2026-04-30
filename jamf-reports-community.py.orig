@@ -237,13 +237,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "enabled": True,
         "data_dir": "jamf-cli-data",
         "profile": "",
-        "multi": {
-            "enabled": False,
-            "filter": "",
-            "profiles": "",
-            "from_file": "",
-            "sequential": False,
-        },
         "use_cached_data": True,
         "allow_live_overview": True,
         "command_timeout_seconds": 300,
@@ -254,13 +247,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "enabled": False,
         "data_dir": "school-cli-data",
         "profile": "school",
-        "multi": {
-            "enabled": False,
-            "filter": "",
-            "profiles": "",
-            "from_file": "",
-            "sequential": False,
-        },
         "use_cached_data": True,
     },
     "school_columns": {
@@ -3143,7 +3129,6 @@ class JamfCLIBridge:
         command_timeout: int = 300,
         ea_results_timeout: int = 600,
         max_cache_age_hours: int = 0,
-        multi_config: Optional[dict[str, Any]] = None,
     ) -> None:
         self._binary = self._find_binary()
         self._save = save_output
@@ -3153,7 +3138,6 @@ class JamfCLIBridge:
         self._command_timeout = max(1, int(command_timeout))
         self._ea_results_timeout = max(1, int(ea_results_timeout))
         self._max_cache_age_hours = max(0, int(max_cache_age_hours))
-        self._multi = multi_config or {}
         self._report_commands_cache: Optional[set[str]] = None
         self._protect_commands_cache: Optional[set[str]] = None
         self._last_source_info: dict[str, dict[str, Any]] = {}
@@ -3211,9 +3195,6 @@ class JamfCLIBridge:
             "hardware_models",
             "env-stats",
             "env_stats",
-            "audit",
-            "group-tools-analyze",
-            "group_tools_analyze",
         ]
         if include_protect:
             report_names.extend(
@@ -3466,22 +3447,8 @@ class JamfCLIBridge:
                 "jamf-cli binary not found. Set JAMFCLI_PATH or install via Homebrew."
             )
         cmd = [self._binary]
-
-        multi_enabled = self._multi.get("enabled") is True
-        if multi_enabled:
-            cmd.append("multi")
-            if self._multi.get("filter"):
-                cmd.extend(["--filter", str(self._multi["filter"])])
-            if self._multi.get("profiles"):
-                cmd.extend(["--profiles", str(self._multi["profiles"])])
-            if self._multi.get("from_file"):
-                cmd.extend(["--from-file", str(self._multi["from_file"])])
-            if self._multi.get("sequential") is True:
-                cmd.append("--sequential")
-            cmd.append("--")
-        elif self._profile:
+        if self._profile:
             cmd.extend(["-p", self._profile])
-
         cmd.extend(["--output", "json", "--no-input"])
         cmd.extend(args)
         effective_timeout = self._command_timeout if timeout is None else max(1, int(timeout))
@@ -3690,24 +3657,6 @@ class JamfCLIBridge:
                 source_mode="cached",
             )
         return self._run_and_save("overview", ["pro", "overview"], ["overview"])
-
-    def audit(self, category: Optional[str] = None) -> Any:
-        """Fetch health check results from jamf-cli pro audit."""
-        args = ["pro", "audit"]
-        if category:
-            args.extend(["--checks", category])
-        return self._run_and_save("audit", args, ["audit"])
-
-    def group_analyze(self, mode: str = "unused") -> Any:
-        """Fetch computer group hygiene analysis from jamf-cli pro group-tools analyze."""
-        args = ["pro", "group-tools", "analyze"]
-        if mode == "unused":
-            args.append("--unused")
-        return self._run_and_save(
-            "group-tools-analyze",
-            args,
-            ["group-tools-analyze", "group_tools_analyze"]
-        )
 
     def security_report(self) -> Any:
         """Fetch security posture report from jamf-cli pro report security."""
@@ -4373,7 +4322,6 @@ def _build_jamf_cli_bridge(
         command_timeout=command_timeout,
         ea_results_timeout=ea_timeout,
         max_cache_age_hours=max_cache_age,
-        multi_config=jamf_cli_cfg.get("multi"),
     )
 
 
@@ -5131,8 +5079,6 @@ class CoreDashboard:
                 ("Inventory Summary", self._write_inventory_summary),
                 ("Hardware Models", self._write_hardware_models),
                 ("Mobile Inventory", self._write_mobile_inventory),
-                ("Audit Summary", self._write_audit),
-                ("Group Hygiene", self._write_group_analysis),
                 ("Security Posture", self._write_security),
                 ("Device Compliance", self._write_device_compliance),
                 ("Check-in Health", self._write_checkin_health),
@@ -5641,7 +5587,6 @@ class CoreDashboard:
         ]
         rules_with_failures = sum(1 for item in rows if _to_int(item.get("failed", 0)) > 0)
         rules_with_unknown = sum(1 for item in rows if _to_int(item.get("unknown", 0)) > 0)
-        rules_missing_data = sum(1 for item in rows if "failed" not in item)
 
         sheet_title = "Compliance Rules"
         sheet_name = _excel_sheet_name(
@@ -5665,7 +5610,6 @@ class CoreDashboard:
             ("Rules Returned", len(rows)),
             ("Rules with Failures", rules_with_failures),
             ("Rules with Unknown Results", rules_with_unknown),
-            ("Rules with Missing Data", rules_missing_data),
             (
                 "Average Pass Rate",
                 (sum(avg_pass_rate) / len(avg_pass_rate)) if avg_pass_rate else "",
@@ -5683,30 +5627,13 @@ class CoreDashboard:
         row += 1
 
         for item in rows:
-            # Distinguish absent "failed" key (unknown) from explicit 0 (no failures).
-            # An absent key must not render as passing — flag it yellow like unknown.
-            failed_raw = item.get("failed")
-            failed = _to_int(failed_raw, 0) if failed_raw is not None else None
+            failed = _to_int(item.get("failed", 0))
             unknown = _to_int(item.get("unknown", 0))
             pass_rate = _parse_percent(item.get("passRate", ""))
-            if failed:
-                base_fmt = self._fmts["red"]
-            elif failed is None or unknown:
-                # None means the field was absent — status is unknown, not passing.
-                base_fmt = self._fmts["yellow"]
-            else:
-                base_fmt = self._fmts["cell"]
+            base_fmt = self._fmts["red"] if failed else self._fmts["yellow"] if unknown else self._fmts["cell"]
             _safe_write(ws, row, 0, item.get("rule", ""), base_fmt)
             _safe_write(ws, row, 1, _to_int(item.get("passed", 0)), self._fmts["cell"])
-            failed_display = failed if failed is not None else "—"
-            _safe_write(
-                ws,
-                row,
-                2,
-                failed_display,
-                self._fmts["red"] if failed else self._fmts["yellow"] if failed is None
-                else self._fmts["cell"],
-            )
+            _safe_write(ws, row, 2, failed, self._fmts["red"] if failed else self._fmts["cell"])
             _safe_write(
                 ws,
                 row,
@@ -5754,15 +5681,10 @@ class CoreDashboard:
         ws.set_column(0, 0, 34)
         ws.set_column(1, 1, 18)
         ws.set_column(2, 4, 16)
-        devices_with_failures = sum(
-            1 for item in rows if _to_int(item.get("rulesFailed", 0), 0) > 0
-        )
-        devices_unknown_status = sum(1 for item in rows if "rulesFailed" not in item)
         for label, value in [
             ("Benchmark", benchmark),
             ("Devices Returned", len(rows)),
-            ("Devices with Failing Rules", devices_with_failures),
-            ("Devices with Unknown Status", devices_unknown_status),
+            ("Devices with Failing Rules", sum(1 for item in rows if _to_int(item.get("rulesFailed", 0)) > 0)),
             (
                 "Average Compliance",
                 (sum(compliance_values) / len(compliance_values)) if compliance_values else "",
@@ -5782,25 +5704,20 @@ class CoreDashboard:
         for item in sorted(
             rows,
             key=lambda current: (
-                # Absent rulesFailed sorts before confirmed-0 so unknown devices surface first.
-                -_to_int(current["rulesFailed"], 0) if "rulesFailed" in current else 1,
+                -_to_int(current.get("rulesFailed", 0)),
                 str(current.get("device", "")).lower(),
             ),
         ):
-            # Distinguish absent rulesFailed (unknown compliance) from explicit 0 (passing).
-            rules_failed_raw = item.get("rulesFailed")
-            rules_failed = _to_int(rules_failed_raw, 0) if rules_failed_raw is not None else None
+            rules_failed = _to_int(item.get("rulesFailed", 0))
             compliance = _parse_percent(item.get("compliance", ""))
             _safe_write(ws, row, 0, item.get("device", ""), self._fmts["cell"])
             _safe_write(ws, row, 1, item.get("deviceId", ""), self._fmts["cell"])
-            failed_display = rules_failed if rules_failed is not None else "—"
             _safe_write(
                 ws,
                 row,
                 2,
-                failed_display,
-                self._fmts["red"] if rules_failed else self._fmts["yellow"] if rules_failed is None
-                else self._fmts["cell"],
+                rules_failed,
+                self._fmts["red"] if rules_failed else self._fmts["cell"],
             )
             _safe_write(ws, row, 3, _to_int(item.get("rulesPassed", 0)), self._fmts["cell"])
             if compliance is None:
@@ -6191,81 +6108,6 @@ class CoreDashboard:
                 _safe_write(ws, row, 2, item.get("pct", ""), self._fmts["cell"])
                 row += 1
 
-    def _write_audit(self) -> None:
-        """Write health check findings from jamf-cli pro audit."""
-        raw = self._bridge.audit()
-        items = raw if isinstance(raw, list) else []
-
-        ws = self._wb.add_worksheet("Audit Summary")
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        row = _write_sheet_header(
-            ws,
-            self._t("Health Audit Summary"),
-            f"Source: jamf-cli pro audit | Generated: {ts}",
-            self._fmts,
-            ncols=5,
-        )
-        ws.set_column(0, 0, 35)
-        ws.set_column(1, 1, 15)
-        ws.set_column(2, 2, 15)
-        ws.set_column(3, 3, 50)
-        ws.set_column(4, 4, 15)
-
-        headers = ["Finding", "Category", "Severity", "Recommendation", "Affected"]
-        for c, h in enumerate(headers):
-            _safe_write(ws, row, c, h, self._fmts["header"])
-        row += 1
-
-        for item in items:
-            severity = str(item.get("severity", "")).upper()
-            fmt = self._fmts["cell"]
-            if severity == "CRITICAL":
-                fmt = self._fmts["red"]
-            elif severity == "WARNING":
-                fmt = self._fmts["yellow"]
-
-            _safe_write(ws, row, 0, item.get("name", ""), fmt)
-            _safe_write(ws, row, 1, item.get("category", ""), fmt)
-            _safe_write(ws, row, 2, severity, fmt)
-            _safe_write(ws, row, 3, item.get("recommendation", ""), fmt)
-            _safe_write(ws, row, 4, item.get("affected", 0), fmt)
-            row += 1
-
-    def _write_group_analysis(self) -> None:
-        """Write unused computer group analysis from jamf-cli pro group-tools analyze."""
-        raw = self._bridge.group_analyze(mode="unused")
-        items = raw if isinstance(raw, list) else []
-
-        ws = self._wb.add_worksheet("Group Hygiene")
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        row = _write_sheet_header(
-            ws,
-            self._t("Group Hygiene: Unused Groups"),
-            f"Source: jamf-cli pro group-tools analyze --unused | Generated: {ts}",
-            self._fmts,
-            ncols=4,
-        )
-        ws.set_column(0, 0, 45)
-        ws.set_column(1, 1, 15)
-        ws.set_column(2, 2, 15)
-        ws.set_column(3, 3, 15)
-
-        headers = ["Group Name", "Type", "Jamf ID", "Members"]
-        for c, h in enumerate(headers):
-            _safe_write(ws, row, c, h, self._fmts["header"])
-        row += 1
-
-        if not items:
-            _safe_write(ws, row, 0, "No unused computer groups found.", self._fmts["cell"])
-            return
-
-        for item in items:
-            _safe_write(ws, row, 0, item.get("name", ""), self._fmts["cell"])
-            _safe_write(ws, row, 1, item.get("type", ""), self._fmts["cell"])
-            _safe_write(ws, row, 2, item.get("id", ""), self._fmts["cell"])
-            _safe_write(ws, row, 3, item.get("memberCount", 0), self._fmts["cell"])
-            row += 1
-
     def _write_inventory_summary(self) -> None:
         """Write a flat inventory breakdown by model and OS version."""
         raw = self._bridge.inventory_summary()
@@ -6380,8 +6222,7 @@ class CoreDashboard:
             raise RuntimeError("jamf-cli device-compliance returned no rows")
 
         total = len(rows)
-        # Only count devices with an explicit stale=true; absent field is unknown, not current.
-        stale_count = sum(1 for item in rows if item.get("stale") is True)
+        stale_count = sum(1 for item in rows if _to_bool(item.get("stale")))
         managed_count = sum(1 for item in rows if _to_bool(item.get("managed")))
 
         ws = self._wb.add_worksheet("Device Compliance")
@@ -6429,34 +6270,21 @@ class CoreDashboard:
         for item in sorted(
             rows,
             key=lambda current: (
-                # Unknown stale status (absent field) sorts after confirmed-stale but
-                # before confirmed-current, so it is never silently buried at the bottom.
-                0 if "stale" not in current else (1 if not _to_bool(current["stale"]) else 0),
+                not _to_bool(current.get("stale")),
                 -_to_int(current.get("days_since_contact", -1), -1),
                 str(current.get("name", "")),
             ),
         ):
-            stale_raw = item.get("stale")
-            stale_known = "stale" in item
-            stale = _to_bool(stale_raw) if stale_known else None
+            stale = _to_bool(item.get("stale"))
             managed = _to_bool(item.get("managed"))
-            if stale is True:
-                row_fmt = self._fmts["red"]
-                stale_label = "Yes"
-            elif stale is None:
-                # stale field absent — status unknown; flag conservatively
-                row_fmt = self._fmts["yellow"]
-                stale_label = "Unknown"
-            else:
-                row_fmt = self._fmts["cell"]
-                stale_label = "No"
+            row_fmt = self._fmts["red"] if stale else self._fmts["cell"]
             _safe_write(ws, row, 0, item.get("name", ""), row_fmt)
             _safe_write(ws, row, 1, item.get("serial", ""), row_fmt)
             _safe_write(ws, row, 2, "Yes" if managed else "No", row_fmt)
             _safe_write(ws, row, 3, item.get("os_version", ""), row_fmt)
             _safe_write(ws, row, 4, item.get("last_contact", ""), row_fmt)
             _safe_write(ws, row, 5, item.get("days_since_contact", ""), row_fmt)
-            _safe_write(ws, row, 6, stale_label, row_fmt)
+            _safe_write(ws, row, 6, "Yes" if stale else "No", row_fmt)
             row += 1
 
     def _write_checkin_health(self) -> None:
@@ -15908,7 +15736,6 @@ def _build_school_bridge(config: Config) -> SchoolCLIBridge:
         data_dir=data_dir,
         profile=profile,
         use_cached_data=use_cached,
-        multi_config=school_cfg.get("multi"),
     )
 
 

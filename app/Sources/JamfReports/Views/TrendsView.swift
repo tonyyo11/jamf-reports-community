@@ -11,6 +11,7 @@ struct TrendsView: View {
     @State private var range: TrendRange = .w26
     @State private var selectedDate: String? = nil
     @State private var isArchiving = false
+    @State private var isExporting = false
 
     private var values: [Double] {
         workspaceStore.demoMode ? (DemoData.trends[metric] ?? []) : trendStore.values(metric: metric)
@@ -150,9 +151,10 @@ struct TrendsView: View {
                     selection: $range,
                     options: TrendRange.allCases.map { ($0, $0.rawValue, nil) }
                 )
-                PNPButton(title: "Export PNG", icon: "arrow.down.circle")
-                    .disabled(true)
-                    .help("PNG export is not yet available")
+                PNPButton(title: isExporting ? "Exporting…" : "Export PNG", icon: "arrow.down.circle") {
+                    Task { await exportChartPNG() }
+                }
+                .disabled(isExporting)
             }
         }
     }
@@ -516,14 +518,14 @@ struct TrendsView: View {
                             }
                         }
                         PNPButton(
-                            title: isArchiving ? "Collecting…" : "Archive now",
+                            title: isArchiving ? "Archiving…" : "Archive now",
                             icon: isArchiving ? "hourglass" : "icloud.and.arrow.up",
                             style: .gold,
                             size: .sm
                         ) {
-                            guard !isArchiving else { return }
                             Task { await archiveNow() }
                         }
+                        .disabled(isArchiving || workspaceStore.demoMode)
                     }
                 }
 
@@ -569,6 +571,36 @@ struct TrendsView: View {
         withAnimation(.snappy) {
             trendStore.load(profile: profile, range: range)
         }
+    }
+
+    // MARK: Export PNG
+
+    @MainActor
+    private func exportChartPNG() async {
+        isExporting = true
+        defer { isExporting = false }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "\(metric.displayLabel.replacingOccurrences(of: " ", with: "-")).png"
+        panel.title = "Export Chart as PNG"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let snapshot = ChartExportView(
+            values: values,
+            dates: trendDates,
+            metric: metric
+        )
+        let renderer = ImageRenderer(content: snapshot)
+        renderer.scale = 2.0
+
+        guard let image = renderer.nsImage,
+              let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+            return
+        }
+        try? pngData.write(to: url)
     }
 }
 
@@ -618,5 +650,49 @@ struct FlowLayout: Layout {
             x += s.width + spacing
             rowHeight = max(rowHeight, s.height)
         }
+    }
+}
+
+// MARK: - Chart export snapshot view
+
+/// Fixed-size view rendered to PNG by `ImageRenderer`. Stands alone — no
+/// environment dependencies — so it renders correctly off-screen.
+private struct ChartExportView: View {
+    let values: [Double]
+    let dates: [String]
+    let metric: TrendSeries.Metric
+
+    var body: some View {
+        Chart {
+            ForEach(Array(values.enumerated()), id: \.offset) { idx, v in
+                let date = dates[safe: idx] ?? ""
+                AreaMark(x: .value("Week", date), y: .value(metric.displayLabel, v))
+                    .foregroundStyle(LinearGradient(
+                        colors: [Color(hex: metric.colorHex).opacity(0.35),
+                                 Color(hex: metric.colorHex).opacity(0.0)],
+                        startPoint: .top, endPoint: .bottom
+                    ))
+                    .interpolationMethod(.catmullRom)
+                LineMark(x: .value("Week", date), y: .value(metric.displayLabel, v))
+                    .foregroundStyle(Color(hex: metric.colorHex))
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .interpolationMethod(.catmullRom)
+            }
+        }
+        .chartYScale(domain: metric.minY...metric.maxY)
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .day, count: 28)) { _ in
+                AxisValueLabel().font(.system(size: 10, design: .monospaced))
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) {
+                AxisGridLine()
+                AxisValueLabel().font(.system(size: 10, design: .monospaced))
+            }
+        }
+        .frame(width: 800, height: 400)
+        .padding(24)
+        .background(Color(hex: 0x1A1A1A))
     }
 }

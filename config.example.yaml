@@ -214,6 +214,21 @@ jamf_cli:
   # jamf-cli. When you use multiple profiles, point data_dir at a profile-
   # specific folder so cached snapshots do not mix between tenants.
   profile: ""
+
+  # jamf-cli multi support (v1.9+)
+  # Run commands against multiple profiles. When enabled, report results
+  # are aggregated into a single JSON snapshot by jamf-cli.
+  multi:
+    # Set true to use 'jamf-cli multi' for all live data collection.
+    enabled: false
+    # Optional glob pattern to filter profiles (e.g., 'prod-*').
+    filter: ""
+    # Optional comma-separated list of profile names.
+    profiles: ""
+    # Optional path to a file containing profile names or instance URLs.
+    from_file: ""
+    # Set true to run profiles sequentially instead of in parallel.
+    sequential: false
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.
   # This helps generate/check keep working from cached report data, but
   # inventory-csv still requires live jamf-cli auth.
@@ -693,6 +708,21 @@ school_cli:
   data_dir: "school-cli-data"
   # Profile name configured via: jamf-cli school setup --profile-name <name>
   profile: "school"
+
+  # jamf-cli multi support (v1.9+)
+  # Run commands against multiple school profiles.
+  multi:
+    # Set true to use 'jamf-cli multi' for all live school data collection.
+    enabled: false
+    # Optional glob pattern to filter profiles (e.g., 'school-*').
+    filter: ""
+    # Optional comma-separated list of profile names.
+    profiles: ""
+    # Optional path to a file containing profile names or instance URLs.
+    from_file: ""
+    # Set true to run profiles sequentially instead of in parallel.
+    sequential: false
+
   # Fall back to cached snapshots when live commands fail.
   use_cached_data: true
 

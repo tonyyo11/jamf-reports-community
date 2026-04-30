@@ -91,8 +91,10 @@ struct SettingsView: View {
                 PNPButton(title: "Check", size: .sm) {
                     Task { await workspace.checkJamfCLIUpdate() }
                 }
-                PNPButton(title: "Update", icon: "arrow.down.circle", style: .gold, size: .sm) {
-                    Task { await workspace.updateJamfCLI() }
+                if workspace.jamfCLIUpdateAvailable {
+                    PNPButton(title: "Update", icon: "arrow.down.circle", style: .gold, size: .sm) {
+                        Task { await workspace.updateJamfCLI() }
+                    }
                 }
             }
         }

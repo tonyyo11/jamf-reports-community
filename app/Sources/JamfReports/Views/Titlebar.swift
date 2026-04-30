@@ -20,19 +20,6 @@ struct Titlebar: View {
             .buttonStyle(.plain)
             .help("Toggle sidebar")
 
-            Button {} label: { Image(systemName: "chevron.left").font(.system(size: 12)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.fgDisabled)
-                .frame(width: 26, height: 24)
-                .disabled(true)
-            Button {} label: { Image(systemName: "chevron.right").font(.system(size: 12)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.fgDisabled)
-                .frame(width: 26, height: 24)
-                .disabled(true)
-
-            Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 1, height: 16)
-
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.Colors.fg)
@@ -65,10 +52,6 @@ struct Titlebar: View {
                     )
             )
 
-            Button {} label: { Image(systemName: "bell").font(.system(size: 13)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Colors.fgMuted)
-                .frame(width: 26, height: 24)
         }
         .padding(.horizontal, 14)
         .frame(height: Theme.Metrics.titlebarHeight)

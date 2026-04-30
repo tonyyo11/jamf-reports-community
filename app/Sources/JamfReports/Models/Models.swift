@@ -26,6 +26,37 @@ struct JamfCLIProfile: Identifiable, Sendable {
 
 // MARK: - Schedules
 
+// MARK: - Multi-profile target
+
+struct MultiTarget: Sendable, Equatable {
+    enum Scope: Sendable, Equatable {
+        case all
+        case filter(String)
+        case list([String])
+    }
+
+    let scope: Scope
+    var sequential: Bool = false
+
+    var cliFlags: [String] {
+        switch scope {
+        case .all:           return []
+        case .filter(let g): return ["--filter", g]
+        case .list(let ps):  return ["--profiles", ps.joined(separator: ",")]
+        }
+    }
+
+    var displayLabel: String {
+        switch scope {
+        case .all:           return "All profiles"
+        case .filter(let g): return "~\(g)"
+        case .list(let ps):  return "\(ps.count) profiles"
+        }
+    }
+}
+
+// MARK: - Schedule
+
 struct Schedule: Identifiable, Sendable {
     enum RunMode: String, Sendable, CaseIterable, Identifiable {
         case snapshotOnly  = "snapshot-only"
@@ -48,6 +79,10 @@ struct Schedule: Identifiable, Sendable {
     var artifacts: [String]
     var enabled: Bool
     var launchAgentLabel: String? = nil
+    var multiTarget: MultiTarget? = nil
+
+    var isMulti: Bool { multiTarget != nil }
+    var profileDisplayLabel: String { multiTarget?.displayLabel ?? profile }
 }
 
 // MARK: - OS distribution

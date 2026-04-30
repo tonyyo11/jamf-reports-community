@@ -62,6 +62,7 @@ struct ContentView: View {
         case .overview:   OverviewView()
         case .devices:    DevicesView()
         case .trends:     TrendsView()
+        case .audit:      AuditView()
         case .reports:    ReportsView()
         case .schedules:  SchedulesView()
         case .runs:       RunsView()
@@ -79,6 +80,7 @@ struct ContentView: View {
         case .overview:   "FLEET"
         case .devices:    "INVENTORY"
         case .trends:     "26W"
+        case .audit:      "HEALTH & HYGIENE"
         case .schedules:  "LAUNCHAGENT"
         case .runs:       "STDOUT"
         case .config:     "CONFIG.YAML"

@@ -88,16 +88,60 @@ enum LaunchAgentWriter {
         _ label: String,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> Int32 {
+        if isMultiLabel(label) {
+            return await runMultiNow(label, onLine: onLine)
+        }
         do {
             let plan = try manualRunPlan(for: label)
             return await runManualPlan(plan, onLine: onLine)
         } catch {
-            onLine(.init(
-                timestamp: Date(),
-                level: .fail,
-                text: "[error] \(error.localizedDescription)"
-            ))
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
             return -1
+        }
+    }
+
+    private static func runMultiNow(
+        _ label: String,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async -> Int32 {
+        let plistURL = LaunchAgentService.agentsDir.appendingPathComponent("\(label).plist")
+        guard let data = try? Data(contentsOf: plistURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let args = plist["ProgramArguments"] as? [String], args.count > 1
+        else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi plist missing or malformed for \(label)"))
+            return -1
+        }
+        guard let execPath = args.first,
+              FileManager.default.isExecutableFile(atPath: execPath)
+        else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not executable: \(args.first ?? "nil")"))
+            return -1
+        }
+        return await withCheckedContinuation { cont in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: execPath)
+            p.arguments = Array(args.dropFirst())
+            let pipe = Pipe()
+            p.standardOutput = pipe
+            p.standardError = pipe
+            pipe.fileHandleForReading.readabilityHandler = { fh in
+                let text = String(decoding: fh.availableData, as: UTF8.self)
+                guard !text.isEmpty else { return }
+                for line in text.components(separatedBy: .newlines) where !line.isEmpty {
+                    onLine(.init(timestamp: Date(), level: .info, text: line))
+                }
+            }
+            p.terminationHandler = { proc in
+                pipe.fileHandleForReading.readabilityHandler = nil
+                cont.resume(returning: proc.terminationStatus)
+            }
+            do {
+                try p.run()
+            } catch {
+                onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
+                cont.resume(returning: -1)
+            }
         }
     }
 
@@ -123,11 +167,70 @@ enum LaunchAgentWriter {
         if let existing = schedule.launchAgentLabel, isValidLabel(existing) {
             return existing
         }
-        guard ProfileService.isValid(schedule.profile) else { return nil }
         let slug = sanitizedSlug(from: schedule.name)
         guard isValidComponent(slug) else { return nil }
+        if schedule.isMulti {
+            let candidate = "\(labelPrefix).multi.\(slug)"
+            return isValidLabel(candidate) ? candidate : nil
+        }
+        guard ProfileService.isValid(schedule.profile) else { return nil }
         let candidate = "\(labelPrefix).\(schedule.profile).\(slug)"
         return isValidLabel(candidate) ? candidate : nil
+    }
+
+    // MARK: - Multi-profile LaunchAgent
+
+    /// Write a LaunchAgent plist directly for a multi-profile `jamf-cli multi` schedule.
+    /// Bypasses jrc entirely — the plist calls `jamf-cli multi [flags] -- pro collect`.
+    static func multiSetupPlan(for schedule: Schedule, load: Bool) throws -> SetupPlan {
+        guard let target = schedule.multiTarget else {
+            throw WriterError.invalidProfile("not a multi-profile schedule")
+        }
+        guard let agentLabel = label(for: schedule) else {
+            throw WriterError.invalidSlug(sanitizedSlug(from: schedule.name))
+        }
+        guard let jamfCLI = ExecutableLocator.locate("jamf-cli") else {
+            throw WriterError.invalidProfile("jamf-cli not found in PATH")
+        }
+
+        let cadence = try setupCadence(from: schedule.schedule)
+        let logDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+        try FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+
+        var programArgs = [jamfCLI.path, "multi"]
+        programArgs.append(contentsOf: target.cliFlags)
+        if target.sequential { programArgs.append("--sequential") }
+        programArgs.append(contentsOf: ["--", "pro", "collect"])
+
+        let plistContent: [String: Any] = [
+            "Label": agentLabel,
+            "ProgramArguments": programArgs,
+            "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
+            "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
+            "StartCalendarInterval": cadence.startCalendarIntervals,
+            "RunAtLoad": false,
+            "Disabled": !load,
+        ]
+
+        let plistURL = LaunchAgentService.agentsDir.appendingPathComponent("\(agentLabel).plist")
+        let safeDir = LaunchAgentService.agentsDir.resolvingSymlinksInPath()
+        guard plistURL.resolvingSymlinksInPath().path.hasPrefix(safeDir.path + "/")
+                || plistURL.resolvingSymlinksInPath().path == safeDir.path else {
+            throw WriterError.outsideSafeDir(plistURL)
+        }
+        let data = try PropertyListSerialization.data(fromPropertyList: plistContent, format: .xml, options: 0)
+        try data.write(to: plistURL, options: .atomic)
+
+        return SetupPlan(label: agentLabel, arguments: [], plistURL: plistURL)
+    }
+
+    static func loadPlist(at url: URL) async -> Int32 {
+        await launchctl(["bootstrap", "gui/\(getuid())", url.path])
+    }
+
+    static func isMultiLabel(_ label: String) -> Bool {
+        label.hasPrefix("\(labelPrefix).multi.")
     }
 
     // MARK: - Private helpers
@@ -137,6 +240,24 @@ enum LaunchAgentWriter {
         let timeOfDay: String
         let weekday: String?
         let dayOfMonth: Int?
+
+        var startCalendarIntervals: [[String: Int]] {
+            let parts = timeOfDay.split(separator: ":").compactMap { Int($0) }
+            let hour = parts.count > 0 ? parts[0] : 6
+            let minute = parts.count > 1 ? parts[1] : 0
+            let wdMap = ["sunday":0,"monday":1,"tuesday":2,"wednesday":3,"thursday":4,"friday":5,"saturday":6]
+            switch schedule {
+            case "weekly":
+                let wd = wdMap[weekday?.lowercased() ?? ""] ?? 1
+                return [["Weekday": wd, "Hour": hour, "Minute": minute]]
+            case "weekdays":
+                return (1...5).map { ["Weekday": $0, "Hour": hour, "Minute": minute] }
+            case "monthly":
+                return [["Day": dayOfMonth ?? 1, "Hour": hour, "Minute": minute]]
+            default:
+                return [["Hour": hour, "Minute": minute]]
+            }
+        }
     }
 
     private struct ManualRunPlan {
@@ -638,20 +759,10 @@ enum LaunchAgentWriter {
     ) {
         guard let text = String(data: data, encoding: .utf8) else { return }
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-            let classified = classifyManualLine(line)
+            let classified = CLIBridge.LogLevel.from(line: String(line))
             let level: CLIBridge.LogLevel = stderr && classified == .info ? .warn : classified
             onLine(.init(timestamp: Date(), level: level, text: String(line)))
         }
-    }
-
-    private static func classifyManualLine(_ line: Substring) -> CLIBridge.LogLevel {
-        let lower = line.lowercased()
-        if lower.contains("[ok]") { return .ok }
-        if lower.contains("[warn]") { return .warn }
-        if lower.contains("[fatal]") || lower.contains("[error]") || lower.contains("traceback") {
-            return .fail
-        }
-        return .info
     }
 
     private static func parseHHMM(_ s: String, raw: String) throws -> String {

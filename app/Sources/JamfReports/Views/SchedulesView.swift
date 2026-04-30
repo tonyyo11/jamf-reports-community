@@ -116,15 +116,31 @@ struct SchedulesView: View {
     private var profileFilterStrip: some View {
         HStack(spacing: 8) {
             Kicker(text: "JAMF-CLI PROFILE").padding(.trailing, 4)
-            Pill(text: "All · \(workspace.schedules.count)", tone: .gold)
+            Button {
+                profileFilter = "All"
+            } label: {
+                Pill(text: "All · \(workspace.schedules.count)", tone: profileFilter == "All" ? .gold : .muted)
+            }
+            .buttonStyle(.plain)
             ForEach(workspace.profiles) { p in
                 let count = workspace.schedules.filter { $0.profile == p.name }.count
-                Pill(text: "\(p.name) · \(count)", tone: .muted).opacity(count > 0 ? 1 : 0.5)
+                Button {
+                    profileFilter = p.name
+                } label: {
+                    Pill(text: "\(p.name) · \(count)", tone: profileFilter == p.name ? .gold : .muted)
+                        .opacity(count > 0 ? 1 : 0.5)
+                }
+                .buttonStyle(.plain)
             }
             Spacer()
-            PNPButton(title: "Add profile", icon: "plus", size: .sm)
-                .disabled(true)
-                .help("Add connections in Settings · Connections")
+            PNPButton(title: "Add profile", icon: "plus", size: .sm) {
+                NotificationCenter.default.post(
+                    name: .navigateToTab,
+                    object: nil,
+                    userInfo: ["tab": Tab.settings.rawValue]
+                )
+            }
+            .help("Add connections in Settings · Connections")
         }
     }
 
@@ -241,7 +257,9 @@ struct SchedulesView: View {
                     }
                 }
 
-                TableColumn("Profile") { s in Pill(text: s.profile, tone: .gold) }.width(140)
+                TableColumn("Profile") { s in
+                    Pill(text: s.profileDisplayLabel, tone: s.isMulti ? .teal : .gold)
+                }.width(140)
                 TableColumn("Cadence") { s in Mono(text: s.schedule) }
                 TableColumn("Mode")    { s in Pill(text: s.mode.rawValue, tone: .muted) }
                 TableColumn("Next Run") { s in
@@ -260,6 +278,15 @@ struct SchedulesView: View {
                 }
                 TableColumn("") { s in
                     Menu {
+                        Button {
+                            guard !isRunning else { return }
+                            showRunLog = true
+                            Task { await runScheduleNow(s) }
+                        } label: {
+                            Label("Run now", systemImage: "play.fill")
+                        }
+                        .disabled(isRunning)
+                        Divider()
                         Button(role: .destructive) {
                             pendingDelete = s
                             showDeleteConfirm = true
@@ -309,23 +336,38 @@ struct SchedulesView: View {
 
     private func runNextScheduledNow() async {
         let target = filteredSchedules.first(where: \.enabled) ?? filteredSchedules.first
-        guard let target, ProfileService.isValid(target.profile) else { return }
-        guard let agentLabel = LaunchAgentWriter.label(for: target) else {
-            lastRunMessage = "invalid schedule label"
-            return
-        }
+        guard let target else { return }
+        await runScheduleNow(target)
+    }
+
+    private func runScheduleNow(_ schedule: Schedule) async {
         isRunning = true
         runLogLines = []
         let buf = LineBuffer()
-        let exit = await LaunchAgentWriter.runNow(agentLabel) { line in
-            buf.append(line)
-            Task { @MainActor in
-                runLogLines = buf.lines
+
+        let exit: Int32
+        if let target = schedule.multiTarget {
+            exit = await bridge.runMulti(target: target, subcommand: ["pro", "collect"]) { line in
+                buf.append(line)
+                Task { @MainActor in runLogLines = buf.lines }
+            }
+        } else {
+            guard ProfileService.isValid(schedule.profile),
+                  let agentLabel = LaunchAgentWriter.label(for: schedule)
+            else {
+                lastRunMessage = "invalid schedule label"
+                isRunning = false
+                return
+            }
+            exit = await LaunchAgentWriter.runNow(agentLabel) { line in
+                buf.append(line)
+                Task { @MainActor in runLogLines = buf.lines }
             }
         }
+
         runLogLines = buf.lines
         isRunning = false
-        lastRunMessage = "\(target.name) · exit \(exit)"
+        lastRunMessage = "\(schedule.name) · exit \(exit)"
         workspace.reloadFromDisk()
     }
 
@@ -419,6 +461,34 @@ struct ScheduleFormState {
     var mode = Schedule.RunMode.snapshotOnly
     var enabled = true
 
+    // Multi-profile targeting
+    enum ProfileMode: String, CaseIterable, Identifiable {
+        case single = "Single profile"
+        case all = "All profiles"
+        case filter = "Profile filter (glob)"
+        case list = "Specific profiles"
+        var id: String { rawValue }
+    }
+    var profileMode: ProfileMode = .single
+    var multiFilter = ""          // for .filter
+    var multiList = ""            // for .list, comma-separated
+    var multiSequential = false
+
+    var resolvedMultiTarget: MultiTarget? {
+        switch profileMode {
+        case .single: return nil
+        case .all:    return MultiTarget(scope: .all, sequential: multiSequential)
+        case .filter:
+            let g = multiFilter.trimmingCharacters(in: .whitespaces)
+            guard !g.isEmpty else { return MultiTarget(scope: .all, sequential: multiSequential) }
+            return MultiTarget(scope: .filter(g), sequential: multiSequential)
+        case .list:
+            let ps = multiList.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            guard !ps.isEmpty else { return MultiTarget(scope: .all, sequential: multiSequential) }
+            return MultiTarget(scope: .list(ps), sequential: multiSequential)
+        }
+    }
+
     init(defaultProfile: String = "") { profile = defaultProfile }
 
     enum CadenceType: String, CaseIterable, Identifiable {
@@ -448,13 +518,20 @@ struct ScheduleFormState {
     }
 
     var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty && !profile.isEmpty
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        switch profileMode {
+        case .single:  return !profile.isEmpty
+        case .all:     return true
+        case .filter:  return !multiFilter.trimmingCharacters(in: .whitespaces).isEmpty
+        case .list:    return !multiList.trimmingCharacters(in: .whitespaces).isEmpty
+        }
     }
 
     func toSchedule() -> Schedule {
-        Schedule(
+        let target = resolvedMultiTarget
+        return Schedule(
             name: name.trimmingCharacters(in: .whitespaces),
-            profile: profile,
+            profile: target == nil ? profile : "",
             schedule: scheduleString,
             cadence: cadenceType.rawValue.lowercased(),
             mode: mode,
@@ -462,7 +539,8 @@ struct ScheduleFormState {
             last: "—",
             lastStatus: .ok,
             artifacts: [],
-            enabled: enabled
+            enabled: enabled,
+            multiTarget: target
         )
     }
 }
@@ -502,12 +580,43 @@ private struct NewScheduleSheet: View {
                         PNPTextField(value: $form.name, placeholder: "e.g. Daily Snapshot Collection")
                     }
 
-                    formRow(label: "Profile") {
-                        Picker("", selection: $form.profile) {
-                            ForEach(profiles, id: \.self) { Text($0).tag($0) }
+                    formRow(label: "Profile target") {
+                        Picker("", selection: $form.profileMode) {
+                            ForEach(ScheduleFormState.ProfileMode.allCases) {
+                                Text($0.rawValue).tag($0)
+                            }
                         }
                         .labelsHidden()
                         .frame(maxWidth: .infinity)
+                    }
+
+                    if form.profileMode == .single {
+                        formRow(label: "Profile") {
+                            Picker("", selection: $form.profile) {
+                                ForEach(profiles, id: \.self) { Text($0).tag($0) }
+                            }
+                            .labelsHidden()
+                            .frame(maxWidth: .infinity)
+                        }
+                    } else if form.profileMode == .filter {
+                        formRow(label: "Glob pattern") {
+                            PNPTextField(value: $form.multiFilter, placeholder: "e.g. prod-*", mono: true)
+                        }
+                    } else if form.profileMode == .list {
+                        formRow(label: "Profiles") {
+                            PNPTextField(value: $form.multiList,
+                                         placeholder: "production,staging", mono: true)
+                        }
+                    }
+
+                    if form.profileMode != .single {
+                        formRow(label: "Sequential") {
+                            Toggle("Run profiles one at a time", isOn: $form.multiSequential)
+                                .labelsHidden()
+                            Text("Run profiles one at a time")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                        }
                     }
 
                     formRow(label: "Cadence") {

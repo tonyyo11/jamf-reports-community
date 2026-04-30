@@ -7,6 +7,17 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- **Health Audit & Group Hygiene**: New reporting surface leveraging `jamf-cli pro audit` and `jamf-cli pro group-tools analyze`.
+- Added **Audit Summary** and **Group Hygiene** sheets to the Excel workbook. Audit summary includes severity-based color coding (CRITICAL, WARNING).
+- New **Health Audit** screen in the macOS app for running on-demand health checks and hygiene analysis.
+- Implementation of a **"View" button** in the Group Hygiene screen that directly opens the computer group in the Jamf Pro web console.
+- Audit and hygiene results from the macOS app are now automatically **saved to the workspace** as JSON snapshots, ensuring persistence across app restarts.
+- `SystemActions.open` now supports `http` and `https` URLs, enabling the app to launch the default browser for Jamf Pro console links.
+- `JamfCLIBridge` (Python) and `CLIBridge` (Swift) now include dedicated methods for `audit` and `group_analyze`.
+- macOS app sidebar now includes a dedicated "Health Audit" tab under the REPORTS group.
+
 ### Fixed
 
 - When `--csv` is explicitly provided but the file is unreadable, `generate`
@@ -31,71 +42,8 @@ versions in this repository map to git tags.
 - Unexpected exceptions that escape a command (e.g. network errors, malformed
   JSON) now print a clean `Error: <type>: <message>` line to stderr and exit 1,
   instead of surfacing a raw Python traceback with local paths.
-
-### Added
-
-- `jamf_cli.max_cache_age_hours` config option (default `0` = no limit). When
-  set, `generate` raises an error instead of using a cached snapshot older than
-  the configured number of hours. Useful when stale compliance data must not
-  silently pass through to the report.
-- macOS app per-device drilldown now calls `jamf-cli pro device <identifier>`
-  for the selected row, caches the JSON under
-  `~/Jamf-Reports/<profile>/jamf-cli-data/devices/`, and renders grouped detail
-  rows in the Devices pane.
-- macOS app report, collection, backup, validation, and drilldown commands now
-  always pass the active workspace profile to `jrc` or `jamf-cli`; existing
-  workspace configs are reconciled so `jamf_cli.profile` matches the selected
-  profile.
-- The macOS app now prefers the bundled/current Python script over an installed
-  `jrc` shim when launching report commands, avoiding stale shim behavior after
-  app updates.
-- Onboarding now validates the newly registered `jamf-cli` profile with
-  `jamf-cli config validate` before continuing to CSV mapping and first report
-  generation.
-- macOS app Settings now detects whether `jamf-cli` is managed by Homebrew or
-  installed directly from GitHub releases, and runs update checks through the
-  matching source instead of treating every install as Homebrew-managed.
-- `--profile` now works as a runtime Jamf Pro profile override for Python
-  commands that use `jamf_cli.profile`, while retaining its existing
-  `workspace-init` behavior.
-- `collect` now supports first-run Jamf CLI-only bootstrapping more completely,
-  saving computer inventory, app/update status, groups, packages, scripts, and
-  org metadata snapshots without requiring CSV or historical data.
-- `inventory-csv` now saves/falls back through the normal jamf-cli cache path
-  and still exports base computer inventory if extension attribute results are
-  temporarily unavailable.
-- New `backup` command wraps `jamf-cli pro backup --format json --output <dir>`
-  and writes atomic per-profile backups plus a `manifest.json` under
-  `~/Jamf-Reports/<profile>/backups/`.
-- macOS app Backups screen lists local backups, can run a new backup, reveal
-  backup folders, and diff two backups or an older backup against the latest
-  via `jamf-cli pro diff`.
-- macOS app Devices screen for current inventory review. It merges validated
-  workspace-local inventory CSV output with cached jamf-cli compliance and patch
-  snapshots, then presents searchable device rows, stale filtering, macOS version
-  breakdowns, and per-device patch/security detail.
-- SwiftUI macOS app scaffold with 10 design-faithful screens.
-- Trends hero feature built on Swift Charts for 26-week historical visualization.
-- Multi-profile workspace switching via sidebar profile chip.
-- LaunchAgent-based scheduling for background data collection and reporting.
-- NSWorkspace-bounded file actions for opening reports and revealing folders.
-- Spectrum-inspired app icon and brand-faithful IBM Plex Mono typography.
-- Emit per-run `summary.json` in `snapshots/summaries/` for macOS GUI trend consumption.
-- New `SummaryJSONParser` and `TrendStore` in the macOS app to parse historical summaries.
-- Real trend data visualization in `TrendsView` replacing synthetic demo data.
-- `capabilities` command emits a deterministic app-facing manifest of supported Jamf
-  products, commands, data sources, current-status surfaces, historical/trend surfaces,
-  config sections, and known gaps. This gives the Swift app a stable contract instead
-  of hardcoding sheet/source support.
-- `--summary-json` for `generate`, `html`, `collect`, `school-generate`, and
-  `school-collect`, giving the Swift app stable machine-readable run summaries.
-- macOS app release packaging can now bundle a private, pinned Python runtime
-  using `python-runtime.lock` and `requirements-runtime.txt`.
-- GitHub Actions now builds and tests the Swift macOS app on macOS in addition
-  to the Python test matrix.
-
-### Fixed
-
+- **Build Fix**: Fixed a missing `return` statement in `SchedulesView.swift` that prevented the macOS app from building.
+- **Swift Compiler**: Simplified `latestJson` closure in `AuditView.swift` to resolve a compiler ambiguity error.
 - macOS app builds now fail fast when component or bundle signing fails instead
   of continuing with a partially signed app.
 - Bundled Python runtime builds now require a pinned SHA256 before downloading,

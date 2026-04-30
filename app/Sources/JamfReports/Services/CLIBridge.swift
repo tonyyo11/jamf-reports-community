@@ -40,7 +40,21 @@ enum ExecutableLocator {
 @Observable
 final class CLIBridge {
 
-    enum LogLevel: String, Sendable { case info, ok, warn, fail }
+    enum LogLevel: String, Sendable {
+        case info, ok, warn, fail
+
+        /// Centralized log line classification. Matches `[ok]`, `[warn]`, `[fatal]`,
+        /// `[error]`, `[fail]`, and `traceback` patterns from Python CLI output.
+        static func from(line: String) -> LogLevel {
+            let l = line.lowercased()
+            if l.contains("[ok]") { return .ok }
+            if l.contains("[warn]") { return .warn }
+            if l.contains("[fatal]") || l.contains("[error]") || l.contains("[fail]") || l.contains("traceback") {
+                return .fail
+            }
+            return .info
+        }
+    }
     struct LogLine: Sendable, Identifiable {
         let id = UUID()
         let timestamp: Date
@@ -87,7 +101,7 @@ final class CLIBridge {
                 let data = handle.availableData
                 guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
                 for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                    onLine(.init(timestamp: Date(), level: classify(line), text: String(line)))
+                    onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
                 }
             }
             stderr.fileHandleForReading.readabilityHandler = { handle in
@@ -111,6 +125,77 @@ final class CLIBridge {
                 continuation.resume(returning: -1)
             }
         }
+    }
+
+    /// Run an arbitrary command, streaming each line through `onLine` and returning
+    /// the collected stdout + the process exit code.
+    nonisolated func runAndCapture(
+        executable: URL,
+        arguments: [String],
+        cwd: URL? = nil,
+        environment: [String: String]? = nil,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> (Int32, Data) {
+        final class DataBox: @unchecked Sendable {
+            var data = Data()
+            let lock = NSLock()
+            func append(_ newData: Data) {
+                lock.lock()
+                data.append(newData)
+                lock.unlock()
+            }
+        }
+        let box = DataBox()
+        
+        let code = await withCheckedContinuation { (continuation: CheckedContinuation<Int32, Never>) in
+            let process = Process()
+            process.executableURL = executable
+            process.arguments = arguments
+            if let cwd { process.currentDirectoryURL = cwd }
+            if let environment {
+                process.environment = environment
+            } else if let bundled = Self.environmentForBundledPython(executable) {
+                process.environment = bundled
+            }
+
+            let stdout = Pipe()
+            let stderr = Pipe()
+            process.standardOutput = stdout
+            process.standardError = stderr
+
+            stdout.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                
+                box.append(data)
+                
+                guard let s = String(data: data, encoding: .utf8) else { return }
+                for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
+                    onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
+                }
+            }
+            stderr.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+                for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
+                    onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
+                }
+            }
+
+            process.terminationHandler = { proc in
+                stdout.fileHandleForReading.readabilityHandler = nil
+                stderr.fileHandleForReading.readabilityHandler = nil
+                continuation.resume(returning: proc.terminationStatus)
+            }
+
+            do {
+                try process.run()
+            } catch {
+                onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
+                continuation.resume(returning: -1)
+            }
+        }
+        return (code, box.data)
     }
 
     /// Fluent helper for the most common CLI flows the GUI surfaces.
@@ -283,6 +368,60 @@ final class CLIBridge {
         return await run(executable: command.executable, arguments: command.arguments + args, onLine: onLine)
     }
 
+    func audit(
+        profile: String,
+        category: String?,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
+        guard let bin = ExecutableLocator.locate("jamf-cli") else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
+            return -1
+        }
+        var args = ["-p", profile, "pro", "audit", "--output", "json"]
+        if let category, !category.isEmpty {
+            args.append(contentsOf: ["--checks", category])
+        }
+        
+        let (code, data) = await runAndCapture(executable: bin, arguments: args, onLine: onLine)
+        if code == 0, !data.isEmpty {
+            saveJSONSnapshot(data: data, profile: profile, type: "audit")
+        }
+        return code
+    }
+
+    func groupHygiene(
+        profile: String,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
+        guard let bin = ExecutableLocator.locate("jamf-cli") else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
+            return -1
+        }
+        let args = ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json"]
+        let (code, data) = await runAndCapture(executable: bin, arguments: args, onLine: onLine)
+        if code == 0, !data.isEmpty {
+            saveJSONSnapshot(data: data, profile: profile, type: "group-tools-analyze")
+        }
+        return code
+    }
+
+    private func saveJSONSnapshot(data: Data, profile: String, type: String) {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return }
+        let dir = workspace.appendingPathComponent("jamf-cli-data/\(type)", isDirectory: true)
+        let ts = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .prefix(15)
+        let file = dir.appendingPathComponent("\(type)_\(ts).json")
+        
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try data.write(to: file)
+        } catch {
+            print("[warn] failed to save snapshot \(type): \(error)")
+        }
+    }
+
     func backup(
         profile: String,
         label: String?,
@@ -342,6 +481,8 @@ final class CLIBridge {
         load: Bool,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
+        if schedule.isMulti { return await setupMultiLaunchAgent(schedule, load: load, onLine: onLine) }
+
         guard let command = resolveJRCCommand() else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
             return -1
@@ -375,6 +516,53 @@ final class CLIBridge {
             arguments: command.arguments + plan.arguments,
             onLine: onLine
         )
+    }
+
+    private func setupMultiLaunchAgent(
+        _ schedule: Schedule,
+        load: Bool,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
+        guard let agentLabel = LaunchAgentWriter.label(for: schedule) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid schedule name for multi-profile label"))
+            return -1
+        }
+        do {
+            let plan = try LaunchAgentWriter.multiSetupPlan(for: schedule, load: load)
+            let action = load ? "writing and loading" : "writing disabled"
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] \(action) multi-profile LaunchAgent \(plan.label)"))
+            if load {
+                let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)
+                if exit != 0 {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                                 text: "[warn] launchctl bootstrap returned \(exit) — plist written but not loaded"))
+                }
+                return exit
+            }
+            _ = agentLabel
+            return 0
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
+            return -1
+        }
+    }
+
+    func runMulti(
+        target: MultiTarget,
+        subcommand: [String],
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
+        guard let bin = ExecutableLocator.locate("jamf-cli") else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
+            return -1
+        }
+        var args = ["multi"]
+        args.append(contentsOf: target.cliFlags)
+        if target.sequential { args.append("--sequential") }
+        args.append("--")
+        args.append(contentsOf: subcommand)
+        return await run(executable: bin, arguments: args, onLine: onLine)
     }
 
     func resolveJRCCommand() -> (executable: URL, arguments: [String])? {
@@ -562,16 +750,6 @@ final class CLIBridge {
         ].compactMap { $0 }
         return candidates.first { fm.fileExists(atPath: $0.path) }
     }
-}
-
-/// Heuristic line classifier. Matches the `[ok]` / `[warn]` / `[fatal]` markers
-/// emitted by `jamf-reports-community.py`'s log helpers.
-private func classify(_ line: Substring) -> CLIBridge.LogLevel {
-    let l = line.lowercased()
-    if l.contains("[ok]") { return .ok }
-    if l.contains("[warn]") { return .warn }
-    if l.contains("[fatal]") || l.contains("[error]") || l.contains("traceback") { return .fail }
-    return .info
 }
 
 private func runDeviceDetailProcess(

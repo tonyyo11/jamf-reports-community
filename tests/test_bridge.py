@@ -275,3 +275,76 @@ def test_packages_uses_pro_packages_list(monkeypatch, jrc) -> None:
         "args": ["pro", "packages", "list"],
         "cache_names": ["packages"],
     }
+
+
+def test_bridge_uses_multi_flags(monkeypatch, jrc) -> None:
+    multi_config = {
+        "enabled": True,
+        "filter": "prod-*",
+        "profiles": "a,b",
+        "from_file": "instances.txt",
+        "sequential": True,
+    }
+    bridge = jrc.JamfCLIBridge(
+        save_output=False,
+        use_cached_data=False,
+        multi_config=multi_config,
+    )
+
+    captured_cmd: list[str] = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        import subprocess
+        return subprocess.CompletedProcess(cmd, 0, stdout='{"ok": true}', stderr='')
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    result = bridge.overview()
+
+    assert result == {"ok": True}
+    assert "multi" in captured_cmd
+    assert "--filter" in captured_cmd
+    assert "prod-*" in captured_cmd
+    assert "--profiles" in captured_cmd
+    assert "a,b" in captured_cmd
+    assert "--from-file" in captured_cmd
+    assert "instances.txt" in captured_cmd
+    assert "--sequential" in captured_cmd
+    assert "--" in captured_cmd
+    assert "--output" in captured_cmd
+    assert "json" in captured_cmd
+    assert "--no-input" in captured_cmd
+
+    multi_idx = captured_cmd.index("multi")
+    sep_idx = captured_cmd.index("--")
+    assert multi_idx < sep_idx
+
+
+def test_bridge_no_multi_when_disabled(monkeypatch, jrc) -> None:
+    multi_config = {
+        "enabled": False,
+        "filter": "prod-*",
+    }
+    bridge = jrc.JamfCLIBridge(
+        save_output=False,
+        use_cached_data=False,
+        profile="my-profile",
+        multi_config=multi_config,
+    )
+
+    captured_cmd: list[str] = []
+
+    def fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        import subprocess
+        return subprocess.CompletedProcess(cmd, 0, stdout='{"ok": true}', stderr='')
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    bridge.overview()
+
+    assert "multi" not in captured_cmd
+    assert "--filter" not in captured_cmd
+    assert "-p" in captured_cmd
+    assert "my-profile" in captured_cmd
