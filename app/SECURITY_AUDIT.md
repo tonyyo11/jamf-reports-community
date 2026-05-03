@@ -2,7 +2,7 @@
 
 **Scope:** `app/Sources/JamfReports/`, `app/build-app.sh`, `app/iconset/`
 **Date:** 2026-04-26
-**Updated:** 2026-04-29
+**Updated:** 2026-05-03
 **Branch:** `dev-app/2.0` (post-feature-merge)
 **Auditor:** Claude (Opus 4.7)
 
@@ -22,6 +22,13 @@ validation, and credential keys rejected at config load. The findings below clos
 trailing-slash prefix bugs, remove an unwired Protect snapshot prototype that had an
 invalid-profile path fallback, shrink the file-opening allow-list, and harden the build
 chain (Hardened Runtime + entitlements).
+
+**Final pass, 2026-05-03:** expanded the review to the Python HTML report and the
+Swift multi-profile manual-run path. The remaining findings were fixed: generated
+HTML now escapes branding in title/topbar contexts, rejects unsafe CSS color
+overrides and active SVG logos, and Swift manual multi-profile runs now validate
+their saved `multi-launchagent-run` arguments plus status/stdout/stderr paths
+before executing a trusted command.
 
 ---
 
@@ -245,6 +252,31 @@ Developer ID, notarization, and stapling requirements for distribution.
 
 ## Findings detail
 
+### MUST-FIX 4 — generated HTML branding injection
+
+`HtmlReport._render()` inserted `branding.org_name` and the Jamf instance URL
+directly into the `<title>` and topbar brand text. `HtmlReport._css()` also
+trusted `branding.accent_color` / `accent_dark` inside a `<style>` block, and
+`_logo_html()` embedded any configured file as a data URI.
+
+**Fix applied:** title/topbar values are escaped with `_html_text`, accent
+overrides are limited to hex colors, chart SVG colors use the same sanitizer,
+and inline logos must be small PNG/JPEG/GIF/WebP bitmap files. SVG logos are
+rejected to avoid active-content surprises in shared reports.
+
+### MUST-FIX 5 — multi-profile Run Now plist path trust
+
+`LaunchAgentWriter.runMultiNow` validated that the command executable was trusted,
+but still accepted `StandardOutPath`, `StandardErrorPath`, `WorkingDirectory`,
+and `--status-file` values from the plist. A tampered user LaunchAgent could
+redirect output/status writes outside the generated log directory.
+
+**Fix applied:** manual multi-profile runs now require the generated
+`multi-launchagent-run` argument contract, validate profile lists/filters and
+workspace root, and only write `status.json`, `stdout.log`, and `stderr.log`
+under `~/Library/Logs/JamfReports/<label>/`. Symlinked log files or log
+directories are rejected.
+
 ### MUST-FIX 1 — `SystemActions.canonicalize` trailing-slash prefix
 
 ```swift
@@ -290,9 +322,9 @@ to `codesign`. `Info.plist` now has `NSHumanReadableCopyright` and a strict
   the developer's machine. Distribution to other Macs requires Apple Developer
   ID + notarization; that is a release-engineering concern, not a code change.
   The requirements are documented in root `README.md` and `app/README.md`.
-- **Python `jamf-reports-community.py` (`jrc`) internals.** This audit only
-  covers the Swift app and its build chain. The Python tool's own input handling,
-  XML/YAML emit, and CLI argument parsing are out of scope.
+- **Full Python CLI internals.** The 2026-05-03 pass covered the Python HTML
+  report and reviewed the primary CLI subprocess/path handling. It was not a
+  line-by-line audit of every workbook sheet writer.
 - **`jamf-cli` itself.** Treated as a trusted external dependency installed by
   the user via Homebrew.
 
@@ -309,3 +341,7 @@ to `codesign`. `Info.plist` now has `NSHumanReadableCopyright` and a strict
 6. `app/build-app.sh` — pass `--entitlements` and `--options runtime`.
 7. `app/build-app.sh` — `Info.plist` adds `NSHumanReadableCopyright` and
    `NSAppTransportSecurity`.
+8. `jamf-reports-community.py` — escape HTML title/topbar branding, sanitize CSS
+   colors, and restrict inline logos to safe bitmap formats.
+9. `Services/LaunchAgentWriter.swift` — validate multi-profile manual-run
+   arguments and status/log path destinations before launching.

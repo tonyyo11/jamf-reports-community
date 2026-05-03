@@ -92,6 +92,7 @@ struct ReportsView: View {
         VStack(alignment: .leading, spacing: 8) {
             PageHeader(
                 kicker: "Generated Reports",
+                breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
                 title: "\(reports.count) reports archived",
                 subtitle: "~/Jamf-Reports/\(workspace.profile)/Generated Reports/"
             ) {
@@ -207,6 +208,14 @@ struct ReportsView: View {
         }
     }
 
+    private func navigateToOverview() {
+        NotificationCenter.default.post(
+            name: .navigateToTab,
+            object: nil,
+            userInfo: ["tab": Tab.overview.rawValue]
+        )
+    }
+
     private func requestOverviewTab() {
         NotificationCenter.default.post(name: .requestOverviewTab, object: nil)
     }
@@ -223,14 +232,22 @@ struct ReportsView: View {
             guard response == .OK, let dest = panel.url else { return }
             let outPath = dest.path
             isGeneratingHTML = true
+            workspace.globalStatus = "jrc generate · profile=\(profile)"
             reportError = nil
             Task {
-                let code = await bridge.generateHTML(profile: profile, outFile: outPath) { _ in }
+                let code = await bridge.generateHTML(profile: profile, outFile: outPath) { line in
+                    Task { @MainActor in
+                        workspace.globalStatus = "jrc · \(line.text)"
+                    }
+                }
                 isGeneratingHTML = false
+                workspace.globalStatus = nil
                 if code == 0 {
+                    workspace.toast = Toast(message: "HTML report generated", style: .success)
                     SystemActions.open(dest)
                     reload()
                 } else {
+                    workspace.toast = Toast(message: "HTML generation failed · exit \(code)", style: .danger)
                     reportError = "HTML generation failed (exit \(code))"
                 }
             }
@@ -249,14 +266,22 @@ struct ReportsView: View {
             guard response == .OK, let dest = panel.url else { return }
             let outPath = dest.path
             isExportingCSV = true
+            workspace.globalStatus = "jrc inventory-csv · profile=\(profile)"
             reportError = nil
             Task {
-                let code = await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { _ in }
+                let code = await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { line in
+                    Task { @MainActor in
+                        workspace.globalStatus = "jrc · \(line.text)"
+                    }
+                }
                 isExportingCSV = false
+                workspace.globalStatus = nil
                 if code == 0 {
+                    workspace.toast = Toast(message: "Inventory CSV exported", style: .success)
                     SystemActions.reveal(dest)
                     reload()
                 } else {
+                    workspace.toast = Toast(message: "CSV export failed · exit \(code)", style: .danger)
                     reportError = "Inventory CSV export failed (exit \(code))"
                 }
             }

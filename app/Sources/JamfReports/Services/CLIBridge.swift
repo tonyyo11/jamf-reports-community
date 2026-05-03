@@ -62,6 +62,11 @@ final class CLIBridge {
         let text: String
     }
 
+    struct CachedJSONSnapshot: Sendable {
+        let data: Data
+        let modified: Date
+    }
+
     func locate(_ binary: String) -> URL? {
         ExecutableLocator.locate(binary)
     }
@@ -70,6 +75,42 @@ final class CLIBridge {
 
     func jrcDisplayPath() -> String? {
         resolveJRCScript()?.path ?? locate("jrc")?.path
+    }
+
+    nonisolated func cachedJSONSnapshots(
+        profile: String,
+        type: String,
+        limit: Int = 2
+    ) async -> [CachedJSONSnapshot] {
+        await Task.detached(priority: .utility) {
+            guard ProfileService.isValid(profile),
+                  let dataDir = WorkspacePaths.dataDir(for: profile) else {
+                return []
+            }
+            let dir = dataDir.appendingPathComponent(type, isDirectory: true)
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                return []
+            }
+
+            return entries
+                .filter { $0.pathExtension == "json" }
+                .compactMap { url -> (url: URL, modified: Date)? in
+                    let modified = (try? url.resourceValues(
+                        forKeys: [.contentModificationDateKey]
+                    ))?.contentModificationDate ?? Date.distantPast
+                    return (url, modified)
+                }
+                .sorted { $0.modified > $1.modified }
+                .prefix(max(limit, 0))
+                .compactMap { item in
+                    guard let data = try? Data(contentsOf: item.url) else { return nil }
+                    return CachedJSONSnapshot(data: data, modified: item.modified)
+                }
+        }.value
     }
 
     /// Run an arbitrary command, streaming each line through `onLine`. Returns the
@@ -406,8 +447,8 @@ final class CLIBridge {
     }
 
     private func saveJSONSnapshot(data: Data, profile: String, type: String) {
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return }
-        let dir = workspace.appendingPathComponent("jamf-cli-data/\(type)", isDirectory: true)
+        guard let dataDir = WorkspacePaths.dataDir(for: profile) else { return }
+        let dir = dataDir.appendingPathComponent(type, isDirectory: true)
         let ts = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "-", with: "")
@@ -523,15 +564,29 @@ final class CLIBridge {
         load: Bool,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
-        guard let agentLabel = LaunchAgentWriter.label(for: schedule) else {
+        guard LaunchAgentWriter.label(for: schedule) != nil else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid schedule name for multi-profile label"))
             return -1
         }
+        guard ProfileService.isValid(schedule.profile) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi-profile schedules need a base workspace profile"))
+            return -1
+        }
+        guard let command = resolveJRCCommand() else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+            return -1
+        }
         do {
-            let plan = try LaunchAgentWriter.multiSetupPlan(for: schedule, load: load)
+            let plan = try LaunchAgentWriter.multiSetupPlan(
+                for: schedule,
+                command: command,
+                workspaceRoot: ProfileService.workspacesRoot(),
+                load: load
+            )
             let action = load ? "writing and loading" : "writing disabled"
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] \(action) multi-profile LaunchAgent \(plan.label)"))
+            _ = await LaunchAgentWriter.unload(plan.label)
             if load {
                 let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)
                 if exit != 0 {
@@ -540,7 +595,6 @@ final class CLIBridge {
                 }
                 return exit
             }
-            _ = agentLabel
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))

@@ -13,6 +13,8 @@ struct DevicesView: View {
     @State private var deviceDetail: DeviceDetail?
     @State private var deviceDetailState: DeviceDetailState = .idle
     @State private var deviceDetailRequestKey = ""
+    @State private var sortOrder = [KeyPathComparator(\DeviceInventoryRecord.displayName)]
+    @FocusState private var isSearchFocused: Bool
 
     private enum DeviceDetailState: Equatable {
         case idle
@@ -66,7 +68,7 @@ struct DevicesView: View {
             case .security:
                 return device.securityGapCount > 0 || device.failedRules > 0
             }
-        }
+        }.sorted(using: sortOrder)
     }
 
     private var selectedDevice: DeviceInventoryRecord? {
@@ -116,13 +118,21 @@ struct DevicesView: View {
         .task(id: deviceDetailTaskID) {
             await loadSelectedDeviceDetail()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
+            Task { await reload() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
+            isSearchFocused = true
+        }
     }
 
     private var header: some View {
         PageHeader(
-            kicker: isLoading ? "Loading inventory" : "Current Inventory · \(activeSnapshot.generatedAt)",
+            kicker: isLoading ? "Loading inventory" : "Detailed Inventory · \(activeSnapshot.generatedAt)",
+            breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: "Devices",
-            subtitle: "\(activeSnapshot.totalDevices) records · \(workspace.profile)"
+            subtitle: "\(activeSnapshot.totalDevices) records · \(workspace.profile)",
+            lastModified: activeSnapshot.generatedDate
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -138,6 +148,14 @@ struct DevicesView: View {
         }
     }
 
+    private func navigateToOverview() {
+        NotificationCenter.default.post(
+            name: .navigateToTab,
+            object: nil,
+            userInfo: ["tab": Tab.overview.rawValue]
+        )
+    }
+
     private var controls: some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
@@ -148,6 +166,7 @@ struct DevicesView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.Colors.fg)
+                    .focused($isSearchFocused)
             }
             .padding(.horizontal, 10)
             .frame(width: 260, height: 30)
@@ -206,8 +225,8 @@ struct DevicesView: View {
                 .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
                 Divider().background(Theme.Colors.hairlineStrong)
 
-                Table(filteredDevices, selection: $selectedID) {
-                    TableColumn("Device") { device in
+                Table(filteredDevices, selection: $selectedID, sortOrder: $sortOrder) {
+                    TableColumn("Device", value: \.displayName) { device in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device.displayName)
                                 .font(.system(size: 12.5, weight: .semibold))
@@ -219,14 +238,14 @@ struct DevicesView: View {
                                 .lineLimit(1)
                         }
                     }
-                    TableColumn("Serial") { device in
+                    TableColumn("Serial", value: \.serial) { device in
                         Mono(text: device.displaySerial)
                             .textSelection(.enabled)
                     }
-                    TableColumn("macOS") { device in
+                    TableColumn("macOS", value: \.osVersion) { device in
                         Mono(text: device.osVersion.isEmpty ? "Unknown" : device.osVersion)
                     }
-                    TableColumn("User") { device in
+                    TableColumn("User", value: \.user) { device in
                         Text(device.user.isEmpty ? "Unassigned" : device.user)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.Colors.fgMuted)
@@ -241,6 +260,25 @@ struct DevicesView: View {
                 }
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)
+                .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { selection in
+                    if let id = selection.first, let device = activeSnapshot.devices.first(where: { $0.id == id }) {
+                        Button("Copy Serial Number") {
+                            SystemActions.copyToClipboard(device.serial)
+                        }
+                        Button("Copy User Email") {
+                            SystemActions.copyToClipboard(device.email.isEmpty ? device.user : device.email)
+                        }
+                        if let jamfID = device.numericJamfID, !workspace.org.jamfURL.isEmpty {
+                            Button("Open in Jamf Pro") {
+                                let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
+                                let urlString = "\(jamfURL)/computers.html?id=\(jamfID)&o=r"
+                                if let url = URL(string: urlString) {
+                                    SystemActions.open(url)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -344,8 +382,12 @@ struct DevicesView: View {
                 Spacer()
                 if workspace.demoMode {
                     Pill(text: "Live mode only", tone: .muted)
+                } else if case .loading = deviceDetailState {
+                    Pill(text: "Loading", tone: .gold)
                 } else if case .loaded = deviceDetailState {
                     Pill(text: "Loaded", tone: .teal, icon: "checkmark")
+                } else if case .unavailable = deviceDetailState {
+                    Pill(text: "Unavailable", tone: .warn)
                 }
             }
 

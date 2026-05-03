@@ -144,7 +144,7 @@ enum RunHistoryService {
     }
 
     /// Read the last 1 KB of a log to infer exit code and duration.
-    private static func parseLogTail(from url: URL) -> (Int32?, String?) {
+    static func parseLogTail(from url: URL) -> (Int32?, String?) {
         guard let fh = FileHandle(forReadingAtPath: url.path) else { return (nil, nil) }
         defer { fh.closeFile() }
 
@@ -156,20 +156,36 @@ enum RunHistoryService {
 
         var hasFatal = false
         var duration: String? = nil
-        var exitCode: Int32? = nil
+        var parsedExitCode: Int32? = nil
 
         for line in text.components(separatedBy: "\n").reversed() {
             let level = CLIBridge.LogLevel.from(line: line)
             if level == .fail { hasFatal = true }
-            if exitCode == nil {
-                if line.contains("exit 0") { exitCode = 0; break }
-                if line.contains("exit 1") { exitCode = 1; break }
-            }
             if duration == nil,
                let r = line.range(of: #"\d+m \d+s|\d+s"#, options: .regularExpression) {
                 duration = String(line[r])
             }
+            if parsedExitCode == nil,
+               let parsed = exitCode(from: line) {
+                parsedExitCode = parsed
+                if duration != nil { break }
+            }
         }
-        return (exitCode ?? (hasFatal ? 1 : 0), duration)
+        return (parsedExitCode ?? (hasFatal ? 1 : 0), duration)
+    }
+
+    static func exitCode(from line: String) -> Int32? {
+        guard let range = line.range(
+            of: #"exit\s+(-?\d+)"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) else {
+            return nil
+        }
+        let match = String(line[range])
+        guard let codeRange = match.range(of: #"-?\d+"#, options: .regularExpression),
+              let value = Int32(match[codeRange]) else {
+            return nil
+        }
+        return value
     }
 }

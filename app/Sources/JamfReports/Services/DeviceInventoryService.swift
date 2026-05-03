@@ -85,6 +85,7 @@ enum DeviceInventoryService {
             sourceFiles: uniqueSources,
             warnings: warnings,
             generatedAt: formattedDate(newestSourceDate),
+            generatedDate: newestSourceDate,
             isDemo: false
         )
     }
@@ -96,6 +97,7 @@ enum DeviceInventoryService {
             sourceFiles: [],
             warnings: [warning],
             generatedAt: "No current device data",
+            generatedDate: nil,
             isDemo: false
         )
     }
@@ -353,35 +355,21 @@ private extension DeviceInventoryService {
         warnings: inout [String]
     ) {
         for item in jsonArray(from: url, root: root, warnings: &warnings) {
-            let name = clean(item["device"]) ?? clean(item["name"]) ?? ""
-            let serial = clean(item["serial"]) ?? ""
-            let title = clean(item["policy"]) ?? clean(item["title"]) ?? clean(item["patch_title"]) ?? "Patch title"
-            let status = clean(item["last_action"]) ?? clean(item["status"]) ?? clean(item["state"]) ?? "Needs attention"
-            let failure = DevicePatchFailure(
-                title: title,
-                status: status,
-                date: clean(item["status_date"]) ?? clean(item["updated"]) ?? clean(item["last_event"]) ?? "",
-                latestVersion: clean(item["latest"]) ?? clean(item["version"]) ?? ""
-            )
-            var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial), source: url.lastPathComponent)
-            record.name = name
-            record.serial = serial
-            record.osVersion = clean(item["os_version"]) ?? ""
-            record.user = clean(item["username"]) ?? ""
-            record.patchFailures = [failure]
-            merger.upsert(record)
+            merger.upsert(recordFromPatchFailure(item, source: url.lastPathComponent))
         }
     }
 }
 
 // MARK: - Record mapping
 
-private extension DeviceInventoryService {
+extension DeviceInventoryService {
 
     static func recordFromCSV(_ row: [String: String], source: String) -> DeviceInventoryRecord {
         let name = cell(row, ["Computer Name", "Device Name", "Name"])
         let serial = cell(row, ["Serial Number", "Serial"])
-        var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial), source: source)
+        let jamfID = cell(row, ["Jamf ID", "Computer ID", "ID"])
+        var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
+        record.jamfID = jamfID
         record.name = name
         record.serial = serial
         record.osVersion = cell(row, ["Operating System", "Operating System Version", "OS Version", "macOS"])
@@ -412,7 +400,12 @@ private extension DeviceInventoryService {
         let flat = flattened(item)
         let name = first(flat, ["general.name", "name", "general.displayName"])
         let serial = first(flat, ["hardware.serialNumber", "serialNumber", "general.serialNumber"])
-        var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial), source: source)
+        let jamfID = firstNumericID(
+            flat,
+            ["general.id", "id", "computerId", "computer_id", "general.computerId"]
+        )
+        var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
+        record.jamfID = jamfID
         record.name = name
         record.serial = serial
         record.osVersion = first(flat, ["operatingSystem.version", "operatingSystemVersion", "general.osVersion"])
@@ -440,7 +433,9 @@ private extension DeviceInventoryService {
     static func recordFromCompliance(_ item: [String: Any], source: String) -> DeviceInventoryRecord {
         let name = clean(item["name"]) ?? clean(item["device"]) ?? ""
         let serial = clean(item["serial"]) ?? clean(item["serial_number"]) ?? ""
-        var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial), source: source)
+        let jamfID = firstNumericID(item, ["id", "jamf_id", "device_id"])
+        var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
+        record.jamfID = jamfID
         record.name = name
         record.serial = serial
         record.osVersion = clean(item["os_version"]) ?? clean(item["operating_system"]) ?? ""
@@ -448,6 +443,31 @@ private extension DeviceInventoryService {
         record.daysSinceContact = intValue(item["days_since_contact"]) ?? daysSince(label: record.lastContact)
         record.managedState = managedLabel(clean(item["managed"]) ?? "")
         record.stale = boolValue(item["stale"]) || (record.daysSinceContact ?? 0) >= 30
+        return record
+    }
+
+    static func recordFromPatchFailure(_ item: [String: Any], source: String) -> DeviceInventoryRecord {
+        let name = clean(item["device"]) ?? clean(item["name"]) ?? ""
+        let serial = clean(item["serial"]) ?? ""
+        let jamfID = firstNumericID(
+            item,
+            ["device_id", "deviceId", "computer_id", "computerId"]
+        )
+        let title = clean(item["policy"]) ?? clean(item["title"]) ?? clean(item["patch_title"]) ?? "Patch title"
+        let status = clean(item["last_action"]) ?? clean(item["status"]) ?? clean(item["state"]) ?? "Needs attention"
+        let failure = DevicePatchFailure(
+            title: title,
+            status: status,
+            date: clean(item["status_date"]) ?? clean(item["updated"]) ?? clean(item["last_event"]) ?? "",
+            latestVersion: clean(item["latest"]) ?? clean(item["version"]) ?? ""
+        )
+        var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
+        record.jamfID = jamfID
+        record.name = name
+        record.serial = serial
+        record.osVersion = clean(item["os_version"]) ?? ""
+        record.user = clean(item["username"]) ?? ""
+        record.patchFailures = [failure]
         return record
     }
 }
@@ -675,6 +695,33 @@ private extension DeviceInventoryService {
         return ""
     }
 
+    static func firstNumericID(_ values: [String: Any], _ candidates: [String]) -> String? {
+        for key in candidates {
+            if let value = numericID(values[key]) { return value }
+        }
+        return nil
+    }
+
+    static func numericID(_ value: Any?) -> String? {
+        let raw: String?
+        switch value {
+        case let value as String:
+            raw = value
+        case _ as Bool:
+            raw = nil
+        case let value as NSNumber:
+            raw = value.stringValue
+        default:
+            raw = nil
+        }
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              trimmed.allSatisfy({ $0 >= "0" && $0 <= "9" }) else {
+            return nil
+        }
+        return trimmed
+    }
+
     static func clean(_ value: Any?) -> String? {
         switch value {
         case let value as String:
@@ -724,9 +771,12 @@ private extension DeviceInventoryService {
 
 fileprivate extension DeviceInventoryService {
 
-    static func recordID(name: String, serial: String) -> String {
+    static func recordID(name: String, serial: String, jamfID: String? = nil) -> String {
         let serialKey = normalizedKey(serial)
         if !serialKey.isEmpty { return "serial:\(serialKey)" }
+        if let jid = jamfID?.trimmingCharacters(in: .whitespacesAndNewlines), !jid.isEmpty {
+            return "jamf:\(jid)"
+        }
         let nameKey = normalizedKey(name)
         return nameKey.isEmpty ? "device:unknown" : "name:\(nameKey)"
     }
@@ -779,14 +829,24 @@ fileprivate extension DeviceInventoryService {
 
 private struct DeviceRecordMerger {
     private(set) var records: [DeviceInventoryRecord] = []
+    private var jamfIDIndex: [String: Int] = [:]
     private var serialIndex: [String: Int] = [:]
     private var nameIndex: [String: Int] = [:]
 
     mutating func upsert(_ record: DeviceInventoryRecord) {
+        let jamfIDKey = record.numericJamfID ?? ""
         let serialKey = DeviceInventoryService.normalizedKey(record.serial)
         let nameKey = DeviceInventoryService.normalizedKey(record.name)
-        if let idx = (!serialKey.isEmpty ? serialIndex[serialKey] : nil) ?? (!nameKey.isEmpty ? nameIndex[nameKey] : nil) {
+        if let idx = (!serialKey.isEmpty ? serialIndex[serialKey] : nil)
+            ?? (!jamfIDKey.isEmpty ? jamfIDIndex[jamfIDKey] : nil)
+            ?? (!nameKey.isEmpty ? nameIndex[nameKey] : nil) {
+            let oldJamfID = records[idx].numericJamfID
             records[idx].merge(record)
+            let newJamfID = records[idx].numericJamfID
+            if oldJamfID != newJamfID {
+                if let old = oldJamfID { jamfIDIndex.removeValue(forKey: old) }
+                if let new = newJamfID { jamfIDIndex[new] = idx }
+            }
         } else {
             records.append(record)
         }
@@ -794,9 +854,11 @@ private struct DeviceRecordMerger {
     }
 
     private mutating func rebuildIndexes() {
+        jamfIDIndex.removeAll(keepingCapacity: true)
         serialIndex.removeAll(keepingCapacity: true)
         nameIndex.removeAll(keepingCapacity: true)
         for (idx, record) in records.enumerated() {
+            if let jamfIDKey = record.numericJamfID { jamfIDIndex[jamfIDKey] = idx }
             let serialKey = DeviceInventoryService.normalizedKey(record.serial)
             if !serialKey.isEmpty { serialIndex[serialKey] = idx }
             let nameKey = DeviceInventoryService.normalizedKey(record.name)

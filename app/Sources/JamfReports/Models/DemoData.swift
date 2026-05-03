@@ -38,16 +38,33 @@ enum DemoData {
         }
     }
 
-    static let trends: [TrendSeries.Metric: [Double]] = [
-        .fileVault:   trend(start: 78,  end: 96, jitter: 2.2),
-        .compliance:  trend(start: 54,  end: 81, jitter: 4),
-        .stale:       trend(start: 48,  end: 22, jitter: 4),
-        .osCurrent:   trend(start: 41,  end: 73, jitter: 5),
-        .crowdstrike: trend(start: 82,  end: 94, jitter: 2.8),
-        .patch:       trend(start: 62,  end: 84, jitter: 4),
-    ]
-
     static let totalDevicesTrend = trend(start: 486, end: 524, jitter: 3.5)
+    private static let fileVaultTrend = trend(start: 78, end: 96, jitter: 2.2)
+    private static let complianceTrend = trend(start: 54, end: 81, jitter: 4)
+    private static let staleTrend = trend(start: 48, end: 22, jitter: 4)
+    private static let osCurrentTrend = trend(start: 41, end: 73, jitter: 5)
+    private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8)
+    private static let patchTrend = trend(start: 62, end: 84, jitter: 4)
+
+    static let stabilityTrend: [Double] = complianceTrend.indices.map { idx in
+        let total = Int((totalDevicesTrend[safe: idx] ?? totalDevicesTrend.last ?? 1).rounded())
+        return TrendSeries.stabilityIndex(
+            compliancePct: complianceTrend[safe: idx],
+            patchPct: patchTrend[safe: idx] ?? 0,
+            staleCount: Int((staleTrend[safe: idx] ?? 0).rounded()),
+            totalDevices: max(total, 1)
+        ) ?? 0
+    }
+
+    static let trends: [TrendSeries.Metric: [Double]] = [
+        .stability:   stabilityTrend,
+        .fileVault:   fileVaultTrend,
+        .compliance:  complianceTrend,
+        .stale:       staleTrend,
+        .osCurrent:   osCurrentTrend,
+        .crowdstrike: crowdstrikeTrend,
+        .patch:       patchTrend,
+    ]
 
     static let osDistribution: [OSDistribution] = [
         .init(version: "macOS 15.4 (Sequoia)",   count: 287, pct: 54.8, colorHex: 0xC9970A, current: true),
@@ -260,6 +277,7 @@ enum DemoData {
         ],
         warnings: [],
         generatedAt: "Apr 25, 2026 06:01",
+        generatedDate: Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 25, hour: 6, minute: 1)),
         isDemo: true
     )
 

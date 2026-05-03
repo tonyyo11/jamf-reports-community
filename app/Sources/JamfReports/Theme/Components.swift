@@ -2,16 +2,47 @@ import SwiftUI
 
 // MARK: - Kicker (mono uppercase eyebrow above titles)
 
+struct Breadcrumb: Identifiable, Sendable {
+    var id: String { label }
+    let label: String
+    var action: (@MainActor @Sendable () -> Void)? = nil
+}
+
 struct Kicker: View {
-    enum Tone { case muted, gold, teal }
+    enum Tone { case muted, gold, teal, warn, danger }
     let text: String
     var tone: Tone = .muted
+    var breadcrumbs: [Breadcrumb] = []
 
     var body: some View {
-        Text(text.uppercased())
-            .font(Theme.Fonts.mono(10.5, weight: .semibold))
-            .tracking(1.5)
-            .foregroundStyle(color)
+        HStack(spacing: 4) {
+            ForEach(breadcrumbs) { crumb in
+                Button {
+                    if let action = crumb.action {
+                        Task { @MainActor in
+                            action()
+                        }
+                    }
+                } label: {
+                    Text(crumb.label.uppercased())
+                        .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                        .tracking(1.5)
+                        .foregroundStyle(color)
+                        .opacity(crumb.action != nil ? 1 : 0.6)
+                }
+                .buttonStyle(.plain)
+                .disabled(crumb.action == nil)
+
+                Text("/")
+                    .font(Theme.Fonts.mono(10, weight: .bold))
+                    .foregroundStyle(Theme.Colors.hairlineStrong)
+            }
+
+            Text(text.uppercased())
+                .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                .tracking(1.5)
+                .foregroundStyle(color)
+        }
     }
 
     private var color: Color {
@@ -19,6 +50,8 @@ struct Kicker: View {
         case .muted: Theme.Colors.fgMuted
         case .gold:  Theme.Colors.goldBright
         case .teal:  Theme.Colors.tealBright
+        case .warn:  Theme.Colors.warn
+        case .danger: Theme.Colors.danger
         }
     }
 }
@@ -28,28 +61,45 @@ struct Kicker: View {
 struct PageHeader: View {
     let kicker: String
     var kickerTone: Kicker.Tone = .gold
+    var breadcrumbs: [Breadcrumb] = []
     let title: String
     var subtitle: String?
+    var lastModified: Date? = nil
     @ViewBuilder var trailing: () -> AnyView
 
     init(
         kicker: String,
         kickerTone: Kicker.Tone = .gold,
+        breadcrumbs: [Breadcrumb] = [],
         title: String,
         subtitle: String? = nil,
+        lastModified: Date? = nil,
         @ViewBuilder trailing: @escaping () -> AnyView = { AnyView(EmptyView()) }
     ) {
         self.kicker = kicker
         self.kickerTone = kickerTone
+        self.breadcrumbs = breadcrumbs
         self.title = title
         self.subtitle = subtitle
+        self.lastModified = lastModified
         self.trailing = trailing
     }
 
     var body: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
-                Kicker(text: kicker, tone: kickerTone)
+                HStack(spacing: 8) {
+                    Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs)
+                    if let ageLabel = stalenessLabel {
+                        Text("·")
+                            .font(Theme.Fonts.mono(10.5, weight: .bold))
+                            .foregroundStyle(Theme.Colors.hairlineStrong)
+                        Text(ageLabel.uppercased())
+                            .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                            .tracking(1.5)
+                            .foregroundStyle(effectiveKickerTone == .gold ? Theme.Colors.fgMuted : color(for: effectiveKickerTone))
+                    }
+                }
                 Text(title)
                     .font(Theme.Fonts.serif(26, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
@@ -61,6 +111,41 @@ struct PageHeader: View {
             }
             Spacer()
             trailing()
+        }
+    }
+
+    private var effectiveKicker: String {
+        kicker
+    }
+
+    private var effectiveKickerTone: Kicker.Tone {
+        if let lastModified {
+            let hours = Calendar.current.dateComponents([.hour], from: lastModified, to: Date()).hour ?? 0
+            if hours >= 24 * 7 { return .danger }
+            if hours >= 24 { return .warn }
+        }
+        return kickerTone
+    }
+
+    private var stalenessLabel: String? {
+        guard let lastModified else { return nil }
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.day, .hour, .minute], from: lastModified, to: Date())
+
+        if let days = components.day, days >= 1 {
+            if effectiveKickerTone == .gold { return nil } // Only show if stale
+            return "Updated \(days) \(days == 1 ? "day" : "days") ago"
+        }
+        return nil
+    }
+
+    private func color(for tone: Kicker.Tone) -> Color {
+        switch tone {
+        case .muted: Theme.Colors.fgMuted
+        case .gold:  Theme.Colors.goldBright
+        case .teal:  Theme.Colors.tealBright
+        case .warn:  Theme.Colors.warn
+        case .danger: Theme.Colors.danger
         }
     }
 }
@@ -452,6 +537,40 @@ struct SectionHeader: View {
             Text(title).font(.system(size: size, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
             Spacer()
             if let trailing { Kicker(text: trailing) }
+        }
+    }
+}
+
+// MARK: - Status Bar
+
+struct StatusBar: View {
+    let status: String?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let status {
+                if status.contains("...") || status.lowercased().contains("running") || status.lowercased().contains("collecting") {
+                    ProgressView().controlSize(.small)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 10))
+                }
+                Text(status)
+                    .font(Theme.Fonts.mono(10.5))
+                    .foregroundStyle(Theme.Colors.fg2)
+            } else {
+                Text("Ready")
+                    .font(Theme.Fonts.mono(10.5))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 24)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Divider().background(Theme.Colors.hairline)
         }
     }
 }

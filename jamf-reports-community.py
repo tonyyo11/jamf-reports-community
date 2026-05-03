@@ -42,7 +42,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
 from pathlib import Path
@@ -2212,11 +2212,23 @@ def _emit_summary_json(
     summary_file = summaries_dir / f"summary_{date_str}.json"
 
     if summary_file.exists() and not force:
-        print(
-            f"  [note] Trend summary for {date_str} already exists; "
-            f"re-run with --force-summary to overwrite ({summary_file})"
-        )
-        return
+        # Validate existing file before skipping.
+        try:
+            existing = json.loads(summary_file.read_text(encoding="utf-8"))
+            required_keys = {"date", "totalDevices", "source"}
+            if not all(k in existing for k in required_keys):
+                raise ValueError("missing required keys")
+        except Exception as exc:
+            print(
+                f"  [warn] Existing summary {summary_file} is invalid "
+                f"({exc}); regenerating"
+            )
+        else:
+            print(
+                f"  [note] Trend summary for {date_str} already exists; "
+                f"re-run with --force-summary to overwrite ({summary_file})"
+            )
+            return
 
     df = getattr(csv_dash, "_df", None) if csv_dash else None
     if df is None:
@@ -2237,10 +2249,10 @@ def _emit_summary_json(
         compliant = df[fv_col].apply(lambda v: _security_control_is_compliant("filevault", v)).sum()
         fv_pct = (compliant / total_devices * 100.0)
 
-    # 2. Compliance (NIST/CIS) — fail-closed on unparseable values
+    # 2. Compliance (NIST/CIS) — skip metric on unparseable values
     comp_cfg = config.compliance
     count_col = comp_cfg.get("failures_count_column")
-    comp_pct = 0.0
+    comp_pct = None
     if count_col and count_col in df.columns:
         compliant = 0
         unparseable_count = 0
@@ -2255,11 +2267,11 @@ def _emit_summary_json(
                     print(f"  [error] Unparseable compliance value: {exc}")
         if unparseable_count > 0:
             print(
-                f"  [error] {unparseable_count} devices have unparseable compliance "
-                f"values in '{count_col}' — exiting (fail-closed)"
+                f"  [warn] {unparseable_count} devices have unparseable compliance "
+                f"values in '{count_col}' — skipping compliancePct in summary"
             )
-            sys.exit(1)
-        comp_pct = (compliant / total_devices * 100.0) if total_devices > 0 else 0.0
+        else:
+            comp_pct = (compliant / total_devices * 100.0) if total_devices > 0 else 0.0
 
     # 3. Stale count (30d+)
     checkin_col = csv_dash._col("last_checkin")
@@ -2311,17 +2323,18 @@ def _emit_summary_json(
         except Exception:
             pass
 
-    summary_data = {
+    summary_data: dict[str, Any] = {
         "date": date_str,
         "totalDevices": int(total_devices),
         "fileVaultPct": round(fv_pct, 1),
-        "compliancePct": round(comp_pct, 1),
         "staleCount": int(stale_count),
         "osCurrentPct": round(os_pct, 1),
         "crowdstrikePct": round(cs_pct, 1),
         "patchPct": round(patch_pct, 1),
         "source": "csv",
     }
+    if comp_pct is not None:
+        summary_data["compliancePct"] = round(comp_pct, 1)
 
     _atomic_write_summary(summary_file, summaries_dir, summary_data)
 
@@ -2365,7 +2378,7 @@ def _build_summary_from_bridge(
     them as nil and skips them, rather than rendering a flat 0% line that users could
     mistake for a real reading.
     """
-    if not bridge or not bridge.is_available():
+    if not bridge:
         return None
 
     total_devices = 0
@@ -2375,8 +2388,13 @@ def _build_summary_from_bridge(
         for entry in sec:
             if isinstance(entry, dict) and entry.get("section") == "summary":
                 data = entry.get("data") or {}
-                total_devices = int(data.get("total_devices") or 0)
-                fv_pct = _percent_string_to_float(data.get("filevault_encrypted_pct"))
+                total_devices = _to_int(data.get("total_devices"))
+                pct_raw = data.get("filevault_encrypted_pct")
+                if pct_raw not in (None, ""):
+                    fv_pct = _percent_string_to_float(pct_raw)
+                elif total_devices > 0:
+                    encrypted = _to_int(data.get("filevault_encrypted"))
+                    fv_pct = (encrypted / total_devices) * 100.0
                 break
     except Exception:
         pass
@@ -11888,6 +11906,30 @@ class HtmlReport:
         return _escape(str(value), quote=True)
 
     @staticmethod
+    def _safe_css_color(value: Any) -> str:
+        """Return a simple hex CSS color, or an empty string for unsafe input."""
+        candidate = str(value or "").strip()
+        if re.fullmatch(
+            r"#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})",
+            candidate,
+        ):
+            return candidate
+        return ""
+
+    @staticmethod
+    def _safe_image_mime(data: bytes) -> Optional[str]:
+        """Return a safe bitmap MIME type for inline report logos."""
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if data.startswith((b"GIF87a", b"GIF89a")):
+            return "image/gif"
+        if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "image/webp"
+        return None
+
+    @staticmethod
     def _safe_href(url: str) -> str:
         """Return url only if it uses https:// or http://; otherwise return '#'."""
         return url if url.startswith(("https://", "http://")) else "#"
@@ -12409,22 +12451,28 @@ class HtmlReport:
             if not points:
                 continue
             path = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
-            color = str(item.get("borderColor", "#0076B6"))
+            color = self._safe_css_color(item.get("borderColor")) or "#0076B6"
+            stroke_width = float(item.get("borderWidth", 2))
             paths.append(
-                f'<polyline fill="none" stroke="{color}" stroke-width="{float(item.get("borderWidth", 2)):.1f}" '
+                f'<polyline fill="none" stroke="{self._html_text(color)}" '
+                f'stroke-width="{stroke_width:.1f}" '
                 f'stroke-linejoin="round" stroke-linecap="round" points="{path}"/>'
             )
             for x_pos, y_pos in points:
                 paths.append(
-                    f'<circle cx="{x_pos:.1f}" cy="{y_pos:.1f}" r="3.2" fill="{color}" />'
+                    f'<circle cx="{x_pos:.1f}" cy="{y_pos:.1f}" r="3.2" '
+                    f'fill="{self._html_text(color)}" />'
                 )
 
-        legend = "".join(
-            '<span class="chart-legend-item">'
-            f'<span class="chart-legend-swatch" style="background:{self._html_text(item.get("borderColor", "#0076B6"))}"></span>'
-            f'{self._html_text(item.get("label", "Series"))}</span>'
-            for item in series
-        )
+        legend_parts = []
+        for item in series:
+            color = self._safe_css_color(item.get("borderColor")) or "#0076B6"
+            legend_parts.append(
+                '<span class="chart-legend-item">'
+                f'<span class="chart-legend-swatch" style="background:{color}"></span>'
+                f'{self._html_text(item.get("label", "Series"))}</span>'
+            )
+        legend = "".join(legend_parts)
         return (
             f'<svg class="trend-svg" viewBox="0 0 {int(width)} {int(height)}" '
             'role="img" aria-label="Trend chart">'
@@ -12529,8 +12577,8 @@ class HtmlReport:
         Colour palette and layout inspired by DevliegereM/JamfReport.
         See the code-level comment above the HtmlReport class for attribution.
         """
-        accent = (self._config.get("branding", "accent_color") or "").strip()
-        accent_dark = (self._config.get("branding", "accent_dark") or "").strip()
+        accent = self._safe_css_color(self._config.get("branding", "accent_color"))
+        accent_dark = self._safe_css_color(self._config.get("branding", "accent_dark"))
         overrides = ""
         if accent or accent_dark:
             parts = []
@@ -13087,9 +13135,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             return ""
         try:
             import base64
-            import mimetypes
-            mime = mimetypes.guess_type(str(logo_path))[0] or "image/png"
-            b64 = base64.b64encode(logo_path.read_bytes()).decode()
+
+            data = logo_path.read_bytes()
+            if len(data) > 2 * 1024 * 1024:
+                return ""
+            mime = self._safe_image_mime(data)
+            if not mime:
+                return ""
+            b64 = base64.b64encode(data).decode()
             return (
                 f'<img src="data:{mime};base64,{b64}" alt="" '
                 f'style="height:28px;margin-right:10px;vertical-align:middle;'
@@ -13967,6 +14020,8 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             if org_name
             else f"Jamf Pro Report \u2014 {instance_url}"
         )
+        safe_brand_label = self._html_text(brand_label)
+        safe_page_title = self._html_text(page_title)
         logo_html = self._logo_html()
 
         return f"""<!DOCTYPE html>
@@ -13974,13 +14029,13 @@ document.querySelectorAll('.tree-search').forEach((input) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{page_title}</title>
+<title>{safe_page_title}</title>
 <style>{css}</style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="topbar-brand">{logo_html}{brand_label}</div>
+  <div class="topbar-brand">{logo_html}{safe_brand_label}</div>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <div class="topbar-meta">
       <strong>{self._html_text(instance_url, "N/A")}</strong><br>
@@ -15773,6 +15828,237 @@ def cmd_launchagent_setup(
         print("  Triggered one immediate run with launchctl kickstart.")
 
 
+def _multi_launchagent_profile_list(
+    workspace_root: Optional[str],
+    profiles: Optional[str],
+    profile_filter: Optional[str],
+) -> tuple[Path, list[str]]:
+    """Resolve multi-profile LaunchAgent targets from initialized workspaces."""
+    root = Path(workspace_root or Path.home() / "Jamf-Reports").expanduser().resolve()
+
+    def valid_profile(value: str) -> str:
+        return _validate_profile_override(value)
+
+    if profiles:
+        names = [
+            valid_profile(item.strip())
+            for item in profiles.split(",")
+            if item.strip()
+        ]
+    else:
+        names = []
+        if root.is_dir():
+            for child in sorted(root.iterdir(), key=lambda p: p.name):
+                if not child.is_dir() or not (child / "config.yaml").exists():
+                    continue
+                try:
+                    names.append(valid_profile(child.name))
+                except SystemExit:
+                    continue
+        if profile_filter:
+            names = [name for name in names if fnmatch(name, profile_filter)]
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        if name and name not in seen:
+            deduped.append(name)
+            seen.add(name)
+    return root, deduped
+
+
+def _multi_launchagent_run_one(
+    profile: str,
+    workspace_root: Path,
+    mode: str,
+    csv_inbox_dir: Optional[str],
+    csv_freshness_days: int,
+    historical_csv_dir: Optional[str],
+    notify_url: Optional[str],
+) -> dict[str, Any]:
+    """Run one profile's LaunchAgent workflow and return a compact result."""
+    config_path = workspace_root / profile / "config.yaml"
+    if not config_path.exists():
+        return {
+            "profile": profile,
+            "success": False,
+            "error": f"config not found: {config_path}",
+        }
+
+    started_at = datetime.now(timezone.utc).isoformat()
+    try:
+        config = Config(str(config_path))
+        _apply_profile_override(config, profile, "launchagent-run")
+        automation_dir = config.base_dir / "automation"
+        automation_dir.mkdir(parents=True, exist_ok=True)
+        status_path = automation_dir / f"multi_{_filename_component(profile)}_status.json"
+
+        per_historical_dir = historical_csv_dir
+        if per_historical_dir is None:
+            resolved_hist = _resolve_historical_csv_dir(None, config.base_dir, mode)
+            per_historical_dir = str(resolved_hist) if resolved_hist else None
+
+        per_csv_inbox_dir = csv_inbox_dir
+        per_csv_freshness_days = csv_freshness_days
+        if per_csv_inbox_dir is None:
+            resolved_inbox, per_csv_freshness_days = _resolve_csv_inbox_settings(
+                None,
+                csv_freshness_days,
+                config.base_dir,
+                mode,
+            )
+            per_csv_inbox_dir = str(resolved_inbox) if resolved_inbox else None
+
+        print(f"\n=== Multi profile: {profile} ===")
+        cmd_launchagent_run(
+            config,
+            mode,
+            per_csv_inbox_dir,
+            per_csv_freshness_days,
+            per_historical_dir,
+            str(status_path),
+            notify_url,
+        )
+        return {
+            "profile": profile,
+            "success": True,
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "status_file": str(status_path),
+        }
+    except SystemExit as exc:
+        return {
+            "profile": profile,
+            "success": False,
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "error": str(exc),
+        }
+    except Exception as exc:  # noqa: BLE001 - aggregate profile failures.
+        return {
+            "profile": profile,
+            "success": False,
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def cmd_multi_launchagent_run(
+    mode: str,
+    workspace_root: Optional[str],
+    profiles: Optional[str],
+    profile_filter: Optional[str],
+    sequential: bool,
+    csv_inbox_dir: Optional[str],
+    csv_freshness_days: int,
+    historical_csv_dir: Optional[str],
+    status_file: Optional[str],
+    notify_url: Optional[str] = None,
+) -> None:
+    """Run one automation workflow across initialized profile workspaces."""
+    started_at = datetime.now(timezone.utc).isoformat()
+    root, targets = _multi_launchagent_profile_list(workspace_root, profiles, profile_filter)
+    status: dict[str, Any] = {
+        "command": "multi-launchagent-run",
+        "finished_at": None,
+        "mode": mode,
+        "profile_count": len(targets),
+        "profiles": targets,
+        "started_at": started_at,
+        "status_file": status_file,
+        "success": False,
+        "workspace_root": str(root),
+    }
+    if profile_filter:
+        status["profile_filter"] = profile_filter
+    if profiles:
+        status["profile_list"] = profiles
+
+    if not targets:
+        status["error"] = "no initialized profile workspaces matched the multi-profile target"
+        status["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _write_status_file(status_file, status)
+        raise SystemExit(f"Error: {status['error']}")
+
+    print("\nMulti-profile LaunchAgent run")
+    print(f"  mode: {mode}")
+    print(f"  workspace root: {root}")
+    print(f"  profiles: {', '.join(targets)}")
+    print(f"  execution: {'sequential' if sequential else 'parallel'}")
+
+    if sequential or len(targets) == 1:
+        results = [
+            _multi_launchagent_run_one(
+                profile,
+                root,
+                mode,
+                csv_inbox_dir,
+                csv_freshness_days,
+                historical_csv_dir,
+                notify_url,
+            )
+            for profile in targets
+        ]
+    else:
+        max_workers = min(4, len(targets))
+        results = []
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(
+                    _multi_launchagent_run_one,
+                    profile,
+                    root,
+                    mode,
+                    csv_inbox_dir,
+                    csv_freshness_days,
+                    historical_csv_dir,
+                    notify_url,
+                ): profile
+                for profile in targets
+            }
+            done, not_done = wait(futures.keys(), timeout=3600)  # 1 hour timeout
+            for future in done:
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    profile = futures[future]
+                    results.append({
+                        "profile": profile,
+                        "success": False,
+                        "error": str(exc),
+                        "started_at": None,
+                        "finished_at": datetime.now(timezone.utc).isoformat(),
+                    })
+            for future in not_done:
+                future.cancel()
+                profile = futures[future]
+                results.append({
+                    "profile": profile,
+                    "success": False,
+                    "error": "timeout after 3600s",
+                    "started_at": None,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                })
+        results.sort(key=lambda item: str(item.get("profile", "")))
+
+    failures = [item for item in results if not item.get("success")]
+    status["results"] = results
+    status["success"] = not failures
+    status["finished_at"] = datetime.now(timezone.utc).isoformat()
+    _write_status_file(status_file, status)
+
+    print("\nMulti-profile summary")
+    for item in results:
+        label = "[ok]" if item.get("success") else "[fail]"
+        print(f"  {label} {item.get('profile')}")
+        if item.get("error"):
+            print(f"       {item['error']}")
+    if failures:
+        failed_names = ", ".join(str(item.get("profile", "")) for item in failures)
+        raise SystemExit(f"Error: multi-profile run failed for: {failed_names}")
+
+
 # ---------------------------------------------------------------------------
 # Managed-state patching (requires jamf-cli v1.6.0+)
 # ---------------------------------------------------------------------------
@@ -16228,7 +16514,12 @@ def _capability_commands() -> dict[str, list[str]]:
         "jamf_school": [
             "school-generate", "school-collect", "school-scaffold", "school-check",
         ],
-        "automation": ["workspace-init", "launchagent-setup", "launchagent-run"],
+        "automation": [
+            "workspace-init",
+            "launchagent-setup",
+            "launchagent-run",
+            "multi-launchagent-run",
+        ],
     }
 
 
@@ -16445,6 +16736,7 @@ def main() -> None:
             "  workspace-init Create a per-profile reporting workspace skeleton\n"
             "  launchagent-setup Create a LaunchAgent for scheduled reporting\n"
             "  launchagent-run   Internal runner used by generated LaunchAgents\n"
+            "  multi-launchagent-run Internal runner for multi-profile LaunchAgents\n"
             "  capabilities Print machine-readable app/report capabilities\n"
             "  scaffold      Generate a starter config.yaml from a Jamf Pro CSV\n"
             "  check         Verify jamf-cli auth and config\n"
@@ -16470,6 +16762,7 @@ def main() -> None:
             "workspace-init",
             "launchagent-setup",
             "launchagent-run",
+            "multi-launchagent-run",
             "capabilities",
             "scaffold",
             "check",
@@ -16599,6 +16892,23 @@ def main() -> None:
         help="Kickstart the LaunchAgent immediately after loading it",
     )
     parser.add_argument(
+        "--multi-profiles",
+        help="Comma-separated profile list for multi-launchagent-run",
+    )
+    parser.add_argument(
+        "--multi-filter",
+        help="Glob filter for initialized profile workspaces in multi-launchagent-run",
+    )
+    parser.add_argument(
+        "--multi-sequential",
+        action="store_true",
+        help="Run multi-launchagent-run profiles one at a time",
+    )
+    parser.add_argument(
+        "--base-profile",
+        help="UI base profile for generated multi LaunchAgents (metadata only)",
+    )
+    parser.add_argument(
         "--disabled",
         action="store_true",
         help="Write the LaunchAgent disabled and unload any existing instance",
@@ -16685,6 +16995,23 @@ def main() -> None:
 
     if args.command == "capabilities":
         cmd_capabilities(args.output)
+        return
+
+    if args.command == "multi-launchagent-run":
+        if not args.mode:
+            parser.error("multi-launchagent-run requires --mode")
+        cmd_multi_launchagent_run(
+            args.mode,
+            args.workspace_root,
+            args.multi_profiles,
+            args.multi_filter,
+            args.multi_sequential,
+            args.csv_inbox_dir,
+            _resolve_csv_freshness_days(args.csv_freshness_days),
+            args.historical_csv_dir,
+            args.status_file,
+            args.notify,
+        )
         return
 
     if args.command in {"launchagent-setup", "launchagent-run"}:

@@ -25,13 +25,26 @@ struct BackupsView: View {
         backups.first
     }
 
+    private var diffSelectionHint: String {
+        switch selectedBackups.count {
+        case 0: "Command-click to select multiple"
+        case 1: "Select 1 more to diff"
+        case 2: "Ready to diff"
+        default: "Select exactly 2 to diff"
+        }
+    }
+
+    private var shouldShowBackupLogBody: Bool {
+        isRunningBackup || !backupOutput.isEmpty || backupExitCode != nil
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                summary
                 errorBanner
                 backupsTable
-                summary
                 logCard
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -59,6 +72,11 @@ struct BackupsView: View {
                     PNPButton(title: "Reveal in Finder", icon: "folder") {
                         SystemActions.openFolder(backupsDirectory)
                     }
+                    Mono(
+                        text: diffSelectionHint,
+                        size: 10.5,
+                        color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Colors.fgMuted
+                    )
                     PNPButton(
                         title: isRunningDiff ? "Diffing..." : "Diff Selected",
                         icon: "arrow.left.arrow.right",
@@ -132,7 +150,13 @@ struct BackupsView: View {
                             Text(backup.label.isEmpty ? backup.name : backup.label)
                                 .font(.system(size: 12.5, weight: .semibold))
                                 .foregroundStyle(Theme.Colors.fg)
-                            Mono(text: backup.name, size: 10.5)
+                            if backup.label.isEmpty {
+                                Text("No label set")
+                                    .font(Theme.Fonts.mono(10.5))
+                                    .foregroundStyle(Theme.Colors.fgMuted.opacity(0.65))
+                            } else {
+                                Mono(text: backup.name, size: 10.5)
+                            }
                         }
                     }
                     TableColumn("Created") { backup in
@@ -198,6 +222,9 @@ struct BackupsView: View {
                     Image(systemName: "terminal")
                         .foregroundStyle(Theme.Colors.gold)
                     Mono(text: isRunningBackup ? "jrc backup running" : "jrc backup output", color: Theme.Colors.fg2)
+                    if !shouldShowBackupLogBody {
+                        Mono(text: "No output yet.", size: 10.5)
+                    }
                     Spacer()
                     if let backupExitCode {
                         Pill(text: "EXIT \(backupExitCode)", tone: backupExitCode == 0 ? .teal : .danger)
@@ -205,21 +232,17 @@ struct BackupsView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                Divider().background(Theme.Colors.hairlineStrong)
-                VStack(alignment: .leading, spacing: 4) {
-                    if backupOutput.isEmpty {
-                        Text("No output yet.")
-                            .font(Theme.Fonts.mono(11.5))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                    } else {
+                if shouldShowBackupLogBody {
+                    Divider().background(Theme.Colors.hairlineStrong)
+                    VStack(alignment: .leading, spacing: 4) {
                         ForEach(backupOutput) { line in
                             Text(line.text)
                                 .font(Theme.Fonts.mono(11.5))
                                 .foregroundStyle(color(for: line.level))
                         }
                     }
+                    .padding(14)
                 }
-                .padding(14)
             }
             .background(Theme.Colors.codeBG)
         }
@@ -242,10 +265,7 @@ struct BackupsView: View {
                             .foregroundStyle(Theme.Colors.fgMuted)
                     } else {
                         ForEach(diffOutput) { line in
-                            Text(line.text)
-                                .font(Theme.Fonts.mono(11.5))
-                                .foregroundStyle(color(for: line.level))
-                                .textSelection(.enabled)
+                            DiffLineView(text: line.text, fallbackColor: color(for: line.level))
                         }
                     }
                 }
@@ -322,6 +342,53 @@ struct BackupsView: View {
         case .warn: Theme.Colors.warn
         case .fail: Theme.Colors.danger
         }
+    }
+}
+
+private struct DiffLineView: View {
+    let text: String
+    let fallbackColor: Color
+
+    private var kind: DiffKind {
+        if text.hasPrefix("@@") { return .hunk }
+        if text.hasPrefix("+++") || text.hasPrefix("---") { return .fileHeader }
+        if text.hasPrefix("+") { return .addition }
+        if text.hasPrefix("-") { return .deletion }
+        return .unchanged
+    }
+
+    var body: some View {
+        Text(text)
+            .font(Theme.Fonts.mono(11.5))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(background, in: RoundedRectangle(cornerRadius: 4))
+            .textSelection(.enabled)
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .addition: Theme.Colors.ok
+        case .deletion: Theme.Colors.danger
+        case .hunk: Theme.Colors.goldBright
+        case .fileHeader: Theme.Colors.fg2
+        case .unchanged: text.hasPrefix("[") ? fallbackColor : Theme.Colors.fgMuted
+        }
+    }
+
+    private var background: Color {
+        switch kind {
+        case .addition: Theme.Colors.ok.opacity(0.10)
+        case .deletion: Theme.Colors.danger.opacity(0.10)
+        case .hunk: Theme.Colors.gold.opacity(0.10)
+        case .fileHeader, .unchanged: .clear
+        }
+    }
+
+    private enum DiffKind {
+        case addition, deletion, unchanged, hunk, fileHeader
     }
 }
 

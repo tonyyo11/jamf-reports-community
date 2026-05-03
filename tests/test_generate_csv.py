@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import shutil
 from pathlib import Path
 
 import openpyxl
@@ -21,7 +22,8 @@ def test_generate_dummy_computer_csv_workbook(
     config._data["jamf_cli"]["enabled"] = False
     csv_path = fixtures_root / "csv" / "dummy_all_macs.csv"
     out_path = tmp_path / "dummy-report.xlsx"
-    historical_dir = fixtures_root / "snapshots" / "computers"
+    historical_dir = tmp_path / "snapshots" / "computers"
+    shutil.copytree(fixtures_root / "snapshots" / "computers", historical_dir)
 
     report_path = jrc.cmd_generate(
         config,

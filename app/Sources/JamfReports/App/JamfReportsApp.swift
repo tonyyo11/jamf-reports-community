@@ -26,6 +26,25 @@ struct JamfReportsApp: App {
                 }
                 .keyboardShortcut("0", modifiers: .command)
             }
+
+            CommandGroup(after: .newItem) {
+                Button("Refresh") {
+                    NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
+                Button("Find...") {
+                    NotificationCenter.default.post(name: .focusSearch, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+            }
+
+            CommandGroup(after: .appInfo) {
+                Button(workspace.demoMode ? "Disable Demo Mode" : "Enable Demo Mode") {
+                    workspace.setDemoMode(!workspace.demoMode)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+            }
         }
     }
 }
@@ -33,4 +52,6 @@ struct JamfReportsApp: App {
 extension Notification.Name {
     static let cycleSidebar = Notification.Name("JamfReports.cycleSidebar")
     static let navigateToTab = Notification.Name("JamfReports.navigateToTab")
+    static let refreshActiveTab = Notification.Name("JamfReports.refreshActiveTab")
+    static let focusSearch = Notification.Name("JamfReports.focusSearch")
 }

@@ -34,6 +34,12 @@ def test_generate_writes_summary_json(config_factory, monkeypatch, tmp_path, jrc
     assert payload["counts"]["sheets_written"] >= 1
     assert "Report Sources" in payload["sheets"]["all"]
 
+    trend_summaries = list((tmp_path / "snapshots" / "summaries").glob("summary_*.json"))
+    assert len(trend_summaries) == 1
+    trend_payload = json.loads(trend_summaries[0].read_text(encoding="utf-8"))
+    assert trend_payload["source"] == "jamf-cli"
+    assert trend_payload["totalDevices"] == 101
+
 
 def test_generate_skips_trend_summary_when_workbook_close_fails(
     config_factory,
@@ -193,3 +199,67 @@ def test_build_summary_from_bridge_omits_csv_only_metrics(jrc, fixtures_root) ->
     assert "crowdstrikePct" not in summary
     assert summary["totalDevices"] == 50
     assert summary["fileVaultPct"] == 92.0
+
+
+def test_build_summary_from_bridge_uses_cached_data_without_jamf_cli(
+    config_factory,
+    monkeypatch,
+    jrc,
+) -> None:
+    """Cached jamf-cli JSON can drive trend summaries when the binary is absent."""
+    config = config_factory("dummy.yaml")
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: None)
+    bridge = jrc._build_jamf_cli_bridge(config, save_output=False)
+
+    assert bridge.is_available() is False
+
+    summary = jrc._build_summary_from_bridge(config, bridge, "2026-04-27")
+
+    assert summary is not None
+    assert summary["source"] == "jamf-cli"
+    assert summary["totalDevices"] == 101
+    assert summary["fileVaultPct"] == 99.0
+
+
+def test_build_summary_from_bridge_calculates_filevault_pct_from_counts(
+    jrc,
+    fixtures_root,
+) -> None:
+    """Documented count-only security summaries still produce FileVault percent."""
+    config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
+
+    class StubBridge:
+        def security_report(self) -> list[dict[str, object]]:
+            return [{
+                "section": "summary",
+                "data": {"total_devices": 50, "filevault_encrypted": 45},
+            }]
+
+        def inventory_summary(self) -> list[dict[str, object]]:
+            return [{"os_version": "15.7.3", "count": 50}]
+
+        def device_compliance(self) -> list[dict[str, object]]:
+            return []
+
+        def patch_status(self) -> list[dict[str, object]]:
+            return []
+
+    summary = jrc._build_summary_from_bridge(config, StubBridge(), "2026-04-27")
+
+    assert summary is not None
+    assert summary["totalDevices"] == 50
+    assert summary["fileVaultPct"] == 90.0
+
+
+def test_config_factory_redirects_trend_summaries_to_tmp_path(
+    config_factory,
+    fixtures_root,
+    tmp_path,
+) -> None:
+    """Fixture configs must not write generated summaries into committed snapshots."""
+    config = config_factory("dummy.yaml")
+
+    historical_dir = config.resolve_path("charts", "historical_csv_dir")
+
+    assert historical_dir == tmp_path / "snapshots"
+    assert fixtures_root not in historical_dir.parents

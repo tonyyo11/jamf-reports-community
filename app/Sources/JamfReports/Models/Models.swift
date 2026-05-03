@@ -204,6 +204,15 @@ struct DeviceRow: Identifiable, Sendable {
     var id: String { serial }
     let name: String
     let serial: String
+    var jamfID: String? = nil
+    var numericJamfID: String? {
+        guard let trimmed = jamfID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              trimmed.allSatisfy({ $0 >= "0" && $0 <= "9" }) else {
+            return nil
+        }
+        return trimmed
+    }
     let os: String
     let user: String
     let dept: String
@@ -246,6 +255,7 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     }
 
     var id: String
+    var jamfID: String?
     var name: String
     var serial: String
     var osVersion: String
@@ -275,6 +285,14 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var displayName: String { name.isEmpty ? "Unknown device" : name }
     var displaySerial: String { serial.isEmpty ? "No serial" : serial }
     var patchFailureCount: Int { patchFailures.count }
+    var numericJamfID: String? {
+        guard let trimmed = jamfID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              trimmed.allSatisfy({ $0 >= "0" && $0 <= "9" }) else {
+            return nil
+        }
+        return trimmed
+    }
 
     var securityGapCount: Int {
         [fileVault, sip, firewall, gatekeeper, bootstrapToken].filter(Self.statusLooksBad).count
@@ -295,7 +313,7 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
 
     var searchableText: String {
         [
-            name, serial, osVersion, model, user, email, department, building, site,
+            jamfID ?? "", name, serial, osVersion, model, user, email, department, building, site,
             ipAddress, assetTag, managedState, source,
         ]
         .joined(separator: " ")
@@ -303,6 +321,7 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     }
 
     mutating func merge(_ other: DeviceInventoryRecord) {
+        jamfID = firstNonEmpty(jamfID, other.jamfID)
         name = firstNonEmpty(name, other.name)
         serial = firstNonEmpty(serial, other.serial)
         osVersion = firstNonEmpty(osVersion, other.osVersion)
@@ -340,6 +359,7 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     static func empty(id: String, source: String) -> DeviceInventoryRecord {
         DeviceInventoryRecord(
             id: id,
+            jamfID: nil,
             name: "",
             serial: "",
             osVersion: "",
@@ -384,11 +404,12 @@ struct DeviceInventorySnapshot: Sendable {
     var sourceFiles: [String]
     var warnings: [String]
     var generatedAt: String
+    var generatedDate: Date?
     var isDemo: Bool
 
     static let empty = DeviceInventorySnapshot(
         devices: [], patchTitles: [], sourceFiles: [], warnings: [],
-        generatedAt: "", isDemo: false
+        generatedAt: "", generatedDate: nil, isDemo: false
     )
 
     var totalDevices: Int { devices.count }
@@ -629,6 +650,11 @@ private func firstNonEmpty(_ lhs: String, _ rhs: String) -> String {
     lhs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? rhs : lhs
 }
 
+private func firstNonEmpty(_ lhs: String?, _ rhs: String?) -> String? {
+    let trimmed = lhs?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? rhs : lhs
+}
+
 private func minKnown(_ lhs: Int?, _ rhs: Int?) -> Int? {
     switch (lhs, rhs) {
     case (.some(let a), .some(let b)): min(a, b)
@@ -661,10 +687,11 @@ private func valueLooksGood(_ value: String) -> Bool {
 
 struct TrendSeries: Identifiable, Sendable {
     enum Metric: String, CaseIterable, Identifiable, Sendable {
-        case activeDevices, compliance, fileVault, osCurrent, crowdstrike, stale, patch
+        case stability, activeDevices, compliance, fileVault, osCurrent, crowdstrike, stale, patch
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
+            case .stability: return "Stability Index"
             case .activeDevices: return "Active Devices"
             case .compliance:  return "NIST 800-53r5 Moderate"
             case .fileVault:   return "FileVault Encryption"
@@ -683,6 +710,7 @@ struct TrendSeries: Identifiable, Sendable {
         var minY: Double {
             switch self {
             case .activeDevices: return 0
+            case .stability:   return 40
             case .compliance:  return 40
             case .fileVault:   return 60
             case .osCurrent:   return 30
@@ -700,7 +728,8 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var colorHex: UInt32 {
             switch self {
-            case .activeDevices: return 0xE8B614
+            case .stability:   return 0xE8B614
+            case .activeDevices: return 0x8E8E93
             case .compliance:  return 0xC9970A
             case .fileVault:   return 0x30D158
             case .osCurrent:   return 0x0A84FF
@@ -711,14 +740,40 @@ struct TrendSeries: Identifiable, Sendable {
         }
     }
 
+    static func stabilityIndex(
+        compliancePct: Double?,
+        patchPct: Double,
+        staleCount: Int,
+        totalDevices: Int
+    ) -> Double? {
+        guard let compliancePct else { return nil }
+        let stalePct = totalDevices > 0
+            ? (Double(staleCount) / Double(totalDevices)) * 100
+            : 0
+        let staleInverse = 100 - stalePct
+        let raw = 0.4 * compliancePct + 0.4 * patchPct + 0.2 * staleInverse
+        return min(max(raw, 0), 100)
+    }
+
     var id: String { metric.rawValue }
     let metric: Metric
     let values: [Double]
 }
 
+extension DailySummary {
+    var stabilityIndex: Double? {
+        TrendSeries.stabilityIndex(
+            compliancePct: compliancePct,
+            patchPct: patchPct,
+            staleCount: staleCount,
+            totalDevices: totalDevices
+        )
+    }
+}
+
 // MARK: - Trend range
 
 enum TrendRange: String, CaseIterable, Identifiable, Sendable {
-    case w4 = "4w", w12 = "12w", w26 = "26w", w52 = "52w", all = "All"
+    case w4 = "W4", w12 = "W12", w26 = "W26", w52 = "W52", all = "All"
     var id: String { rawValue }
 }

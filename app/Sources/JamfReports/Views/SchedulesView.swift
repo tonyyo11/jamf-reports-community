@@ -345,24 +345,17 @@ struct SchedulesView: View {
         runLogLines = []
         let buf = LineBuffer()
 
-        let exit: Int32
-        if let target = schedule.multiTarget {
-            exit = await bridge.runMulti(target: target, subcommand: ["pro", "collect"]) { line in
-                buf.append(line)
-                Task { @MainActor in runLogLines = buf.lines }
-            }
-        } else {
-            guard ProfileService.isValid(schedule.profile),
-                  let agentLabel = LaunchAgentWriter.label(for: schedule)
-            else {
-                lastRunMessage = "invalid schedule label"
-                isRunning = false
-                return
-            }
-            exit = await LaunchAgentWriter.runNow(agentLabel) { line in
-                buf.append(line)
-                Task { @MainActor in runLogLines = buf.lines }
-            }
+        guard let agentLabel = LaunchAgentWriter.label(for: schedule),
+              schedule.isMulti || ProfileService.isValid(schedule.profile)
+        else {
+            lastRunMessage = "invalid schedule label"
+            isRunning = false
+            return
+        }
+
+        let exit = await LaunchAgentWriter.runNow(agentLabel) { line in
+            buf.append(line)
+            Task { @MainActor in runLogLines = buf.lines }
         }
 
         runLogLines = buf.lines
@@ -531,7 +524,7 @@ struct ScheduleFormState {
         let target = resolvedMultiTarget
         return Schedule(
             name: name.trimmingCharacters(in: .whitespaces),
-            profile: target == nil ? profile : "",
+            profile: profile,
             schedule: scheduleString,
             cadence: cadenceType.rawValue.lowercased(),
             mode: mode,

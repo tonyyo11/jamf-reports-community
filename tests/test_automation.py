@@ -390,3 +390,100 @@ def test_default_launchagent_label_lowercases_uppercase_profile_stem(jrc, tmp_pa
     # Tail must contain only the Swift-allowed character set.
     tail = label[len(_PREFIX) + 1:]
     assert tail == tail.lower()
+
+
+def test_multi_launchagent_profile_list_discovers_initialized_workspaces(jrc, tmp_path: Path) -> None:
+    root = tmp_path / "Jamf-Reports"
+    for name in ["alpha", "beta", "prod-east"]:
+        workspace = root / name
+        workspace.mkdir(parents=True)
+        (workspace / "config.yaml").write_text("jamf_cli:\n  profile: test\n", encoding="utf-8")
+    (root / "not-initialized").mkdir()
+
+    resolved_root, profiles = jrc._multi_launchagent_profile_list(
+        str(root),
+        profiles=None,
+        profile_filter="prod-*",
+    )
+
+    assert resolved_root == root.resolve()
+    assert profiles == ["prod-east"]
+
+
+def test_multi_launchagent_profile_list_validates_explicit_profiles(jrc, tmp_path: Path) -> None:
+    root = tmp_path / "Jamf-Reports"
+
+    _, profiles = jrc._multi_launchagent_profile_list(
+        str(root),
+        profiles="alpha,beta,alpha",
+        profile_filter=None,
+    )
+
+    assert profiles == ["alpha", "beta"]
+
+
+def test_multi_launchagent_run_writes_failure_status_when_no_profiles(jrc, tmp_path: Path) -> None:
+    status_path = tmp_path / "multi-status.json"
+
+    with pytest.raises(SystemExit, match="no initialized profile"):
+        jrc.cmd_multi_launchagent_run(
+            mode="jamf-cli-only",
+            workspace_root=str(tmp_path / "empty-root"),
+            profiles=None,
+            profile_filter=None,
+            sequential=True,
+            csv_inbox_dir=None,
+            csv_freshness_days=14,
+            historical_csv_dir=None,
+            status_file=str(status_path),
+        )
+
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["success"] is False
+    assert status["profile_count"] == 0
+    assert "no initialized profile" in status["error"]
+
+
+def test_multi_launchagent_run_invokes_each_initialized_profile(
+    jrc,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = tmp_path / "Jamf-Reports"
+    for name in ["alpha", "beta"]:
+        workspace = root / name
+        workspace.mkdir(parents=True)
+        (workspace / "config.yaml").write_text(
+            "jamf_cli:\n"
+            f"  profile: {name}\n"
+            "automation:\n"
+            "  generate_xlsx: false\n",
+            encoding="utf-8",
+        )
+    status_path = tmp_path / "multi-status.json"
+    calls: list[tuple[str, str]] = []
+
+    def fake_launchagent_run(config, mode, csv_inbox_dir, csv_freshness_days,
+                             historical_csv_dir, status_file, notify_url=None):
+        del csv_inbox_dir, csv_freshness_days, historical_csv_dir, notify_url
+        calls.append((config.jamf_cli["profile"], mode))
+        Path(status_file).write_text(json.dumps({"success": True}), encoding="utf-8")
+
+    monkeypatch.setattr(jrc, "cmd_launchagent_run", fake_launchagent_run)
+
+    jrc.cmd_multi_launchagent_run(
+        mode="jamf-cli-only",
+        workspace_root=str(root),
+        profiles="alpha,beta",
+        profile_filter=None,
+        sequential=True,
+        csv_inbox_dir=None,
+        csv_freshness_days=14,
+        historical_csv_dir=None,
+        status_file=str(status_path),
+    )
+
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert calls == [("alpha", "jamf-cli-only"), ("beta", "jamf-cli-only")]
+    assert status["success"] is True
+    assert [item["profile"] for item in status["results"]] == ["alpha", "beta"]

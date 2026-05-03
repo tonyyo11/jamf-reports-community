@@ -1,11 +1,24 @@
 import Foundation
 import Observation
 
+struct TrendPoint: Identifiable, Sendable, Equatable {
+    let date: Date
+    let value: Double
+
+    var id: Date { date }
+}
+
 @Observable final class TrendStore {
     private var allSummaries: [DailySummary] = []
     private(set) var filteredSummaries: [DailySummary] = []
     private(set) var currentProfile: String?
     private(set) var currentRange: TrendRange = .w26
+
+    init(summaries: [DailySummary] = [], range: TrendRange = .w26) {
+        allSummaries = summaries
+        currentRange = range
+        filterSummaries(range: range)
+    }
 
     func load(profile: String, range: TrendRange) {
         if profile != currentProfile {
@@ -45,46 +58,87 @@ import Observation
     }
 
     private func filterSummaries(range: TrendRange) {
-        // newest first to take N
+        guard !allSummaries.isEmpty else {
+            filteredSummaries = []
+            return
+        }
+
+        // newest first to find the anchor date
         let sorted = allSummaries.sorted { $0.date > $1.date }
-        let count: Int? = {
+        let latestDate = sorted.first?.parsedDate ?? Date()
+        let calendar = Calendar(identifier: .iso8601)
+
+        let startDate: Date? = {
             switch range {
-            case .w4: return 4
-            case .w12: return 12
-            case .w26: return 26
-            case .w52: return 52
+            case .w4:  return calendar.date(byAdding: .weekOfYear, value: -4, to: latestDate)
+            case .w12: return calendar.date(byAdding: .weekOfYear, value: -12, to: latestDate)
+            case .w26: return calendar.date(byAdding: .weekOfYear, value: -26, to: latestDate)
+            case .w52: return calendar.date(byAdding: .weekOfYear, value: -52, to: latestDate)
             case .all: return nil
             }
         }()
 
-        if let count = count {
-            // Take newest N, then back to ascending for display
-            filteredSummaries = Array(sorted.prefix(count)).reversed()
+        if let startDate = startDate {
+            filteredSummaries = allSummaries
+                .filter { $0.parsedDate >= startDate }
+                .sorted { $0.date < $1.date }
         } else {
             filteredSummaries = allSummaries.sorted { $0.date < $1.date }
         }
     }
 
-    /// Series values for `metric`. Optional metrics (compliance, crowdstrike)
-    /// are omitted when nil — bridge-mode summaries don't include them, and
-    /// rendering them as 0% would be misleading. Non-optional metrics return a
-    /// value for every summary.
-    func values(metric: TrendSeries.Metric) -> [Double] {
-        filteredSummaries.compactMap { summary -> Double? in
-            switch metric {
-            case .activeDevices: return Double(summary.totalDevices)
-            case .compliance:  return summary.compliancePct
-            case .fileVault:   return summary.fileVaultPct
-            case .osCurrent:   return summary.osCurrentPct
-            case .crowdstrike: return summary.crowdstrikePct
-            case .stale:       return Double(summary.staleCount)
-            case .patch:       return summary.patchPct
+    /// The time domain for the X-axis, spanning from the calculated start
+    /// of the range to the newest snapshot.
+    var chartDomain: ClosedRange<Date>? {
+        guard !allSummaries.isEmpty else { return nil }
+        let sorted = allSummaries.sorted { $0.date > $1.date }
+        let latestDate = sorted.first?.parsedDate ?? Date()
+        let calendar = Calendar(identifier: .iso8601)
+
+        let startDate: Date = {
+            switch currentRange {
+            case .w4:  return calendar.date(byAdding: .weekOfYear, value: -4, to: latestDate) ?? latestDate
+            case .w12: return calendar.date(byAdding: .weekOfYear, value: -12, to: latestDate) ?? latestDate
+            case .w26: return calendar.date(byAdding: .weekOfYear, value: -26, to: latestDate) ?? latestDate
+            case .w52: return calendar.date(byAdding: .weekOfYear, value: -52, to: latestDate) ?? latestDate
+            case .all: return allSummaries.map(\.parsedDate).min() ?? latestDate
             }
+        }()
+
+        return startDate...latestDate
+    }
+
+    /// Date/value pairs for `metric`. Optional metrics (compliance,
+    /// crowdstrike, stability) are omitted when nil while keeping each value
+    /// attached to its original snapshot date.
+    func points(metric: TrendSeries.Metric) -> [TrendPoint] {
+        filteredSummaries.compactMap { summary -> TrendPoint? in
+            guard let value = value(for: metric, in: summary) else { return nil }
+            return TrendPoint(date: summary.parsedDate, value: value)
         }
     }
 
-    func dates() -> [String] {
-        filteredSummaries.map { $0.date }
+    /// Series values for `metric`. Kept for existing summary-only callers;
+    /// `points(metric:)` should be used when dates are rendered with values.
+    func values(metric: TrendSeries.Metric) -> [Double] {
+        points(metric: metric).map(\.value)
+    }
+
+    private func value(for metric: TrendSeries.Metric, in summary: DailySummary) -> Double? {
+        switch metric {
+        case .stability: return summary.stabilityIndex
+        case .activeDevices: return Double(summary.totalDevices)
+        case .compliance:  return summary.compliancePct
+        case .fileVault:   return summary.fileVaultPct
+        case .osCurrent:   return summary.osCurrentPct
+        case .crowdstrike: return summary.crowdstrikePct
+        case .stale:       return Double(summary.staleCount)
+        case .patch:       return summary.patchPct
+        }
+    }
+
+    func dates() -> [Date] {
+        filteredSummaries.map { $0.parsedDate }
     }
 
     var isEmpty: Bool {

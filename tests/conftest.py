@@ -46,6 +46,7 @@ def config_factory(jrc, fixtures_root, tmp_path):
         config._data["output"]["timestamp_outputs"] = False
         config._data["output"]["archive_enabled"] = False
         config._data["output"]["keep_latest_runs"] = 2
+        config._data["charts"]["historical_csv_dir"] = str(tmp_path / "snapshots")
         config._data["charts"]["archive_current_csv"] = False
         return config
 

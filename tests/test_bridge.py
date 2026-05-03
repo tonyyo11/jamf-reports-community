@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -348,3 +351,149 @@ def test_bridge_no_multi_when_disabled(monkeypatch, jrc) -> None:
     assert "--filter" not in captured_cmd
     assert "-p" in captured_cmd
     assert "my-profile" in captured_cmd
+
+# ---------------------------------------------------------------------------
+# max_cache_age_hours
+# ---------------------------------------------------------------------------
+
+def test_max_cache_age_raises_when_cache_too_old(monkeypatch, tmp_path, jrc) -> None:
+    """When cache is older than max_cache_age_hours, raise RuntimeError."""
+    data_dir = tmp_path / "jamf-cli-data"
+    overview_dir = data_dir / "overview"
+    overview_dir.mkdir(parents=True)
+    cache_file = overview_dir / "data.json"
+    cache_file.write_text('[{"ok": true}]')
+
+    # Set mtime to 2 hours ago
+    old_time = datetime.now() - timedelta(hours=2)
+    os.utime(cache_file, (old_time.timestamp(), old_time.timestamp()))
+
+    bridge = jrc.JamfCLIBridge(
+        save_output=False,
+        data_dir=str(data_dir),
+        use_cached_data=True,
+        max_cache_age_hours=1,
+    )
+
+    def fake_run(args, timeout=None):
+        raise RuntimeError("jamf-cli failed")
+
+    monkeypatch.setattr(bridge, "_run", fake_run)
+
+    with pytest.raises(RuntimeError, match="too old"):
+        bridge.overview()
+
+
+def test_max_cache_age_skips_check_when_zero(monkeypatch, tmp_path, jrc) -> None:
+    """When max_cache_age_hours=0, always use cache without age check."""
+    data_dir = tmp_path / "jamf-cli-data"
+    overview_dir = data_dir / "overview"
+    overview_dir.mkdir(parents=True)
+    cache_file = overview_dir / "data.json"
+    cache_file.write_text('[{"ok": true}]')
+
+    # Set mtime to very old (30 days ago)
+    old_time = datetime.now() - timedelta(days=30)
+    os.utime(cache_file, (old_time.timestamp(), old_time.timestamp()))
+
+    bridge = jrc.JamfCLIBridge(
+        save_output=False,
+        data_dir=str(data_dir),
+        use_cached_data=True,
+        max_cache_age_hours=0,  # disabled
+    )
+
+    def fake_run(args, timeout=None):
+        raise RuntimeError("jamf-cli failed")
+
+    monkeypatch.setattr(bridge, "_run", fake_run)
+
+    # Should succeed (use cache) because age check is disabled
+    result = bridge.overview()
+    assert result is not None
+
+
+def test_max_cache_age_uses_cache_when_fresh(monkeypatch, tmp_path, jrc) -> None:
+    """When cache is fresh, use it without error."""
+    data_dir = tmp_path / "jamf-cli-data"
+    overview_dir = data_dir / "overview"
+    overview_dir.mkdir(parents=True)
+    cache_file = overview_dir / "data.json"
+    cache_file.write_text('[{"ok": true}]')
+
+    bridge = jrc.JamfCLIBridge(
+        save_output=False,
+        data_dir=str(data_dir),
+        use_cached_data=True,
+        max_cache_age_hours=1,
+    )
+
+    def fake_run(args, timeout=None):
+        raise RuntimeError("jamf-cli failed")
+
+    monkeypatch.setattr(bridge, "_run", fake_run)
+
+    # Cache file is fresh (just created), should succeed
+    result = bridge.overview()
+    assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# audit() and group_analyze()
+# ---------------------------------------------------------------------------
+
+def test_audit_calls_correct_command(monkeypatch, jrc) -> None:
+    """audit() should call _run_and_save with correct args."""
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+    captured: dict[str, Any] = {}
+
+    original_run_and_save = bridge._run_and_save
+
+    def fake_run_and_save(report_type, args, cache_names, timeout=None):
+        captured["report_type"] = report_type
+        captured["args"] = list(args)
+        captured["cache_names"] = cache_names
+        return [{"section": "summary", "data": {}}]
+
+    monkeypatch.setattr(bridge, "_run_and_save", fake_run_and_save)
+
+    result = bridge.audit()
+    assert captured["report_type"] == "audit"
+    assert captured["args"] == ["pro", "audit"]
+    assert result is not None
+
+
+def test_audit_with_category_adds_checks_flag(monkeypatch, jrc) -> None:
+    """audit(category) should add --checks parameter."""
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+    captured: list[str] = []
+
+    def fake_run_and_save(report_type, args, cache_names, timeout=None):
+        captured.extend(args)
+        return [{"section": "summary", "data": {}}]
+
+    monkeypatch.setattr(bridge, "_run_and_save", fake_run_and_save)
+
+    bridge.audit(category="security")
+    assert "--checks" in captured
+    assert "security" in captured
+
+
+def test_group_analyze_unused_mode_adds_flag(monkeypatch, jrc) -> None:
+    """group_analyze('unused') should add --unused flag."""
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+    captured: dict[str, Any] = {}
+
+    def fake_run_and_save(report_type, args, cache_names, timeout=None):
+        captured["report_type"] = report_type
+        captured["args"] = list(args)
+        return []
+
+    monkeypatch.setattr(bridge, "_run_and_save", fake_run_and_save)
+
+    bridge.group_analyze(mode="unused")
+    assert captured["report_type"] == "group-tools-analyze"
+    assert "--unused" in captured["args"]
+    assert "pro" in captured["args"]
+    assert "group-tools" in captured["args"]
+    assert "analyze" in captured["args"]

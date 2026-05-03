@@ -36,9 +36,20 @@ struct ContentView: View {
                     onCycleSidebar: cycleSidebar
                 )
                 Divider().background(Theme.Colors.hairline)
-                detailView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Theme.Colors.winBG)
+
+                ZStack(alignment: .bottom) {
+                    detailView
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.Colors.winBG)
+
+                    if let toast = workspace.toast {
+                        toastView(toast)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .zIndex(100)
+                    }
+                }
+
+                StatusBar(status: workspace.globalStatus)
             }
         }
         .background(Theme.Colors.winBG.ignoresSafeArea())
@@ -54,12 +65,14 @@ struct ContentView: View {
             await workspace.autoUpdateJamfCLIIfNeeded()
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
+        .animation(.snappy, value: workspace.toast != nil)
     }
 
     @ViewBuilder
     private var detailView: some View {
         switch tab {
         case .overview:   OverviewView()
+        case .fleet:      FleetOverviewView()
         case .devices:    DevicesView()
         case .trends:     TrendsView()
         case .audit:      AuditView()
@@ -78,6 +91,7 @@ struct ContentView: View {
     private func subtitle(for tab: Tab) -> String? {
         switch tab {
         case .overview:   "FLEET"
+        case .fleet:      "MULTI-PROFILE"
         case .devices:    "INVENTORY"
         case .trends:     "26W"
         case .audit:      "HEALTH & HYGIENE"
@@ -95,5 +109,59 @@ struct ContentView: View {
 
     private func cycleSidebar() {
         sidebarModeRaw = sidebarMode.next().rawValue
+    }
+
+    @ViewBuilder
+    private func toastView(_ toast: Toast) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: toastIcon(toast.style))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(toastColor(toast.style))
+
+            Text(toast.message)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.Colors.fg)
+
+            Button {
+                workspace.toast = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+        )
+        .padding(.bottom, 40)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                if workspace.toast?.id == toast.id {
+                    workspace.toast = nil
+                }
+            }
+        }
+    }
+
+    private func toastIcon(_ style: Toast.Style) -> String {
+        switch style {
+        case .info:    "info.circle.fill"
+        case .success: "checkmark.circle.fill"
+        case .danger:  "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func toastColor(_ style: Toast.Style) -> Color {
+        switch style {
+        case .info:    Theme.Colors.info
+        case .success: Theme.Colors.ok
+        case .danger:  Theme.Colors.danger
+        }
     }
 }

@@ -25,6 +25,8 @@ final class WorkspaceStore {
     var isInitializingWorkspace: Bool = false
     var workspaceInitMessage: String?
     var launchAgentCleanupMessage: String?
+    var globalStatus: String? = nil
+    var toast: Toast? = nil
     private var didAutoUpdateJamfCLI = false
     private static let forceDemoModeKey = "com.jamfreports.forceDemoMode"
 
@@ -37,6 +39,16 @@ final class WorkspaceStore {
         return FileManager.default.fileExists(
             atPath: url.appendingPathComponent("config.yaml").path
         )
+    }
+
+    var initializedProfiles: [JamfCLIProfile] {
+        if demoMode { return profiles }
+        return profiles.filter { profile in
+            guard let url = ProfileService.workspaceURL(for: profile.name) else { return false }
+            return FileManager.default.fileExists(
+                atPath: url.appendingPathComponent("config.yaml").path
+            )
+        }
     }
 
     // MARK: Config state
@@ -94,7 +106,7 @@ final class WorkspaceStore {
         self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
-        self.selectedScoreCards = [.activeDevices, .fileVault, .compliance, .stale]
+        self.selectedScoreCards = [.stability, .activeDevices, .fileVault, .compliance]
         let jamfCLI = JamfCLIInstaller.currentInstallation()
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
@@ -397,7 +409,7 @@ final class WorkspaceStore {
 /// Routes the active screen. `Tab` is the source of truth for which detail view
 /// the `NavigationSplitView` renders, and the title shown in the toolbar.
 enum Tab: String, CaseIterable, Identifiable, Hashable {
-    case overview, devices, trends, audit, reports, schedules, runs
+    case overview, fleet, devices, trends, audit, reports, schedules, runs
     case config, customize, sources, backups, settings, onboarding
 
     var id: String { rawValue }
@@ -405,6 +417,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     var label: String {
         switch self {
         case .overview:   "Overview"
+        case .fleet:      "Fleet Overview"
         case .devices:    "Devices"
         case .trends:     "Trends"
         case .audit:      "Health Audit"
@@ -423,6 +436,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     var sfSymbol: String {
         switch self {
         case .overview:   "house"
+        case .fleet:      "rectangle.grid.2x2"
         case .devices:    "laptopcomputer"
         case .trends:     "chart.line.uptrend.xyaxis"
         case .audit:      "shield.checkered"
@@ -441,6 +455,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     var badge: String? {
         switch self {
         case .devices:   "inv"
+        case .fleet:     "multi"
         case .trends:    "26w"
         case .reports:   "47"
         case .schedules: "5"
@@ -463,4 +478,13 @@ enum SidebarMode: String, CaseIterable {
         case .hidden:   .expanded
         }
     }
+}
+
+// MARK: - Toast Model
+
+struct Toast: Identifiable, Sendable {
+    enum Style { case info, success, danger }
+    var id: UUID = UUID()
+    let message: String
+    var style: Style = .info
 }

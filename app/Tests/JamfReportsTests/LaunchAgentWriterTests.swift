@@ -104,6 +104,22 @@ final class LaunchAgentWriterTests: XCTestCase {
         )
     }
 
+    func testTrustedJamfCLIExecutableRejectsTempBasename() throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let fakeJamfCLI = tempRoot.appendingPathComponent("jamf-cli")
+        try "#!/bin/sh\nexit 0\n".write(to: fakeJamfCLI, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: fakeJamfCLI.path
+        )
+
+        XCTAssertFalse(LaunchAgentWriter.isTrustedJamfCLIExecutable(fakeJamfCLI.path))
+    }
+
     func testLaunchEnvironmentIgnoresPlistControlledPathAndJamfCLIPath() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let safeXDGConfigHome = FileManager.default.homeDirectoryForCurrentUser
@@ -154,6 +170,58 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertEqual(LaunchAgentWriter.filenameComponent("\(prefix).dummy"), "\(prefix).dummy")
         XCTAssertEqual(LaunchAgentWriter.filenameComponent(" bad/value  "), "bad_value")
         XCTAssertEqual(LaunchAgentWriter.filenameComponent("..."), "jamf_report")
+    }
+
+    func testMultiLaunchAgentArgumentsRejectUnsafePathsAndProfiles() {
+        let label = "\(prefix).multi.final-review"
+        let statusURL = LaunchAgentWriter.expectedMultiLogURL(label: label, filename: "status.json")
+        let validFlags = [
+            "--mode", "jamf-cli-full",
+            "--workspace-root", ProfileService.workspacesRoot().path,
+            "--base-profile", "alpha",
+            "--status-file", statusURL.path,
+            "--multi-profiles", "alpha,beta",
+            "--multi-sequential",
+        ]
+
+        XCTAssertTrue(LaunchAgentWriter.areMultiLaunchAgentArgumentsSafe(validFlags, label: label))
+
+        var unsafeRoot = validFlags
+        unsafeRoot[3] = "/"
+        XCTAssertFalse(LaunchAgentWriter.areMultiLaunchAgentArgumentsSafe(unsafeRoot, label: label))
+
+        var unsafeStatus = validFlags
+        unsafeStatus[7] = "/tmp/status.json"
+        XCTAssertFalse(LaunchAgentWriter.areMultiLaunchAgentArgumentsSafe(unsafeStatus, label: label))
+
+        var unsafeProfiles = validFlags
+        unsafeProfiles[9] = "alpha,../evil"
+        XCTAssertFalse(LaunchAgentWriter.areMultiLaunchAgentArgumentsSafe(unsafeProfiles, label: label))
+    }
+
+    func testExpectedMultiLogURLRejectsSymlinkedLogFile() throws {
+        let label = "\(prefix).multi.\(UUID().uuidString.lowercased())"
+        let logURL = LaunchAgentWriter.expectedMultiLogURL(label: label, filename: "stdout.log")
+        let logDir = logURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: logDir) }
+
+        XCTAssertTrue(
+            LaunchAgentWriter.isExpectedMultiLogURL(logURL, label: label, filename: "stdout.log")
+        )
+
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let outside = tempRoot.appendingPathComponent("outside.log")
+        try "outside\n".write(to: outside, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: logURL, withDestinationURL: outside)
+
+        XCTAssertFalse(
+            LaunchAgentWriter.isExpectedMultiLogURL(logURL, label: label, filename: "stdout.log")
+        )
     }
 
     private func schedule(name: String) -> Schedule {

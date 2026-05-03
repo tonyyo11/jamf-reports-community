@@ -11,7 +11,7 @@ struct Sidebar: View {
     }
 
     private let groups: [NavGroup] = [
-        .init(group: "REPORTS", items: [.overview, .devices, .trends, .audit, .reports]),
+        .init(group: "REPORTS", items: [.overview, .fleet, .devices, .trends, .audit, .reports]),
         .init(group: "AUTOMATION", items: [.schedules, .runs]),
         .init(group: "CONFIGURATION", items: [.config, .customize, .sources, .backups]),
         .init(group: "SYSTEM", items: [.settings]),
@@ -145,6 +145,9 @@ struct Sidebar: View {
     private func badge(for item: Tab) -> String? {
         if workspace.demoMode { return item.badge }
         switch item {
+        case .fleet:
+            let count = workspace.initializedProfiles.count
+            return count > 0 ? "\(count)" : nil
         case .trends:
             let count = liveTrendCount()
             return count > 0 ? "\(count)" : nil
@@ -160,8 +163,7 @@ struct Sidebar: View {
     }
 
     private func liveTrendCount() -> Int {
-        guard let workspaceURL = ProfileService.workspaceURL(for: workspace.profile) else { return 0 }
-        let summariesDir = workspaceURL.appendingPathComponent("snapshots/summaries", isDirectory: true)
+        guard let summariesDir = WorkspacePaths.summariesDir(for: workspace.profile) else { return 0 }
         return SummaryJSONParser.parseDirectory(summariesDir).count
     }
 

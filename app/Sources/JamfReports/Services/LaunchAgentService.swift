@@ -88,7 +88,7 @@ enum LaunchAgentService {
 
     /// Parse one plist into a Schedule. Returns nil if the plist is malformed
     /// or the label doesn't match the Python-owned naming convention.
-    private static func parse(_ url: URL) -> Schedule? {
+    static func parse(_ url: URL) -> Schedule? {
         guard let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization
                 .propertyList(from: data, format: nil) as? [String: Any],
@@ -97,19 +97,28 @@ enum LaunchAgentService {
             return nil
         }
 
-        guard let (profile, slug) = profileAndSlug(from: label) else { return nil }
+        guard let labelParts = profileAndSlug(from: label) else { return nil }
         let args = plist["ProgramArguments"] as? [String] ?? []
         let enabled = !((plist["Disabled"] as? Bool) ?? false)
         let cadence = describeCadence(plist["StartCalendarInterval"])
         let mode = runMode(from: args) ?? .jamfCLIOnly
-        let statusURL = statusFileURL(from: args, profile: profile, label: label)
-        let runStatus = readRunStatus(from: statusURL, profile: profile)
-        let logSummary = readLogSummary(from: plist, profile: profile)
+        let statusURL = labelParts.isMulti
+            ? multiStatusFileURL(from: args, label: label)
+            : statusFileURL(from: args, profile: labelParts.profile, label: label)
+        let runStatus = labelParts.isMulti
+            ? readMultiRunStatus(from: statusURL, label: label)
+            : readRunStatus(from: statusURL, profile: labelParts.profile)
+        let logSummary = readLogSummary(
+            from: plist,
+            profile: labelParts.profile,
+            label: label,
+            isMulti: labelParts.isMulti
+        )
         let lastDate = runStatus?.finishedAt ?? logSummary.date
 
         return Schedule(
-            name: humanName(from: slug, mode: mode),
-            profile: profile,
+            name: humanName(from: labelParts.slug, mode: mode),
+            profile: labelParts.isMulti ? (multiBaseProfile(from: args) ?? "") : labelParts.profile,
             schedule: cadence,
             cadence: "custom",
             mode: mode,
@@ -118,7 +127,8 @@ enum LaunchAgentService {
             lastStatus: lastStatus(from: runStatus, logSummary: logSummary),
             artifacts: runStatus?.artifacts ?? [],
             enabled: enabled,
-            launchAgentLabel: label
+            launchAgentLabel: label,
+            multiTarget: labelParts.isMulti ? (multiTarget(from: args) ?? MultiTarget(scope: .all)) : nil
         )
     }
 
@@ -131,14 +141,73 @@ enum LaunchAgentService {
         return plist["Label"] as? String
     }
 
-    private static func profileAndSlug(from label: String) -> (String, String)? {
+    private struct LabelParts {
+        let profile: String
+        let slug: String
+        let isMulti: Bool
+    }
+
+    private static func profileAndSlug(from label: String) -> LabelParts? {
         let prefix = "\(LaunchAgentWriter.labelPrefix)."
         guard label.hasPrefix(prefix) else { return nil }
         let tail = String(label.dropFirst(prefix.count))
+        if tail.hasPrefix("multi.") {
+            let slug = String(tail.dropFirst("multi.".count))
+            guard !slug.isEmpty else { return nil }
+            return LabelParts(profile: "", slug: slug, isMulti: true)
+        }
         let parts = tail.components(separatedBy: ".")
         guard let profile = parts.first, ProfileService.isValid(profile) else { return nil }
         let slug = parts.dropFirst().joined(separator: ".")
-        return (profile, slug)
+        return LabelParts(profile: profile, slug: slug, isMulti: false)
+    }
+
+    private static func multiTarget(from args: [String]) -> MultiTarget? {
+        let flags: [String]
+        if args.count >= 2, args[1] == "multi" {
+            flags = Array(args.dropFirst(2).prefix { $0 != "--" })
+        } else if let runIndex = args.firstIndex(of: "multi-launchagent-run") {
+            flags = Array(args.dropFirst(runIndex + 1))
+        } else {
+            return nil
+        }
+        var scope: MultiTarget.Scope = .all
+        var sequential = false
+        var i = 0
+        while i < flags.count {
+            switch flags[i] {
+            case "--sequential", "--multi-sequential":
+                sequential = true
+            case "--filter", "--multi-filter":
+                if i + 1 < flags.count {
+                    scope = .filter(flags[i + 1])
+                    i += 1
+                }
+            case "--profiles", "--multi-profiles":
+                if i + 1 < flags.count {
+                    let profiles = flags[i + 1]
+                        .split(separator: ",")
+                        .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { ProfileService.isValid($0) }
+                    if !profiles.isEmpty {
+                        scope = .list(profiles)
+                    }
+                    i += 1
+                }
+            default:
+                break
+            }
+            i += 1
+        }
+        return MultiTarget(scope: scope, sequential: sequential)
+    }
+
+    private static func multiBaseProfile(from args: [String]) -> String? {
+        guard let idx = args.firstIndex(of: "--base-profile"), idx + 1 < args.count else {
+            return nil
+        }
+        let profile = args[idx + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+        return ProfileService.isValid(profile) ? profile : nil
     }
 
     private static func runMode(from args: [String]) -> Schedule.RunMode? {
@@ -290,6 +359,13 @@ enum LaunchAgentService {
         return validatedWorkspaceURL(rawPath, profile: profile)
     }
 
+    private static func multiStatusFileURL(from args: [String], label: String) -> URL? {
+        guard let idx = args.firstIndex(of: "--status-file"), idx + 1 < args.count else {
+            return nil
+        }
+        return validatedMultiLogURL(args[idx + 1], label: label)
+    }
+
     private static func readRunStatus(
         from url: URL?,
         profile: String
@@ -310,13 +386,35 @@ enum LaunchAgentService {
         )
     }
 
+    private static func readMultiRunStatus(from url: URL?, label: String) -> ParsedRunStatus? {
+        guard let url,
+              let safeURL = validatedMultiLogURL(url.path, label: label),
+              let values = try? safeURL.resourceValues(forKeys: [.fileSizeKey]),
+              (values.fileSize ?? 0) <= 1_048_576,
+              let data = try? Data(contentsOf: safeURL),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return ParsedRunStatus(
+            finishedAt: dateValue(payload["finished_at"]),
+            success: payload["success"] as? Bool,
+            artifacts: []
+        )
+    }
+
     private static func readLogSummary(
         from plist: [String: Any],
-        profile: String
+        profile: String,
+        label: String,
+        isMulti: Bool
     ) -> ParsedLogSummary {
         let urls = ["StandardOutPath", "StandardErrorPath"]
             .compactMap { plist[$0] as? String }
-            .compactMap { validatedWorkspaceURL($0, profile: profile) }
+            .compactMap {
+                isMulti
+                    ? validatedMultiLogURL($0, label: label)
+                    : validatedWorkspaceURL($0, profile: profile)
+            }
             .filter { fileSize($0) > 0 }
 
         let newestDate = urls
@@ -427,7 +525,7 @@ enum LaunchAgentService {
         return standard.date(from: text)
     }
 
-    private static func parseLogTail(from url: URL) -> (exitCode: Int32?, hasFailureMarker: Bool) {
+    static func parseLogTail(from url: URL) -> (exitCode: Int32?, hasFailureMarker: Bool) {
         guard let fh = FileHandle(forReadingAtPath: url.path) else { return (nil, false) }
         defer { fh.closeFile() }
 
@@ -438,19 +536,35 @@ enum LaunchAgentService {
         guard let text = String(data: data, encoding: .utf8) else { return (nil, false) }
 
         var hasFailureMarker = false
-        var exitCode: Int32? = nil
+        var parsedExitCode: Int32? = nil
         for line in text.components(separatedBy: "\n").reversed() {
             let lower = line.lowercased()
             hasFailureMarker = hasFailureMarker
                 || lower.contains("[fatal]")
                 || lower.contains("[error]")
+                || lower.contains("[fail]")
+                || lower.contains("error:")
                 || lower.contains("traceback")
-            if exitCode == nil {
-                if lower.contains("exit 0") { exitCode = 0 }
-                if lower.contains("exit 1") { exitCode = 1 }
+            if parsedExitCode == nil {
+                parsedExitCode = exitCode(from: line)
             }
         }
-        return (exitCode, hasFailureMarker)
+        return (parsedExitCode, hasFailureMarker)
+    }
+
+    static func exitCode(from line: String) -> Int32? {
+        guard let range = line.range(
+            of: #"exit\s+(-?\d+)"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) else {
+            return nil
+        }
+        let match = String(line[range])
+        guard let codeRange = match.range(of: #"-?\d+"#, options: .regularExpression),
+              let value = Int32(match[codeRange]) else {
+            return nil
+        }
+        return value
     }
 
     private static func fileSize(_ url: URL) -> Int {
@@ -462,6 +576,19 @@ enum LaunchAgentService {
         let expanded = (rawPath as NSString).expandingTildeInPath
         let url = URL(fileURLWithPath: expanded)
         return WorkspacePathGuard.validate(url, under: root)
+    }
+
+    private static func validatedMultiLogURL(_ rawPath: String, label: String) -> URL? {
+        let expanded = (rawPath as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: expanded)
+        let logDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/JamfReports/\(label)", isDirectory: true)
+            .resolvingSymlinksInPath()
+        let resolved = url.resolvingSymlinksInPath()
+        let safePath = logDir.path
+        let safePrefix = safePath + "/"
+        guard resolved.path == safePath || resolved.path.hasPrefix(safePrefix) else { return nil }
+        return resolved
     }
 
     private static func bootout(_ label: String) -> Int32 {

@@ -9,17 +9,111 @@ versions in this repository map to git tags.
 
 ### Added
 
-- **Health Audit & Group Hygiene**: New reporting surface leveraging `jamf-cli pro audit` and `jamf-cli pro group-tools analyze`.
-- Added **Audit Summary** and **Group Hygiene** sheets to the Excel workbook. Audit summary includes severity-based color coding (CRITICAL, WARNING).
-- New **Health Audit** screen in the macOS app for running on-demand health checks and hygiene analysis.
-- Implementation of a **"View" button** in the Group Hygiene screen that directly opens the computer group in the Jamf Pro web console.
-- Audit and hygiene results from the macOS app are now automatically **saved to the workspace** as JSON snapshots, ensuring persistence across app restarts.
-- `SystemActions.open` now supports `http` and `https` URLs, enabling the app to launch the default browser for Jamf Pro console links.
-- `JamfCLIBridge` (Python) and `CLIBridge` (Swift) now include dedicated methods for `audit` and `group_analyze`.
-- macOS app sidebar now includes a dedicated "Health Audit" tab under the REPORTS group.
+- macOS app **Fleet Overview** tab now aggregates initialized profile workspaces
+  from historical summary JSON, showing per-profile device count, Stability
+  Index, and last successful run without exposing local configuration paths.
+- macOS app **Overview** and **Fleet Overview** surfaces now support drill-down:
+  KPI cards, macOS distribution, failing rules, security-agent cards, recent
+  activity, and fleet profile cards open detail pages with relevant metrics and
+  actions to jump to related tabs.
+- Added **Stability Index** trend metric as a management-level health score,
+  weighted from compliance, patch posture, and inverse stale-device pressure.
+- Added **Interactive Breadcrumbs** to all page headers; users can now click the
+  parent view name (e.g., "OVERVIEW") to navigate back or switch tabs.
+- Added **Keyboard Shortcuts** for core app actions: `Cmd + R` (Refresh),
+  `Cmd + F` (Find/Search), and `Cmd + D` (Toggle Demo Mode).
+- Added **Live Status Bar** to the app footer, providing real-time feedback and
+  CLI output (e.g., "Collecting jamf-cli snapshots...") during long-running tasks.
+- Added **Toast Notifications** for background task completion; a brief popup
+  now confirms successful report generation or audit completion across all tabs.
+- Added **Context Menus** (right-click) to device rows in Detailed Inventory and
+  Overview tables with actions for "Open in Jamf Pro", "Copy Serial", and "Copy User".
+- Added **Interactive Column Sorting** to inventory and audit tables.
+
+### Changed
+
+- Compliance failure-count parsing is now fail-closed: `strict_parse_failures()`
+  raises `ValueError` on non-numeric values (empty, "N/A", "null", etc.) instead
+  of silently treating them as 0. In the summary JSON path, unparseable values
+  cause `compliancePct` to be omitted (GUI shows "no data") rather than exiting.
+  CSV sheets log unparseable details and exclude those rows from compliance bands.
 
 ### Fixed
 
+- `_emit_summary_json` now validates existing summary files before skipping:
+  parses JSON and checks for required keys (`date`, `totalDevices`, `source`);
+  regenerates instead of using corrupt data.
+- Compliance parsing no longer crashes in summary path: removed `sys.exit(1)`
+  when unparseable values are found; sets `comp_pct = None` and logs a warning.
+
+### Added
+
+- Tests for `max_cache_age_hours` enforcement in `test_bridge.py`:
+  `test_max_cache_age_raises_when_cache_too_old`,
+  `test_max_cache_age_skips_check_when_zero`,
+  `test_max_cache_age_uses_cache_when_fresh`.
+- Tests for `JamfCLIBridge.audit()` and `group_analyze()` methods:
+  `test_audit_calls_correct_command`,
+  `test_audit_with_category_adds_checks_flag`,
+  `test_group_analyze_unused_mode_adds_flag`.
+
+### Fixed
+ 
+- Fixed chart layout overflow in the macOS app where charts could go "off the page"
+  due to categorical string X-axis; now uses continuous `Date` scaling.
+- Fixed timeline range filtering (W4–W52) to be duration-based rather than
+  snapshot-count based, ensuring correct behavior when daily snapshots exist.
+- Fixed chart scaling for sparse data: charts now anchor to the selected time
+  domain (e.g., a full year for W52) rather than stretching few points to fill.
+- Improved responsiveness of **Trends** view; comparison cards now stack
+  vertically on narrow windows using `ViewThatFits`.
+- Added **Data Staleness Indicators** to headers; timestamps now turn amber (>24h)
+  or red (>7d) with a relative age label to warn when viewing old cached data.
+- Improved search discoverability; `Cmd + F` now automatically focuses the search
+  field in **Detailed Inventory** and **Health Audit** views.
+- Health Audit now tracks drift between cached audit snapshots, badges findings
+  that are new since the previous run, and shows recently resolved findings.
+- Multi-profile automation now has a dedicated `multi-launchagent-run` command
+  that fans out the existing LaunchAgent workflow across initialized profile
+  workspaces, with aggregate status JSON and per-profile results.
+- Fixed optional metrics (Stability, NIST Compliance) in the macOS app **Overview**
+  rendering as 0.0% when no historical data exists; now shows "--" and "No Data".
+- Manual multi-profile "Run now" actions in the macOS app now append their output
+  to the standard schedule logs and record exit status correctly.
+- Hardened device row identity to prevent collisions for records that capture
+  a numeric Jamf ID but lack a serial number or name.
+- Fixed sidebar trend badge to honor custom `charts.historical_csv_dir` paths
+  instead of hardcoding the default snapshots directory.
+- Manual multi-profile "Run now" now rejects legacy `jamf-cli multi`
+  LaunchAgent plists that point at a fake executable with the same basename
+  instead of the trusted `jamf-cli` discovered by the app.
+- Multi-profile LaunchAgent schedules now read their aggregate status JSON and
+  treat `[fail]`, `Error:`, and non-zero exit markers in logs as failed runs,
+  so a failed profile fan-out no longer appears as OK in the schedule list.
+- Trends now keep optional metric values paired with their original snapshot
+  dates, preventing Compliance, CrowdStrike, and Stability data from drifting
+  onto the wrong date when summaries mix CSV-only and jamf-cli-backed metrics.
+- Active Devices demo trends now use the demo total-device series and clamp
+  mismatched demo date/value arrays, preventing crashes when viewing that metric.
+- "Open in Jamf Pro" context-menu actions now appear only when a device has a
+  numeric Jamf computer ID populated from inventory or patch-failure data,
+  avoiding invalid URLs built from serial/name-based local row IDs.
+- Breadcrumb navigation actions now use main-actor closures, resolving Swift
+  concurrency warnings from page-header navigation callbacks.
+- macOS app Trends **Export PNG** now renders readable, self-contained chart
+  images with a light background, title, date range, gridlines, axis labels,
+  point markers, highlighted latest point, and summary stats instead of sparse
+  dark images with little context.
+- Active Devices PNG exports now use dynamic y-axis scaling so count metrics no
+  longer flatten into a near-empty line against a hardcoded range.
+- Multi-profile schedules now run the saved JRC LaunchAgent command instead of
+  bypassing automation through `jamf-cli multi -- pro collect`, preserving the
+  selected mode, base profile, target profile list/filter, sequential setting,
+  logs, and status-file behavior.
+- Health Audit, Group Hygiene, and Backups app views received focused usability
+  refinements: compact KPI summaries, last-run timestamps, clearer affected
+  counts, recommendation details, group-type/status pills, bulk ID/CSV helpers,
+  improved backup labels, diff selection hints, and syntax-colored diff output.
 - When `--csv` is explicitly provided but the file is unreadable, `generate`
   now exits with an error instead of silently producing a workbook with no
   CSV sheets.
@@ -72,6 +166,13 @@ versions in this repository map to git tags.
 - Reduced macOS app file-opening and onboarding exposure by removing the unused
   `/Applications` allow-list entry and redacting profile credentials from
   registration failure output before it is shown in the UI.
+- Hardened generated HTML reports against branding-driven markup/style injection:
+  page titles and topbar branding are escaped, accent colors are limited to hex
+  values, inline logos must be small bitmap images, and SVG logos are rejected.
+- Hardened macOS app multi-profile "Run now" execution so tampered LaunchAgent
+  plists cannot redirect the aggregate status file or stdout/stderr logs outside
+  the generated `~/Library/Logs/JamfReports/<label>/` directory, and the saved
+  `multi-launchagent-run` arguments must match the generated command contract.
 - macOS app report actions now choose a Python interpreter that can import the
   bundled report dependencies, and the workspace banner now distinguishes a
   missing `config.yaml` from a missing workspace directory.
@@ -88,7 +189,18 @@ versions in this repository map to git tags.
 - The macOS app now delegates scheduled-run LaunchAgent creation to Python's
   `launchagent-setup`, using the shared status-file, log, CSV inbox, and
   `com.github.tonyyo11.jamf-reports-community.*` plist format; old
-  `com.tonyyo.jrc.*` app-generated plists are removed on launch.
+   `com.tonyyo.jrc.*` app-generated plists are removed on launch.
+ - Fixed `DeviceRecordMerger` not updating `jamfIDIndex` after merging records
+   with a new `jamfID`, causing subsequent lookups by Jamf ID to miss updated records.
+ - Fixed `TrendStore` timezone mismatch: `parsedDate` used UTC while
+   `filterSummaries` used `Calendar.current`, causing date-range boundaries to
+   shift during DST transitions. Both now use `Calendar(identifier: .iso8601)`.
+ - Fixed `DailySummary` decoding to use explicit `init(from:)` with
+   `decodeIfPresent` for optional keys (`compliancePct`, `crowdstrikePct`),
+   preventing decode failures when Python omits CSV-only metrics.
+ - Fixed `cmd_multi_launchagent_run` missing timeout: `ThreadPoolExecutor` now
+   uses `wait(futures, timeout=3600)` so a hanging profile run cannot block
+   the pool indefinitely; timed-out profiles are recorded as failed.
 
 ### Removed
 

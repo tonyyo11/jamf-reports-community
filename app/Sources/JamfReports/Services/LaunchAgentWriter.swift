@@ -109,40 +109,208 @@ enum LaunchAgentWriter {
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let args = plist["ProgramArguments"] as? [String], args.count > 1
         else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi plist missing or malformed for \(label)"))
+            onLine(.init(
+                timestamp: Date(),
+                level: .fail,
+                text: "[error] multi plist missing or malformed for \(label)"
+            ))
             return -1
         }
-        guard let execPath = args.first,
-              FileManager.default.isExecutableFile(atPath: execPath)
-        else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not executable: \(args.first ?? "nil")"))
+        guard multiProgramArgumentsAreTrusted(args, label: label) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi LaunchAgent command is not trusted"))
             return -1
         }
+
+        let stdoutPath = plist["StandardOutPath"] as? String
+        let stderrPath = plist["StandardErrorPath"] as? String
+        let workingDir = plist["WorkingDirectory"] as? String
+
+        guard let stdoutURL = validatedMultiLogURL(stdoutPath, label: label, filename: "stdout.log"),
+              let stderrURL = validatedMultiLogURL(stderrPath, label: label, filename: "stderr.log"),
+              isExpectedMultiWorkingDirectory(workingDir) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi LaunchAgent paths are not trusted"))
+            return -1
+        }
+
+        let execPath = args[0]
         return await withCheckedContinuation { cont in
             let p = Process()
             p.executableURL = URL(fileURLWithPath: execPath)
             p.arguments = Array(args.dropFirst())
+            if let workingDir = workingDir {
+                p.currentDirectoryURL = URL(fileURLWithPath: workingDir)
+            }
+            p.environment = launchEnvironment(from: plist)
+
+            var outFile: FileHandle?
+            var errFile: FileHandle?
+            let outLock = NSLock()
+            let errLock = NSLock()
+
+            try? FileManager.default.createDirectory(
+                at: stdoutURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            outFile = try? appendHandle(for: stdoutURL)
+            errFile = try? appendHandle(for: stderrURL)
+
+            let started = Date()
+            let header = "\n[info] manual multi-profile Run now started "
+                + "\(ISO8601DateFormatter().string(from: started)) for \(label)\n"
+            if let outFile = outFile { write(header, to: outFile, lock: outLock) }
+            onLine(.init(
+                timestamp: started,
+                level: .info,
+                text: header.trimmingCharacters(in: .whitespacesAndNewlines)
+            ))
+
+            let finalOutFile = outFile
+            let finalErrFile = errFile
+
             let pipe = Pipe()
             p.standardOutput = pipe
             p.standardError = pipe
             pipe.fileHandleForReading.readabilityHandler = { fh in
-                let text = String(decoding: fh.availableData, as: UTF8.self)
-                guard !text.isEmpty else { return }
+                let data = fh.availableData
+                guard !data.isEmpty else { return }
+                if let outFile = finalOutFile { write(data, to: outFile, lock: outLock) }
+                if let errFile = finalErrFile { write(data, to: errFile, lock: errLock) }
+
+                let text = String(decoding: data, as: UTF8.self)
                 for line in text.components(separatedBy: .newlines) where !line.isEmpty {
                     onLine(.init(timestamp: Date(), level: .info, text: line))
                 }
             }
             p.terminationHandler = { proc in
                 pipe.fileHandleForReading.readabilityHandler = nil
+                
+                let seconds = max(0, Int(Date().timeIntervalSince(started).rounded()))
+                let footer = "[info] exit \(proc.terminationStatus) after \(seconds)s\n"
+                if let outFile = finalOutFile { write(footer, to: outFile, lock: outLock) }
+                onLine(.init(
+                    timestamp: Date(),
+                    level: proc.terminationStatus == 0 ? .ok : .fail,
+                    text: footer.trimmingCharacters(in: .newlines)
+                ))
+
+                try? finalOutFile?.close()
+                try? finalErrFile?.close()
                 cont.resume(returning: proc.terminationStatus)
             }
             do {
                 try p.run()
             } catch {
-                onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
+                let message = "[fatal] \(error.localizedDescription)\n"
+                if let outFile = finalOutFile { write(message, to: outFile, lock: outLock) }
+                if let errFile = finalErrFile { write(message, to: errFile, lock: errLock) }
+                onLine(.init(timestamp: Date(), level: .fail, text: message.trimmingCharacters(in: .newlines)))
+                
+                try? finalOutFile?.close()
+                try? finalErrFile?.close()
                 cont.resume(returning: -1)
             }
         }
+    }
+
+    private static func multiProgramArgumentsAreTrusted(_ args: [String], label: String) -> Bool {
+        guard let execPath = args.first,
+              FileManager.default.isExecutableFile(atPath: execPath) else {
+            return false
+        }
+        if args.count >= 2, args[1] == "multi" {
+            return isTrustedJamfCLIExecutable(execPath)
+                && legacyJamfCLIMultiArgumentsAreSafe(args)
+        }
+        if args.count >= 3,
+           args[2] == "multi-launchagent-run",
+           isPythonExecutableName(URL(fileURLWithPath: execPath).lastPathComponent),
+           isTrustedPythonExecutable(execPath),
+           isTrustedJRCScript(args[1]),
+           areMultiLaunchAgentArgumentsSafe(Array(args.dropFirst(3)), label: label) {
+            return true
+        }
+        if args.count >= 2,
+           args[1] == "multi-launchagent-run",
+           isTrustedJRCExecutable(execPath),
+           areMultiLaunchAgentArgumentsSafe(Array(args.dropFirst(2)), label: label) {
+            return true
+        }
+        return false
+    }
+
+    private static func legacyJamfCLIMultiArgumentsAreSafe(_ args: [String]) -> Bool {
+        guard let separator = args.firstIndex(of: "--"),
+              Array(args.dropFirst(separator + 1)) == ["pro", "collect"] else {
+            return false
+        }
+
+        var i = 2
+        while i < separator {
+            switch args[i] {
+            case "--sequential":
+                break
+            case "--profiles":
+                guard i + 1 < separator, allProfilesAreValid(args[i + 1]) else { return false }
+                i += 1
+            case "--filter":
+                guard i + 1 < separator, isSafeMultiProfileFilter(args[i + 1]) else { return false }
+                i += 1
+            default:
+                return false
+            }
+            i += 1
+        }
+        return true
+    }
+
+    static func areMultiLaunchAgentArgumentsSafe(_ flags: [String], label: String) -> Bool {
+        var sawMode = false
+        var sawWorkspaceRoot = false
+        var sawBaseProfile = false
+        var sawStatusFile = false
+        var i = 0
+
+        while i < flags.count {
+            switch flags[i] {
+            case "--mode":
+                guard i + 1 < flags.count,
+                      Schedule.RunMode(rawValue: flags[i + 1]) != nil else { return false }
+                sawMode = true
+                i += 1
+            case "--workspace-root":
+                guard i + 1 < flags.count,
+                      isExpectedMultiWorkingDirectory(flags[i + 1]) else { return false }
+                sawWorkspaceRoot = true
+                i += 1
+            case "--base-profile":
+                guard i + 1 < flags.count,
+                      ProfileService.isValid(flags[i + 1]) else { return false }
+                sawBaseProfile = true
+                i += 1
+            case "--status-file":
+                guard i + 1 < flags.count,
+                      let statusURL = expandedFileURL(flags[i + 1]),
+                      isExpectedMultiLogURL(statusURL, label: label, filename: "status.json") else {
+                    return false
+                }
+                sawStatusFile = true
+                i += 1
+            case "--multi-profiles":
+                guard i + 1 < flags.count, allProfilesAreValid(flags[i + 1]) else { return false }
+                i += 1
+            case "--multi-filter":
+                guard i + 1 < flags.count,
+                      isSafeMultiProfileFilter(flags[i + 1]) else { return false }
+                i += 1
+            case "--multi-sequential":
+                break
+            default:
+                return false
+            }
+            i += 1
+        }
+
+        return sawMode && sawWorkspaceRoot && sawBaseProfile && sawStatusFile
     }
 
     /// Delete a generated Python-owned plist.
@@ -180,17 +348,23 @@ enum LaunchAgentWriter {
 
     // MARK: - Multi-profile LaunchAgent
 
-    /// Write a LaunchAgent plist directly for a multi-profile `jamf-cli multi` schedule.
-    /// Bypasses jrc entirely — the plist calls `jamf-cli multi [flags] -- pro collect`.
-    static func multiSetupPlan(for schedule: Schedule, load: Bool) throws -> SetupPlan {
+    /// Write a LaunchAgent plist for a multi-profile JRC automation schedule.
+    /// The plist calls `jamf-reports-community.py multi-launchagent-run`, which
+    /// fans out the selected automation workflow across initialized workspaces.
+    static func multiSetupPlan(
+        for schedule: Schedule,
+        command: (executable: URL, arguments: [String]),
+        workspaceRoot: URL,
+        load: Bool
+    ) throws -> SetupPlan {
         guard let target = schedule.multiTarget else {
             throw WriterError.invalidProfile("not a multi-profile schedule")
         }
+        guard ProfileService.isValid(schedule.profile) else {
+            throw WriterError.invalidProfile(schedule.profile)
+        }
         guard let agentLabel = label(for: schedule) else {
             throw WriterError.invalidSlug(sanitizedSlug(from: schedule.name))
-        }
-        guard let jamfCLI = ExecutableLocator.locate("jamf-cli") else {
-            throw WriterError.invalidProfile("jamf-cli not found in PATH")
         }
 
         let cadence = try setupCadence(from: schedule.schedule)
@@ -198,14 +372,33 @@ enum LaunchAgentWriter {
             .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
         try FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
 
-        var programArgs = [jamfCLI.path, "multi"]
-        programArgs.append(contentsOf: target.cliFlags)
-        if target.sequential { programArgs.append("--sequential") }
-        programArgs.append(contentsOf: ["--", "pro", "collect"])
+        let workspaceRoot = workspaceRoot.resolvingSymlinksInPath().standardizedFileURL
+        var programArgs = [command.executable.path]
+        programArgs.append(contentsOf: command.arguments)
+        programArgs.append(contentsOf: [
+            "multi-launchagent-run",
+            "--mode", schedule.mode.rawValue,
+            "--workspace-root", workspaceRoot.path,
+            "--base-profile", schedule.profile,
+            "--status-file", logDir.appendingPathComponent("status.json").path,
+        ])
+        switch target.scope {
+        case .all:
+            break
+        case .filter(let pattern):
+            programArgs.append(contentsOf: ["--multi-filter", pattern])
+        case .list(let profiles):
+            programArgs.append(contentsOf: ["--multi-profiles", profiles.joined(separator: ",")])
+        }
+        if target.sequential {
+            programArgs.append("--multi-sequential")
+        }
 
         let plistContent: [String: Any] = [
             "Label": agentLabel,
             "ProgramArguments": programArgs,
+            "WorkingDirectory": workspaceRoot.path,
+            "EnvironmentVariables": launchEnvironment(from: [:]),
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
             "StartCalendarInterval": cadence.startCalendarIntervals,
@@ -379,6 +572,30 @@ enum LaunchAgentWriter {
             let resolved = candidate.resolvingSymlinksInPath().standardizedFileURL
             return fm.fileExists(atPath: resolved.path) && resolved.path == script.path
         }
+    }
+
+    /// True when ``path`` is the same `jrc` executable the app would resolve.
+    static func isTrustedJRCExecutable(_ path: String) -> Bool {
+        let expanded = (path as NSString).expandingTildeInPath
+        let candidate = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL
+        guard candidate.lastPathComponent == "jrc",
+              FileManager.default.isExecutableFile(atPath: candidate.path),
+              let located = ExecutableLocator.locate("jrc") else {
+            return false
+        }
+        return sameResolvedPath(candidate, located)
+    }
+
+    /// True when ``path`` is the same `jamf-cli` executable the app would resolve.
+    static func isTrustedJamfCLIExecutable(_ path: String) -> Bool {
+        let expanded = (path as NSString).expandingTildeInPath
+        let candidate = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL
+        guard candidate.lastPathComponent == "jamf-cli",
+              FileManager.default.isExecutableFile(atPath: candidate.path),
+              let located = ExecutableLocator.locate("jamf-cli") else {
+            return false
+        }
+        return sameResolvedPath(candidate, located)
     }
 
     private static func setupCadence(from raw: String) throws -> CadenceOptions {
@@ -640,6 +857,40 @@ enum LaunchAgentWriter {
         sameResolvedPath(url, expectedStderrURL(label: label, root: root))
     }
 
+    static func expectedMultiLogURL(label: String, filename: String) -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/JamfReports", isDirectory: true)
+            .appendingPathComponent(label, isDirectory: true)
+            .appendingPathComponent(filename)
+    }
+
+    static func isExpectedMultiLogURL(_ url: URL, label: String, filename: String) -> Bool {
+        guard isValidLabel(label), isMultiLabel(label) else { return false }
+        let expected = expectedMultiLogURL(label: label, filename: filename)
+        let normalized = url.standardizedFileURL.path
+        guard normalized == expected.standardizedFileURL.path else { return false }
+        let logDir = expected.deletingLastPathComponent()
+        let reportLogsDir = logDir.deletingLastPathComponent()
+        return !isSymlink(url) && !isSymlink(logDir) && !isSymlink(reportLogsDir)
+    }
+
+    private static func validatedMultiLogURL(
+        _ raw: String?,
+        label: String,
+        filename: String
+    ) -> URL? {
+        guard let raw, let url = expandedFileURL(raw),
+              isExpectedMultiLogURL(url, label: label, filename: filename) else {
+            return nil
+        }
+        return url
+    }
+
+    static func isExpectedMultiWorkingDirectory(_ raw: String?) -> Bool {
+        guard let raw, let url = expandedFileURL(raw) else { return false }
+        return sameResolvedPath(url, ProfileService.workspacesRoot())
+    }
+
     /// Swift twin of Python's `_filename_component` for generated status/log paths.
     static func filenameComponent(_ text: String) -> String {
         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
@@ -670,8 +921,36 @@ enum LaunchAgentWriter {
             == rhs.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
+    private static func expandedFileURL(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("\0") else { return nil }
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        guard expanded.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: expanded).standardizedFileURL
+    }
+
+    private static func isSymlink(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
+    }
+
     private static func isPath(_ path: String, inside root: String) -> Bool {
         path == root || path.hasPrefix(root + "/")
+    }
+
+    private static func allProfilesAreValid(_ raw: String) -> Bool {
+        let profiles = raw
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+        return !profiles.isEmpty && profiles.allSatisfy(ProfileService.isValid)
+    }
+
+    private static func isSafeMultiProfileFilter(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 128, !trimmed.contains("\0") else {
+            return false
+        }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-*?[]")
+        return trimmed.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
     private static func isHomebrewPythonPath(_ path: String) -> Bool {

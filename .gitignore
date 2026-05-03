@@ -22,6 +22,7 @@ Harbor/
 __pycache__/
 *.pyc
 *.pyo
+*.orig
 
 # macOS
 .DS_Store
