@@ -82,17 +82,56 @@ struct FleetOverviewView: View {
         )
     }
 
+    private var issueCount: Int {
+        rows.filter { fleetProfileHasIssue($0.summary) }.count
+    }
+
+    private var stabilitySpark: [Double] {
+        rows.compactMap { $0.summary?.stabilityIndex }
+    }
+
     private var summaryStrip: some View {
         HStack(spacing: 12) {
             StatTile(label: "Profiles", value: "\(rows.count)", sub: "Initialized workspaces")
+                .overlay(alignment: .topTrailing) {
+                    if issueCount > 0 {
+                        Pill(text: "\(issueCount) Issue\(issueCount == 1 ? "" : "s")", tone: .danger)
+                            .padding(8)
+                    }
+                }
             StatTile(label: "Devices", value: "\(totalDevices)", sub: "Latest successful summaries")
             StatTile(
                 label: "Stability",
                 value: stabilityLabel(averageStability),
-                sub: "Average index"
+                sub: "Average index",
+                sparkValues: stabilitySpark.isEmpty ? nil : stabilitySpark,
+                sparkColor: Theme.Colors.teal
             )
-            StatTile(label: "Latest Run", value: latestRunDate, sub: "Most recent summary")
+            latestRunTile
         }
+    }
+
+    private var latestRunTile: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Kicker(text: "Latest Run")
+            Text(latestRunDate)
+                .font(Theme.Fonts.mono(18, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fg)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text("Most recent summary across all profiles")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.Colors.fgMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.winBG2)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
     }
 
     private var issuesFilter: some View {
@@ -331,23 +370,49 @@ private struct FleetProfileCard: View {
         row.summary?.stabilityIndex
     }
 
+    private var hasIssue: Bool { fleetProfileHasIssue(row.summary) }
+    private var hasNoSummary: Bool { row.summary == nil }
+
     var body: some View {
         Card(padding: 16) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Kicker(text: "Profile")
-                        Text(row.profile)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fg)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    Pill(
-                        text: stability.map { stabilityLabel($0) } ?? "No Data",
-                        tone: stabilityTone(stability)
-                    )
+            HStack(alignment: .top, spacing: 12) {
+                if hasIssue && !hasNoSummary {
+                    Rectangle()
+                        .fill(Theme.Colors.warn)
+                        .frame(width: 3)
+                        .clipShape(RoundedRectangle(cornerRadius: 1.5, style: .continuous))
                 }
+                cardContent
+            }
+        }
+        .overlay {
+            if hasNoSummary {
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .strokeBorder(
+                        Theme.Colors.hairlineStrong,
+                        style: StrokeStyle(lineWidth: 0.8, dash: [4, 3])
+                    )
+            }
+        }
+    }
+
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Kicker(text: "Profile")
+                    Text(row.profile)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Pill(
+                    text: stability.map { stabilityLabel($0) } ?? "No Data",
+                    tone: stabilityTone(stability)
+                )
+                .contentTransition(.numericText())
+            }
 
                 HStack(alignment: .firstTextBaseline, spacing: 18) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -380,7 +445,6 @@ private struct FleetProfileCard: View {
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
         }
     }
 

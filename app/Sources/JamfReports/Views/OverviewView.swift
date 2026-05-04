@@ -209,14 +209,30 @@ struct OverviewView: View {
     private var statRow: some View {
         HStack(spacing: 12) {
             ForEach(workspace.selectedScoreCards) { metric in
+                let isPrimary = metric == .stability
+                let isDanger = scoreCardTrend(for: metric) == .down && metric != .stale
                 NavigationLink(value: OverviewDrillDown.metric(metric.rawValue)) {
                     scoreCard(for: metric)
+                        .modifier(StatTileHealthModifier(isDanger: isDanger, isPrimary: isPrimary))
                         .drillDownChrome()
                 }
                 .buttonStyle(.plain)
                 .help("Open \(metric.displayLabel) details")
+                .layoutPriority(isPrimary ? 1 : 0)
             }
         }
+    }
+
+    private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
+        let values: [Double] = workspace.demoMode ?
+            (metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])) :
+            trendStore.values(metric: metric)
+        guard let last = values.last else { return .flat }
+        let prev = values.count > 1 ? values[values.count - 2] : last
+        let diff = last - prev
+        if diff == 0 { return .flat }
+        if metric == .stale { return diff < 0 ? .up : .down }
+        return diff > 0 ? .up : .down
     }
 
     private func scoreCard(for metric: TrendSeries.Metric) -> some View {
@@ -408,39 +424,7 @@ struct OverviewView: View {
     }
 
     private func agentCard(_ a: SecurityAgent) -> some View {
-        let barColor: Color = a.pct > 90 ? Theme.Colors.ok :
-                              a.pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(a.name).font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.Colors.fg)
-            Text("\(String(format: "%.1f", a.pct))%")
-                .font(Theme.Fonts.serif(22, weight: .bold))
-                .foregroundStyle(Theme.Colors.fg)
-                .monospacedDigit()
-            HStack(spacing: 6) {
-                Mono(text: "\(a.installed) / 502", size: 10.5)
-                if a.trend == .up {
-                    Image(systemName: "arrow.up").font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Theme.Colors.ok)
-                }
-            }
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.05)).frame(height: 4)
-                GeometryReader { geo in
-                    Capsule().fill(barColor).frame(width: geo.size.width * a.pct / 100, height: 4)
-                }
-                .frame(height: 4)
-            }
-            .padding(.top, 4)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.025))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        AgentCardView(agent: a)
     }
 
     // MARK: Recent activity table
@@ -872,7 +856,15 @@ private enum OverviewDrillDown: Hashable {
 
 private extension View {
     func drillDownChrome() -> some View {
-        self
+        modifier(DrillDownChromeModifier())
+    }
+}
+
+private struct DrillDownChromeModifier: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
             .overlay(alignment: .topTrailing) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .bold))
@@ -880,7 +872,101 @@ private extension View {
                     .padding(8)
                     .background(.ultraThinMaterial, in: Circle())
                     .padding(10)
+                    .opacity(isHovering ? 1 : 0)
+                    .allowsHitTesting(false)
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .strokeBorder(
+                        isHovering ? Theme.Colors.gold.opacity(0.4) : Theme.Colors.hairlineStrong,
+                        lineWidth: 0.5
+                    )
+                    .allowsHitTesting(false)
+            )
             .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    isHovering = hovering
+                }
+            }
+    }
+}
+
+private struct StatTileHealthModifier: ViewModifier {
+    let isDanger: Bool
+    let isPrimary: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .frame(minWidth: isPrimary ? 200 : nil)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .fill(isDanger ? Theme.Colors.danger.opacity(0.08) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .strokeBorder(
+                        isDanger ? Theme.Colors.danger.opacity(0.35) : Color.clear,
+                        lineWidth: 0.5
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
+    }
+}
+
+private struct AgentCardView: View {
+    let agent: SecurityAgent
+    @State private var isHovering = false
+
+    var body: some View {
+        let pct = agent.pct
+        let isAtRisk = pct < 80
+        let barColor: Color = pct > 90 ? Theme.Colors.ok :
+                              pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
+        let trackColor: Color = isAtRisk ? Theme.Colors.warn.opacity(0.15) : Color.white.opacity(0.05)
+        let gap = max(0, 502 - agent.installed)
+
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(agent.name).font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fg)
+            Text("\(String(format: "%.1f", pct))%")
+                .font(Theme.Fonts.serif(22, weight: .bold))
+                .foregroundStyle(Theme.Colors.fg)
+                .monospacedDigit()
+            HStack(spacing: 6) {
+                Mono(text: "\(agent.installed) / 502", size: 10.5)
+                if agent.trend == .up {
+                    Image(systemName: "arrow.up").font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Theme.Colors.ok)
+                }
+            }
+            ZStack(alignment: .leading) {
+                Capsule().fill(trackColor).frame(height: 4)
+                GeometryReader { geo in
+                    Capsule().fill(barColor).frame(width: geo.size.width * pct / 100, height: 4)
+                }
+                .frame(height: 4)
+            }
+            .padding(.top, 4)
+            if isAtRisk {
+                Mono(text: "\(gap) not installed", size: 10, color: Theme.Colors.fgMuted)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.025))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .shadow(color: .black.opacity(isHovering ? 0.25 : 0), radius: isHovering ? 8 : 0, y: isHovering ? 4 : 0)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
     }
 }

@@ -214,13 +214,22 @@ struct AuditView: View {
                 Card(padding: 0) {
                     Table(filteredFindings, sortOrder: $sortOrderAudit) {
                         TableColumn("Finding", value: \.name) { f in
-                            HStack {
+                            HStack(spacing: 8) {
+                                Rectangle()
+                                    .fill(f.severity.uppercased() == "CRITICAL"
+                                          ? Theme.Colors.danger
+                                          : Color.clear)
+                                    .frame(width: 3)
+                                    .frame(maxHeight: .infinity)
                                 severityIcon(f.severity)
                                 Text(f.name).font(.system(size: 13, weight: .semibold))
                                 if newFindingKeys.contains(f.driftKey) {
                                     Pill(text: "New", tone: .gold, icon: "sparkle")
+                                        .transition(.scale.combined(with: .opacity))
                                 }
                             }
+                            .animation(.spring(response: 0.35, dampingFraction: 0.7),
+                                       value: newFindingKeys.contains(f.driftKey))
                         }
                         TableColumn("Severity", value: \.severity) { f in
                             Pill(text: f.severity, tone: pillTone(f.severity))
@@ -260,11 +269,11 @@ struct AuditView: View {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
-                        SectionHeader(title: "Recently Resolved")
+                        Kicker(text: "Resolved · \(resolvedFindings.count)", tone: .teal)
                         Spacer()
-                        Pill(text: "\(resolvedFindings.count)", tone: .teal, icon: "checkmark")
                     }
                     .padding(16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
 
                     Divider().background(Theme.Colors.hairline)
 
@@ -278,6 +287,7 @@ struct AuditView: View {
                                     Text(finding.name)
                                         .font(.system(size: 12.5, weight: .semibold))
                                         .foregroundStyle(Theme.Colors.fg)
+                                        .strikethrough(true, color: Theme.Colors.fgMuted)
                                     Text(finding.recommendation)
                                         .font(.system(size: 11.5))
                                         .foregroundStyle(Theme.Colors.fgMuted)
@@ -289,6 +299,7 @@ struct AuditView: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 9)
+                            .opacity(0.5)
                             if idx < resolvedFindings.count - 1 {
                                 Divider().background(Theme.Colors.hairline)
                             }
@@ -296,6 +307,7 @@ struct AuditView: View {
                     }
                 }
             }
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: resolvedFindings.count)
         }
     }
 
@@ -557,18 +569,28 @@ private struct AffectedBar: View {
         return min(max(CGFloat(value) / CGFloat(maxValue), 0), 1)
     }
 
-    var body: some View {
-        HStack(spacing: 8) {
-            Mono(text: "\(value)")
-                .frame(width: 34, alignment: .trailing)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.08))
-                Capsule()
-                    .fill(toneColor(tone))
-                    .frame(width: value == 0 ? 0 : max(3, 58 * fraction))
-            }
-            .frame(width: 58, height: 6)
+    private var fillColor: Color {
+        switch tone {
+        case .danger: Theme.Colors.danger.opacity(0.55)
+        case .warn:   Theme.Colors.warn.opacity(0.55)
+        default:      toneColor(tone).opacity(0.45)
         }
+    }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .frame(width: 80, height: 16)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(fillColor)
+                .frame(width: value == 0 ? 0 : max(4, 80 * fraction), height: 16)
+            Text("\(value)")
+                .font(Theme.Fonts.mono(11, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fg)
+                .frame(width: 80, height: 16)
+        }
+        .frame(width: 80, height: 16)
     }
 }
 
