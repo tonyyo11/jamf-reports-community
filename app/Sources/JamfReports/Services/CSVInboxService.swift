@@ -213,12 +213,16 @@ struct CSVInboxService {
                 eventMask: [.write, .delete, .rename, .extend, .attrib, .link, .revoke],
                 queue: DispatchQueue.global(qos: .utility)
             )
-            source.setEventHandler { [weak self] in
-                DispatchQueue.main.async {
+            // Handlers run on the dispatch queue (not main). Mark @Sendable so the
+            // compiler does not infer @MainActor isolation from the enclosing class
+            // — that inference triggers a runtime isolation check that traps under
+            // Swift 6 when the handler runs off-main.
+            source.setEventHandler { @Sendable [weak self] in
+                Task { @MainActor [weak self] in
                     self?.scheduleReload(onChange: onChange)
                 }
             }
-            source.setCancelHandler {
+            source.setCancelHandler { @Sendable in
                 Darwin.close(descriptor)
             }
             self.source = source

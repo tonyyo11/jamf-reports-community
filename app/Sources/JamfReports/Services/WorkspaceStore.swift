@@ -411,7 +411,9 @@ final class WorkspaceStore {
     private func consoleURL(path: String, id: Int) -> URL? {
         let rawServer = activeProfileURL()
         guard !rawServer.isEmpty else { return nil }
-        guard var components = URLComponents(string: rawServer) else { return nil }
+        guard var components = URLComponents(string: rawServer),
+              components.scheme?.isEmpty == false,
+              components.host?.isEmpty == false else { return nil }
         let separator = components.path.hasSuffix("/") ? "" : "/"
         components.path = components.path + separator + path
         components.queryItems = [
