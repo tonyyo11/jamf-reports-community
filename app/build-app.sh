@@ -35,42 +35,19 @@ mkdir -p "$APP_OUT/Contents/Resources"
 cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 
-# Resource bundle lives next to the executable so Bundle.module resolves correctly.
-# SwiftPM produces a flat directory (iOS-style); macOS NSBundle requires the
-# canonical Contents/Info.plist + Contents/Resources/ layout. Strict enforcement
-# on macOS 15+/26+ trips Bundle.module's fatalError on flat layouts even when
-# the build machine tolerated them. Always re-layout into the macOS form.
+# Copy bundled font assets directly into Contents/Resources/ so Bundle.main
+# can find them on any Mac. SwiftPM's auto-generated `Bundle.module` accessor
+# is incompatible with macOS .app code-signing rules (it expects the resource
+# bundle at the .app root, outside Contents/, which violates the "unsealed
+# contents" check), so FontRegistry uses a Bundle.main lookup instead — see
+# Theme.swift `FontRegistry.locateFont(named:)`. The SwiftPM bundle is
+# deliberately NOT copied into the packaged .app.
 if [[ -d "$BUNDLE" ]]; then
-  COPIED_BUNDLE="$APP_OUT/Contents/MacOS/$(basename "$BUNDLE")"
-  rm -rf "$COPIED_BUNDLE"
-  mkdir -p "$COPIED_BUNDLE/Contents/Resources"
-  # Move every file from the flat SwiftPM bundle into Contents/Resources.
-  # Preserve subdirectories if the bundle already nests anything.
-  find "$BUNDLE" -mindepth 1 -maxdepth 1 \
-    \( ! -name "Info.plist" ! -name "_CodeSignature" \) \
-    -print0 | while IFS= read -r -d '' entry; do
-    cp -R "$entry" "$COPIED_BUNDLE/Contents/Resources/"
+  find "$BUNDLE" -mindepth 1 -maxdepth 1 -type f \
+    \( -name "*.ttf" -o -name "*.otf" -o -name "*.png" -o -name "*.json" \) \
+    -print0 | while IFS= read -r -d '' asset; do
+    cp "$asset" "$APP_OUT/Contents/Resources/"
   done
-  # Always rewrite Info.plist at the canonical path. SwiftPM's bundle ID needs
-  # to be `JamfReports_JamfReports` so Bundle.module's name match succeeds.
-  cat > "$COPIED_BUNDLE/Contents/Info.plist" <<'BUNDLEPLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleIdentifier</key>
-    <string>JamfReports_JamfReports</string>
-    <key>CFBundleName</key>
-    <string>JamfReports_JamfReports</string>
-    <key>CFBundlePackageType</key>
-    <string>BNDL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>2.0.0</string>
-    <key>CFBundleVersion</key>
-    <string>2.0.0</string>
-</dict>
-</plist>
-BUNDLEPLIST
 fi
 
 # Regenerate the AppIcon.icns if missing (first-run convenience).

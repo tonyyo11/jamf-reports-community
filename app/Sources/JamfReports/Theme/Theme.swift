@@ -102,8 +102,25 @@ enum FontRegistry {
             "IBMPlexMono-Bold",
         ]
         for name in names {
-            guard let url = Bundle.module.url(forResource: name, withExtension: "ttf") else { continue }
+            guard let url = locateFont(named: name) else { continue }
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
+    }
+
+    /// Locate a font without going through `Bundle.module`. SwiftPM's auto-generated
+    /// accessor expects the resource bundle at the .app root, which conflicts with
+    /// macOS code-signing rules (no unsealed content outside `Contents/`). We ship
+    /// fonts directly into `Contents/Resources/` and resolve via `Bundle.main`. The
+    /// `Bundle.module` fallback is gated to DEBUG so accessing it never trips the
+    /// fatalError on a packaged release build running on a clean Mac.
+    private static func locateFont(named name: String) -> URL? {
+        if let url = Bundle.main.url(forResource: name, withExtension: "ttf") {
+            return url
+        }
+        #if DEBUG
+        return Bundle.module.url(forResource: name, withExtension: "ttf")
+        #else
+        return nil
+        #endif
     }
 }
