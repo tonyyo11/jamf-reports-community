@@ -134,9 +134,8 @@ struct CSVInboxService {
                 queue: DispatchQueue.global(qos: .utility)
             )
             source.setEventHandler { [weak self] in
-                Task { @MainActor in
-                    self?.scheduleReload(onChange: onChange)
-                }
+                guard let self = self else { return }
+                self.scheduleReload(onChange: onChange)
             }
             source.setCancelHandler {
                 Darwin.close(descriptor)
