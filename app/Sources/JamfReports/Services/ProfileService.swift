@@ -15,9 +15,9 @@ enum ProfileService {
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile):
-                "Invalid profile name: \(profile)"
+                return "Invalid profile name: \(profile)"
             case .outsideWorkspaceRoot(let url):
-                "Refusing to remove workspace outside ~/Jamf-Reports: \(url.path)"
+                return "Refusing to remove workspace outside ~/Jamf-Reports: \(url.path)"
             }
         }
     }
@@ -57,7 +57,15 @@ enum ProfileService {
 
     /// Workspace root, always inside the user's home dir.
     static func workspacesRoot() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        #if DEBUG
+        if let override = getenv("JRC_TEST_WORKSPACES_ROOT"),
+           let path = String(validatingCString: override),
+           !path.isEmpty {
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        #endif
+
+        return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Jamf-Reports")
     }
 
@@ -117,6 +125,9 @@ enum ProfileService {
         let root = workspacesRoot().resolvingSymlinksInPath().standardizedFileURL
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL
         guard resolved.path == root.appendingPathComponent(profile, isDirectory: true).path else {
+            throw CleanupError.outsideWorkspaceRoot(url)
+        }
+        guard resolved.deletingLastPathComponent().standardizedFileURL.path == root.path else {
             throw CleanupError.outsideWorkspaceRoot(url)
         }
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
@@ -257,5 +268,48 @@ enum ProfileService {
     private static func profileSort(_ lhs: JamfCLIProfile, _ rhs: JamfCLIProfile) -> Bool {
         if lhs.isDefault != rhs.isDefault { return lhs.isDefault && !rhs.isDefault }
         return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+    }
+}
+
+// MARK: - API scope persistence
+
+extension ProfileService {
+
+    private static func scopeKey(for slug: String) -> String {
+        "profile.scope.\(slug)"
+    }
+
+    /// Returns the persisted `APIScope` for `profileSlug`.
+    ///
+    /// Returns `.limited` when no value has been stored — explicit elevation is
+    /// required before any destructive action can be gated on `fullAdmin`.
+    ///
+    /// - Parameter profileSlug: A validated profile slug (`ProfileService.isValid`).
+    /// - Parameter store: The `UserDefaults` suite to read from. Defaults to `.standard`.
+    /// - Returns: The stored scope, or `.limited` if absent or the slug is invalid.
+    static func scope(
+        for profileSlug: String,
+        store: UserDefaults = .standard
+    ) -> APIScope {
+        guard isValid(profileSlug) else { return .limited }
+        guard let raw = store.string(forKey: scopeKey(for: profileSlug)),
+              let parsed = APIScope(rawValue: raw) else {
+            return .limited
+        }
+        return parsed
+    }
+
+    /// Persists `scope` for `profileSlug`.
+    ///
+    /// - Parameter scope: The `APIScope` to store.
+    /// - Parameter profileSlug: A validated profile slug. Silently no-ops for invalid slugs.
+    /// - Parameter store: The `UserDefaults` suite to write to. Defaults to `.standard`.
+    static func setScope(
+        _ scope: APIScope,
+        for profileSlug: String,
+        store: UserDefaults = .standard
+    ) {
+        guard isValid(profileSlug) else { return }
+        store.set(scope.rawValue, forKey: scopeKey(for: profileSlug))
     }
 }

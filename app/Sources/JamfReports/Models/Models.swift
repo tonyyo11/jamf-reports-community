@@ -11,6 +11,23 @@ struct Org: Sendable {
     let workspaceRoot: String
 }
 
+// MARK: - API scope
+
+/// Tracks the privilege level granted to this profile's API client.
+/// Defaults to `.limited` until the admin explicitly elevates the profile.
+/// Gating destructive operations on this value is deferred to W22+.
+enum APIScope: String, Codable, CaseIterable, Sendable {
+    case fullAdmin
+    case limited
+
+    var displayName: String {
+        switch self {
+        case .fullAdmin: "Full Admin"
+        case .limited:   "Limited"
+        }
+    }
+}
+
 // MARK: - jamf-cli profile
 
 struct JamfCLIProfile: Identifiable, Sendable {
@@ -681,6 +698,24 @@ private func valueLooksGood(_ value: String) -> Bool {
         || text.contains("encrypted")
         || text.contains("escrowed")
         || ["true", "yes", "1", "managed"].contains(text)
+}
+
+// MARK: - Token status
+
+/// Read-only snapshot of a jamf-cli auth token for one profile.
+/// Populated by `CLIBridge.tokenStatus(for:)` using `jamf-cli pro auth token --output json`.
+///
+/// JSON shape (jamf-cli v1.9+):
+///   { "token": "eyJ...", "expires_at": "2026-05-04T13:38:38Z" }
+/// `expires_at` is omitted when the profile uses a static token file (bearer-token auth).
+struct TokenStatus: Sendable, Codable {
+    let profile: String
+    /// Parsed from `expires_at`; nil when jamf-cli omits it (token-file auth).
+    let expiresAt: Date?
+    /// True when jamf-cli returned a token without error (exit 0).
+    let isValid: Bool
+    /// Raw stdout for debugging.
+    let raw: String
 }
 
 // MARK: - Trend metric

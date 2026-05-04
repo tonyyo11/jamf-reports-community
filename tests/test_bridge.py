@@ -499,3 +499,48 @@ def test_group_analyze_unused_mode_adds_flag(monkeypatch, jrc) -> None:
     assert "pro" in captured["args"]
     assert "group-tools" in captured["args"]
     assert "analyze" in captured["args"]
+
+
+# ---------------------------------------------------------------------------
+# audit_platform_checks()
+# ---------------------------------------------------------------------------
+
+
+def test_audit_platform_checks_parses_array(monkeypatch, jrc) -> None:
+    """audit_platform_checks() returns the parsed top-level array verbatim."""
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+    sample = [
+        {"category": "platform", "severity": "warning",
+         "name": "Undeployed blueprints", "affected": 2,
+         "recommendation": "Deploy or archive draft blueprints."},
+        {"category": "platform", "severity": "critical",
+         "name": "Blueprint deployment failures", "affected": 4,
+         "recommendation": "Investigate failed deployments."},
+    ]
+    captured: dict[str, Any] = {}
+
+    def fake_run_and_save(report_type, args, cache_names, timeout=None):
+        captured["report_type"] = report_type
+        captured["args"] = list(args)
+        captured["cache_names"] = list(cache_names)
+        return sample
+
+    monkeypatch.setattr(bridge, "_run_and_save", fake_run_and_save)
+
+    result = bridge.audit_platform_checks()
+    assert result == sample
+    assert captured["report_type"] == "audit-platform-checks"
+    assert captured["args"] == ["pro", "audit", "--checks", "platform"]
+    assert "audit-platform-checks" in captured["cache_names"]
+
+
+def test_audit_platform_checks_returns_none_on_failure(monkeypatch, jrc) -> None:
+    """When _run_and_save returns None (subprocess failure, no cache), the call
+    returns None rather than raising."""
+    bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
+
+    def fake_run_and_save(report_type, args, cache_names, timeout=None):
+        return None
+
+    monkeypatch.setattr(bridge, "_run_and_save", fake_run_and_save)
+    assert bridge.audit_platform_checks() is None

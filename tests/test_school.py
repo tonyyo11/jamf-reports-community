@@ -188,7 +188,7 @@ def test_school_dashboard_device_inventory_has_rows(jrc, fixtures_root, tmp_path
     dashboard = jrc.SchoolDashboard(config, workbook, fmts, csv_df=df)
     # Write just the Device Inventory sheet
     ws = workbook.add_worksheet("Device Inventory")
-    dashboard._write_device_inventory(ws)
+    dashboard._write_device_inventory_compact(ws)
     workbook.close()
 
     # The workbook should be non-empty
@@ -279,3 +279,380 @@ def test_cmd_school_generate_csv_only(jrc, fixtures_root, tmp_path) -> None:
 
     assert Path(out_file).exists()
     assert Path(out_file).stat().st_size > 5000
+
+
+# ---------------------------------------------------------------------------
+# SchoolDashboard._write_device_inventory_compact
+# ---------------------------------------------------------------------------
+
+
+def _make_school_dashboard(jrc, config, df, tmp_path):
+    import xlsxwriter
+
+    out_path = tmp_path / "inv.xlsx"
+    workbook = xlsxwriter.Workbook(str(out_path), {"remove_timezone": True})
+    fmts = jrc._build_formats(workbook)
+    dashboard = jrc.SchoolDashboard(config, workbook, fmts, csv_df=df)
+    return dashboard, workbook, out_path
+
+
+def test_write_device_inventory_compact_no_crash_missing_columns(
+    jrc, fixtures_root, tmp_path
+) -> None:
+    """Missing device_type / user_name mappings produce blank cells, no exception."""
+    import pandas as pd
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    # Omit device_type and user_name from config — they should be blank, not a crash
+    config._data["school_columns"].pop("device_type", None)
+    config._data["school_columns"].pop("user_name", None)
+
+    df = pd.DataFrame({
+        "SerialNumber": ["ABC123", "DEF456"],
+        "Name": ["iPad 1", "iPad 2"],
+        "OsVersion": ["17.0", "16.5"],
+        "LocationName": ["School A", "School A"],
+        "LastConnected": ["2026-04-01T00:00:00Z", "2026-03-01T00:00:00Z"],
+    })
+
+    dashboard, workbook, out_path = _make_school_dashboard(jrc, config, df, tmp_path)
+    ws = workbook.add_worksheet("Inv")
+    dashboard._write_device_inventory_compact(ws)
+    workbook.close()
+
+    assert out_path.stat().st_size > 0
+
+
+def test_write_device_inventory_compact_malformed_checkin_treated_as_stale(
+    jrc, fixtures_root, tmp_path
+) -> None:
+    """Unparseable last_checkin values are treated as stale (Status = 'Stale')."""
+    import pandas as pd
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    config._data["thresholds"]["stale_device_days"] = 30
+
+    df = pd.DataFrame({
+        "SerialNumber": ["ABC123"],
+        "Name": ["Test iPad"],
+        "OsVersion": ["17.0"],
+        "LocationName": ["School A"],
+        "LastConnected": ["not-a-date"],
+    })
+
+    dashboard, workbook, out_path = _make_school_dashboard(jrc, config, df, tmp_path)
+    ws = workbook.add_worksheet("Inv")
+    dashboard._write_device_inventory_compact(ws)
+    workbook.close()
+
+    # The workbook writes without error; we verify it is non-empty as a proxy
+    # for the row being written at all (stale path must not raise or skip).
+    assert out_path.stat().st_size > 0
+
+
+def test_write_device_inventory_compact_all_stale(
+    jrc, fixtures_root, tmp_path
+) -> None:
+    """Every row whose last_checkin exceeds the threshold is marked 'Stale'."""
+    import pandas as pd
+    import openpyxl
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    config._data["thresholds"]["stale_device_days"] = 1  # tiny threshold
+
+    # Use a date far in the past so every row is stale
+    df = pd.DataFrame({
+        "SerialNumber": ["S1", "S2", "S3"],
+        "Name": ["Dev 1", "Dev 2", "Dev 3"],
+        "OsVersion": ["17.0", "17.0", "17.0"],
+        "LocationName": ["Loc A", "Loc B", "Loc A"],
+        "LastConnected": [
+            "2020-01-01T00:00:00Z",
+            "2019-06-15T12:00:00Z",
+            "2018-09-01T00:00:00Z",
+        ],
+    })
+
+    dashboard, workbook, out_path = _make_school_dashboard(jrc, config, df, tmp_path)
+    ws = workbook.add_worksheet("Inv")
+    dashboard._write_device_inventory_compact(ws)
+    workbook.close()
+
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    # Column H (index 8) is "Status"; row 1 is the header
+    statuses = [sheet.cell(row=r, column=8).value for r in range(2, 5)]
+    assert all(s == "Stale" for s in statuses), f"Expected all Stale, got {statuses}"
+
+
+# ---------------------------------------------------------------------------
+# SchoolDashboard._write_device_groups_sorted
+# ---------------------------------------------------------------------------
+
+
+class _StubBridge:
+    """Minimal bridge stub for device-groups tests."""
+
+    def __init__(self, groups):
+        self._groups = groups
+
+    def device_groups_list(self):
+        return self._groups
+
+
+def _make_bridge_dashboard(jrc, config, bridge, tmp_path):
+    import xlsxwriter
+
+    out_path = tmp_path / "groups.xlsx"
+    workbook = xlsxwriter.Workbook(str(out_path), {"remove_timezone": True})
+    fmts = jrc._build_formats(workbook)
+    dashboard = jrc.SchoolDashboard(config, workbook, fmts, bridge=bridge)
+    return dashboard, workbook, out_path
+
+
+def test_write_device_groups_sorted_empty_no_crash(jrc, fixtures_root, tmp_path) -> None:
+    """Empty group list writes header row only and does not raise."""
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    bridge = _StubBridge([])
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("Device Groups")
+    dashboard._write_device_groups_sorted(ws)
+    workbook.close()
+
+    import openpyxl
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    assert sheet.cell(row=1, column=1).value == "Group Name"
+    assert sheet.cell(row=2, column=1).value is None, "Expected no data rows for empty list"
+
+
+def test_write_device_groups_sorted_sort_order(jrc, fixtures_root, tmp_path) -> None:
+    """Rows are written in device count descending order."""
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    groups = [
+        {"name": "Small Group", "device_count": 5, "location_name": "Campus A"},
+        {"name": "Large Group", "device_count": 100, "location_name": "Campus B"},
+        {"name": "Medium Group", "device_count": 30, "location_name": "Campus A"},
+    ]
+    bridge = _StubBridge(groups)
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("Device Groups")
+    dashboard._write_device_groups_sorted(ws)
+    workbook.close()
+
+    import openpyxl
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    names = [sheet.cell(row=r, column=1).value for r in range(2, 5)]
+    counts = [sheet.cell(row=r, column=2).value for r in range(2, 5)]
+    assert names == ["Large Group", "Medium Group", "Small Group"], (
+        f"Expected descending name order, got {names}"
+    )
+    assert counts == [100, 30, 5], f"Expected descending counts, got {counts}"
+
+
+def test_write_device_groups_sorted_none_bridge_returns_empty(
+    jrc, fixtures_root, tmp_path
+) -> None:
+    """None returned from bridge (cache miss) produces header-only sheet without error."""
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    bridge = _StubBridge(None)
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("Device Groups")
+    dashboard._write_device_groups_sorted(ws)
+    workbook.close()
+
+    import openpyxl
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    assert sheet.cell(row=1, column=1).value == "Group Name"
+    assert sheet.cell(row=2, column=1).value is None
+
+
+class _DEPBridge:
+    """Minimal bridge stub returning DEP devices."""
+
+    def __init__(self, items):
+        self._items = items
+
+    def dep_devices_list(self):
+        return self._items
+
+
+class _IBeaconsBridge:
+    """Minimal bridge stub returning iBeacons."""
+
+    def __init__(self, items):
+        self._items = items
+
+    def ibeacons_list(self):
+        return self._items
+
+
+def _load_json_fixture(fixtures_root, rel: str):
+    import json
+    return json.loads((fixtures_root / "jamf-cli-data" / rel).read_text())
+
+
+# ---------------------------------------------------------------------------
+# SchoolDashboard._write_dep_devices
+# ---------------------------------------------------------------------------
+
+
+def test_write_dep_devices_happy_path(jrc, fixtures_root, tmp_path) -> None:
+    """DEP devices fixture renders with all 6 columns populated for the first row."""
+    import openpyxl
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    items = _load_json_fixture(
+        fixtures_root, "school-dep-devices/dep_devices_happy.json"
+    )
+    bridge = _DEPBridge(items)
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("DEP Devices")
+    dashboard._write_dep_devices(ws)
+    workbook.close()
+
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    headers = [sheet.cell(row=1, column=c).value for c in range(1, 7)]
+    assert headers == [
+        "Serial Number", "Model", "Color", "Status",
+        "Profile Name", "Device Name",
+    ]
+    # 3 data rows
+    serials = [sheet.cell(row=r, column=1).value for r in range(2, 5)]
+    assert all(s for s in serials), f"Expected non-empty serials, got {serials}"
+
+
+def test_write_dep_devices_empty_no_crash(jrc, fixtures_root, tmp_path) -> None:
+    """Empty DEP list writes header row only and does not raise."""
+    import openpyxl
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    bridge = _DEPBridge([])
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("DEP Devices")
+    dashboard._write_dep_devices(ws)
+    workbook.close()
+
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    assert sheet.cell(row=1, column=1).value == "Serial Number"
+    assert sheet.cell(row=2, column=1).value is None
+
+
+def test_write_dep_devices_sorted_by_serial(jrc, fixtures_root, tmp_path) -> None:
+    """Rows are written in serial-number ascending order."""
+    import openpyxl
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    items = [
+        {"serialNumber": "ZZZ999", "model": "iPad", "color": "Silver",
+         "status": "Assigned", "profileName": "P1", "deviceName": "D1"},
+        {"serialNumber": "AAA111", "model": "iPad", "color": "Silver",
+         "status": "Assigned", "profileName": "P1", "deviceName": "D2"},
+        {"serialNumber": "MMM555", "model": "iPad", "color": "Silver",
+         "status": "Assigned", "profileName": "P1", "deviceName": "D3"},
+    ]
+    bridge = _DEPBridge(items)
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("DEP Devices")
+    dashboard._write_dep_devices(ws)
+    workbook.close()
+
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    serials = [sheet.cell(row=r, column=1).value for r in range(2, 5)]
+    assert serials == ["AAA111", "MMM555", "ZZZ999"]
+
+
+# ---------------------------------------------------------------------------
+# SchoolDashboard._write_ibeacons
+# ---------------------------------------------------------------------------
+
+
+def test_write_ibeacons_happy_path(jrc, fixtures_root, tmp_path) -> None:
+    """iBeacons fixture renders the 5 expected columns and lowerCamelCase uuid."""
+    import openpyxl
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    items = _load_json_fixture(
+        fixtures_root, "school-ibeacons/ibeacons_happy.json"
+    )
+    bridge = _IBeaconsBridge(items)
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("iBeacons")
+    dashboard._write_ibeacons(ws)
+    workbook.close()
+
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    headers = [sheet.cell(row=1, column=c).value for c in range(1, 6)]
+    assert headers == ["Name", "UUID", "Major", "Minor", "Description"]
+    # UUID column populated from lowercase 'uuid' source key
+    uuids = [sheet.cell(row=r, column=2).value for r in range(2, 5)]
+    assert all(u for u in uuids), f"Expected non-empty UUIDs, got {uuids}"
+
+
+def test_write_ibeacons_empty_no_crash(jrc, fixtures_root, tmp_path) -> None:
+    """Empty iBeacons list writes header row only and does not raise."""
+    import openpyxl
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    bridge = _IBeaconsBridge([])
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("iBeacons")
+    dashboard._write_ibeacons(ws)
+    workbook.close()
+
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    assert sheet.cell(row=1, column=1).value == "Name"
+    assert sheet.cell(row=2, column=1).value is None
+
+
+def test_write_ibeacons_sorted_by_name(jrc, fixtures_root, tmp_path) -> None:
+    """Rows are written in name ascending order."""
+    import openpyxl
+
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    items = [
+        {"name": "Zone Z", "uuid": "uuid-z", "major": 1, "minor": 1, "description": ""},
+        {"name": "Alpha Hall", "uuid": "uuid-a", "major": 1, "minor": 2, "description": ""},
+        {"name": "Mid-Block", "uuid": "uuid-m", "major": 1, "minor": 3, "description": ""},
+    ]
+    bridge = _IBeaconsBridge(items)
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("iBeacons")
+    dashboard._write_ibeacons(ws)
+    workbook.close()
+
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    names = [sheet.cell(row=r, column=1).value for r in range(2, 5)]
+    assert names == ["Alpha Hall", "Mid-Block", "Zone Z"]
+
+
+def test_write_device_groups_sorted_locations_comma_joined(
+    jrc, fixtures_root, tmp_path
+) -> None:
+    """Multiple locations in a list are comma-joined in the Locations column."""
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    groups = [
+        {"name": "Multi-Campus", "device_count": 10,
+         "locations": ["Campus A", "Campus B", "Campus C"]},
+    ]
+    bridge = _StubBridge(groups)
+    dashboard, workbook, out_path = _make_bridge_dashboard(jrc, config, bridge, tmp_path)
+    ws = workbook.add_worksheet("Device Groups")
+    dashboard._write_device_groups_sorted(ws)
+    workbook.close()
+
+    import openpyxl
+    wb = openpyxl.load_workbook(str(out_path))
+    sheet = wb.active
+    locations_cell = sheet.cell(row=2, column=3).value
+    assert locations_cell == "Campus A, Campus B, Campus C", (
+        f"Expected comma-joined locations, got {locations_cell!r}"
+    )

@@ -42,6 +42,7 @@ struct ConfigState: Equatable, Sendable {
     var archiveEnabled: Bool
     var keepLatestRuns: String
     var exportPptx: Bool
+    var jamfCLIUseCachedData: Bool
     var orgName: String
     var logoPath: String
     var accentColor: String
@@ -96,6 +97,7 @@ struct ConfigState: Equatable, Sendable {
         archiveEnabled: true,
         keepLatestRuns: "10",
         exportPptx: false,
+        jamfCLIUseCachedData: true,
         orgName: "",
         logoPath: "",
         accentColor: "#2D5EA2",
@@ -131,11 +133,11 @@ enum ConfigService {
 
     private static let managedTopLevelKeys: Set<String> = [
         "columns", "security_agents", "custom_eas", "thresholds", "compliance",
-        "platform", "output", "branding",
+        "platform", "output", "jamf_cli", "branding",
     ]
 
-    static func load(profile: String) throws -> LoadedConfig {
-        let url = try configURL(for: profile)
+    static func load(profile: String, workspaceRoot: URL? = nil) throws -> LoadedConfig {
+        let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw ConfigError.missingConfig(url)
         }
@@ -149,9 +151,10 @@ enum ConfigService {
     static func save(
         profile: String,
         state: ConfigState,
-        existingDocument: YAMLCodec.YAMLDocument?
+        existingDocument: YAMLCodec.YAMLDocument?,
+        workspaceRoot: URL? = nil
     ) throws -> YAMLCodec.YAMLDocument {
-        let url = try configURL(for: profile)
+        let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
         try rejectSymlinkDestination(url)
 
         let manager = FileManager.default
@@ -182,12 +185,12 @@ enum ConfigService {
         return try YAMLCodec.decode(encoded)
     }
 
-    static func configURL(for profile: String) throws -> URL {
+    static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
         guard ProfileService.isValid(profile) else {
             throw ConfigError.invalidProfile(profile)
         }
 
-        let root = ProfileService.workspacesRoot()
+        let root = (workspaceRoot ?? ProfileService.workspacesRoot())
             .resolvingSymlinksInPath()
             .standardizedFileURL
         let workspace = root
@@ -308,6 +311,11 @@ enum ConfigService {
             state.exportPptx = output.value(for: "export_pptx")?.boolValue ?? state.exportPptx
         }
 
+        if let jamfCLI = root.value(for: "jamf_cli")?.mapping {
+            state.jamfCLIUseCachedData =
+                jamfCLI.value(for: "use_cached_data")?.boolValue ?? state.jamfCLIUseCachedData
+        }
+
         if let branding = root.value(for: "branding")?.mapping {
             state.orgName = string(branding, "org_name")
             state.logoPath = string(branding, "logo_path")
@@ -367,6 +375,10 @@ enum ConfigService {
         output.set("keep_latest_runs", value: intScalar(state.keepLatestRuns))
         output.set("export_pptx", value: .scalar(.bool(state.exportPptx)))
         root.set("output", value: .mapping(output))
+
+        var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? .init(entries: [])
+        jamfCLI.set("use_cached_data", value: .scalar(.bool(state.jamfCLIUseCachedData)))
+        root.set("jamf_cli", value: .mapping(jamfCLI))
 
         var branding = root.value(for: "branding")?.mapping ?? .init(entries: [])
         branding.set("org_name", value: scalar(state.orgName))

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "plan-pascal-001",
+    "name": "Pascal Casing Plan",
+    "uuid": "44444444-4444-4444-4444-444444444444",
+    "description": "Plan with mixed PascalCase config blocks",
+    "created": "2025-09-01T00:00:00Z",
+    "updated": "2026-04-01T00:00:00Z",
+    "logLevel": "INFO",
+    "autoUpdate": true,
+    "threatPreventionStrategy": "BALANCED",
+    "profileVersion": 3,
+    "customEngineConfig": {
+      "MalwareRiskware": {"enabled": true},
+      "AdversaryTactics": {"enabled": true},
+      "SystemTampering": {"enabled": false},
+      "FilelessThreats": {"enabled": true},
+      "Experimental": {"enabled": false}
+    },
+    "AlertStatusCounts": {
+      "Open": 12,
+      "Resolved": 47,
+      "Suppressed": 3
+    },
+    "exceptionSets": [{"name": "Pascal Exception"}],
+    "analyticSets": [{"analyticSet": {"name": "Core Analytics"}}],
+    "telemetry": true,
+    "telemetryV2": true
+  }
+]

@@ -84,7 +84,7 @@ final class CLIBridge {
     ) async -> [CachedJSONSnapshot] {
         await Task.detached(priority: .utility) {
             guard ProfileService.isValid(profile),
-                  let dataDir = WorkspacePaths.dataDir(for: profile) else {
+                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
                 return []
             }
             let dir = dataDir.appendingPathComponent(type, isDirectory: true)
@@ -308,6 +308,55 @@ final class CLIBridge {
         return await run(executable: bin, arguments: ["-p", profile, "config", "validate"], onLine: onLine)
     }
 
+    /// Fetch the token status for `profile` using `jamf-cli pro auth token --output json`.
+    ///
+    /// Returns a `TokenStatus` with `isValid: false` (never throws) when:
+    /// - jamf-cli is not installed
+    /// - the profile slug is invalid
+    /// - jamf-cli exits non-zero (unauthenticated, old version, unknown command)
+    /// - JSON is missing or malformed
+    nonisolated func tokenStatus(for profile: String) async -> TokenStatus? {
+        guard ProfileService.isValid(profile),
+              let bin = ExecutableLocator.locate("jamf-cli") else {
+            return nil
+        }
+        // Subcommand: jamf-cli -p <profile> pro auth token --output json --no-input
+        // Available since jamf-cli v1.9; older versions exit non-zero with "unknown command".
+        let args = CLICommand.proAuthToken(profile: profile).argv
+        let (exitCode, data) = await runAndCapture(executable: bin, arguments: args) { _ in }
+        let raw = String(data: data, encoding: .utf8) ?? ""
+        guard exitCode == 0, !data.isEmpty else {
+            return TokenStatus(profile: profile, expiresAt: nil, isValid: false, raw: raw)
+        }
+        return parseTokenStatus(profile: profile, data: data, raw: raw)
+    }
+
+    private nonisolated func parseTokenStatus(
+        profile: String,
+        data: Data,
+        raw: String
+    ) -> TokenStatus {
+        // Defensive decode struct — every field optional so malformed JSON never throws.
+        struct TokenPayload: Decodable {
+            let token: String?
+            let expires_at: String?   // ISO8601, e.g. "2026-05-04T13:38:38Z"; omitted for token-file auth
+        }
+        let decoder = JSONDecoder()
+        guard let payload = try? decoder.decode(TokenPayload.self, from: data) else {
+            return TokenStatus(profile: profile, expiresAt: nil, isValid: false, raw: raw)
+        }
+        let hasToken = !(payload.token ?? "").isEmpty
+        let expiresAt: Date?
+        if let raw_date = payload.expires_at {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            expiresAt = formatter.date(from: raw_date)
+        } else {
+            expiresAt = nil
+        }
+        return TokenStatus(profile: profile, expiresAt: expiresAt, isValid: hasToken, raw: raw)
+    }
+
     nonisolated func deviceDetail(profile: String, deviceID: String) async -> Data? {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard ProfileService.isValid(profile),
@@ -447,7 +496,7 @@ final class CLIBridge {
     }
 
     private func saveJSONSnapshot(data: Data, profile: String, type: String) {
-        guard let dataDir = WorkspacePaths.dataDir(for: profile) else { return }
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return }
         let dir = dataDir.appendingPathComponent(type, isDirectory: true)
         let ts = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "")

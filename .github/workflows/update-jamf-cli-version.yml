@@ -1,3 +1,7 @@
+# Note: Python runtime updates (app/python-runtime.lock) are intentionally a manual
+# process. Bumping the pinned python-build-standalone release requires fetching and
+# verifying SHA256 sums for both arm64 and x86_64 tarballs, which is gated by human
+# review for supply-chain safety. There is no companion auto-bump workflow.
 name: Update jamf-cli tracked version
 on:
   schedule:
@@ -37,19 +41,16 @@ jobs:
           fi
           echo "current=$current" >> "$GITHUB_OUTPUT"
 
-      - name: Update tracked file and create PR if changed
+      - name: Update tracked file
         if: steps.get_latest.outputs.tag != steps.read_current.outputs.current
         run: |
           new_tag="${{ steps.get_latest.outputs.tag }}"
           file=".jamf-cli-tracked-version"
           echo "$new_tag" > "$file"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$file"
-          git commit -m "chore: bump jamf-cli to ${new_tag}" || echo "no changes to commit"
+
       - name: Create pull request
         if: steps.get_latest.outputs.tag != steps.read_current.outputs.current
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v7
         with:
           commit-message: "chore: bump jamf-cli to ${{ steps.get_latest.outputs.tag }}"
           title: "chore: bump jamf-cli -> ${{ steps.get_latest.outputs.tag }}"

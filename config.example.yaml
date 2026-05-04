@@ -336,6 +336,23 @@ protect:
   # Set true to enable the experimental Protect Overview sheet and snapshot
   # collection for Jamf Protect commands.
   enabled: false
+  # Cached JSON snapshots are kept separate from Pro so multi-tenant setups
+  # don't collide. Path is resolved relative to this config file's directory.
+  data_dir: "jamf-cli-data/protect"
+  # jamf-cli protect profile name; empty = jamf-cli's default Protect profile.
+  # Distinct from jamf_cli.profile (the Pro profile).
+  profile: ""
+  # Fall back to cached snapshots when a live Protect call fails.
+  use_cached_data: true
+  plans:
+    enabled: true                  # W22 — Protect Plans sheet (quick win)
+  # Placeholders for W23+; currently no-ops.
+  computers:
+    enabled: false                 # Reserved — Protect Computers sheet (W23)
+  alerts:
+    enabled: false                 # Reserved — Protect Alerts sheet (W23)
+  insights:
+    enabled: false                 # Reserved — Protect Insights sheet (W23)
 
 
 # =============================================================================
@@ -370,6 +387,13 @@ platform:
   compliance_benchmarks:
     # - "NIST 800-53r5 Moderate"
     # - "DISA STIG"
+  # Platform-only health checks via `jamf-cli pro audit --checks platform`.
+  # Adds a "Platform Health" sheet with seven platform-specific findings
+  # (undeployed blueprints, deployment failures, stale blueprints,
+  # benchmark updates available, monitor-mode benchmarks, empty platform
+  # scope, devices with failed DDM declarations). Gated by platform.enabled.
+  audit_platform:
+    enabled: true
 
 
 # =============================================================================
@@ -725,6 +749,26 @@ school_cli:
 
   # Fall back to cached snapshots when live commands fail.
   use_cached_data: true
+
+
+# ---------------------------------------------------------------------------
+# Jamf School sheet toggles (jamf-cli v1.9+)
+# ---------------------------------------------------------------------------
+# Optional sheets sourced from jamf-cli school read-only resources. Each is
+# enabled by default; set enabled: false to skip the sheet without affecting
+# the rest of the school workbook.
+
+school:
+  # DEP Devices sheet — DEP-enrolled inventory via `jamf-cli school dep-devices list`.
+  # Columns: Serial Number, Model, Color, Status, Profile Name, Device Name.
+  # Note: jamf-cli's flatten drops dateAdded / datePushed; those columns are
+  # only available via the Jamf School REST API directly.
+  dep_devices:
+    enabled: true
+  # iBeacons sheet — registered iBeacons via `jamf-cli school ibeacons list`.
+  # Columns: Name, UUID, Major, Minor, Description.
+  ibeacons:
+    enabled: true
 
 
 # ---------------------------------------------------------------------------

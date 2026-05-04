@@ -175,9 +175,9 @@ fileprivate extension DeviceInventoryService {
         }
 
         let profile = root.lastPathComponent
-        let jamfCLIDataDir = WorkspacePaths.dataDir(for: profile)
+        let jamfCLIDataDir = (try? WorkspacePaths.dataDir(for: profile))
             ?? resolvedDirectory("jamf-cli-data", fallback: "jamf-cli-data", root: root)
-        let historicalCSVDir = WorkspacePaths.historicalDir(for: profile)
+        let historicalCSVDir = (try? WorkspacePaths.historicalDir(for: profile))
             ?? resolvedDirectory("snapshots", fallback: "snapshots", root: root)
 
         return ConfigHints(

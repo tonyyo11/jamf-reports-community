@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Alpha Blueprint",
+    "state": "error",
+    "scope": "Group A",
+    "steps": 4,
+    "succeeded": 0,
+    "failed": 10,
+    "pending": 0
+  },
+  {
+    "name": "Beta Blueprint",
+    "state": "error",
+    "scope": "Group B",
+    "steps": 4,
+    "succeeded": 1,
+    "failed": 7,
+    "pending": 0
+  },
+  {
+    "name": "Gamma Blueprint",
+    "state": "error",
+    "scope": "Group C",
+    "steps": 4,
+    "succeeded": 2,
+    "failed": 3,
+    "pending": 0
+  }
+]

@@ -12,22 +12,32 @@ any changes.
 
 ## What This Project Is
 
-A single-file Python script (`jamf-reports-community.py`) that generates multi-sheet
-Excel workbooks and/or self-contained HTML reports from Jamf Pro CSV exports and/or
-jamf-cli JSON data. As of v1.7-1.9 support, it also generates Jamf School reports from
-jamf-cli school data and/or Jamf School device CSV exports. It is config-driven: users
-edit `config.yaml` to map their column names to logical field names; no Python changes
+This project has two components that ship together:
+
+**1. Python CLI engine (`jamf-reports-community.py`)** — A single-file Python script that
+generates multi-sheet Excel workbooks and/or self-contained HTML reports from Jamf Pro CSV
+exports and/or jamf-cli JSON data. As of v1.7-1.9 support, it also generates Jamf School
+reports from jamf-cli school data and/or Jamf School device CSV exports. It is config-driven:
+users edit `config.yaml` to map their column names to logical field names; no Python changes
 are needed for normal use.
 
+**2. Native macOS app (`app/`)** — A SwiftUI GUI (macOS 14+, Swift 6) that wraps every CLI
+flow — config editing, scheduling via LaunchAgents, report generation, run history — and adds
+a Historical Trends screen built on archived `summary.json` snapshots. The app bundles a
+private Python runtime and the CLI script; end users do not need Python installed separately.
+It is a SwiftPM project (`app/Package.swift`), not a hand-rolled `.xcodeproj`.
+
 Target audience: Mac/iPad admins at any organization running Jamf Pro or Jamf School.
-The tool must work without any org-specific values in the code.
+Neither component should contain any org-specific values in the code.
 
 ---
 
 ## Architecture
 
-The entire implementation lives in `jamf-reports-community.py` (~13,600 lines). There are
-no other Python files. Do not create additional modules — keep it single-file.
+### Python CLI Engine
+
+The entire Python implementation lives in `jamf-reports-community.py` (~13,600 lines). There
+are no other Python files. Do not create additional modules — keep it single-file.
 
 ### Classes
 
@@ -279,6 +289,91 @@ split into multiple files or add a package structure.
 
 ---
 
+### Swift App Architecture
+
+The macOS app lives in `app/` and is a SwiftPM executable target (`JamfReports`).
+Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
+
+#### Key services
+
+| Service | Purpose |
+|---------|---------|
+| `WorkspaceStore` | `@Observable` per-profile state. Sidebar chip switches the active profile; every screen re-routes to that workspace's data. |
+| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jrc` and `jamf-cli`. Streams stdout/stderr live to the Runs screen. Prefers the bundled Python runtime + bundled CLI script; falls back to external `python3`/`jrc`. |
+| `WorkspacePaths` | Typed, profile-validated path constants under `~/Jamf-Reports/<profile>/`. All path construction goes through here. |
+| `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
+| `LaunchAgentService` | Discovers and parses existing `~/Library/LaunchAgents/com.jamfreports.*.plist` jobs. |
+| `LaunchAgentWriter` | Generates LaunchAgent plists and writes them atomically. |
+| `OnboardingFlow` | Orchestrates first-run: jamf-cli auth via `stdin`, profile creation, workspace init, first collect/generate run. |
+| `ConfigService` | Reads and writes `config.yaml` within a profile workspace. |
+| `TrendStore` | Loads `summary.json` snapshots from `snapshots/computers/summaries/`; feeds the Trends screen charts. |
+| `DeviceInventoryService` | Reads cached device inventory JSON from the workspace. |
+| `ReportLibrary` | Lists generated reports in `Generated Reports/`. |
+| `RunHistoryService` | Reads run logs from `automation/logs/`. |
+| `SnapshotArchiveService` | Manages dated CSV snapshot archives. |
+| `SystemActions` | `NSWorkspace` file open/reveal, strictly bounded to allowed paths. |
+| `YAMLCodec` | Minimal YAML reader/writer for `config.yaml` fields the GUI exposes. |
+| `JamfCLIInstaller` | Auto-update check and installation via Homebrew. |
+
+**Convention:** New jamf-cli command wrappers go through the `CLICommand` enum and `CLIExecutor` protocol (`Services/CLICommand.swift`), not bespoke `CLIBridge` methods. Existing helpers (`generate`, `collect`, `audit`, `deviceDetail`, …) stay as-is per `.claude/plans/ADR-W21-clicommand-enum.md` (Hybrid scope).
+
+#### Key views (13 screens)
+
+`Sidebar`, `Titlebar`, `OverviewView`, `FleetOverviewView`, `DevicesView`,
+`TrendsView`, `ReportsView`, `BackupsView`, `SchedulesView`, `RunsView`,
+`ConfigView`, `CustomizeView`, `SourcesView`, `AuditView`, `OnboardingView`, `SettingsView`
+
+#### Security model
+
+- **Path allow-list:** `SystemActions` file open/reveal is bounded to `~/Jamf-Reports`,
+  `~/Library/LaunchAgents`, and standard user folders. Paths are canonicalized with a
+  trailing-`/` prefix check to prevent symlink traversal.
+- **Profile-name regex:** `ProfileService.isValid` (`^[a-z0-9][a-z0-9._-]*$`) is enforced
+  at every path-construction site.
+- **No persisted credentials in app:** During onboarding the secret is passed to `jamf-cli`
+  via `stdin`, redacted from failure output, and cleared immediately. Persistent secrets live
+  in the system keychain through `jamf-cli`.
+- **UserAgents-only:** The app only manages `~/Library/LaunchAgents`. It never requests
+  `sudo` or installs system-wide LaunchDaemons.
+- **Atomic writes:** Configuration and plist updates use `replaceItem(at:withItemAt:)` to
+  prevent corruption on power loss or crash.
+- **Hardened Runtime + entitlements:** The release bundle is built with Hardened Runtime
+  enabled. Entitlements are in `app/JamfReports.entitlements`.
+
+#### Building the app
+
+```bash
+cd app
+swift build                        # validate compilation
+swift run JamfReports              # launch (debug)
+
+# Produce a runnable .app bundle (ad-hoc signed, local dev use)
+./build-app.sh release             # → app/build/JamfReports.app
+
+# Skip Python runtime bundling for fast local iteration
+JRC_BUNDLE_PYTHON=0 ./build-app.sh debug
+```
+
+The release build bundles a private Python runtime via `scripts/build-python-runtime.sh`.
+Pin details live in `app/python-runtime.lock`. The script refuses to proceed until
+`PBS_ARM64_SHA256` and `PBS_X86_64_SHA256` are filled in.
+
+For distribution to other Macs: sign with a Developer ID certificate, notarize via
+`xcrun notarytool`, and staple with `xcrun stapler staple`. These steps are currently
+manual and not integrated into `build-app.sh`.
+
+#### Swift code conventions
+
+- Swift 6 strict concurrency (`@MainActor`, `Sendable`, `async/await` throughout).
+- `@Observable` for state; no `ObservableObject` / `@Published`.
+- All user-visible strings in English; no `NSLocalizedString` wrapping required for now.
+- No `UIKit` — SwiftUI only.
+- All new services must validate paths through `ProfileService.workspaceURL(for:)` before
+  constructing any file paths.
+- Test targets live in `app/Tests/JamfReportsTests/`.
+
+---
+
 ## Custom EA Types — Adding a New One
 
 EA types are dispatched in `CSVDashboard._write_custom_ea()` via a dict:
@@ -301,10 +396,12 @@ To add a new type:
 
 ---
 
-## jamf-cli JSON Shapes (v1.2.0–v1.6.0)
+## jamf-cli JSON Shapes (v1.14.0)
 
-CoreDashboard parses these exact shapes. Do not change the parsing without verifying
-against the jamf-cli source.
+CoreDashboard parses these exact shapes. Minimum supported jamf-cli is **v1.14.0**.
+Older versions are not supported — older fallback branches were removed in W21 (patch-status
+`installed/total` shape). The `update-status` older shape is preserved pending live
+verification against a tenant with active update plans.
 
 **`pro report security --output json`**
 ```json
@@ -330,10 +427,10 @@ against the jamf-cli source.
   "total": 120, "latest": "130.0", "compliance_pct": "83%"}]
 ```
 
-Patch-status parser handles both `installed/total` and `on_latest/on_other` field shapes
-for compatibility with different jamf-cli versions.
+`on_latest` / `on_other` is the canonical shape on v1.14. The pre-v1.4
+`installed`/`total` legacy shape is no longer supported.
 
-**`pro report patch-status --scan-failures --output json`** *(v1.4.0+)*
+**`pro report patch-status --scan-failures --output json`**
 ```json
 [{"policy": "Firefox 130.0", "policy_id": "42", "device": "MacBook-001",
   "device_id": "123", "status_date": "2026-04-01", "attempt": 3,
@@ -345,7 +442,7 @@ One row per failing device × patch policy. `last_action` is fetched from
 `/v2/patch-policies/{id}/logs/{deviceId}/details` (highest attempt, highest action order).
 Used by `JamfCLIBridge.patch_device_failures()` → CoreDashboard "Patch Failures" sheet.
 
-**`pro report update-status --output json`** *(v1.6.0+)*
+**`pro report update-status --output json`**
 ```json
 [{"total": N,
   "status_summary": [{"status": "PENDING", "count": N}, ...],
@@ -353,10 +450,9 @@ Used by `JamfCLIBridge.patch_device_failures()` → CoreDashboard "Patch Failure
   "plan_state_summary": [{"state": "Activated", "count": N}, ...]}]
 ```
 
-v1.5 and earlier used `{"summary": {"total_updates": N, "pending": N, ...}, "ErrorDevices": [...]}`.
-`_write_update_status` detects the format via the `status_summary` key and handles both shapes.
+`error_devices` and `failed_plans` only appear with `--scan-failures`.
 
-**`pro report update-status --scan-failures --output json`** *(v1.6.0+)*
+**`pro report update-status --scan-failures --output json`**
 ```json
 [{"total": N,
   "status_summary": [{"status": "...", "count": N}],
@@ -373,10 +469,14 @@ v1.5 and earlier used `{"summary": {"total_updates": N, "pending": N, ...}, "Err
 
 Used by `JamfCLIBridge.update_device_failures()` → CoreDashboard "Update Failures" sheet.
 API-expensive: fetches full computer and mobile inventory plus per-plan events in parallel.
+v1.7 server-side now drops devices Jamf considers stale before returning the failure list,
+so totals match the live console rather than including never-checked-in records.
 
 ---
 
 ## Code Conventions
+
+### Python CLI
 
 - Python 3.9+. Type hints on all method signatures.
 - Google-style docstrings on all classes and public methods.
@@ -384,9 +484,42 @@ API-expensive: fetches full computer and mobile inventory plus per-plan events i
 - 100-character line length.
 - No relative imports (there is only one file).
 
+### Swift App
+
+- Swift 6. All code compiles with strict concurrency enabled.
+- Functions ≤100 lines. Cyclomatic complexity ≤8.
+- 100-character line length.
+- No force-unwrap (`!`) in production paths — use `guard let` / `if let`.
+- Services must be `@MainActor` or explicitly `Sendable`.
+- Test new services and business logic in `app/Tests/JamfReportsTests/`.
+
 ---
 
 ## Testing
+
+### Swift App
+
+Run the Swift test suite from the `app/` directory:
+
+```bash
+cd app
+swift test
+```
+
+Tests live in `app/Tests/JamfReportsTests/`. Current coverage:
+`AuditHygieneTests`, `DeviceInventoryRecordTests`, `LaunchAgentServiceTests`,
+`LaunchAgentWriterTests`, `RunHistoryServiceTests`, `TrendStoreTests`.
+
+All new services and business-logic functions should have corresponding test files.
+Follow the same naming convention: `<ServiceName>Tests.swift`.
+
+Verify the app compiles before committing any Swift change:
+
+```bash
+cd app && swift build 2>&1 | tail -20
+```
+
+### Python CLI
 
 An automated pytest suite now exists under `tests/`, backed by committed fixtures in
 `tests/fixtures/`. Manual validation is still useful, especially for bigger end-to-end
@@ -457,7 +590,7 @@ Version` (version), `KerberosSSO - password_expires_date` (date), `EC - adBound`
 
 ```
 jamf-reports-community/
-├── jamf-reports-community.py   # Entire implementation — single file
+├── jamf-reports-community.py   # Entire Python CLI implementation — single file
 ├── config.example.yaml         # Annotated example config — must stay in sync with DEFAULT_CONFIG
 ├── CHANGELOG.md                # User-visible changes between commits and releases
 ├── COMMUNITY_README.md         # End-user setup and usage guide
@@ -465,9 +598,30 @@ jamf-reports-community/
 ├── AGENTS.md                   # Mirror of CLAUDE.md for OpenAI-compatible agents
 ├── PROJECT_CONTEXT.md          # Session context, known issues, enhancement backlog
 ├── requirements.txt            # xlsxwriter, pandas, pyyaml, matplotlib
+├── requirements-dev.txt        # pytest and dev tools
 ├── docs/wiki/                  # GitHub Wiki source files
+├── tests/                      # Python pytest suite
+│   ├── fixtures/               # Committed test data (CSV, jamf-cli JSON, snapshots)
+│   └── test_*.py               # One file per feature area
 ├── Jamf Reports/               # Test CSV (gitignored except the dummy CSV)
 │   └── 97 Computers.csv        # 96 sanitized dummy devices
+├── app/                        # Native macOS SwiftUI app
+│   ├── Package.swift           # SwiftPM manifest (executable target, macOS 14+, Swift 6)
+│   ├── JamfReports.entitlements
+│   ├── build-app.sh            # Produces app/build/JamfReports.app with ad-hoc signing
+│   ├── python-runtime.lock     # Pinned python-build-standalone release + SHA256 checksums
+│   ├── requirements-runtime.txt # Packages bundled in the private Python runtime
+│   ├── SECURITY_AUDIT.md       # Security audit findings and mitigations
+│   ├── scripts/
+│   │   └── build-python-runtime.sh  # Downloads + packages the private Python runtime
+│   ├── iconset/                # App icon source and build script
+│   ├── Sources/JamfReports/
+│   │   ├── App/                # @main entry point, ContentView
+│   │   ├── Models/             # Data models + DemoData
+│   │   ├── Services/           # Business logic, CLIBridge, workspace management
+│   │   ├── Theme/              # Design tokens, shared components
+│   │   └── Views/              # 16 SwiftUI screens
+│   └── Tests/JamfReportsTests/ # Swift XCTest suite
 └── .gitignore                  # Excludes config.yaml, Generated Reports/, jamf-cli-data/
 ```
 
@@ -498,6 +652,8 @@ Do not port org-specific logic, hardcoded column names, or tenant-specific EA na
 
 ## What Not to Do
 
+### Python CLI
+
 - Do not add a `setup.py`, `pyproject.toml`, or package structure. It must remain a
   drop-in script.
 - Do not add features that require org-specific configuration to be useful (e.g., a sheet
@@ -506,3 +662,16 @@ Do not port org-specific logic, hardcoded column names, or tenant-specific EA na
   Each dependency is installation friction for end users.
 - Do not add backward-compatibility shims or dual config formats. When a key name changes,
   update the code and the example — users will re-scaffold.
+
+### Swift App
+
+- Do not add Swift Package dependencies without a strong justification. Each dependency
+  increases build time, maintenance surface, and binary size.
+- Do not construct file paths by string interpolation — always use `ProfileService.workspaceURL(for:)`
+  and `WorkspacePaths` typed constants.
+- Do not add `UIKit` imports or `AppKit` patterns that bypass SwiftUI — use `NSViewRepresentable`
+  only when SwiftUI has no equivalent.
+- Do not expose new CLI operations unless the Python CLI has a corresponding command to back
+  them. The app is a GUI shell; the Python script is the engine.
+- Do not add Xcode project files (`.xcodeproj`, `.xcworkspace`) — the project is SwiftPM-only.
+- Do not request `sudo` or install LaunchDaemons. The security model is user-agent-only.

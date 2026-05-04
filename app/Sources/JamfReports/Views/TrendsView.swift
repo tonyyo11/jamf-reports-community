@@ -348,7 +348,7 @@ struct TrendsView: View {
                     }
                     Spacer()
                     PNPButton(title: "Open in Finder", icon: "folder", style: .ghost, size: .sm) {
-                        if let dir = WorkspacePaths.summariesDir(for: workspaceStore.profile) {
+                        if let dir = try? WorkspacePaths.summariesDir(for: workspaceStore.profile) {
                             SystemActions.openFolder(dir)
                         }
                     }
@@ -571,7 +571,7 @@ struct TrendsView: View {
                     Spacer()
                     HStack(spacing: 8) {
                         PNPButton(title: "Show in Finder", icon: "folder", size: .sm) {
-                            if let dir = WorkspacePaths.summariesDir(for: workspaceStore.profile) {
+                            if let dir = try? WorkspacePaths.summariesDir(for: workspaceStore.profile) {
                                 SystemActions.openFolder(dir)
                             }
                         }

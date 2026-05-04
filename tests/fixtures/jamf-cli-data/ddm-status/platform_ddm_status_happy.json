@@ -1,0 +1,34 @@
+[
+  {
+    "type": "configuration",
+    "source": "Security Profile Source",
+    "devices": 85,
+    "declarations": 12,
+    "successful": 82,
+    "unsuccessful": 3
+  },
+  {
+    "type": "activation",
+    "source": "App Activation Source",
+    "devices": 60,
+    "declarations": 8,
+    "successful": 60,
+    "unsuccessful": 0
+  },
+  {
+    "type": "management",
+    "source": "MDM Management Source",
+    "devices": 90,
+    "declarations": 5,
+    "successful": 90,
+    "unsuccessful": 0
+  },
+  {
+    "type": "configuration",
+    "source": "Network Config Source",
+    "devices": 45,
+    "declarations": 6,
+    "successful": 40,
+    "unsuccessful": 5
+  }
+]

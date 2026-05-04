@@ -45,7 +45,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     private func readSummaries(profile: String) -> [DailySummary] {
         // Validate at the boundary — string-interpolating an unvalidated profile
         // into a path component is a traversal vector.
-        guard let summariesDir = WorkspacePaths.summariesDir(for: profile)
+        guard let summariesDir = (try? WorkspacePaths.summariesDir(for: profile))
             ?? fallbackSummariesDir(for: profile) else {
             return []
         }

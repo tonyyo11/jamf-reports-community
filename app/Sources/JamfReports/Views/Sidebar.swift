@@ -163,7 +163,7 @@ struct Sidebar: View {
     }
 
     private func liveTrendCount() -> Int {
-        guard let summariesDir = WorkspacePaths.summariesDir(for: workspace.profile) else { return 0 }
+        guard let summariesDir = try? WorkspacePaths.summariesDir(for: workspace.profile) else { return 0 }
         return SummaryJSONParser.parseDirectory(summariesDir).count
     }
 
