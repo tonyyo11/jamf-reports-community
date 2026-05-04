@@ -36,21 +36,32 @@ cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 
 # Resource bundle lives next to the executable so Bundle.module resolves correctly.
-# SwiftPM produces a flat directory; codesign requires an Info.plist before it
-# will treat the .bundle as a signable subcomponent.
+# SwiftPM produces a flat directory (iOS-style); macOS NSBundle requires the
+# canonical Contents/Info.plist + Contents/Resources/ layout. Strict enforcement
+# on macOS 15+/26+ trips Bundle.module's fatalError on flat layouts even when
+# the build machine tolerated them. Always re-layout into the macOS form.
 if [[ -d "$BUNDLE" ]]; then
-  cp -R "$BUNDLE" "$APP_OUT/Contents/MacOS/"
   COPIED_BUNDLE="$APP_OUT/Contents/MacOS/$(basename "$BUNDLE")"
-  if [[ ! -f "$COPIED_BUNDLE/Info.plist" ]]; then
-    cat > "$COPIED_BUNDLE/Info.plist" <<'BUNDLEPLIST'
+  rm -rf "$COPIED_BUNDLE"
+  mkdir -p "$COPIED_BUNDLE/Contents/Resources"
+  # Move every file from the flat SwiftPM bundle into Contents/Resources.
+  # Preserve subdirectories if the bundle already nests anything.
+  find "$BUNDLE" -mindepth 1 -maxdepth 1 \
+    \( ! -name "Info.plist" ! -name "_CodeSignature" \) \
+    -print0 | while IFS= read -r -d '' entry; do
+    cp -R "$entry" "$COPIED_BUNDLE/Contents/Resources/"
+  done
+  # Always rewrite Info.plist at the canonical path. SwiftPM's bundle ID needs
+  # to be `JamfReports_JamfReports` so Bundle.module's name match succeeds.
+  cat > "$COPIED_BUNDLE/Contents/Info.plist" <<'BUNDLEPLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.tonyyo.jamfreports.resources</string>
+    <string>JamfReports_JamfReports</string>
     <key>CFBundleName</key>
-    <string>JamfReports Resources</string>
+    <string>JamfReports_JamfReports</string>
     <key>CFBundlePackageType</key>
     <string>BNDL</string>
     <key>CFBundleShortVersionString</key>
@@ -60,7 +71,6 @@ if [[ -d "$BUNDLE" ]]; then
 </dict>
 </plist>
 BUNDLEPLIST
-  fi
 fi
 
 # Regenerate the AppIcon.icns if missing (first-run convenience).
