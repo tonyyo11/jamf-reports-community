@@ -1,0 +1,20 @@
+[
+  {
+    "device": "MacBook-X01",
+    "deviceId": "201",
+    "rulesPassed": 0,
+    "compliance": ""
+  },
+  {
+    "device": "MacBook-X02",
+    "deviceId": "202",
+    "rulesPassed": 0,
+    "compliance": ""
+  },
+  {
+    "device": "MacBook-X03",
+    "deviceId": "203",
+    "rulesPassed": 0,
+    "compliance": ""
+  }
+]

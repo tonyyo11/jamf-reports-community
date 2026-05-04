@@ -1,0 +1,18 @@
+[
+  {
+    "type": "configuration",
+    "source": "Failed Source A",
+    "devices": 30,
+    "declarations": 4,
+    "successful": 0,
+    "unsuccessful": 30
+  },
+  {
+    "type": "activation",
+    "source": "Failed Source B",
+    "devices": 20,
+    "declarations": 3,
+    "successful": 0,
+    "unsuccessful": 20
+  }
+]

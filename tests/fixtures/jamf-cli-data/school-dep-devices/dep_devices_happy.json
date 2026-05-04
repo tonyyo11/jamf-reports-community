@@ -1,0 +1,32 @@
+[
+  {
+    "id": 101,
+    "serialNumber": "C02ABC123XYZ",
+    "model": "MacBook Air",
+    "color": "Space Gray",
+    "status": "Assigned",
+    "deviceName": "Lab-iMac-01",
+    "profileName": "Student Default",
+    "locationId": 1
+  },
+  {
+    "id": 102,
+    "serialNumber": "DLXAA1B2C3D4",
+    "model": "iPad (10th gen)",
+    "color": "Silver",
+    "status": "Pushed",
+    "deviceName": "Cart-iPad-15",
+    "profileName": "Cart Profile",
+    "locationId": 2
+  },
+  {
+    "id": 103,
+    "serialNumber": "F2LXY9Z8W7V6",
+    "model": "iPad Pro 11-inch",
+    "color": "Space Black",
+    "status": "Unassigned",
+    "deviceName": "",
+    "profileName": "",
+    "locationId": 1
+  }
+]

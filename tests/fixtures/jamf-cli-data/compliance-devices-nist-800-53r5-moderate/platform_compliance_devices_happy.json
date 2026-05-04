@@ -1,0 +1,22 @@
+[
+  {
+    "device": "MacBook-001",
+    "deviceId": "101",
+    "rulesFailed": 0,
+    "rulesPassed": 12,
+    "compliance": "100%"
+  },
+  {
+    "device": "MacBook-002",
+    "deviceId": "102",
+    "rulesFailed": 4,
+    "rulesPassed": 8,
+    "compliance": "66.7%"
+  },
+  {
+    "device": "MacPro-003",
+    "deviceId": "103",
+    "rulesPassed": 0,
+    "compliance": ""
+  }
+]

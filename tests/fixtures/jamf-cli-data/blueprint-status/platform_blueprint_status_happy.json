@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Security Baseline",
+    "state": "deployed",
+    "scope": "All Managed Devices",
+    "steps": 5,
+    "succeeded": 42,
+    "failed": 0,
+    "pending": 0
+  },
+  {
+    "name": "Software Updates",
+    "state": "deployed",
+    "scope": "Laptops",
+    "steps": 3,
+    "succeeded": 35,
+    "failed": 4,
+    "pending": 2
+  },
+  {
+    "name": "Network Config",
+    "state": "draft",
+    "scope": "Desktops",
+    "steps": 2,
+    "succeeded": 0,
+    "failed": 0,
+    "pending": 18
+  }
+]
