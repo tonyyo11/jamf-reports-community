@@ -266,9 +266,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "school_columns": {
         "device_name": "",
         "serial_number": "",
+        "device_type": "",
         "os_version": "",
         "model": "",
         "location_name": "",
+        "user_name": "",
         "owner_email": "",
         "owner_first_name": "",
         "owner_last_name": "",
@@ -285,10 +287,29 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "protect": {
         "enabled": False,
+        "data_dir": "jamf-cli-data/protect",
+        "profile": "",
+        "use_cached_data": True,
+        "plans": {"enabled": True},
+        # Reserved for W23+: bridge methods stubbed but sheets not yet implemented.
+        "computers": {"enabled": False},
+        "alerts": {"enabled": False},
+        "insights": {"enabled": False},
     },
     "platform": {
         "enabled": False,
         "compliance_benchmarks": [],
+        "audit_platform": {
+            "enabled": True,
+        },
+    },
+    "school": {
+        "dep_devices": {
+            "enabled": True,
+        },
+        "ibeacons": {
+            "enabled": True,
+        },
     },
     "compliance": {
         "enabled": False,
@@ -440,13 +461,15 @@ COLUMN_EXCLUDES: dict[str, list[str]] = {
 SCHOOL_COLUMN_HINTS: dict[str, list[str]] = {
     "device_name": ["name", "devicename", "device name"],
     "serial_number": ["serialnumber", "serial number", "serial"],
+    "device_type": ["devicetype", "device type"],
     "os_version": ["osversion", "os version", "iosversion", "ios version"],
     "model": ["model"],
     "location_name": ["locationname", "location name", "location", "school"],
+    "user_name": ["username"],
     "owner_email": ["owneremail", "owner email", "email"],
     "owner_first_name": ["ownerfirstname", "owner first name", "first name", "firstname"],
     "owner_last_name": ["ownerlastname", "owner last name", "last name", "lastname"],
-    "owner_username": ["ownerusername", "owner username", "username"],
+    "owner_username": ["ownerusername", "owner username"],
     "managed": ["ismanaged", "managed"],
     "supervised": ["issupervised", "supervised"],
     "shared": ["isshared", "shared"],
@@ -463,6 +486,7 @@ SCHOOL_COLUMN_EXCLUDES: dict[str, list[str]] = {
     "owner_email": ["ownerfirstname", "ownerlastname", "ownerusername"],
     "location_name": ["schoolnumber"],
     "model": ["modelidentifier", "modelid"],
+    "user_name": ["owner"],
 }
 
 
@@ -1399,35 +1423,21 @@ def _profile_isolation_guidance(config: "Config") -> list[str]:
     return guidance
 
 
-def _days_since(date_str: str) -> Optional[int]:
-    """Parse a date string and return days elapsed since then.
+def _days_since(value: Any) -> Optional[int]:
+    """Return whole days since a timestamp-like value, or None when unavailable.
 
     Args:
-        date_str: Date string in common formats.
+        value: Date string or timestamp in common formats.
 
     Returns:
         Integer days since that date, or None if unparseable.
     """
-    text = str(date_str).strip()
-    if not text:
+    if value in (None, ""):
         return None
-
-    iso_text = text[:-1] + "+00:00" if text.endswith("Z") else text
-    try:
-        parsed = datetime.fromisoformat(iso_text)
-        if parsed.tzinfo is not None:
-            return (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).days
-        return (datetime.now() - parsed).days
-    except ValueError:
-        pass
-
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%Y-%m-%d"):
-        try:
-            dt = datetime.strptime(text, fmt)
-            return (datetime.now() - dt).days
-        except ValueError:
-            continue
-    return None
+    parsed = pd.to_datetime(value, utc=True, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return max(0, int((datetime.now(timezone.utc) - parsed.to_pydatetime()).days))
 
 
 def _package_size_mb(raw_size: Any) -> Optional[float]:
@@ -1890,12 +1900,7 @@ def _yes_no_unknown(value: Any) -> str:
 
 def _days_since_timestamp(value: Any) -> Optional[int]:
     """Return whole days since a timestamp-like value, or None when unavailable."""
-    if value in (None, ""):
-        return None
-    parsed = pd.to_datetime(value, utc=True, errors="coerce")
-    if pd.isna(parsed):
-        return None
-    return max(0, int((datetime.now(timezone.utc) - parsed.to_pydatetime()).days))
+    return _days_since(value)
 
 
 def _mobile_device_family(model: Any, name: Any) -> str:
@@ -3716,6 +3721,27 @@ class JamfCLIBridge:
             args.extend(["--checks", category])
         return self._run_and_save("audit", args, ["audit"])
 
+    def audit_platform_checks(self) -> Optional[list[dict]]:
+        """Fetch platform-specific health checks via `pro audit --checks platform`.
+
+        Wraps `jamf-cli pro audit --checks platform --output json`. Requires the
+        active jamf-cli profile to have working platform-gateway auth. Returns the
+        parsed top-level JSON array (objects with `category`, `severity`, `name`,
+        `affected`, `recommendation`), or None when the call fails and no cached
+        snapshot is available.
+
+        Returns:
+            Parsed list of platform check records, or None.
+        """
+        result = self._run_and_save(
+            "audit-platform-checks",
+            ["pro", "audit", "--checks", "platform"],
+            ["audit-platform-checks", "audit_platform_checks"],
+        )
+        if isinstance(result, list):
+            return result
+        return None
+
     def group_analyze(self, mode: str = "unused") -> Any:
         """Fetch computer group hygiene analysis from jamf-cli pro group-tools analyze."""
         args = ["pro", "group-tools", "analyze"]
@@ -3760,7 +3786,7 @@ class JamfCLIBridge:
     def patch_device_failures(self) -> Any:
         """Fetch per-device patch failures via pro report patch-status --scan-failures.
 
-        Requires jamf-cli v1.4.0+. Returns one row per failing device per patch policy,
+        Requires jamf-cli v1.14.0+. Returns one row per failing device per patch policy,
         enriched with inventory data and the last action taken from the patch log.
         JSON shape:
           [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
@@ -3804,9 +3830,9 @@ class JamfCLIBridge:
     def update_device_failures(self) -> Any:
         """Fetch per-device update failures via pro report update-status --scan-failures.
 
-        Requires jamf-cli v1.6.0+. Enriches error devices and failed plans with
+        Requires jamf-cli v1.14.0+. Enriches error devices and failed plans with
         inventory details (name, serial, OS, username) and per-plan last events.
-        JSON shape (v1.6):
+        JSON shape:
           [{"total": N, "status_summary": [{"status": "...", "count": N}],
             "error_devices": [{"name": "...", "serial": "...", "device_type": "...",
                                "os_version": "...", "username": "...", "status": "...",
@@ -3968,41 +3994,43 @@ class JamfCLIBridge:
             ["ddm-status", "ddm_status"],
         )
 
-    def protect_overview(self) -> Any:
-        """Fetch a Jamf Protect instance summary from jamf-cli protect overview."""
-        self._require_protect_command("overview", ["protect-overview", "protect_overview"])
-        return self._run_and_save(
-            "protect-overview",
-            ["protect", "overview"],
-            ["protect-overview", "protect_overview"],
+    # Deprecated W22 — delegates to ProtectCLIBridge; remove in W23.
+    # Kept on JamfCLIBridge so existing CoreDashboard call sites keep working
+    # during the graduation cycle. The shim shares this bridge's binary, profile,
+    # data_dir, and cache config — it does NOT honor a separate `protect.*` config
+    # block. New call sites should use `_build_protect_bridge(config)` instead.
+    def _protect_shim_bridge(self) -> "ProtectCLIBridge":
+        cached = getattr(self, "_protect_shim_cache", None)
+        if cached is not None:
+            return cached
+        bridge = ProtectCLIBridge(
+            save_output=self._save,
+            data_dir=str(self._data_dir),
+            profile=self._profile,
+            use_cached_data=self._use_cached_data,
+            command_timeout=self._command_timeout,
+            ea_results_timeout=self._ea_results_timeout,
+            max_cache_age_hours=self._max_cache_age_hours,
+            multi_config=self._multi,
         )
+        self._protect_shim_cache = bridge
+        return bridge
+
+    def protect_overview(self) -> Any:
+        """Deprecated W22 — delegates to ProtectCLIBridge.overview."""
+        return self._protect_shim_bridge().overview()
 
     def protect_computers_list(self) -> Any:
-        """Fetch Jamf Protect computer rows from jamf-cli protect computers list."""
-        self._require_protect_command("computers", ["protect-computers", "protect_computers"])
-        return self._run_and_save(
-            "protect-computers",
-            ["protect", "computers", "list"],
-            ["protect-computers", "protect_computers"],
-        )
+        """Deprecated W22 — delegates to ProtectCLIBridge.computers_list."""
+        return self._protect_shim_bridge().computers_list()
 
     def protect_analytics(self) -> Any:
-        """Fetch Jamf Protect analytics from jamf-cli protect analytics list."""
-        self._require_protect_command("analytics", ["protect-analytics", "protect_analytics"])
-        return self._run_and_save(
-            "protect-analytics",
-            ["protect", "analytics", "list"],
-            ["protect-analytics", "protect_analytics"],
-        )
+        """Deprecated W22 — delegates to ProtectCLIBridge.analytics_list."""
+        return self._protect_shim_bridge().analytics_list()
 
     def protect_plans(self) -> Any:
-        """Fetch Jamf Protect plans from jamf-cli protect plans list."""
-        self._require_protect_command("plans", ["protect-plans", "protect_plans"])
-        return self._run_and_save(
-            "protect-plans",
-            ["protect", "plans", "list"],
-            ["protect-plans", "protect_plans"],
-        )
+        """Deprecated W22 — delegates to ProtectCLIBridge.plans_list."""
+        return self._protect_shim_bridge().plans_list()
 
     def device_detail(self, identifier: str) -> Any:
         """Fetch the aggregated device detail view for one computer."""
@@ -4164,7 +4192,7 @@ class JamfCLIBridge:
     ) -> Any:
         """Patch writable fields on a computer identified by serial number.
 
-        Requires jamf-cli v1.6.0+ (computers-inventory patch subcommand).
+        Requires jamf-cli v1.14.0+ (computers-inventory patch subcommand).
         Uses --serial to identify the device; --set for each field/value pair.
 
         Args:
@@ -4352,6 +4380,40 @@ class JamfCLIBridge:
             ["pro", "departments", "list"],
             ["departments"],
         )
+
+    @staticmethod
+    def _classify_platform_error(message: str) -> str:
+        """Classify a Platform API error message into a short token.
+
+        Returns one of: ``auth_not_configured``, ``unknown_command``,
+        ``network_error``, ``parse_error``, ``general``. Mirrors the token
+        vocabulary used by `_classify_protect_error`. Message construction
+        belongs at the call site.
+
+        Args:
+            message: The raw RuntimeError message from a failed Platform bridge call.
+
+        Returns:
+            A short snake_case classification token.
+        """
+        lowered = (message or "").lower()
+        auth_tokens = ("401", "unauthorized", "oauth2", "oauth", "platform credential",
+                       "client_id", "client_secret", "forbidden", "403")
+        not_found_tokens = ("404", "not found", "no such command", "unknown command",
+                            "command not found")
+        network_tokens = ("connection refused", "timeout", "network", "unreachable",
+                          "name or service not known", "ssl", "certificate")
+        parse_tokens = ("json", "decode", "parse", "malformed", "unexpected character")
+
+        if any(token in lowered for token in auth_tokens):
+            return "auth_not_configured"
+        if any(token in lowered for token in not_found_tokens):
+            return "unknown_command"
+        if any(token in lowered for token in network_tokens):
+            return "network_error"
+        if any(token in lowered for token in parse_tokens):
+            return "parse_error"
+        return "general"
 
 
 # ---------------------------------------------------------------------------
@@ -4709,6 +4771,42 @@ def _extract_envelope(raw: Any) -> dict:
     return node if isinstance(node, dict) and node else {}
 
 
+def _format_bool_yes_no(value: Any) -> str:
+    """Render booleans as 'Yes'/'No', leave empty/null as ''."""
+    if value is None or value == "":
+        return ""
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    text = str(value).strip().lower()
+    if text in {"true", "yes", "1", "on", "enabled"}:
+        return "Yes"
+    if text in {"false", "no", "0", "off", "disabled"}:
+        return "No"
+    return str(value)
+
+
+def _format_named_list(value: Any, max_chars: int = 200) -> str:
+    """Render an array of {name: ...} (or strings) as 'count: name1, name2, ...'."""
+    if not isinstance(value, list) or not value:
+        return ""
+    names: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            inner = item.get("analyticSet") if isinstance(item.get("analyticSet"), dict) else item
+            name = inner.get("name") or inner.get("displayName") or inner.get("uuid")
+        else:
+            name = item
+        text = str(name or "").strip()
+        if text:
+            names.append(text)
+    if not names:
+        return f"{len(value)}"
+    joined = ", ".join(names)
+    if len(joined) > max_chars:
+        joined = joined[: max_chars - 1] + "…"
+    return f"{len(names)}: {joined}"
+
+
 def _protect_overview_has_data(raw: Any) -> bool:
     """Return True when a Protect overview response contains a non-placeholder value."""
     for item in _extract_items(raw):
@@ -4724,6 +4822,206 @@ def _protect_overview_has_data(raw: Any) -> bool:
             if text and _normalized_text(text) not in {"n/a", "na"}:
                 return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# ProtectCLIBridge (W22 — graduated from experimental in-class methods)
+# ---------------------------------------------------------------------------
+
+
+# W22: Pagination shape against a live tenant has not been verified. The bridge
+# accepts both a bare JSON array and a `{nodes, pageInfo}` envelope defensively.
+PROTECT_PLANS_HARD_CAP = 5000
+
+
+class ProtectCLIBridge(JamfCLIBridge):
+    """Subprocess wrapper around `jamf-cli protect` commands.
+
+    Inherits transport plumbing (_run, _run_and_save, _latest_cached_json) from
+    JamfCLIBridge. Adds Protect-specific helpers: command introspection, an auth
+    probe (`is_protect_available`), error classification, and resource-fetch
+    methods. Mirrors the SchoolCLIBridge subclass pattern.
+
+    W22 ships `plans_list()` only. `overview()`, `computers_list()`, and
+    `analytics_list()` are exposed for the deprecated JamfCLIBridge shim and the
+    existing experimental Protect Overview sheet; W23 will graduate them with
+    dedicated sheets.
+    """
+
+    # --- introspection / auth ------------------------------------------------
+
+    def is_protect_available(self) -> bool:
+        """Return True when jamf-cli protect is reachable for this profile.
+
+        Pre-flight probe used by the dashboard before scheduling Protect sheets.
+        Returns True when the binary exists, the `plans` subcommand is present,
+        and either a live `protect plans list` succeeds OR a cached fallback is
+        available.
+        """
+        if not self.is_available():
+            return False
+        commands = self._protect_commands()
+        if commands and "plans" not in commands:
+            return False
+        try:
+            self._run(["protect", "plans", "list", "--output", "json"], timeout=15)
+            return True
+        except RuntimeError:
+            if self._use_cached_data and self._latest_cached_json(
+                ["protect-plans", "protect_plans"]
+            ):
+                return True
+            return False
+
+    @staticmethod
+    def _classify_protect_error(stderr: str, exit_code: int = 0) -> str:
+        """Classify a Protect bridge stderr/error into a graceful skip reason.
+
+        Returns one of: ``auth_not_configured``, ``network_error``,
+        ``unknown_command``, ``general``. Mirrors `_classify_platform_error`.
+        """
+        lowered = (stderr or "").lower()
+        auth_tokens = (
+            "401", "unauthorized", "oauth2", "oauth", "client_id", "client_secret",
+            "403", "forbidden", "protect credential", "protect not configured",
+            "tenant url",
+        )
+        unknown_command_tokens = (
+            "404", "not found", "no such command", "unknown command",
+            "command not found",
+        )
+        network_tokens = (
+            "connection refused", "timeout", "network", "unreachable",
+            "name or service not known", "ssl", "certificate",
+        )
+        if any(token in lowered for token in auth_tokens):
+            return "auth_not_configured"
+        if any(token in lowered for token in unknown_command_tokens):
+            return "unknown_command"
+        if any(token in lowered for token in network_tokens):
+            return "network_error"
+        return "general"
+
+    # --- W22 fetch methods ---------------------------------------------------
+
+    def plans_list(self) -> Any:
+        """Fetch Jamf Protect plans via `jamf-cli protect plans list --output json`.
+
+        Defensively normalizes the response to a list whether jamf-cli returns
+        a bare JSON array or a `{nodes, pageInfo}` envelope. Hard-caps at
+        ``PROTECT_PLANS_HARD_CAP`` rows; emits a warning log when the cap is
+        hit (real-world plan counts are typically <50).
+
+        Returns:
+            List of plan dicts. Empty list when the tenant has no plans.
+
+        Raises:
+            RuntimeError: When the protect subcommand is unavailable, the live
+                call fails, and no cached fallback is available.
+        """
+        self._require_protect_command("plans", ["protect-plans", "protect_plans"])
+        raw = self._run_and_save(
+            "protect-plans",
+            ["protect", "plans", "list", "--output", "json"],
+            ["protect-plans", "protect_plans"],
+        )
+        plans, raw_count = self._normalize_plans_payload(raw)
+        if raw_count > PROTECT_PLANS_HARD_CAP:
+            print(
+                f"  [warn] Protect plans response exceeded the {PROTECT_PLANS_HARD_CAP}-row"
+                f" cap ({raw_count} rows); response was truncated."
+            )
+        return plans
+
+    @staticmethod
+    def _normalize_plans_payload(raw: Any) -> tuple[list[dict], int]:
+        """Return a flat list of plan dicts plus the pre-cap row count."""
+        if raw is None:
+            return [], 0
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            nodes = raw.get("nodes")
+            if isinstance(nodes, list):
+                items = nodes
+            else:
+                items = _extract_items(raw)
+        else:
+            return [], 0
+        plans = [item for item in items if isinstance(item, dict)]
+        raw_count = len(plans)
+        return plans[:PROTECT_PLANS_HARD_CAP], raw_count
+
+    # --- Methods used by the existing experimental Protect Overview sheet ----
+    # These methods preserve the call surface that `_write_protect_overview`
+    # expects. W23 will graduate each to a dedicated sheet.
+
+    def overview(self) -> Any:
+        """Fetch Protect overview via `jamf-cli protect overview`."""
+        self._require_protect_command("overview", ["protect-overview", "protect_overview"])
+        return self._run_and_save(
+            "protect-overview",
+            ["protect", "overview"],
+            ["protect-overview", "protect_overview"],
+        )
+
+    def computers_list(self) -> Any:
+        """Fetch Protect computer rows via `jamf-cli protect computers list`."""
+        self._require_protect_command(
+            "computers", ["protect-computers", "protect_computers"]
+        )
+        return self._run_and_save(
+            "protect-computers",
+            ["protect", "computers", "list"],
+            ["protect-computers", "protect_computers"],
+        )
+
+    def analytics_list(self) -> Any:
+        """Fetch Protect analytics via `jamf-cli protect analytics list`."""
+        self._require_protect_command(
+            "analytics", ["protect-analytics", "protect_analytics"]
+        )
+        return self._run_and_save(
+            "protect-analytics",
+            ["protect", "analytics", "list"],
+            ["protect-analytics", "protect_analytics"],
+        )
+
+
+def _build_protect_bridge(
+    config: Config,
+    *,
+    save_output: bool,
+    use_cached_data: Optional[bool] = None,
+) -> ProtectCLIBridge:
+    """Construct a ProtectCLIBridge from the `protect.*` config block.
+
+    Reads `protect.data_dir`, `protect.profile`, and `protect.use_cached_data`
+    independently of the `jamf_cli.*` block so that Pro and Protect can target
+    different tenants/profiles. Falls back to `jamf_cli.command_timeout_seconds`
+    for transport timeouts since Protect commands use the same binary.
+    """
+    protect_cfg = config.get("protect", default={}) or {}
+    jamf_cli_cfg = config.jamf_cli
+    protect_dir = config.resolve_path(
+        "protect", "data_dir", default="jamf-cli-data/protect"
+    )
+    if use_cached_data is None:
+        use_cached = protect_cfg.get("use_cached_data", True) is not False
+    else:
+        use_cached = use_cached_data
+    command_timeout = _to_int(jamf_cli_cfg.get("command_timeout_seconds", 300), 300)
+    ea_timeout = _to_int(jamf_cli_cfg.get("ea_results_timeout_seconds", 600), 600)
+    max_cache_age = _to_int(jamf_cli_cfg.get("max_cache_age_hours", 0), 0)
+    return ProtectCLIBridge(
+        save_output=save_output,
+        data_dir=str(protect_dir or Path("jamf-cli-data/protect")),
+        profile=str(protect_cfg.get("profile", "") or "").strip(),
+        use_cached_data=use_cached,
+        command_timeout=command_timeout,
+        ea_results_timeout=ea_timeout,
+        max_cache_age_hours=max_cache_age,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -4840,6 +5138,36 @@ class SchoolCLIBridge(JamfCLIBridge):
             "school-profiles",
             ["school", "profiles", "list"],
             cache_names=["school-profiles", "school_profiles"],
+        )
+
+    def dep_devices_list(self) -> list[dict] | None:
+        """Fetch DEP-enrolled devices via `jamf-cli school dep-devices list`.
+
+        Returns a list of dep-device records, or None if the call fails and no
+        cached snapshot is available. Read-only resource (jamf-cli v1.9+).
+
+        Returns:
+            Parsed JSON list of DEP device records, or None.
+        """
+        return self._run_and_save(
+            "school-dep-devices",
+            ["school", "dep-devices", "list"],
+            cache_names=["school-dep-devices", "school_dep_devices"],
+        )
+
+    def ibeacons_list(self) -> list[dict] | None:
+        """Fetch iBeacons via `jamf-cli school ibeacons list`.
+
+        Returns a list of ibeacon records, or None if the call fails and no
+        cached snapshot is available. Available in jamf-cli v1.9+.
+
+        Returns:
+            Parsed JSON list of iBeacon records, or None.
+        """
+        return self._run_and_save(
+            "school-ibeacons",
+            ["school", "ibeacons", "list"],
+            cache_names=["school-ibeacons", "school_ibeacons"],
         )
 
     def locations_list(self) -> Any:
@@ -5129,6 +5457,8 @@ class CoreDashboard:
         sheets = [("Fleet Overview", self._write_overview)]
         if self._protect_enabled():
             sheets.append(("Protect Overview", self._write_protect_overview))
+            if self._protect_plans_enabled():
+                sheets.append(("Protect Plans", self._write_protect_plans))
         if self._platform_enabled():
             sheets.append(("Platform Blueprints", self._write_platform_blueprints))
             for bench in self._platform_benchmark_titles():
@@ -5143,6 +5473,8 @@ class CoreDashboard:
                     lambda b=bench: self._write_platform_compliance_devices(b),
                 ))
             sheets.append(("Platform DDM Status", self._write_platform_ddm_status))
+            if self._audit_platform_enabled():
+                sheets.append(("Platform Health", self._write_audit_platform))
         sheets.extend(
             [
                 ("Mobile Fleet Summary", self._write_mobile_fleet_summary),
@@ -5577,7 +5909,137 @@ class CoreDashboard:
             notes = [{"Note": message} for message in optional_errors[:5]]
             self._write_table_block(ws, row, "Optional Source Notes", ["Note"], notes, max_rows=5)
 
+    def _protect_plans_enabled(self) -> bool:
+        """Return True when the W22 Protect Plans sheet is opted in."""
+        if not self._protect_enabled():
+            return False
+        return self._config.get("protect", "plans", "enabled", default=True) is not False
+
+    def _write_protect_plans(self) -> None:
+        # Experimental — W22. Pagination shape against a live tenant is unverified;
+        # the bridge accepts both bare-array and {nodes, pageInfo} envelope responses.
+        """Write the Jamf Protect Plans sheet from `jamf-cli protect plans list`."""
+        if not self._protect_plans_enabled():
+            raise RuntimeError(
+                "disabled in config (set protect.plans.enabled: true to opt in)"
+            )
+
+        try:
+            plans_raw = self._bridge.plans_list()
+        except AttributeError:
+            # Fallback for callers using the legacy JamfCLIBridge shim path.
+            plans_raw = self._bridge.protect_plans()
+
+        plans = self._protect_plan_detail_rows(plans_raw)
+
+        ws = self._wb.add_worksheet("Protect Plans")
+        ws.set_column(0, 0, 28)   # Plan Name
+        ws.set_column(1, 1, 36)   # UUID
+        ws.set_column(2, 2, 40)   # Description
+        ws.set_column(3, 4, 20)   # Created / Updated
+        ws.set_column(5, 5, 12)   # Log Level
+        ws.set_column(6, 6, 12)   # Auto Update
+        ws.set_column(7, 7, 22)   # Threat Prevention Strategy
+        ws.set_column(8, 8, 14)   # Profile Version
+        ws.set_column(9, 9, 60)   # Custom Engine Config
+        ws.set_column(10, 10, 32) # Exception Sets
+        ws.set_column(11, 11, 32) # Analytic Sets
+        ws.set_column(12, 13, 14) # Telemetry / Telemetry V2
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Protect Plans"),
+            f"Source: jamf-cli protect plans list | Generated: {ts}",
+            self._fmts,
+            ncols=14,
+        )
+        _safe_write(ws, row, 0, "Support Status", self._fmts["cell"])
+        _safe_write(ws, row, 1, "Experimental (W22)", self._fmts["yellow"])
+        row += 1
+        _safe_write(ws, row, 0, "Validation Note", self._fmts["cell"])
+        _safe_write(
+            ws,
+            row,
+            1,
+            "Pagination shape against a live tenant is unverified; bridge accepts"
+            " both bare-array and envelope responses.",
+            self._fmts["yellow"],
+        )
+        row += 2
+
+        headers = [
+            "Plan Name", "UUID", "Description", "Created", "Updated", "Log Level",
+            "Auto Update", "Threat Prevention Strategy", "Profile Version",
+            "Custom Engine Config", "Exception Sets", "Analytic Sets",
+            "Telemetry", "Telemetry V2",
+        ]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        if not plans:
+            _safe_write(
+                ws, row, 0,
+                "No Protect plans configured.",
+                self._fmts["yellow"],
+            )
+            return
+
+        plans.sort(key=lambda p: str(p.get("Plan Name", "") or "").lower())
+        for plan in plans:
+            for col_i, header in enumerate(headers):
+                _safe_write(ws, row, col_i, plan.get(header, ""), self._fmts["cell"])
+            row += 1
+
+    @staticmethod
+    def _protect_plan_detail_rows(raw: Any) -> list[dict[str, Any]]:
+        """Normalize Protect plan records into the 14-column sheet shape.
+
+        Preserves PascalCase sub-keys inside ``customEngineConfig`` so the
+        summary column reflects the SDK exactly. Defensively handles missing
+        fields by leaving cells blank rather than synthesizing values.
+        """
+        items: list[Any]
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            nodes = raw.get("nodes")
+            items = nodes if isinstance(nodes, list) else _extract_items(raw)
+        else:
+            items = []
+
+        rows: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            cec = item.get("customEngineConfig")
+            cec_summary = ""
+            if isinstance(cec, dict) and cec:
+                # Preserve PascalCase keys verbatim — defensive against parsers
+                # that lowercase keys.
+                cec_summary = ", ".join(str(key) for key in cec.keys())
+
+            rows.append({
+                "Plan Name": item.get("name", "") or "",
+                "UUID": item.get("uuid", "") or "",
+                "Description": item.get("description", "") or "",
+                "Created": item.get("created", "") or "",
+                "Updated": item.get("updated", "") or "",
+                "Log Level": item.get("logLevel", "") or "",
+                "Auto Update": _format_bool_yes_no(item.get("autoUpdate")),
+                "Threat Prevention Strategy": item.get("threatPreventionStrategy", "") or "",
+                "Profile Version": item.get("profileVersion", "") or "",
+                "Custom Engine Config": cec_summary,
+                "Exception Sets": _format_named_list(item.get("exceptionSets")),
+                "Analytic Sets": _format_named_list(item.get("analyticSets")),
+                "Telemetry": _format_bool_yes_no(item.get("telemetry")),
+                "Telemetry V2": _format_bool_yes_no(item.get("telemetryV2")),
+            })
+        return rows
+
     def _write_platform_blueprints(self) -> None:
+        # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write a blueprint deployment summary from Platform API report data."""
         if not self._platform_enabled():
             raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
@@ -5644,6 +6106,7 @@ class CoreDashboard:
             row += 1
 
     def _write_platform_compliance_rules(self, benchmark: str) -> None:
+        # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write per-rule Platform compliance results for a single benchmark.
 
         Args:
@@ -5740,6 +6203,7 @@ class CoreDashboard:
             row += 1
 
     def _write_platform_compliance_devices(self, benchmark: str) -> None:
+        # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write failing Platform compliance devices for a single benchmark.
 
         Args:
@@ -5828,6 +6292,7 @@ class CoreDashboard:
             row += 1
 
     def _write_platform_ddm_status(self) -> None:
+        # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write DDM declaration health from Platform API report data."""
         if not self._platform_enabled():
             raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
@@ -6235,6 +6700,75 @@ class CoreDashboard:
         row += 1
 
         for item in items:
+            severity = str(item.get("severity", "")).upper()
+            fmt = self._fmts["cell"]
+            if severity == "CRITICAL":
+                fmt = self._fmts["red"]
+            elif severity == "WARNING":
+                fmt = self._fmts["yellow"]
+
+            _safe_write(ws, row, 0, item.get("name", ""), fmt)
+            _safe_write(ws, row, 1, item.get("category", ""), fmt)
+            _safe_write(ws, row, 2, severity, fmt)
+            _safe_write(ws, row, 3, item.get("recommendation", ""), fmt)
+            _safe_write(ws, row, 4, item.get("affected", 0), fmt)
+            row += 1
+
+    def _audit_platform_enabled(self) -> bool:
+        """Return True when the platform audit-checks sheet is enabled.
+
+        Gated by both `platform.enabled` (parent toggle, requires platform-gateway
+        auth) and `platform.audit_platform.enabled` (sheet-level toggle).
+        """
+        if not self._platform_enabled():
+            return False
+        return self._config.get("platform", "audit_platform", "enabled", default=True) is True
+
+    def _write_audit_platform(self) -> None:
+        """Write platform-only health check findings from `pro audit --checks platform`.
+
+        Sibling to `_write_audit`: distinct sheet, distinct cache key, gated by
+        `platform.enabled`. Skips silently when the call returns no data.
+        """
+        raw = self._bridge.audit_platform_checks()
+        if raw is None:
+            raise RuntimeError(
+                "no platform audit findings available "
+                "(requires platform-gateway auth)"
+            )
+        items = raw if isinstance(raw, list) else []
+
+        ws = self._wb.add_worksheet("Platform Health")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Platform Health Audit"),
+            f"Source: jamf-cli pro audit --checks platform | Generated: {ts}",
+            self._fmts,
+            ncols=5,
+        )
+        ws.set_column(0, 0, 35)
+        ws.set_column(1, 1, 15)
+        ws.set_column(2, 2, 15)
+        ws.set_column(3, 3, 50)
+        ws.set_column(4, 4, 15)
+
+        headers = ["Finding", "Category", "Severity", "Recommendation", "Affected"]
+        for c, h in enumerate(headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        row += 1
+
+        if not items:
+            _safe_write(
+                ws, row, 0,
+                "No platform audit findings — fleet is healthy.",
+                self._fmts["yellow"],
+            )
+            return
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
             severity = str(item.get("severity", "")).upper()
             fmt = self._fmts["cell"]
             if severity == "CRITICAL":
@@ -7018,12 +7552,9 @@ class CoreDashboard:
         # jamf-cli pro report patch-status --output json returns a flat list:
         #   [{"title":"Firefox","id":"123","on_latest":100,"on_other":20,
         #     "total":120,"latest":"130.0","compliance_pct":"83%"}, ...]
-        # Newer builds may instead return:
-        #   [{"title":"Firefox","id":"123","installed":100,
-        #     "total":120,"latest":"130.0","compliance_pct":"83%"}, ...]
+        # on_latest/on_other is the canonical shape on v1.14+.
         raw = self._bridge.patch_status()
         titles = raw if isinstance(raw, list) else []
-        uses_installed_shape = any("installed" in item for item in titles if isinstance(item, dict))
 
         # Attempt to load active-device stats for adjusted columns.
         # Patch-status only has aggregate counts per title; per-device filtering is
@@ -7065,34 +7596,20 @@ class CoreDashboard:
         ws.set_column(1, 5, 18)
         if adj_available:
             ws.set_column(6, 9, 22)
-        raw_headers = (
-            ["Software Title", "Installed", "Not Installed", "Total", "Latest Version",
-             "Compliance %"]
-            if uses_installed_shape
-            else ["Software Title", "On Latest", "On Other", "Total", "Latest Version",
-                  "Compliance %"]
-        )
-        adj_headers = (
-            ["Adjusted Installed", "Adjusted Not Installed", "Adjusted Total",
-             "Adjusted Completion %"]
-            if uses_installed_shape
-            else ["Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
-                  "Adjusted Completion %"]
-        )
+        raw_headers = ["Software Title", "On Latest", "On Other", "Total", "Latest Version",
+                       "Compliance %"]
+        adj_headers = ["Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
+                       "Adjusted Completion %"]
         headers = raw_headers + (adj_headers if adj_available else [])
         for c, h in enumerate(headers):
             _safe_write(ws, row, c, h, self._fmts["header"])
         row += 1
         for item in titles:
             total = _to_int(item.get("total", 0))
-            if uses_installed_shape:
-                primary = _to_int(item.get("installed", 0))
-                secondary = max(total - primary, 0)
-            else:
-                primary = _to_int(item.get("on_latest", 0))
-                secondary = _to_int(item.get("on_other", 0))
-                if total == 0:
-                    total = primary + secondary
+            primary = _to_int(item.get("on_latest", 0))
+            secondary = _to_int(item.get("on_other", 0))
+            if total == 0:
+                total = primary + secondary
 
             pct_raw = str(item.get("compliance_pct", "")).strip()
             pct_match = re.fullmatch(r"(\d+(?:\.\d+)?)%", pct_raw)
@@ -7126,7 +7643,7 @@ class CoreDashboard:
             row += 1
 
     def _write_patch_failures(self) -> None:
-        # jamf-cli pro report patch-status --scan-failures --output json (v1.4.0+) returns:
+        # jamf-cli pro report patch-status --scan-failures --output json returns:
         #   [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
         #     "device_id":"123","status_date":"2026-04-01","attempt":3,
         #     "last_action":"Retrying","serial":"ABC123",
@@ -7258,29 +7775,22 @@ class CoreDashboard:
                 row += 1
 
     def _write_update_status(self) -> None:
-        # jamf-cli pro report update-status --output json shape differs by version:
-        #
-        # v1.5 and earlier:
-        #   {"summary": {"total_updates": N, "pending": N, "downloading": N,
-        #                "installing": N, "installed": N, "errors": N},
-        #    "ErrorDevices": [{"device_name":"...","serial":"...","os_version":"...",
-        #                      "status":"...","product_key":"...","updated":"..."},...]}
-        #
-        # v1.6+:
+        # jamf-cli pro report update-status --output json canonical shape (v1.14):
         #   [{"total": N,
         #     "status_summary": [{"status": "...", "count": N}, ...],
         #     "plan_total": N,
         #     "plan_state_summary": [{"state": "...", "count": N}, ...]}]
         #   (error_devices and failed_plans only present with --scan-failures)
         #
-        # Detect format by checking which summary key is present.
+        # NOTE: Both shapes preserved — v1.14 not yet verified against live data with
+        # update plans. The older shape (summary dict) is kept operational as a fallback.
         raw = self._bridge.update_status()
         envelope = _extract_envelope(raw)
         if not envelope:
             raise RuntimeError("update-status returned no data")
 
         no_data_message = str(envelope.get("message", "") or "").strip()
-        is_v16 = "status_summary" in envelope
+        is_current = "status_summary" in envelope
 
         ws = self._wb.add_worksheet("Update Status")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -7294,7 +7804,7 @@ class CoreDashboard:
         ws.set_column(0, 0, 32)
         ws.set_column(1, 5, 20)
 
-        if no_data_message and not is_v16 and not envelope.get("summary"):
+        if no_data_message and not is_current and not envelope.get("summary"):
             _safe_write(ws, row, 0, "Status", self._fmts["header"])
             _safe_write(ws, row, 1, "Details", self._fmts["header"])
             row += 1
@@ -7302,8 +7812,8 @@ class CoreDashboard:
             _safe_write(ws, row, 1, no_data_message, self._fmts["yellow"])
             return
 
-        if is_v16:
-            # v1.6+ format: status_summary list + plan_state_summary list
+        if is_current:
+            # Canonical format: status_summary list + plan_state_summary list
             status_summary = envelope.get("status_summary") or []
             plan_state_summary = envelope.get("plan_state_summary") or []
             total = _to_int(envelope.get("total", 0))
@@ -7333,7 +7843,7 @@ class CoreDashboard:
                     _safe_write(ws, row, 1, _to_int(item.get("count", 0)), self._fmts["cell"])
                     row += 1
         else:
-            # v1.5 and earlier: summary dict + ErrorDevices list
+            # Older shape: summary dict + ErrorDevices list
             summary = envelope.get("summary", {})
             error_devices = envelope.get("ErrorDevices", [])
             summary_fields = [
@@ -7370,7 +7880,7 @@ class CoreDashboard:
                     row += 1
 
     def _write_update_failures(self) -> None:
-        # jamf-cli pro report update-status --scan-failures --output json (v1.6+) returns:
+        # jamf-cli pro report update-status --scan-failures --output json returns:
         #   [{"total": N, "status_summary": [...],
         #     "error_devices": [{"name":"...","serial":"...","device_type":"...",
         #                        "os_version":"...","username":"...","status":"...",
@@ -7396,7 +7906,7 @@ class CoreDashboard:
             self._t("Update Failures"),
             (
                 "Source: jamf-cli pro report update-status --scan-failures"
-                f" (v1.6.0+) | Generated: {ts}"
+                f" | Generated: {ts}"
             ),
             self._fmts,
             ncols=8,
@@ -8643,17 +9153,21 @@ class SchoolDashboard:
         if self._bridge is not None:
             sheets += [
                 (self._t("School Overview"), self._write_overview),
-                (self._t("Device Groups"), self._write_device_groups),
+                (self._t("Device Groups"), self._write_device_groups_sorted),
                 (self._t("Users"), self._write_users),
                 (self._t("Classes"), self._write_classes),
                 (self._t("Apps"), self._write_apps),
                 (self._t("Profiles"), self._write_profiles),
                 (self._t("Locations"), self._write_locations),
             ]
+            if self._config.get("school", "dep_devices", "enabled", default=True) is True:
+                sheets.append((self._t("DEP Devices"), self._write_dep_devices))
+            if self._config.get("school", "ibeacons", "enabled", default=True) is True:
+                sheets.append((self._t("iBeacons"), self._write_ibeacons))
 
         if self._df is not None:
             sheets += [
-                (self._t("Device Inventory"), self._write_device_inventory),
+                (self._t("Device Inventory"), self._write_device_inventory_compact),
                 (self._t("OS Versions"), self._write_os_versions),
                 (self._t("Device Status"), self._write_device_status),
                 (self._t("Stale Devices"), self._write_stale_devices),
@@ -8714,36 +9228,50 @@ class SchoolDashboard:
                 _safe_write(ws, row, 1, value, self._fmts["cell"])
                 row += 1
 
-    def _write_device_groups(self, ws: xlsxwriter.workbook.Worksheet) -> None:
-        """Write Device Groups sheet from jamf-cli school device-groups list."""
+    def _write_device_groups_sorted(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Device Groups sheet sorted by device count descending.
+
+        Columns: Group Name, Device Count, Locations (comma-joined when multiple).
+        Handles None or empty group list by writing the header row only.
+        """
         raw = self._bridge.device_groups_list()  # type: ignore[union-attr]
         items = _extract_items(raw)
 
-        headers = ["Name", "Type", "Device Count", "Description"]
+        headers = ["Group Name", "Device Count", "Locations"]
         self._header_row(ws, headers)
         ws.set_column(0, 0, 40)
-        ws.set_column(1, 1, 16)
-        ws.set_column(2, 2, 14)
-        ws.set_column(3, 3, 50)
+        ws.set_column(1, 1, 14)
+        ws.set_column(2, 2, 50)
 
-        for row_i, item in enumerate(items, start=1):
+        def _count_key(item: dict) -> int:
             flat = _flatten_record(item)
-            _safe_write(ws, row_i, 0,
-                        _first_value(flat, ["name", "group_name", "groupName"]),
-                        self._fmts["cell"])
-            _safe_write(ws, row_i, 1,
-                        _first_value(flat, ["type", "group_type", "groupType"]),
-                        self._fmts["cell"])
+            raw_count = _first_value(flat, ["device_count", "deviceCount", "count",
+                                            "total_devices", "totalDevices"])
+            try:
+                return int(raw_count) if raw_count not in (None, "") else 0
+            except (ValueError, TypeError):
+                return 0
+
+        for row_i, item in enumerate(sorted(items, key=_count_key, reverse=True), start=1):
+            flat = _flatten_record(item)
+            name = _first_value(flat, ["name", "group_name", "groupName"])
             count_raw = _first_value(flat, ["device_count", "deviceCount", "count",
                                             "total_devices", "totalDevices"])
             try:
-                count = int(count_raw) if count_raw else ""
+                count: Any = int(count_raw) if count_raw not in (None, "") else ""
             except (ValueError, TypeError):
                 count = count_raw
-            _safe_write(ws, row_i, 2, count, self._fmts["cell"])
-            _safe_write(ws, row_i, 3,
-                        _first_value(flat, ["description", "notes"]),
-                        self._fmts["cell"])
+
+            loc_raw = _first_value(flat, ["locations", "location_names", "locationNames",
+                                           "location_name", "locationName", "location"])
+            if isinstance(loc_raw, list):
+                locations = ", ".join(str(loc) for loc in loc_raw if loc)
+            else:
+                locations = str(loc_raw) if loc_raw else ""
+
+            _safe_write(ws, row_i, 0, name, self._fmts["cell"])
+            _safe_write(ws, row_i, 1, count, self._fmts["cell"])
+            _safe_write(ws, row_i, 2, locations, self._fmts["cell"])
 
     def _write_users(self, ws: xlsxwriter.workbook.Worksheet) -> None:
         """Write Users sheet from jamf-cli school users list."""
@@ -8904,6 +9432,103 @@ class SchoolDashboard:
                 count = count_raw
             _safe_write(ws, row_i, 3, count, self._fmts["cell"])
 
+    def _write_dep_devices(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write DEP Devices sheet from jamf-cli school dep-devices list.
+
+        jamf-cli's `flattenSchoolDEPDevice` drops `dateAdded` and `datePushed`,
+        so date columns are unavailable on this code path. Output columns:
+        Serial Number, Model, Color, Status, Profile Name, Device Name.
+        Sorted by serial number ascending. Empty / None bridge results produce
+        a header-only sheet without raising.
+        """
+        raw = self._bridge.dep_devices_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Serial Number", "Model", "Color", "Status",
+                   "Profile Name", "Device Name"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 22)
+        ws.set_column(1, 1, 24)
+        ws.set_column(2, 2, 14)
+        ws.set_column(3, 3, 18)
+        ws.set_column(4, 4, 32)
+        ws.set_column(5, 5, 28)
+
+        def _serial_key(item: Any) -> str:
+            if not isinstance(item, dict):
+                return ""
+            flat = _flatten_record(item)
+            return str(_first_value(flat, ["serialNumber", "serial_number"]) or "")
+
+        for row_i, item in enumerate(sorted(items, key=_serial_key), start=1):
+            flat = _flatten_record(item) if isinstance(item, dict) else {}
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["serialNumber", "serial_number"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["model"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 2,
+                        _first_value(flat, ["color"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 3,
+                        _first_value(flat, ["status"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 4,
+                        _first_value(flat, ["profileName", "profile_name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 5,
+                        _first_value(flat, ["deviceName", "device_name"]),
+                        self._fmts["cell"])
+
+    def _write_ibeacons(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write iBeacons sheet from jamf-cli school ibeacons list.
+
+        jamf-cli flattens to lowerCamelCase, so `uuid` is lowercase here (the
+        SDK's PascalCase `UUID` does not survive the flatten). Output columns:
+        Name, UUID, Major, Minor, Description. Sorted by name ascending.
+        Empty / None bridge results produce a header-only sheet.
+        """
+        raw = self._bridge.ibeacons_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Name", "UUID", "Major", "Minor", "Description"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 32)
+        ws.set_column(1, 1, 38)
+        ws.set_column(2, 3, 10)
+        ws.set_column(4, 4, 48)
+
+        def _name_key(item: Any) -> str:
+            if not isinstance(item, dict):
+                return ""
+            flat = _flatten_record(item)
+            return str(_first_value(flat, ["name"]) or "")
+
+        for row_i, item in enumerate(sorted(items, key=_name_key), start=1):
+            flat = _flatten_record(item) if isinstance(item, dict) else {}
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["uuid", "UUID"]),
+                        self._fmts["cell"])
+            major_raw = _first_value(flat, ["major"])
+            try:
+                major: Any = int(major_raw) if major_raw not in (None, "") else ""
+            except (ValueError, TypeError):
+                major = major_raw
+            _safe_write(ws, row_i, 2, major, self._fmts["cell"])
+            minor_raw = _first_value(flat, ["minor"])
+            try:
+                minor: Any = int(minor_raw) if minor_raw not in (None, "") else ""
+            except (ValueError, TypeError):
+                minor = minor_raw
+            _safe_write(ws, row_i, 3, minor, self._fmts["cell"])
+            _safe_write(ws, row_i, 4,
+                        _first_value(flat, ["description"]),
+                        self._fmts["cell"])
+
     # ------------------------------------------------------------------
     # CSV-driven sheets
     # ------------------------------------------------------------------
@@ -8913,46 +9538,6 @@ class SchoolDashboard:
         if self._df is None:
             return []
         return self._df.to_dict("records")
-
-    def _write_device_inventory(self, ws: xlsxwriter.workbook.Worksheet) -> None:
-        """Write Device Inventory sheet from Jamf School CSV export."""
-        rows = self._device_rows()
-        col = self._col
-
-        headers = [
-            "Device Name", "Serial Number", "Model", "OS Version",
-            "Location", "Owner", "Email", "Enrollment Type",
-            "Enrollment Date", "Last Check-in", "Managed", "Supervised",
-            "Shared", "Lost Mode", "Groups",
-        ]
-        self._header_row(ws, headers)
-        ws.set_column(0, 1, 28)
-        ws.set_column(2, 3, 24)
-        ws.set_column(4, 5, 28)
-        ws.set_column(6, 6, 32)
-        ws.set_column(7, 9, 20)
-        ws.set_column(10, 13, 12)
-        ws.set_column(14, 14, 48)
-
-        for row_i, row in enumerate(rows, start=1):
-            first = col.extract(row, "owner_first_name")
-            last = col.extract(row, "owner_last_name")
-            owner = f"{first} {last}".strip() if (first or last) else col.extract(row, "owner_username")
-            _safe_write(ws, row_i, 0, col.extract(row, "device_name"), self._fmts["cell"])
-            _safe_write(ws, row_i, 1, col.extract(row, "serial_number"), self._fmts["cell"])
-            _safe_write(ws, row_i, 2, col.extract(row, "model"), self._fmts["cell"])
-            _safe_write(ws, row_i, 3, col.extract(row, "os_version"), self._fmts["cell"])
-            _safe_write(ws, row_i, 4, col.extract(row, "location_name"), self._fmts["cell"])
-            _safe_write(ws, row_i, 5, owner, self._fmts["cell"])
-            _safe_write(ws, row_i, 6, col.extract(row, "owner_email"), self._fmts["cell"])
-            _safe_write(ws, row_i, 7, col.extract(row, "enroll_type"), self._fmts["cell"])
-            _safe_write(ws, row_i, 8, col.extract(row, "enrollment_date"), self._fmts["cell"])
-            _safe_write(ws, row_i, 9, col.extract(row, "last_checkin"), self._fmts["cell"])
-            _safe_write(ws, row_i, 10, col.extract(row, "managed"), self._fmts["cell"])
-            _safe_write(ws, row_i, 11, col.extract(row, "supervised"), self._fmts["cell"])
-            _safe_write(ws, row_i, 12, col.extract(row, "shared"), self._fmts["cell"])
-            _safe_write(ws, row_i, 13, col.extract(row, "lost_mode"), self._fmts["cell"])
-            _safe_write(ws, row_i, 14, col.extract(row, "member_of"), self._fmts["cell"])
 
     def _write_os_versions(self, ws: xlsxwriter.workbook.Worksheet) -> None:
         """Write OS version distribution from CSV."""
@@ -9027,11 +9612,28 @@ class SchoolDashboard:
             _safe_write(ws, row_i, 1, count, fmt)
             _safe_write(ws, row_i, 2, pct, fmt)
 
+    def _classify_stale(self, row: dict) -> tuple[str, Optional[int]]:
+        """Classify a CSV row by stale-device status.
+
+        Reads the configured ``last_checkin`` column, computes days since
+        check-in, and returns a `(raw_ts, days)` tuple where `days` is None
+        when no check-in timestamp is available or parseable.
+
+        Args:
+            row: One CSV row dict.
+
+        Returns:
+            Tuple of (raw timestamp string, days since check-in or None).
+        """
+        checkin_col = self._col.get("last_checkin")
+        raw_ts = str(row.get(checkin_col, "")).strip() if checkin_col else ""
+        days = _days_since(raw_ts) if raw_ts else None
+        return raw_ts, days
+
     def _write_stale_devices(self, ws: xlsxwriter.workbook.Worksheet) -> None:
         """Write Stale Devices sheet — devices not seen within stale_device_days."""
         rows = self._device_rows()
         checkin_col = self._col.get("last_checkin")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=self._stale_days)
 
         headers = [
             "Device Name", "Serial Number", "Model", "OS Version",
@@ -9046,31 +9648,20 @@ class SchoolDashboard:
 
         stale_count = 0
         for row in rows:
-            if not checkin_col:
-                break
-            raw_ts = str(row.get(checkin_col, "")).strip()
-            if not raw_ts:
-                continue
-            try:
-                ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            if ts >= cutoff:
+            raw_ts, days = self._classify_stale(row)
+            if days is None or days <= self._stale_days:
                 continue
 
-            days_since = (datetime.now(timezone.utc) - ts).days
             row_i = stale_count + 1
             stale_count += 1
-            row_fmt = self._fmts["red"] if days_since >= self._stale_days * 3 else \
-                      self._fmts["yellow"] if days_since >= self._stale_days else \
-                      self._fmts["cell"]
+            row_fmt = self._fmts["red"] if days >= self._stale_days * 3 else self._fmts["yellow"]
             _safe_write(ws, row_i, 0, self._col.extract(row, "device_name"), row_fmt)
             _safe_write(ws, row_i, 1, self._col.extract(row, "serial_number"), row_fmt)
             _safe_write(ws, row_i, 2, self._col.extract(row, "model"), row_fmt)
             _safe_write(ws, row_i, 3, self._col.extract(row, "os_version"), row_fmt)
             _safe_write(ws, row_i, 4, self._col.extract(row, "location_name"), row_fmt)
             _safe_write(ws, row_i, 5, raw_ts, row_fmt)
-            _safe_write(ws, row_i, 6, days_since, row_fmt)
+            _safe_write(ws, row_i, 6, days, row_fmt)
 
         if stale_count == 0 and not checkin_col:
             ws.write(1, 0, "[last_checkin column not mapped in school_columns]",
@@ -9078,6 +9669,43 @@ class SchoolDashboard:
         elif stale_count == 0:
             ws.write(1, 0, f"No devices stale beyond {self._stale_days} days.",
                      self._fmts["cell"])
+
+    def _write_device_inventory_compact(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write compact device inventory with stale-status classification from CSV.
+
+        Columns: Serial Number, Device Name, Device Type, OS Version, Location,
+        User, Days Since Check-in, Status.  Status is "Active" when the device
+        checked in within ``stale_device_days``; otherwise "Stale".  Missing or
+        unmapped columns produce blank cells without raising.
+        """
+        rows = self._device_rows()
+        col = self._col
+
+        headers = [
+            "Serial Number", "Device Name", "Device Type", "OS Version",
+            "Location", "User", "Days Since Check-in", "Status",
+        ]
+        self._header_row(ws, headers)
+        ws.set_column(0, 1, 28)
+        ws.set_column(2, 3, 20)
+        ws.set_column(4, 5, 28)
+        ws.set_column(6, 6, 20)
+        ws.set_column(7, 7, 14)
+
+        for row_i, row in enumerate(rows, start=1):
+            _, days = self._classify_stale(row)
+            is_stale = days is None or days > self._stale_days
+            status = "Stale" if is_stale else "Active"
+            row_fmt = self._fmts["yellow"] if is_stale else self._fmts["cell"]
+
+            _safe_write(ws, row_i, 0, col.extract(row, "serial_number"), row_fmt)
+            _safe_write(ws, row_i, 1, col.extract(row, "device_name"), row_fmt)
+            _safe_write(ws, row_i, 2, col.extract(row, "device_type"), row_fmt)
+            _safe_write(ws, row_i, 3, col.extract(row, "os_version"), row_fmt)
+            _safe_write(ws, row_i, 4, col.extract(row, "location_name"), row_fmt)
+            _safe_write(ws, row_i, 5, col.extract(row, "user_name"), row_fmt)
+            _safe_write(ws, row_i, 6, days if days is not None else "", row_fmt)
+            _safe_write(ws, row_i, 7, status, row_fmt)
 
     # ------------------------------------------------------------------
     # Bridge-only device sheets (when no CSV provided)
@@ -16060,7 +16688,7 @@ def cmd_multi_launchagent_run(
 
 
 # ---------------------------------------------------------------------------
-# Managed-state patching (requires jamf-cli v1.6.0+)
+# Managed-state patching (requires jamf-cli v1.14.0+)
 # ---------------------------------------------------------------------------
 
 
@@ -16098,7 +16726,7 @@ def cmd_patch_managed(
 ) -> None:
     """Set managed state on computers via jamf-cli computers-inventory patch.
 
-    Requires jamf-cli v1.6.0+. Without --serials-file, queries device-compliance
+    Requires jamf-cli v1.14.0+. Without --serials-file, queries device-compliance
     and patches all devices currently in the opposite managed state. With
     --serials-file, patches every listed serial to the target state.
 
@@ -16162,7 +16790,7 @@ def cmd_patch_managed(
             if "unknown command" in detail.lower() or "computers-inventory" in detail.lower():
                 raise SystemExit(
                     "Error: 'computers-inventory patch' not available."
-                    " Upgrade to jamf-cli v1.6.0+."
+                    " Upgrade to jamf-cli v1.14.0+."
                 ) from exc
             print(f"  [fail] {serial}: {exc}")
             failed += 1
@@ -16741,7 +17369,7 @@ def main() -> None:
             "  scaffold      Generate a starter config.yaml from a Jamf Pro CSV\n"
             "  check         Verify jamf-cli auth and config\n"
             "  device        Print a device detail view from jamf-cli pro device\n"
-            "  patch-managed Set managed state on computers (requires jamf-cli v1.6.0+)\n"
+            "  patch-managed Set managed state on computers (requires jamf-cli v1.14.0+)\n"
             "\n"
             "Jamf School commands:\n"
             "  school-generate  Build the Jamf School Excel report\n"
