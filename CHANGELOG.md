@@ -9,6 +9,21 @@ versions in this repository map to git tags.
 
 ### Added
 
+- **Platform Health Audit Sheet**: New `Platform Health` sheet driven by `jamf-cli pro audit --checks platform`. Surfaces seven platform-specific health checks (undeployed blueprints, blueprint deployment failures, stale blueprints, compliance benchmarks needing updates, MONITOR-mode benchmarks, empty platform scope, devices with failed DDM declarations). Gated by `platform.enabled` and `platform.audit_platform.enabled`.
+- **School DEP Devices Sheet**: New sheet listing DEP-enrolled devices (Serial Number, Model, Color, Status, Profile Name, Device Name). Driven by `jamf-cli school dep-devices list`.
+- **School iBeacons Sheet**: New sheet listing configured iBeacons (Name, UUID, Major, Minor, Description). Driven by `jamf-cli school ibeacons list`.
+- **Jamf Protect Plans Sheet**: New 14-column `Protect Plans` sheet showing plan name, threat-prevention strategy, custom engine config, exception/analytic sets, and telemetry version per plan. First step of Protect feature graduation from experimental.
+- **Protect Bridge**: New `ProtectCLIBridge` class graduates the experimental Protect plumbing into a first-class subclass of `JamfCLIBridge`. Includes auth-detection (`is_protect_available()`) and structured error classification (`_classify_protect_error()`).
+- **CI Automation**: Added Dependabot configuration plus weekly workflows that watch for new jamf-cli releases and Python versions.
+- **Jamf School Reporting**: Full support for Jamf School inventory and device group sheets in Python reports.
+  - New **Compact Inventory**: CSV-driven inventory focusing on stale-status classification.
+  - New **Sorted Device Groups**: Bridge-driven group reporting sorted by device count with multi-location support.
+- **Native macOS App**: Introduced a complete SwiftUI-based desktop application for fleet overview, detailed inventory, health audits, and automated schedule management.
+- **Health Audit Improvements**: New audit views in the macOS app for identifying stale devices, empty groups, and hygiene findings from jamf-cli data.
+- **Group Hygiene Reporting**: Automated detection and reporting of unused or misconfigured device groups.
+- **Config Management**: Expanded `ConfigView` in the macOS app to manage stale device thresholds, run retention policies, and jamf-cli cache settings.
+- **Inbox Management**: Wired `SourcesView` to the workspace inbox for real-time monitoring and one-click clearing of generated reports.
+- **Automated Scheduling**: Atomic LaunchAgent management for scheduled report runs across multiple profiles.
 - macOS app **Fleet Overview** tab now aggregates initialized profile workspaces
   from historical summary JSON, showing per-profile device count, Stability
   Index, and last successful run without exposing local configuration paths.
@@ -29,9 +44,22 @@ versions in this repository map to git tags.
 - Added **Context Menus** (right-click) to device rows in Detailed Inventory and
   Overview tables with actions for "Open in Jamf Pro", "Copy Serial", and "Copy User".
 - Added **Interactive Column Sorting** to inventory and audit tables.
+- **Security Hardening**: Hardened `ProfileService` path safety with direct-child workspace root validation to prevent symlink-based traversal.
+- **App Responsiveness**: Improved `DirectoryWatcher` responsiveness by reducing debounce interval and ensuring MainActor thread safety for Swift 6 concurrency.
 
 ### Changed
 
+- **Minimum supported jamf-cli is now v1.14.0**; older versions are no longer supported.
+  The pre-v1.4 patch-status `installed`/`total` shape is no longer parsed — only
+  `on_latest`/`on_other` is supported. The older `update-status` shape (`summary`/`ErrorDevices`)
+  is preserved pending live verification against a tenant with active update plans; the
+  `status_summary` shape remains the canonical path. Users on older jamf-cli must upgrade
+  via Homebrew (`brew upgrade jamf-cli`) before generating reports.
+- **v1.6.0 Compatibility**: Updated patch and update-status parsers to support the new JSON schema introduced in jamf-cli v1.6.0.
+- **Python Runtime**: Switched to pinned SHA256 verification for bundled Python runtime assets on both arm64 and x86_64 architectures.
+- **Test Suite**: Expanded Swift test coverage for core services including `ConfigService`, `ProfileService`, `CSVInboxService`, and `LaunchAgent` management. Added negative path testing for security boundaries.
+- **Date Robustness**: Reconciled Python date-handling logic to be more resilient to clock skew and diverse timestamp formats using UTC-aware pandas parsing across all school-related sheets.
+- **Architecture Cleanup**: Removed deprecated `_write_device_groups` and `_write_device_inventory` in favor of more specialized methods.
 - Compliance failure-count parsing is now fail-closed: `strict_parse_failures()`
   raises `ValueError` on non-numeric values (empty, "N/A", "null", etc.) instead
   of silently treating them as 0. In the summary JSON path, unparseable values
@@ -40,6 +68,10 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- **Security Hardening**: Resolved path-traversal risks by sanitizing trailing-slashes in workspace paths and validating profile names in `TrendStore`.
+- **HTML Security**: Hardened HTML reports against branding-driven markup/style injection via escaped titles and topbar branding.
+- **UI Stability**: Fixed Swift compiler ambiguities and missing return statements in various app views (`SchedulesView`, `AuditView`).
+- **Data Integrity**: Improved error normalization for cached Jamf software-update responses to prevent blank report sheets.
 - `_emit_summary_json` now validates existing summary files before skipping:
   parses JSON and checks for required keys (`date`, `totalDevices`, `source`);
   regenerates instead of using corrupt data.
