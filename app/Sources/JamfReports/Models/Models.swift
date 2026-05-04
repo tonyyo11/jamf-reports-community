@@ -67,7 +67,7 @@ struct MultiTarget: Sendable, Equatable {
         switch scope {
         case .all:           return "All profiles"
         case .filter(let g): return "~\(g)"
-        case .list(let ps):  return "\(ps.count) profiles"
+        case .list(let ps):  return "\(ps.count) profile\(ps.count == 1 ? "" : "s")"
         }
     }
 }

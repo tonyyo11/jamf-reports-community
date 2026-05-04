@@ -85,7 +85,7 @@ struct SchedulesView: View {
         PageHeader(
             kicker: "macOS LaunchAgent · UserAgent",
             title: "Scheduled Runs",
-            subtitle: "\(workspace.schedules.count) schedules · \(workspace.schedules.filter(\.enabled).count) enabled · across \(profileCount) jamf-cli profiles"
+            subtitle: "\(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s") · \(workspace.schedules.filter(\.enabled).count) enabled · across \(profileCount) jamf-cli profile\(profileCount == 1 ? "" : "s")"
         ) {
             AnyView(
                 HStack(spacing: 8) {

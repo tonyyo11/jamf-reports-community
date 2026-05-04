@@ -63,7 +63,7 @@ struct BackupsView: View {
     private var header: some View {
         PageHeader(
             kicker: "Configuration Backups",
-            title: "\(backups.count) backups",
+            title: "\(backups.count) backup\(backups.count == 1 ? "" : "s")",
             subtitle: "~/Jamf-Reports/\(workspace.profile)/backups/"
         ) {
             AnyView(

@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 struct FleetOverviewView: View {
@@ -214,6 +215,8 @@ struct FleetOverviewView: View {
                     )
                 }
 
+                stabilityTrendCard(for: row)
+
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
@@ -272,6 +275,96 @@ struct FleetOverviewView: View {
         .background(Theme.Colors.winBG)
     }
 
+    private func stabilityTrendPoints(_ summaries: [DailySummary]) -> [StabilityTrendPoint] {
+        summaries.compactMap { summary in
+            guard let value = summary.stabilityIndex else { return nil }
+            let date = summary.parsedDate
+            guard date != .distantPast else { return nil }
+            return StabilityTrendPoint(date: date, value: value)
+        }
+    }
+
+    private func stabilityTrendCard(for row: FleetProfileOverview) -> some View {
+        let points = stabilityTrendPoints(row.summaries)
+        return Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    SectionHeader(title: "Stability Trend")
+                    Spacer()
+                    if !points.isEmpty {
+                        Pill(text: "\(points.count) snapshot\(points.count == 1 ? "" : "s")",
+                             tone: .muted)
+                    }
+                }
+                if points.isEmpty {
+                    stabilityEmptyState
+                } else {
+                    stabilityChart(points: points)
+                }
+            }
+        }
+    }
+
+    private var stabilityEmptyState: some View {
+        VStack(spacing: 6) {
+            Kicker(text: "No stability history yet")
+            Text("Generate a report to start tracking trends")
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.Colors.fgMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 200)
+    }
+
+    private func stabilityChart(points: [StabilityTrendPoint]) -> some View {
+        Chart {
+            ForEach(points) { point in
+                AreaMark(
+                    x: .value("Date", point.date),
+                    y: .value("Stability", point.value)
+                )
+                .foregroundStyle(LinearGradient(
+                    colors: [Theme.Colors.teal.opacity(0.35), Theme.Colors.teal.opacity(0)],
+                    startPoint: .top, endPoint: .bottom
+                ))
+                .interpolationMethod(.catmullRom)
+
+                LineMark(
+                    x: .value("Date", point.date),
+                    y: .value("Stability", point.value)
+                )
+                .foregroundStyle(Theme.Colors.teal)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .interpolationMethod(.catmullRom)
+            }
+        }
+        .chartYScale(domain: 0...100)
+        .chartXAxis {
+            AxisMarks { _ in
+                AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day(),
+                               centered: false)
+                    .font(Theme.Fonts.mono(10))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) { value in
+                AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                AxisValueLabel(horizontalSpacing: 6) {
+                    if let pct = value.as(Double.self) {
+                        Text("\(Int(pct))%")
+                            .font(Theme.Fonts.mono(10))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+            }
+        }
+        .frame(height: 200)
+    }
+
     private func profileMetricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
         HStack(spacing: 10) {
             Text(label)
@@ -326,7 +419,11 @@ struct FleetOverviewView: View {
             profiles.map { profile in
                 let summaries = (try? WorkspacePaths.summariesDir(for: profile.name))
                     .map { SummaryJSONParser.parseDirectory($0) } ?? []
-                return FleetProfileOverview(profile: profile.name, summary: summaries.last)
+                return FleetProfileOverview(
+                    profile: profile.name,
+                    summary: summaries.last,
+                    summaries: summaries
+                )
             }
         }.value
         
@@ -350,7 +447,11 @@ struct FleetOverviewView: View {
                 crowdstrikePct: 93 - offset,
                 patchPct: 84 - offset
             )
-            return FleetProfileOverview(profile: profile.name, summary: summary)
+            return FleetProfileOverview(
+                profile: profile.name,
+                summary: summary,
+                summaries: [summary]
+            )
         }
     }
 }
@@ -359,8 +460,15 @@ private struct FleetProfileOverview: Identifiable, Sendable {
     var id: String { profile }
     let profile: String
     let summary: DailySummary?
+    var summaries: [DailySummary] = []
 
     var hasIssue: Bool { fleetProfileHasIssue(summary) }
+}
+
+private struct StabilityTrendPoint: Identifiable, Sendable {
+    let date: Date
+    let value: Double
+    var id: Date { date }
 }
 
 private struct FleetProfileCard: View {

@@ -176,7 +176,7 @@ struct TrendsView: View {
             kicker: "Trends · \(range.rawValue)",
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: "Historical Trends",
-            subtitle: "Snapshot history from snapshots/summaries · \(trendDates.count) snapshots",
+            subtitle: "Snapshot history from snapshots/summaries · \(trendDates.count) snapshot\(trendDates.count == 1 ? "" : "s")",
             lastModified: workspaceStore.demoMode ? Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 25)) : trendStore.filteredSummaries.last?.parsedDate
         ) {
             AnyView(
