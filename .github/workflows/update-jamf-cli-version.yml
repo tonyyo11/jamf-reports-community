@@ -1,0 +1,60 @@
+# Note: Python runtime updates (app/python-runtime.lock) are intentionally a manual
+# process. Bumping the pinned python-build-standalone release requires fetching and
+# verifying SHA256 sums for both arm64 and x86_64 tarballs, which is gated by human
+# review for supply-chain safety. There is no companion auto-bump workflow.
+name: Update jamf-cli tracked version
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-jamf-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get latest jamf-cli release tag
+        id: get_latest
+        run: |
+          echo "Fetching latest release tag from GitHub..."
+          latest=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Jamf-Concepts/jamf-cli/releases/latest | jq -r .tag_name)
+          if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+            echo "No release tag found"; exit 1
+          fi
+          echo "tag=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Read current tracked version
+        id: read_current
+        run: |
+          file=".jamf-cli-tracked-version"
+          if [ -f "$file" ]; then
+            current=$(cat "$file" | tr -d '[:space:]')
+          else
+            current=""
+          fi
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+
+      - name: Update tracked file
+        if: steps.get_latest.outputs.tag != steps.read_current.outputs.current
+        run: |
+          new_tag="${{ steps.get_latest.outputs.tag }}"
+          file=".jamf-cli-tracked-version"
+          echo "$new_tag" > "$file"
+
+      - name: Create pull request
+        if: steps.get_latest.outputs.tag != steps.read_current.outputs.current
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: bump jamf-cli to ${{ steps.get_latest.outputs.tag }}"
+          title: "chore: bump jamf-cli -> ${{ steps.get_latest.outputs.tag }}"
+          body: |
+            Automated update of .jamf-cli-tracked-version to ${{ steps.get_latest.outputs.tag }}.
+          branch: "update/jamf-cli-${{ steps.get_latest.outputs.tag }}"
+          labels: "automation,dependencies"
