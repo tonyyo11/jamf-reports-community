@@ -281,6 +281,7 @@ def test_packages_uses_pro_packages_list(monkeypatch, jrc) -> None:
 
 
 def test_bridge_uses_multi_flags(monkeypatch, jrc) -> None:
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: "/fake/jamf-cli")
     multi_config = {
         "enabled": True,
         "filter": "prod-*",
@@ -325,6 +326,7 @@ def test_bridge_uses_multi_flags(monkeypatch, jrc) -> None:
 
 
 def test_bridge_no_multi_when_disabled(monkeypatch, jrc) -> None:
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: "/fake/jamf-cli")
     multi_config = {
         "enabled": False,
         "filter": "prod-*",
