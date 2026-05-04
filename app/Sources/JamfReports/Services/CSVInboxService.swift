@@ -134,7 +134,7 @@ struct CSVInboxService {
                 queue: DispatchQueue.global(qos: .utility)
             )
             source.setEventHandler { [weak self] in
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self?.scheduleReload(onChange: onChange)
                 }
             }
