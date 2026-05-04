@@ -22,7 +22,12 @@ struct SnapshotArchiveService {
 
     func families(profile: String) -> [SnapshotFamily] {
         guard let root = WorkspacePathGuard.root(for: profile) else { return [] }
-        let snapshots = root.appendingPathComponent("snapshots", isDirectory: true)
+        let snapshots: URL
+        do {
+            snapshots = try WorkspacePaths.historicalDir(for: profile)
+        } catch {
+            return []
+        }
         guard let validatedSnapshots = WorkspacePathGuard.validate(snapshots, under: root),
               let entries = try? fileManager.contentsOfDirectory(
                 at: validatedSnapshots,

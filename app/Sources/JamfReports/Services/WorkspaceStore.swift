@@ -390,6 +390,43 @@ final class WorkspaceStore {
         }
     }
 
+    // MARK: Console deep-links
+
+    /// Returns the Jamf Pro console URL for a computer, or nil if the active
+    /// profile has no server URL or the URL is malformed.
+    ///
+    /// Pattern mirrors JamfDash: `<server>/computers.html?id=<id>&o=r`
+    func consoleURL(forComputerID id: Int) -> URL? {
+        consoleURL(path: "computers.html", id: id)
+    }
+
+    /// Returns the Jamf Pro console URL for a mobile device, or nil if the active
+    /// profile has no server URL or the URL is malformed.
+    ///
+    /// Pattern: `<server>/mobileDevices.html?id=<id>&o=r`
+    func consoleURL(forMobileDeviceID id: Int) -> URL? {
+        consoleURL(path: "mobileDevices.html", id: id)
+    }
+
+    private func consoleURL(path: String, id: Int) -> URL? {
+        let rawServer = activeProfileURL()
+        guard !rawServer.isEmpty else { return nil }
+        guard var components = URLComponents(string: rawServer) else { return nil }
+        let separator = components.path.hasSuffix("/") ? "" : "/"
+        components.path = components.path + separator + path
+        components.queryItems = [
+            URLQueryItem(name: "id", value: String(id)),
+            URLQueryItem(name: "o", value: "r"),
+        ]
+        return components.url
+    }
+
+    /// Server URL for the currently active profile.
+    private func activeProfileURL() -> String {
+        if demoMode { return org.jamfURL }
+        return profiles.first(where: { $0.name == profile })?.url ?? ""
+    }
+
     private static func org(for profile: JamfCLIProfile?) -> Org {
         let name = profile?.name ?? "jamf-cli"
         let url = profile?.url ?? "(jamf-cli profile)"

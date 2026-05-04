@@ -741,23 +741,36 @@ private struct OutputTab: View {
                 }
             }
 
-            // Branding: keys ARE in config.example.yaml and DEFAULT_CONFIG.
-            Card(padding: 18) {
-                VStack(alignment: .leading, spacing: 14) {
-                    SectionHeader(title: "Branding")
-                    VStack(alignment: .leading, spacing: 4) {
-                        FieldLabel(label: "Organisation name")
-                        PNPTextField(value: $ws.configState.orgName, placeholder: ws.org.name)
+            VStack(spacing: 14) {
+                Card(padding: 18) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeader(title: "jamf-cli Cache")
+                        outputToggleRow(
+                            title: "Use cached jamf-cli data",
+                            detail: "jamf_cli.use_cached_data",
+                            isOn: $ws.configState.jamfCLIUseCachedData
+                        )
                     }
-                    VStack(alignment: .leading, spacing: 4) {
-                        FieldLabel(label: "Logo path")
-                        PNPTextField(value: $ws.configState.logoPath, mono: true)
-                    }
-                    HStack(spacing: 8) {
-                        colorField(label: "Accent color", value: $ws.configState.accentColor,
-                                   hexColor: Theme.Colors.gold)
-                        colorField(label: "Accent dark", value: $ws.configState.accentDark,
-                                   hexColor: Theme.Colors.goldDim)
+                }
+
+                // Branding: keys ARE in config.example.yaml and DEFAULT_CONFIG.
+                Card(padding: 18) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        SectionHeader(title: "Branding")
+                        VStack(alignment: .leading, spacing: 4) {
+                            FieldLabel(label: "Organisation name")
+                            PNPTextField(value: $ws.configState.orgName, placeholder: ws.org.name)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            FieldLabel(label: "Logo path")
+                            PNPTextField(value: $ws.configState.logoPath, mono: true)
+                        }
+                        HStack(spacing: 8) {
+                            colorField(label: "Accent color", value: $ws.configState.accentColor,
+                                       hexColor: Theme.Colors.gold)
+                            colorField(label: "Accent dark", value: $ws.configState.accentDark,
+                                       hexColor: Theme.Colors.goldDim)
+                        }
                     }
                 }
             }

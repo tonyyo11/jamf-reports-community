@@ -11,21 +11,63 @@ import Foundation
 /// full YAML parser.
 enum WorkspacePaths {
 
+    /// `<workspace>/Generated Reports` by default; honors `output.output_dir`.
+    static func outputDir(for profile: String) throws -> URL {
+        guard let workspace = workspaceRoot(for: profile) else {
+            throw PathError.invalidProfile(profile)
+        }
+        return try resolve(
+            rawValue: try configValue(workspace: workspace, section: "output", key: "output_dir"),
+            fallback: "Generated Reports",
+            workspace: workspace
+        )
+    }
+
+    /// `<output_dir>/archive` by default; honors `output.archive_dir`.
+    ///
+    /// Matches Python `Config.resolve_path("output", "archive_dir")`: when the user
+    /// supplies a relative path it resolves against the config file's directory
+    /// (the workspace root). Only the empty/unset fallback resolves relative to
+    /// `output_dir`, mirroring Python's `out_path.parent / "archive"`.
+    static func archiveDir(for profile: String) throws -> URL {
+        guard let workspace = workspaceRoot(for: profile) else {
+            throw PathError.invalidProfile(profile)
+        }
+        let raw = try configValue(workspace: workspace, section: "output", key: "archive_dir")
+        let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            let output = try outputDir(for: profile)
+            return output.appendingPathComponent("archive", isDirectory: true)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+        }
+        return try resolve(
+            rawValue: trimmed,
+            fallback: "archive",
+            workspace: workspace,
+            isArchive: true
+        )
+    }
+
     /// `<workspace>/jamf-cli-data` by default; honors `jamf_cli.data_dir`.
-    static func dataDir(for profile: String) -> URL? {
-        guard let workspace = workspaceRoot(for: profile) else { return nil }
-        return resolve(
-            rawValue: configValue(workspace: workspace, section: "jamf_cli", key: "data_dir"),
+    static func dataDir(for profile: String) throws -> URL {
+        guard let workspace = workspaceRoot(for: profile) else {
+            throw PathError.invalidProfile(profile)
+        }
+        return try resolve(
+            rawValue: try configValue(workspace: workspace, section: "jamf_cli", key: "data_dir"),
             fallback: "jamf-cli-data",
             workspace: workspace
         )
     }
 
     /// `<workspace>/snapshots` by default; honors `charts.historical_csv_dir`.
-    static func historicalDir(for profile: String) -> URL? {
-        guard let workspace = workspaceRoot(for: profile) else { return nil }
-        return resolve(
-            rawValue: configValue(workspace: workspace, section: "charts", key: "historical_csv_dir"),
+    static func historicalDir(for profile: String) throws -> URL {
+        guard let workspace = workspaceRoot(for: profile) else {
+            throw PathError.invalidProfile(profile)
+        }
+        return try resolve(
+            rawValue: try configValue(workspace: workspace, section: "charts", key: "historical_csv_dir"),
             fallback: "snapshots",
             workspace: workspace
         )
@@ -33,11 +75,25 @@ enum WorkspacePaths {
 
     /// `<historical_csv_dir>/summaries` — the trend-summary directory written
     /// by `_emit_summary_json` on the Python side.
-    static func summariesDir(for profile: String) -> URL? {
-        historicalDir(for: profile)?.appendingPathComponent("summaries", isDirectory: true)
+    static func summariesDir(for profile: String) throws -> URL {
+        try historicalDir(for: profile).appendingPathComponent("summaries", isDirectory: true)
     }
 
     // MARK: - Internals
+
+    enum PathError: Error, LocalizedError {
+        case invalidProfile(String)
+        case configReadError(URL, Error)
+        case resolutionEscaped(String, URL)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidProfile(let p): "Invalid profile: \(p)"
+            case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.localizedDescription)"
+            case .resolutionEscaped(let val, let root): "Path '\(val)' escapes workspace root \(root.lastPathComponent)"
+            }
+        }
+    }
 
     private static func workspaceRoot(for profile: String) -> URL? {
         guard let url = ProfileService.workspaceURL(for: profile) else { return nil }
@@ -45,13 +101,12 @@ enum WorkspacePaths {
     }
 
     /// Resolves a raw config value against the workspace.
-    /// - Absolute paths (`/...` or `~...`) are honored as-is, expanding `~` to home.
-    /// - Relative paths resolve from the workspace (matching `Config.resolve_path`,
-    ///   since the workspace is the config file's directory).
-    /// - Empty/missing values fall back to the documented default.
-    /// - Returns nil if the resolved path escapes the workspace; callers fall
-    ///   back to `<workspace>/<fallback>`.
-    private static func resolve(rawValue: String?, fallback: String, workspace: URL) -> URL {
+    private static func resolve(
+        rawValue: String?,
+        fallback: String,
+        workspace: URL,
+        isArchive: Bool = false
+    ) throws -> URL {
         let trimmed = (rawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let value = trimmed.isEmpty ? fallback : trimmed
         let expanded = expandTilde(value)
@@ -62,15 +117,18 @@ enum WorkspacePaths {
             candidate = workspace.appendingPathComponent(expanded, isDirectory: true)
         }
         let resolved = candidate.resolvingSymlinksInPath().standardizedFileURL
-        if isInside(resolved, root: workspace) {
-            return resolved
-        }
-        // Absolute paths outside the workspace are intentionally allowed —
-        // the Python tool also lets users point these elsewhere.
+        
+        // Absolute paths outside the workspace are allowed, matching the Python side.
         if expanded.hasPrefix("/") {
             return resolved
         }
-        return workspace.appendingPathComponent(fallback, isDirectory: true)
+        
+        // If it's relative, it must stay inside the workspace.
+        if isInside(resolved, root: workspace) {
+            return resolved
+        }
+        
+        throw PathError.resolutionEscaped(value, workspace)
     }
 
     private static func expandTilde(_ value: String) -> String {
@@ -87,14 +145,15 @@ enum WorkspacePaths {
         return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 
-    /// Reads a single `<section>.<key>` scalar from `<workspace>/config.yaml`.
-    /// Uses the same minimal YAML pattern as `DeviceInventoryService`: section
-    /// headers at column 0, two-space-indented `key: value` lines.
-    private static func configValue(workspace: URL, section: String, key: String) -> String? {
+    private static func configValue(workspace: URL, section: String, key: String) throws -> String? {
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard FileManager.default.fileExists(atPath: configURL.path),
-              let text = try? String(contentsOf: configURL, encoding: .utf8) else {
-            return nil
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
+        
+        let text: String
+        do {
+            text = try String(contentsOf: configURL, encoding: .utf8)
+        } catch {
+            throw PathError.configReadError(configURL, error)
         }
 
         var inSection = false

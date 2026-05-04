@@ -44,7 +44,12 @@ struct ReportLibrary {
 
     func list(profile: String) -> [Report] {
         guard let root = WorkspacePathGuard.root(for: profile) else { return [] }
-        let reportsRoot = root.appendingPathComponent("Generated Reports", isDirectory: true)
+        let reportsRoot: URL
+        do {
+            reportsRoot = try WorkspacePaths.outputDir(for: profile)
+        } catch {
+            return []
+        }
         guard let validatedReportsRoot = WorkspacePathGuard.validate(
             reportsRoot,
             under: root
@@ -52,7 +57,7 @@ struct ReportLibrary {
             return []
         }
 
-        return reportFileURLs(in: validatedReportsRoot, root: root)
+        return reportFileURLs(in: validatedReportsRoot, root: root, profile: profile)
             .compactMap { report(from: $0, profile: profile, root: root) }
             .sorted { $0.mtime > $1.mtime }
             .map(\.report)
@@ -62,7 +67,14 @@ struct ReportLibrary {
         guard let root = WorkspacePathGuard.root(for: profile) else {
             return Stats(count: 0, totalBytes: 0, archivedCount: 0)
         }
-        let reportsRoot = root.appendingPathComponent("Generated Reports", isDirectory: true)
+        let reportsRoot: URL
+        let archiveRoot: URL?
+        do {
+            reportsRoot = try WorkspacePaths.outputDir(for: profile)
+            archiveRoot = try? WorkspacePaths.archiveDir(for: profile)
+        } catch {
+            return Stats(count: 0, totalBytes: 0, archivedCount: 0)
+        }
         guard let validatedReportsRoot = WorkspacePathGuard.validate(
             reportsRoot,
             under: root
@@ -70,11 +82,9 @@ struct ReportLibrary {
             return Stats(count: 0, totalBytes: 0, archivedCount: 0)
         }
 
-        let rows = reportFileURLs(in: validatedReportsRoot, root: root)
+        let rows = reportFileURLs(in: validatedReportsRoot, root: root, profile: profile)
             .compactMap { metadata(for: $0, root: root) }
-        let archivePath = validatedReportsRoot
-            .appendingPathComponent("archive", isDirectory: true)
-            .path + "/"
+        let archivePath = (archiveRoot ?? validatedReportsRoot.appendingPathComponent("archive", isDirectory: true)).path + "/"
         return Stats(
             count: rows.count,
             totalBytes: rows.reduce(Int64(0)) { $0 + $1.size },
@@ -84,7 +94,12 @@ struct ReportLibrary {
 
     func url(profile: String, reportName: String) -> URL? {
         guard let root = WorkspacePathGuard.root(for: profile) else { return nil }
-        let reportsRoot = root.appendingPathComponent("Generated Reports", isDirectory: true)
+        let reportsRoot: URL
+        do {
+            reportsRoot = try WorkspacePaths.outputDir(for: profile)
+        } catch {
+            return nil
+        }
         guard let validatedReportsRoot = WorkspacePathGuard.validate(
             reportsRoot,
             under: root
@@ -92,7 +107,7 @@ struct ReportLibrary {
             return nil
         }
 
-        return reportFileURLs(in: validatedReportsRoot, root: root)
+        return reportFileURLs(in: validatedReportsRoot, root: root, profile: profile)
             .compactMap { metadata(for: $0, root: root) }
             .filter { $0.url.lastPathComponent == reportName }
             .sorted { $0.mtime > $1.mtime }
@@ -100,11 +115,17 @@ struct ReportLibrary {
             .url
     }
 
-    private func reportFileURLs(in reportsRoot: URL, root: URL) -> [URL] {
+    private func reportFileURLs(in reportsRoot: URL, root: URL, profile: String) -> [URL] {
         var urls: [URL] = []
         urls.append(contentsOf: immediateReportFiles(in: reportsRoot, root: root))
 
-        let archive = reportsRoot.appendingPathComponent("archive", isDirectory: true)
+        let archive: URL
+        do {
+            archive = try WorkspacePaths.archiveDir(for: profile)
+        } catch {
+            archive = reportsRoot.appendingPathComponent("archive", isDirectory: true)
+        }
+
         if let validatedArchive = WorkspacePathGuard.validate(archive, under: root) {
             urls.append(contentsOf: recursiveReportFiles(in: validatedArchive, root: root))
         }

@@ -5,6 +5,12 @@ struct SourcesView: View {
     @State private var csvFiles: [InboxFile] = []
     @State private var families: [SnapshotFamily] = []
     @State private var inboxWatcher = CSVInboxService.DirectoryWatcher()
+    @State private var pendingClearFile: InboxFile?
+    @State private var pendingClearProfile: String?
+    @State private var showClearConfirm = false
+    @State private var clearError: String?
+    @State private var showClearError = false
+    @State private var resolutionError: String?
 
     private struct CLICommand: Identifiable {
         let id = UUID()
@@ -47,6 +53,21 @@ struct SourcesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
+                
+                if let error = resolutionError {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.Colors.danger)
+                        Text(error)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Theme.Colors.danger)
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(Theme.Colors.danger.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+
                 HStack(alignment: .top, spacing: 14) {
                     cliCard
                     csvCard
@@ -65,6 +86,9 @@ struct SourcesView: View {
             }
         }
         .onChange(of: workspace.profile) { _, _ in
+            pendingClearFile = nil
+            pendingClearProfile = nil
+            showClearConfirm = false
             reload()
             inboxWatcher.start(profile: workspace.profile) {
                 reload()
@@ -72,6 +96,23 @@ struct SourcesView: View {
         }
         .onDisappear {
             inboxWatcher.stop()
+        }
+        .confirmationDialog(
+            "Clear \"\(pendingClearFile?.name ?? "")\"?",
+            isPresented: $showClearConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clear inbox file", role: .destructive) {
+                clearPendingFile()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the CSV file from disk.")
+        }
+        .alert("Clear Inbox Error", isPresented: $showClearError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(clearError ?? "Unknown error")
         }
     }
 
@@ -105,6 +146,7 @@ struct SourcesView: View {
                 HStack(spacing: 4) {
                     Text("jamf-cli profile")
                     Text(workspace.profile).foregroundStyle(Theme.Colors.goldBright)
+                    scopeChip(for: workspace.profile)
                     Text("· cache \(cliCacheDisplayPath)")
                 }
                 .font(Theme.Fonts.mono(11.5))
@@ -164,6 +206,21 @@ struct SourcesView: View {
                                 }
                                 Spacer()
                                 Pill(text: f.status.rawValue, tone: tone(for: f.status))
+                                Menu {
+                                    Button(role: .destructive) {
+                                        pendingClearFile = f
+                                        pendingClearProfile = workspace.profile
+                                        showClearConfirm = true
+                                    } label: {
+                                        Label("Clear inbox file", systemImage: "trash")
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                        .foregroundStyle(Theme.Colors.fgMuted)
+                                        .font(.system(size: 14))
+                                }
+                                .menuStyle(.button)
+                                .buttonStyle(.plain)
                             }
                             .padding(.vertical, 8)
                             if idx < csvFiles.count - 1 {
@@ -195,10 +252,11 @@ struct SourcesView: View {
                     SectionHeader(title: "Snapshot Archive Families")
                     Spacer()
                     PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
-                        let url = (ProfileService.workspaceURL(for: workspace.profile)
-                                    ?? FileManager.default.homeDirectoryForCurrentUser
-                                        .appendingPathComponent("Jamf-Reports"))
-                            .appendingPathComponent("snapshots", isDirectory: true)
+                        let url = (try? WorkspacePaths.historicalDir(for: workspace.profile))
+                                    ?? (ProfileService.workspaceURL(for: workspace.profile)
+                                        ?? FileManager.default.homeDirectoryForCurrentUser
+                                            .appendingPathComponent("Jamf-Reports"))
+                                        .appendingPathComponent("snapshots", isDirectory: true)
                         SystemActions.openFolder(url)
                     }
                 }
@@ -257,6 +315,45 @@ struct SourcesView: View {
     private func reload() {
         csvFiles = CSVInboxService().list(profile: workspace.profile)
         families = SnapshotArchiveService().families(profile: workspace.profile)
+        
+        do {
+            _ = try WorkspacePaths.dataDir(for: workspace.profile)
+            _ = try WorkspacePaths.historicalDir(for: workspace.profile)
+            _ = try WorkspacePaths.outputDir(for: workspace.profile)
+            resolutionError = nil
+        } catch {
+            resolutionError = error.localizedDescription
+        }
+    }
+
+    private func clearPendingFile() {
+        guard let file = pendingClearFile,
+              let profile = pendingClearProfile else {
+            return
+        }
+
+        do {
+            try CSVInboxService().clear(file, profile: profile)
+            pendingClearFile = nil
+            pendingClearProfile = nil
+            if profile == workspace.profile {
+                reload()
+            }
+        } catch {
+            clearError = error.localizedDescription
+            showClearError = true
+        }
+    }
+
+    /// Read-only scope chip. Editing scope is deferred — see TODO(W22) below.
+    @ViewBuilder
+    private func scopeChip(for profile: String) -> some View {
+        let scope = ProfileService.scope(for: profile)
+        // TODO(W22): expose scope toggle in SettingsView / profile detail sheet
+        Pill(
+            text: scope.displayName,
+            tone: scope == .fullAdmin ? .warn : .muted
+        )
     }
 
     private func tone(for status: InboxFileStatus) -> Pill.Tone {
@@ -274,8 +371,9 @@ struct SourcesView: View {
 
     private func latestCacheDate(for cacheNames: [String]) -> Date? {
         guard let root = WorkspacePathGuard.root(for: workspace.profile) else { return nil }
-        let configured = WorkspacePaths.dataDir(for: workspace.profile)
+        let configured = (try? WorkspacePaths.dataDir(for: workspace.profile))
             ?? root.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        
         guard let validatedDataDir = WorkspacePathGuard.validate(configured, under: root) else {
             return nil
         }
@@ -288,7 +386,7 @@ struct SourcesView: View {
 
     private var cliCacheDisplayPath: String {
         guard let root = WorkspacePathGuard.root(for: workspace.profile),
-              let dataDir = WorkspacePaths.dataDir(for: workspace.profile) else {
+              let dataDir = try? WorkspacePaths.dataDir(for: workspace.profile) else {
             return "~/Jamf-Reports/\(workspace.profile)/jamf-cli-data/"
         }
         let rootPath = root.path

@@ -20,7 +20,10 @@ let package = Package(
         .testTarget(
             name: "JamfReportsTests",
             dependencies: ["JamfReports"],
-            path: "Tests/JamfReportsTests"
+            path: "Tests/JamfReportsTests",
+            resources: [
+                .process("Fixtures")
+            ]
         )
     ]
 )

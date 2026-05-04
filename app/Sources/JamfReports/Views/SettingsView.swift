@@ -7,6 +7,8 @@ struct SettingsView: View {
     @State private var testingProfile: String? = nil
     @State private var testResults: [String: Bool] = [:]
     @State private var addConnectionMessage: String? = nil
+    @State private var tokenStatuses: [String: TokenStatus] = [:]
+    @State private var loadingTokenProfiles: Set<String> = []
 
     var body: some View {
         ScrollView {
@@ -34,6 +36,7 @@ struct SettingsView: View {
             workspace.refreshToolStatus()
             workspace.reloadFromDisk()
             testResults = [:]
+            await loadTokenStatuses()
         }
     }
 
@@ -135,6 +138,7 @@ struct SettingsView: View {
                                 Text(c.name).font(.system(size: 12.5, weight: .medium))
                                     .foregroundStyle(isUnsupported ? Theme.Colors.fgDisabled : Theme.Colors.fg)
                                 Mono(text: "\(c.url) · \(profileType(c))", size: 10.5)
+                                tokenStatusLabel(for: c.name)
                             }
                             Spacer()
                             if !isUnsupported {
@@ -194,6 +198,51 @@ struct SettingsView: View {
                     testResults[profileName] = exit == 0
                     testingProfile = nil
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tokenStatusLabel(for profileName: String) -> some View {
+        if loadingTokenProfiles.contains(profileName) {
+            Mono(text: "Token: checking...", size: 10).foregroundStyle(Theme.Colors.fgMuted)
+        } else if let status = tokenStatuses[profileName] {
+            Mono(text: tokenStatusText(status), size: 10)
+                .foregroundStyle(tokenStatusColor(status))
+        }
+    }
+
+    private func tokenStatusText(_ status: TokenStatus) -> String {
+        guard status.isValid else {
+            return "Token: not authenticated"
+        }
+        guard let exp = status.expiresAt else {
+            return "Token: valid (no expiry)"
+        }
+        if exp <= Date() {
+            return "Token: expired"
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return "Token valid until \(formatter.string(from: exp))"
+    }
+
+    private func tokenStatusColor(_ status: TokenStatus) -> Color {
+        guard status.isValid else { return Theme.Colors.fgMuted }
+        if let exp = status.expiresAt, exp <= Date() { return Theme.Colors.warn }
+        return Theme.Colors.ok
+    }
+
+    private func loadTokenStatuses() async {
+        let bridge = CLIBridge()
+        let profiles = workspace.profiles
+        for profile in profiles where profile.status != .error {
+            loadingTokenProfiles.insert(profile.name)
+            let status = await bridge.tokenStatus(for: profile.name)
+            loadingTokenProfiles.remove(profile.name)
+            if let status {
+                tokenStatuses[profile.name] = status
             }
         }
     }

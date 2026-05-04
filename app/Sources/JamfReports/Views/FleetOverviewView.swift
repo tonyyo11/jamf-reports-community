@@ -5,6 +5,11 @@ struct FleetOverviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var rows: [FleetProfileOverview] = []
     @State private var isLoading = false
+    @State private var issuesOnly: Bool = false
+
+    private var visibleRows: [FleetProfileOverview] {
+        issuesOnly ? rows.filter { fleetProfileHasIssue($0.summary) } : rows
+    }
 
     private var profileKey: String {
         "\(workspace.demoMode)|" + workspace.initializedProfiles.map(\.name).joined(separator: "|")
@@ -30,6 +35,7 @@ struct FleetOverviewView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
                     summaryStrip
+                    issuesFilter
                     profileGrid
                 }
                 .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -89,19 +95,48 @@ struct FleetOverviewView: View {
         }
     }
 
+    private var issuesFilter: some View {
+        HStack {
+            Toggle("Issues Only", isOn: $issuesOnly)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.Colors.fg2)
+            Spacer()
+        }
+    }
+
     private var profileGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 270), spacing: 12, alignment: .top)],
-            alignment: .leading,
-            spacing: 12
-        ) {
-            ForEach(rows) { row in
-                NavigationLink(value: row.profile) {
-                    FleetProfileCard(row: row)
-                        .fleetDrillDownChrome()
+        Group {
+            if visibleRows.isEmpty && issuesOnly {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        Image(systemName: "checkmark.shield")
+                            .font(.system(size: 32, weight: .light))
+                            .foregroundStyle(Theme.Colors.teal)
+                        Text("No profiles with issues — fleet looks healthy")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                    .padding(.vertical, 48)
+                    Spacer()
                 }
-                .buttonStyle(.plain)
-                .help("Open \(row.profile) fleet details")
+            } else {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 270), spacing: 12, alignment: .top)],
+                    alignment: .leading,
+                    spacing: 12
+                ) {
+                    ForEach(visibleRows) { row in
+                        NavigationLink(value: row.profile) {
+                            FleetProfileCard(row: row)
+                                .fleetDrillDownChrome()
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open \(row.profile) fleet details")
+                    }
+                }
             }
         }
     }
@@ -250,7 +285,7 @@ struct FleetOverviewView: View {
         let profiles = workspace.initializedProfiles
         rows = await Task.detached(priority: .utility) {
             profiles.map { profile in
-                let summaries = WorkspacePaths.summariesDir(for: profile.name)
+                let summaries = (try? WorkspacePaths.summariesDir(for: profile.name))
                     .map { SummaryJSONParser.parseDirectory($0) } ?? []
                 return FleetProfileOverview(profile: profile.name, summary: summaries.last)
             }
@@ -285,6 +320,8 @@ private struct FleetProfileOverview: Identifiable, Sendable {
     var id: String { profile }
     let profile: String
     let summary: DailySummary?
+
+    var hasIssue: Bool { fleetProfileHasIssue(summary) }
 }
 
 private struct FleetProfileCard: View {
@@ -400,4 +437,23 @@ private func stabilityTone(_ value: Double?) -> Pill.Tone {
     if value >= 85 { return .teal }
     if value >= 70 { return .warn }
     return .danger
+}
+
+/// Returns true when the profile summary indicates an actionable issue:
+/// - No summary yet (workspace needs a first run)
+/// - Stability index below the warn threshold (< 70%)
+/// - Any stale devices in the fleet
+/// - FileVault below 90% (material encryption gap)
+/// - Patch compliance below 80%
+///
+/// Stability already captures compliance + patch + stale in one composite score;
+/// the individual thresholds catch cases where one metric is bad but others
+/// keep stability above 70.
+func fleetProfileHasIssue(_ summary: DailySummary?) -> Bool {
+    guard let summary else { return true }
+    if let stability = summary.stabilityIndex, stability < 70 { return true }
+    if summary.staleCount > 0 { return true }
+    if summary.fileVaultPct < 90 { return true }
+    if summary.patchPct < 80 { return true }
+    return false
 }
