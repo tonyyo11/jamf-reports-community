@@ -207,7 +207,15 @@ struct OverviewView: View {
     }
 
     private var statRow: some View {
-        HStack(spacing: 12) {
+        // Adaptive grid wraps to multiple rows on narrow windows. The previous
+        // HStack + .layoutPriority(1) on the primary tile starved the other
+        // tiles of space below ~1200pt, causing Kicker labels to wrap one
+        // character per line. Adaptive grid keeps every tile readable; a wide
+        // window still renders all 8 tiles in a single row.
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 160), spacing: 12)],
+            spacing: 12
+        ) {
             ForEach(workspace.selectedScoreCards) { metric in
                 let isPrimary = metric == .stability
                 let isDanger = scoreCardTrend(for: metric) == .down && metric != .stale
@@ -218,7 +226,6 @@ struct OverviewView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open \(metric.displayLabel) details")
-                .layoutPriority(isPrimary ? 1 : 0)
             }
         }
     }
