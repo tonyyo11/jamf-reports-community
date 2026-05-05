@@ -5586,7 +5586,7 @@ class CoreDashboard:
             return self._fmts["red"]
         if any(
             token in normalized
-            for token in ("pending", "draft", "partial", "progress", "scheduled")
+            for token in ("pending", "draft", "partial", "progress", "scheduled", "out_of_date", "out of date")
         ):
             return self._fmts["yellow"]
         return self._fmts["cell"]
