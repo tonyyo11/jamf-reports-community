@@ -8,9 +8,10 @@ struct OverviewView: View {
     @State private var trendStore = TrendStore()
     @State private var isRunning = false
     @State private var activitySelection: DeviceInventoryRecord.ID? = nil
+    @State private var navigationPath = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
@@ -49,6 +50,11 @@ struct OverviewView: View {
             workspace.reloadFromDisk()
             if !workspace.demoMode {
                 trendStore.load(profile: workspace.profile, range: .w12)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
+            if !navigationPath.isEmpty {
+                navigationPath = NavigationPath()
             }
         }
     }
@@ -207,27 +213,29 @@ struct OverviewView: View {
     }
 
     private var statRow: some View {
-        // Adaptive grid wraps to multiple rows on narrow windows. The previous
-        // HStack + .layoutPriority(1) on the primary tile starved the other
-        // tiles of space below ~1200pt, causing Kicker labels to wrap one
-        // character per line. Adaptive grid keeps every tile readable; a wide
-        // window still renders all 8 tiles in a single row.
+        // Fixed-count flexible columns guarantee equal widths; an asymmetric
+        // child minWidth (previously 200 on the primary tile only) inside an
+        // adaptive grid let one column dominate and squeezed the rest into
+        // single-character vertical strips on live workspaces.
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 160), spacing: 12)],
+            columns: Array(
+                repeating: GridItem(.flexible(minimum: 0), spacing: 12),
+                count: max(workspace.selectedScoreCards.count, 1)
+            ),
             spacing: 12
         ) {
             ForEach(workspace.selectedScoreCards) { metric in
-                let isPrimary = metric == .stability
                 let isDanger = scoreCardTrend(for: metric) == .down && metric != .stale
                 NavigationLink(value: OverviewDrillDown.metric(metric.rawValue)) {
                     scoreCard(for: metric)
-                        .modifier(StatTileHealthModifier(isDanger: isDanger, isPrimary: isPrimary))
+                        .modifier(StatTileHealthModifier(isDanger: isDanger))
                         .drillDownChrome()
                 }
                 .buttonStyle(.plain)
                 .help("Open \(metric.displayLabel) details")
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
@@ -492,13 +500,10 @@ struct OverviewView: View {
                         Button("Copy User Email") {
                             SystemActions.copyToClipboard(device.user)
                         }
-                        if let jamfID = device.numericJamfID, !workspace.org.jamfURL.isEmpty {
+                        if let jamfID = device.numericJamfID,
+                           let url = workspace.consoleURL(forComputerID: jamfID) {
                             Button("Open in Jamf Pro") {
-                                let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
-                                let urlString = "\(jamfURL)/computers.html?id=\(jamfID)&o=r"
-                                if let url = URL(string: urlString) {
-                                    SystemActions.open(url)
-                                }
+                                SystemActions.open(url)
                             }
                         }
                     }
@@ -736,13 +741,10 @@ struct OverviewView: View {
                         Button("Copy User Email") {
                             SystemActions.copyToClipboard(device.user)
                         }
-                        if let jamfID = device.numericJamfID, !workspace.org.jamfURL.isEmpty {
+                        if let jamfID = device.numericJamfID,
+                           let url = workspace.consoleURL(forComputerID: jamfID) {
                             Button("Open in Jamf Pro") {
-                                let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
-                                let urlString = "\(jamfURL)/computers.html?id=\(jamfID)&o=r"
-                                if let url = URL(string: urlString) {
-                                    SystemActions.open(url)
-                                }
+                                SystemActions.open(url)
                             }
                         }
                     }
@@ -901,11 +903,9 @@ private struct DrillDownChromeModifier: ViewModifier {
 
 private struct StatTileHealthModifier: ViewModifier {
     let isDanger: Bool
-    let isPrimary: Bool
 
     func body(content: Content) -> some View {
         content
-            .frame(minWidth: isPrimary ? 200 : nil)
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)

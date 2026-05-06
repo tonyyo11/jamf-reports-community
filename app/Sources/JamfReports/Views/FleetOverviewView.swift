@@ -7,6 +7,7 @@ struct FleetOverviewView: View {
     @State private var rows: [FleetProfileOverview] = []
     @State private var isLoading = false
     @State private var issuesOnly: Bool = false
+    @State private var navigationPath = NavigationPath()
 
     private var visibleRows: [FleetProfileOverview] {
         issuesOnly ? rows.filter { fleetProfileHasIssue($0.summary) } : rows
@@ -31,7 +32,7 @@ struct FleetOverviewView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
@@ -52,6 +53,11 @@ struct FleetOverviewView: View {
         }
         .task(id: profileKey) {
             await load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
+            if !navigationPath.isEmpty {
+                navigationPath = NavigationPath()
+            }
         }
     }
 

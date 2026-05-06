@@ -1,8 +1,18 @@
 import SwiftUI
+import Sparkle
 
 @main
 struct JamfReportsApp: App {
     @State private var workspace = WorkspaceStore()
+
+    /// Sparkle updater — single shared instance for the app's lifetime.
+    /// Configuration (SUFeedURL + SUPublicEDKey) lives in Info.plist set by
+    /// `build-app.sh`. See ADR-W23-sparkle-integration.md.
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     init() {
         FontRegistry.registerBundledFonts()
@@ -44,6 +54,10 @@ struct JamfReportsApp: App {
                     workspace.setDemoMode(!workspace.demoMode)
                 }
                 .keyboardShortcut("d", modifiers: .command)
+
+                Divider()
+
+                CheckForUpdatesView(updater: updaterController.updater)
             }
         }
     }
@@ -54,4 +68,5 @@ extension Notification.Name {
     static let navigateToTab = Notification.Name("JamfReports.navigateToTab")
     static let refreshActiveTab = Notification.Name("JamfReports.refreshActiveTab")
     static let focusSearch = Notification.Name("JamfReports.focusSearch")
+    static let popToRootNavigation = Notification.Name("JamfReports.popToRootNavigation")
 }

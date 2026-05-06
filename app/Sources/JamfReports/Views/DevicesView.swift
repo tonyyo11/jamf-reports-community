@@ -332,13 +332,10 @@ struct DevicesView: View {
                         Button("Copy User Email") {
                             SystemActions.copyToClipboard(device.email.isEmpty ? device.user : device.email)
                         }
-                        if let jamfID = device.numericJamfID, !workspace.org.jamfURL.isEmpty {
+                        if let jamfID = device.numericJamfID,
+                           let url = workspace.consoleURL(forComputerID: jamfID) {
                             Button("Open in Jamf Pro") {
-                                let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
-                                let urlString = "\(jamfURL)/computers.html?id=\(jamfID)&o=r"
-                                if let url = URL(string: urlString) {
-                                    SystemActions.open(url)
-                                }
+                                SystemActions.open(url)
                             }
                         }
                     }

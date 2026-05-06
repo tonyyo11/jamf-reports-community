@@ -372,16 +372,9 @@ struct AuditView: View {
     }
 
     private func openInJamfPro(_ group: UnusedGroup) {
-        let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
-        guard !jamfURL.isEmpty else { return }
-
-        // Typical Jamf Pro computer group URL:
-        // https://tenant.jamfcloud.com/smartComputerGroups.html?id=123&o=r
-        // https://tenant.jamfcloud.com/staticComputerGroups.html?id=123&o=r
-        let page = group.type.lowercased() == "static" ? "staticComputerGroups.html" : "smartComputerGroups.html"
-        let urlString = "\(jamfURL)/\(page)?id=\(group.id)&o=r"
-
-        if let url = URL(string: urlString) {
+        guard let groupID = Int(group.id) else { return }
+        let isStatic = group.type.lowercased() == "static"
+        if let url = workspace.consoleURL(forComputerGroupID: groupID, isStatic: isStatic) {
             SystemActions.open(url)
         }
     }

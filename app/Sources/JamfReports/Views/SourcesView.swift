@@ -11,6 +11,9 @@ struct SourcesView: View {
     @State private var clearError: String?
     @State private var showClearError = false
     @State private var resolutionError: String?
+    @State private var showElevateScopeConfirm = false
+    @State private var pendingScopeProfile: String?
+    @State private var scopeRefreshTrigger = 0
 
     private struct CLICommand: Identifiable {
         let id = UUID()
@@ -113,6 +116,24 @@ struct SourcesView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(clearError ?? "Unknown error")
+        }
+        .confirmationDialog(
+            "Elevate \"\(pendingScopeProfile ?? "")\" to Full Admin?",
+            isPresented: $showElevateScopeConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Elevate to Full Admin", role: .destructive) {
+                if let target = pendingScopeProfile {
+                    ProfileService.setScope(.fullAdmin, for: target)
+                    scopeRefreshTrigger &+= 1
+                }
+                pendingScopeProfile = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingScopeProfile = nil
+            }
+        } message: {
+            Text("Full Admin enables destructive operations against this tenant. Limited is recommended unless an admin task requires elevated privileges.")
         }
     }
 
@@ -345,15 +366,49 @@ struct SourcesView: View {
         }
     }
 
-    /// Read-only scope chip. Editing scope is deferred — see TODO(W22) below.
+    /// Interactive scope chip. Limited↔Full Admin via Menu; elevation to
+    /// Full Admin requires explicit confirmation since it gates destructive
+    /// operations on the live tenant.
     @ViewBuilder
     private func scopeChip(for profile: String) -> some View {
+        let _ = scopeRefreshTrigger
         let scope = ProfileService.scope(for: profile)
-        // TODO(W22): expose scope toggle in SettingsView / profile detail sheet
-        Pill(
-            text: scope.displayName,
-            tone: scope == .fullAdmin ? .warn : .muted
-        )
+        Menu {
+            Button {
+                if scope != .limited {
+                    ProfileService.setScope(.limited, for: profile)
+                    scopeRefreshTrigger &+= 1
+                }
+            } label: {
+                Label(
+                    APIScope.limited.displayName,
+                    systemImage: scope == .limited ? "checkmark" : ""
+                )
+            }
+            Button {
+                if scope != .fullAdmin {
+                    pendingScopeProfile = profile
+                    showElevateScopeConfirm = true
+                }
+            } label: {
+                Label(
+                    APIScope.fullAdmin.displayName,
+                    systemImage: scope == .fullAdmin ? "checkmark" : ""
+                )
+            }
+        } label: {
+            Pill(
+                text: scope.displayName,
+                tone: scope == .fullAdmin ? .warn : .muted,
+                icon: "chevron.down"
+            )
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .help(scope == .fullAdmin
+              ? "Full Admin — destructive operations enabled. Click to change."
+              : "Limited — destructive operations gated. Click to elevate.")
     }
 
     private func tone(for status: InboxFileStatus) -> Pill.Tone {

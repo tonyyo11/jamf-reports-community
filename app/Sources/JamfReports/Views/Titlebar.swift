@@ -23,14 +23,27 @@ struct Titlebar: View {
             .buttonStyle(.plain)
             .help("Toggle sidebar")
 
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.Colors.fg)
+            Button(action: popToRoot) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.fg)
+            }
+            .buttonStyle(.plain)
+            .help("Return to \(title)")
+
             if let sub {
-                Text("/ \(sub)")
+                Text("/")
                     .font(Theme.Fonts.mono(10.5))
                     .tracking(0.6)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Colors.hairlineStrong)
+                Button(action: popToRoot) {
+                    Text(sub)
+                        .font(Theme.Fonts.mono(10.5))
+                        .tracking(0.6)
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                }
+                .buttonStyle(.plain)
+                .help("Return to \(title)")
             }
 
             Spacer()
@@ -99,6 +112,10 @@ struct Titlebar: View {
         }
         .padding(10)
         .frame(minWidth: 220, alignment: .leading)
+    }
+
+    private func popToRoot() {
+        NotificationCenter.default.post(name: .popToRootNavigation, object: nil)
     }
 
     private var cliStatusText: String {

@@ -12,8 +12,14 @@
     <true/>
     <key>com.apple.security.cs.allow-jit</key>
     <false/>
+    <!-- Required by Sparkle 2.x: the Installer XPC helper and ad-hoc-signed
+         Sparkle.framework load with their own anonymous Team IDs, so the main
+         app must opt out of strict library-team validation. With Developer ID
+         signing the team IDs match naturally, but this entitlement is still
+         required because Sparkle's helpers are signed with their own Sparkle
+         Project team. -->
     <key>com.apple.security.cs.disable-library-validation</key>
-    <false/>
+    <true/>
     <key>com.apple.security.inherit</key>
     <false/>
 </dict>

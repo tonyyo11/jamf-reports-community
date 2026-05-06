@@ -138,9 +138,47 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
     <true/>
     <key>NSSupportsSuddenTermination</key>
     <true/>
+
+    <!-- Sparkle auto-update — see ADR-W23-sparkle-integration.md.
+         Both keys MUST be filled in before a release build. While SUPublicEDKey
+         is empty, Sparkle 2.x refuses to apply updates (safe-by-default) so
+         dev builds are still functional but won't auto-update. Tony generates
+         the EdDSA keypair offline with `generate_keys`; private key is stored
+         in 1Password + offline backup, never committed. -->
+    <key>SUFeedURL</key>
+    <string>https://tonyyo11.github.io/jamf-reports-community/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string></string>
+    <key>SUEnableInstallerLauncherService</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
 </dict>
 </plist>
 PLIST
+
+# Embed Sparkle.framework. SwiftPM stages it under .build/<triple>/<config>/
+# but does NOT copy it into the .app — without this step the binary fails to
+# launch with: Library not loaded: @rpath/Sparkle.framework/...
+SPARKLE_SRC="${BUILT_DIR}/Sparkle.framework"
+if [[ -d "$SPARKLE_SRC" ]]; then
+  echo "→ embedding Sparkle.framework"
+  mkdir -p "$APP_OUT/Contents/Frameworks"
+  rm -rf "$APP_OUT/Contents/Frameworks/Sparkle.framework"
+  cp -R "$SPARKLE_SRC" "$APP_OUT/Contents/Frameworks/Sparkle.framework"
+
+  # Add @loader_path/../Frameworks to the main binary's rpath so dyld can
+  # resolve @rpath/Sparkle.framework/... at launch. SwiftPM does not add this
+  # rpath automatically. Must run BEFORE codesign — install_name_tool
+  # invalidates any prior signature.
+  if ! otool -l "$APP_OUT/Contents/MacOS/JamfReports" \
+       | grep -q "@loader_path/../Frameworks"; then
+    install_name_tool -add_rpath "@loader_path/../Frameworks" \
+      "$APP_OUT/Contents/MacOS/JamfReports"
+  fi
+else
+  echo "⚠ Sparkle.framework not found at $SPARKLE_SRC; auto-update will fail" >&2
+fi
 
 # Ad-hoc sign with Hardened Runtime + explicit entitlements. Distribution still
 # requires Developer ID + notarization; this is the local-dev posture.
@@ -159,11 +197,40 @@ if [[ -f "$ENTITLEMENTS" ]]; then
       esac
     done < <(find "$APP_OUT/Contents/Resources/python" -type f -print0)
   fi
+
+  # Sparkle requires inside-out signing of its inner helpers BEFORE the outer
+  # framework, BEFORE the main app. Order matters; --deep is not sufficient
+  # for nested XPC services + the Updater.app helper.
+  SPARKLE_FRAMEWORK="$APP_OUT/Contents/Frameworks/Sparkle.framework"
+  if [[ -d "$SPARKLE_FRAMEWORK" ]]; then
+    echo "→ signing Sparkle.framework helpers"
+    SPARKLE_INNER="$SPARKLE_FRAMEWORK/Versions/B"
+    for helper in \
+      "$SPARKLE_INNER/XPCServices/Downloader.xpc" \
+      "$SPARKLE_INNER/XPCServices/Installer.xpc" \
+      "$SPARKLE_INNER/Updater.app" \
+      "$SPARKLE_INNER/Autoupdate"
+    do
+      if [[ -e "$helper" ]]; then
+        if ! codesign --force --sign - --options runtime --timestamp=none "$helper" >/dev/null; then
+          echo "✗ codesign failed for $helper" >&2
+          exit 1
+        fi
+      fi
+    done
+    if ! codesign --force --sign - --options runtime --timestamp=none "$SPARKLE_FRAMEWORK" >/dev/null; then
+      echo "✗ codesign failed for $SPARKLE_FRAMEWORK" >&2
+      exit 1
+    fi
+  fi
+
   echo "→ signing $APP_OUT"
+  # Drop --deep: Sparkle.framework was already signed inside-out above; --deep
+  # would re-sign helpers without their entitlements/identifiers.
   if ! codesign --force --sign - \
     --options runtime \
     --entitlements "$ENTITLEMENTS" \
-    --deep "$APP_OUT" >/dev/null; then
+    "$APP_OUT" >/dev/null; then
     echo "✗ codesign failed for $APP_OUT" >&2
     exit 1
   fi

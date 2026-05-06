@@ -291,7 +291,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "profile": "",
         "use_cached_data": True,
         "plans": {"enabled": True},
-        # Reserved for W23+: bridge methods stubbed but sheets not yet implemented.
+        # W23 standard pack — opt-in (default off) until verified against a live
+        # Protect tenant. Sheets are marked Experimental in their headers.
         "computers": {"enabled": False},
         "alerts": {"enabled": False},
         "insights": {"enabled": False},
@@ -1802,6 +1803,66 @@ PROTECT_ANALYTIC_FIELD_CANDIDATES: dict[str, list[str]] = {
     "enabled": ["enabled", "active", "isEnabled"],
 }
 
+# W23 — Protect standard pack. Field shapes follow the jamfprotect-go-sdk
+# camelCase convention (see protect_sdk_inventory.md). Candidate lists are
+# defensive against jamf-cli flatten-key drift; pagination shape unverified
+# against a live Protect tenant — sheets are # Experimental until verified.
+PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "uuid": ["uuid", "id"],
+    "hostname": ["hostName", "hostname", "computerName", "displayName", "name"],
+    "serial": ["serial", "serialNumber"],
+    "model": ["modelName", "model"],
+    "os_string": ["osString"],
+    "os_major": ["osMajor"],
+    "os_minor": ["osMinor"],
+    "os_patch": ["osPatch"],
+    "plan_name": ["plan.name", "planName"],
+    "tags": ["tags"],
+    "web_protection": ["webProtectionActive", "webProtectionEnabled"],
+    "full_disk_access": ["fullDiskAccess"],
+    "insights_pass": ["insightsStatsPass"],
+    "insights_fail": ["insightsStatsFail"],
+    "insights_unknown": ["insightsStatsUnknown"],
+    "connection_status": ["connectionStatus"],
+    "last_connection": ["lastConnection", "checkin"],
+}
+
+PROTECT_ALERT_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "uuid": ["uuid", "id"],
+    "created": ["created", "createdAt"],
+    "received": ["received"],
+    "event_timestamp": ["eventTimestamp"],
+    "severity": ["severity"],
+    "status": ["status"],
+    "event_type": ["eventType"],
+    "computer_hostname": ["computer.hostName", "computer.hostname"],
+    "computer_serial": ["computer.serial"],
+    "computer_uuid": ["computer.uuid"],
+    "plan_name": ["plan.name", "planName"],
+    "tags": ["tags"],
+    "actions": ["actions"],
+    "analytics": ["analytics"],
+}
+
+PROTECT_INSIGHT_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "uuid": ["uuid", "id"],
+    "label": ["label", "name", "title"],
+    "section": ["section", "category"],
+    "description": ["description"],
+    "enabled": ["enabled", "active", "isEnabled"],
+    "total_pass": ["totalPass"],
+    "total_fail": ["totalFail"],
+    "total_none": ["totalNone"],
+    "tags": ["tags"],
+    "cisid": ["cisid"],
+}
+
+# Hard caps — typical tenant sizes are well below these; the cap exists to
+# prevent a runaway response from consuming the workbook.
+PROTECT_COMPUTERS_HARD_CAP = 25_000
+PROTECT_ALERTS_HARD_CAP = 25_000
+PROTECT_INSIGHTS_HARD_CAP = 5_000
+
 
 def _extract_items(raw: Any) -> list[Any]:
     """Return a list payload from list- or envelope-shaped jamf-cli output."""
@@ -3178,7 +3239,6 @@ class JamfCLIBridge:
         self._max_cache_age_hours = max(0, int(max_cache_age_hours))
         self._multi = multi_config or {}
         self._report_commands_cache: Optional[set[str]] = None
-        self._protect_commands_cache: Optional[set[str]] = None
         self._last_source_info: dict[str, dict[str, Any]] = {}
 
     def _find_binary(self) -> Optional[str]:
@@ -3353,77 +3413,6 @@ class JamfCLIBridge:
                 return
             raise RuntimeError(
                 f"jamf-cli report '{command_name}' is not available in the"
-                " installed jamf-cli build."
-            )
-
-    def _protect_commands(self) -> set[str]:
-        """Return the installed jamf-cli protect subcommands, if discoverable."""
-        if self._protect_commands_cache is not None:
-            return self._protect_commands_cache
-        if not self._binary:
-            self._protect_commands_cache = set()
-            return self._protect_commands_cache
-
-        try:
-            cmd = [self._binary]
-            if self._profile:
-                cmd.extend(["-p", self._profile])
-            cmd.extend(["protect", "--help"])
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=30,
-                stdin=subprocess.DEVNULL,
-            )
-        except (subprocess.SubprocessError, PermissionError):
-            self._protect_commands_cache = set()
-            return self._protect_commands_cache
-
-        commands: set[str] = set()
-        in_available_section = False
-        section_headers = {
-            "Core Commands:",
-            "Security Configuration:",
-            "Endpoints:",
-            "Organization:",
-            "Access & Identity:",
-            "Available Commands:",
-        }
-        for line in result.stdout.splitlines():
-            stripped = line.strip()
-            if stripped in section_headers:
-                in_available_section = True
-                continue
-            if not in_available_section:
-                continue
-            if (
-                not stripped
-                or stripped.startswith("Flags:")
-                or stripped.startswith("Global Flags:")
-            ):
-                if stripped.startswith("Flags:") or stripped.startswith("Global Flags:"):
-                    break
-                in_available_section = False
-                continue
-            commands.add(stripped.split()[0])
-
-        self._protect_commands_cache = commands
-        return commands
-
-    def _require_protect_command(
-        self,
-        command_name: str,
-        cache_names: Optional[list[str]] = None,
-    ) -> None:
-        """Raise when the installed jamf-cli does not support a protect subcommand."""
-        commands = self._protect_commands()
-        if commands and command_name not in commands:
-            if self._use_cached_data and cache_names and self._latest_cached_json(cache_names):
-                return
-            raise RuntimeError(
-                f"jamf-cli protect '{command_name}' is not available in the"
                 " installed jamf-cli build."
             )
 
@@ -3993,44 +3982,6 @@ class JamfCLIBridge:
             ["pro", "report", "ddm-status"],
             ["ddm-status", "ddm_status"],
         )
-
-    # Deprecated W22 — delegates to ProtectCLIBridge; remove in W23.
-    # Kept on JamfCLIBridge so existing CoreDashboard call sites keep working
-    # during the graduation cycle. The shim shares this bridge's binary, profile,
-    # data_dir, and cache config — it does NOT honor a separate `protect.*` config
-    # block. New call sites should use `_build_protect_bridge(config)` instead.
-    def _protect_shim_bridge(self) -> "ProtectCLIBridge":
-        cached = getattr(self, "_protect_shim_cache", None)
-        if cached is not None:
-            return cached
-        bridge = ProtectCLIBridge(
-            save_output=self._save,
-            data_dir=str(self._data_dir),
-            profile=self._profile,
-            use_cached_data=self._use_cached_data,
-            command_timeout=self._command_timeout,
-            ea_results_timeout=self._ea_results_timeout,
-            max_cache_age_hours=self._max_cache_age_hours,
-            multi_config=self._multi,
-        )
-        self._protect_shim_cache = bridge
-        return bridge
-
-    def protect_overview(self) -> Any:
-        """Deprecated W22 — delegates to ProtectCLIBridge.overview."""
-        return self._protect_shim_bridge().overview()
-
-    def protect_computers_list(self) -> Any:
-        """Deprecated W22 — delegates to ProtectCLIBridge.computers_list."""
-        return self._protect_shim_bridge().computers_list()
-
-    def protect_analytics(self) -> Any:
-        """Deprecated W22 — delegates to ProtectCLIBridge.analytics_list."""
-        return self._protect_shim_bridge().analytics_list()
-
-    def protect_plans(self) -> Any:
-        """Deprecated W22 — delegates to ProtectCLIBridge.plans_list."""
-        return self._protect_shim_bridge().plans_list()
 
     def device_detail(self, identifier: str) -> Any:
         """Fetch the aggregated device detail view for one computer."""
@@ -4848,7 +4799,82 @@ class ProtectCLIBridge(JamfCLIBridge):
     dedicated sheets.
     """
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._protect_commands_cache: Optional[set[str]] = None
+
     # --- introspection / auth ------------------------------------------------
+
+    def _protect_commands(self) -> set[str]:
+        """Return the installed jamf-cli protect subcommands, if discoverable."""
+        if self._protect_commands_cache is not None:
+            return self._protect_commands_cache
+        if not self._binary:
+            self._protect_commands_cache = set()
+            return self._protect_commands_cache
+
+        try:
+            cmd = [self._binary]
+            if self._profile:
+                cmd.extend(["-p", self._profile])
+            cmd.extend(["protect", "--help"])
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
+        except (subprocess.SubprocessError, PermissionError):
+            self._protect_commands_cache = set()
+            return self._protect_commands_cache
+
+        commands: set[str] = set()
+        in_available_section = False
+        section_headers = {
+            "Core Commands:",
+            "Security Configuration:",
+            "Endpoints:",
+            "Organization:",
+            "Access & Identity:",
+            "Available Commands:",
+        }
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped in section_headers:
+                in_available_section = True
+                continue
+            if not in_available_section:
+                continue
+            if (
+                not stripped
+                or stripped.startswith("Flags:")
+                or stripped.startswith("Global Flags:")
+            ):
+                if stripped.startswith("Flags:") or stripped.startswith("Global Flags:"):
+                    break
+                in_available_section = False
+                continue
+            commands.add(stripped.split()[0])
+
+        self._protect_commands_cache = commands
+        return commands
+
+    def _require_protect_command(
+        self,
+        command_name: str,
+        cache_names: Optional[list[str]] = None,
+    ) -> None:
+        """Raise when the installed jamf-cli does not support a protect subcommand."""
+        commands = self._protect_commands()
+        if commands and command_name not in commands:
+            if self._use_cached_data and cache_names and self._latest_cached_json(cache_names):
+                return
+            raise RuntimeError(
+                f"jamf-cli protect '{command_name}' is not available in the"
+                " installed jamf-cli build."
+            )
 
     def is_protect_available(self) -> bool:
         """Return True when jamf-cli protect is reachable for this profile.
@@ -4985,6 +5011,35 @@ class ProtectCLIBridge(JamfCLIBridge):
             "protect-analytics",
             ["protect", "analytics", "list"],
             ["protect-analytics", "protect_analytics"],
+        )
+
+    # --- W23 standard pack ---------------------------------------------------
+
+    def alerts_list(self) -> Any:
+        """Fetch Protect alerts via `jamf-cli protect alerts list --output json`.
+
+        Returns the raw response. Pagination shape is unverified against a live
+        tenant; consumers must defensively handle bare-array OR `{nodes,
+        pageInfo}` envelope responses (mirrors `plans_list`).
+        """
+        self._require_protect_command(
+            "alerts", ["protect-alerts", "protect_alerts"]
+        )
+        return self._run_and_save(
+            "protect-alerts",
+            ["protect", "alerts", "list", "--output", "json"],
+            ["protect-alerts", "protect_alerts"],
+        )
+
+    def insights_list(self) -> Any:
+        """Fetch Protect insights via `jamf-cli protect insights list --output json`."""
+        self._require_protect_command(
+            "insights", ["protect-insights", "protect_insights"]
+        )
+        return self._run_and_save(
+            "protect-insights",
+            ["protect", "insights", "list", "--output", "json"],
+            ["protect-insights", "protect_insights"],
         )
 
 
@@ -5214,6 +5269,7 @@ class CoreDashboard:
         bridge: JamfCLIBridge,
         workbook: xlsxwriter.Workbook,
         fmts: dict,
+        protect_bridge: Optional["ProtectCLIBridge"] = None,
     ) -> None:
         self._config = config
         self._bridge = bridge
@@ -5223,6 +5279,24 @@ class CoreDashboard:
         self._overview_source_label: str = ""
         self._mobile_inventory_cache: Optional[tuple[list[dict[str, Any]], str]] = None
         self._mobile_profile_cache: Optional[list[dict[str, Any]]] = None
+        # Protect bridge is owned separately because Protect uses its own
+        # `protect.*` config block (data_dir/profile/use_cached_data) that may
+        # target a different tenant than the Pro `jamf_cli.*` block. Tests
+        # inject a stub via this parameter; production lazy-builds via
+        # `_build_protect_bridge(config)` on first access.
+        self._protect_bridge_override = protect_bridge
+        self._protect_bridge_cache: Optional["ProtectCLIBridge"] = None
+
+    @property
+    def _protect_bridge(self) -> "ProtectCLIBridge":
+        if self._protect_bridge_override is not None:
+            return self._protect_bridge_override
+        if self._protect_bridge_cache is not None:
+            return self._protect_bridge_cache
+        self._protect_bridge_cache = _build_protect_bridge(
+            self._config, save_output=getattr(self._bridge, "_save", False)
+        )
+        return self._protect_bridge_cache
 
     @property
     def _org_name(self) -> str:
@@ -5459,6 +5533,12 @@ class CoreDashboard:
             sheets.append(("Protect Overview", self._write_protect_overview))
             if self._protect_plans_enabled():
                 sheets.append(("Protect Plans", self._write_protect_plans))
+            if self._protect_computers_enabled():
+                sheets.append(("Protect Computers", self._write_protect_computers))
+            if self._protect_alerts_enabled():
+                sheets.append(("Protect Alerts", self._write_protect_alerts))
+            if self._protect_insights_enabled():
+                sheets.append(("Protect Insights", self._write_protect_insights))
         if self._platform_enabled():
             sheets.append(("Platform Blueprints", self._write_platform_blueprints))
             for bench in self._platform_benchmark_titles():
@@ -5599,6 +5679,14 @@ class CoreDashboard:
         if isinstance(value, bool):
             return "Yes" if value else "No"
         return str(value).strip()
+
+    @staticmethod
+    def _protect_tags_text(item: dict[str, Any]) -> str:
+        """Render a Protect `tags` list to a comma-joined display string."""
+        tags = item.get("tags")
+        if not isinstance(tags, list):
+            return ""
+        return ", ".join(str(t) for t in tags if str(t).strip())
 
     def _protect_has_plan(self, value: str) -> bool:
         """Return True when a Protect plan value appears assigned."""
@@ -5747,7 +5835,8 @@ class CoreDashboard:
         if not self._protect_enabled():
             raise RuntimeError("disabled in config (set protect.enabled: true to opt in)")
 
-        overview_raw = self._bridge.protect_overview()
+        protect_bridge = self._protect_bridge
+        overview_raw = protect_bridge.overview()
         overview_rows = self._protect_overview_rows(overview_raw)
         if not overview_rows:
             raise RuntimeError("jamf-cli protect overview returned no usable rows")
@@ -5759,9 +5848,9 @@ class CoreDashboard:
         plans: list[dict[str, Any]] = []
         analytics: list[dict[str, Any]] = []
         optional_sources = [
-            ("jamf-cli protect computers list", self._bridge.protect_computers_list, self._protect_computer_rows),
-            ("jamf-cli protect plans list", self._bridge.protect_plans, self._protect_plan_rows),
-            ("jamf-cli protect analytics list", self._bridge.protect_analytics, self._protect_analytic_rows),
+            ("jamf-cli protect computers list", protect_bridge.computers_list, self._protect_computer_rows),
+            ("jamf-cli protect plans list", protect_bridge.plans_list, self._protect_plan_rows),
+            ("jamf-cli protect analytics list", protect_bridge.analytics_list, self._protect_analytic_rows),
         ]
         for source_label, fetcher, normalizer in optional_sources:
             try:
@@ -5924,11 +6013,7 @@ class CoreDashboard:
                 "disabled in config (set protect.plans.enabled: true to opt in)"
             )
 
-        try:
-            plans_raw = self._bridge.plans_list()
-        except AttributeError:
-            # Fallback for callers using the legacy JamfCLIBridge shim path.
-            plans_raw = self._bridge.protect_plans()
+        plans_raw = self._protect_bridge.plans_list()
 
         plans = self._protect_plan_detail_rows(plans_raw)
 
@@ -6037,6 +6122,304 @@ class CoreDashboard:
                 "Telemetry V2": _format_bool_yes_no(item.get("telemetryV2")),
             })
         return rows
+
+    # --- W23 Protect standard pack ---------------------------------------
+
+    def _protect_computers_enabled(self) -> bool:
+        """Return True when the W23 Protect Computers sheet is opted in."""
+        if not self._protect_enabled():
+            return False
+        return self._config.get("protect", "computers", "enabled", default=False) is True
+
+    def _protect_alerts_enabled(self) -> bool:
+        """Return True when the W23 Protect Alerts sheet is opted in."""
+        if not self._protect_enabled():
+            return False
+        return self._config.get("protect", "alerts", "enabled", default=False) is True
+
+    def _protect_insights_enabled(self) -> bool:
+        """Return True when the W23 Protect Insights sheet is opted in."""
+        if not self._protect_enabled():
+            return False
+        return self._config.get("protect", "insights", "enabled", default=False) is True
+
+    @staticmethod
+    def _normalize_protect_payload(raw: Any, hard_cap: int) -> tuple[list[dict], int]:
+        """Coerce a Protect response into a flat list, applying a row cap.
+
+        Accepts either a bare list or a `{nodes, pageInfo}` envelope (per
+        graphql conventions in jamfprotect-go-sdk). Returns the capped list
+        and the pre-cap raw count so callers can warn on truncation.
+        """
+        if raw is None:
+            return [], 0
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            nodes = raw.get("nodes")
+            items = nodes if isinstance(nodes, list) else _extract_items(raw)
+        else:
+            return [], 0
+        records = [item for item in items if isinstance(item, dict)]
+        return records[:hard_cap], len(records)
+
+    def _protect_computer_detail_rows(self, raw: Any) -> list[dict[str, Any]]:
+        """Normalize Protect computer records into the W23 Computers sheet shape."""
+        records, _ = self._normalize_protect_payload(raw, PROTECT_COMPUTERS_HARD_CAP)
+        rows: list[dict[str, Any]] = []
+        for item in records:
+            flat = _flatten_record(item)
+            os_string = self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["os_string"])
+            if not os_string:
+                parts = [
+                    self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES[k])
+                    for k in ("os_major", "os_minor", "os_patch")
+                ]
+                os_string = ".".join(p for p in parts if p)
+            tags_text = self._protect_tags_text(item)
+            rows.append({
+                "Hostname": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["hostname"]),
+                "Serial": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["serial"]),
+                "UUID": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["uuid"]),
+                "Model": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["model"]),
+                "OS Version": os_string,
+                "Plan": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["plan_name"]),
+                "Tags": tags_text,
+                "Web Protection": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["web_protection"]
+                ),
+                "Full Disk Access": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["full_disk_access"]
+                ),
+                "Insights Pass": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["insights_pass"]
+                ),
+                "Insights Fail": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["insights_fail"]
+                ),
+                "Insights Unknown": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["insights_unknown"]
+                ),
+                "Connection Status": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["connection_status"]
+                ),
+                "Last Connection": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["last_connection"]
+                ),
+            })
+        return rows
+
+    def _protect_alert_detail_rows(self, raw: Any) -> list[dict[str, Any]]:
+        """Normalize Protect alert records into the W23 Alerts sheet shape."""
+        records, _ = self._normalize_protect_payload(raw, PROTECT_ALERTS_HARD_CAP)
+        rows: list[dict[str, Any]] = []
+        for item in records:
+            flat = _flatten_record(item)
+            analytics = item.get("analytics")
+            analytic_names = ", ".join(
+                str(a.get("name", "") or a.get("label", "") or "")
+                for a in analytics if isinstance(a, dict)
+            ) if isinstance(analytics, list) else ""
+            actions = item.get("actions")
+            actions_text = ""
+            if isinstance(actions, list):
+                names = []
+                for action in actions:
+                    if isinstance(action, dict):
+                        names.append(str(action.get("name", "") or ""))
+                    else:
+                        names.append(str(action))
+                actions_text = ", ".join(n for n in names if n.strip())
+            tags_text = self._protect_tags_text(item)
+            rows.append({
+                "Created": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["created"]),
+                "Severity": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["severity"]),
+                "Status": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["status"]),
+                "Event Type": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["event_type"]),
+                "Computer": self._protect_text(
+                    flat, PROTECT_ALERT_FIELD_CANDIDATES["computer_hostname"]
+                ),
+                "Computer Serial": self._protect_text(
+                    flat, PROTECT_ALERT_FIELD_CANDIDATES["computer_serial"]
+                ),
+                "Plan": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["plan_name"]),
+                "Analytics": analytic_names,
+                "Actions": actions_text,
+                "Tags": tags_text,
+                "UUID": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["uuid"]),
+            })
+        return rows
+
+    def _protect_insight_detail_rows(self, raw: Any) -> list[dict[str, Any]]:
+        """Normalize Protect insight records into the W23 Insights sheet shape."""
+        records, _ = self._normalize_protect_payload(raw, PROTECT_INSIGHTS_HARD_CAP)
+        rows: list[dict[str, Any]] = []
+        for item in records:
+            flat = _flatten_record(item)
+            cisid = item.get("cisid")
+            cisid_text = ""
+            if isinstance(cisid, list):
+                ids = [
+                    str(entry.get("id", "") or "") for entry in cisid
+                    if isinstance(entry, dict)
+                ]
+                cisid_text = ", ".join(i for i in ids if i.strip())
+            tags_text = self._protect_tags_text(item)
+            rows.append({
+                "Label": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["label"]),
+                "Section": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["section"]),
+                "Description": self._protect_text(
+                    flat, PROTECT_INSIGHT_FIELD_CANDIDATES["description"]
+                ),
+                "Pass": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["total_pass"]),
+                "Fail": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["total_fail"]),
+                "None": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["total_none"]),
+                "Enabled": _format_bool_yes_no(item.get("enabled")),
+                "Tags": tags_text,
+                "CIS IDs": cisid_text,
+                "UUID": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["uuid"]),
+            })
+        return rows
+
+    def _write_protect_table_sheet(
+        self,
+        sheet_name: str,
+        title: str,
+        source_label: str,
+        headers: list[str],
+        column_widths: list[tuple[int, int]],
+        rows: list[dict[str, Any]],
+        empty_message: str,
+        sort_key: Optional[str] = None,
+    ) -> None:
+        """Write a tabular Protect sheet with the standard W22/W23 chrome.
+
+        Used by the W23 Computers / Alerts / Insights writers. Mirrors the
+        structure of `_write_protect_plans`: title row, "Experimental"
+        validation banner, header row, data rows; empty payload is replaced
+        with a yellow note rather than a blank sheet.
+        """
+        ws = self._wb.add_worksheet(sheet_name)
+        for col_idx, width in column_widths:
+            ws.set_column(col_idx, col_idx, width)
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t(title),
+            f"Source: {source_label} | Generated: {ts}",
+            self._fmts,
+            ncols=len(headers),
+        )
+        _safe_write(ws, row, 0, "Support Status", self._fmts["cell"])
+        _safe_write(ws, row, 1, "Experimental (W23)", self._fmts["yellow"])
+        row += 1
+        _safe_write(ws, row, 0, "Validation Note", self._fmts["cell"])
+        _safe_write(
+            ws, row, 1,
+            "Pagination shape against a live Protect tenant is unverified;"
+            " field names follow the jamfprotect-go-sdk camelCase contract.",
+            self._fmts["yellow"],
+        )
+        row += 2
+
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        if not rows:
+            _safe_write(ws, row, 0, empty_message, self._fmts["yellow"])
+            return
+
+        if sort_key is not None:
+            rows.sort(key=lambda r: str(r.get(sort_key, "") or "").lower())
+
+        for record in rows:
+            for col_i, header in enumerate(headers):
+                _safe_write(ws, row, col_i, record.get(header, ""), self._fmts["cell"])
+            row += 1
+
+    def _write_protect_computers(self) -> None:
+        # Experimental — W23. Pagination shape against a live tenant unverified.
+        """Write the Jamf Protect Computers sheet from `jamf-cli protect computers list`."""
+        if not self._protect_computers_enabled():
+            raise RuntimeError(
+                "disabled in config (set protect.computers.enabled: true to opt in)"
+            )
+        rows = self._protect_computer_detail_rows(self._protect_bridge.computers_list())
+        headers = [
+            "Hostname", "Serial", "UUID", "Model", "OS Version", "Plan", "Tags",
+            "Web Protection", "Full Disk Access", "Insights Pass", "Insights Fail",
+            "Insights Unknown", "Connection Status", "Last Connection",
+        ]
+        widths = [
+            (0, 28), (1, 18), (2, 36), (3, 22), (4, 12), (5, 22), (6, 28),
+            (7, 14), (8, 14), (9, 12), (10, 12), (11, 14), (12, 18), (13, 22),
+        ]
+        self._write_protect_table_sheet(
+            "Protect Computers",
+            "Protect Computers",
+            "jamf-cli protect computers list",
+            headers,
+            widths,
+            rows,
+            "No Protect computers reported.",
+            sort_key="Hostname",
+        )
+
+    def _write_protect_alerts(self) -> None:
+        # Experimental — W23. Pagination shape against a live tenant unverified.
+        """Write the Jamf Protect Alerts sheet from `jamf-cli protect alerts list`."""
+        if not self._protect_alerts_enabled():
+            raise RuntimeError(
+                "disabled in config (set protect.alerts.enabled: true to opt in)"
+            )
+        rows = self._protect_alert_detail_rows(self._protect_bridge.alerts_list())
+        headers = [
+            "Created", "Severity", "Status", "Event Type", "Computer",
+            "Computer Serial", "Plan", "Analytics", "Actions", "Tags", "UUID",
+        ]
+        widths = [
+            (0, 20), (1, 12), (2, 14), (3, 24), (4, 24), (5, 18),
+            (6, 22), (7, 36), (8, 24), (9, 24), (10, 36),
+        ]
+        self._write_protect_table_sheet(
+            "Protect Alerts",
+            "Protect Alerts",
+            "jamf-cli protect alerts list",
+            headers,
+            widths,
+            rows,
+            "No Protect alerts reported.",
+            sort_key="Created",
+        )
+
+    def _write_protect_insights(self) -> None:
+        # Experimental — W23. Pagination shape against a live tenant unverified.
+        """Write the Jamf Protect Insights sheet from `jamf-cli protect insights list`."""
+        if not self._protect_insights_enabled():
+            raise RuntimeError(
+                "disabled in config (set protect.insights.enabled: true to opt in)"
+            )
+        rows = self._protect_insight_detail_rows(self._protect_bridge.insights_list())
+        headers = [
+            "Label", "Section", "Description", "Pass", "Fail", "None",
+            "Enabled", "Tags", "CIS IDs", "UUID",
+        ]
+        widths = [
+            (0, 32), (1, 18), (2, 50), (3, 8), (4, 8), (5, 8),
+            (6, 10), (7, 24), (8, 18), (9, 36),
+        ]
+        self._write_protect_table_sheet(
+            "Protect Insights",
+            "Protect Insights",
+            "jamf-cli protect insights list",
+            headers,
+            widths,
+            rows,
+            "No Protect insights reported.",
+            sort_key="Label",
+        )
 
     def _write_platform_blueprints(self) -> None:
         # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
@@ -11574,7 +11957,10 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             if missing_platform:
                 print(f"  missing platform commands: {', '.join(missing_platform)}")
         if protect_enabled:
-            protect_commands = bridge._protect_commands()
+            protect_probe = _build_protect_bridge(
+                config, save_output=False, use_cached_data=True
+            )
+            protect_commands = protect_probe._protect_commands()
             if protect_commands:
                 print(f"  supported protect commands: {', '.join(sorted(protect_commands))}")
         try:
@@ -11613,16 +11999,18 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             print(f"  auth: failed — {exc}")
         if protect_enabled:
             try:
-                live_protect_bridge = _build_jamf_cli_bridge(
+                live_protect_bridge = _build_protect_bridge(
                     config,
                     save_output=False,
                     use_cached_data=False,
                 )
-                protect_overview = live_protect_bridge.protect_overview()
-                if _protect_overview_has_data(protect_overview):
-                    print("  protect auth: ok (overview returned live values)")
+                if live_protect_bridge.is_protect_available():
+                    print("  protect auth: ok")
                 else:
-                    print("  protect auth: inconclusive (overview returned placeholder values)")
+                    print(
+                        "  protect auth: failed — `jamf-cli protect plans list` did"
+                        " not succeed and no cached fallback is available."
+                    )
             except RuntimeError as exc:
                 print(f"  protect auth: failed — {exc}")
         if platform_enabled:
@@ -15049,14 +15437,26 @@ def _collect_snapshots(
     if jamf_cli_enabled and bridge is not None and bridge.is_available():
         commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed)
         if protect_enabled:
-            commands.extend(
-                [
-                    ("Protect Overview", bridge.protect_overview),
-                    ("Protect Computers", bridge.protect_computers_list),
-                    ("Protect Analytics", bridge.protect_analytics),
-                    ("Protect Plans", bridge.protect_plans),
-                ]
+            protect_bridge = _build_protect_bridge(
+                config, save_output=True, use_cached_data=False
             )
+            if protect_bridge.is_protect_available():
+                commands.extend(
+                    [
+                        ("Protect Overview", protect_bridge.overview),
+                        ("Protect Computers", protect_bridge.computers_list),
+                        ("Protect Analytics", protect_bridge.analytics_list),
+                        ("Protect Plans", protect_bridge.plans_list),
+                        ("Protect Alerts", protect_bridge.alerts_list),
+                        ("Protect Insights", protect_bridge.insights_list),
+                    ]
+                )
+            else:
+                print(
+                    "  [skip] protect: jamf-cli protect is not reachable for this"
+                    " profile (auth missing or binary lacks `protect` subcommand);"
+                    " skipping Protect snapshots."
+                )
         if platform_enabled:
             commands.extend(
                 [

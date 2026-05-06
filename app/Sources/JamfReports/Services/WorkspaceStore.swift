@@ -408,6 +408,40 @@ final class WorkspaceStore {
         consoleURL(path: "mobileDevices.html", id: id)
     }
 
+    /// Returns the Jamf Pro console URL for a computer group. `isStatic` selects
+    /// `staticComputerGroups.html`; otherwise `smartComputerGroups.html`.
+    func consoleURL(forComputerGroupID id: Int, isStatic: Bool) -> URL? {
+        consoleURL(path: isStatic ? "staticComputerGroups.html" : "smartComputerGroups.html", id: id)
+    }
+
+    /// Returns the Jamf Pro console URL for a policy.
+    /// Pattern: `<server>/policies.html?id=<id>&o=r`
+    func consoleURL(forPolicyID id: Int) -> URL? {
+        consoleURL(path: "policies.html", id: id)
+    }
+
+    /// Returns the Jamf Pro console URL for a computer configuration profile.
+    /// Pattern: `<server>/OSXConfigurationProfiles.html?id=<id>&o=r`
+    func consoleURL(forComputerConfigProfileID id: Int) -> URL? {
+        consoleURL(path: "OSXConfigurationProfiles.html", id: id)
+    }
+
+    /// Returns the Jamf Pro console URL for a mobile-device configuration profile.
+    /// Pattern: `<server>/mobileDeviceConfigurationProfiles.html?id=<id>&o=r`
+    func consoleURL(forMobileConfigProfileID id: Int) -> URL? {
+        consoleURL(path: "mobileDeviceConfigurationProfiles.html", id: id)
+    }
+
+    /// String-id convenience: wraps the numeric Int helper. Returns nil if the
+    /// string isn't a positive integer.
+    func consoleURL(forComputerID id: String) -> URL? {
+        Int(id).flatMap { consoleURL(forComputerID: $0) }
+    }
+
+    func consoleURL(forMobileDeviceID id: String) -> URL? {
+        Int(id).flatMap { consoleURL(forMobileDeviceID: $0) }
+    }
+
     private func consoleURL(path: String, id: Int) -> URL? {
         let rawServer = activeProfileURL()
         guard !rawServer.isEmpty else { return nil }
@@ -448,46 +482,48 @@ final class WorkspaceStore {
 /// Routes the active screen. `Tab` is the source of truth for which detail view
 /// the `NavigationSplitView` renders, and the title shown in the toolbar.
 enum Tab: String, CaseIterable, Identifiable, Hashable {
-    case overview, fleet, devices, trends, audit, reports, schedules, runs
+    case overview, fleet, devices, deviceLookup, trends, audit, reports, schedules, runs
     case config, customize, sources, backups, settings, onboarding
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .overview:   "Overview"
-        case .fleet:      "Fleet Overview"
-        case .devices:    "Devices"
-        case .trends:     "Trends"
-        case .audit:      "Health Audit"
-        case .reports:    "Generated"
-        case .schedules:  "Schedules"
-        case .runs:       "Run History"
-        case .config:     "Config"
-        case .customize:  "Customize"
-        case .sources:    "Data Sources"
-        case .backups:    "Backups"
-        case .settings:   "Settings"
-        case .onboarding: "Onboarding"
+        case .overview:     "Overview"
+        case .fleet:        "Fleet Overview"
+        case .devices:      "Devices"
+        case .deviceLookup: "Device Lookup"
+        case .trends:       "Trends"
+        case .audit:        "Health Audit"
+        case .reports:      "Generated"
+        case .schedules:    "Schedules"
+        case .runs:         "Run History"
+        case .config:       "Config"
+        case .customize:    "Customize"
+        case .sources:      "Data Sources"
+        case .backups:      "Backups"
+        case .settings:     "Settings"
+        case .onboarding:   "Onboarding"
         }
     }
 
     var sfSymbol: String {
         switch self {
-        case .overview:   "house"
-        case .fleet:      "rectangle.grid.2x2"
-        case .devices:    "laptopcomputer"
-        case .trends:     "chart.line.uptrend.xyaxis"
-        case .audit:      "shield.checkered"
-        case .reports:    "doc.text"
-        case .schedules:  "clock"
-        case .runs:       "terminal"
-        case .config:     "wrench.and.screwdriver"
-        case .customize:  "sparkles"
-        case .sources:    "externaldrive"
-        case .backups:    "externaldrive.badge.timemachine"
-        case .settings:   "gear"
-        case .onboarding: "wand.and.stars"
+        case .overview:     "house"
+        case .fleet:        "rectangle.grid.2x2"
+        case .devices:      "laptopcomputer"
+        case .deviceLookup: "magnifyingglass"
+        case .trends:       "chart.line.uptrend.xyaxis"
+        case .audit:        "shield.checkered"
+        case .reports:      "doc.text"
+        case .schedules:    "clock"
+        case .runs:         "terminal"
+        case .config:       "wrench.and.screwdriver"
+        case .customize:    "sparkles"
+        case .sources:      "externaldrive"
+        case .backups:      "externaldrive.badge.timemachine"
+        case .settings:     "gear"
+        case .onboarding:   "wand.and.stars"
         }
     }
 

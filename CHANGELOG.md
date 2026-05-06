@@ -9,6 +9,14 @@ versions in this repository map to git tags.
 
 ### Added
 
+- **Protect Computers Sheet**: New 14-column sheet listing Jamf Protect-managed Macs (hostname, serial, UUID, model, OS version, plan, tags, web protection / full disk access status, insights pass/fail/unknown counts, connection status, last connection). Driven by `jamf-cli protect computers list`. Gated by `protect.computers.enabled` (default off). Marked Experimental until pagination shape is verified against a live tenant.
+- **Protect Alerts Sheet**: New 11-column sheet listing Jamf Protect alerts (created, severity, status, event type, computer, serial, plan, analytics, actions, tags, UUID). Driven by `jamf-cli protect alerts list`. Gated by `protect.alerts.enabled` (default off).
+- **Protect Insights Sheet**: New 10-column sheet listing Protect compliance insights (label, section, description, pass/fail/none counts, enabled, tags, CIS IDs, UUID). Driven by `jamf-cli protect insights list`. Gated by `protect.insights.enabled` (default off).
+- **Device Lookup screen** (macOS app): Search by serial, hostname, asset tag, or device ID; resolves via `jamf-cli pro device <id>` and renders the full DeviceDetail. Includes "Open in Jamf Pro" deep-link to the corresponding console page.
+- **Sparkle Auto-Update**: Integrated Sparkle 2.x. "Check for Updates…" menu item under the application menu. Configuration via `Info.plist` (SUFeedURL → GitHub Pages appcast, EdDSA-signed). Installer is a no-op until the EdDSA public key is set in the build script (safe-by-default).
+- **APIScope Toggle UX** (macOS app): The per-profile API scope chip in Data Sources is now an interactive Menu — Limited↔Full Admin selectable inline, with a confirmation dialog required for elevation to Full Admin.
+- **Console Deep-Link Helpers**: Typed `consoleURL(...)` helpers cover computers, mobile devices, smart/static computer groups, policies, and computer/mobile config profiles, plus String-id overloads. Replaces ad-hoc URL construction across views.
+- **jamf-cli First-Time Installer**: `JamfCLIInstaller.firstTimeInstall()` direct-downloads the latest GitHub release into `~/.local/bin/`. SHA256 verification against the release's `*.checksums.txt` is mandatory — install is refused if the checksums file is missing or the digest does not match. Existing upgrade path now flows through the same verification.
 - **Platform Health Audit Sheet**: New `Platform Health` sheet driven by `jamf-cli pro audit --checks platform`. Surfaces seven platform-specific health checks (undeployed blueprints, blueprint deployment failures, stale blueprints, compliance benchmarks needing updates, MONITOR-mode benchmarks, empty platform scope, devices with failed DDM declarations). Gated by `platform.enabled` and `platform.audit_platform.enabled`.
 - **School DEP Devices Sheet**: New sheet listing DEP-enrolled devices (Serial Number, Model, Color, Status, Profile Name, Device Name). Driven by `jamf-cli school dep-devices list`.
 - **School iBeacons Sheet**: New sheet listing configured iBeacons (Name, UUID, Major, Minor, Description). Driven by `jamf-cli school ibeacons list`.
@@ -49,6 +57,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- **Protect Bridge graduation**: `JamfCLIBridge.protect_*` shim methods (deprecated in v2.0) have been removed. Internal callers now construct a `ProtectCLIBridge` via `_build_protect_bridge(config)`, which honors the dedicated `protect.*` config block (`data_dir`, `profile`, `use_cached_data`) so Pro and Protect can target different tenants. `_protect_commands` / `_require_protect_command` likewise moved from `JamfCLIBridge` to `ProtectCLIBridge` where they always belonged.
+- **Protect collect planner** now gates Protect snapshots on `is_protect_available()` — when Protect is unconfigured for the active profile, the collector emits a single `[skip]` line instead of a misleading auth error. The `cmd_check` Protect probe likewise replaces its placeholder-value heuristic with the same availability call.
+- **Overview screen tile layout**: Stat tiles on the Overview screen now use a fixed-count flexible grid; previously, an asymmetric `minWidth` on the primary tile caused right-side tiles to collapse into single-character columns on live workspaces.
+- **Titlebar breadcrumb is clickable**: The "Tab Name / SUBTITLE" path at the top of every screen now acts as a navigation control — clicking either segment pops the active tab's `NavigationStack` back to root.
 - **Minimum supported jamf-cli is now v1.14.0**; older versions are no longer supported.
   The pre-v1.4 patch-status `installed`/`total` shape is no longer parsed — only
   `on_latest`/`on_other` is supported. The older `update-status` shape (`summary`/`ErrorDevices`)
