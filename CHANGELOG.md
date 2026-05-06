@@ -31,6 +31,14 @@ versions in this repository map to git tags.
   `jamf-cli-data/patch-summaries/`. The column is omitted gracefully if the endpoint
   is unavailable. `collect` now includes patch-summaries in its snapshot run.
 
+### Changed
+
+- Tracked jamf-cli dependency updated to v1.15.0. No code changes required.
+  Notable upstream changes in v1.15.0: spec-generated platform commands; bulk delete
+  `--from-file` and `--group` flags (not used by this tool); output format alignment
+  for multi-instance commands (already handled by `_extract_items()`); URL normalization
+  at all entry points; App Installers spec updates.
+
 ## [1.3.0] - 2026-04-24
 
 ### Fixed
