@@ -33,11 +33,13 @@ versions in this repository map to git tags.
 
 ### Changed
 
-- Tracked jamf-cli dependency updated to v1.15.0. No code changes required.
-  Notable upstream changes in v1.15.0: spec-generated platform commands; bulk delete
-  `--from-file` and `--group` flags (not used by this tool); output format alignment
-  for multi-instance commands (already handled by `_extract_items()`); URL normalization
-  at all entry points; App Installers spec updates.
+- Tracked jamf-cli dependency updated to v1.16.1. No code changes required.
+  Notable upstream changes since v1.15.0:
+  - v1.16.0: New `jcds download <fileName>` and `jcds sync --dir <path>` commands for
+    Jamf Cloud Distribution Service — content distribution utilities not used by this tool.
+  - v1.16.1: Nil-safety fix for device platform section fields (`BlueprintDetail.Scope`,
+    `BlueprintDetail.DeploymentState`, `BenchmarkResponseV2.Target`) — internal fix to
+    jamf-cli with no CLI interface change.
 
 ## [1.3.0] - 2026-04-24
 
