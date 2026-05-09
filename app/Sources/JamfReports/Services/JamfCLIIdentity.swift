@@ -17,10 +17,10 @@ enum JamfCLIIdentity {
 
     /// Pinned Team ID for jamf-cli releases published by Jamf Software, LLC.
     ///
-    /// TODO(release): replace `nil` with the real value (10 alphanumeric chars)
-    /// before the first signed/notarized release. Once set, signature
-    /// verification becomes a hard gate on credential passing.
-    static let expectedTeamID: String? = nil
+    /// Confirmed via: codesign -dv --verbose=4 $(which jamf-cli) 2>&1 | grep TeamIdentifier
+    /// Signature verification is enforced as a hard gate in OnboardingFlow.registerJamfCLIProfile
+    /// before OAuth credentials are written to the binary's stdin.
+    static let expectedTeamID: String? = "483DWKW443"
 
     /// Whether to enforce a successful signature check on jamf-cli before
     /// handing it OAuth credentials. Driven by `expectedTeamID` being set.

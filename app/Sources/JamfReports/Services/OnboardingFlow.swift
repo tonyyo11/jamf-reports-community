@@ -229,6 +229,14 @@ final class OnboardingFlow {
 
     func registerJamfCLIProfile() async throws {
         guard let binary = CLIBridge().locate("jamf-cli") else { throw FlowError.missingJamfCLI }
+        if JamfCLIIdentity.enforceSignatureCheck {
+            guard let teamID = JamfCLIIdentity.expectedTeamID,
+                  CodeSignVerifier.verify(url: binary, expectedTeamID: teamID) else {
+                throw FlowError.processFailed(
+                    "jamf-cli signature verification failed — binary may be untrusted"
+                )
+            }
+        }
         guard let url = normalizedJamfURL else { throw FlowError.invalidJamfURL }
         guard isProfileNameValid else { throw FlowError.invalidProfile }
 

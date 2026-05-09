@@ -732,7 +732,7 @@ def _resolve_cli_input_path(
     candidates = _cli_input_candidates(path_value, config)
     for candidate in candidates:
         if candidate.exists():
-            return candidate
+            return candidate.resolve()
     return candidates[0] if candidates else None
 
 
@@ -2221,11 +2221,11 @@ def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
 
 def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[Path], bool]:
     """Copy the current CSV into the historical snapshot directory for future trend runs."""
-    source = Path(csv_path)
+    source = Path(csv_path).resolve()
     if not source.is_file():
         return None, False
 
-    out_dir = Path(historical_dir)
+    out_dir = Path(historical_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     source_size = source.stat().st_size
     source_digest = _sha256_file(source)
