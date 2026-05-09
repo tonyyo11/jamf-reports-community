@@ -490,12 +490,12 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             return -1
         }
-        guard await authGuard(profile: profile, onLine: onLine) else {
-            return Self.exitCodeUnauthorized
-        }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             return -1
+        }
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
         }
         return await run(
             executable: bin,
