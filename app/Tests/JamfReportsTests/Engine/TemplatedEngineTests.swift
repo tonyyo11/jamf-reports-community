@@ -19,18 +19,16 @@ final class TemplatedEngineTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private var tmpDir: URL!
+    private nonisolated(unsafe) var tmpDir: URL!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUpWithError() throws {
         tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("TemplatedEngineTests_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
     }
 
-    override func tearDown() async throws {
+    override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: tmpDir)
-        try await super.tearDown()
     }
 
     // MARK: - TemplateResolver

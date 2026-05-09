@@ -4,16 +4,14 @@ import XCTest
 @MainActor
 final class WizardExceptionsStepTests: XCTestCase {
 
-    var wizardState: WizardState!
+    nonisolated(unsafe) var wizardState: WizardState!
 
-    override func setUp() async throws {
-        try await super.setUp()
-        wizardState = WizardState()
+    override func setUpWithError() throws {
+        wizardState = MainActor.assumeIsolated { WizardState() }
     }
 
-    override func tearDown() async throws {
+    override func tearDownWithError() throws {
         wizardState = nil
-        try await super.tearDown()
     }
 
     func testAcceptDraft_CreatesConfigException() {
