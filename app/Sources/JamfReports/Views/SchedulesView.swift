@@ -110,7 +110,10 @@ struct SchedulesView: View {
                         newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
                         showNewSchedule = true
                     }
-                    .help("Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? "Available in live mode only"
+                          : "Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
                 }
             )
         }
@@ -225,6 +228,8 @@ struct SchedulesView: View {
                         showRunLog = true
                         Task { await runNextScheduledNow() }
                     }
+                    .disabled(workspace.demoMode || isRunning)
+                    .help(workspace.demoMode ? "Available in live mode only" : "")
                     if let msg = lastRunMessage {
                         Mono(text: msg, size: 10, color: Theme.Colors.fgMuted)
                     }
@@ -351,20 +356,22 @@ struct SchedulesView: View {
                 TableColumn("") { s in
                     Menu {
                         Button {
-                            guard !isRunning else { return }
+                            guard !isRunning, !workspace.demoMode else { return }
                             showRunLog = true
                             Task { await runScheduleNow(s) }
                         } label: {
                             Label("Run now", systemImage: "play.fill")
                         }
-                        .disabled(isRunning)
+                        .disabled(isRunning || workspace.demoMode)
                         Divider()
                         Button(role: .destructive) {
+                            guard !workspace.demoMode else { return }
                             pendingDelete = s
                             showDeleteConfirm = true
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                        .disabled(workspace.demoMode)
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .foregroundStyle(Theme.Colors.fgMuted)
@@ -477,6 +484,7 @@ struct SchedulesView: View {
     }
 
     private func toggleSchedule(_ schedule: Schedule) async {
+        guard !workspace.demoMode else { return }
         guard let idx = workspace.schedules.firstIndex(where: { $0.id == schedule.id }) else { return }
 
         let original = workspace.schedules[idx].enabled
@@ -503,6 +511,7 @@ struct SchedulesView: View {
     }
 
     private func deleteSchedule(_ schedule: Schedule) {
+        guard !workspace.demoMode else { return }
         guard let label = LaunchAgentWriter.label(for: schedule) else {
             writeError = "Schedule name or profile produces an invalid LaunchAgent label."
             showWriteError = true
@@ -755,6 +764,9 @@ private struct NewScheduleSheet: View {
     let onSave: (ScheduleFormState) -> Void
     let onCancel: () -> Void
 
+    @FocusState private var nameFieldFocused: Bool
+    @State private var nameWasTouched = false
+
     private let weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
     var body: some View {
@@ -779,7 +791,18 @@ private struct NewScheduleSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     formRow(label: "Name") {
-                        PNPTextField(value: $form.name, placeholder: "e.g. Daily Snapshot Collection")
+                        VStack(alignment: .leading, spacing: 4) {
+                            PNPTextField(value: $form.name, placeholder: "e.g. Daily Snapshot Collection")
+                                .focused($nameFieldFocused)
+                                .onChange(of: nameFieldFocused) { _, focused in
+                                    if !focused { nameWasTouched = true }
+                                }
+                            if nameWasTouched && form.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                                Text("Schedule name is required")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.Colors.warn)
+                            }
+                        }
                     }
 
                     formRow(label: "Profile target") {

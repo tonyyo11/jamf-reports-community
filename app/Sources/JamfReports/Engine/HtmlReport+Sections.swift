@@ -6,9 +6,8 @@ import Foundation
 // Each renderer is a pure instance method — it reads from cached JSON already
 // loaded in `buildSectionMap` and passes data through `HtmlSectionFormatters`.
 //
-// All user-controlled strings MUST go through `htmlEscape(_:)` (inherited from
-// HtmlReport) or `HtmlSectionFormatters.escapeHTML(_:)` before interpolation.
-// No exceptions.
+// All user-controlled strings MUST go through `HtmlSectionFormatters.escapeHTML(_:)`
+// before interpolation. No exceptions.
 
 extension HtmlReport {
 
@@ -312,13 +311,13 @@ extension HtmlReport {
             }
             parts.append("""
             <div class="audit-severity-group">
-              \(deviceAnchors)<h3>\(pill) \(htmlEscape(sev.capitalized)) (\(items.count))</h3>
+              \(deviceAnchors)<h3>\(pill) \(HtmlSectionFormatters.escapeHTML(sev.capitalized)) (\(items.count))</h3>
               \(f.renderTable(
                   headers: ["Check", "Policy / Resource", "Detail"],
                   rows: Array(tableRows)
               ))
               \(items.count > 10 ? "<p class=\"empty\">\(items.count - 10) additional " +
-                "\(htmlEscape(sev)) findings omitted.</p>" : "")
+                "\(HtmlSectionFormatters.escapeHTML(sev)) findings omitted.</p>" : "")
             </div>
             """)
         }
@@ -688,7 +687,7 @@ extension HtmlReport {
         guard !counts.isEmpty else {
             return """
             <section class="content-section" id="\(sectionID)">
-              <h2>\(htmlEscape(title))</h2>
+              <h2>\(HtmlSectionFormatters.escapeHTML(title))</h2>
               \(f.emptyState(emptyHint))
             </section>
             """
@@ -715,7 +714,7 @@ extension HtmlReport {
 
         return """
         <section class="content-section" id="\(sectionID)">
-          <h2>\(htmlEscape(title))</h2>
+          <h2>\(HtmlSectionFormatters.escapeHTML(title))</h2>
           <div class="cohort-bar-section">\(bars)</div>
           \(f.renderTable(headers: [title.components(separatedBy: " ").first ?? "Group",
                                     "Devices"], rows: Array(tableRows)))

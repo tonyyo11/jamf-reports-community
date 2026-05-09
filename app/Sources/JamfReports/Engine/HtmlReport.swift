@@ -1581,14 +1581,6 @@ struct HtmlReport: Sendable {
         return result
     }
 
-    /// Backwards-compatible shim used only by `HtmlReport+Sections.swift`.
-    /// All other callers now use `HtmlSectionFormatters.escapeHTML` directly.
-    /// Routes through the hardened formatter so the legacy callers also pick up
-    /// the strengthened scheme blocklist and `'` escaping (P9-A-03 / P10-B-29).
-    /// TODO(H-Eng): replace remaining `htmlEscape` calls in `HtmlReport+Sections.swift`
-    /// with `HtmlSectionFormatters.escapeHTML` and delete this shim.
-    func htmlEscape(_ s: String) -> String { HtmlSectionFormatters.escapeHTML(s) }
-
     /// P9-A-02: validate a brand accent color string before interpolating it into
     /// CSS or a JS string literal. A user-supplied value like `red; }` would
     /// otherwise close the `--accent:` declaration and inject arbitrary CSS, and

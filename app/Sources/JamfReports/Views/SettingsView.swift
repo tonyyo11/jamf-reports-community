@@ -1,11 +1,20 @@
 import SwiftUI
 import AppKit
 
+private final class TextLineBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _lines: [String] = []
+    func append(_ text: String) { lock.withLock { _lines.append(text) } }
+    var lines: [String] { lock.withLock { _lines } }
+}
+
 struct SettingsView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
     @State private var testingProfile: String? = nil
     @State private var testResults: [String: Bool] = [:]
+    @State private var testErrors: [String: String] = [:]
+    @State private var testingTooLong = false
     @State private var addConnectionMessage: String? = nil
     @State private var tokenStatuses: [String: TokenStatus] = [:]
     @State private var loadingTokenProfiles: Set<String> = []
@@ -184,6 +193,10 @@ struct SettingsView: View {
                         }
                     }
                     .help("Opens a Terminal window and copies `jamf-cli config add-profile` to your clipboard.")
+                    Text("Opens Terminal and copies the auth command. Paste it in the Terminal window and follow the prompts.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.Text.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let msg = addConnectionMessage {
                         Text(msg)
                             .font(Theme.Fonts.mono(10.5))
@@ -198,23 +211,63 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func testControlView(for profileName: String) -> some View {
-        if testingProfile == profileName {
-            ProgressView().controlSize(.small)
-        } else if let passed = testResults[profileName] {
-            Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(passed ? Theme.Colors.ok : Theme.Colors.warn)
-                .font(.system(size: 14))
-        } else {
-            PNPButton(title: "Test", size: .sm) {
-                testingProfile = profileName
-                Task {
-                    let bridge = CLIBridge()
-                    let exit = await bridge.validateConnection(profile: profileName) { _ in }
-                    testResults[profileName] = exit == 0
-                    testingProfile = nil
+        VStack(alignment: .trailing, spacing: 4) {
+            if testingProfile == profileName {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    if testingTooLong {
+                        Text("Taking longer than usual…")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Text.tertiary)
+                    }
                 }
+            } else if let passed = testResults[profileName] {
+                HStack(spacing: 6) {
+                    Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(passed ? Theme.Colors.ok : Theme.Colors.warn)
+                        .font(.system(size: 14))
+                    PNPButton(title: "Retest", size: .sm) {
+                        runConnectionTest(for: profileName)
+                    }
+                }
+                if let err = testErrors[profileName] {
+                    Text(err)
+                        .font(Theme.Fonts.mono(10.5))
+                        .foregroundStyle(Theme.Colors.warn)
+                        .lineLimit(4)
+                        .onTapGesture { testErrors[profileName] = nil }
+                }
+            } else {
+                PNPButton(title: "Test", size: .sm) {
+                    runConnectionTest(for: profileName)
+                }
+                .help("Run `jamf-cli pro auth-status` against this profile to verify the API token is valid.")
             }
-            .help("Run `jamf-cli pro auth-status` against this profile to verify the API token is valid.")
+        }
+    }
+
+    private func runConnectionTest(for profileName: String) {
+        testingProfile = profileName
+        testErrors[profileName] = nil
+        testingTooLong = false
+        Task {
+            let bridge = CLIBridge()
+            let buf = TextLineBuffer()
+            let timeoutTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(10))
+                if !Task.isCancelled { testingTooLong = true }
+            }
+            let exit = await bridge.validateConnection(profile: profileName) { line in
+                buf.append(line.text)
+            }
+            timeoutTask.cancel()
+            testResults[profileName] = exit == 0
+            if exit != 0 {
+                let msg = buf.lines.filter { !$0.isEmpty }.joined(separator: "\n")
+                testErrors[profileName] = msg.isEmpty ? "Connection failed (exit \(exit))" : msg
+            }
+            testingProfile = nil
+            testingTooLong = false
         }
     }
 
