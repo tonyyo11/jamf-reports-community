@@ -66,18 +66,18 @@ enum CSVParser {
                 case "\"":
                     inQuote = true
                 case ",":
-                    fields.append(field)
+                    fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
                     field = ""
                 case "\r":
                     if next < text.endIndex && text[next] == "\n" {
                         idx = text.index(after: idx)
                     }
-                    fields.append(field)
+                    fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
                     rows.append(fields)
                     fields = []
                     field = ""
                 case "\n":
-                    fields.append(field)
+                    fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
                     rows.append(fields)
                     fields = []
                     field = ""
@@ -89,7 +89,7 @@ enum CSVParser {
         }
         // Last field / row
         if !field.isEmpty || !fields.isEmpty {
-            fields.append(field)
+            fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
             if fields.contains(where: { !$0.isEmpty }) {
                 rows.append(fields)
             }

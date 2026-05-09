@@ -167,7 +167,7 @@ struct GenerateSheet: View {
     private var formatsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             FieldLabel(label: "Output formats")
-            ForEach(GenerateOutputType.allCases, id: \.self) { type in
+            ForEach(GenerateOutputType.allCases.filter { $0 != .pdf }, id: \.self) { type in
                 formatRow(type)
             }
         }

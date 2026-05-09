@@ -789,10 +789,14 @@ school_columns:
   # Device display name (e.g. "Jamf School exports this as 'Name'")
   device_name: ""
   serial_number: ""
+  # Device type (e.g. "iPad", "AppleTV", "Mac")
+  device_type: ""
   os_version: ""
   model: ""
   # School/location name the device belongs to
   location_name: ""
+  # Assigned user display name (separate from owner_username)
+  user_name: ""
   owner_email: ""
   owner_first_name: ""
   owner_last_name: ""

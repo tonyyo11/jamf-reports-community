@@ -680,8 +680,9 @@ struct ReportEngine: Sendable {
             ))
             let (exitCode, data) = await bridge.runAndCapture(
                 executable: bin, arguments: args,
-                environment: CLIBridge.environmentForJamfCLI()
-            ) { _ in }
+                environment: CLIBridge.environmentForJamfCLI(),
+                onLine: onLine
+            )
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -937,8 +938,9 @@ struct ReportEngine: Sendable {
                          text: "[info] collecting \(kind) for \(profile)"))
             let (exitCode, data) = await bridge.runAndCapture(
                 executable: bin, arguments: args,
-                environment: CLIBridge.environmentForJamfCLI()
-            ) { _ in }
+                environment: CLIBridge.environmentForJamfCLI(),
+                onLine: onLine
+            )
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -987,8 +989,9 @@ struct ReportEngine: Sendable {
                          text: "[info] collecting \(kind) for \(profile)"))
             let (exitCode, data) = await bridge.runAndCapture(
                 executable: bin, arguments: args,
-                environment: CLIBridge.environmentForJamfCLI()
-            ) { _ in }
+                environment: CLIBridge.environmentForJamfCLI(),
+                onLine: onLine
+            )
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 onLine(.init(timestamp: Date(), level: .ok,

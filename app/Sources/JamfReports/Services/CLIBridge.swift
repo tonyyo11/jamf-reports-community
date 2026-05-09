@@ -252,6 +252,7 @@ final class CLIBridge {
         profile: String,
         csvPath: String?,
         template: any ReportTemplate = ExecutiveTemplate(),
+        outputDir: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
@@ -277,7 +278,8 @@ final class CLIBridge {
         }
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
-        let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
+        let defaultURL = engine.resolveOutputURL(stem: "report", profile: profile)
+        let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) } ?? defaultURL
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -676,11 +678,11 @@ final class CLIBridge {
     func generateHTML(
         profile: String,
         outFile: String?,
+        template: any ReportTemplate = ExecutiveTemplate(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
-        guard await authGuard(profile: profile, onLine: onLine) else {
-            return Self.exitCodeUnauthorized
-        }
+        // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
+        // authGuard is intentionally omitted — stale/expired credentials do not prevent rendering.
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
         let configURL = workspace.appendingPathComponent("config.yaml")
@@ -724,7 +726,7 @@ final class CLIBridge {
             }
         }
         do {
-            try await ReportEngine.generateHTML(config: config, dataDir: dataDir, outputURL: outputURL)
+            try await ReportEngine.generateHTML(config: config, dataDir: dataDir, outputURL: outputURL, template: template)
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] HTML report written: \(outputURL.lastPathComponent)"))
             tightenOnSuccess(0, profile: profile)
@@ -1413,10 +1415,21 @@ private func runDeviceDetailProcess(
             process.arguments = arguments
             process.environment = CLIBridge.environmentForJamfCLI()
             process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
+            let stderrPipe = Pipe()
+            process.standardError = stderrPipe
             try process.run()
             process.waitUntilExit()
-            return process.terminationStatus
+            let code = process.terminationStatus
+            if code != 0 {
+                let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                if let msg = String(data: data, encoding: .utf8),
+                   !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    AppLogger.cli.warning(
+                        "runDeviceDetailProcess exit \(code): \(msg, privacy: .private)"
+                    )
+                }
+            }
+            return code
         } catch {
             AppLogger.cli.error(
                 "runDeviceDetailProcess launch failed: \(error.localizedDescription, privacy: .private)"

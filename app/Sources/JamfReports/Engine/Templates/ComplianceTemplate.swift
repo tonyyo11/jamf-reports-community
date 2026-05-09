@@ -42,8 +42,6 @@ struct ComplianceTemplate: ReportTemplate {
             .auditEvidence,
             .exceptionList,
             .osAdoptionChart,
-            .patchBar,
-            .securityTiles,
             .profileTable,
         ]
     }

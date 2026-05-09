@@ -807,11 +807,8 @@ enum ConfigLoader {
             switch s.lowercased() {
             case "true": return true
             case "false": return false
-            case "null", "~", "": return NSNull()
-            default:
-                if let i = Int(s) { return i }
-                if let d = Double(s) { return d }
-                return s
+            case "null", "~": return NSNull()
+            default: return s
             }
         case .int(let i): return i
         case .bool(let b): return b

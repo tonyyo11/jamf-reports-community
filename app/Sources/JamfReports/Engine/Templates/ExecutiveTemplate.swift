@@ -31,10 +31,7 @@ struct ExecutiveTemplate: ReportTemplate {
     var htmlSections: [SectionID] {
         [
             .kpiTiles,
-            .fleetSummary,
-            .securityTiles,
             .osAdoptionChart,
-            .patchBar,
             .complianceBands,
             .execSummary,
             .orgInfo,

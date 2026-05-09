@@ -76,7 +76,7 @@ extension CLIBridge {
             if schoolMode {
                 code = await schoolGenerate(profile: profile, csvPath: nil, onLine: onLine)
             } else {
-                code = await generate(profile: profile, csvPath: nil, template: template, onLine: onLine)
+                code = await generate(profile: profile, csvPath: nil, template: template, outputDir: outputDir, onLine: onLine)
             }
             if code == 0 {
                 result.succeeded.append(.xlsx)
@@ -91,6 +91,7 @@ extension CLIBridge {
             let code = await generateHTML(
                 profile: profile,
                 outFile: outURL.path,
+                template: template,
                 onLine: onLine
             )
             if code == 0 {
