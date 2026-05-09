@@ -17,9 +17,4 @@ updates:
     schedule:
       interval: "weekly"
 
-  - package-ecosystem: "github-releases"
-    directory: "/"
-    package-name: "Jamf-Concepts/jamf-cli"
-    schedule:
-      interval: "daily"
-    open-pull-requests-limit: 1
+  # jamf-cli version tracking is handled by .github/workflows/update-jamf-cli-version.yml

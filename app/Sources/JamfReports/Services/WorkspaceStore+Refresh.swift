@@ -60,7 +60,10 @@ extension WorkspaceStore {
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            self.triggerHotRefresh(for: self.profile)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.triggerHotRefresh(for: self.profile)
+            }
         }
     }
 }
