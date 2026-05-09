@@ -30,8 +30,9 @@ enum ExecutableLocator {
     }
 }
 
-/// Wraps invocations of the underlying `jamf-reports-community` Python script (`jrc`)
-/// and `jamf-cli`. The GUI is a thin shell over the CLI — every flow round-trips here.
+/// Wraps invocations of `jamf-cli` for live API flows and native Swift engine calls.
+/// All GUI flows (generate, collect, backup, audit, deviceDetail, schoolGenerate, etc.)
+/// delegate to `ReportEngine` or native service implementations — no Python required.
 ///
 /// The bridge is intentionally async-boundary-safe: it never blocks the main thread,
 /// streams stdout/stderr into a callback so the Runs screen can render lines as they
@@ -44,7 +45,7 @@ final class CLIBridge {
         case info, ok, warn, fail
 
         /// Centralized log line classification. Matches `[ok]`, `[warn]`, `[fatal]`,
-        /// `[error]`, `[fail]`, and `traceback` patterns from Python CLI output.
+        /// `[error]`, `[fail]`, and `traceback` patterns from ReportEngine and jamf-cli.
         static func from(line: String) -> LogLevel {
             let l = line.lowercased()
             if l.contains("[ok]") { return .ok }
@@ -72,10 +73,6 @@ final class CLIBridge {
     }
 
     var isJamfCLIAvailable: Bool { locate("jamf-cli") != nil }
-
-    func jrcDisplayPath() -> String? {
-        resolveJRCScript()?.path ?? locate("jrc")?.path
-    }
 
     nonisolated func cachedJSONSnapshots(
         profile: String,
@@ -129,8 +126,6 @@ final class CLIBridge {
             if let cwd { process.currentDirectoryURL = cwd }
             if let environment {
                 process.environment = environment
-            } else if let bundled = Self.environmentForBundledPython(executable) {
-                process.environment = bundled
             }
 
             let stdout = Pipe()
@@ -162,6 +157,11 @@ final class CLIBridge {
             do {
                 try process.run()
             } catch {
+                // C-11: mirror to OSLog so post-mortem forensics see launch
+                // failures even when the in-app stream is gone.
+                AppLogger.cli.error(
+                    "CLIBridge.run: process launch failed: \(error.localizedDescription, privacy: .private)"
+                )
                 onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
                 continuation.resume(returning: -1)
             }
@@ -187,7 +187,7 @@ final class CLIBridge {
             }
         }
         let box = DataBox()
-        
+
         let code = await withCheckedContinuation { (continuation: CheckedContinuation<Int32, Never>) in
             let process = Process()
             process.executableURL = executable
@@ -195,8 +195,6 @@ final class CLIBridge {
             if let cwd { process.currentDirectoryURL = cwd }
             if let environment {
                 process.environment = environment
-            } else if let bundled = Self.environmentForBundledPython(executable) {
-                process.environment = bundled
             }
 
             let stdout = Pipe()
@@ -232,6 +230,10 @@ final class CLIBridge {
             do {
                 try process.run()
             } catch {
+                // C-11: mirror to OSLog — see `run()` above.
+                AppLogger.cli.error(
+                    "CLIBridge.runAndCapture: process launch failed: \(error.localizedDescription, privacy: .private)"
+                )
                 onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
                 continuation.resume(returning: -1)
             }
@@ -240,33 +242,174 @@ final class CLIBridge {
     }
 
     /// Fluent helper for the most common CLI flows the GUI surfaces.
-    func generate(profile: String, csvPath: String?, onLine: @Sendable @escaping (LogLine) -> Void) async -> Int32 {
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+    func generate(
+        profile: String,
+        csvPath: String?,
+        template: any ReportTemplate = ExecutiveTemplate(),
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        let config: ReportConfig
+        if FileManager.default.fileExists(atPath: configURL.path) {
+            do {
+                config = try ConfigLoader.load(from: configURL)
+            } catch {
+                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
+                AppLogger.cli.warning("\(msg, privacy: .private)")
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+                config = ReportConfig()
+            }
+        } else {
+            config = ReportConfig()
+        }
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] could not resolve data_dir for \(profile)"))
             return -1
         }
-        guard let config = await ensureWorkspace(profile: profile, command: command, onLine: onLine) else {
+        let engine = ReportEngine(config: config, dataDir: dataDir)
+        let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
+        let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
+            do {
+                try fm.createDirectory(
+                    at: outputURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+            } catch {
+                onLine(.init(timestamp: Date(), level: .fail,
+                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                return -1
+            }
+        }
+        do {
+            try await engine.generate(csvURL: csvURL, outputURL: outputURL, template: template, onLine: onLine)
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] report written: \(outputURL.lastPathComponent)"))
+            tightenOnSuccess(0, profile: profile)
+            return 0
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] generate failed: \(error.localizedDescription)"))
+            tightenOnSuccess(-1, profile: profile)
             return -1
         }
+    }
 
-        var args = ["generate", "--config", config.path, "--profile", profile]
-        if let csv = csvPath { args.append(contentsOf: ["--csv", csv]) }
-        return await run(executable: command.executable, arguments: command.arguments + args, onLine: onLine)
+    /// Tighten workspace permissions after every CLI write (MFS-1). Extends
+    /// the Wave 1 sweep from `generateAll` to the standalone
+    /// collect/audit/inventory/backup/html/school-generate paths so each
+    /// writer leaves files at 0600 / dirs at 0700.
+    ///
+    /// Runs on every exit code, not just success: the underlying writer may
+    /// write some files then crash (non-zero exit), and those files would
+    /// otherwise keep their default-umask 0644 perms indefinitely. The cost
+    /// of a tree walk on a failed run is negligible compared to the security
+    /// gain. The caller's `exitCode` parameter is retained for the log entry
+    /// so forensic review can correlate the sweep with the underlying run.
+    func tightenOnSuccess(_ exitCode: Int32, profile: String) {
+        let result = WorkspacePermissionHardener.tighten(profile: profile)
+        AppLogger.cli.info(
+            """
+            tightenOnSuccess profile=\(profile, privacy: .public) \
+            exit=\(exitCode) touched=\(result.touched) \
+            failed=\(result.failed) enumerated=\(result.enumerated)
+            """
+        )
+    }
+
+    /// Run school-generate for Jamf School tenants via the Swift engine.
+    func schoolGenerate(
+        profile: String,
+        csvPath: String?,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
+        }
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        let config: ReportConfig
+        if FileManager.default.fileExists(atPath: configURL.path) {
+            do {
+                config = try ConfigLoader.load(from: configURL)
+            } catch {
+                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
+                AppLogger.cli.warning("\(msg, privacy: .private)")
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+                config = ReportConfig()
+            }
+        } else {
+            config = ReportConfig()
+        }
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] could not resolve data_dir for \(profile)"))
+            return -1
+        }
+        let engine = ReportEngine(config: config, dataDir: dataDir)
+        let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
+        let outputURL = engine.resolveOutputURL(stem: "school-report", profile: profile)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
+            do {
+                try fm.createDirectory(
+                    at: outputURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+            } catch {
+                onLine(.init(timestamp: Date(), level: .fail,
+                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                return -1
+            }
+        }
+        do {
+            try await ReportEngine.schoolGenerate(
+                config: config,
+                csvURL: csvURL,
+                dataDir: dataDir,
+                outputURL: outputURL
+            )
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] school report written: \(outputURL.lastPathComponent)"))
+            tightenOnSuccess(0, profile: profile)
+            return 0
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] school-generate failed: \(error.localizedDescription)"))
+            tightenOnSuccess(-1, profile: profile)
+            return -1
+        }
     }
 
     func collect(profile: String, onLine: @Sendable @escaping (LogLine) -> Void) async -> Int32 {
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
+        }
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        do {
+            try await ReportEngine.collect(
+                profile: profile,
+                workspacePaths: WorkspacePaths.self,
+                onLine: onLine
+            )
+            tightenOnSuccess(0, profile: profile)
+            return 0
+        } catch ReportEngineError.jamfCLINotFound {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] jamf-cli not found — install via Homebrew: brew install jamf-cli"))
+            tightenOnSuccess(-1, profile: profile)
+            return -1
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] collect failed: \(error.localizedDescription)"))
+            tightenOnSuccess(-1, profile: profile)
             return -1
         }
-        guard let config = await ensureWorkspace(profile: profile, command: command, onLine: onLine) else {
-            return -1
-        }
-        return await run(
-            executable: command.executable,
-            arguments: command.arguments + ["collect", "--config", config.path, "--profile", profile],
-            onLine: onLine
-        )
     }
 
     func collectThenGenerate(
@@ -274,38 +417,86 @@ final class CLIBridge {
         csvPath: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
-            return -1
-        }
-        guard let config = await ensureWorkspace(profile: profile, command: command, onLine: onLine) else {
-            return -1
-        }
-
+        // Auth is checked inside collect(); skipping a separate probe here avoids calling
+        // jamf-cli pro auth token twice for the combined collect+generate flow.
         onLine(.init(timestamp: Date(), level: .info, text: "[info] collecting jamf-cli snapshots for \(profile)"))
-        let collectExit = await run(
-            executable: command.executable,
-            arguments: command.arguments + ["collect", "--config", config.path, "--profile", profile],
-            onLine: onLine
-        )
+        let collectExit = await collect(profile: profile, onLine: onLine)
         guard collectExit == 0 else { return collectExit }
 
         onLine(.init(timestamp: Date(), level: .info, text: "[info] generating report from cached snapshots"))
-        var generateArgs = ["generate", "--config", config.path, "--profile", profile]
-        if let csv = csvPath { generateArgs.append(contentsOf: ["--csv", csv]) }
-        return await run(executable: command.executable, arguments: command.arguments + generateArgs, onLine: onLine)
+        return await generate(profile: profile, csvPath: csvPath, onLine: onLine)
     }
 
-    nonisolated func validateConnection(profile: String, onLine: @Sendable @escaping (LogLine) -> Void) async -> Int32 {
+    // MARK: - jamf-cli exit codes (jamf-cli Error Handling & Exit Codes spec)
+    nonisolated static let exitCodeUsage: Int32 = 2          // bad flags / missing args — indicates a caller bug
+    nonisolated static let exitCodeUnauthorized: Int32 = 3   // HTTP 401 — invalid or expired credentials
+    nonisolated static let exitCodeNotFound: Int32 = 4       // HTTP 404 — resource does not exist
+    nonisolated static let exitCodePermissionDenied: Int32 = 5  // HTTP 403 — account lacks required API privileges
+    nonisolated static let exitCodeRateLimited: Int32 = 6    // HTTP 429 — server throttling; transient, self-resolving
+
+    /// Guards a live-API operation by probing `pro auth token` first.
+    ///
+    /// Resolves the profile's auth method via `jamf-cli config list` (falls back to local
+    /// workspace discovery if jamf-cli is absent). Skips the probe for Jamf School profiles
+    /// (`authMethod == "apikey"`) — school uses API-key auth with no bearer token to inspect.
+    ///
+    /// Returns `true` when it's safe to proceed. On failure, emits a `[error]` log
+    /// line with a remediation hint and returns `false` — callers must return
+    /// a non-zero exit code immediately without running any further API calls.
+    nonisolated func authGuard(
+        profile: String,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Bool {
+        let authMethod = ProfileService.discoverLocal()
+            .first(where: { $0.name == profile })?
+            .authMethod ?? ""
+        guard !CLIBridge.shouldSkipAuthProbe(for: authMethod) else { return true }
+        let status = await tokenStatus(for: profile)
+        if let status, status.isValid, !status.isExpired { return true }
+        if ExecutableLocator.locate("jamf-cli") == nil {
+            onLine(.init(
+                timestamp: Date(), level: .fail,
+                text: "[error] jamf-cli not found — install via Homebrew: brew install jamf-cli"
+            ))
+        } else {
+            onLine(.init(
+                timestamp: Date(), level: .fail,
+                text: "[error] auth check failed for profile '\(profile)' — " +
+                      "re-authenticate with: jamf-cli -p \(profile) pro auth token"
+            ))
+        }
+        return false
+    }
+
+    /// Returns `true` when the auth method does not require a bearer-token probe.
+    ///
+    /// API-key auth (Jamf School) uses key-based authentication with no bearer token
+    /// to inspect, so the `pro auth token` probe must be skipped for those profiles.
+    nonisolated static func shouldSkipAuthProbe(for authMethod: String) -> Bool {
+        authMethod == "apikey"
+    }
+
+    nonisolated func validateConnection(
+        profile: String,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             return -1
+        }
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             return -1
         }
-        return await run(executable: bin, arguments: ["-p", profile, "config", "validate"], onLine: onLine)
+        return await run(
+            executable: bin,
+            arguments: ["-p", profile, "config", "validate"],
+            environment: Self.environmentForJamfCLI(),
+            onLine: onLine
+        )
     }
 
     /// Fetch the token status for `profile` using `jamf-cli pro auth token --output json`.
@@ -323,15 +514,19 @@ final class CLIBridge {
         // Subcommand: jamf-cli -p <profile> pro auth token --output json --no-input
         // Available since jamf-cli v1.9; older versions exit non-zero with "unknown command".
         let args = CLICommand.proAuthToken(profile: profile).argv
-        let (exitCode, data) = await runAndCapture(executable: bin, arguments: args) { _ in }
+        let (exitCode, data) = await runAndCapture(
+            executable: bin,
+            arguments: args,
+            environment: Self.environmentForJamfCLI()
+        ) { _ in }
         let raw = String(data: data, encoding: .utf8) ?? ""
         guard exitCode == 0, !data.isEmpty else {
-            return TokenStatus(profile: profile, expiresAt: nil, isValid: false, raw: raw)
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: raw)
         }
         return parseTokenStatus(profile: profile, data: data, raw: raw)
     }
 
-    private nonisolated func parseTokenStatus(
+    nonisolated func parseTokenStatus(
         profile: String,
         data: Data,
         raw: String
@@ -343,21 +538,57 @@ final class CLIBridge {
         }
         let decoder = JSONDecoder()
         guard let payload = try? decoder.decode(TokenPayload.self, from: data) else {
-            return TokenStatus(profile: profile, expiresAt: nil, isValid: false, raw: raw)
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: raw)
         }
-        let hasToken = !(payload.token ?? "").isEmpty
         let expiresAt: Date?
-        if let raw_date = payload.expires_at {
+        if let rawDate = payload.expires_at {
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime]
-            expiresAt = formatter.date(from: raw_date)
+            expiresAt = formatter.date(from: rawDate)
         } else {
             expiresAt = nil
         }
-        return TokenStatus(profile: profile, expiresAt: expiresAt, isValid: hasToken, raw: raw)
+        return TokenStatus.make(
+            profile: profile,
+            token: payload.token,
+            expiresAt: expiresAt,
+            raw: raw
+        )
     }
 
     nonisolated func deviceDetail(profile: String, deviceID: String) async -> Data? {
+        guard await authGuard(profile: profile, onLine: { _ in }) else { return nil }
+        return await singleDeviceDetail(
+            profile: profile,
+            deviceID: deviceID,
+            cacheSubdir: "devices",
+            jamfCLIArgs: { id in ["pro", "device", id] }
+        )
+    }
+
+    /// Mobile-device detail. Mirrors `deviceDetail` but invokes
+    /// `jamf-cli pro mobile-devices get <id>` and caches under
+    /// `jamf-cli-data/mobile-devices/`. Same fall-back-to-cache semantics.
+    nonisolated func mobileDeviceDetail(profile: String, deviceID: String) async -> Data? {
+        guard await authGuard(profile: profile, onLine: { _ in }) else { return nil }
+        return await singleDeviceDetail(
+            profile: profile,
+            deviceID: deviceID,
+            cacheSubdir: "mobile-devices",
+            jamfCLIArgs: { id in ["pro", "mobile-devices", "get", id] }
+        )
+    }
+
+    /// Shared backbone for single-device fetches. The two device kinds differ
+    /// only in jamf-cli subcommand and cache directory — everything else
+    /// (profile validation, atomic move, fall-back to last-known-good cache)
+    /// is identical and must stay in lock-step.
+    nonisolated private func singleDeviceDetail(
+        profile: String,
+        deviceID: String,
+        cacheSubdir: String,
+        jamfCLIArgs: (String) -> [String]
+    ) async -> Data? {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard ProfileService.isValid(profile),
               !trimmedID.isEmpty,
@@ -367,28 +598,35 @@ final class CLIBridge {
 
         let devicesDir = workspace
             .appendingPathComponent("jamf-cli-data", isDirectory: true)
-            .appendingPathComponent("devices", isDirectory: true)
+            .appendingPathComponent(cacheSubdir, isDirectory: true)
         let cache = devicesDir.appendingPathComponent(deviceCacheFilename(trimmedID))
         if let bin = ExecutableLocator.locate("jamf-cli") {
             let partial = devicesDir.appendingPathComponent(".\(cache.lastPathComponent).partial")
+            let baseArgs = ["-p", profile] + jamfCLIArgs(trimmedID)
             let exit = await runDeviceDetailProcess(
                 executable: bin,
-                arguments: [
-                    "-p", profile, "pro", "device", trimmedID,
+                arguments: baseArgs + [
                     "--output", "json", "--no-input", "--out-file", partial.path,
                 ],
                 outputDirectory: devicesDir
             )
-            if exit == 0,
-               let data = try? Data(contentsOf: partial),
-               !data.isEmpty {
-                try? FileManager.default.removeItem(at: cache)
+            if exit == 0 {
                 do {
-                    try FileManager.default.moveItem(at: partial, to: cache)
-                    return try? Data(contentsOf: cache)
+                    let data = try Data(contentsOf: partial)
+                    if !data.isEmpty {
+                        try? FileManager.default.removeItem(at: cache)
+                        do {
+                            try FileManager.default.moveItem(at: partial, to: cache)
+                            return try? Data(contentsOf: cache)
+                        } catch {
+                            try? data.write(to: cache, options: .atomic)
+                            return data
+                        }
+                    }
                 } catch {
-                    try? data.write(to: cache, options: .atomic)
-                    return data
+                    AppLogger.cli.warning(
+                        "deviceDetail: could not read partial output: \(error.localizedDescription, privacy: .private)"
+                    )
                 }
             }
             try? FileManager.default.removeItem(at: partial)
@@ -420,6 +658,7 @@ final class CLIBridge {
                 "--output", "plain",
                 "--no-input",
             ],
+            environment: Self.environmentForJamfCLI(),
             onLine: onLine
         )
     }
@@ -429,16 +668,63 @@ final class CLIBridge {
         outFile: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
+        }
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        let config: ReportConfig
+        if FileManager.default.fileExists(atPath: configURL.path) {
+            do {
+                config = try ConfigLoader.load(from: configURL)
+            } catch {
+                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
+                AppLogger.cli.warning("\(msg, privacy: .private)")
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+                config = ReportConfig()
+            }
+        } else {
+            config = ReportConfig()
+        }
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] could not resolve data_dir for \(profile)"))
             return -1
         }
-        guard let config = await ensureWorkspace(profile: profile, command: command, onLine: onLine) else {
+        let outputURL: URL
+        if let path = outFile {
+            outputURL = URL(fileURLWithPath: path)
+        } else {
+            let engine = ReportEngine(config: config, dataDir: dataDir)
+            outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
+                .deletingPathExtension().appendingPathExtension("html")
+        }
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
+            do {
+                try fm.createDirectory(
+                    at: outputURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+            } catch {
+                onLine(.init(timestamp: Date(), level: .fail,
+                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                return -1
+            }
+        }
+        do {
+            try await ReportEngine.generateHTML(config: config, dataDir: dataDir, outputURL: outputURL)
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] HTML report written: \(outputURL.lastPathComponent)"))
+            tightenOnSuccess(0, profile: profile)
+            return 0
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] html generation failed: \(error.localizedDescription)"))
+            tightenOnSuccess(-1, profile: profile)
             return -1
         }
-        var args = ["html", "--config", config.path, "--profile", profile, "--no-open"]
-        if let path = outFile { args.append(contentsOf: ["--out-file", path]) }
-        return await run(executable: command.executable, arguments: command.arguments + args, onLine: onLine)
     }
 
     func exportInventoryCSV(
@@ -446,16 +732,49 @@ final class CLIBridge {
         outFile: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
+        }
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        let config: ReportConfig
+        if FileManager.default.fileExists(atPath: configURL.path) {
+            do {
+                config = try ConfigLoader.load(from: configURL)
+            } catch {
+                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
+                AppLogger.cli.warning("\(msg, privacy: .private)")
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+                config = ReportConfig()
+            }
+        } else {
+            config = ReportConfig()
+        }
+        let outputURL: URL
+        if let path = outFile {
+            outputURL = URL(fileURLWithPath: path)
+        } else {
+            let engine = ReportEngine(config: config, dataDir: workspace)
+            outputURL = engine.resolveOutputURL(stem: "inventory", profile: profile)
+                .deletingPathExtension().appendingPathExtension("csv")
+        }
+        do {
+            try await ReportEngine.inventoryCSV(
+                profile: profile,
+                workspacePaths: WorkspacePaths.self,
+                outputURL: outputURL
+            )
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] inventory CSV written: \(outputURL.lastPathComponent)"))
+            tightenOnSuccess(0, profile: profile)
+            return 0
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] inventory-csv failed: \(error.localizedDescription)"))
+            tightenOnSuccess(-1, profile: profile)
             return -1
         }
-        guard let config = await ensureWorkspace(profile: profile, command: command, onLine: onLine) else {
-            return -1
-        }
-        var args = ["inventory-csv", "--config", config.path, "--profile", profile]
-        if let path = outFile { args.append(contentsOf: ["--out-file", path]) }
-        return await run(executable: command.executable, arguments: command.arguments + args, onLine: onLine)
     }
 
     func audit(
@@ -463,19 +782,41 @@ final class CLIBridge {
         category: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
+        // B-02: defense-in-depth profile validation. Mirrors validateConnection.
+        guard ProfileService.isValid(profile) else {
+            AppLogger.cli.warning("audit: rejecting invalid profile name")
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            return -1
+        }
+        // B-03: refuse leading-dash category. Checked before auth so that the
+        // rejection is deterministic and does not depend on auth state.
+        if let category, category.hasPrefix("-") {
+            AppLogger.cli.warning("audit: rejecting leading-dash category")
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] audit category may not start with '-'"))
+            return -1
+        }
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
+        }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             return -1
         }
-        var args = ["-p", profile, "pro", "audit", "--output", "json"]
+        var args = ["-p", profile, "pro", "audit", "--output", "json", "--no-input"]
         if let category, !category.isEmpty {
             args.append(contentsOf: ["--checks", category])
         }
         
-        let (code, data) = await runAndCapture(executable: bin, arguments: args, onLine: onLine)
+        let (code, data) = await runAndCapture(
+            executable: bin,
+            arguments: args,
+            environment: Self.environmentForJamfCLI(),
+            onLine: onLine
+        )
         if code == 0, !data.isEmpty {
-            saveJSONSnapshot(data: data, profile: profile, type: "audit")
+            saveJSONSnapshot(data: data, profile: profile, type: "audit", onLine: onLine)
         }
+        tightenOnSuccess(code, profile: profile)
         return code
     }
 
@@ -483,32 +824,81 @@ final class CLIBridge {
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
+        // B-02: defense-in-depth profile validation.
+        guard ProfileService.isValid(profile) else {
+            AppLogger.cli.warning("groupHygiene: rejecting invalid profile name")
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            return -1
+        }
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
+        }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             return -1
         }
-        let args = ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json"]
-        let (code, data) = await runAndCapture(executable: bin, arguments: args, onLine: onLine)
+        let args = ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json", "--no-input"]
+        let (code, data) = await runAndCapture(
+            executable: bin,
+            arguments: args,
+            environment: Self.environmentForJamfCLI(),
+            onLine: onLine
+        )
         if code == 0, !data.isEmpty {
-            saveJSONSnapshot(data: data, profile: profile, type: "group-tools-analyze")
+            saveJSONSnapshot(data: data, profile: profile, type: "group-tools-analyze", onLine: onLine)
         }
+        tightenOnSuccess(code, profile: profile)
         return code
     }
 
-    private func saveJSONSnapshot(data: Data, profile: String, type: String) {
-        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return }
+    private func saveJSONSnapshot(
+        data: Data,
+        profile: String,
+        type: String,
+        onLine: (@Sendable (LogLine) -> Void)? = nil
+    ) {
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            // C-12: surface the silent path-resolution failure too. Otherwise
+            // the user sees a green CLI exit while the workspace gets no
+            // refreshed JSON.
+            AppLogger.cli.warning(
+                "saveJSONSnapshot: could not resolve data_dir for \(type, privacy: .public)"
+            )
+            onLine?(.init(
+                timestamp: Date(),
+                level: .warn,
+                text: "[warn] snapshot write skipped (\(type)) — workspace data_dir unresolved"
+            ))
+            return
+        }
         let dir = dataDir.appendingPathComponent(type, isDirectory: true)
         let ts = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "-", with: "")
             .prefix(15)
         let file = dir.appendingPathComponent("\(type)_\(ts).json")
-        
+
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try data.write(to: file)
+            // MFS-1: ensure the freshly-written snapshot is owner-only readable.
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))],
+                ofItemAtPath: file.path
+            )
         } catch {
-            print("[warn] failed to save snapshot \(type): \(error)")
+            // C-07/MFS-4: route to unified logging instead of stdout.
+            // %{public} for type (taxonomy), %{private} for the error chain.
+            AppLogger.cli.warning(
+                "saveJSONSnapshot failed for \(type, privacy: .public): \(error.localizedDescription, privacy: .private)"
+            )
+            // C-12: also surface to the in-app log feed so the user can see
+            // their refresh just used stale data.
+            onLine?(.init(
+                timestamp: Date(),
+                level: .warn,
+                text: "[warn] snapshot write failed (\(type)) — refresh will use stale data: \(error.localizedDescription)"
+            ))
         }
     }
 
@@ -517,50 +907,238 @@ final class CLIBridge {
         label: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+        guard ProfileService.isValid(profile) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             return -1
         }
-        guard let config = await ensureWorkspace(profile: profile, command: command, onLine: onLine) else {
+        // B-03: refuse leading-dash labels — would be re-interpreted as a flag by jamf-cli.
+        let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedLabel, trimmedLabel.hasPrefix("-") {
+            AppLogger.cli.warning("backup: rejecting leading-dash label")
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] backup label may not start with '-'"))
             return -1
         }
-        var args = ["backup", "--config", config.path, "--profile", profile]
-        if let label, !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            args.append(contentsOf: ["--label", label])
+        guard let bin = ExecutableLocator.locate("jamf-cli") else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
+            return -1
         }
-        return await run(executable: command.executable, arguments: command.arguments + args, onLine: onLine)
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] no workspace for profile '\(profile)'"))
+            return -1
+        }
+        let backupsRoot = workspace.appendingPathComponent("backups", isDirectory: true)
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: backupsRoot, withIntermediateDirectories: true,
+                                   attributes: [.posixPermissions: 0o700])
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] could not create backups directory: \(error.localizedDescription)"))
+            return -1
+        }
+
+        // Create a temp dir inside the backups root so the atomic rename stays on-volume.
+        let tempDir = backupsRoot.appendingPathComponent(".tmp-\(UUID().uuidString)", isDirectory: true)
+        guard let validatedTemp = WorkspacePathGuard.validate(tempDir, under: workspace) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] backup temp path rejected by path guard"))
+            return -1
+        }
+        do {
+            try fm.createDirectory(at: validatedTemp, withIntermediateDirectories: true,
+                                   attributes: [.posixPermissions: 0o700])
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] could not create backup temp dir: \(error.localizedDescription)"))
+            return -1
+        }
+
+        var args = ["-p", profile, "--no-input", "pro", "backup",
+                    "--format", "json", "--output", validatedTemp.path]
+        let exit = await run(
+            executable: bin,
+            arguments: args,
+            environment: Self.environmentForJamfCLI(),
+            onLine: onLine
+        )
+        _ = args  // suppress unused-var warning
+
+        guard exit == 0 else {
+            if (try? fm.removeItem(at: validatedTemp)) == nil {
+                AppLogger.cli.warning(
+                    "backup: failed to remove temp dir after CLI error: \(validatedTemp.path, privacy: .private)"
+                )
+            }
+            tightenOnSuccess(exit, profile: profile)
+            return exit
+        }
+
+        // Rename temp dir to a timestamped final name.
+        let ts = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .prefix(15)
+        let finalName = "\(ts)"
+        let finalDir = backupsRoot.appendingPathComponent(String(finalName), isDirectory: true)
+        guard let validatedFinal = WorkspacePathGuard.validate(finalDir, under: workspace) else {
+            if (try? fm.removeItem(at: validatedTemp)) == nil {
+                AppLogger.cli.warning(
+                    "backup: failed to remove temp dir after path guard rejection: \(validatedTemp.path, privacy: .private)"
+                )
+            }
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] backup final path rejected by path guard"))
+            return -1
+        }
+
+        do {
+            try fm.moveItem(at: validatedTemp, to: validatedFinal)
+        } catch {
+            if (try? fm.removeItem(at: validatedTemp)) == nil {
+                AppLogger.cli.warning(
+                    "backup: failed to remove temp dir after move failure: \(validatedTemp.path, privacy: .private)"
+                )
+            }
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] could not finalize backup directory: \(error.localizedDescription)"))
+            return -1
+        }
+
+        // Write manifest.json so BackupLibrary can read label, date, and counts.
+        let stats = directoryStats(validatedFinal)
+        let effectiveLabel = trimmedLabel?.isEmpty == false ? (trimmedLabel ?? "") : ""
+        let manifest: [String: Any] = [
+            "label": effectiveLabel,
+            "created_at": ISO8601DateFormatter().string(from: Date()),
+            "file_count": stats.fileCount,
+            "size_bytes": stats.sizeBytes,
+        ]
+        do {
+            let manifestData = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted])
+            let manifestURL = validatedFinal.appendingPathComponent("manifest.json")
+            try manifestData.write(to: manifestURL, options: .atomic)
+            try? fm.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))],
+                ofItemAtPath: manifestURL.path
+            )
+        } catch {
+            AppLogger.cli.warning(
+                "backup: manifest write failed for \(validatedFinal.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+            )
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] backup manifest write failed — backup was created but BackupsView may show no label or stats"))
+        }
+
+        onLine(.init(timestamp: Date(), level: .ok,
+                     text: "[ok] backup written: \(validatedFinal.lastPathComponent)"))
+        tightenOnSuccess(0, profile: profile)
+        return 0
+    }
+
+    private func directoryStats(_ url: URL) -> (fileCount: Int, sizeBytes: Int64) {
+        guard let enumerator = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return (0, 0) }
+        var fileCount = 0
+        var sizeBytes: Int64 = 0
+        for case let item as URL in enumerator {
+            guard let values = try? item.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                  values.isRegularFile == true else { continue }
+            fileCount += 1
+            sizeBytes += Int64(values.fileSize ?? 0)
+        }
+        return (fileCount, sizeBytes)
     }
 
     func check(profile: String, csvPath: String?, onLine: @Sendable @escaping (LogLine) -> Void) async -> Int32 {
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+        guard ProfileService.isValid(profile) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             return -1
         }
-        guard let config = await ensureWorkspace(profile: profile, command: command, onLine: onLine) else {
+        guard await authGuard(profile: profile, onLine: onLine) else {
+            return Self.exitCodeUnauthorized
+        }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] no workspace for profile '\(profile)'"))
             return -1
         }
-        var args = ["check", "--config", config.path, "--profile", profile]
-        if let csv = csvPath { args.append(contentsOf: ["--csv", csv]) }
-        return await run(executable: command.executable, arguments: command.arguments + args, onLine: onLine)
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: configURL.path) else {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] config.yaml not found — run workspace-init first"))
+            return -1
+        }
+        do {
+            let config = try ConfigLoader.load(from: configURL)
+            let cliProfile = config.jamfCli?.resolvedProfile ?? profile
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] config.yaml decoded successfully"))
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] jamf_cli.profile: \(cliProfile.isEmpty ? "(not set)" : cliProfile)"))
+            let resolvedDataDir = try? WorkspacePaths.dataDir(for: profile)
+            let dataDir = resolvedDataDir ?? workspace.appendingPathComponent("jamf-cli-data")
+            if resolvedDataDir == nil {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[warn] data_dir path resolution failed — using fallback jamf-cli-data/"))
+            }
+            let snapshotCount = (try? FileManager.default.contentsOfDirectory(
+                atPath: dataDir.path))?.count ?? 0
+            let dataDirLevel: LogLevel = resolvedDataDir != nil ? .ok : .warn
+            onLine(.init(timestamp: Date(), level: dataDirLevel,
+                         text: "[\(dataDirLevel == .ok ? "ok" : "warn")] cached snapshots in data_dir: \(snapshotCount)"))
+
+            // CSV column validation — only runs when a CSV path is provided.
+            if let csvPath, !csvPath.isEmpty {
+                let csvURL = URL(fileURLWithPath: csvPath)
+                if FileManager.default.fileExists(atPath: csvURL.path) {
+                    do {
+                        var text = try String(contentsOf: csvURL, encoding: .utf8)
+                        if text.hasPrefix("\u{FEFF}") { text = String(text.dropFirst()) }
+                        let firstLine = text.split(separator: "\n", maxSplits: 1).first ?? ""
+                        let headers = Set(firstLine.split(separator: ",").map {
+                            String($0).trimmingCharacters(in: .init(charactersIn: "\" \t\r"))
+                        })
+                        let configuredColumns: [(name: String, value: String)] = [
+                            ("computer_name", config.columns?.computerName ?? ""),
+                            ("serial_number", config.columns?.serialNumber ?? ""),
+                            ("operating_system", config.columns?.operatingSystem ?? ""),
+                            ("last_checkin", config.columns?.lastCheckin ?? ""),
+                            ("department", config.columns?.department ?? ""),
+                            ("email", config.columns?.email ?? ""),
+                        ].filter { !$0.value.isEmpty }
+                        var anyMissing = false
+                        for col in configuredColumns where !headers.contains(col.value) {
+                            onLine(.init(timestamp: Date(), level: .warn,
+                                         text: "[warn] column '\(col.value)' (config: \(col.name)) not found in CSV"))
+                            anyMissing = true
+                        }
+                        if !anyMissing {
+                            onLine(.init(timestamp: Date(), level: .ok,
+                                         text: "[ok] all configured columns found in CSV"))
+                        }
+                    } catch {
+                        onLine(.init(timestamp: Date(), level: .warn,
+                                     text: "[warn] could not read CSV '\(csvPath)': \(error.localizedDescription)"))
+                    }
+                } else {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                                 text: "[warn] CSV file not found: \(csvPath)"))
+                }
+            }
+
+            return 0
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] \(error.localizedDescription)"))
+            return -1
+        }
     }
 
     func initializeWorkspace(
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(
-                timestamp: Date(),
-                level: .fail,
-                text: "[error] jrc or jamf-reports-community.py not found"
-            ))
-            return -1
-        }
-        guard await ensureWorkspace(
-            profile: profile,
-            command: command,
-            onLine: onLine
-        ) != nil else {
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
             return -1
         }
         return 0
@@ -573,27 +1151,13 @@ final class CLIBridge {
     ) async -> Int32 {
         if schedule.isMulti { return await setupMultiLaunchAgent(schedule, load: load, onLine: onLine) }
 
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
-            return -1
-        }
-        guard let workspace = ProfileService.workspaceURL(for: schedule.profile),
-              let config = await ensureWorkspace(
-                profile: schedule.profile,
-                command: command,
-                onLine: onLine
-              ) else {
+        guard await ensureWorkspace(profile: schedule.profile, onLine: onLine) != nil else {
             return -1
         }
 
         let plan: LaunchAgentWriter.SetupPlan
         do {
-            plan = try LaunchAgentWriter.setupPlan(
-                for: schedule,
-                configURL: config,
-                workspaceURL: workspace,
-                load: load
-            )
+            plan = try LaunchAgentWriter.nativeSingleWrite(for: schedule, load: load)
         } catch {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
             return -1
@@ -601,11 +1165,16 @@ final class CLIBridge {
 
         let action = load ? "writing and loading" : "writing disabled"
         onLine(.init(timestamp: Date(), level: .info, text: "[info] \(action) LaunchAgent \(plan.label)"))
-        return await run(
-            executable: command.executable,
-            arguments: command.arguments + plan.arguments,
-            onLine: onLine
-        )
+        _ = await LaunchAgentWriter.unload(plan.label)
+        if load {
+            let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)
+            if exit != 0 {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[warn] launchctl bootstrap returned \(exit) — plist written but not loaded"))
+            }
+            return exit
+        }
+        return 0
     }
 
     private func setupMultiLaunchAgent(
@@ -621,15 +1190,14 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi-profile schedules need a base workspace profile"))
             return -1
         }
-        guard let command = resolveJRCCommand() else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
+        guard let execURL = Bundle.main.executableURL else {
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] cannot resolve app executable path"))
             return -1
         }
         do {
-            let plan = try LaunchAgentWriter.multiSetupPlan(
+            let plan = try LaunchAgentWriter.nativeMultiWrite(
                 for: schedule,
-                command: command,
-                workspaceRoot: ProfileService.workspacesRoot(),
+                executableURL: execURL,
                 load: load
             )
             let action = load ? "writing and loading" : "writing disabled"
@@ -656,6 +1224,14 @@ final class CLIBridge {
         subcommand: [String],
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
+        // B-02: validate every profile name surfaced through the multi target.
+        // `cliFlags` may emit `--profiles foo,bar` from a list scope; we cannot
+        // trust those strings without re-validation.
+        for profile in target.allProfileNames where !ProfileService.isValid(profile) {
+            AppLogger.cli.warning("runMulti: rejecting invalid profile name in target")
+            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
+            return -1
+        }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             return -1
@@ -665,111 +1241,45 @@ final class CLIBridge {
         if target.sequential { args.append("--sequential") }
         args.append("--")
         args.append(contentsOf: subcommand)
-        return await run(executable: bin, arguments: args, onLine: onLine)
+        return await run(
+            executable: bin,
+            arguments: args,
+            environment: Self.environmentForJamfCLI(),
+            onLine: onLine
+        )
     }
 
-    func resolveJRCCommand() -> (executable: URL, arguments: [String])? {
-        if let script = resolveJRCScript(),
-           let python = locatePythonForJRC() {
-            return (python, [script.path])
-        }
-        if let jrc = locate("jrc") {
-            return (jrc, [])
-        }
-        return nil
-    }
+    /// B-13: minimal environment for jamf-cli subprocess invocations.
+    ///
+    /// By default `Process` inherits the parent environment verbatim, which
+    /// allows variables like `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`,
+    /// `SSL_CERT_FILE`, `JAMF_CLI_*` to alter how jamf-cli validates TLS,
+    /// loads dynamic libraries, or interprets its own config. We pin a known
+    /// minimal env and only allow-list a small set of variables that proxied
+    /// environments legitimately need.
+    nonisolated static let jamfCLIAllowedEnvKeys: [String] = [
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+        "http_proxy", "https_proxy", "no_proxy",
+    ]
 
-    func resolveJRCScript() -> URL? {
-        let fm = FileManager.default
-        let cwd = URL(fileURLWithPath: fm.currentDirectoryPath, isDirectory: true)
-        let candidates = [
-            cwd.appendingPathComponent("jamf-reports-community.py"),
-            cwd.deletingLastPathComponent().appendingPathComponent("jamf-reports-community.py"),
-            Bundle.main.resourceURL?.appendingPathComponent("jamf-reports-community.py"),
-        ].compactMap { $0 }
-
-        return candidates.first { fm.fileExists(atPath: $0.path) }
-    }
-
-    private nonisolated static func bundledPythonURL() -> URL? {
-        Bundle.main.resourceURL?
-            .appendingPathComponent("python", isDirectory: true)
-            .appendingPathComponent("bin", isDirectory: true)
-            .appendingPathComponent("python3")
-    }
-
-    private nonisolated static func environmentForBundledPython(_ executable: URL) -> [String: String]? {
-        guard let bundled = bundledPythonURL(),
-              sameResolvedPath(executable, bundled) else {
-            return nil
-        }
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "PYTHONHOME")
-        env.removeValue(forKey: "PYTHONPATH")
-        env["PYTHONDONTWRITEBYTECODE"] = "1"
-        env["PYTHONNOUSERSITE"] = "1"
-        env["PYTHONUNBUFFERED"] = "1"
-        let pythonBin = bundled.deletingLastPathComponent().path
-        env["PATH"] = "\(pythonBin):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        return env
-    }
-
-    private nonisolated static func sameResolvedPath(_ lhs: URL, _ rhs: URL) -> Bool {
-        lhs.resolvingSymlinksInPath().standardizedFileURL.path
-            == rhs.resolvingSymlinksInPath().standardizedFileURL.path
-    }
-
-    private func locatePythonForJRC() -> URL? {
-        for candidate in pythonCandidates() where canRunJRC(candidate) {
-            return candidate
-        }
-        return locate("python3") ?? locate("python")
-    }
-
-    private func pythonCandidates() -> [URL] {
-        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        var paths = [
-            "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
-            "/usr/local/bin/python3",
-            "/opt/homebrew/bin/python3",
-            "/usr/bin/python3",
-            cwd.appendingPathComponent("python3").path,
+    nonisolated static func environmentForJamfCLI() -> [String: String] {
+        let parent = ProcessInfo.processInfo.environment
+        var env: [String: String] = [
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
+            "LANG": parent["LANG"] ?? "en_US.UTF-8",
+            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
         ]
-        if let bundled = Self.bundledPythonURL() {
-            paths.insert(bundled.path, at: 0)
-        }
-        var seen: Set<String> = []
-        return paths.compactMap { path in
-            guard !seen.contains(path), FileManager.default.isExecutableFile(atPath: path) else {
-                return nil
+        for key in jamfCLIAllowedEnvKeys {
+            if let value = parent[key], !value.isEmpty {
+                env[key] = value
             }
-            seen.insert(path)
-            return URL(fileURLWithPath: path)
         }
-    }
-
-    private func canRunJRC(_ python: URL) -> Bool {
-        let process = Process()
-        process.executableURL = python
-        process.arguments = ["-c", "import pandas, xlsxwriter, yaml"]
-        if let environment = Self.environmentForBundledPython(python) {
-            process.environment = environment
-        }
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
-        }
+        return env
     }
 
     private func ensureWorkspace(
         profile: String,
-        command: (executable: URL, arguments: [String]),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> URL? {
         guard ProfileService.isValid(profile),
@@ -783,17 +1293,19 @@ final class CLIBridge {
         }
 
         onLine(.init(timestamp: Date(), level: .info, text: "[info] initializing workspace for \(profile)"))
-        var args = command.arguments + [
-            "workspace-init",
-            "--profile", profile,
-            "--workspace-root", ProfileService.workspacesRoot().path,
-        ]
-        if let seed = bundledSeedConfig() {
-            args.append(contentsOf: ["--seed-config", seed.path])
+        do {
+            try ReportEngine.initializeWorkspace(
+                profile: profile,
+                workspacesRoot: ProfileService.workspacesRoot(),
+                seedConfigURL: bundledSeedConfig(),
+                onLine: onLine
+            )
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] workspace init failed for \(profile): \(error.localizedDescription)"))
+            return nil
         }
-
-        let exit = await run(executable: command.executable, arguments: args, onLine: onLine)
-        guard exit == 0, FileManager.default.fileExists(atPath: config.path) else {
+        guard FileManager.default.fileExists(atPath: config.path) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] workspace init failed for \(profile)"))
             return nil
         }
@@ -822,10 +1334,16 @@ final class CLIBridge {
                 .flatMap { $0[.posixPermissions] as? NSNumber }
             try encoded.write(to: config, atomically: true, encoding: .utf8)
             if let permissions {
-                try? FileManager.default.setAttributes(
-                    [.posixPermissions: permissions],
-                    ofItemAtPath: config.path
-                )
+                do {
+                    try FileManager.default.setAttributes(
+                        [.posixPermissions: permissions],
+                        ofItemAtPath: config.path
+                    )
+                } catch {
+                    AppLogger.cli.warning(
+                        "reconcileConfigProfile: could not restore permissions on \(config.path): \(error)"
+                    )
+                }
             }
             onLine(.init(
                 timestamp: Date(),
@@ -869,12 +1387,16 @@ private func runDeviceDetailProcess(
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
+            process.environment = CLIBridge.environmentForJamfCLI()
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try process.run()
             process.waitUntilExit()
             return process.terminationStatus
         } catch {
+            AppLogger.cli.error(
+                "runDeviceDetailProcess launch failed: \(error.localizedDescription, privacy: .private)"
+            )
             return -1
         }
     }.value

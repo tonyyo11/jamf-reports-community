@@ -35,7 +35,7 @@ enum DeviceInventoryService {
 
         if let computers = latestCachedJSON(
             dataDir: config.jamfCLIDataDir,
-            names: ["computers-list", "computers_list"],
+            names: ["computers-list", "computers_list", "computers"],
             root: root
         ) {
             loadComputersList(computers, root: root, into: &merger, warnings: &warnings)
@@ -834,35 +834,45 @@ private struct DeviceRecordMerger {
     private var nameIndex: [String: Int] = [:]
 
     mutating func upsert(_ record: DeviceInventoryRecord) {
-        let jamfIDKey = record.numericJamfID ?? ""
-        let serialKey = DeviceInventoryService.normalizedKey(record.serial)
-        let nameKey = DeviceInventoryService.normalizedKey(record.name)
-        if let idx = (!serialKey.isEmpty ? serialIndex[serialKey] : nil)
-            ?? (!jamfIDKey.isEmpty ? jamfIDIndex[jamfIDKey] : nil)
-            ?? (!nameKey.isEmpty ? nameIndex[nameKey] : nil) {
-            let oldJamfID = records[idx].numericJamfID
+        let newJamfIDKey = record.numericJamfID
+        let newSerialKey = DeviceInventoryService.normalizedKey(record.serial)
+        let newNameKey = DeviceInventoryService.normalizedKey(record.name)
+
+        if let idx = (!newSerialKey.isEmpty ? serialIndex[newSerialKey] : nil)
+            ?? (newJamfIDKey.map { jamfIDIndex[$0] } ?? nil)
+            ?? (!newNameKey.isEmpty ? nameIndex[newNameKey] : nil) {
+            // Update existing record. Remove stale index entries, merge, then
+            // add updated ones — O(1) instead of O(n) full rebuild.
+            let existing = records[idx]
+            let oldJamfIDKey = existing.numericJamfID
+            let oldSerialKey = DeviceInventoryService.normalizedKey(existing.serial)
+            let oldNameKey = DeviceInventoryService.normalizedKey(existing.name)
+
             records[idx].merge(record)
-            let newJamfID = records[idx].numericJamfID
-            if oldJamfID != newJamfID {
-                if let old = oldJamfID { jamfIDIndex.removeValue(forKey: old) }
-                if let new = newJamfID { jamfIDIndex[new] = idx }
+
+            let mergedJamfIDKey = records[idx].numericJamfID
+            let mergedSerialKey = DeviceInventoryService.normalizedKey(records[idx].serial)
+            let mergedNameKey = DeviceInventoryService.normalizedKey(records[idx].name)
+
+            if oldJamfIDKey != mergedJamfIDKey {
+                if let old = oldJamfIDKey { jamfIDIndex.removeValue(forKey: old) }
+                if let new = mergedJamfIDKey { jamfIDIndex[new] = idx }
+            }
+            if oldSerialKey != mergedSerialKey {
+                if !oldSerialKey.isEmpty { serialIndex.removeValue(forKey: oldSerialKey) }
+                if !mergedSerialKey.isEmpty { serialIndex[mergedSerialKey] = idx }
+            }
+            if oldNameKey != mergedNameKey {
+                if !oldNameKey.isEmpty { nameIndex.removeValue(forKey: oldNameKey) }
+                if !mergedNameKey.isEmpty { nameIndex[mergedNameKey] = idx }
             }
         } else {
+            // New record: append and index in O(1).
+            let idx = records.count
             records.append(record)
-        }
-        rebuildIndexes()
-    }
-
-    private mutating func rebuildIndexes() {
-        jamfIDIndex.removeAll(keepingCapacity: true)
-        serialIndex.removeAll(keepingCapacity: true)
-        nameIndex.removeAll(keepingCapacity: true)
-        for (idx, record) in records.enumerated() {
-            if let jamfIDKey = record.numericJamfID { jamfIDIndex[jamfIDKey] = idx }
-            let serialKey = DeviceInventoryService.normalizedKey(record.serial)
-            if !serialKey.isEmpty { serialIndex[serialKey] = idx }
-            let nameKey = DeviceInventoryService.normalizedKey(record.name)
-            if !nameKey.isEmpty { nameIndex[nameKey] = idx }
+            if let jamfIDKey = newJamfIDKey { jamfIDIndex[jamfIDKey] = idx }
+            if !newSerialKey.isEmpty { serialIndex[newSerialKey] = idx }
+            if !newNameKey.isEmpty { nameIndex[newNameKey] = idx }
         }
     }
 }

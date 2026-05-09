@@ -34,7 +34,6 @@ final class OnboardingFlow {
         case invalidProfile
         case invalidJamfURL
         case missingJamfCLI
-        case missingJRC
         case missingWorkspace
         case csvOutsideAllowedZones
         case processFailed(String)
@@ -47,8 +46,6 @@ final class OnboardingFlow {
                 "Jamf Pro URL must start with https:// and include a valid host."
             case .missingJamfCLI:
                 "Could not find jamf-cli on PATH."
-            case .missingJRC:
-                "Could not find jrc on PATH."
             case .missingWorkspace:
                 "Create the workspace before running this step."
             case .csvOutsideAllowedZones:
@@ -190,9 +187,41 @@ final class OnboardingFlow {
             try? fm.setAttributes(attrs, ofItemAtPath: url.path)
         }
 
+        // Spotlight exclusion (security audit C-02): without this marker, the
+        // workspace contents (device serials, usernames, compliance findings)
+        // get indexed and become queryable system-wide via `mdfind`, leak via
+        // universal search, and end up in iCloud / Time Machine metadata.
+        // `.metadata_never_index` is the documented opt-out for `mdimport`.
+        // SF-9: mirror the defensive write pattern in
+        // `WorkspaceMigration.dropNeverIndexMarker`. A silent `try?` here meant
+        // a write failure left `workspaceCreated = true` while Spotlight could
+        // still index the workspace contents.
+        let neverIndex = workspace.appendingPathComponent(".metadata_never_index")
+        if !fm.fileExists(atPath: neverIndex.path) {
+            do {
+                try Data().write(to: neverIndex, options: .atomic)
+                try? fm.setAttributes(
+                    [.posixPermissions: NSNumber(value: Int16(0o600))],
+                    ofItemAtPath: neverIndex.path
+                )
+            } catch {
+                AppLogger.engine.warning(
+                    "OnboardingFlow: failed to write .metadata_never_index: \(error.localizedDescription, privacy: .private)"
+                )
+            }
+        }
+
+        // Backfill: tighten any 0644 artifacts a previous version of the app
+        // (or a prior CLI run with default umask) left behind. Cheap because
+        // newly created workspaces have no files; expensive only on a long-
+        // standing workspace, which is exactly when we want to do it (audit
+        // C-03 documented an inflection on 2026-05-01 where some writers got
+        // the chmod and others didn't).
+        WorkspacePermissionHardener.tighten(profile: profile)
+
         // config.yaml is intentionally not written here. The CSV mapping step
-        // produces it via `jrc scaffold`; the skip path produces it via
-        // `jrc workspace-init`. Writing a placeholder config here would block
+        // produces it via ScaffoldService.writeConfig; the skip path produces it via
+        // ScaffoldService.writeMinimalConfig. Writing a placeholder here would block
         // scaffold (which refuses to overwrite an existing file).
         workspaceCreated = true
         lastError = nil
@@ -279,42 +308,38 @@ final class OnboardingFlow {
             guard let workspace = workspaceURL else { throw FlowError.missingWorkspace }
             let profile = profileName.trimmed
             guard ProfileService.isValid(profile) else { throw FlowError.invalidProfile }
-            let bridge = CLIBridge()
-            guard let command = bridge.resolveJRCCommand() else { throw FlowError.missingJRC }
 
             selectedCSVURL = csvURL
             isScaffoldingCSV = true
             defer { isScaffoldingCSV = false }
 
             let outputConfig = workspace.appendingPathComponent("config.yaml")
-            // scaffold refuses to overwrite an existing file. Clear any prior
-            // attempt or skip-seeded config so users can re-enter the mapping
-            // step without leaving a half-written workspace behind.
+            // Remove any prior attempt or skip-seeded config so the user can
+            // re-enter the mapping step without leaving a half-written file.
             try? FileManager.default.removeItem(at: outputConfig)
-            let exit = await bridge.run(
-                executable: command.executable,
-                arguments: command.arguments + [
-                    "scaffold",
-                    "--csv", csvURL.path,
-                    "--out", outputConfig.path,
-                    "--profile", profile,
-                ]
-            ) { [weak self] line in
-                Task { @MainActor in self?.csvOutput.append(line) }
-            }
 
-            if exit == 0 {
-                csvScaffolded = true
-            } else {
-                throw FlowError.processFailed("jrc scaffold exited \(exit).")
-            }
+            csvOutput.append(.init(timestamp: Date(), level: .info, text: "[info] reading CSV headers…"))
+            let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
+
+            let matched = result.columns.count + result.complianceColumns.count
+            csvOutput.append(.init(
+                timestamp: Date(), level: .ok,
+                text: "[ok] matched \(matched) column(s) from CSV"
+            ))
+
+            try ScaffoldService.writeConfig(to: outputConfig, result: result, profile: profile)
+            csvOutput.append(.init(
+                timestamp: Date(), level: .ok,
+                text: "[ok] config.yaml written to \(outputConfig.lastPathComponent)"
+            ))
+            csvScaffolded = true
         } catch {
             lastError = error.localizedDescription
         }
     }
 
-    /// Seed a minimal `config.yaml` via `jrc workspace-init` so the user can
-    /// skip CSV mapping and still produce a working workspace.
+    /// Seed a minimal `config.yaml` so the user can skip CSV mapping and still produce
+    /// a working workspace.
     func skipCSVMapping() async {
         selectedCSVURL = nil
         csvScaffolded = false
@@ -331,32 +356,21 @@ final class OnboardingFlow {
             lastError = FlowError.missingWorkspace.localizedDescription
             return
         }
-        let bridge = CLIBridge()
-        guard let command = bridge.resolveJRCCommand() else {
-            lastError = FlowError.missingJRC.localizedDescription
-            return
-        }
 
         isSkippingCSVMapping = true
         defer { isSkippingCSVMapping = false }
 
-        let parent = workspace.deletingLastPathComponent()
-        let exit = await bridge.run(
-            executable: command.executable,
-            arguments: command.arguments + [
-                "workspace-init",
-                "--profile", profile,
-                "--workspace-root", parent.path,
-                "--workspace-name", workspace.lastPathComponent,
-            ]
-        ) { [weak self] line in
-            Task { @MainActor in self?.csvOutput.append(line) }
-        }
-
-        if exit == 0 {
+        let outputConfig = workspace.appendingPathComponent("config.yaml")
+        csvOutput.append(.init(timestamp: Date(), level: .info, text: "[info] writing minimal config.yaml…"))
+        do {
+            try ScaffoldService.writeMinimalConfig(to: outputConfig, profile: profile)
+            csvOutput.append(.init(
+                timestamp: Date(), level: .ok,
+                text: "[ok] config.yaml written — edit column mappings before running generate"
+            ))
             csvMappingSkipped = true
-        } else {
-            lastError = "jrc workspace-init exited \(exit)."
+        } catch {
+            lastError = error.localizedDescription
         }
     }
 
@@ -366,10 +380,6 @@ final class OnboardingFlow {
         lastError = nil
 
         let bridge = CLIBridge()
-        guard bridge.resolveJRCCommand() != nil else {
-            lastError = FlowError.missingJRC.localizedDescription
-            return
-        }
 
         isRunningFirstReport = true
         defer { isRunningFirstReport = false }
@@ -382,7 +392,7 @@ final class OnboardingFlow {
         if exit == 0 {
             workspaceStore.reloadFromDisk()
         } else {
-            lastError = "jrc generate exited \(exit)."
+            lastError = "Generate exited \(exit) — check the log above."
         }
     }
 
@@ -406,10 +416,24 @@ final class OnboardingFlow {
         return resolved
     }
 
+    /// P9-A-07: Accept finalized credential bytes from `SecureSecretField`.
+    ///
+    /// The field calls this once on focus-loss or Return, passing UTF-8 bytes
+    /// read directly from `NSSecureTextField.stringValue`. The public
+    /// `clientSecret` property is updated only at finalization — not on every
+    /// keystroke — minimizing the window during which `@Observable` diffing can
+    /// snapshot the in-progress string.
+    func setClientSecret(_ data: Data) {
+        clientSecret = String(data: data, encoding: .utf8) ?? ""
+    }
+
     private func clearClientSecret() {
         let count = clientSecret.count
-        clientSecret = String(repeating: "\0", count: count)
+        if count > 0 {
+            clientSecret = String(repeating: "\0", count: count)
+        }
         clientSecret.removeAll(keepingCapacity: false)
+        clientSecret = ""
     }
 
     private func redactedCredentialOutput(_ text: String) -> String {
@@ -468,6 +492,12 @@ final class OnboardingFlow {
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
+            // SF-10/B-13: this is the most security-sensitive Process site —
+            // it streams the user's client secret over the PTY into jamf-cli.
+            // A hostile DYLD_INSERT_LIBRARIES, SSL_CERT_FILE, or rogue
+            // JAMF_CLI_* in the parent env could redirect or capture the
+            // secret. Pin a minimal env before launch.
+            process.environment = CLIBridge.environmentForJamfCLI()
             process.standardInput = slaveHandle
             process.standardOutput = slaveHandle
             process.standardError = slaveHandle

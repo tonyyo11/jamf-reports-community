@@ -1,11 +1,11 @@
 import Foundation
 import Darwin
 
-/// LaunchAgent label and command helpers for the Python-owned automation flow.
+/// LaunchAgent label, command helpers, and native plist writer for JamfReports automation.
 ///
-/// The macOS app no longer serializes LaunchAgent plists. It shells out to
-/// `jamf-reports-community.py launchagent-setup`, which owns the plist schema,
-/// status-file path, log paths, CSV inbox behavior, and launchd loading.
+/// Single-profile schedules use `nativeSingleWrite`; multi-profile schedules use
+/// `nativeMultiWrite`. Both serialize the plist in Swift and invoke the app binary directly
+/// with `--scheduled-run` — no Python or external CLI required.
 enum LaunchAgentWriter {
 
     static let labelPrefix = "com.github.tonyyo11.jamf-reports-community"
@@ -33,12 +33,16 @@ enum LaunchAgentWriter {
         let plistURL: URL
     }
 
-    // MARK: - Python launchagent-setup arguments
+    // MARK: - Native single-profile LaunchAgent (Swift engine path)
 
-    static func setupPlan(
+    /// Write a LaunchAgent plist that invokes `JamfReports --scheduled-run --profile <slug>`
+    /// directly — no Python or jrc required.
+    ///
+    /// The plist calls the current executable with `--scheduled-run`, which runs
+    /// `ReportEngine.collect` + `ReportEngine.generate` in-process and exits.
+    /// Log files are written to `~/Library/Logs/JamfReports/<label>/`.
+    static func nativeSingleWrite(
         for schedule: Schedule,
-        configURL: URL,
-        workspaceURL: URL,
         load: Bool
     ) throws -> SetupPlan {
         guard ProfileService.isValid(schedule.profile) else {
@@ -47,31 +51,60 @@ enum LaunchAgentWriter {
         guard let agentLabel = label(for: schedule) else {
             throw WriterError.invalidSlug(sanitizedSlug(from: schedule.name))
         }
+
         let cadence = try setupCadence(from: schedule.schedule)
-        var args = [
-            "launchagent-setup",
-            "--config", configURL.path,
-            "--profile", schedule.profile,
-            "--label", agentLabel,
-            "--mode", schedule.mode.rawValue,
-            "--schedule", cadence.schedule,
-            "--time-of-day", cadence.timeOfDay,
-            "--workspace-dir", workspaceURL.path,
-        ]
-        if let weekday = cadence.weekday {
-            args.append(contentsOf: ["--weekday", weekday])
+
+        // Use the running executable so the plist survives app updates atomically.
+        guard let execURL = Bundle.main.executableURL else {
+            throw WriterError.invalidProfile("cannot resolve executable path")
         }
-        if let day = cadence.dayOfMonth {
-            args.append(contentsOf: ["--day-of-month", String(day)])
-        }
-        if !load {
-            args.append(contentsOf: ["--disabled", "--skip-load"])
-        }
-        return SetupPlan(
-            label: agentLabel,
-            arguments: args,
-            plistURL: LaunchAgentService.agentsDir.appendingPathComponent("\(agentLabel).plist")
+        let execPath = execURL.path
+
+        let logDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+        // 0o700: log files may contain device serials, hostnames, usernames.
+        try FileManager.default.createDirectory(
+            at: logDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
         )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: logDir.path)
+
+        let plistContent: [String: Any] = [
+            "Label": agentLabel,
+            "ProgramArguments": [execPath, "--scheduled-run", "--profile", schedule.profile],
+            "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
+            "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
+            "StartCalendarInterval": cadence.startCalendarIntervals,
+            "RunAtLoad": false,
+            "Disabled": !load,
+        ]
+
+        let plistURL = LaunchAgentService.agentsDir.appendingPathComponent("\(agentLabel).plist")
+        let safeDir = LaunchAgentService.agentsDir.resolvingSymlinksInPath()
+        guard plistURL.resolvingSymlinksInPath().path.hasPrefix(safeDir.path + "/")
+                || plistURL.resolvingSymlinksInPath().path == safeDir.path else {
+            throw WriterError.outsideSafeDir(plistURL)
+        }
+        let data = try PropertyListSerialization.data(fromPropertyList: plistContent, format: .xml, options: 0)
+        try data.write(to: plistURL, options: .atomic)
+        // 0600: plist embeds workspace paths and profile name.
+        do {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))],
+                ofItemAtPath: plistURL.path
+            )
+        } catch {
+            AppLogger.cli.warning(
+                """
+                nativeSingleWrite: chmod 0600 failed for \
+                \(plistURL.lastPathComponent, privacy: .public): \
+                \(error.localizedDescription, privacy: .private)
+                """
+            )
+        }
+
+        return SetupPlan(label: agentLabel, arguments: [], plistURL: plistURL)
     }
 
     // MARK: - Load / Unload / Delete
@@ -147,12 +180,27 @@ enum LaunchAgentWriter {
             let outLock = NSLock()
             let errLock = NSLock()
 
-            try? FileManager.default.createDirectory(
-                at: stdoutURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            outFile = try? appendHandle(for: stdoutURL)
-            errFile = try? appendHandle(for: stderrURL)
+            let multiLogDir = stdoutURL.deletingLastPathComponent()
+            // 0o700: run logs contain device serials, hostnames, and usernames.
+            do {
+                try FileManager.default.createDirectory(
+                    at: multiLogDir,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o700], ofItemAtPath: multiLogDir.path
+                )
+                outFile = try appendHandle(for: stdoutURL)
+                errFile = try appendHandle(for: stderrURL)
+            } catch {
+                onLine(.init(
+                    timestamp: Date(),
+                    level: .warn,
+                    text: "[warn] could not open run log files: \(error.localizedDescription)"
+                        + " — output will not be persisted"
+                ))
+            }
 
             let started = Date()
             let header = "\n[info] manual multi-profile Run now started "
@@ -217,23 +265,15 @@ enum LaunchAgentWriter {
               FileManager.default.isExecutableFile(atPath: execPath) else {
             return false
         }
+        // Native format: [exec, "--scheduled-run", "--profile", slug, "--all-profiles"]
+        if args.count >= 4, args[1] == "--scheduled-run", args[2] == "--profile" {
+            guard ProfileService.isValid(args[3]) else { return false }
+            return isTrustedNativeExecutable(URL(fileURLWithPath: execPath))
+        }
+        // Legacy jamf-cli multi format (read-only support for pre-existing plists).
         if args.count >= 2, args[1] == "multi" {
             return isTrustedJamfCLIExecutable(execPath)
                 && legacyJamfCLIMultiArgumentsAreSafe(args)
-        }
-        if args.count >= 3,
-           args[2] == "multi-launchagent-run",
-           isPythonExecutableName(URL(fileURLWithPath: execPath).lastPathComponent),
-           isTrustedPythonExecutable(execPath),
-           isTrustedJRCScript(args[1]),
-           areMultiLaunchAgentArgumentsSafe(Array(args.dropFirst(3)), label: label) {
-            return true
-        }
-        if args.count >= 2,
-           args[1] == "multi-launchagent-run",
-           isTrustedJRCExecutable(execPath),
-           areMultiLaunchAgentArgumentsSafe(Array(args.dropFirst(2)), label: label) {
-            return true
         }
         return false
     }
@@ -263,57 +303,7 @@ enum LaunchAgentWriter {
         return true
     }
 
-    static func areMultiLaunchAgentArgumentsSafe(_ flags: [String], label: String) -> Bool {
-        var sawMode = false
-        var sawWorkspaceRoot = false
-        var sawBaseProfile = false
-        var sawStatusFile = false
-        var i = 0
-
-        while i < flags.count {
-            switch flags[i] {
-            case "--mode":
-                guard i + 1 < flags.count,
-                      Schedule.RunMode(rawValue: flags[i + 1]) != nil else { return false }
-                sawMode = true
-                i += 1
-            case "--workspace-root":
-                guard i + 1 < flags.count,
-                      isExpectedMultiWorkingDirectory(flags[i + 1]) else { return false }
-                sawWorkspaceRoot = true
-                i += 1
-            case "--base-profile":
-                guard i + 1 < flags.count,
-                      ProfileService.isValid(flags[i + 1]) else { return false }
-                sawBaseProfile = true
-                i += 1
-            case "--status-file":
-                guard i + 1 < flags.count,
-                      let statusURL = expandedFileURL(flags[i + 1]),
-                      isExpectedMultiLogURL(statusURL, label: label, filename: "status.json") else {
-                    return false
-                }
-                sawStatusFile = true
-                i += 1
-            case "--multi-profiles":
-                guard i + 1 < flags.count, allProfilesAreValid(flags[i + 1]) else { return false }
-                i += 1
-            case "--multi-filter":
-                guard i + 1 < flags.count,
-                      isSafeMultiProfileFilter(flags[i + 1]) else { return false }
-                i += 1
-            case "--multi-sequential":
-                break
-            default:
-                return false
-            }
-            i += 1
-        }
-
-        return sawMode && sawWorkspaceRoot && sawBaseProfile && sawStatusFile
-    }
-
-    /// Delete a generated Python-owned plist.
+    /// Delete a generated plist.
     static func delete(_ label: String) throws {
         guard isValidLabel(label) else {
             throw WriterError.outsideSafeDir(
@@ -322,7 +312,7 @@ enum LaunchAgentWriter {
         }
         let plistURL = LaunchAgentService.agentsDir.appendingPathComponent("\(label).plist")
         let safeDir = LaunchAgentService.agentsDir.resolvingSymlinksInPath()
-        guard plistURL.resolvingSymlinksInPath().path.hasPrefix(safeDir.path) else {
+        guard plistURL.resolvingSymlinksInPath().path.hasPrefix(safeDir.path + "/") else {
             throw WriterError.outsideSafeDir(plistURL)
         }
         guard FileManager.default.fileExists(atPath: plistURL.path) else { return }
@@ -346,20 +336,17 @@ enum LaunchAgentWriter {
         return isValidLabel(candidate) ? candidate : nil
     }
 
-    // MARK: - Multi-profile LaunchAgent
+    // MARK: - Multi-profile LaunchAgent (native)
 
-    /// Write a LaunchAgent plist for a multi-profile JRC automation schedule.
-    /// The plist calls `jamf-reports-community.py multi-launchagent-run`, which
-    /// fans out the selected automation workflow across initialized workspaces.
-    static func multiSetupPlan(
+    /// Write a LaunchAgent plist for a multi-profile schedule.
+    ///
+    /// The plist invokes the current app binary with `--scheduled-run --profile <p>
+    /// --all-profiles` so the app's native engine fans out across all initialized profiles.
+    static func nativeMultiWrite(
         for schedule: Schedule,
-        command: (executable: URL, arguments: [String]),
-        workspaceRoot: URL,
+        executableURL: URL,
         load: Bool
     ) throws -> SetupPlan {
-        guard let target = schedule.multiTarget else {
-            throw WriterError.invalidProfile("not a multi-profile schedule")
-        }
         guard ProfileService.isValid(schedule.profile) else {
             throw WriterError.invalidProfile(schedule.profile)
         }
@@ -368,37 +355,26 @@ enum LaunchAgentWriter {
         }
 
         let cadence = try setupCadence(from: schedule.schedule)
+        let execPath = executableURL.path
+
         let logDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
-        try FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
-
-        let workspaceRoot = workspaceRoot.resolvingSymlinksInPath().standardizedFileURL
-        var programArgs = [command.executable.path]
-        programArgs.append(contentsOf: command.arguments)
-        programArgs.append(contentsOf: [
-            "multi-launchagent-run",
-            "--mode", schedule.mode.rawValue,
-            "--workspace-root", workspaceRoot.path,
-            "--base-profile", schedule.profile,
-            "--status-file", logDir.appendingPathComponent("status.json").path,
-        ])
-        switch target.scope {
-        case .all:
-            break
-        case .filter(let pattern):
-            programArgs.append(contentsOf: ["--multi-filter", pattern])
-        case .list(let profiles):
-            programArgs.append(contentsOf: ["--multi-profiles", profiles.joined(separator: ",")])
-        }
-        if target.sequential {
-            programArgs.append("--multi-sequential")
-        }
+        // 0o700: log files contain device serials, hostnames, and usernames.
+        try FileManager.default.createDirectory(
+            at: logDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: logDir.path)
 
         let plistContent: [String: Any] = [
             "Label": agentLabel,
-            "ProgramArguments": programArgs,
-            "WorkingDirectory": workspaceRoot.path,
-            "EnvironmentVariables": launchEnvironment(from: [:]),
+            "ProgramArguments": [
+                execPath,
+                "--scheduled-run",
+                "--profile", schedule.profile,
+                "--all-profiles",
+            ],
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
             "StartCalendarInterval": cadence.startCalendarIntervals,
@@ -414,6 +390,20 @@ enum LaunchAgentWriter {
         }
         let data = try PropertyListSerialization.data(fromPropertyList: plistContent, format: .xml, options: 0)
         try data.write(to: plistURL, options: .atomic)
+        do {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))],
+                ofItemAtPath: plistURL.path
+            )
+        } catch {
+            AppLogger.cli.warning(
+                """
+                nativeMultiWrite: chmod 0600 failed for \
+                \(plistURL.lastPathComponent, privacy: .public): \
+                \(error.localizedDescription, privacy: .private)
+                """
+            )
+        }
 
         return SetupPlan(label: agentLabel, arguments: [], plistURL: plistURL)
     }
@@ -478,112 +468,13 @@ enum LaunchAgentWriter {
             case .invalidLabel(let label):      "Invalid LaunchAgent label: \(label)"
             case .missingPlist(let label):      "LaunchAgent plist not found for \(label)"
             case .malformedPlist(let detail):   "LaunchAgent plist is malformed: \(detail)"
-            case .unsupportedCommand(let label): "LaunchAgent \(label) is not a generated JRC run command."
+            case .unsupportedCommand(let label): "LaunchAgent \(label) is not a generated scheduled-run command."
             case .unsafePath(let path):         "LaunchAgent path is outside the profile workspace: \(path)"
             case .notExecutable(let path):      "LaunchAgent executable is not runnable: \(path)"
-            case .untrustedExecutable(let path): "LaunchAgent executable is outside the trusted Python locations: \(path)"
-            case .untrustedScript(let path):    "LaunchAgent script is not the trusted JRC script: \(path)"
+            case .untrustedExecutable(let path): "LaunchAgent executable is not the trusted app binary: \(path)"
+            case .untrustedScript(let path):    "LaunchAgent script is not trusted: \(path)"
             }
         }
-    }
-
-    /// Trusted Python interpreter locations for the manual Run-now flow.
-    ///
-    /// A tampered plist could otherwise point ``ProgramArguments[0]`` at any
-    /// executable on disk and use the GUI's `runNow` to launch it. The
-    /// allowlist limits us to system Python, Homebrew, the python.org framework
-    /// installer, Xcode developer tools, and ``pyenv`` shims. Exact binary
-    /// paths and directory roots are separate so a loose prefix such as
-    /// `/usr/local/bin/python` does not also trust `/usr/local/bin/python-evil`.
-    private static let trustedPythonExactPaths: Set<String> = {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return Set([
-            "/usr/bin/python",
-            "/usr/bin/python3",
-            "/usr/local/bin/python",
-            "/usr/local/bin/python3",
-            "/opt/homebrew/bin/python",
-            "/opt/homebrew/bin/python3",
-            "/Applications/Xcode.app/Contents/Developer/usr/bin/python",
-            "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
-            "\(home)/.pyenv/shims/python",
-            "\(home)/.pyenv/shims/python3",
-        ].map { canonicalPath($0) })
-    }()
-
-    private static let trustedPythonDirectoryRoots: [String] = {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return [
-            "/Library/Frameworks/Python.framework/Versions",
-            "\(home)/.pyenv/versions/",
-        ].map { canonicalPath($0) }
-    }()
-
-    private static let trustedHomebrewRoots = [
-        "/opt/homebrew/opt",
-        "/opt/homebrew/Cellar",
-        "/usr/local/opt",
-        "/usr/local/Cellar",
-    ].map { canonicalPath($0) }
-
-    /// True when ``path`` resolves to a trusted Python interpreter.
-    static func isTrustedPythonExecutable(_ path: String) -> Bool {
-        let resolvedURL = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-            .resolvingSymlinksInPath()
-            .standardizedFileURL
-        guard isPythonExecutableName(resolvedURL.lastPathComponent) else { return false }
-        guard FileManager.default.isExecutableFile(atPath: resolvedURL.path) else { return false }
-        let resolved = resolvedURL.path
-        if let bundled = bundledPythonURL(), sameResolvedPath(resolvedURL, bundled) {
-            return true
-        }
-        return trustedPythonExactPaths.contains(resolved)
-            || trustedPythonDirectoryRoots.contains { isPath(resolved, inside: $0) }
-            || isHomebrewPythonPath(resolved)
-    }
-
-    private static func bundledPythonURL() -> URL? {
-        Bundle.main.resourceURL?
-            .appendingPathComponent("python", isDirectory: true)
-            .appendingPathComponent("bin", isDirectory: true)
-            .appendingPathComponent("python3")
-    }
-
-    /// Candidate JRC script paths used by the app bridge.
-    static func trustedJRCScriptCandidates() -> [URL] {
-        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-        return [
-            cwd.appendingPathComponent("jamf-reports-community.py"),
-            cwd.deletingLastPathComponent().appendingPathComponent("jamf-reports-community.py"),
-            Bundle.main.resourceURL?.appendingPathComponent("jamf-reports-community.py"),
-        ].compactMap { $0 }
-    }
-
-    /// True when ``path`` is the same resolved file the app would invoke.
-    static func isTrustedJRCScript(_ path: String) -> Bool {
-        let fm = FileManager.default
-        let expanded = (path as NSString).expandingTildeInPath
-        let script = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL
-        guard script.lastPathComponent == "jamf-reports-community.py",
-              fm.fileExists(atPath: script.path) else {
-            return false
-        }
-        return trustedJRCScriptCandidates().contains { candidate in
-            let resolved = candidate.resolvingSymlinksInPath().standardizedFileURL
-            return fm.fileExists(atPath: resolved.path) && resolved.path == script.path
-        }
-    }
-
-    /// True when ``path`` is the same `jrc` executable the app would resolve.
-    static func isTrustedJRCExecutable(_ path: String) -> Bool {
-        let expanded = (path as NSString).expandingTildeInPath
-        let candidate = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL
-        guard candidate.lastPathComponent == "jrc",
-              FileManager.default.isExecutableFile(atPath: candidate.path),
-              let located = ExecutableLocator.locate("jrc") else {
-            return false
-        }
-        return sameResolvedPath(candidate, located)
     }
 
     /// True when ``path`` is the same `jamf-cli` executable the app would resolve.
@@ -635,7 +526,14 @@ enum LaunchAgentWriter {
             p.standardOutput = Pipe()
             p.standardError = Pipe()
             p.terminationHandler = { proc in cont.resume(returning: proc.terminationStatus) }
-            do { try p.run() } catch { cont.resume(returning: -1) }
+            do {
+                try p.run()
+            } catch {
+                AppLogger.cli.error(
+                    "launchctl \(args.first ?? "", privacy: .public) launch failed: \(error.localizedDescription, privacy: .private)"
+                )
+                cont.resume(returning: -1)
+            }
         }
     }
 
@@ -662,54 +560,80 @@ enum LaunchAgentWriter {
               args.count >= 3 else {
             throw ManualRunError.malformedPlist("missing ProgramArguments")
         }
-        guard args[2] == "launchagent-run",
-              args[1].hasSuffix("jamf-reports-community.py"),
-              isPythonExecutableName(URL(fileURLWithPath: args[0]).lastPathComponent) else {
+
+        // Native format: [exec, "--scheduled-run", "--profile", slug]
+        // Produced by nativeSingleWrite / nativeMultiWrite.
+        guard args.count >= 4, args[1] == "--scheduled-run", args[2] == "--profile" else {
             throw ManualRunError.unsupportedCommand(label)
         }
-        guard isTrustedJRCScript(args[1]) else {
-            throw ManualRunError.untrustedScript(args[1])
-        }
-        guard let configURL = argumentPath("--config", in: args, root: root),
-              isExpectedConfigURL(configURL, root: root) else {
-            throw ManualRunError.unsafePath("config")
-        }
-        guard let statusURL = argumentPath("--status-file", in: args, root: root),
-              isExpectedStatusURL(statusURL, label: label, root: root) else {
-            throw ManualRunError.unsafePath("status file")
-        }
-        if let argProfile = argumentValue("--profile", in: args), argProfile != profile {
-            throw ManualRunError.malformedPlist("profile does not match label")
+        return try nativeManualRunPlan(
+            label: label,
+            plist: plist,
+            args: args,
+            profile: profile,
+            root: root
+        )
+    }
+
+    /// Validate and build a `ManualRunPlan` for the native plist format written by
+    /// `nativeSingleWrite`. `ProgramArguments` is `[exec, "--scheduled-run", "--profile", slug]`.
+    private static func nativeManualRunPlan(
+        label: String,
+        plist: [String: Any],
+        args: [String],
+        profile: String,
+        root: URL
+    ) throws -> ManualRunPlan {
+        let plistProfile = args[3]
+        guard ProfileService.isValid(plistProfile), plistProfile == profile else {
+            throw ManualRunError.malformedPlist("profile in plist does not match label")
         }
 
         let executable = URL(fileURLWithPath: args[0])
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             throw ManualRunError.notExecutable(executable.path)
         }
-        guard isTrustedPythonExecutable(executable.path) else {
+        // The native executable must be the app binary or a known macOS app bundle path.
+        guard isTrustedNativeExecutable(executable) else {
             throw ManualRunError.untrustedExecutable(executable.path)
         }
 
-        let workingDirectory = validatedWorkspaceURL(
-            plist["WorkingDirectory"] as? String,
-            root: root
-        ) ?? root
-        guard let stdoutURL = validatedWorkspaceURL(plist["StandardOutPath"] as? String, root: root),
-              isExpectedStdoutURL(stdoutURL, label: label, root: root),
-              let stderrURL = validatedWorkspaceURL(plist["StandardErrorPath"] as? String, root: root),
-              isExpectedStderrURL(stderrURL, label: label, root: root) else {
-            throw ManualRunError.unsafePath("stdout or stderr log")
+        // Log paths are in ~/Library/Logs/JamfReports/<label>/.
+        let logDir = expectedMultiLogURL(label: label, filename: "").deletingLastPathComponent()
+        let expectedStdout = logDir.appendingPathComponent("stdout.log")
+        let expectedStderr = logDir.appendingPathComponent("stderr.log")
+
+        guard let rawStdout = plist["StandardOutPath"] as? String,
+              let stdoutURL = expandedFileURL(rawStdout),
+              sameResolvedPath(stdoutURL, expectedStdout) else {
+            throw ManualRunError.unsafePath("stdout log")
+        }
+        guard let rawStderr = plist["StandardErrorPath"] as? String,
+              let stderrURL = expandedFileURL(rawStderr),
+              sameResolvedPath(stderrURL, expectedStderr) else {
+            throw ManualRunError.unsafePath("stderr log")
         }
 
         return ManualRunPlan(
             label: label,
             executable: executable,
             arguments: Array(args.dropFirst()),
-            workingDirectory: workingDirectory,
-            environment: launchEnvironment(from: plist),
+            workingDirectory: root,
+            environment: CLIBridge.environmentForJamfCLI(),
             stdoutURL: stdoutURL,
             stderrURL: stderrURL
         )
+    }
+
+    /// True only when the URL resolves to the current process's own executable.
+    /// Restricting to Bundle.main prevents a tampered plist from pointing at any
+    /// other binary under /Applications or ~/Applications.
+    private static func isTrustedNativeExecutable(_ url: URL) -> Bool {
+        guard let mainExecutable = Bundle.main.executableURL?.resolvingSymlinksInPath() else {
+            return false
+        }
+        return url.resolvingSymlinksInPath().standardizedFileURL.path
+            == mainExecutable.standardizedFileURL.path
     }
 
     private static func runManualPlan(
@@ -718,13 +642,24 @@ enum LaunchAgentWriter {
     ) async -> Int32 {
         await Task.detached(priority: .userInitiated) {
             do {
+                let stdoutLogDir = plan.stdoutURL.deletingLastPathComponent()
+                let stderrLogDir = plan.stderrURL.deletingLastPathComponent()
+                // 0o700: run logs contain device serials, hostnames, and usernames.
                 try FileManager.default.createDirectory(
-                    at: plan.stdoutURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
+                    at: stdoutLogDir,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o700], ofItemAtPath: stdoutLogDir.path
                 )
                 try FileManager.default.createDirectory(
-                    at: plan.stderrURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
+                    at: stderrLogDir,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+                try FileManager.default.setAttributes(
+                    [.posixPermissions: 0o700], ofItemAtPath: stderrLogDir.path
                 )
 
                 let outFile = try appendHandle(for: plan.stdoutURL)
@@ -909,13 +844,6 @@ enum LaunchAgentWriter {
         return trimmed.isEmpty ? "jamf_report" : trimmed
     }
 
-    private static func canonicalPath(_ path: String) -> String {
-        URL(fileURLWithPath: path)
-            .resolvingSymlinksInPath()
-            .standardizedFileURL
-            .path
-    }
-
     private static func sameResolvedPath(_ lhs: URL, _ rhs: URL) -> Bool {
         lhs.resolvingSymlinksInPath().standardizedFileURL.path
             == rhs.resolvingSymlinksInPath().standardizedFileURL.path
@@ -953,21 +881,6 @@ enum LaunchAgentWriter {
         return trimmed.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
-    private static func isHomebrewPythonPath(_ path: String) -> Bool {
-        trustedHomebrewRoots.contains { root in
-            guard isPath(path, inside: root) else { return false }
-            let relative = path.dropFirst(root.count).split(separator: "/")
-            guard let formula = relative.first else { return false }
-            return formula == "python" || formula.hasPrefix("python@")
-        }
-    }
-
-    private static func isPythonExecutableName(_ name: String) -> Bool {
-        if name == "python" || name == "python3" { return true }
-        guard name.hasPrefix("python3.") else { return false }
-        return name.dropFirst("python3.".count).allSatisfy(\.isNumber)
-    }
-
     private static let safeLaunchPath = [
         "/opt/homebrew/bin",
         "/usr/local/bin",
@@ -979,12 +892,9 @@ enum LaunchAgentWriter {
 
     static func launchEnvironment(from plist: [String: Any]) -> [String: String] {
         let raw = plist["EnvironmentVariables"] as? [String: Any] ?? [:]
-        var env = [
+        var env: [String: String] = [
             "HOME": FileManager.default.homeDirectoryForCurrentUser.path,
             "PATH": safeLaunchPath,
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONNOUSERSITE": "1",
-            "PYTHONUNBUFFERED": "1",
         ]
         if let xdgConfigHome = safeXDGConfigHome(raw["XDG_CONFIG_HOME"]) {
             env["XDG_CONFIG_HOME"] = xdgConfigHome
@@ -1012,8 +922,18 @@ enum LaunchAgentWriter {
     }
 
     private static func appendHandle(for url: URL) throws -> FileHandle {
+        // Create new run-log files at 0600 atomically — `createFile` without
+        // attributes applies the process umask (typically 0022 → 0644 files),
+        // leaking device serials/usernames/hostnames to anything that can read
+        // the parent dir. The post Wave 1+2 silent-failure audit caught this
+        // helper bypassing the 0600-on-create contract that AppLogger and
+        // OnboardingFlow already enforce.
         if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: nil)
+            FileManager.default.createFile(
+                atPath: url.path,
+                contents: nil,
+                attributes: [.posixPermissions: NSNumber(value: Int16(0o600))]
+            )
         }
         let handle = try FileHandle(forWritingTo: url)
         handle.seekToEndOfFile()
