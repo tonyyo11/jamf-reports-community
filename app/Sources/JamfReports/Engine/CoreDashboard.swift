@@ -1439,11 +1439,8 @@ struct CoreDashboard: Sendable {
     }
 
     private func yesNoUnknown(_ value: Bool?) -> String {
-        switch value {
-        case true: return "Yes"
-        case false: return "No"
-        case nil: return ""
-        }
+        guard let value else { return "" }
+        return value ? "Yes" : "No"
     }
 
     // MARK: - Counter block helper
