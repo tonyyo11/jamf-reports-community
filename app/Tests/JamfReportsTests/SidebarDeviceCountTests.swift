@@ -5,18 +5,18 @@ import XCTest
 @MainActor
 final class SidebarDeviceCountTests: XCTestCase {
 
-    private var tempDir: URL!
+    nonisolated(unsafe) var tempDir: URL!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("SidebarDeviceCountTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     }
 
-    override func tearDown() async throws {
+    override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: tempDir)
-        try await super.tearDown()
+        try super.tearDownWithError()
     }
 
     // MARK: - deviceCount
