@@ -1,29 +1,32 @@
 [
   {
-    "name": "Security Baseline",
-    "state": "deployed",
-    "scope": "All Managed Devices",
-    "steps": 5,
-    "succeeded": 42,
-    "failed": 0,
-    "pending": 0
+    "name": "",
+    "scope": 1,
+    "state": "NOT_DEPLOYED",
+    "steps": 1
   },
   {
-    "name": "Software Updates",
-    "state": "deployed",
-    "scope": "Laptops",
-    "steps": 3,
-    "succeeded": 35,
-    "failed": 4,
-    "pending": 2
+    "failed": 0,
+    "name": "",
+    "pending": 9,
+    "scope": 1,
+    "state": "DEPLOYED",
+    "steps": 1,
+    "succeeded": 2
   },
   {
-    "name": "Network Config",
-    "state": "draft",
-    "scope": "Desktops",
-    "steps": 2,
-    "succeeded": 0,
     "failed": 0,
-    "pending": 18
+    "name": "Update to Latest macOS",
+    "pending": 0,
+    "scope": 1,
+    "state": "DEPLOYED",
+    "steps": 1,
+    "succeeded": 0
+  },
+  {
+    "name": "Update to Latest macOS By Eligibility",
+    "scope": 1,
+    "state": "OUT_OF_DATE",
+    "steps": 1
   }
 ]

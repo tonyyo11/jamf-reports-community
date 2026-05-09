@@ -12,6 +12,7 @@ struct CustomizeView: View {
     @State private var chartSavePNGs: Bool = false
 
     @State private var applySaved = false
+    @State private var saveError: String?
 
     private static let executiveSheets: Set<String> = [
         "Fleet Overview", "Security Posture", "Compliance", "Patch Compliance",
@@ -29,6 +30,33 @@ struct CustomizeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                if let err = saveError {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.system(size: 13))
+                        Text("Save failed: \(err)")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.Text.primary)
+                        Spacer()
+                        Button {
+                            saveError = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Theme.Text.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.red.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(Color.red.opacity(0.3), lineWidth: 0.5)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
                 HStack(alignment: .top, spacing: 14) {
                     sheetGroupsList
                     rightRail
@@ -70,6 +98,7 @@ struct CustomizeView: View {
                         icon: applySaved ? "checkmark.circle" : "checkmark",
                         style: .gold
                     ) {
+                        saveError = nil
                         applyAndSave()
                     }
                 }
@@ -129,7 +158,7 @@ struct CustomizeView: View {
                 
                 Text("Select up to 4 metrics for the dashboard.")
                     .font(.system(size: 10.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary)
                     .padding(.bottom, 12)
 
                 ForEach(TrendSeries.Metric.allCases) { metric in
@@ -150,7 +179,7 @@ struct CustomizeView: View {
                         HStack {
                             Text(metric.displayLabel)
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Theme.Colors.fg)
+                                .foregroundStyle(Theme.Text.primary)
                             Spacer()
                             PNPToggle(isOn: isOn)
                                 .disabled(!isOn.wrappedValue && workspace.selectedScoreCards.count >= 4)
@@ -158,7 +187,7 @@ struct CustomizeView: View {
                         }
                         .padding(.vertical, 6)
                         if metric != TrendSeries.Metric.allCases.last {
-                            Divider().background(Theme.Colors.hairline)
+                            Divider().background(Theme.Hairline.standard)
                         }
                     }
                 }
@@ -179,7 +208,7 @@ struct CustomizeView: View {
                                 Mono(
                                     text: "\(idx + 1)",
                                     size: 10,
-                                    color: Theme.Colors.fgMuted
+                                    color: Theme.Text.tertiary
                                 )
                                 .frame(width: 18, alignment: .trailing)
                                 Image(systemName: "doc")
@@ -187,9 +216,9 @@ struct CustomizeView: View {
                                     .foregroundStyle(Theme.Colors.gold)
                                 Text(item.name)
                                     .font(.system(size: 11.5))
-                                    .foregroundStyle(Theme.Colors.fg2)
+                                    .foregroundStyle(Theme.Text.secondary)
                                 Spacer()
-                                Mono(text: item.req, size: 9.5, color: Theme.Colors.fgMuted)
+                                Mono(text: item.req, size: 9.5, color: Theme.Text.tertiary)
                             }
                             .padding(.vertical, 4)
                             .padding(.horizontal, 12)
@@ -197,12 +226,12 @@ struct CustomizeView: View {
                     }
                 }
                 .frame(maxHeight: 360)
-                .background(Theme.Colors.winBG3)
+                .background(Theme.Surface.high)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
                 Text("Estimated workbook · ~1.1 MB · \(enabledSheets.count) sheets · matplotlib charts embedded")
                     .font(.system(size: 11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary)
             }
         }
     }
@@ -258,17 +287,17 @@ struct CustomizeView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.Colors.fg)
+                        .foregroundStyle(Theme.Text.primary)
                     Text(detail)
                         .font(.system(size: 10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary)
                 }
                 Spacer()
                 PNPToggle(isOn: isOn)
             }
             .padding(.vertical, 8)
             if hasDivider {
-                Divider().background(Theme.Colors.hairline)
+                Divider().background(Theme.Hairline.standard)
             }
         }
     }
@@ -309,10 +338,17 @@ struct CustomizeView: View {
         sheets = updatedSheets
 
         Task {
-            try? await workspace.saveConfig()
-            applySaved = true
-            try? await Task.sleep(for: .seconds(2))
-            applySaved = false
+            do {
+                try await workspace.saveConfig()
+                applySaved = true
+                try? await Task.sleep(for: .seconds(2))
+                applySaved = false
+            } catch {
+                AppLogger.engine.warning(
+                    "CustomizeView: saveConfig failed: \(error.localizedDescription, privacy: .private)"
+                )
+                saveError = error.localizedDescription
+            }
         }
     }
 }
@@ -333,7 +369,7 @@ private struct SheetToggleCell: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .strokeBorder(
-                                    item.on ? Theme.Colors.gold.opacity(0.6) : Theme.Colors.hairlineStrong,
+                                    item.on ? Theme.Colors.gold.opacity(0.6) : Theme.Hairline.strong,
                                     lineWidth: 0.5
                                 )
                         )
@@ -347,14 +383,14 @@ private struct SheetToggleCell: View {
 
                 Text(item.name)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(item.on ? Theme.Colors.fg : Theme.Colors.fg2)
+                    .foregroundStyle(item.on ? Theme.Text.primary : Theme.Text.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .lineLimit(1)
 
                 Mono(
                     text: item.req.uppercased(),
                     size: 9.5,
-                    color: Theme.Colors.fgMuted
+                    color: Theme.Text.tertiary
                 )
             }
             .padding(.horizontal, 10)
@@ -369,7 +405,7 @@ private struct SheetToggleCell: View {
                     .strokeBorder(
                         item.on
                             ? Theme.Colors.gold.opacity(0.35)
-                            : Theme.Colors.hairline,
+                            : Theme.Hairline.standard,
                         lineWidth: 0.5
                     )
             )

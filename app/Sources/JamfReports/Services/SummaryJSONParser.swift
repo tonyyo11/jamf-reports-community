@@ -2,7 +2,8 @@ import Foundation
 
 struct DailySummary: Codable, Identifiable, Sendable {
     private enum CodingKeys: String, CodingKey {
-        case date, totalDevices, fileVaultPct, compliancePct, staleCount, osCurrentPct, crowdstrikePct, patchPct, source
+        case date, totalDevices, fileVaultPct, compliancePct, staleCount,
+             osCurrentPct, crowdstrikePct, patchPct, source, provenance
     }
 
     var id: String { date }
@@ -19,6 +20,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
     let crowdstrikePct: Double?
     let patchPct: Double
     let source: String
+    /// Optional run provenance (run-ID, jamf-cli version, tenant URL, operator).
+    /// Absent in legacy Python-emitted summaries; present in Swift-emitted ones.
+    let provenance: Provenance?
 
     var parsedDate: Date {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
@@ -33,7 +37,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         osCurrentPct: Double,
         crowdstrikePct: Double?,
         patchPct: Double,
-        source: String = "demo"
+        source: String = "demo",
+        provenance: Provenance? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -44,6 +49,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.crowdstrikePct = crowdstrikePct
         self.patchPct = patchPct
         self.source = source
+        self.provenance = provenance
     }
 
     init(from decoder: Decoder) throws {
@@ -57,6 +63,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         crowdstrikePct = try container.decodeIfPresent(Double.self, forKey: .crowdstrikePct)
         patchPct = try container.decode(Double.self, forKey: .patchPct)
         source = try container.decode(String.self, forKey: .source)
+        provenance = try container.decodeIfPresent(Provenance.self, forKey: .provenance)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -70,6 +77,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(crowdstrikePct, forKey: .crowdstrikePct)
         try container.encode(patchPct, forKey: .patchPct)
         try container.encode(source, forKey: .source)
+        try container.encodeIfPresent(provenance, forKey: .provenance)
     }
 }
 

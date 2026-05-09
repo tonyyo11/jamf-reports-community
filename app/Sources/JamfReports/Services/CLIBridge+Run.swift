@@ -2,7 +2,7 @@ import Foundation
 
 extension CLIBridge {
 
-    /// Run `jrc` immediately for `profile` and `mode`, streaming each output line through `onLine`.
+    /// Run collect/generate immediately for `profile` and `mode`, streaming each output line through `onLine`.
     ///
     /// Profile is validated with `ProfileService.isValid` before any subprocess is launched.
     /// For `jamfCLIFull` and `csvAssisted`, the newest CSV in the profile workspace is used when
@@ -15,10 +15,6 @@ extension CLIBridge {
     ) async -> Int32 {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
-        }
-        guard resolveJRCCommand() != nil else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] jrc or jamf-reports-community.py not found"))
             return -1
         }
         switch mode {

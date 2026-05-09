@@ -1,34 +1,42 @@
 [
   {
-    "type": "configuration",
-    "source": "Security Profile Source",
-    "devices": 85,
-    "declarations": 12,
-    "successful": 82,
+    "declarations": 1,
+    "devices": 1,
+    "source": "9a5598b4-b8ca-400e-922c-dc1dc99680cc",
+    "successful": 1,
+    "type": "standalone",
+    "unsuccessful": 0
+  },
+  {
+    "declarations": 6,
+    "devices": 3,
+    "source": "Update to Latest macOS By Eligibility",
+    "successful": 2,
+    "type": "blueprint",
     "unsuccessful": 3
   },
   {
-    "type": "activation",
-    "source": "App Activation Source",
-    "devices": 60,
-    "declarations": 8,
-    "successful": 60,
+    "declarations": 3,
+    "devices": 3,
+    "source": "Device Group Membership",
+    "successful": 0,
+    "type": "system",
     "unsuccessful": 0
   },
   {
-    "type": "management",
-    "source": "MDM Management Source",
-    "devices": 90,
-    "declarations": 5,
-    "successful": 90,
-    "unsuccessful": 0
-  },
-  {
-    "type": "configuration",
-    "source": "Network Config Source",
-    "devices": 45,
     "declarations": 6,
-    "successful": 40,
-    "unsuccessful": 5
+    "devices": 3,
+    "source": "",
+    "successful": 4,
+    "type": "blueprint",
+    "unsuccessful": 0
+  },
+  {
+    "declarations": 2,
+    "devices": 2,
+    "source": "20d2bbe6-2f8f-46cd-a90f-93dc388fa8ba",
+    "successful": 2,
+    "type": "standalone",
+    "unsuccessful": 0
   }
 ]

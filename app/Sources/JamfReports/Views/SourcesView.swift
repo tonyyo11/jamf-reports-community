@@ -11,6 +11,9 @@ struct SourcesView: View {
     @State private var clearError: String?
     @State private var showClearError = false
     @State private var resolutionError: String?
+    @State private var showElevateScopeConfirm = false
+    @State private var pendingScopeProfile: String?
+    @State private var scopeRefreshTrigger = 0
 
     private struct CLICommand: Identifiable {
         let id = UUID()
@@ -114,6 +117,24 @@ struct SourcesView: View {
         } message: {
             Text(clearError ?? "Unknown error")
         }
+        .confirmationDialog(
+            "Elevate \"\(pendingScopeProfile ?? "")\" to Full Admin?",
+            isPresented: $showElevateScopeConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Elevate to Full Admin", role: .destructive) {
+                if let target = pendingScopeProfile {
+                    ProfileService.setScope(.fullAdmin, for: target)
+                    scopeRefreshTrigger &+= 1
+                }
+                pendingScopeProfile = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingScopeProfile = nil
+            }
+        } message: {
+            Text("Full Admin enables destructive operations against this tenant. Limited is recommended unless an admin task requires elevated privileges.")
+        }
     }
 
     private var header: some View {
@@ -121,10 +142,10 @@ struct SourcesView: View {
             Kicker(text: "Inputs to the workbook", tone: .gold)
             Text("Data Sources")
                 .font(Theme.Fonts.serif(26, weight: .bold))
-                .foregroundStyle(Theme.Colors.fg)
+                .foregroundStyle(Theme.Text.primary)
             Text("Live API · cached snapshots · CSV inboxes · historical archives")
                 .font(.system(size: 12.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary)
         }
     }
 
@@ -150,20 +171,20 @@ struct SourcesView: View {
                     Text("· cache \(cliCacheDisplayPath)")
                 }
                 .font(Theme.Fonts.mono(11.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary)
 
                 VStack(spacing: 0) {
                     ForEach(Array(cliCommands.enumerated()), id: \.element.id) { idx, c in
                         HStack {
-                            Mono(text: c.label, color: Theme.Colors.fg2)
+                            Mono(text: c.label, color: Theme.Text.secondary)
                             Spacer()
                             Text(c.status)
                                 .font(.system(size: 11))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary)
                         }
                         .padding(.vertical, 6)
                         if idx < cliCommands.count - 1 {
-                            Divider().background(Theme.Colors.hairline)
+                            Divider().background(Theme.Hairline.standard)
                         }
                     }
                 }
@@ -194,11 +215,11 @@ struct SourcesView: View {
                                     .foregroundStyle(
                                         f.status == .pending
                                             ? Theme.Colors.gold
-                                            : Theme.Colors.fgMuted
+                                            : Theme.Text.tertiary
                                     )
                                     .font(.system(size: 12))
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Mono(text: f.name, color: Theme.Colors.fg2)
+                                    Mono(text: f.name, color: Theme.Text.secondary)
                                     Mono(
                                         text: "\(FileDisplay.date(f.mtime)) · \(f.size)",
                                         size: 10.5
@@ -216,7 +237,7 @@ struct SourcesView: View {
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis.circle")
-                                        .foregroundStyle(Theme.Colors.fgMuted)
+                                        .foregroundStyle(Theme.Text.tertiary)
                                         .font(.system(size: 14))
                                 }
                                 .menuStyle(.button)
@@ -224,7 +245,7 @@ struct SourcesView: View {
                             }
                             .padding(.vertical, 8)
                             if idx < csvFiles.count - 1 {
-                                Divider().background(Theme.Colors.hairline)
+                                Divider().background(Theme.Hairline.standard)
                             }
                         }
                     }
@@ -237,6 +258,7 @@ struct SourcesView: View {
                         .appendingPathComponent("csv-inbox", isDirectory: true)
                     SystemActions.openFolder(url)
                 }
+                .help("Open the csv-inbox folder where you drop fresh CSV exports.")
                 .padding(.top, 4)
             }
         }
@@ -247,7 +269,7 @@ struct SourcesView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    Image(systemName: "externaldrive").foregroundStyle(Theme.Colors.fgMuted)
+                    Image(systemName: "externaldrive").foregroundStyle(Theme.Text.tertiary)
                         .font(.system(size: 16))
                     SectionHeader(title: "Snapshot Archive Families")
                     Spacer()
@@ -259,6 +281,7 @@ struct SourcesView: View {
                                         .appendingPathComponent("snapshots", isDirectory: true)
                         SystemActions.openFolder(url)
                     }
+                    .help("Open the snapshots directory where dated CSV/JSON archives live.")
                 }
                 if families.isEmpty {
                     emptyFamiliesState
@@ -278,7 +301,7 @@ struct SourcesView: View {
                         TableColumn("Used By") { f in
                             Text(f.usedBy.isEmpty ? "—" : f.usedBy)
                                 .font(.system(size: 11.5))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary)
                         }
                     }
                     .frame(minHeight: 200)
@@ -292,10 +315,10 @@ struct SourcesView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("No CSV files in the inbox.")
                 .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(Theme.Colors.fg)
+                .foregroundStyle(Theme.Text.primary)
             Text("Drop Jamf exports here before running a CSV-assisted report.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary)
         }
         .padding(.vertical, 10)
     }
@@ -304,10 +327,10 @@ struct SourcesView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("No snapshot families yet.")
                 .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(Theme.Colors.fg)
+                .foregroundStyle(Theme.Text.primary)
             Text("Historical trend snapshots will appear after collection or CSV archival runs.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
     }
@@ -345,15 +368,49 @@ struct SourcesView: View {
         }
     }
 
-    /// Read-only scope chip. Editing scope is deferred — see TODO(W22) below.
+    /// Interactive scope chip. Limited↔Full Admin via Menu; elevation to
+    /// Full Admin requires explicit confirmation since it gates destructive
+    /// operations on the live tenant.
     @ViewBuilder
     private func scopeChip(for profile: String) -> some View {
+        let _ = scopeRefreshTrigger
         let scope = ProfileService.scope(for: profile)
-        // TODO(W22): expose scope toggle in SettingsView / profile detail sheet
-        Pill(
-            text: scope.displayName,
-            tone: scope == .fullAdmin ? .warn : .muted
-        )
+        Menu {
+            Button {
+                if scope != .limited {
+                    ProfileService.setScope(.limited, for: profile)
+                    scopeRefreshTrigger &+= 1
+                }
+            } label: {
+                Label(
+                    APIScope.limited.displayName,
+                    systemImage: scope == .limited ? "checkmark" : ""
+                )
+            }
+            Button {
+                if scope != .fullAdmin {
+                    pendingScopeProfile = profile
+                    showElevateScopeConfirm = true
+                }
+            } label: {
+                Label(
+                    APIScope.fullAdmin.displayName,
+                    systemImage: scope == .fullAdmin ? "checkmark" : ""
+                )
+            }
+        } label: {
+            Pill(
+                text: scope.displayName,
+                tone: scope == .fullAdmin ? .warn : .muted,
+                icon: "chevron.down"
+            )
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .help(scope == .fullAdmin
+              ? "Full Admin — destructive operations enabled. Click to change."
+              : "Limited — destructive operations gated. Click to elevate.")
     }
 
     private func tone(for status: InboxFileStatus) -> Pill.Tone {

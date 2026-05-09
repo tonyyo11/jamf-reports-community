@@ -48,3 +48,10 @@ app/iconset/AppIcon-1024.png
 *.xcworkspace/xcuserdata/
 DerivedData/
 .codex/config.toml
+
+# Engineering / AI session artifacts — never ship
+app/.specs/
+app/SESSION_STATE.md
+app/HANDOFF.md
+SESSION_STATE.md
+HANDOFF.md

@@ -98,33 +98,32 @@ def test_blueprint_status_happy_path_no_raise(jrc, tmp_path) -> None:
 
 
 def test_blueprint_status_happy_summary_counts(jrc, tmp_path) -> None:
-    """Summary row counts match fixture data: 2 deployed, 1 with failures, 1 with pending."""
+    """Summary counts match the live-shape happy fixture (4 entries, 2 DEPLOYED, 1 pending)."""
     rows = _load(BP_DIR / "platform_blueprint_status_happy.json")
     dashboard, wb, wb_path = _make_dashboard(jrc, tmp_path, {"blueprint_status": rows})
     dashboard._write_platform_blueprints()
     wb.close()
 
     summary = _read_summary(wb_path, "Platform Blueprints")
-    assert summary.get("Total Blueprints") == 3
+    assert summary.get("Total Blueprints") == 4
     assert summary.get("Deployed Blueprints") == 2
-    assert summary.get("Blueprints with Failures") == 1
-    assert summary.get("Blueprints with Pending Devices") == 2
+    assert summary.get("Blueprints with Failures") == 0
+    assert summary.get("Blueprints with Pending Devices") == 1
 
 
 def test_blueprint_status_sort_order_failed_first(jrc, tmp_path) -> None:
     """Rows are sorted descending by failed, then pending, then name."""
-    rows = _load(BP_DIR / "platform_blueprint_status_happy.json")
+    rows = _load(BP_DIR / "platform_blueprint_status_all_failed.json")
     expected_names = {r["name"] for r in rows}
     dashboard, wb, wb_path = _make_dashboard(jrc, tmp_path, {"blueprint_status": rows})
     dashboard._write_platform_blueprints()
     wb.close()
 
     all_col1 = _read_column(wb_path, "Platform Blueprints", col=1)
-    # Keep only the actual blueprint name rows (filter headers and summary labels)
     data_names = [n for n in all_col1 if n in expected_names]
-    # "Software Updates" has failed=4 — must appear first
-    assert data_names[0] == "Software Updates", (
-        f"Blueprint with failures must sort first; got {data_names}"
+    # "Alpha Blueprint" has failed=10 — must appear first.
+    assert data_names[0] == "Alpha Blueprint", (
+        f"Blueprint with most failures must sort first; got {data_names}"
     )
 
 
@@ -272,9 +271,9 @@ def test_ddm_status_unsuccessful_summary(jrc, tmp_path) -> None:
     wb.close()
 
     summary = _read_summary(wb_path, "Platform DDM Status")
-    assert summary.get("Sources Returned") == 4
-    assert summary.get("Sources with Unsuccessful Declarations") == 2
-    assert summary.get("Total Unsuccessful Declarations") == 8
+    assert summary.get("Sources Returned") == 5
+    assert summary.get("Sources with Unsuccessful Declarations") == 1
+    assert summary.get("Total Unsuccessful Declarations") == 3
 
 
 def test_ddm_status_all_failed_summary(jrc, tmp_path) -> None:

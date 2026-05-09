@@ -31,6 +31,34 @@ struct UnusedGroup: Identifiable, Codable {
         let trimmed = reason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "Not referenced by any policy or profile." : trimmed
     }
+
+    /// jamf-cli's `pro group-tools analyze --unused` always returns
+    /// `memberCount: 0` regardless of the group's actual size (upstream
+    /// limitation). The platform-API `groups` snapshot has the correct value
+    /// in `membershipCount`, keyed by `groupJamfProId`. This helper builds the
+    /// id → count map from the supplied groups-list JSON and rewrites each
+    /// `UnusedGroup`'s `memberCount` to match. Falls back to the analyzer's
+    /// value (typically 0) when no platform record exists for that id.
+    static func merging(_ unused: [UnusedGroup], withGroupCounts groupsJSON: Data?) -> [UnusedGroup] {
+        guard let data = groupsJSON,
+              let array = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+            return unused
+        }
+        var counts: [String: Int] = [:]
+        for entry in array {
+            guard let id = entry["groupJamfProId"] as? String else { continue }
+            if let n = entry["membershipCount"] as? Int {
+                counts[id] = n
+            } else if let n = entry["membershipCount"] as? NSNumber {
+                counts[id] = n.intValue
+            }
+        }
+        return unused.map { g in
+            guard let real = counts[g.id], real != g.memberCount else { return g }
+            return UnusedGroup(id: g.id, name: g.name, memberCount: real,
+                               type: g.type, reason: g.reason)
+        }
+    }
 }
 
 struct AuditView: View {
@@ -167,26 +195,29 @@ struct AuditView: View {
                     HStack(spacing: 8) {
                         if selectedTab == 0 {
                             PNPButton(
-                                title: isRunningAudit ? "Running..." : "Run Audit",
-                                icon: "play.fill",
+                                title: isRunningAudit ? "Audit running…" : "Run Audit",
+                                icon: isRunningAudit ? "hourglass" : "play.fill",
                                 style: .gold
                             ) {
                                 runAudit()
                             }
                             .disabled(isRunningAudit || workspace.demoMode)
+                            .help("Run a fresh audit against this workspace.")
                         } else {
                             PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
                                 copyGroupIDs()
                             }
                             .disabled(unusedGroups.isEmpty)
+                            .help("Copy the comma-separated list of unused group IDs to the clipboard.")
                             PNPButton(
-                                title: isRunningHygiene ? "Analyzing..." : "Analyze Groups",
-                                icon: "magnifyingglass",
+                                title: isRunningHygiene ? "Analyzing…" : "Analyze Groups",
+                                icon: isRunningHygiene ? "hourglass" : "magnifyingglass",
                                 style: .gold
                             ) {
                                 runHygiene()
                             }
                             .disabled(isRunningHygiene || workspace.demoMode)
+                            .help("Find computer groups not referenced by any policy or profile.")
                         }
                     }
                 }
@@ -214,13 +245,22 @@ struct AuditView: View {
                 Card(padding: 0) {
                     Table(filteredFindings, sortOrder: $sortOrderAudit) {
                         TableColumn("Finding", value: \.name) { f in
-                            HStack {
+                            HStack(spacing: 8) {
+                                Rectangle()
+                                    .fill(f.severity.uppercased() == "CRITICAL"
+                                          ? Theme.Colors.danger
+                                          : Color.clear)
+                                    .frame(width: 3)
+                                    .frame(maxHeight: .infinity)
                                 severityIcon(f.severity)
                                 Text(f.name).font(.system(size: 13, weight: .semibold))
                                 if newFindingKeys.contains(f.driftKey) {
                                     Pill(text: "New", tone: .gold, icon: "sparkle")
+                                        .transition(.scale.combined(with: .opacity))
                                 }
                             }
+                            .animation(.spring(response: 0.35, dampingFraction: 0.7),
+                                       value: newFindingKeys.contains(f.driftKey))
                         }
                         TableColumn("Severity", value: \.severity) { f in
                             Pill(text: f.severity, tone: pillTone(f.severity))
@@ -260,11 +300,11 @@ struct AuditView: View {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
-                        SectionHeader(title: "Recently Resolved")
+                        Kicker(text: "Resolved · \(resolvedFindings.count)", tone: .teal)
                         Spacer()
-                        Pill(text: "\(resolvedFindings.count)", tone: .teal, icon: "checkmark")
                     }
                     .padding(16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
 
                     Divider().background(Theme.Colors.hairline)
 
@@ -278,6 +318,7 @@ struct AuditView: View {
                                     Text(finding.name)
                                         .font(.system(size: 12.5, weight: .semibold))
                                         .foregroundStyle(Theme.Colors.fg)
+                                        .strikethrough(true, color: Theme.Colors.fgMuted)
                                     Text(finding.recommendation)
                                         .font(.system(size: 11.5))
                                         .foregroundStyle(Theme.Colors.fgMuted)
@@ -289,6 +330,7 @@ struct AuditView: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 9)
+                            .opacity(0.5)
                             if idx < resolvedFindings.count - 1 {
                                 Divider().background(Theme.Colors.hairline)
                             }
@@ -296,6 +338,7 @@ struct AuditView: View {
                     }
                 }
             }
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: resolvedFindings.count)
         }
     }
 
@@ -360,18 +403,22 @@ struct AuditView: View {
     }
 
     private func openInJamfPro(_ group: UnusedGroup) {
-        let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
-        guard !jamfURL.isEmpty else { return }
-
-        // Typical Jamf Pro computer group URL:
-        // https://tenant.jamfcloud.com/smartComputerGroups.html?id=123&o=r
-        // https://tenant.jamfcloud.com/staticComputerGroups.html?id=123&o=r
-        let page = group.type.lowercased() == "static" ? "staticComputerGroups.html" : "smartComputerGroups.html"
-        let urlString = "\(jamfURL)/\(page)?id=\(group.id)&o=r"
-
-        if let url = URL(string: urlString) {
-            SystemActions.open(url)
+        guard let groupID = Int(group.id) else {
+            workspace.toast = Toast(
+                message: "Group `\(group.name)` has a non-numeric id (\(group.id)) — cannot build console URL.",
+                style: .danger
+            )
+            return
         }
+        let isStatic = group.type.lowercased() == "static"
+        guard let url = workspace.consoleURL(forComputerGroupID: groupID, isStatic: isStatic) else {
+            workspace.toast = Toast(
+                message: "Active profile has no Jamf Pro URL configured. Set one in Settings to enable console links.",
+                style: .danger
+            )
+            return
+        }
+        SystemActions.open(url)
     }
 
     private func emptyState(icon: String, text: String) -> some View {
@@ -468,19 +515,29 @@ struct AuditView: View {
         )
         if let latestHygiene = hygieneSnapshots.first,
            let decoded = try? decoder.decode([UnusedGroup].self, from: latestHygiene.data) {
-            unusedGroups = decoded
+            let groupsSnapshots = await bridge.cachedJSONSnapshots(
+                profile: workspace.profile,
+                type: "groups",
+                limit: 1
+            )
+            unusedGroups = UnusedGroup.merging(decoded, withGroupCounts: groupsSnapshots.first?.data)
             lastHygieneDate = latestHygiene.modified
         }
     }
 
     private func runAudit() {
         isRunningAudit = true
-        workspace.globalStatus = "jrc audit · profile=\(workspace.profile)"
+        workspace.globalStatus = "audit · profile=\(workspace.profile)"
         Task {
             let profile = workspace.profile
-            let code = await bridge.audit(profile: profile, category: nil) { line in
+            // Late-arriving onLine callbacks would otherwise overwrite the
+            // post-await `globalStatus = nil` and leave a stale status line.
+            // Guarding on `isRunningAudit` makes the running flag the single
+            // source of truth for "show CLI output."
+            let code = await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
                 Task { @MainActor in
-                    workspace.globalStatus = "jrc · \(line.text)"
+                    guard let workspace, self.isRunningAudit else { return }
+                    workspace.globalStatus = line.text
                 }
             }
             isRunningAudit = false
@@ -496,12 +553,13 @@ struct AuditView: View {
 
     private func runHygiene() {
         isRunningHygiene = true
-        workspace.globalStatus = "jrc group-tools analyze · profile=\(workspace.profile)"
+        workspace.globalStatus = "group-tools analyze · profile=\(workspace.profile)"
         Task {
             let profile = workspace.profile
-            let code = await bridge.groupHygiene(profile: profile) { line in
+            let code = await bridge.groupHygiene(profile: profile) { [weak workspace] line in
                 Task { @MainActor in
-                    workspace.globalStatus = "jrc · \(line.text)"
+                    guard let workspace, self.isRunningHygiene else { return }
+                    workspace.globalStatus = line.text
                 }
             }
             isRunningHygiene = false
@@ -557,18 +615,28 @@ private struct AffectedBar: View {
         return min(max(CGFloat(value) / CGFloat(maxValue), 0), 1)
     }
 
-    var body: some View {
-        HStack(spacing: 8) {
-            Mono(text: "\(value)")
-                .frame(width: 34, alignment: .trailing)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.08))
-                Capsule()
-                    .fill(toneColor(tone))
-                    .frame(width: value == 0 ? 0 : max(3, 58 * fraction))
-            }
-            .frame(width: 58, height: 6)
+    private var fillColor: Color {
+        switch tone {
+        case .danger: Theme.Colors.danger.opacity(0.55)
+        case .warn:   Theme.Colors.warn.opacity(0.55)
+        default:      toneColor(tone).opacity(0.45)
         }
+    }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .frame(width: 80, height: 16)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(fillColor)
+                .frame(width: value == 0 ? 0 : max(4, 80 * fraction), height: 16)
+            Text("\(value)")
+                .font(Theme.Fonts.mono(11, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fg)
+                .frame(width: 80, height: 16)
+        }
+        .frame(width: 80, height: 16)
     }
 }
 

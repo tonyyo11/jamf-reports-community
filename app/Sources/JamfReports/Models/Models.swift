@@ -67,7 +67,17 @@ struct MultiTarget: Sendable, Equatable {
         switch scope {
         case .all:           return "All profiles"
         case .filter(let g): return "~\(g)"
-        case .list(let ps):  return "\(ps.count) profiles"
+        case .list(let ps):  return "\(ps.count) profile\(ps.count == 1 ? "" : "s")"
+        }
+    }
+
+    /// Profile names embedded in the target. Used by CLIBridge.runMulti to
+    /// re-validate against `ProfileService.isValid` before invoking jamf-cli
+    /// (B-02 defense-in-depth).
+    var allProfileNames: [String] {
+        switch scope {
+        case .all, .filter:  return []
+        case .list(let ps):  return ps
         }
     }
 }
@@ -81,8 +91,30 @@ struct Schedule: Identifiable, Sendable {
         case jamfCLIFull   = "jamf-cli-full"
         case csvAssisted   = "csv-assisted"
         var id: String { rawValue }
+
+        var displayTitle: String {
+            switch self {
+            case .snapshotOnly: "Refresh data only"
+            case .jamfCLIOnly: "Generate from cached/live jamf-cli data"
+            case .jamfCLIFull: "Refresh + Generate"
+            case .csvAssisted: "CSV-augmented Generate"
+            }
+        }
+
+        var displayDescription: String {
+            switch self {
+            case .snapshotOnly:
+                "Runs jamf-cli pro collect and archives JSON snapshots. Does NOT generate a report. Use this when you want fresh data for trend tracking but don't need a workbook delivered."
+            case .jamfCLIOnly:
+                "Produces an XLSX/HTML report from whatever data is currently cached. Use this for the most common case."
+            case .jamfCLIFull:
+                "Runs collect first, then generates a report. Use this for a self-contained scheduled run."
+            case .csvAssisted:
+                "Combines a Jamf Pro CSV export from the inbox with cached jamf-cli data. Use this when your CSV has columns jamf-cli can't reach (e.g. custom inventory fields)."
+            }
+        }
     }
-    enum LastStatus: String, Sendable { case ok, warn, fail }
+    enum LastStatus: String, Sendable, CaseIterable { case ok, warn, fail }
 
     var id: String { launchAgentLabel ?? "\(profile)/\(name)" }
     var name: String
@@ -708,14 +740,57 @@ private func valueLooksGood(_ value: String) -> Bool {
 /// JSON shape (jamf-cli v1.9+):
 ///   { "token": "eyJ...", "expires_at": "2026-05-04T13:38:38Z" }
 /// `expires_at` is omitted when the profile uses a static token file (bearer-token auth).
+///
+/// - Note: Instances decoded from persisted storage carry `raw == ""` and re-derive
+///   `isValid` from the stored `Bool`. Re-probe via `CLIBridge.tokenStatus(for:)`
+///   before making any auth decisions — decoded instances are for display only.
 struct TokenStatus: Sendable, Codable {
     let profile: String
     /// Parsed from `expires_at`; nil when jamf-cli omits it (token-file auth).
     let expiresAt: Date?
     /// True when jamf-cli returned a token without error (exit 0).
     let isValid: Bool
-    /// Raw stdout for debugging.
+    /// Raw stdout for debugging. Excluded from Codable round-trip — debug-only field.
     let raw: String
+
+    /// True when the token has a known expiry and that expiry is in the past.
+    var isExpired: Bool {
+        guard let expiresAt else { return false }
+        return expiresAt < Date()
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case profile, expiresAt, isValid
+        // raw excluded intentionally — debug-only field
+    }
+
+    init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        profile = try c.decode(String.self, forKey: .profile)
+        expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
+        isValid = try c.decode(Bool.self, forKey: .isValid)
+        raw = ""  // not persisted; callers use make() which supplies raw at construction time
+    }
+
+    private init(profile: String, expiresAt: Date?, isValid: Bool, raw: String) {
+        self.profile = profile
+        self.expiresAt = expiresAt
+        self.isValid = isValid
+        self.raw = raw
+    }
+
+    /// Factory for constructing a `TokenStatus`. Prefer this over direct memberwise init.
+    static func make(profile: String, token: String?, expiresAt: Date?, raw: String) -> TokenStatus {
+        guard !profile.isEmpty else {
+            return TokenStatus(profile: "", expiresAt: nil, isValid: false, raw: raw)
+        }
+        return TokenStatus(
+            profile: profile,
+            expiresAt: expiresAt,
+            isValid: !(token ?? "").isEmpty,
+            raw: raw
+        )
+    }
 }
 
 // MARK: - Trend metric

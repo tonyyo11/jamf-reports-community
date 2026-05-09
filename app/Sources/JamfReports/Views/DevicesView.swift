@@ -14,6 +14,9 @@ struct DevicesView: View {
     @State private var deviceDetailState: DeviceDetailState = .idle
     @State private var deviceDetailRequestKey = ""
     @State private var sortOrder = [KeyPathComparator(\DeviceInventoryRecord.displayName)]
+    // Tracks the Devices page width so the inventory table can hide low-priority
+    // columns under 1200pt — avoids truncation on 13" displays.
+    @State private var pageWidth: CGFloat = 1400
     @FocusState private var isSearchFocused: Bool
 
     private enum DeviceDetailState: Equatable {
@@ -49,6 +52,10 @@ struct DevicesView: View {
             }
         }
     }
+
+    /// True when the page width is too narrow to show every inventory column at
+    /// full fidelity. Drives the responsive Device + User column behavior.
+    private var isCompact: Bool { pageWidth < 1200 }
 
     private var filteredDevices: [DeviceInventoryRecord] {
         activeSnapshot.devices.filter { device in
@@ -111,6 +118,15 @@ struct DevicesView: View {
                                 leading: Theme.Metrics.pagePadH,
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .preference(key: DevicesPageWidthKey.self, value: geo.size.width)
+                }
+            )
+        }
+        .onPreferenceChange(DevicesPageWidthKey.self) { width in
+            pageWidth = width
         }
         .task(id: "\(workspace.profile)-\(workspace.demoMode)") {
             await reload()
@@ -124,6 +140,7 @@ struct DevicesView: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
             isSearchFocused = true
         }
+        .searchable(text: $query, placement: .toolbar, prompt: "Search devices")
     }
 
     private var header: some View {
@@ -136,16 +153,25 @@ struct DevicesView: View {
         ) {
             AnyView(
                 HStack(spacing: 8) {
-                    Stepper("Stale \(staleDays)d", value: $staleDays, in: 7...180, step: 1)
-                        .font(Theme.Fonts.mono(11.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
-                        .frame(width: 118)
+                    staleDaysPicker
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         Task { await reload() }
                     }
+                    .help("Reload device inventory from the cached jamf-cli snapshots.")
                 }
             )
         }
+    }
+
+    /// Stale-days picker — see `EditableNumberStepper` for the input shape.
+    private var staleDaysPicker: some View {
+        EditableNumberStepper(
+            value: $staleDays,
+            range: AppConstants.staleDaysMin...AppConstants.staleDaysMax,
+            prefix: "Stale",
+            suffix: "d",
+            help: "Devices with no jamf-cli check-in for at least this many days are flagged stale."
+        )
     }
 
     private func navigateToOverview() {
@@ -167,13 +193,18 @@ struct DevicesView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.Colors.fg)
                     .focused($isSearchFocused)
+                    .accessibilityLabel("Search devices")
             }
             .padding(.horizontal, 10)
             .frame(width: 260, height: 30)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
-                    .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                    .strokeBorder(
+                        isSearchFocused ? Theme.Colors.gold.opacity(0.6) : Theme.Colors.hairlineStrong,
+                        lineWidth: isSearchFocused ? 1 : 0.5
+                    )
+                    .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
             )
 
             SegmentedControl(
@@ -197,7 +228,19 @@ struct DevicesView: View {
             }
 
             Spacer()
-            Pill(text: "\(filteredDevices.count) shown", tone: .muted)
+
+            let isFiltered = filteredDevices.count < activeSnapshot.devices.count
+            HStack(spacing: 6) {
+                if isFiltered {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.goldBright)
+                }
+                Pill(
+                    text: "\(filteredDevices.count) shown",
+                    tone: isFiltered ? .gold : .muted
+                )
+            }
         }
     }
 
@@ -226,16 +269,29 @@ struct DevicesView: View {
                 Divider().background(Theme.Colors.hairlineStrong)
 
                 Table(filteredDevices, selection: $selectedID, sortOrder: $sortOrder) {
+                    // Device collapses to single line under 1200pt; full name + model
+                    // line is preserved on roomier windows where it earns the height.
+                    // The model string remains accessible via the detail panel and the
+                    // row's textSelection — no popover added to keep table scroll perf.
                     TableColumn("Device", value: \.displayName) { device in
-                        VStack(alignment: .leading, spacing: 2) {
+                        if isCompact {
                             Text(device.displayName)
                                 .font(.system(size: 12.5, weight: .semibold))
                                 .foregroundStyle(Theme.Colors.fg)
-                                .textSelection(.enabled)
-                            Text(device.model.isEmpty ? device.source : device.model)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Theme.Colors.fgMuted)
                                 .lineLimit(1)
+                                .textSelection(.enabled)
+                                .help(device.model.isEmpty ? device.source : device.model)
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(device.displayName)
+                                    .font(.system(size: 12.5, weight: .semibold))
+                                    .foregroundStyle(Theme.Colors.fg)
+                                    .textSelection(.enabled)
+                                Text(device.model.isEmpty ? device.source : device.model)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .lineLimit(1)
+                            }
                         }
                     }
                     TableColumn("Serial", value: \.serial) { device in
@@ -246,14 +302,24 @@ struct DevicesView: View {
                         Mono(text: device.osVersion.isEmpty ? "Unknown" : device.osVersion)
                     }
                     TableColumn("User", value: \.user) { device in
-                        Text(device.user.isEmpty ? "Unassigned" : device.user)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .lineLimit(1)
+                        if !isCompact {
+                            Text(device.user.isEmpty ? "Unassigned" : device.user)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .lineLimit(1)
+                        }
                     }
                     TableColumn("Last Contact") { device in
-                        Mono(text: lastContactLabel(device),
-                             color: isStale(device) ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                        HStack(spacing: 4) {
+                            if isStale(device) {
+                                Image(systemName: "clock.badge.exclamationmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Theme.Colors.warn)
+                                    .accessibilityLabel("Stale")
+                            }
+                            Mono(text: lastContactLabel(device),
+                                 color: isStale(device) ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                        }
                     }
                     TableColumn("Patch") { device in patchPill(device) }
                     TableColumn("Risk") { device in riskPill(device.risk) }
@@ -268,13 +334,10 @@ struct DevicesView: View {
                         Button("Copy User Email") {
                             SystemActions.copyToClipboard(device.email.isEmpty ? device.user : device.email)
                         }
-                        if let jamfID = device.numericJamfID, !workspace.org.jamfURL.isEmpty {
+                        if let jamfID = device.numericJamfID,
+                           let url = workspace.consoleURL(forComputerID: jamfID) {
                             Button("Open in Jamf Pro") {
-                                let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
-                                let urlString = "\(jamfURL)/computers.html?id=\(jamfID)&o=r"
-                                if let url = URL(string: urlString) {
-                                    SystemActions.open(url)
-                                }
+                                SystemActions.open(url)
                             }
                         }
                     }
@@ -316,19 +379,13 @@ struct DevicesView: View {
                         ("Site", device.site),
                     ])
 
-                    detailSection("Security", rows: [
-                        ("FileVault", device.fileVault),
-                        ("SIP", device.sip),
-                        ("Firewall", device.firewall),
-                        ("Gatekeeper", device.gatekeeper),
-                        ("Bootstrap", device.bootstrapToken),
-                        ("Failed rules", device.failedRules == 0 ? "0" : "\(device.failedRules)"),
-                    ])
+                    securitySection(for: device)
 
                     VStack(alignment: .leading, spacing: 8) {
                         SectionHeader(title: "Patch")
                         if device.patchFailures.isEmpty {
-                            Pill(text: "No patch failures", tone: .teal, icon: "checkmark")
+                            PatchClearPill()
+                                .id("patch-clear-\(device.id)")
                         } else {
                             ForEach(device.patchFailures) { failure in
                                 VStack(alignment: .leading, spacing: 2) {
@@ -360,6 +417,7 @@ struct DevicesView: View {
                         PNPButton(title: "Copy Serial", icon: "doc.on.doc", size: .sm) {
                             SystemActions.copyToClipboard(device.serial)
                         }
+                        .help("Copy this device's serial number to the clipboard.")
                     }
                 }
                 .textSelection(.enabled)
@@ -492,6 +550,13 @@ struct DevicesView: View {
                         }
                     }
                     .frame(height: 150)
+                    .accessibilityChartDescriptor(BarDistributionChartDescriptor(
+                        title: "macOS Version Distribution",
+                        unit: " devices",
+                        bars: activeSnapshot.osDistribution.prefix(6).map {
+                            .init(label: $0.version, value: Double($0.count))
+                        }
+                    ))
 
                     VStack(spacing: 0) {
                         ForEach(activeSnapshot.osDistribution.prefix(5)) { item in
@@ -581,8 +646,9 @@ struct DevicesView: View {
             VStack(spacing: 0) {
                 ForEach(rows.filter { !$0.1.isEmpty }, id: \.0) { row in
                     HStack(alignment: .firstTextBaseline) {
-                        Text(row.0)
-                            .font(.system(size: 11.5))
+                        Text(row.0.uppercased())
+                            .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                            .tracking(1.0)
                             .foregroundStyle(Theme.Colors.fgMuted)
                             .frame(width: 92, alignment: .leading)
                         Text(row.1)
@@ -595,6 +661,58 @@ struct DevicesView: View {
                 }
             }
         }
+    }
+
+    private func securitySection(for device: DeviceInventoryRecord) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Security")
+            VStack(spacing: 0) {
+                securityRow("FileVault", value: device.fileVault)
+                securityRow("SIP", value: device.sip)
+                securityRow("Firewall", value: device.firewall)
+                securityRow("Gatekeeper", value: device.gatekeeper)
+                if !device.bootstrapToken.isEmpty {
+                    securityRow("Bootstrap", value: device.bootstrapToken)
+                }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("FAILED RULES")
+                        .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                        .tracking(1.0)
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .frame(width: 92, alignment: .leading)
+                    Text(device.failedRules == 0 ? "0" : "\(device.failedRules)")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(device.failedRules == 0 ? Theme.Colors.fg2 : Theme.Colors.warn)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func securityRow(_ label: String, value: String) -> some View {
+        if !value.isEmpty {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label.uppercased())
+                    .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                    .tracking(1.0)
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .frame(width: 92, alignment: .leading)
+                Pill(text: value, tone: securityTone(for: value))
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func securityTone(for value: String) -> Pill.Tone {
+        let v = value.lowercased()
+        let positives = ["enabled", "on", "active", "encrypted", "yes", "true", "escrowed", "installed"]
+        let negatives = ["disabled", "off", "inactive", "decrypted", "no", "false", "missing", "not installed"]
+        if positives.contains(where: { v.contains($0) }) { return .teal }
+        if negatives.contains(where: { v.contains($0) }) { return .danger }
+        return .muted
     }
 
     private func riskPill(_ risk: DeviceInventoryRecord.Risk) -> Pill {
@@ -616,6 +734,7 @@ struct DevicesView: View {
     private func legendDot(color: Color, label: String) -> some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 6, height: 6)
+                .accessibilityHidden(true)
             Text(label)
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.Colors.fgMuted)
@@ -703,5 +822,30 @@ struct DevicesView: View {
         if !serial.isEmpty { return serial }
         let name = device.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? nil : name
+    }
+}
+
+/// PreferenceKey carrying the Devices page width up to the parent view so the
+/// inventory table can collapse low-priority columns on narrow windows.
+private struct DevicesPageWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 1400
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Patch-clear pill with a brief scale + opacity pulse on first appearance.
+/// `@State` justified: animation flag is purely view-local presentation state.
+private struct PatchClearPill: View {
+    @State private var pulsed = false
+
+    var body: some View {
+        Pill(text: "No patch failures", tone: .teal, icon: "checkmark")
+            .scaleEffect(pulsed ? 1.0 : 1.05)
+            .opacity(pulsed ? 1.0 : 0.6)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.45)) { pulsed = true }
+            }
+            .transition(.scale.combined(with: .opacity))
     }
 }

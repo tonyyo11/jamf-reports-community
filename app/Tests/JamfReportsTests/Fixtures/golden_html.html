@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jamf Reports — Golden Fixture</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; margin: 2em; }
+    .kpi { display: flex; gap: 1em; }
+    .tile { background: #2D5EA2; color: #fff; padding: 1em 2em; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1 id="top">Fleet Health Report</h1>
+  <section id="kpi">
+    <div class="kpi">
+      <div class="tile">
+        <div>Total Devices</div>
+        <div>97</div>
+      </div>
+      <div class="tile">
+        <div>FileVault</div>
+        <div>94%</div>
+      </div>
+      <div class="tile">
+        <div>Patch Compliance</div>
+        <div>87%</div>
+      </div>
+    </div>
+  </section>
+  <section id="fleet">
+    <h2>Fleet Overview</h2>
+    <p>97 managed devices across 3 buildings.</p>
+    <a href="#top">Back to top</a>
+  </section>
+  <script>
+    (function() {
+      var tiles = document.querySelectorAll('.tile');
+      tiles.forEach(function(t) {
+        t.setAttribute('role', 'region');
+      });
+    }());
+  </script>
+</body>
+</html>

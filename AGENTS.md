@@ -23,8 +23,8 @@ are needed for normal use.
 
 **2. Native macOS app (`app/`)** — A SwiftUI GUI (macOS 14+, Swift 6) that wraps every CLI
 flow — config editing, scheduling via LaunchAgents, report generation, run history — and adds
-a Historical Trends screen built on archived `summary.json` snapshots. The app bundles a
-private Python runtime and the CLI script; end users do not need Python installed separately.
+a Historical Trends screen built on archived `summary.json` snapshots. The app uses a native
+Swift engine (`ReportEngine`) for all report generation; Python is not bundled or required.
 It is a SwiftPM project (`app/Package.swift`), not a hand-rolled `.xcodeproj`.
 
 Target audience: Mac/iPad admins at any organization running Jamf Pro or Jamf School.
@@ -299,7 +299,7 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | Service | Purpose |
 |---------|---------|
 | `WorkspaceStore` | `@Observable` per-profile state. Sidebar chip switches the active profile; every screen re-routes to that workspace's data. |
-| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jrc` and `jamf-cli`. Streams stdout/stderr live to the Runs screen. Prefers the bundled Python runtime + bundled CLI script; falls back to external `python3`/`jrc`. |
+| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. |
 | `WorkspacePaths` | Typed, profile-validated path constants under `~/Jamf-Reports/<profile>/`. All path construction goes through here. |
 | `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
 | `LaunchAgentService` | Discovers and parses existing `~/Library/LaunchAgents/com.jamfreports.*.plist` jobs. |
@@ -316,6 +316,22 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `JamfCLIInstaller` | Auto-update check and installation via Homebrew. |
 
 **Convention:** New jamf-cli command wrappers go through the `CLICommand` enum and `CLIExecutor` protocol (`Services/CLICommand.swift`), not bespoke `CLIBridge` methods. Existing helpers (`generate`, `collect`, `audit`, `deviceDetail`, …) stay as-is per `.claude/plans/ADR-W21-clicommand-enum.md` (Hybrid scope).
+
+#### jamf-cli exit codes
+
+Named constants in `CLIBridge`. Reference: jamf-cli Error Handling & Exit Codes spec.
+
+| Code | Constant | Meaning | App behavior |
+|------|----------|---------|--------------|
+| 0 | — | Success | Continue normally |
+| 1 | — | General error (network failure, unexpected) | Warn; use cached data |
+| 2 | `exitCodeUsage` | Bad flags / missing args | Indicates a caller bug — log as error |
+| 3 | `exitCodeUnauthorized` | HTTP 401 — invalid or expired credentials | Hard fail; `authGuard` blocks live calls |
+| 4 | `exitCodeNotFound` | HTTP 404 — resource does not exist | Warn; use cached data |
+| 5 | `exitCodePermissionDenied` | HTTP 403 — account lacks required API privileges | Warn with specific message; use cached data |
+| 6 | `exitCodeRateLimited` | HTTP 429 — server throttling | Warn with specific message; use cached data |
+
+The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data.
 
 #### Key views (13 screens)
 
@@ -349,14 +365,7 @@ swift run JamfReports              # launch (debug)
 
 # Produce a runnable .app bundle (ad-hoc signed, local dev use)
 ./build-app.sh release             # → app/build/JamfReports.app
-
-# Skip Python runtime bundling for fast local iteration
-JRC_BUNDLE_PYTHON=0 ./build-app.sh debug
 ```
-
-The release build bundles a private Python runtime via `scripts/build-python-runtime.sh`.
-Pin details live in `app/python-runtime.lock`. The script refuses to proceed until
-`PBS_ARM64_SHA256` and `PBS_X86_64_SHA256` are filled in.
 
 For distribution to other Macs: sign with a Developer ID certificate, notarize via
 `xcrun notarytool`, and staple with `xcrun stapler staple`. These steps are currently
@@ -396,12 +405,18 @@ To add a new type:
 
 ---
 
-## jamf-cli JSON Shapes (v1.14.0)
+## jamf-cli JSON Shapes (v1.16.1)
 
-CoreDashboard parses these exact shapes. Minimum supported jamf-cli is **v1.14.0**.
+CoreDashboard parses these exact shapes. Minimum supported jamf-cli is **v1.16.1**.
 Older versions are not supported — older fallback branches were removed in W21 (patch-status
 `installed/total` shape). The `update-status` older shape is preserved pending live
 verification against a tenant with active update plans.
+
+The floor was bumped to 1.16.1 (from 1.14.0) on 2026-05-08 to pick up the platform-section
+nil-guard in `pro device <id>` (PR #185). v1.15 added URL normalization at all entry points,
+which complements `WorkspaceStore.consoleURL`'s defensive scheme prepend. JamfCLIInstaller
+surfaces a Settings notice when the detected jamf-cli is below this floor; the app does not
+hard-fail — most code paths still work, the warning is to nudge updates.
 
 **`pro report security --output json`**
 ```json

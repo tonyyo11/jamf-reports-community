@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-/// Discovers Python-owned `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist`
+/// Discovers `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist`
 /// files and parses them into `Schedule` model objects.
 enum LaunchAgentService {
 
@@ -19,7 +19,7 @@ enum LaunchAgentService {
     static let agentsDir: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
 
-    /// All Python-owned LaunchAgent plist files.
+    /// All Jamf Reports LaunchAgent plist files.
     static func list() -> [Schedule] {
         launchAgentEntries()
             .filter { $0.lastPathComponent.hasPrefix("\(LaunchAgentWriter.labelPrefix).") }
@@ -49,7 +49,7 @@ enum LaunchAgentService {
         return LegacyCleanupResult(removedLabels: removed.sorted())
     }
 
-    /// Remove generated Python-owned LaunchAgents for a profile. Used when
+    /// Remove generated Jamf Reports LaunchAgents for a profile. Used when
     /// leaving demo mode so synthetic demo schedules cannot appear in live mode.
     static func removeAgents(profile: String) -> [String] {
         guard ProfileService.isValid(profile) else { return [] }
@@ -87,7 +87,7 @@ enum LaunchAgentService {
     }
 
     /// Parse one plist into a Schedule. Returns nil if the plist is malformed
-    /// or the label doesn't match the Python-owned naming convention.
+    /// or the label doesn't match the expected naming convention.
     static func parse(_ url: URL) -> Schedule? {
         guard let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization

@@ -71,9 +71,10 @@ struct ContentView: View {
     @ViewBuilder
     private var detailView: some View {
         switch tab {
-        case .overview:   OverviewView()
-        case .fleet:      FleetOverviewView()
-        case .devices:    DevicesView()
+        case .overview:     OverviewView()
+        case .fleet:        FleetOverviewView()
+        case .devices:      DevicesView()
+        case .deviceLookup: DeviceLookupView()
         case .trends:     TrendsView()
         case .audit:      AuditView()
         case .reports:    ReportsView()
@@ -90,9 +91,10 @@ struct ContentView: View {
 
     private func subtitle(for tab: Tab) -> String? {
         switch tab {
-        case .overview:   "FLEET"
-        case .fleet:      "MULTI-PROFILE"
-        case .devices:    "INVENTORY"
+        case .overview:     "FLEET"
+        case .fleet:        "MULTI-PROFILE"
+        case .devices:      "INVENTORY"
+        case .deviceLookup: "LOOKUP"
         case .trends:     "26W"
         case .audit:      "HEALTH & HYGIENE"
         case .schedules:  "LAUNCHAGENT"

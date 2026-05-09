@@ -3,14 +3,14 @@ import Charts
 
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
-    @Environment(\.dismiss) private var dismiss
     @State private var bridge = CLIBridge()
     @State private var trendStore = TrendStore()
     @State private var isRunning = false
     @State private var activitySelection: DeviceInventoryRecord.ID? = nil
+    @State private var navigationPath = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
@@ -35,6 +35,7 @@ struct OverviewView: View {
                 overviewDetail(destination)
             }
         }
+        .tint(Theme.Colors.goldBright)
         .onAppear {
             if !workspace.demoMode {
                 trendStore.load(profile: workspace.profile, range: .w12)
@@ -51,6 +52,21 @@ struct OverviewView: View {
                 trendStore.load(profile: workspace.profile, range: .w12)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
+            if !navigationPath.isEmpty {
+                navigationPath = NavigationPath()
+            }
+        }
+    }
+
+    /// Pops the current drill-down off the NavigationStack. Called by breadcrumb
+    /// "Overview" links inside drill-down detail views. We can't use
+    /// `@Environment(\.dismiss)` here because the property is read on the root
+    /// `OverviewView`; closures captured at that scope dismiss the root, which
+    /// on a top-level macOS window closes the window itself.
+    private func popDrillDown() {
+        guard !navigationPath.isEmpty else { return }
+        navigationPath.removeLast()
     }
 
     private var workspaceInitBanner: some View {
@@ -60,7 +76,7 @@ struct OverviewView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(Theme.Colors.gold)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Workspace not initialized")
+                    Text("Configuration incomplete")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     Text(workspace.workspaceInitMessage ?? workspaceInitDefaultMessage)
@@ -75,6 +91,7 @@ struct OverviewView: View {
                     PNPButton(title: "Initialize", style: .gold, size: .sm) {
                         Task { await workspace.initializeWorkspace() }
                     }
+                    .help("Create the workspace directory and seed it with a default config.yaml.")
                 }
             }
         }
@@ -108,12 +125,6 @@ struct OverviewView: View {
                         ok: workspace.jamfCLIPath != nil
                     )
                     liveStateTile(
-                        label: "jrc",
-                        value: workspace.jrcPath == nil ? "Missing" : "Available",
-                        sub: workspace.jrcPath ?? "No CLI entrypoint found",
-                        ok: workspace.jrcPath != nil
-                    )
-                    liveStateTile(
                         label: "Trend summaries",
                         value: "\(trendStore.filteredSummaries.count)",
                         sub: "~/Jamf-Reports/\(workspace.profile)/",
@@ -143,7 +154,7 @@ struct OverviewView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.025))
+        .background(Color(nsColor: .controlBackgroundColor))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(ok ? Theme.Colors.hairlineStrong : Theme.Colors.warn.opacity(0.45), lineWidth: 0.5)
@@ -166,6 +177,7 @@ struct OverviewView: View {
                             trendStore.load(profile: workspace.profile, range: .w12)
                         }
                     }
+                    .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
                     PNPButton(
                         title: isRunning ? "Running…" : "Generate Report",
                         icon: isRunning ? "hourglass" : "play.fill",
@@ -185,11 +197,13 @@ struct OverviewView: View {
             return
         }
         isRunning = true
-        workspace.globalStatus = "jrc collect + generate · profile=\(workspace.profile)"
+        workspace.globalStatus = "collect + generate · profile=\(workspace.profile)"
         let profile = workspace.profile
-        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { line in
+        // Status-bar race guard — see HealthCheckView.runAudit comment.
+        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
             Task { @MainActor in
-                workspace.globalStatus = "jrc · \(line.text)"
+                guard let workspace, self.isRunning else { return }
+                workspace.globalStatus = line.text
             }
         }
         isRunning = false
@@ -207,16 +221,42 @@ struct OverviewView: View {
     }
 
     private var statRow: some View {
-        HStack(spacing: 12) {
+        // Fixed-count flexible columns guarantee equal widths; an asymmetric
+        // child minWidth (previously 200 on the primary tile only) inside an
+        // adaptive grid let one column dominate and squeezed the rest into
+        // single-character vertical strips on live workspaces.
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(minimum: 0), spacing: 12),
+                count: max(workspace.selectedScoreCards.count, 1)
+            ),
+            spacing: 12
+        ) {
             ForEach(workspace.selectedScoreCards) { metric in
+                let isDanger = scoreCardTrend(for: metric) == .down && metric != .stale
                 NavigationLink(value: OverviewDrillDown.metric(metric.rawValue)) {
                     scoreCard(for: metric)
+                        .modifier(StatTileHealthModifier(isDanger: isDanger))
                         .drillDownChrome()
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Open \(metric.displayLabel) details")
                 .help("Open \(metric.displayLabel) details")
             }
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
+        let values: [Double] = workspace.demoMode ?
+            (metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])) :
+            trendStore.values(metric: metric)
+        guard let last = values.last else { return .flat }
+        let prev = values.count > 1 ? values[values.count - 2] : last
+        let diff = last - prev
+        if diff == 0 { return .flat }
+        if metric == .stale { return diff < 0 ? .up : .down }
+        return diff > 0 ? .up : .down
     }
 
     private func scoreCard(for metric: TrendSeries.Metric) -> some View {
@@ -344,6 +384,7 @@ struct OverviewView: View {
         }
         .chartLegend(.hidden)
         .frame(width: 160, height: 160)
+        .accessibilityLabel("macOS distribution donut chart: 73 percent of devices are on the current macOS release")
         .overlay(
             VStack(spacing: 2) {
                 Text("73%")
@@ -351,7 +392,13 @@ struct OverviewView: View {
                     .foregroundStyle(Theme.Colors.fg)
                 Kicker(text: "On Current")
             }
+            .accessibilityHidden(true)
         )
+        .accessibilityChartDescriptor(SectorChartDescriptor(
+            title: "macOS Distribution",
+            unit: "%",
+            slices: DemoData.osDistribution.map { .init(label: $0.version, value: $0.pct) }
+        ))
     }
 
     private var failingRulesBars: some View {
@@ -368,7 +415,8 @@ struct OverviewView: View {
                     GeometryReader { geo in
                         let w = CGFloat(r.fails) / CGFloat(maxFails) * geo.size.width
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.04))
+                            Capsule()
+                                .fill(Color(nsColor: NSColor.alternatingContentBackgroundColors[1]))
                                 .frame(height: 10)
                             Capsule().fill(Theme.Colors.gold).frame(width: w, height: 10)
                         }
@@ -408,39 +456,7 @@ struct OverviewView: View {
     }
 
     private func agentCard(_ a: SecurityAgent) -> some View {
-        let barColor: Color = a.pct > 90 ? Theme.Colors.ok :
-                              a.pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(a.name).font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.Colors.fg)
-            Text("\(String(format: "%.1f", a.pct))%")
-                .font(Theme.Fonts.serif(22, weight: .bold))
-                .foregroundStyle(Theme.Colors.fg)
-                .monospacedDigit()
-            HStack(spacing: 6) {
-                Mono(text: "\(a.installed) / 502", size: 10.5)
-                if a.trend == .up {
-                    Image(systemName: "arrow.up").font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Theme.Colors.ok)
-                }
-            }
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.05)).frame(height: 4)
-                GeometryReader { geo in
-                    Capsule().fill(barColor).frame(width: geo.size.width * a.pct / 100, height: 4)
-                }
-                .frame(height: 4)
-            }
-            .padding(.top, 4)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.025))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        AgentCardView(agent: a)
     }
 
     // MARK: Recent activity table
@@ -501,13 +517,10 @@ struct OverviewView: View {
                         Button("Copy User Email") {
                             SystemActions.copyToClipboard(device.user)
                         }
-                        if let jamfID = device.numericJamfID, !workspace.org.jamfURL.isEmpty {
+                        if let jamfID = device.numericJamfID,
+                           let url = workspace.consoleURL(forComputerID: jamfID) {
                             Button("Open in Jamf Pro") {
-                                let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
-                                let urlString = "\(jamfURL)/computers.html?id=\(jamfID)&o=r"
-                                if let url = URL(string: urlString) {
-                                    SystemActions.open(url)
-                                }
+                                SystemActions.open(url)
                             }
                         }
                     }
@@ -553,6 +566,16 @@ struct OverviewView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .background(Theme.Colors.winBG)
+        // Esc pops the drill-down. Hidden zero-size button with .cancelAction
+        // is the canonical SwiftUI pattern — system back-chevron doesn't expose
+        // a keyboard-shortcut surface, so we add our own.
+        .background {
+            Button("", action: popDrillDown)
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
     }
 
     private func metricDetail(_ metric: TrendSeries.Metric) -> some View {
@@ -563,7 +586,7 @@ struct OverviewView: View {
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: metric.displayLabel,
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { dismiss() })],
+                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: metric.displayLabel,
                 subtitle: "\(values.count) summaries · \(workspace.profile)"
             )
@@ -609,7 +632,7 @@ struct OverviewView: View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: "macOS Distribution",
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { dismiss() })],
+                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: "macOS Distribution",
                 subtitle: "\(DemoData.osDistribution.reduce(0) { $0 + $1.count }) devices across \(DemoData.osDistribution.count) versions"
             )
@@ -642,7 +665,7 @@ struct OverviewView: View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: "Top Failing Rules",
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { dismiss() })],
+                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: "Top Failing Rules",
                 subtitle: "NIST 800-53r5 Moderate · highest failure counts"
             )
@@ -676,7 +699,7 @@ struct OverviewView: View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: agent.name,
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { dismiss() })],
+                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: agent.name,
                 subtitle: "\(agent.installed) installed · mapped from \(agent.column)"
             )
@@ -715,7 +738,7 @@ struct OverviewView: View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: "Recent Activity",
-                breadcrumbs: [Breadcrumb(label: "Overview", action: { dismiss() })],
+                breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: "Recent Activity",
                 subtitle: "\(DemoData.deviceSample.count) recent devices from the current snapshot"
             )
@@ -745,13 +768,10 @@ struct OverviewView: View {
                         Button("Copy User Email") {
                             SystemActions.copyToClipboard(device.user)
                         }
-                        if let jamfID = device.numericJamfID, !workspace.org.jamfURL.isEmpty {
+                        if let jamfID = device.numericJamfID,
+                           let url = workspace.consoleURL(forComputerID: jamfID) {
                             Button("Open in Jamf Pro") {
-                                let jamfURL = workspace.org.jamfURL.trimmingCharacters(in: .init(charactersIn: "/"))
-                                let urlString = "\(jamfURL)/computers.html?id=\(jamfID)&o=r"
-                                if let url = URL(string: urlString) {
-                                    SystemActions.open(url)
-                                }
+                                SystemActions.open(url)
                             }
                         }
                     }
@@ -872,7 +892,15 @@ private enum OverviewDrillDown: Hashable {
 
 private extension View {
     func drillDownChrome() -> some View {
-        self
+        modifier(DrillDownChromeModifier())
+    }
+}
+
+private struct DrillDownChromeModifier: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
             .overlay(alignment: .topTrailing) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .bold))
@@ -880,7 +908,115 @@ private extension View {
                     .padding(8)
                     .background(.ultraThinMaterial, in: Circle())
                     .padding(10)
+                    .opacity(isHovering ? 1 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .strokeBorder(
+                        isHovering ? Theme.Colors.gold.opacity(0.4) : Theme.Colors.hairlineStrong,
+                        lineWidth: 0.5
+                    )
+                    .allowsHitTesting(false)
+            )
             .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    isHovering = hovering
+                }
+            }
+    }
+}
+
+private struct StatTileHealthModifier: ViewModifier {
+    let isDanger: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .fill(isDanger ? Theme.Colors.danger.opacity(0.08) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .strokeBorder(
+                        isDanger ? Theme.Colors.danger.opacity(0.35) : Color.clear,
+                        lineWidth: 0.5
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
+    }
+}
+
+private struct AgentCardView: View {
+    let agent: SecurityAgent
+    @State private var isHovering = false
+
+    var body: some View {
+        let pct = agent.pct
+        let isAtRisk = pct < 80
+        let barColor: Color = pct > 90 ? Theme.Colors.ok :
+                              pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
+        let trackColor: Color = isAtRisk ? Theme.Colors.warn.opacity(0.15) : Color.white.opacity(0.05)
+        let gap = max(0, 502 - agent.installed)
+
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(agent.name).font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fg)
+            Text("\(String(format: "%.1f", pct))%")
+                .font(Theme.Fonts.serif(22, weight: .bold))
+                .foregroundStyle(Theme.Colors.fg)
+                .monospacedDigit()
+            HStack(spacing: 6) {
+                Mono(text: "\(agent.installed) / 502", size: 10.5)
+                if agent.trend == .up {
+                    Image(systemName: "arrow.up").font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Theme.Colors.ok)
+                        .accessibilityHidden(true)
+                }
+            }
+            ZStack(alignment: .leading) {
+                Capsule().fill(trackColor).frame(height: 4)
+                GeometryReader { geo in
+                    Capsule().fill(barColor).frame(width: geo.size.width * pct / 100, height: 4)
+                }
+                .frame(height: 4)
+            }
+            .padding(.top, 4)
+            .accessibilityHidden(true)
+            if isAtRisk {
+                Mono(text: "\(gap) not installed", size: 10, color: Theme.Colors.fgMuted)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .shadow(color: .black.opacity(isHovering ? 0.25 : 0), radius: isHovering ? 8 : 0, y: isHovering ? 4 : 0)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(agentCardAccessibilityLabel)
+    }
+
+    private var agentCardAccessibilityLabel: String {
+        var parts = [
+            "\(agent.name): \(String(format: "%.1f", agent.pct))% coverage",
+            "\(agent.installed) of 502 installed",
+        ]
+        if agent.trend == .up { parts.append("trending up") }
+        let gap = max(0, 502 - agent.installed)
+        if gap > 0 { parts.append("\(gap) not installed") }
+        return parts.joined(separator: ", ")
     }
 }

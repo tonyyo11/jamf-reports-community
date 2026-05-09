@@ -79,22 +79,6 @@ def test_is_protect_available_returns_bool(jrc, tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# JamfCLIBridge protect_* shims
-# ---------------------------------------------------------------------------
-
-
-def test_jamf_cli_bridge_protect_methods_are_shims(jrc, tmp_path) -> None:
-    """The legacy methods should construct a ProtectCLIBridge under the hood."""
-    bridge = jrc.JamfCLIBridge(
-        save_output=False, data_dir=str(tmp_path), profile="dummy"
-    )
-    shim = bridge._protect_shim_bridge()
-    assert isinstance(shim, jrc.ProtectCLIBridge)
-    # Shim should be cached on subsequent calls.
-    assert bridge._protect_shim_bridge() is shim
-
-
-# ---------------------------------------------------------------------------
 # CoreDashboard._write_protect_plans
 # ---------------------------------------------------------------------------
 
@@ -120,16 +104,29 @@ class _StubProtectBridge:
 
 def _make_core_dashboard(jrc, tmp_path, bridge, *, protect_enabled=True,
                         plans_enabled=True):
+    """Build a CoreDashboard wired with the stub protect bridge.
+
+    The Pro `bridge` slot is given an empty placeholder JamfCLIBridge — the
+    Protect sheets only touch `self._protect_bridge`, which we inject via the
+    `protect_bridge=` keyword. This mirrors how production constructs the
+    dashboard with two separate bridges (Pro + Protect).
+    """
     import xlsxwriter
 
     config = jrc.Config("__workspace_init_defaults__.yaml")
     config._data["protect"]["enabled"] = protect_enabled
     config._data["protect"]["plans"]["enabled"] = plans_enabled
 
+    placeholder_pro = jrc.JamfCLIBridge(
+        save_output=False, data_dir=str(tmp_path), profile=""
+    )
+
     out_path = tmp_path / "protect.xlsx"
     workbook = xlsxwriter.Workbook(str(out_path), {"remove_timezone": True})
     fmts = jrc._build_formats(workbook)
-    dashboard = jrc.CoreDashboard(config, bridge, workbook, fmts)
+    dashboard = jrc.CoreDashboard(
+        config, placeholder_pro, workbook, fmts, protect_bridge=bridge
+    )
     return dashboard, workbook, out_path
 
 

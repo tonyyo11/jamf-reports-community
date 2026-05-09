@@ -1,0 +1,30 @@
+[
+  {
+    "section": "summary",
+    "data": {
+      "total_devices": 150,
+      "filevault_encrypted": 142,
+      "gatekeeper_enabled": 150,
+      "sip_enabled": 149,
+      "firewall_enabled": 130
+    }
+  },
+  {
+    "section": "os_version",
+    "os_version": "15.4.1",
+    "count": 90,
+    "pct": "60%"
+  },
+  {
+    "section": "os_version",
+    "os_version": "14.7.5",
+    "count": 60,
+    "pct": "40%"
+  },
+  {
+    "section": "device",
+    "name": "MacBook-Pro-001",
+    "serial": "C02XY1234ABC",
+    "data": {}
+  }
+]

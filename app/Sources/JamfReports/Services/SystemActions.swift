@@ -53,14 +53,39 @@ enum SystemActions {
         return nil
     }
 
+    /// B-04: narrowed to Jamf-owned data only.
+    /// - Removed `/tmp` (TOCTOU/symlink-prone, shared across users on macOS;
+    ///   canonicalize() resolves /tmp → /private/tmp anyway, leaving the
+    ///   allow-list dead).
+    /// - Removed `~/Documents` and `~/Downloads`: the audit found these too
+    ///   broad to claim "bounded to Jamf data". User-initiated export targets
+    ///   should go through `userExportTargetIsAllowed(_:)` with explicit
+    ///   per-action confirmation (UI seam not yet wired).
     private static func allowedParents() -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
             home.appendingPathComponent("Jamf-Reports"),
             home.appendingPathComponent("Library/LaunchAgents"),
+            home.appendingPathComponent("Library/Logs/JamfReports"),
+        ]
+    }
+
+    /// B-04: secondary allow-list for user-initiated export destinations
+    /// (Save As..., reveal-after-export). Callers MUST present a confirmation
+    /// affordance before invoking SystemActions on a path approved only by
+    /// this method — the broader trust comes from the user's explicit choice,
+    /// not from the path itself. Currently a seam: not yet wired into UI.
+    static func userExportTargetIsAllowed(_ url: URL) -> Bool {
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let exportRoots = [
             home.appendingPathComponent("Documents"),
             home.appendingPathComponent("Downloads"),
-            URL(fileURLWithPath: "/tmp"),
-        ]
+            home.appendingPathComponent("Desktop"),
+        ].map { $0.standardizedFileURL.path }
+        for root in exportRoots {
+            if resolved == root || resolved.hasPrefix(root + "/") { return true }
+        }
+        return false
     }
 }

@@ -63,7 +63,7 @@ struct BackupsView: View {
     private var header: some View {
         PageHeader(
             kicker: "Configuration Backups",
-            title: "\(backups.count) backups",
+            title: "\(backups.count) backup\(backups.count == 1 ? "" : "s")",
             subtitle: "~/Jamf-Reports/\(workspace.profile)/backups/"
         ) {
             AnyView(
@@ -72,10 +72,11 @@ struct BackupsView: View {
                     PNPButton(title: "Reveal in Finder", icon: "folder") {
                         SystemActions.openFolder(backupsDirectory)
                     }
+                    .help("Open the backups directory for this workspace in Finder.")
                     Mono(
                         text: diffSelectionHint,
                         size: 10.5,
-                        color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Colors.fgMuted
+                        color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Text.tertiary
                     )
                     PNPButton(
                         title: isRunningDiff ? "Diffing..." : "Diff Selected",
@@ -104,18 +105,18 @@ struct BackupsView: View {
         HStack(spacing: 8) {
             Image(systemName: "tag")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary)
             TextField("Label", text: $backupLabel)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
-                .foregroundStyle(Theme.Colors.fg)
+                .foregroundStyle(Theme.Text.primary)
         }
         .padding(.horizontal, 10)
         .frame(width: 160, height: 30)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
-                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                .strokeBorder(Theme.Hairline.strong, lineWidth: 0.5)
         )
     }
 
@@ -127,7 +128,7 @@ struct BackupsView: View {
                     .foregroundStyle(Theme.Colors.warn)
                 Text(errorMessage)
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fg2)
+                    .foregroundStyle(Theme.Text.secondary)
                 Spacer()
             }
             .padding(12)
@@ -149,11 +150,11 @@ struct BackupsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(backup.label.isEmpty ? backup.name : backup.label)
                                 .font(.system(size: 12.5, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.fg)
+                                .foregroundStyle(Theme.Text.primary)
                             if backup.label.isEmpty {
                                 Text("No label set")
                                     .font(Theme.Fonts.mono(10.5))
-                                    .foregroundStyle(Theme.Colors.fgMuted.opacity(0.65))
+                                    .foregroundStyle(Theme.Text.tertiary.opacity(0.65))
                             } else {
                                 Mono(text: backup.name, size: 10.5)
                             }
@@ -194,10 +195,10 @@ struct BackupsView: View {
                 .foregroundStyle(Theme.Colors.gold)
             Text("No backups yet")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.Colors.fg)
+                .foregroundStyle(Theme.Text.primary)
             Text("Run New Backup to create the first configuration snapshot.")
                 .font(.system(size: 12))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 360)
     }
@@ -221,7 +222,7 @@ struct BackupsView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "terminal")
                         .foregroundStyle(Theme.Colors.gold)
-                    Mono(text: isRunningBackup ? "jrc backup running" : "jrc backup output", color: Theme.Colors.fg2)
+                    Mono(text: isRunningBackup ? "Backup running" : "Backup output", color: Theme.Text.secondary)
                     if !shouldShowBackupLogBody {
                         Mono(text: "No output yet.", size: 10.5)
                     }
@@ -233,7 +234,7 @@ struct BackupsView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 if shouldShowBackupLogBody {
-                    Divider().background(Theme.Colors.hairlineStrong)
+                    Divider().background(Theme.Hairline.strong)
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(backupOutput) { line in
                             Text(line.text)
@@ -262,7 +263,7 @@ struct BackupsView: View {
                     if diffOutput.isEmpty {
                         Text("No diff output.")
                             .font(Theme.Fonts.mono(11.5))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary)
                     } else {
                         ForEach(diffOutput) { line in
                             DiffLineView(text: line.text, fallbackColor: color(for: line.level))
@@ -275,7 +276,7 @@ struct BackupsView: View {
         }
         .padding(22)
         .frame(width: 760, height: 520)
-        .background(Theme.Colors.winBG)
+        .background(Theme.Surface.base)
     }
 
     private func runBackup() {
@@ -337,7 +338,7 @@ struct BackupsView: View {
 
     private func color(for level: CLIBridge.LogLevel) -> Color {
         switch level {
-        case .info: Theme.Colors.fg2
+        case .info: Theme.Text.secondary
         case .ok: Theme.Colors.ok
         case .warn: Theme.Colors.warn
         case .fail: Theme.Colors.danger
@@ -373,8 +374,8 @@ private struct DiffLineView: View {
         case .addition: Theme.Colors.ok
         case .deletion: Theme.Colors.danger
         case .hunk: Theme.Colors.goldBright
-        case .fileHeader: Theme.Colors.fg2
-        case .unchanged: text.hasPrefix("[") ? fallbackColor : Theme.Colors.fgMuted
+        case .fileHeader: Theme.Text.secondary
+        case .unchanged: text.hasPrefix("[") ? fallbackColor : Theme.Text.tertiary
         }
     }
 

@@ -8,10 +8,16 @@ struct TrendsView: View {
     @State private var trendStore = TrendStore()
     @State private var bridge = CLIBridge()
     @State private var metric: TrendSeries.Metric = .stability
-    @State private var range: TrendRange = .w26
+    @State private var range: TrendRange = .w4
     @State private var selectedDate: Date? = nil
     @State private var isArchiving = false
     @State private var isExporting = false
+    /// Index of the snapshot bar currently hovered, for floating tooltip in archive timeline.
+    @State private var hoveredArchiveIdx: Int? = nil
+    /// Drives the pulsing "live" indicator on the latest snapshot bar.
+    @State private var archivePulse: Bool = false
+    /// Drives the danger wash pulse on negative-trend metric pills.
+    @State private var pillPulse: Bool = false
 
     private var trendPoints: [TrendPoint] {
         workspaceStore.demoMode
@@ -58,6 +64,23 @@ struct TrendsView: View {
     /// "good" trend for stale-devices is *down*; everything else is *up*.
     private var deltaIsPositive: Bool {
         metric == .stale ? delta < 0 : delta > 0
+    }
+
+    /// "Apr 1 → Apr 25 · 12 weeks" — used as the hero header date-range pill.
+    private var rangeBadgeText: String {
+        let f = SummaryJSONParser.dateFormatter
+        guard let first = trendDates.first, let last = trendDates.last else {
+            return "No snapshots"
+        }
+        if first == last {
+            return f.string(from: first)
+        }
+        let weeks = max(
+            1,
+            Int((last.timeIntervalSince(first) / (7 * 24 * 3600)).rounded())
+        )
+        let suffix = weeks == 1 ? "1 week" : "\(weeks) weeks"
+        return "\(f.string(from: first)) → \(f.string(from: last)) · \(suffix)"
     }
 
     var body: some View {
@@ -153,7 +176,7 @@ struct TrendsView: View {
             kicker: "Trends · \(range.rawValue)",
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: "Historical Trends",
-            subtitle: "Snapshot history from snapshots/summaries · \(trendDates.count) snapshots",
+            subtitle: "Snapshot history from snapshots/summaries · \(trendDates.count) snapshot\(trendDates.count == 1 ? "" : "s")",
             lastModified: workspaceStore.demoMode ? Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 25)) : trendStore.filteredSummaries.last?.parsedDate
         ) {
             AnyView(
@@ -195,30 +218,69 @@ struct TrendsView: View {
         let goodTrend = m == .stale ? dl < 0 : dl > 0
         let isActive = metric == m
         let color = Color(hex: m.colorHex)
+        // Tail of the series for the in-pill micro sparkline.
+        let sparkValues = Array(series.suffix(8))
+        let isBadTrend = !goodTrend && m != .stale
 
         return Button {
             withAnimation(.snappy(duration: 0.25)) { metric = m }
         } label: {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
                 Text(m.displayLabel).font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Text("\(dl >= 0 ? "+" : "")\(Int(dl.rounded()))\(m.unit)")
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
+                if sparkValues.count >= 2 {
+                    Sparkline(
+                        values: sparkValues,
+                        color: goodTrend ? Theme.Colors.ok : Theme.Colors.danger
+                    )
+                    .frame(width: 40, height: 18)
+                    .opacity(0.85)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isActive ? color.opacity(0.14) : Color.white.opacity(0.03))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isActive ? color.opacity(0.14) : Color.white.opacity(0.03))
+                    if isBadTrend {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Theme.Colors.danger.opacity(pillPulse ? 0.12 : 0.04))
+                    }
+                }
             )
+            .overlay(alignment: .leading) {
+                // Animated left-edge accent bar that slides in on selection.
+                if isActive {
+                    Rectangle()
+                        .fill(color)
+                        .frame(width: 2)
+                        .padding(.vertical, 4)
+                        .clipShape(RoundedRectangle(cornerRadius: 1, style: .continuous))
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        .accessibilityHidden(true)
+                }
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(isActive ? color : Theme.Colors.hairlineStrong, lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(metricPillAccessibilityLabel(m, delta: dl, goodTrend: goodTrend))
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .help("Show \(m.displayLabel) trend")
+        .onAppear {
+            guard !pillPulse else { return }
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                pillPulse = true
+            }
+        }
     }
 
     // MARK: Hero chart
@@ -234,7 +296,13 @@ struct TrendsView: View {
                                 .font(Theme.Fonts.serif(44, weight: .bold))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .monospacedDigit()
-                            
+                                .contentTransition(.numericText(countsDown: delta < 0))
+                                .animation(.snappy(duration: 0.35), value: displayVal)
+                                .shadow(
+                                    color: Color(hex: metric.colorHex).opacity(0.3),
+                                    radius: 20
+                                )
+
                             if selectedPoint == nil {
                                 HStack(spacing: 4) {
                                     Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
@@ -243,9 +311,7 @@ struct TrendsView: View {
                                 }
                                 .font(Theme.Fonts.mono(14, weight: .semibold))
                                 .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
-                                Text("vs. \(SummaryJSONParser.dateFormatter.string(from: trendDates.first ?? Date()))")
-                                    .font(Theme.Fonts.mono(11))
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                Pill(text: rangeBadgeText, tone: .muted)
                             } else {
                                 Text("at \(displayDate)")
                                     .font(Theme.Fonts.mono(14, weight: .semibold))
@@ -328,6 +394,13 @@ struct TrendsView: View {
                     }
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
+                    .accessibilityChartDescriptor(TrendLineChartDescriptor(
+                        title: "\(metric.displayLabel) Trend",
+                        seriesName: metric.displayLabel,
+                        dates: trendPoints.map(\.date),
+                        values: trendPoints.map(\.value),
+                        unit: metric.unit
+                    ))
                 } else {
                     Text("Calculating domain...")
                         .frame(height: 260)
@@ -352,6 +425,7 @@ struct TrendsView: View {
                             SystemActions.openFolder(dir)
                         }
                     }
+                    .help("Open the summaries directory where archived summary.json snapshots live.")
                 }
             }
         }
@@ -440,7 +514,7 @@ struct TrendsView: View {
                 .foregroundStyle(Theme.Colors.fgMuted)
         }
         .frame(maxWidth: .infinity, minHeight: 200)
-        .background(Theme.Colors.codeBG)
+        .background(Color(nsColor: .textBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
@@ -490,6 +564,17 @@ struct TrendsView: View {
                 .chartYAxis(.hidden)
                 .chartLegend(.hidden)
                 .frame(height: 200)
+                .accessibilityChartDescriptor(StackedBarChartDescriptor(
+                    title: "Compliance Distribution Over Time",
+                    dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
+                    bands: DemoData.complianceBands.enumerated().map { bandIdx, band in
+                        StackedBarChartDescriptor.Band(
+                            name: band.label,
+                            dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
+                            values: weeks.map { $0.values[bandIdx] }
+                        )
+                    }
+                ))
             } else {
                 Text("No Data")
                     .frame(height: 200)
@@ -522,11 +607,35 @@ struct TrendsView: View {
                 }
                 .chartLegend(.hidden)
                 .frame(height: 200)
+                .accessibilityChartDescriptor(MultiLineChartDescriptor(
+                    title: "Security Posture Comparison",
+                    seriesList: [
+                        .init(name: "FileVault",
+                              dates: points(for: .fileVault).map(\.date),
+                              values: points(for: .fileVault).map(\.value)),
+                        .init(name: "NIST Compliance",
+                              dates: points(for: .compliance).map(\.date),
+                              values: points(for: .compliance).map(\.value)),
+                        .init(name: "macOS Current",
+                              dates: points(for: .osCurrent).map(\.date),
+                              values: points(for: .osCurrent).map(\.value)),
+                    ]
+                ))
             } else {
                 Text("No Data")
                     .frame(height: 200)
             }
         }
+    }
+
+    private func metricPillAccessibilityLabel(
+        _ m: TrendSeries.Metric,
+        delta: Double,
+        goodTrend: Bool
+    ) -> String {
+        let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
+        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(m.unit)"
+        return "\(m.displayLabel), \(direction), \(deltaStr) change"
     }
 
     private func points(for m: TrendSeries.Metric) -> [TrendPoint] {
@@ -575,6 +684,7 @@ struct TrendsView: View {
                                 SystemActions.openFolder(dir)
                             }
                         }
+                        .help("Open the archived summaries folder so you can inspect or copy snapshot JSON.")
                         PNPButton(
                             title: isArchiving ? "Archiving…" : "Archive now",
                             icon: isArchiving ? "hourglass" : "icloud.and.arrow.up",
@@ -594,16 +704,18 @@ struct TrendsView: View {
                         let isLatest = idx == lastIdx
                         let v = currentMetricValues[safe: idx] ?? 0
                         let h = 4 + (v / 100) * 36
-                        Rectangle()
-                            .fill(isLatest ? Theme.Colors.gold : Theme.Colors.teal)
-                            .opacity(isLatest ? 1 : 0.45)
-                            .frame(height: h)
-                            .frame(maxWidth: .infinity)
-                            .help(SummaryJSONParser.dateFormatter.string(from: date))
+                        archiveBar(
+                            idx: idx,
+                            date: date,
+                            value: v,
+                            height: h,
+                            isLatest: isLatest
+                        )
                     }
                 }
                 .frame(height: 56)
                 .padding(.vertical, 8)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: metric)
 
                 Divider().background(Theme.Colors.hairline)
                 HStack {
@@ -619,15 +731,82 @@ struct TrendsView: View {
             }
         }
     }
+    /// Single archive timeline bar with hover tooltip and (for `isLatest`) a pulsing dot.
+    private func archiveBar(
+        idx: Int,
+        date: Date,
+        value: Double,
+        height: CGFloat,
+        isLatest: Bool
+    ) -> some View {
+        // tealBright adapts better than the static teal token in light mode.
+        let isHovered = hoveredArchiveIdx == idx
+        return Rectangle()
+            .fill(isLatest ? Theme.Colors.gold : Theme.Colors.tealBright)
+            .opacity(isLatest ? 1 : 0.6)
+            .frame(height: height)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .top) {
+                if isLatest {
+                    Circle()
+                        .fill(Theme.Colors.goldBright)
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(archivePulse ? 1.4 : 1.0)
+                        .opacity(archivePulse ? 0.0 : 0.9)
+                        .offset(y: -3)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .top) {
+                if isHovered {
+                    Text("\(SummaryJSONParser.dateFormatter.string(from: date)) · \(Int(value.rounded()))\(metric.unit)")
+                        .font(Theme.Fonts.mono(10))
+                        .foregroundStyle(Theme.Colors.fg)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Theme.Colors.winBG2, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                        )
+                        .fixedSize()
+                        .offset(y: -28)
+                        .zIndex(1)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .onHover { inside in
+                hoveredArchiveIdx = inside ? idx : (hoveredArchiveIdx == idx ? nil : hoveredArchiveIdx)
+            }
+            .onAppear {
+                guard isLatest, !archivePulse else { return }
+                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: false)) {
+                    archivePulse = true
+                }
+            }
+            .accessibilityLabel(archiveBarLabel(date: date, value: value, isLatest: isLatest))
+    }
+
+    private func archiveBarLabel(date: Date, value: Double, isLatest: Bool) -> String {
+        let dateStr = SummaryJSONParser.dateFormatter.string(from: date)
+        let valueStr = "\(Int(value.rounded()))\(metric.unit)"
+        return isLatest
+            ? "\(dateStr): \(valueStr), latest snapshot"
+            : "\(dateStr): \(valueStr)"
+    }
+
     // MARK: Archive
 
     private func archiveNow() async {
         let profile = workspaceStore.profile
         isArchiving = true
-        workspaceStore.globalStatus = "jrc collect + generate · profile=\(profile)"
-        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { line in
+        workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
+        // Status-bar race guard — see HealthCheckView.runAudit comment.
+        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspaceStore] line in
             Task { @MainActor in
-                workspaceStore.globalStatus = "jrc · \(line.text)"
+                guard let workspaceStore, self.isArchiving else { return }
+                workspaceStore.globalStatus = line.text
             }
         }
         isArchiving = false

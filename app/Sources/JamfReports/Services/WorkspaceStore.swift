@@ -21,12 +21,15 @@ final class WorkspaceStore {
     var jamfCLIUpdateMessage: String?
     var jamfCLIUpdateAvailable: Bool = false
     var isUpdatingJamfCLI: Bool = false
-    var jrcPath: String?
     var isInitializingWorkspace: Bool = false
     var workspaceInitMessage: String?
     var launchAgentCleanupMessage: String?
     var globalStatus: String? = nil
     var toast: Toast? = nil
+    /// Last known auth probe result for the active profile. `nil` while not yet
+    /// checked (e.g. demo mode, or immediately after a profile switch before the
+    /// async probe completes). Refreshed by `refreshAuthStatus()`.
+    var authStatus: TokenStatus? = nil
     private var didAutoUpdateJamfCLI = false
     private static let forceDemoModeKey = "com.jamfreports.forceDemoMode"
 
@@ -93,6 +96,13 @@ final class WorkspaceStore {
     // MARK: Init
 
     init(demoMode: Bool? = nil) {
+        // MFS-2: one-shot Spotlight + permissions backfill on existing
+        // workspaces. Gated on a per-version UserDefaults sentinel so the
+        // walk runs at most once per app version. Wave 1 covers the
+        // going-forward path (`OnboardingFlow.createWorkspace`); this
+        // covers the pre-existing-workspace case.
+        WorkspaceMigration.runIfNeeded()
+
         let cleanup = LaunchAgentService.cleanupLegacyAgents()
         let realProfiles = ProfileService.discoverLocal()
         let realSchedules = LaunchAgentService.list()
@@ -111,7 +121,6 @@ final class WorkspaceStore {
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
         self.jamfCLIInstallSource = jamfCLI?.source.label
-        self.jrcPath = CLIBridge().jrcDisplayPath()
         self.launchAgentCleanupMessage = cleanup.message
     }
 
@@ -120,6 +129,7 @@ final class WorkspaceStore {
     func setProfile(_ id: String) {
         guard ProfileService.isValid(id) else { return }
         profile = id
+        authStatus = nil
         if !demoMode {
             org = Self.org(for: profiles.first(where: { $0.name == id }))
         }
@@ -129,8 +139,16 @@ final class WorkspaceStore {
                 do { try await loadConfig() } catch {
                     configError = error.localizedDescription
                 }
+                await refreshAuthStatus()
             }
         }
+    }
+
+    /// Probes `pro auth token` for the active profile and updates `authStatus`.
+    /// No-ops in demo mode. Called on profile switch and app launch.
+    func refreshAuthStatus() async {
+        guard !demoMode else { authStatus = nil; return }
+        authStatus = await CLIBridge().tokenStatus(for: profile)
     }
 
     /// Reload from disk — called from the sidebar refresh and after onboarding.
@@ -153,6 +171,7 @@ final class WorkspaceStore {
                 profile = real.first!.name
             }
             org = Self.org(for: real.first(where: { $0.name == profile }))
+            Task { await refreshAuthStatus() }
         }
     }
 
@@ -199,10 +218,10 @@ final class WorkspaceStore {
         return nil
     }
 
-    /// Run `jrc workspace-init` first so the user gets a workspace even without
-    /// jamf-cli auth, then optionally chain a `collect` call when jamf-cli is
-    /// available. The two failure modes are reported separately so a collect
-    /// failure doesn't masquerade as a workspace-init failure.
+    /// Call `ScaffoldService.writeMinimalConfig` first so the user gets a workspace
+    /// even without jamf-cli auth, then optionally chain a `collect` call when
+    /// jamf-cli is available. The two failure modes are reported separately so a
+    /// collect failure doesn't masquerade as a workspace-init failure.
     func initializeWorkspace() async {
         guard !demoMode, !isWorkspaceInitialized, !isInitializingWorkspace else { return }
         isInitializingWorkspace = true
@@ -239,7 +258,6 @@ final class WorkspaceStore {
         jamfCLIPath = jamfCLI?.path
         jamfCLIVersion = jamfCLI?.version
         jamfCLIInstallSource = jamfCLI?.source.label
-        jrcPath = CLIBridge().jrcDisplayPath()
     }
 
     func checkJamfCLIUpdate() async {
@@ -408,10 +426,53 @@ final class WorkspaceStore {
         consoleURL(path: "mobileDevices.html", id: id)
     }
 
+    /// Returns the Jamf Pro console URL for a computer group. `isStatic` selects
+    /// `staticComputerGroups.html`; otherwise `smartComputerGroups.html`.
+    func consoleURL(forComputerGroupID id: Int, isStatic: Bool) -> URL? {
+        consoleURL(path: isStatic ? "staticComputerGroups.html" : "smartComputerGroups.html", id: id)
+    }
+
+    /// Returns the Jamf Pro console URL for a policy.
+    /// Pattern: `<server>/policies.html?id=<id>&o=r`
+    func consoleURL(forPolicyID id: Int) -> URL? {
+        consoleURL(path: "policies.html", id: id)
+    }
+
+    /// Returns the Jamf Pro console URL for a computer configuration profile.
+    /// Pattern: `<server>/OSXConfigurationProfiles.html?id=<id>&o=r`
+    func consoleURL(forComputerConfigProfileID id: Int) -> URL? {
+        consoleURL(path: "OSXConfigurationProfiles.html", id: id)
+    }
+
+    /// Returns the Jamf Pro console URL for a mobile-device configuration profile.
+    /// Pattern: `<server>/mobileDeviceConfigurationProfiles.html?id=<id>&o=r`
+    func consoleURL(forMobileConfigProfileID id: Int) -> URL? {
+        consoleURL(path: "mobileDeviceConfigurationProfiles.html", id: id)
+    }
+
+    /// String-id convenience: wraps the numeric Int helper. Returns nil if the
+    /// string isn't a positive integer.
+    func consoleURL(forComputerID id: String) -> URL? {
+        Int(id).flatMap { consoleURL(forComputerID: $0) }
+    }
+
+    func consoleURL(forMobileDeviceID id: String) -> URL? {
+        Int(id).flatMap { consoleURL(forMobileDeviceID: $0) }
+    }
+
     private func consoleURL(path: String, id: Int) -> URL? {
         let rawServer = activeProfileURL()
-        guard !rawServer.isEmpty else { return nil }
-        guard var components = URLComponents(string: rawServer),
+        guard !rawServer.isEmpty,
+              rawServer != "(jamf-cli profile)" else { return nil }
+        // `ProfileService.displayURL` stores the profile URL as a bare host
+        // (e.g. `acme.jamfcloud.com`) for sidebar display. URLComponents on
+        // that yields no scheme, which used to silently fail and break every
+        // "Open in Jamf Pro" button. Default to https:// when no scheme is
+        // present — Jamf Pro is HTTPS-only.
+        let normalized = rawServer.contains("://")
+            ? rawServer
+            : "https://\(rawServer)"
+        guard var components = URLComponents(string: normalized),
               components.scheme?.isEmpty == false,
               components.host?.isEmpty == false else { return nil }
         let separator = components.path.hasSuffix("/") ? "" : "/"
@@ -448,46 +509,48 @@ final class WorkspaceStore {
 /// Routes the active screen. `Tab` is the source of truth for which detail view
 /// the `NavigationSplitView` renders, and the title shown in the toolbar.
 enum Tab: String, CaseIterable, Identifiable, Hashable {
-    case overview, fleet, devices, trends, audit, reports, schedules, runs
+    case overview, fleet, devices, deviceLookup, trends, audit, reports, schedules, runs
     case config, customize, sources, backups, settings, onboarding
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .overview:   "Overview"
-        case .fleet:      "Fleet Overview"
-        case .devices:    "Devices"
-        case .trends:     "Trends"
-        case .audit:      "Health Audit"
-        case .reports:    "Generated"
-        case .schedules:  "Schedules"
-        case .runs:       "Run History"
-        case .config:     "Config"
-        case .customize:  "Customize"
-        case .sources:    "Data Sources"
-        case .backups:    "Backups"
-        case .settings:   "Settings"
-        case .onboarding: "Onboarding"
+        case .overview:     "Overview"
+        case .fleet:        "Fleet Overview"
+        case .devices:      "Devices"
+        case .deviceLookup: "Device Lookup"
+        case .trends:       "Trends"
+        case .audit:        "Health Audit"
+        case .reports:      "Generated"
+        case .schedules:    "Schedules"
+        case .runs:         "Run History"
+        case .config:       "Config"
+        case .customize:    "Customize"
+        case .sources:      "Data Sources"
+        case .backups:      "Backups"
+        case .settings:     "Settings"
+        case .onboarding:   "Onboarding"
         }
     }
 
     var sfSymbol: String {
         switch self {
-        case .overview:   "house"
-        case .fleet:      "rectangle.grid.2x2"
-        case .devices:    "laptopcomputer"
-        case .trends:     "chart.line.uptrend.xyaxis"
-        case .audit:      "shield.checkered"
-        case .reports:    "doc.text"
-        case .schedules:  "clock"
-        case .runs:       "terminal"
-        case .config:     "wrench.and.screwdriver"
-        case .customize:  "sparkles"
-        case .sources:    "externaldrive"
-        case .backups:    "externaldrive.badge.timemachine"
-        case .settings:   "gear"
-        case .onboarding: "wand.and.stars"
+        case .overview:     "house"
+        case .fleet:        "rectangle.grid.2x2"
+        case .devices:      "laptopcomputer"
+        case .deviceLookup: "magnifyingglass"
+        case .trends:       "chart.line.uptrend.xyaxis"
+        case .audit:        "shield.checkered"
+        case .reports:      "doc.text"
+        case .schedules:    "clock"
+        case .runs:         "terminal"
+        case .config:       "wrench.and.screwdriver"
+        case .customize:    "sparkles"
+        case .sources:      "externaldrive"
+        case .backups:      "externaldrive.badge.timemachine"
+        case .settings:     "gear"
+        case .onboarding:   "wand.and.stars"
         }
     }
 
@@ -522,8 +585,8 @@ enum SidebarMode: String, CaseIterable {
 // MARK: - Toast Model
 
 struct Toast: Identifiable, Sendable {
-    enum Style { case info, success, danger }
-    var id: UUID = UUID()
+    enum Style: Sendable { case info, success, danger }
+    let id: UUID = UUID()
     let message: String
-    var style: Style = .info
+    let style: Style
 }

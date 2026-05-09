@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 struct FleetOverviewView: View {
@@ -6,6 +7,7 @@ struct FleetOverviewView: View {
     @State private var rows: [FleetProfileOverview] = []
     @State private var isLoading = false
     @State private var issuesOnly: Bool = false
+    @State private var navigationPath = NavigationPath()
 
     private var visibleRows: [FleetProfileOverview] {
         issuesOnly ? rows.filter { fleetProfileHasIssue($0.summary) } : rows
@@ -30,7 +32,7 @@ struct FleetOverviewView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
@@ -46,11 +48,25 @@ struct FleetOverviewView: View {
             .navigationDestination(for: String.self) { profile in
                 if let row = rows.first(where: { $0.profile == profile }) {
                     profileDetail(row)
+                } else {
+                    // Profile data not yet loaded; show placeholder.
+                    VStack(spacing: 8) {
+                        ProgressView()
+                        Text("Loading \(profile)…")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
         .task(id: profileKey) {
             await load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
+            if !navigationPath.isEmpty {
+                navigationPath = NavigationPath()
+            }
         }
     }
 
@@ -69,6 +85,7 @@ struct FleetOverviewView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         Task { await load() }
                     }
+                    .help("Re-aggregate every initialized profile's latest summary snapshot.")
                 }
             )
         }
@@ -82,17 +99,56 @@ struct FleetOverviewView: View {
         )
     }
 
+    private var issueCount: Int {
+        rows.filter { fleetProfileHasIssue($0.summary) }.count
+    }
+
+    private var stabilitySpark: [Double] {
+        rows.compactMap { $0.summary?.stabilityIndex }
+    }
+
     private var summaryStrip: some View {
         HStack(spacing: 12) {
             StatTile(label: "Profiles", value: "\(rows.count)", sub: "Initialized workspaces")
+                .overlay(alignment: .topTrailing) {
+                    if issueCount > 0 {
+                        Pill(text: "\(issueCount) Issue\(issueCount == 1 ? "" : "s")", tone: .danger)
+                            .padding(8)
+                    }
+                }
             StatTile(label: "Devices", value: "\(totalDevices)", sub: "Latest successful summaries")
             StatTile(
                 label: "Stability",
                 value: stabilityLabel(averageStability),
-                sub: "Average index"
+                sub: "Average index",
+                sparkValues: stabilitySpark.isEmpty ? nil : stabilitySpark,
+                sparkColor: Theme.Colors.teal
             )
-            StatTile(label: "Latest Run", value: latestRunDate, sub: "Most recent summary")
+            latestRunTile
         }
+    }
+
+    private var latestRunTile: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Kicker(text: "Latest Run")
+            Text(latestRunDate)
+                .font(Theme.Fonts.mono(18, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fg)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            Text("Most recent summary across all profiles")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.Colors.fgMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.winBG2)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
     }
 
     private var issuesFilter: some View {
@@ -111,13 +167,17 @@ struct FleetOverviewView: View {
             if visibleRows.isEmpty && issuesOnly {
                 HStack {
                     Spacer()
-                    VStack(spacing: 8) {
+                    VStack(spacing: 10) {
                         Image(systemName: "checkmark.shield")
                             .font(.system(size: 32, weight: .light))
                             .foregroundStyle(Theme.Colors.teal)
                         Text("No profiles with issues — fleet looks healthy")
                             .font(.system(size: 14))
                             .foregroundStyle(Theme.Colors.fgMuted)
+                        PNPButton(title: "Show all profiles", icon: "list.bullet", size: .sm) {
+                            issuesOnly = false
+                        }
+                        .help("Disable the Issues-Only filter to see every profile.")
                     }
                     .padding(.vertical, 48)
                     Spacer()
@@ -134,6 +194,7 @@ struct FleetOverviewView: View {
                                 .fleetDrillDownChrome()
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Open \(row.profile) fleet details")
                         .help("Open \(row.profile) fleet details")
                     }
                 }
@@ -175,6 +236,8 @@ struct FleetOverviewView: View {
                     )
                 }
 
+                stabilityTrendCard(for: row)
+
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
@@ -212,15 +275,19 @@ struct FleetOverviewView: View {
                             PNPButton(title: "Overview", icon: Tab.overview.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .overview)
                             }
+                            .help("Switch to `\(row.profile)` and open the Overview tab.")
                             PNPButton(title: "Devices", icon: Tab.devices.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .devices)
                             }
+                            .help("Switch to `\(row.profile)` and open the Devices tab.")
                             PNPButton(title: "Runs", icon: Tab.runs.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .runs)
                             }
+                            .help("Switch to `\(row.profile)` and open the Runs tab.")
                             PNPButton(title: "Schedules", icon: Tab.schedules.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .schedules)
                             }
+                            .help("Switch to `\(row.profile)` and open the Schedules tab.")
                         }
                     }
                 }
@@ -231,6 +298,103 @@ struct FleetOverviewView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .background(Theme.Colors.winBG)
+    }
+
+    private func stabilityTrendPoints(_ summaries: [DailySummary]) -> [StabilityTrendPoint] {
+        summaries.compactMap { summary in
+            guard let value = summary.stabilityIndex else { return nil }
+            let date = summary.parsedDate
+            guard date != .distantPast else { return nil }
+            return StabilityTrendPoint(date: date, value: value)
+        }
+    }
+
+    private func stabilityTrendCard(for row: FleetProfileOverview) -> some View {
+        let points = stabilityTrendPoints(row.summaries)
+        return Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    SectionHeader(title: "Stability Trend")
+                    Spacer()
+                    if !points.isEmpty {
+                        Pill(text: "\(points.count) snapshot\(points.count == 1 ? "" : "s")",
+                             tone: .muted)
+                    }
+                }
+                if points.isEmpty {
+                    stabilityEmptyState
+                } else {
+                    stabilityChart(points: points)
+                }
+            }
+        }
+    }
+
+    private var stabilityEmptyState: some View {
+        VStack(spacing: 6) {
+            Kicker(text: "No stability history yet")
+            Text("Generate a report to start tracking trends")
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.Colors.fgMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 200)
+    }
+
+    private func stabilityChart(points: [StabilityTrendPoint]) -> some View {
+        Chart {
+            ForEach(points) { point in
+                AreaMark(
+                    x: .value("Date", point.date),
+                    y: .value("Stability", point.value)
+                )
+                .foregroundStyle(LinearGradient(
+                    colors: [Theme.Colors.teal.opacity(0.35), Theme.Colors.teal.opacity(0)],
+                    startPoint: .top, endPoint: .bottom
+                ))
+                .interpolationMethod(.catmullRom)
+
+                LineMark(
+                    x: .value("Date", point.date),
+                    y: .value("Stability", point.value)
+                )
+                .foregroundStyle(Theme.Colors.teal)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .interpolationMethod(.catmullRom)
+            }
+        }
+        .chartYScale(domain: 0...100)
+        .chartXAxis {
+            AxisMarks { _ in
+                AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day(),
+                               centered: false)
+                    .font(Theme.Fonts.mono(10))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) { value in
+                AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                AxisValueLabel(horizontalSpacing: 6) {
+                    if let pct = value.as(Double.self) {
+                        Text("\(Int(pct))%")
+                            .font(Theme.Fonts.mono(10))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+            }
+        }
+        .frame(height: 200)
+        .accessibilityChartDescriptor(TrendLineChartDescriptor(
+            title: "Stability Trend",
+            seriesName: "Stability Index",
+            dates: points.map(\.date),
+            values: points.map(\.value),
+            unit: "%"
+        ))
     }
 
     private func profileMetricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
@@ -249,10 +413,13 @@ struct FleetOverviewView: View {
                 }
             }
             .frame(height: 8)
+            .accessibilityHidden(true)
             Mono(text: value.map { "\(String(format: "%.1f", $0))%" } ?? "--",
                  color: Theme.Colors.fg)
                 .frame(width: 56, alignment: .trailing)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value.map { "\(String(format: "%.1f", $0))%" } ?? "no data")")
     }
 
     private func stalePercent(_ summary: DailySummary) -> Double {
@@ -287,7 +454,11 @@ struct FleetOverviewView: View {
             profiles.map { profile in
                 let summaries = (try? WorkspacePaths.summariesDir(for: profile.name))
                     .map { SummaryJSONParser.parseDirectory($0) } ?? []
-                return FleetProfileOverview(profile: profile.name, summary: summaries.last)
+                return FleetProfileOverview(
+                    profile: profile.name,
+                    summary: summaries.last,
+                    summaries: summaries
+                )
             }
         }.value
         
@@ -311,7 +482,11 @@ struct FleetOverviewView: View {
                 crowdstrikePct: 93 - offset,
                 patchPct: 84 - offset
             )
-            return FleetProfileOverview(profile: profile.name, summary: summary)
+            return FleetProfileOverview(
+                profile: profile.name,
+                summary: summary,
+                summaries: [summary]
+            )
         }
     }
 }
@@ -320,8 +495,15 @@ private struct FleetProfileOverview: Identifiable, Sendable {
     var id: String { profile }
     let profile: String
     let summary: DailySummary?
+    var summaries: [DailySummary] = []
 
     var hasIssue: Bool { fleetProfileHasIssue(summary) }
+}
+
+private struct StabilityTrendPoint: Identifiable, Sendable {
+    let date: Date
+    let value: Double
+    var id: Date { date }
 }
 
 private struct FleetProfileCard: View {
@@ -331,23 +513,49 @@ private struct FleetProfileCard: View {
         row.summary?.stabilityIndex
     }
 
+    private var hasIssue: Bool { fleetProfileHasIssue(row.summary) }
+    private var hasNoSummary: Bool { row.summary == nil }
+
     var body: some View {
         Card(padding: 16) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Kicker(text: "Profile")
-                        Text(row.profile)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fg)
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                    Pill(
-                        text: stability.map { stabilityLabel($0) } ?? "No Data",
-                        tone: stabilityTone(stability)
-                    )
+            HStack(alignment: .top, spacing: 12) {
+                if hasIssue && !hasNoSummary {
+                    Rectangle()
+                        .fill(Theme.Colors.warn)
+                        .frame(width: 3)
+                        .clipShape(RoundedRectangle(cornerRadius: 1.5, style: .continuous))
                 }
+                cardContent
+            }
+        }
+        .overlay {
+            if hasNoSummary {
+                RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
+                    .strokeBorder(
+                        Theme.Colors.hairlineStrong,
+                        style: StrokeStyle(lineWidth: 0.8, dash: [4, 3])
+                    )
+            }
+        }
+    }
+
+    private var cardContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Kicker(text: "Profile")
+                    Text(row.profile)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Pill(
+                    text: stability.map { stabilityLabel($0) } ?? "No Data",
+                    tone: stabilityTone(stability)
+                )
+                .contentTransition(.numericText())
+            }
 
                 HStack(alignment: .firstTextBaseline, spacing: 18) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -380,7 +588,6 @@ private struct FleetProfileCard: View {
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
         }
     }
 
@@ -397,9 +604,12 @@ private struct FleetProfileCard: View {
                     .frame(width: max(0, min(CGFloat(value ?? 0), 100)) * 1.1)
             }
             .frame(width: 110, height: 6)
+            .accessibilityHidden(true)
             Spacer()
             Mono(text: value.map { "\(String(format: "%.1f", $0))%" } ?? "--")
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value.map { "\(String(format: "%.1f", $0))%" } ?? "no data")")
     }
 
     private func stalePercent(_ summary: DailySummary) -> Double {
@@ -418,6 +628,7 @@ private extension View {
                     .padding(8)
                     .background(.ultraThinMaterial, in: Circle())
                     .padding(10)
+                    .accessibilityHidden(true)
             }
             .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
     }

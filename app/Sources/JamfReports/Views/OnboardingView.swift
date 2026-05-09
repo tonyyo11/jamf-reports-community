@@ -55,6 +55,10 @@ struct OnboardingView: View {
                 }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "Step \(flow.currentStep.number) of \(OnboardingFlow.Step.allCases.count): \(flow.currentStep.label)"
+        )
     }
 
     private func stepPill(_ step: OnboardingFlow.Step) -> some View {
@@ -134,9 +138,9 @@ struct OnboardingView: View {
         case .validate:
             "jamf-cli validates the saved profile before report setup continues."
         case .csvMapping:
-            "CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop, then jrc scaffold writes the workspace config."
+            "CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop. The app's scaffold tool reads the CSV headers and writes the workspace config."
         case .firstReport:
-            "The final step runs jrc generate for the new profile and streams stdout and stderr here."
+            "The final step runs generate for the new profile and streams output here."
         }
     }
 
@@ -296,7 +300,10 @@ struct OnboardingView: View {
 
                         VStack(alignment: .leading, spacing: 5) {
                             FieldLabel(label: "Client Secret")
-                            PNPTextField(value: binding(\.clientSecret), mono: true, secure: true)
+                            SecureSecretField(placeholder: "OAuth client secret") { data in
+                                flow.setClientSecret(data)
+                            }
+                            .frame(height: 28)
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -365,10 +372,10 @@ struct OnboardingView: View {
     }
 
     private var csvLogViewerTitle: String {
-        if flow.isScaffoldingCSV { return "jrc scaffold running" }
-        if flow.isSkippingCSVMapping { return "jrc workspace-init running" }
-        if flow.csvMappingSkipped { return "jrc workspace-init output" }
-        return "jrc scaffold output"
+        if flow.isScaffoldingCSV { return "Scaffold running" }
+        if flow.isSkippingCSVMapping { return "Workspace init running" }
+        if flow.csvMappingSkipped { return "Workspace init output" }
+        return "Scaffold output"
     }
 
     private var csvLogViewerExitCode: Int32? {
@@ -387,7 +394,7 @@ struct OnboardingView: View {
                         Text("Run profile \(flow.profileName.trimmedForView)")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.Colors.fg)
-                        Mono(text: "jrc generate --profile \(flow.profileName.trimmedForView)", size: 11.5)
+                        Mono(text: "generate --profile \(flow.profileName.trimmedForView)", size: 11.5)
                     }
                     Spacer()
                     if let exit = flow.firstReportExitCode {
@@ -397,7 +404,7 @@ struct OnboardingView: View {
             }
 
             logViewer(
-                title: flow.isRunningFirstReport ? "jrc generate running" : "jrc generate output",
+                title: flow.isRunningFirstReport ? "Generate running" : "Generate output",
                 lines: flow.firstReportOutput,
                 exitCode: flow.firstReportExitCode
             )
@@ -459,6 +466,7 @@ struct OnboardingView: View {
                       flow.isValidatingConnection || flow.isScaffoldingCSV ||
                       flow.isSkippingCSVMapping || flow.isRunningFirstReport)
             .opacity(flow.currentStep == .welcome ? 0.45 : 1)
+            .accessibilityLabel("Back to step \(max(1, flow.currentStep.number - 1))")
 
             Spacer()
 

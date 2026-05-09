@@ -346,13 +346,15 @@ protect:
   use_cached_data: true
   plans:
     enabled: true                  # W22 — Protect Plans sheet (quick win)
-  # Placeholders for W23+; currently no-ops.
+  # W23 standard pack — opt-in. Sheets are Experimental until pagination shape
+  # is verified against a live Protect tenant; field names follow the
+  # jamfprotect-go-sdk camelCase contract.
   computers:
-    enabled: false                 # Reserved — Protect Computers sheet (W23)
+    enabled: false                 # Protect Computers sheet (hostname/serial/plan/insights/connection)
   alerts:
-    enabled: false                 # Reserved — Protect Alerts sheet (W23)
+    enabled: false                 # Protect Alerts sheet (severity/status/event/computer)
   insights:
-    enabled: false                 # Reserved — Protect Insights sheet (W23)
+    enabled: false                 # Protect Insights sheet (label/section/pass-fail-none)
 
 
 # =============================================================================

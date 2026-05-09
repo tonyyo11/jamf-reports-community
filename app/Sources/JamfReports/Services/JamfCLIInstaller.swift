@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import CryptoKit
 
 private final class ProcessPipeDrainer: @unchecked Sendable {
     private let handle: FileHandle
@@ -121,6 +122,97 @@ final class JamfCLIInstaller {
     private static let githubReleasesURL =
         URL(string: "https://github.com/Jamf-Concepts/jamf-cli/releases")!
 
+    /// Hosts allowed to serve a `jamf-cli` release asset. Even though the URL
+    /// comes from a GitHub API response over TLS, we re-validate the host
+    /// because a tampered API response or an MITM-altered redirect could
+    /// otherwise point the download at an attacker-controlled origin.
+    static let trustedAssetHosts: Set<String> = [
+        "github.com",
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+    ]
+
+    /// B-07: Apple Developer Team ID Jamf signs `jamf-cli` with. The SHA-256
+    /// checksum we already verify only proves integrity against the same
+    /// release's `*.checksums.txt` — a tag/branch swap or a compromised
+    /// maintainer key would replace both. Codesign verification proves
+    /// authenticity (Apple-issued Developer ID required).
+    ///
+    /// To look up Jamf's actual team ID, run on a known-good binary:
+    ///     codesign -dv --verbose=4 /opt/homebrew/bin/jamf-cli 2>&1 | grep TeamIdentifier
+    /// then update `expectedJamfTeamID` below. If Jamf rotates its signing
+    /// identity, this constant needs to be bumped at the same time.
+    ///
+    /// Confirmed via `codesign -dv --verbose=4 /usr/local/bin/jamf-cli` against
+    /// jamf-cli 1.16.1 — `Authority=Developer ID Application: JAMF Software
+    /// (483DWKW443)`. If Jamf rotates its signing identity, this constant must
+    /// be bumped at the same time as the rotation lands in a release.
+    static let expectedJamfTeamID: String = "483DWKW443"
+    static let enforceCodesignVerification: Bool = true
+
+    /// Minimum supported jamf-cli version. Bumping this is a documentation +
+    /// soft-warning change — the app does NOT hard-fail on older binaries
+    /// because most code paths still work; we surface a Settings notice so
+    /// users on older releases know to update.
+    ///
+    /// Floor history:
+    /// - 2026-04: 1.14.0 — when CoreDashboard's W21 work removed pre-v1.4
+    ///   patch-status fallbacks (`installed/total` shape).
+    /// - 2026-05-08: 1.16.1 — to pick up the `pro device <id>` platform-
+    ///   section nil-guard (PR #185) which fixes partial DeviceDetail decodes
+    ///   when scope/deploymentState/target are nil.
+    static let minimumSupportedVersion: String = "1.16.1"
+
+    /// Returns true when `installedVersion` is below `minimumSupportedVersion`.
+    /// Returns false if the installed version is unknown/unparseable so we
+    /// don't nag users when version detection itself failed.
+    static func isBelowMinimumSupported(_ installedVersion: String?) -> Bool {
+        guard let installedVersion,
+              !versionParts(installedVersion).isEmpty else { return false }
+        return compareVersions(installedVersion, minimumSupportedVersion) == .orderedAscending
+    }
+
+    /// Errors raised by `validateAsset(host:name:)` when a release asset
+    /// fails the host allow-list, control-char/path-traversal scrub, or
+    /// archive-suffix pattern. See P9-A-08 in the security audit.
+    enum AssetValidationError: Error, LocalizedError, CustomStringConvertible {
+        case untrustedHost(String?)
+        case invalidName(String)
+
+        var errorDescription: String? { description }
+
+        // String interpolation hits this; tests assert the string contains
+        // "untrusted host" or "invalid asset name" so the description must
+        // include that exact wording.
+        var description: String {
+            switch self {
+            case .untrustedHost(let h): "Untrusted host: \(h ?? "<nil>")"
+            case .invalidName(let n):    "Invalid asset name: \(n)"
+            }
+        }
+    }
+
+    /// Validates a release asset before download. Throws `AssetValidationError`
+    /// when the host is not on the trusted list OR the filename contains
+    /// path separators / `..` / NUL / control chars OR doesn't match the
+    /// strict `jamf-cli*.{tar.gz,tgz,zip}` pattern. Tests cover all three
+    /// rejection paths.
+    static func validateAsset(host: String?, name: String) throws {
+        guard let host, trustedAssetHosts.contains(host.lowercased()) else {
+            throw AssetValidationError.untrustedHost(host)
+        }
+        if name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
+            throw AssetValidationError.invalidName(name)
+        }
+        if name.contains("/") || name.contains("\\") || name.contains("..") {
+            throw AssetValidationError.invalidName(name)
+        }
+        let pattern = #"^jamf-cli[0-9A-Za-z._-]*\.(tar\.gz|tgz|zip)$"#
+        if name.range(of: pattern, options: .regularExpression) == nil {
+            throw AssetValidationError.invalidName(name)
+        }
+    }
+
     private var versionChecked = false
     private var cachedVersion: String?
 
@@ -171,6 +263,8 @@ final class JamfCLIInstaller {
         let process = Process()
         process.executableURL = binary
         process.arguments = ["--version"]
+        // SF-10/B-13: minimal env for jamf-cli invocations.
+        process.environment = CLIBridge.environmentForJamfCLI()
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -194,6 +288,33 @@ final class JamfCLIInstaller {
         .joined(separator: "\n")
 
         return parseVersion(from: text)
+    }
+
+    /// Default install location for the direct-download path. `~/.local/bin/`
+    /// is on most users' PATH (XDG-style) and avoids sudo. See
+    /// `ADR-W23-jamf-cli-direct-installer.md` for the location rationale.
+    static var defaultDirectInstallURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local", isDirectory: true)
+            .appendingPathComponent("bin", isDirectory: true)
+            .appendingPathComponent("jamf-cli")
+    }
+
+    /// Returns true when the parent directory of `defaultDirectInstallURL` is
+    /// on the current process's PATH. Used after install to surface a
+    /// remediation toast if the user's shell rc would not pick up the binary.
+    static func defaultDirectInstallDirIsOnPATH() -> Bool {
+        let dir = defaultDirectInstallURL.deletingLastPathComponent().path
+        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        return path.split(separator: ":").contains { String($0) == dir }
+    }
+
+    /// First-time install via direct GitHub download. Verifies the asset
+    /// checksum against the release's `*.checksums.txt` and refuses on
+    /// mismatch or when the checksums asset is missing. Writes to
+    /// `~/.local/bin/jamf-cli`. See ADR-W23-jamf-cli-direct-installer.md.
+    func firstTimeInstall() async -> UpdateResult {
+        await Self.installFromGitHub(target: Self.defaultDirectInstallURL)
     }
 
     func checkForUpdate() async -> UpdateResult {
@@ -347,13 +468,50 @@ final class JamfCLIInstaller {
     }
 
     private static func updateGitHubRelease(_ installation: Installation) async -> UpdateResult {
+        if let local = installation.version {
+            do {
+                let release = try await fetchLatestGitHubRelease()
+                if compareVersions(local, release.tagName) != .orderedAscending {
+                    return UpdateResult(
+                        succeeded: true, message: "GitHub jamf-cli is current at \(local)."
+                    )
+                }
+                // Version is outdated; reuse the already-fetched release to avoid
+                // a redundant network round-trip inside _performInstall.
+                return await _performInstall(
+                    target: URL(fileURLWithPath: installation.path),
+                    release: release
+                )
+            } catch {
+                return UpdateResult(
+                    succeeded: false,
+                    message: "Could not check GitHub releases: \(error.localizedDescription)"
+                )
+            }
+        }
+        return await installFromGitHub(target: URL(fileURLWithPath: installation.path))
+    }
+
+    /// Shared entry point for first-time installs. Fetches the latest GitHub
+    /// release, then delegates to `_performInstall`. On first-time install the
+    /// parent directory is created with mode 0755.
+    static func installFromGitHub(target: URL) async -> UpdateResult {
         do {
             let release = try await fetchLatestGitHubRelease()
-            if let local = installation.version,
-               compareVersions(local, release.tagName) != .orderedAscending {
-                return UpdateResult(succeeded: true, message: "GitHub jamf-cli is current at \(local).")
-            }
+            return await _performInstall(target: target, release: release)
+        } catch {
+            return UpdateResult(
+                succeeded: false,
+                message: "GitHub jamf-cli install failed: \(error.localizedDescription)"
+            )
+        }
+    }
 
+    /// Downloads, verifies, and installs the release binary at `target`.
+    /// Called by `installFromGitHub` (first-time) and `updateGitHubRelease`
+    /// (upgrade, with the release already fetched from the version-check step).
+    private static func _performInstall(target: URL, release: GitHubRelease) async -> UpdateResult {
+        do {
             guard let asset = preferredAsset(from: release.assets) else {
                 return UpdateResult(
                     succeeded: false,
@@ -365,17 +523,155 @@ final class JamfCLIInstaller {
             defer { try? FileManager.default.removeItem(at: tempDir) }
 
             let downloaded = try await download(asset: asset, to: tempDir)
-            let unpackedBinary = try await resolveJamfCLIBinary(from: downloaded, assetName: asset.name, in: tempDir)
-            try replaceDirectBinary(at: URL(fileURLWithPath: installation.path), with: unpackedBinary)
+            try await verifyAssetChecksum(
+                asset: asset,
+                downloaded: downloaded,
+                release: release,
+                tempDir: tempDir
+            )
+            let unpackedBinary = try await resolveJamfCLIBinary(
+                from: downloaded, assetName: asset.name, in: tempDir
+            )
+            // B-07: codesign authenticity check before staging the binary.
+            // SHA-256 verification above proves integrity against the release's
+            // own checksums file; codesign proves Apple-issued Developer ID
+            // signed with `expectedJamfTeamID`. Gated until the team ID is
+            // confirmed against a known-good Jamf binary.
+            if Self.enforceCodesignVerification && !Self.expectedJamfTeamID.isEmpty {
+                guard CodeSignVerifier.verify(
+                    url: unpackedBinary,
+                    expectedTeamID: Self.expectedJamfTeamID
+                ) else {
+                    throw NSError(
+                        domain: "JamfCLIInstaller",
+                        code: 5,
+                        userInfo: [NSLocalizedDescriptionKey:
+                            "jamf-cli codesign verification failed: signature missing,"
+                            + " invalid, or not issued by team \(Self.expectedJamfTeamID)."]
+                    )
+                }
+            } else {
+                // SF-7: surface the skip in install-audit logs so reviewers can
+                // confirm which gate was off (the feature flag, or the team ID).
+                AppLogger.engine.info(
+                    "JamfCLIInstaller: codesign verification skipped (enforce=\(Self.enforceCodesignVerification, privacy: .public), teamID=\(Self.expectedJamfTeamID.isEmpty ? "empty" : "set", privacy: .public))"
+                )
+            }
+            try ensureParentDirectoryExists(for: target)
+            try replaceDirectBinary(at: target, with: unpackedBinary)
 
-            let version = installedVersion(at: URL(fileURLWithPath: installation.path)) ?? release.tagName
-            return UpdateResult(succeeded: true, message: "GitHub jamf-cli is updated to \(version).")
+            let version = installedVersion(at: target) ?? release.tagName
+            return UpdateResult(
+                succeeded: true,
+                message: "jamf-cli \(version) installed at \(target.path)."
+            )
         } catch {
             return UpdateResult(
                 succeeded: false,
-                message: "GitHub jamf-cli update failed: \(error.localizedDescription)"
+                message: "GitHub jamf-cli install failed: \(error.localizedDescription)"
             )
         }
+    }
+
+    /// Verify the SHA256 of `downloaded` against the matching line in the
+    /// release's `*.checksums.txt` asset. Refuses (throws) when the checksums
+    /// asset is missing, the matching line is absent, or the digests differ.
+    private static func verifyAssetChecksum(
+        asset: GitHubAsset,
+        downloaded: URL,
+        release: GitHubRelease,
+        tempDir: URL
+    ) async throws {
+        guard let checksumsAsset = preferredChecksumsAsset(from: release.assets) else {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Release \(release.tagName) does not publish a checksums file;"
+                    + " refusing to install unverified asset."]
+            )
+        }
+
+        let checksumsFile = try await download(asset: checksumsAsset, to: tempDir)
+        let text = (try? String(contentsOf: checksumsFile, encoding: .utf8)) ?? ""
+        guard let expected = extractChecksum(forAsset: asset.name, in: text) else {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "No SHA256 entry for \(asset.name) in \(checksumsAsset.name);"
+                    + " refusing to install."]
+            )
+        }
+
+        let actual = try sha256Hex(of: downloaded)
+        guard actual.caseInsensitiveCompare(expected) == .orderedSame else {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Asset checksum mismatch for \(asset.name) — possible"
+                    + " tampering or corrupted download (expected \(expected),"
+                    + " got \(actual))."]
+            )
+        }
+    }
+
+    /// Pick the checksums file from a release's assets. Matches case-insensitive
+    /// names containing both "checksum" and ending with `.txt` — covers the
+    /// common upstream naming conventions (`checksums.txt`,
+    /// `jamf-cli_v1.14.0_checksums.txt`).
+    private static func preferredChecksumsAsset(from assets: [GitHubAsset]) -> GitHubAsset? {
+        assets.first { asset in
+            let lower = asset.name.lowercased()
+            return lower.contains("checksum") && lower.hasSuffix(".txt")
+        }
+    }
+
+    /// Parse a checksums file body (one `<hex> <space(s)> <filename>` line per
+    /// asset) and return the digest for `assetName`, or nil if absent.
+    static func extractChecksum(forAsset assetName: String, in body: String) -> String? {
+        for line in body.split(whereSeparator: \.isNewline) {
+            let parts = line.split(whereSeparator: \.isWhitespace)
+            guard parts.count >= 2 else { continue }
+            // Last whitespace-separated token is the filename; strip the
+            // optional "*" leading marker for binary-mode shasum output.
+            var filename = String(parts.last!)
+            if filename.hasPrefix("*") { filename.removeFirst() }
+            if filename == assetName {
+                return String(parts.first!)
+            }
+        }
+        return nil
+    }
+
+    /// SHA256 hex digest of a file. Loads the full file into RAM; acceptable
+    /// because release assets are <50 MB and this runs once per install.
+    static func sha256Hex(of file: URL) throws -> String {
+        let data = try Data(contentsOf: file)
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func ensureParentDirectoryExists(for target: URL) throws {
+        let parent = target.deletingLastPathComponent()
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDir) {
+            if !isDir.boolValue {
+                throw NSError(
+                    domain: "JamfCLIInstaller",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "\(parent.path) exists but is not a directory."]
+                )
+            }
+            return
+        }
+        try FileManager.default.createDirectory(
+            at: parent,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: NSNumber(value: Int16(0o755))]
+        )
     }
 
     private static func brewExecutable(for installation: Installation) -> URL? {
@@ -571,10 +867,20 @@ final class JamfCLIInstaller {
             .compactMap { Int($0) }
     }
 
-    private static func runProcessSync(executable: URL, arguments: [String]) -> CommandResult {
+    /// SF-10: `environment` is opt-in because callers run a mix of brew, tar,
+    /// unzip, and jamf-cli — each needs a different env scope. Pass
+    /// `CLIBridge.environmentForJamfCLI()` for jamf-cli invocations, leave
+    /// nil to inherit the parent (current behavior for brew/tar/unzip, where
+    /// the parent's PATH is required to find Homebrew prefixes).
+    private static func runProcessSync(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) -> CommandResult {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        if let environment { process.environment = environment }
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -595,11 +901,17 @@ final class JamfCLIInstaller {
         )
     }
 
-    private nonisolated static func runProcess(executable: URL, arguments: [String]) async -> CommandResult {
+    /// See `runProcessSync` — same `environment` semantics.
+    private nonisolated static func runProcess(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) async -> CommandResult {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
+            if let environment { process.environment = environment }
 
             let stdout = Pipe()
             let stderr = Pipe()

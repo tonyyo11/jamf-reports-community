@@ -22,10 +22,24 @@ struct SchedulesView: View {
     @State private var showDeleteConfirm = false
     @State private var writeError: String? = nil
     @State private var showWriteError = false
+    @State private var now = Date()
+    private let countdownTick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+
+    @State private var query = ""
 
     private var filteredSchedules: [Schedule] {
-        if profileFilter == "All" { return workspace.schedules }
-        return workspace.schedules.filter { $0.profile == profileFilter }
+        let scoped = profileFilter == "All"
+            ? workspace.schedules
+            : workspace.schedules.filter { $0.profile == profileFilter }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return scoped }
+        return scoped.filter { schedule in
+            schedule.name.lowercased().contains(trimmed)
+                || schedule.profile.lowercased().contains(trimmed)
+                || schedule.schedule.lowercased().contains(trimmed)
+                || schedule.cadence.lowercased().contains(trimmed)
+                || schedule.mode.rawValue.lowercased().contains(trimmed)
+        }
     }
 
     private var profileCount: Int {
@@ -49,6 +63,7 @@ struct SchedulesView: View {
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
         }
+        .searchable(text: $query, placement: .toolbar, prompt: "Filter by name, profile, cadence, or mode")
         .sheet(isPresented: $showNewSchedule) {
             NewScheduleSheet(
                 form: $newScheduleForm,
@@ -74,6 +89,7 @@ struct SchedulesView: View {
         } message: {
             Text(writeError ?? "Unknown error")
         }
+        .onReceive(countdownTick) { now = $0 }
     }
 
     // MARK: - Header
@@ -82,17 +98,19 @@ struct SchedulesView: View {
         PageHeader(
             kicker: "macOS LaunchAgent · UserAgent",
             title: "Scheduled Runs",
-            subtitle: "\(workspace.schedules.count) schedules · \(workspace.schedules.filter(\.enabled).count) enabled · across \(profileCount) jamf-cli profiles"
+            subtitle: "\(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s") · \(workspace.schedules.filter(\.enabled).count) enabled · across \(profileCount) jamf-cli profile\(profileCount == 1 ? "" : "s")"
         ) {
             AnyView(
                 HStack(spacing: 8) {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
                     }
+                    .help("Re-scan ~/Library/LaunchAgents for jamfreports schedules.")
                     PNPButton(title: "New schedule", icon: "plus", style: .gold) {
                         newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
                         showNewSchedule = true
                     }
+                    .help("Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
                 }
             )
         }
@@ -122,6 +140,7 @@ struct SchedulesView: View {
                 Pill(text: "All · \(workspace.schedules.count)", tone: profileFilter == "All" ? .gold : .muted)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Show all profiles, \(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s")")
             ForEach(workspace.profiles) { p in
                 let count = workspace.schedules.filter { $0.profile == p.name }.count
                 Button {
@@ -131,6 +150,7 @@ struct SchedulesView: View {
                         .opacity(count > 0 ? 1 : 0.5)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Filter by \(p.name), \(count) schedule\(count == 1 ? "" : "s")")
             }
             Spacer()
             PNPButton(title: "Add profile", icon: "plus", size: .sm) {
@@ -148,19 +168,29 @@ struct SchedulesView: View {
 
     private var nextUpCallout: some View {
         let next = filteredSchedules.first(where: \.enabled) ?? filteredSchedules.first
+        let nextDate = next.flatMap { Self.parseScheduleDate($0.next, reference: now) }
+        let lastDate = next.flatMap { Self.parseScheduleDate($0.last, reference: now) }
+        let progress = Self.intervalProgress(now: now, next: nextDate, last: lastDate)
         return GlassPane(borderColor: Theme.Colors.gold.opacity(0.4)) {
             HStack(alignment: .center, spacing: 14) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(LinearGradient(
-                            colors: [Theme.Colors.gold, Theme.Colors.goldDim],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ))
+                    Circle()
+                        .stroke(Theme.Colors.hairlineStrong, lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: CGFloat(progress))
+                        .stroke(
+                            LinearGradient(
+                                colors: [Theme.Colors.gold, Theme.Colors.goldBright],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            ),
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
                     Image(systemName: "clock")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(Color(hex: 0x1A1408))
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.goldBright)
                 }
-                .frame(width: 44, height: 44)
+                .frame(width: 56, height: 56)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Kicker(text: "Next up", tone: .gold)
@@ -174,7 +204,17 @@ struct SchedulesView: View {
                         }
                     }
                 }
+
                 Spacer()
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    Kicker(text: nextDate == nil ? "Awaiting schedule" : "Runs in", tone: .gold)
+                    Text(Self.countdownString(now: now, next: nextDate))
+                        .font(Theme.Fonts.mono(28, weight: .bold))
+                        .foregroundStyle(Theme.Colors.goldBright)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
 
                 VStack(spacing: 6) {
                     PNPButton(
@@ -196,6 +236,51 @@ struct SchedulesView: View {
         }
     }
 
+    /// Parses schedule strings such as "Apr 27, 07:00" into the next future `Date`.
+    /// Falls back to nil if the format is unrecognized (e.g. "—").
+    private static func parseScheduleDate(_ raw: String, reference: Date) -> Date? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != "—" else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: reference)
+        for fmt in ["MMM d, HH:mm", "MMM d yyyy, HH:mm", "MMM d, h:mm a"] {
+            formatter.dateFormat = fmt
+            if let parsed = formatter.date(from: trimmed) {
+                var comps = calendar.dateComponents([.month, .day, .hour, .minute], from: parsed)
+                comps.year = year
+                if let candidate = calendar.date(from: comps) {
+                    if candidate < reference.addingTimeInterval(-86_400 * 7) {
+                        comps.year = year + 1
+                        return calendar.date(from: comps)
+                    }
+                    return candidate
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func countdownString(now: Date, next: Date?) -> String {
+        guard let next, next > now else { return "—" }
+        let total = Int(next.timeIntervalSince(now))
+        let days = total / 86_400
+        let hours = (total % 86_400) / 3600
+        let minutes = (total % 3600) / 60
+        if days > 0 { return String(format: "%dd %02dh %02dm", days, hours, minutes) }
+        return String(format: "%02dh %02dm", hours, minutes)
+    }
+
+    private static func intervalProgress(now: Date, next: Date?, last: Date?) -> Double {
+        guard let next else { return 0 }
+        let start = last ?? next.addingTimeInterval(-86_400)
+        let total = next.timeIntervalSince(start)
+        guard total > 0 else { return 0 }
+        let elapsed = now.timeIntervalSince(start)
+        return min(max(elapsed / total, 0), 1)
+    }
+
     private var runLogPopover: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -212,27 +297,13 @@ struct SchedulesView: View {
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close run log")
+                .help("Close live output")
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 3) {
-                    if runLogLines.isEmpty {
-                        Mono(text: isRunning ? "Starting…" : "No output", size: 11.5)
-                            .padding(14)
-                    } else {
-                        ForEach(runLogLines) { line in
-                            Text(line.text)
-                                .font(Theme.Fonts.mono(11))
-                                .foregroundStyle(logColor(for: line.level))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .padding(14)
-                    }
-                }
-            }
-            .frame(width: 520, height: 260)
-            .background(Theme.Colors.codeBG)
+            RunLogConsole(lines: runLogLines, isRunning: isRunning)
+                .frame(width: 520, height: 260)
         }
         .background(Theme.Colors.winBG2)
     }
@@ -247,6 +318,7 @@ struct SchedulesView: View {
                         PNPToggle(isOn: .constant(s.enabled)).allowsHitTesting(false)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(s.enabled ? "Disable \(s.name)" : "Enable \(s.name)")
                 }
                 .width(48)
 
@@ -300,6 +372,8 @@ struct SchedulesView: View {
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Actions for \(s.name)")
+                    .help("Run now or delete \(s.name)")
                 }
                 .width(28)
             }
@@ -311,21 +385,59 @@ struct SchedulesView: View {
     // MARK: - Run modes explainer
 
     private var runModesExplainer: some View {
-        let modes: [(String, String, String, Color)] = [
-            ("snapshot-only", "Refresh jamf-cli JSON · archive CSVs",     "icloud.and.arrow.up",   Theme.Colors.info),
-            ("jamf-cli-only", "Live or cached jamf-cli sheets",           "bolt.fill",             Theme.Colors.gold),
-            ("jamf-cli-full", "Baseline CSV + snapshots + report",        "shield.lefthalf.filled", Theme.Colors.ok),
-            ("csv-assisted",  "CSV inbox + jamf-cli",                     "folder.fill",           Theme.Colors.purple),
+        let iconMap: [Schedule.RunMode: (String, Color)] = [
+            .snapshotOnly: ("icloud.and.arrow.up", Theme.Colors.info),
+            .jamfCLIOnly: ("bolt.fill", Theme.Colors.gold),
+            .jamfCLIFull: ("shield.lefthalf.filled", Theme.Colors.ok),
+            .csvAssisted: ("folder.fill", Theme.Colors.purple),
         ]
-        return HStack(spacing: 10) {
-            ForEach(modes, id: \.0) { mode in
-                Card(padding: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Image(systemName: mode.2).font(.system(size: 14)).foregroundStyle(mode.3)
-                            Text(mode.0).font(Theme.Fonts.mono(12, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Kicker(text: "RUN MODES")
+                Spacer()
+                Menu {
+                    ForEach(Schedule.RunMode.allCases, id: \.id) { mode in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(mode.displayTitle)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Text(mode.displayDescription)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .lineLimit(3)
                         }
-                        Text(mode.1).font(.system(size: 11)).foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .help("Run mode explanations")
+            }
+            HStack(spacing: 10) {
+                ForEach(Schedule.RunMode.allCases, id: \.id) { mode in
+                    let (icon, color) = iconMap[mode] ?? ("questionmark.circle", Theme.Colors.fgMuted)
+                    Card(padding: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Image(systemName: icon)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(color)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(mode.displayTitle)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(Theme.Colors.fg)
+                                    Mono(text: mode.rawValue, size: 9, color: Theme.Colors.fgMuted)
+                                }
+                            }
+                            Divider().background(Theme.Colors.hairline)
+                            Text(mode.displayDescription)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .lineLimit(4)
+                        }
                     }
                 }
             }
@@ -422,9 +534,15 @@ struct SchedulesView: View {
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
         switch s {
-        case .ok:   Pill(text: "OK",   tone: .teal,   icon: "checkmark")
-        case .warn: Pill(text: "WARN", tone: .warn,   icon: "exclamationmark")
-        case .fail: Pill(text: "FAIL", tone: .danger, icon: "xmark")
+        case .ok:
+            Pill(text: "OK",   tone: .teal,   icon: "checkmark")
+                .accessibilityLabel("Last run status: OK")
+        case .warn:
+            Pill(text: "WARN", tone: .warn,   icon: "exclamationmark")
+                .accessibilityLabel("Last run status: Warning")
+        case .fail:
+            Pill(text: "FAIL", tone: .danger, icon: "xmark")
+                .accessibilityLabel("Last run status: Failed")
         }
     }
 
@@ -432,14 +550,105 @@ struct SchedulesView: View {
         LaunchAgentWriter.label(for: schedule) ?? "(invalid label)"
     }
 
-    private func logColor(for level: CLIBridge.LogLevel) -> Color {
-        switch level {
-        case .info: Theme.Colors.fg2
-        case .ok:   Theme.Colors.ok
-        case .warn: Theme.Colors.warn
-        case .fail: Theme.Colors.danger
+}
+
+// MARK: - Run log console (terminal-styled live output)
+
+/// Terminal-styled console for streaming `CLIBridge.LogLine` output. Color-codes lines by
+/// keyword (error/warn/success), shows a blinking cursor on the trailing line, and
+/// auto-scrolls to the bottom only while the user has not manually scrolled up.
+private struct RunLogConsole: View {
+    let lines: [CLIBridge.LogLine]
+    let isRunning: Bool
+    @State private var isScrolledToBottom = true
+    @State private var cursorVisible = true
+    private let cursorTick = Timer.publish(every: 0.55, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 3) {
+                    if lines.isEmpty {
+                        HStack(spacing: 0) {
+                            Text(isRunning ? "Starting" : "No output")
+                                .font(Theme.Fonts.mono(12))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                            cursor
+                        }
+                    } else {
+                        ForEach(Array(lines.enumerated()), id: \.element.id) { idx, line in
+                            HStack(spacing: 0) {
+                                Text(line.text)
+                                    .font(Theme.Fonts.mono(12))
+                                    .foregroundStyle(color(for: line))
+                                if idx == lines.count - 1 { cursor }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id(line.id)
+                        }
+                    }
+                    Color.clear.frame(height: 1).id(Self.bottomAnchor)
+                }
+                .padding(14)
+                .background(scrollOffsetReader)
+            }
+            .coordinateSpace(name: Self.coordSpace)
+            .background(Theme.Colors.codeBG)
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous)
+                    .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 1)
+            )
+            .onChange(of: lines.count) { _, _ in
+                guard isScrolledToBottom else { return }
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                }
+            }
+            .onPreferenceChange(BottomVisibilityKey.self) { reachedBottom in
+                isScrolledToBottom = reachedBottom
+            }
+        }
+        .onReceive(cursorTick) { _ in cursorVisible.toggle() }
+    }
+
+    private var cursor: some View {
+        Rectangle()
+            .fill(Theme.Colors.goldBright)
+            .frame(width: 7, height: 13)
+            .opacity(cursorVisible && isRunning ? 1 : 0)
+            .padding(.leading, 2)
+    }
+
+    private var scrollOffsetReader: some View {
+        GeometryReader { geo in
+            // True when the bottom of the content is within ~24pt of the viewport bottom.
+            let frame = geo.frame(in: .named(Self.coordSpace))
+            let nearBottom = frame.maxY <= geo.size.height + 32
+            Color.clear.preference(key: BottomVisibilityKey.self, value: nearBottom)
         }
     }
+
+    private func color(for line: CLIBridge.LogLine) -> Color {
+        let lower = line.text.lowercased()
+        if lower.contains("error") || lower.contains("fail") || line.level == .fail {
+            return Color(hex: 0xFF8077)
+        }
+        if lower.contains("warn") || line.level == .warn {
+            return Color(hex: 0xFFB340)
+        }
+        if line.text.contains("✓") || lower.contains("success") || lower.contains("done") || line.level == .ok {
+            return Theme.Colors.ok
+        }
+        return Theme.Colors.fg2
+    }
+
+    private static let bottomAnchor = "run-log-bottom"
+    private static let coordSpace = "run-log-scroll"
+}
+
+private struct BottomVisibilityKey: PreferenceKey {
+    static let defaultValue = true
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = nextValue() }
 }
 
 // MARK: - New schedule form state
