@@ -1113,14 +1113,15 @@ final class CLIBridge {
                         let headers = Set(firstLine.split(separator: ",").map {
                             String($0).trimmingCharacters(in: .init(charactersIn: "\" \t\r"))
                         })
-                        let configuredColumns: [(name: String, value: String)] = [
+                        let allColumns: [(name: String, value: String)] = [
                             ("computer_name", config.columns?.computerName ?? ""),
                             ("serial_number", config.columns?.serialNumber ?? ""),
                             ("operating_system", config.columns?.operatingSystem ?? ""),
                             ("last_checkin", config.columns?.lastCheckin ?? ""),
                             ("department", config.columns?.department ?? ""),
                             ("email", config.columns?.email ?? ""),
-                        ].filter { !$0.value.isEmpty }
+                        ]
+                        let configuredColumns = allColumns.filter { !$0.value.isEmpty }
                         var anyMissing = false
                         for col in configuredColumns where !headers.contains(col.value) {
                             onLine(.init(timestamp: Date(), level: .warn,
