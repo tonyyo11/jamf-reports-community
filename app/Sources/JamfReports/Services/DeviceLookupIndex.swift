@@ -30,6 +30,7 @@ final class DeviceLookupIndex {
         let id: String
         let name: String
         let serial: String?
+        let osVersion: String?
 
         var identifier: String { "\(kind.rawValue)-\(id)" }
         var id_: String { identifier } // satisfy Identifiable
@@ -147,12 +148,15 @@ final class DeviceLookupIndex {
             guard let rawID = stringValue(dict, "id"), !rawID.isEmpty else { return nil }
             let general = dict["general"] as? [String: Any] ?? [:]
             let hardware = dict["hardware"] as? [String: Any] ?? [:]
+            let operatingSystem = dict["operatingSystem"] as? [String: Any] ?? [:]
             let name = stringValue(general, "name")
                 ?? stringValue(dict, "name")
                 ?? rawID
             let serial = stringValue(hardware, "serialNumber")
                 ?? stringValue(dict, "serialNumber")
-            return Candidate(kind: .computer, id: rawID, name: name, serial: serial)
+            let osVersion = stringValue(operatingSystem, "version")
+                ?? stringValue(dict, "osVersion")
+            return Candidate(kind: .computer, id: rawID, name: name, serial: serial, osVersion: osVersion)
         }
     }
 
@@ -172,7 +176,9 @@ final class DeviceLookupIndex {
                 ?? rawID
             let serial = stringValue(hardware, "serialNumber")
                 ?? stringValue(dict, "serialNumber")
-            return Candidate(kind: .mobile, id: rawID, name: name, serial: serial)
+            let osVersion = stringValue(general, "osVersion")
+                ?? stringValue(dict, "osVersion")
+            return Candidate(kind: .mobile, id: rawID, name: name, serial: serial, osVersion: osVersion)
         }
     }
 

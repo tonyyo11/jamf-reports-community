@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct AuditFinding: Identifiable, Codable {
     let id = UUID()
@@ -203,12 +205,22 @@ struct AuditView: View {
                             }
                             .disabled(isRunningAudit || workspace.demoMode)
                             .help("Run a fresh audit against this workspace.")
+                            PNPButton(title: "Export Findings", icon: "square.and.arrow.up", style: .neutral) {
+                                Task { await exportFindings() }
+                            }
+                            .disabled(findings.isEmpty || workspace.demoMode)
+                            .help("Export all audit findings to a CSV file")
                         } else {
                             PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
                                 copyGroupIDs()
                             }
                             .disabled(unusedGroups.isEmpty)
                             .help("Copy the comma-separated list of unused group IDs to the clipboard.")
+                            PNPButton(title: "Copy All", icon: "doc.on.clipboard", style: .neutral) {
+                                copyAllGroups()
+                            }
+                            .disabled(sortedHygiene.isEmpty || workspace.demoMode)
+                            .help("Copy all unused group IDs and names as tab-separated values")
                             PNPButton(
                                 title: isRunningHygiene ? "Analyzing…" : "Analyze Groups",
                                 icon: isRunningHygiene ? "hourglass" : "magnifyingglass",
@@ -477,6 +489,32 @@ struct AuditView: View {
         SystemActions.copyToClipboard(ids)
     }
 
+    private func copyAllGroups() {
+        let rows = sortedHygiene.map { "\($0.id)\t\($0.name)" }.joined(separator: "\n")
+        SystemActions.copyToClipboard(rows)
+    }
+
+    @MainActor
+    private func exportFindings() async {
+        let panel = NSSavePanel()
+        let dateStr = ISO8601DateFormatter.string(
+            from: Date(), timeZone: .current,
+            formatOptions: [.withFullDate]
+        )
+        panel.nameFieldStringValue = "audit-findings-\(workspace.profile)-\(dateStr).csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard SystemActions.userExportTargetIsAllowed(url) else { return }
+        let header = "Severity,Name,Category,Affected,Recommendation\n"
+        let body = findings.map { f in
+            [f.severity, f.name, f.category, "\(f.affected)", f.recommendation]
+                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        try? (header + body).write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func loadCached() async {
         if workspace.demoMode {
             findings = []
@@ -674,7 +712,8 @@ private struct FindingDetailPopover: View {
             HStack {
                 Spacer()
                 PNPButton(title: "Copy", icon: "doc.on.doc", size: .sm) {
-                    SystemActions.copyToClipboard(finding.recommendation)
+                    let text = "[\(finding.severity)] \(finding.name)\n\(finding.category)\n\(finding.recommendation)"
+                    SystemActions.copyToClipboard(text)
                 }
             }
         }

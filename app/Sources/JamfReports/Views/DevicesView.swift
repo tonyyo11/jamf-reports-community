@@ -1,5 +1,7 @@
 import SwiftUI
+import AppKit
 import Charts
+import UniformTypeIdentifiers
 
 struct DevicesView: View {
     @Environment(WorkspaceStore.self) private var workspace
@@ -14,6 +16,8 @@ struct DevicesView: View {
     @State private var deviceDetailState: DeviceDetailState = .idle
     @State private var deviceDetailRequestKey = ""
     @State private var sortOrder = [KeyPathComparator(\DeviceInventoryRecord.displayName)]
+    @State private var isExportingCSV = false
+    @State private var exportError: String?
     // Tracks the Devices page width so the inventory table can hide low-priority
     // columns under 1200pt — avoids truncation on 13" displays.
     @State private var pageWidth: CGFloat = 1400
@@ -98,6 +102,13 @@ struct DevicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                if let err = exportError {
+                    Text(err)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Colors.danger)
+                        .padding(.horizontal, 4)
+                        .onTapGesture { exportError = nil }
+                }
                 if !workspace.demoMode && activeSnapshot.devices.isEmpty && !isLoading {
                     emptyState
                 } else {
@@ -158,6 +169,17 @@ struct DevicesView: View {
                         Task { await reload() }
                     }
                     .help("Reload device inventory from the cached jamf-cli snapshots.")
+                    PNPButton(
+                        title: isExportingCSV ? "Exporting…" : "Export CSV",
+                        icon: "square.and.arrow.up",
+                        style: .neutral
+                    ) {
+                        Task { await exportFilteredCSV() }
+                    }
+                    .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
+                    .help(workspace.demoMode
+                          ? "Available in live mode only"
+                          : "Export the currently filtered device list to a CSV file")
                 }
             )
         }
@@ -822,6 +844,40 @@ struct DevicesView: View {
         if !serial.isEmpty { return serial }
         let name = device.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? nil : name
+    }
+
+    @MainActor
+    private func exportFilteredCSV() async {
+        let panel = NSSavePanel()
+        let dateStr = ISO8601DateFormatter.string(
+            from: Date(), timeZone: .current,
+            formatOptions: [.withFullDate]
+        )
+        panel.nameFieldStringValue = "devices-\(workspace.profile)-\(dateStr).csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard SystemActions.userExportTargetIsAllowed(url) else {
+            exportError = "Choose a location in Documents, Downloads, or Desktop."
+            return
+        }
+        isExportingCSV = true
+        defer { isExportingCSV = false }
+        let rows = filteredDevices
+        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
+        let body = rows.map { d in
+            [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
+             d.fileVault, d.lastContact, d.risk.rawValue]
+                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        do {
+            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+            // Path is user-confirmed via NSSavePanel — safe to reveal directly.
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            exportError = error.localizedDescription
+        }
     }
 }
 

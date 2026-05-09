@@ -94,6 +94,7 @@ struct DeviceLookupView: View {
                         performLookup()
                     }
                     .disabled(state == .loading || trimmedTerm.isEmpty)
+                    .keyboardShortcut(.return, modifiers: .command)
                 }
                 FieldHelp(text: helpLineText)
             }
@@ -181,6 +182,9 @@ struct DeviceLookupView: View {
                         if let serial = cand.serial, !serial.isEmpty {
                             Mono(text: serial, size: 10.5, color: Theme.Colors.fgMuted)
                         }
+                        if let os = cand.osVersion, !os.isEmpty {
+                            Mono(text: os, size: 10.5, color: Theme.Colors.fgMuted)
+                        }
                     }
                 }
                 Spacer(minLength: 0)
@@ -203,11 +207,25 @@ struct DeviceLookupView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
-                Text(message)
+                Text(clarifiedUnavailableMessage(message))
                     .font(.system(size: 12.5))
                     .foregroundStyle(Theme.Colors.warn)
             }
         }
+    }
+
+    private func clarifiedUnavailableMessage(_ message: String) -> String {
+        let lower = message.lowercased()
+        if lower.contains("401") || lower.contains("unauthorized") {
+            return "Authentication failed — check your jamf-cli profile token."
+        }
+        if lower.contains("timeout") || lower.contains("connection") || lower.contains("network") {
+            return "Network unreachable — check your connection to Jamf Pro."
+        }
+        if lower.contains("decode") || lower.contains("parse") {
+            return "Cached data may be stale — run Collect to refresh."
+        }
+        return message
     }
 
     private func noMatchCard(_ message: String) -> some View {
@@ -229,6 +247,16 @@ struct DeviceLookupView: View {
                         refreshIndex()
                     }
                     .disabled(refreshing)
+                    if let listURL = workspace.computerListURL() {
+                        PNPButton(
+                            title: "Open Computers in Jamf Pro",
+                            icon: "arrow.up.right.square",
+                            style: .neutral,
+                            size: .sm
+                        ) {
+                            SystemActions.open(listURL)
+                        }
+                    }
                     Text("Re-runs `jamf-cli pro computers list` and `mobile-devices list`, then retries.")
                         .font(.system(size: 11.5))
                         .foregroundStyle(Theme.Colors.fgMuted)

@@ -101,15 +101,9 @@ extension CLIBridge {
             }
         }
 
-        // PDF — paginated audit artifact.
-        if types.contains(.pdf) {
-            let code = await runPDFGeneration(profile: profile, outputDir: outputDir, onLine: onLine)
-            if code == 0 {
-                result.succeeded.append(.pdf)
-            } else {
-                result.failed.append((.pdf, code))
-            }
-        }
+        // PDF — not yet wired; UI disables the button. Skip silently so callers
+        // that still pass .pdf don't trigger the stub and confuse the result.
+        // TODO: wire PDFExporter when PDF generation is complete.
 
         // Tighten permissions on files written above (C-01/C-03/C-04). All paths
         // (ReportEngine XLSX, native HTML, PDF) are now Swift; each respects the
@@ -160,21 +154,4 @@ extension CLIBridge {
         return f.string(from: Date())
     }
 
-    @MainActor
-    private func runPDFGeneration(
-        profile: String,
-        outputDir: URL?,
-        onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
-        // Stub bridge to PDFExporter / ReportEngine.generatePDF.
-        // Returns 2 (not-implemented) so the UI does not register a false success.
-        _ = profile
-        _ = outputDir
-        onLine(CLIBridge.LogLine(
-            timestamp: Date(),
-            level: .warn,
-            text: "[warn] PDF generation is not yet available — XLSX and HTML outputs are fully supported"
-        ))
-        return 2
-    }
 }

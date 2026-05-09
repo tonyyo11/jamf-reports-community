@@ -66,6 +66,9 @@ final class WorkspaceStore {
     // Snapshot of state at last load/save — used by revert().
     private var _savedState: ConfigState?
 
+    /// True when configState has been edited since the last save or load.
+    var hasUnsavedChanges: Bool { _savedState != nil && configState != _savedState }
+
     // MARK: Column label / required metadata
 
     private static let columnLabels: [String: String] = [
@@ -408,7 +411,65 @@ final class WorkspaceStore {
         }
     }
 
+    // MARK: Sidebar badge helpers
+
+    /// Reads the device count from the most recent summary JSON for the given profile.
+    /// Returns 0 if no summary exists or the file cannot be read. Does not trigger a live call.
+    func deviceCount(for profile: String) -> Int {
+        guard let dir = try? WorkspacePaths.summariesDir(for: profile) else { return 0 }
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey], options: []
+        ) else { return 0 }
+        let jsons = files.filter { $0.pathExtension == "json" }
+            .sorted { a, b in
+                let aDate = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let bDate = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return aDate > bDate
+            }
+        guard let newest = jsons.first,
+              let data = try? Data(contentsOf: newest),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let count = dict["total_devices"] as? Int else { return 0 }
+        return count
+    }
+
+    /// Returns a human-readable relative "last synced" label derived from the mtime
+    /// of the most recently modified file in the profile's data directory.
+    func lastSyncedRelative(for profile: String) -> String {
+        guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return "Never synced" }
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return "Never synced" }
+        let newest = files.compactMap { url -> Date? in
+            (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        }.max()
+        guard let date = newest else { return "Never synced" }
+        let components = Calendar.current.dateComponents([.minute, .hour, .day], from: date, to: Date())
+        if let days = components.day, days > 0 { return "Synced \(days)d ago" }
+        if let hours = components.hour, hours > 0 { return "Synced \(hours)h ago" }
+        if let minutes = components.minute, minutes > 0 { return "Synced \(minutes)m ago" }
+        return "Synced just now"
+    }
+
     // MARK: Console deep-links
+
+    /// Returns the Jamf Pro Computers list URL (no device ID) for the active profile,
+    /// suitable for opening a search context in the console browser.
+    func computerListURL() -> URL? {
+        let rawServer = activeProfileURL()
+        guard !rawServer.isEmpty, rawServer != "(jamf-cli profile)" else { return nil }
+        let normalized = rawServer.contains("://") ? rawServer : "https://\(rawServer)"
+        guard var components = URLComponents(string: normalized),
+              components.scheme?.isEmpty == false,
+              components.host?.isEmpty == false else { return nil }
+        let sep = components.path.hasSuffix("/") ? "" : "/"
+        components.path = components.path + sep + "computers.html"
+        components.queryItems = nil
+        return components.url
+    }
 
     /// Returns the Jamf Pro console URL for a computer, or nil if the active
     /// profile has no server URL or the URL is malformed.

@@ -216,8 +216,10 @@ struct Sidebar: View {
                 Button {
                     workspace.setProfile(p.name)
                 } label: {
+                    let count = workspace.deviceCount(for: p.name)
                     HStack {
                         Text(p.name)
+                        if count > 0 { Text("· \(count) devices").foregroundStyle(.secondary) }
                         if p.name == workspace.profile { Image(systemName: "checkmark") }
                     }
                 }
@@ -226,8 +228,17 @@ struct Sidebar: View {
             Button("Add workspace…") { activeTab = .onboarding }
         } label: {
             HStack(spacing: 10) {
+                let activeProfile = workspace.profiles.first(where: { $0.name == workspace.profile })
                 workspaceAvatar(engaged: engaged)
                     .frame(width: 22, height: 22)
+                    .overlay(alignment: .topTrailing) {
+                        if activeProfile?.status == .error {
+                            Circle()
+                                .fill(Theme.Colors.danger)
+                                .frame(width: 6, height: 6)
+                                .offset(x: 2, y: -2)
+                        }
+                    }
 
                 if mode != .compact {
                     VStack(alignment: .leading, spacing: 1) {
@@ -235,7 +246,7 @@ struct Sidebar: View {
                             .font(Theme.Fonts.mono(12, weight: .semibold))
                             .foregroundStyle(Theme.Colors.fg)
                             .lineLimit(1)
-                        Text(workspaceSubtitle)
+                        Text(workspace.lastSyncedRelative(for: workspace.profile))
                             .font(Theme.Fonts.mono(9.5))
                             .tracking(0.4)
                             .foregroundStyle(Theme.Colors.fgMuted)

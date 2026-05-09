@@ -128,6 +128,9 @@ struct ReportsView: View {
                             ? "Available in live mode only"
                             : "Generate a self-contained HTML instance report"
                         )
+                        PNPButton(title: "Export PDF", icon: "doc.richtext", style: .neutral) { }
+                            .disabled(true)
+                            .help("PDF export coming soon — XLSX and HTML are fully supported today")
                         PNPButton(
                             title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
                             icon: "doc.text",

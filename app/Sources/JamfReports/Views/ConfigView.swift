@@ -50,6 +50,13 @@ struct ConfigView: View {
                     selection: $tab,
                     options: ConfigTab.allCases.map { ($0, $0.label, $0.icon) }
                 )
+                if let err = workspace.configError {
+                    Text(err)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.Colors.danger)
+                        .padding(.horizontal, 4)
+                        .accessibilityLabel("Configuration error: \(err)")
+                }
                 tabContent
             }
             .padding(EdgeInsets(
@@ -78,6 +85,10 @@ struct ConfigView: View {
         ) {
             AnyView(
                 HStack(spacing: 8) {
+                    if workspace.hasUnsavedChanges && saveStatus == .idle {
+                        Pill(text: "Unsaved changes", tone: .warn, icon: "pencil")
+                            .transition(.opacity)
+                    }
                     saveStatusPill
                     PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
                     PNPButton(title: "Run check", icon: "flask") {
