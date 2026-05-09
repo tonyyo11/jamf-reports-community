@@ -82,6 +82,9 @@ final class CLIBridge {
         await Task.detached(priority: .utility) {
             guard ProfileService.isValid(profile),
                   let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+                AppLogger.cli.warning(
+                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public)"
+                )
                 return []
             }
             let dir = dataDir.appendingPathComponent(type, isDirectory: true)
@@ -90,6 +93,9 @@ final class CLIBridge {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
             ) else {
+                AppLogger.cli.warning(
+                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public)"
+                )
                 return []
             }
 
@@ -557,7 +563,9 @@ final class CLIBridge {
     }
 
     nonisolated func deviceDetail(profile: String, deviceID: String) async -> Data? {
-        guard await authGuard(profile: profile, onLine: { _ in }) else { return nil }
+        guard await authGuard(profile: profile, onLine: { line in
+            AppLogger.cli.warning("deviceDetail auth: \(line.text, privacy: .private)")
+        }) else { return nil }
         return await singleDeviceDetail(
             profile: profile,
             deviceID: deviceID,
@@ -570,7 +578,9 @@ final class CLIBridge {
     /// `jamf-cli pro mobile-devices get <id>` and caches under
     /// `jamf-cli-data/mobile-devices/`. Same fall-back-to-cache semantics.
     nonisolated func mobileDeviceDetail(profile: String, deviceID: String) async -> Data? {
-        guard await authGuard(profile: profile, onLine: { _ in }) else { return nil }
+        guard await authGuard(profile: profile, onLine: { line in
+            AppLogger.cli.warning("mobileDeviceDetail auth: \(line.text, privacy: .private)")
+        }) else { return nil }
         return await singleDeviceDetail(
             profile: profile,
             deviceID: deviceID,
@@ -952,7 +962,7 @@ final class CLIBridge {
             return -1
         }
 
-        var args = ["-p", profile, "--no-input", "pro", "backup",
+        let args = ["-p", profile, "--no-input", "pro", "backup",
                     "--format", "json", "--output", validatedTemp.path]
         let exit = await run(
             executable: bin,
@@ -960,13 +970,14 @@ final class CLIBridge {
             environment: Self.environmentForJamfCLI(),
             onLine: onLine
         )
-        _ = args  // suppress unused-var warning
 
         guard exit == 0 else {
             if (try? fm.removeItem(at: validatedTemp)) == nil {
                 AppLogger.cli.warning(
                     "backup: failed to remove temp dir after CLI error: \(validatedTemp.path, privacy: .private)"
                 )
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] backup temp dir could not be removed — delete manually: \(validatedTemp.lastPathComponent)"))
             }
             tightenOnSuccess(exit, profile: profile)
             return exit
@@ -984,6 +995,8 @@ final class CLIBridge {
                 AppLogger.cli.warning(
                     "backup: failed to remove temp dir after path guard rejection: \(validatedTemp.path, privacy: .private)"
                 )
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] backup temp dir could not be removed — delete manually: \(validatedTemp.lastPathComponent)"))
             }
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] backup final path rejected by path guard"))
             return -1
@@ -996,6 +1009,8 @@ final class CLIBridge {
                 AppLogger.cli.warning(
                     "backup: failed to remove temp dir after move failure: \(validatedTemp.path, privacy: .private)"
                 )
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] backup temp dir could not be removed — delete manually: \(validatedTemp.lastPathComponent)"))
             }
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not finalize backup directory: \(error.localizedDescription)"))
@@ -1004,7 +1019,7 @@ final class CLIBridge {
 
         // Write manifest.json so BackupLibrary can read label, date, and counts.
         let stats = directoryStats(validatedFinal)
-        let effectiveLabel = trimmedLabel?.isEmpty == false ? (trimmedLabel ?? "") : ""
+        let effectiveLabel = trimmedLabel ?? ""
         let manifest: [String: Any] = [
             "label": effectiveLabel,
             "created_at": ISO8601DateFormatter().string(from: Date()),
@@ -1231,6 +1246,14 @@ final class CLIBridge {
             AppLogger.cli.warning("runMulti: rejecting invalid profile name in target")
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             return -1
+        }
+        // Auth guard: probe credentials before dispatching live API calls.
+        // Uses the first profile in the target for the probe; multi-profile runs
+        // share a single auth context in practice (same server, same token).
+        if let firstProfile = target.allProfileNames.first {
+            guard await authGuard(profile: firstProfile, onLine: onLine) else {
+                return Self.exitCodeUnauthorized
+            }
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))

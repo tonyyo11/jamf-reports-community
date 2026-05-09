@@ -256,6 +256,7 @@ struct PNPButton: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     private var height: CGFloat { switch size { case .sm: 22; case .md: 28; case .lg: 36 } }
@@ -292,6 +293,7 @@ struct PNPButton: View {
 
 struct PNPToggle: View {
     @Binding var isOn: Bool
+    var label: String = ""
     var body: some View {
         Button {
             withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
@@ -314,6 +316,9 @@ struct PNPToggle: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label.isEmpty ? "Toggle" : label)
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -352,6 +357,8 @@ struct SegmentedControl<Value: Hashable>: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(opt.label)
+                .accessibilityAddTraits(selection == opt.value ? .isSelected : [])
             }
         }
         .padding(2)
@@ -410,6 +417,21 @@ struct StatTile: View {
                 .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(fullAccessibilityLabel)
+    }
+
+    private var fullAccessibilityLabel: String {
+        var parts = ["\(label): \(value)"]
+        if let delta {
+            switch deltaTrend {
+            case .up:   parts.append("up \(delta)")
+            case .down: parts.append("down \(delta)")
+            case .flat: break
+            }
+        }
+        if let sub { parts.append(sub) }
+        return parts.joined(separator: ", ")
     }
 
     private var deltaColor: Color {
@@ -441,6 +463,7 @@ struct Sparkline: View {
                 )
             }
         }
+        .accessibilityHidden(true)
     }
 
     private func makePath(in size: CGSize) -> Path {
@@ -572,5 +595,65 @@ struct StatusBar: View {
         .overlay(alignment: .top) {
             Divider().background(Theme.Colors.hairline)
         }
+    }
+}
+
+// MARK: - Editable Number Stepper
+
+/// A compact numeric input that pairs a free-text editable field with the
+/// classic up/down stepper. Click the number to type a value directly, or
+/// nudge with the chevrons. Use this anywhere you'd otherwise reach for a
+/// bare `Stepper` — typing is materially faster when the user has a target
+/// value in mind.
+///
+/// `range` is enforced via `onChange` after the user commits because
+/// `TextField(value:format:)` does not honor the `Stepper(in:)` bound on its
+/// own. Out-of-range typed values snap to the nearest end of the range.
+struct EditableNumberStepper: View {
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    var prefix: String? = nil
+    var suffix: String? = nil
+    /// Width of the inner text field. Tune up if your max value has more digits.
+    var fieldWidth: CGFloat = 32
+    var help: String? = nil
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let prefix {
+                Text(prefix)
+                    .font(Theme.Fonts.mono(11.5))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+            TextField("", value: $value, format: .number)
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.trailing)
+                .font(Theme.Fonts.mono(11.5))
+                .foregroundStyle(Theme.Colors.fg2)
+                .frame(width: fieldWidth)
+                .onChange(of: value) { _, newValue in
+                    let clamped = max(range.lowerBound, min(range.upperBound, newValue))
+                    if clamped != newValue { value = clamped }
+                }
+            if let suffix {
+                Text(suffix)
+                    .font(Theme.Fonts.mono(11.5))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+            Stepper("", value: $value, in: range, step: 1)
+                .labelsHidden()
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 28)
+        .background(
+            Color.white.opacity(0.07),
+            in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous)
+                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+        )
+        .help(help ?? "")
     }
 }

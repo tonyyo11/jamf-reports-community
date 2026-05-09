@@ -27,7 +27,18 @@ enum CLICommand: Sendable, Equatable {
     case schoolIBeaconsList(profile: String)
 
     /// Argv passed to `jamf-cli`; the executor prepends the resolved binary path.
+    ///
+    /// Returns an empty array when the profile slug fails validation. All construction
+    /// sites should already validate, so this is a defense-in-depth guard against
+    /// path traversal via an unvalidated profile name reaching `Process.arguments`.
     var argv: [String] {
+        guard ProfileService.isValid(profile) else {
+            assertionFailure(
+                "CLICommand.argv called with invalid profile '\(profile)' " +
+                "— caller should validate before constructing CLICommand"
+            )
+            return []
+        }
         switch self {
         case .proAuthToken(let profile):
             return ["-p", profile, "pro", "auth", "token", "--output", "json", "--no-input"]
@@ -91,12 +102,16 @@ struct DefaultCLIExecutor: CLIExecutor {
         guard ProfileService.isValid(profile) else {
             throw CLIExecutorError.invalidProfile(profile)
         }
+        let argv = command.argv
+        guard !argv.isEmpty else {
+            throw CLIExecutorError.invalidProfile(profile)
+        }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             throw CLIExecutorError.binaryNotFound("jamf-cli")
         }
         let (exitCode, data) = await bridge.runAndCapture(
             executable: bin,
-            arguments: command.argv,
+            arguments: argv,
             onLine: { _ in }
         )
         guard exitCode == 0 else {

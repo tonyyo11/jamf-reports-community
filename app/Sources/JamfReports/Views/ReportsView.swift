@@ -45,8 +45,12 @@ struct ReportsView: View {
                                     Image(systemName: icon(for: r.name))
                                         .foregroundStyle(Theme.Colors.gold)
                                         .font(.system(size: 11))
+                                        .accessibilityHidden(true)
                                     Mono(text: r.name, color: Theme.Colors.fg)
                                 }
+                                .accessibilityLabel(
+                                    "\(r.name), \(r.sheets) sheet\(r.sheets == 1 ? "" : "s"), \(r.size)"
+                                )
                             }
                             TableColumn("Source schedule") { r in
                                 Text(r.source).font(.system(size: 12.5))
@@ -110,6 +114,7 @@ struct ReportsView: View {
                         PNPButton(title: "Reveal in Finder", icon: "folder") {
                             SystemActions.openFolder(reportsDirectory)
                         }
+                        .help("Open the Generated Reports folder in Finder")
                         PNPButton(
                             title: isGeneratingHTML ? "Generating..." : "Generate HTML",
                             icon: "safari",
@@ -118,7 +123,11 @@ struct ReportsView: View {
                             generateHTMLReport()
                         }
                         .disabled(workspace.demoMode || isGeneratingHTML || isExportingCSV)
-                        .help(workspace.demoMode ? "Available in live mode only" : "")
+                        .help(
+                            workspace.demoMode
+                            ? "Available in live mode only"
+                            : "Generate a self-contained HTML instance report"
+                        )
                         PNPButton(
                             title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
                             icon: "doc.text",
@@ -127,7 +136,11 @@ struct ReportsView: View {
                             runExportInventoryCSV()
                         }
                         .disabled(workspace.demoMode || isGeneratingHTML || isExportingCSV)
-                        .help(workspace.demoMode ? "Available in live mode only" : "")
+                        .help(
+                            workspace.demoMode
+                            ? "Available in live mode only"
+                            : "Export a wide CSV of all computer inventory"
+                        )
                     }
                 )
             }
@@ -135,6 +148,7 @@ struct ReportsView: View {
                 Text(err)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.Colors.danger)
+                    .accessibilityLabel("Error: \(err)")
             }
         }
     }
@@ -144,6 +158,7 @@ struct ReportsView: View {
             Image(systemName: "doc.badge.plus")
                 .font(.system(size: 28))
                 .foregroundStyle(Theme.Colors.gold)
+                .accessibilityHidden(true)
             Text("No reports yet — run Generate from Overview")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.Colors.fg)
@@ -152,6 +167,7 @@ struct ReportsView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 360)
+        .accessibilityLabel("No reports yet. Use Go to Overview to run Generate.")
     }
 
     private var noFilterMatches: some View {
@@ -159,6 +175,7 @@ struct ReportsView: View {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 24))
                 .foregroundStyle(Theme.Colors.fgMuted)
+                .accessibilityHidden(true)
             Text("No \(filter) reports found")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.Colors.fg)
@@ -232,12 +249,14 @@ struct ReportsView: View {
             guard response == .OK, let dest = panel.url else { return }
             let outPath = dest.path
             isGeneratingHTML = true
-            workspace.globalStatus = "jrc generate · profile=\(profile)"
+            workspace.globalStatus = "generate · profile=\(profile)"
             reportError = nil
             Task {
-                let code = await bridge.generateHTML(profile: profile, outFile: outPath) { line in
+                // Status-bar race guard — see comment in HealthCheckView.runAudit.
+                let code = await bridge.generateHTML(profile: profile, outFile: outPath) { [weak workspace] line in
                     Task { @MainActor in
-                        workspace.globalStatus = "jrc · \(line.text)"
+                        guard let workspace, self.isGeneratingHTML else { return }
+                        workspace.globalStatus = line.text
                     }
                 }
                 isGeneratingHTML = false
@@ -266,12 +285,13 @@ struct ReportsView: View {
             guard response == .OK, let dest = panel.url else { return }
             let outPath = dest.path
             isExportingCSV = true
-            workspace.globalStatus = "jrc inventory-csv · profile=\(profile)"
+            workspace.globalStatus = "inventory-csv · profile=\(profile)"
             reportError = nil
             Task {
-                let code = await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { line in
+                let code = await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { [weak workspace] line in
                     Task { @MainActor in
-                        workspace.globalStatus = "jrc · \(line.text)"
+                        guard let workspace, self.isExportingCSV else { return }
+                        workspace.globalStatus = line.text
                     }
                 }
                 isExportingCSV = false

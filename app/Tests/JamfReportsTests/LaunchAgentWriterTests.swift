@@ -84,26 +84,6 @@ final class LaunchAgentWriterTests: XCTestCase {
         )
     }
 
-    func testTrustedJRCScriptRejectsSameBasenameOutsideAppCandidates() throws {
-        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempRoot) }
-
-        let fakeScript = tempRoot.appendingPathComponent("jamf-reports-community.py")
-        try "#!/usr/bin/env python3\n".write(to: fakeScript, atomically: true, encoding: .utf8)
-
-        XCTAssertFalse(LaunchAgentWriter.isTrustedJRCScript(fakeScript.path))
-    }
-
-    func testTrustedPythonExecutableRejectsNonexistentTrustedLookingPath() {
-        XCTAssertFalse(
-            LaunchAgentWriter.isTrustedPythonExecutable(
-                "/opt/homebrew/Cellar/python@9.99/9.99.99/bin/python3"
-            )
-        )
-    }
-
     func testTrustedJamfCLIExecutableRejectsTempBasename() throws {
         let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -132,11 +112,6 @@ final class LaunchAgentWriterTests: XCTestCase {
                 "HOME": "/tmp/evil-home",
                 "PATH": "/tmp/evil-bin",
                 "JAMFCLI_PATH": "/tmp/evil-bin/jamf-cli",
-                "PYTHONDONTWRITEBYTECODE": "0",
-                "PYTHONHOME": "/tmp/evil-pythonhome",
-                "PYTHONNOUSERSITE": "0",
-                "PYTHONPATH": "/tmp/evil-pythonpath",
-                "PYTHONUNBUFFERED": "0",
                 "XDG_CONFIG_HOME": safeXDGConfigHome,
             ],
         ]
@@ -145,11 +120,12 @@ final class LaunchAgentWriterTests: XCTestCase {
 
         XCTAssertEqual(env["HOME"], home)
         XCTAssertEqual(env["PATH"], safeLaunchPath)
-        XCTAssertEqual(env["PYTHONDONTWRITEBYTECODE"], "1")
-        XCTAssertEqual(env["PYTHONNOUSERSITE"], "1")
-        XCTAssertEqual(env["PYTHONUNBUFFERED"], "1")
         XCTAssertEqual(env["XDG_CONFIG_HOME"], safeXDGConfigHome)
         XCTAssertNil(env["JAMFCLI_PATH"])
+        // Python env vars must not be injected into native-only launch environments.
+        XCTAssertNil(env["PYTHONDONTWRITEBYTECODE"])
+        XCTAssertNil(env["PYTHONNOUSERSITE"])
+        XCTAssertNil(env["PYTHONUNBUFFERED"])
         XCTAssertNil(env["PYTHONHOME"])
         XCTAssertNil(env["PYTHONPATH"])
     }
@@ -170,33 +146,6 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertEqual(LaunchAgentWriter.filenameComponent("\(prefix).dummy"), "\(prefix).dummy")
         XCTAssertEqual(LaunchAgentWriter.filenameComponent(" bad/value  "), "bad_value")
         XCTAssertEqual(LaunchAgentWriter.filenameComponent("..."), "jamf_report")
-    }
-
-    func testMultiLaunchAgentArgumentsRejectUnsafePathsAndProfiles() {
-        let label = "\(prefix).multi.final-review"
-        let statusURL = LaunchAgentWriter.expectedMultiLogURL(label: label, filename: "status.json")
-        let validFlags = [
-            "--mode", "jamf-cli-full",
-            "--workspace-root", ProfileService.workspacesRoot().path,
-            "--base-profile", "alpha",
-            "--status-file", statusURL.path,
-            "--multi-profiles", "alpha,beta",
-            "--multi-sequential",
-        ]
-
-        XCTAssertTrue(LaunchAgentWriter.areMultiLaunchAgentArgumentsSafe(validFlags, label: label))
-
-        var unsafeRoot = validFlags
-        unsafeRoot[3] = "/"
-        XCTAssertFalse(LaunchAgentWriter.areMultiLaunchAgentArgumentsSafe(unsafeRoot, label: label))
-
-        var unsafeStatus = validFlags
-        unsafeStatus[7] = "/tmp/status.json"
-        XCTAssertFalse(LaunchAgentWriter.areMultiLaunchAgentArgumentsSafe(unsafeStatus, label: label))
-
-        var unsafeProfiles = validFlags
-        unsafeProfiles[9] = "alpha,../evil"
-        XCTAssertFalse(LaunchAgentWriter.areMultiLaunchAgentArgumentsSafe(unsafeProfiles, label: label))
     }
 
     func testExpectedMultiLogURLRejectsSymlinkedLogFile() throws {
@@ -222,6 +171,55 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertFalse(
             LaunchAgentWriter.isExpectedMultiLogURL(logURL, label: label, filename: "stdout.log")
         )
+    }
+
+    // MARK: - nativeSingleWrite structural test
+
+    func testNativeSingleWrite_plistContentIsCorrect() throws {
+        let sched = schedule(name: "Test-Native-Write")
+        guard let agentLabel = LaunchAgentWriter.label(for: sched) else {
+            XCTFail("Expected a valid label for schedule")
+            return
+        }
+
+        let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+        defer {
+            // Clean up: remove the plist and any log directory created.
+            try? FileManager.default.removeItem(at: plan.plistURL)
+            let logDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+            try? FileManager.default.removeItem(at: logDir)
+        }
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: plan.plistURL.path),
+            "plist must exist after nativeSingleWrite"
+        )
+
+        let data = try Data(contentsOf: plan.plistURL)
+        let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as! [String: Any]
+
+        let args = plist["ProgramArguments"] as? [String]
+        XCTAssertNotNil(args, "ProgramArguments must be present")
+        XCTAssertTrue(args?.contains("--scheduled-run") == true,
+                      "ProgramArguments must contain --scheduled-run")
+        XCTAssertTrue(args?.contains("--profile") == true,
+                      "ProgramArguments must contain --profile")
+        XCTAssertTrue(args?.contains("dummy") == true,
+                      "ProgramArguments must contain the profile name")
+        // Profile name must follow --profile flag
+        if let args, let profileIdx = args.firstIndex(of: "--profile") {
+            XCTAssertTrue(profileIdx + 1 < args.count, "--profile must have a following value")
+            XCTAssertEqual(args[profileIdx + 1], "dummy")
+        }
+
+        let runAtLoad = plist["RunAtLoad"] as? Bool
+        XCTAssertEqual(runAtLoad, false, "RunAtLoad must be false")
+
+        let disabled = plist["Disabled"] as? Bool
+        XCTAssertEqual(disabled, true, "Disabled must be true when load: false")
+
+        XCTAssertEqual(plan.label, agentLabel)
     }
 
     private func schedule(name: String) -> Schedule {

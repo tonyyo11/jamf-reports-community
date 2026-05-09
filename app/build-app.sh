@@ -8,6 +8,19 @@ cd "$(dirname "$0")"
 
 CONFIG="${1:-release}"
 
+# Sparkle EdDSA public key — REQUIRED for release builds. Without it the
+# release Info.plist would carry an empty `SUPublicEDKey`, which combined
+# with `cs.disable-library-validation` (entitlements) and the active
+# Sparkle XPC helpers makes the update channel a high-value target. Debug
+# builds may proceed without it (Sparkle refuses to apply updates without
+# a key — safe-by-default). See P9-A-01 in the security audit.
+if [[ "$CONFIG" == "release" ]]; then
+  : "${SU_PUBLIC_ED_KEY:?SU_PUBLIC_ED_KEY env var must be set for release builds. Generate with Sparkle's generate_keys tool; private key stays offline.}"
+else
+  : "${SU_PUBLIC_ED_KEY:=}"
+fi
+export SU_PUBLIC_ED_KEY
+
 echo "→ swift build (${CONFIG})"
 if [[ "$CONFIG" == "release" ]]; then
   swift build -c release
@@ -57,39 +70,8 @@ if [[ ! -f "Resources/AppIcon.icns" ]]; then
 fi
 cp "Resources/AppIcon.icns" "$APP_OUT/Contents/Resources/AppIcon.icns"
 
-# Bundle the Python CLI script as a fallback when a `jrc` shim is not installed
-# on PATH. The GUI still shells out to the CLI source of truth; it does not
-# reimplement report generation in Swift.
-if [[ -f "../jamf-reports-community.py" ]]; then
-  cp "../jamf-reports-community.py" "$APP_OUT/Contents/Resources/jamf-reports-community.py"
-fi
-if [[ -f "../requirements.txt" ]]; then
-  cp "../requirements.txt" "$APP_OUT/Contents/Resources/requirements.txt"
-fi
-if [[ -f "requirements-runtime.txt" ]]; then
-  cp "requirements-runtime.txt" "$APP_OUT/Contents/Resources/requirements-runtime.txt"
-fi
 if [[ -f "../config.example.yaml" ]]; then
   cp "../config.example.yaml" "$APP_OUT/Contents/Resources/config.example.yaml"
-fi
-
-if [[ -z "${JRC_BUNDLE_PYTHON:-}" ]]; then
-  if [[ "$CONFIG" == "release" ]]; then
-    JRC_BUNDLE_PYTHON=1
-  else
-    JRC_BUNDLE_PYTHON=auto
-  fi
-fi
-
-if [[ "$JRC_BUNDLE_PYTHON" != "0" ]]; then
-  echo "→ bundling private Python runtime"
-  if ! ./scripts/build-python-runtime.sh "$ARCH" "$APP_OUT/Contents/Resources"; then
-    if [[ "$JRC_BUNDLE_PYTHON" == "1" ]]; then
-      echo "✗ Python runtime bundling failed" >&2
-      exit 1
-    fi
-    echo "⚠ Python runtime bundling skipped; app will use external Python if available" >&2
-  fi
 fi
 
 cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
@@ -140,15 +122,15 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
     <true/>
 
     <!-- Sparkle auto-update — see ADR-W23-sparkle-integration.md.
-         Both keys MUST be filled in before a release build. While SUPublicEDKey
-         is empty, Sparkle 2.x refuses to apply updates (safe-by-default) so
-         dev builds are still functional but won't auto-update. Tony generates
-         the EdDSA keypair offline with `generate_keys`; private key is stored
-         in 1Password + offline backup, never committed. -->
+         For release builds, SU_PUBLIC_ED_KEY env var MUST be set; this script
+         hard-fails earlier when it isn't. Debug builds may ship empty —
+         Sparkle 2.x refuses to apply updates without a key (safe-by-default).
+         Tony generates the EdDSA keypair offline with `generate_keys`; private
+         key is stored in 1Password + offline backup, never committed. -->
     <key>SUFeedURL</key>
     <string>https://tonyyo11.github.io/jamf-reports-community/appcast.xml</string>
     <key>SUPublicEDKey</key>
-    <string></string>
+    <string>__SU_PUBLIC_ED_KEY_PLACEHOLDER__</string>
     <key>SUEnableInstallerLauncherService</key>
     <true/>
     <key>SUAutomaticallyUpdate</key>
@@ -156,6 +138,33 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+
+# Substitute SUPublicEDKey via PlistBuddy after writing the placeholder.
+#
+# Why not unquote the heredoc? Doing so would interpolate $SU_PUBLIC_ED_KEY raw
+# into XML, allowing a hostile/typo'd value containing `</string>` to inject
+# arbitrary plist keys (e.g. swap SUFeedURL). PlistBuddy parses the real plist
+# tree, so XML metacharacters in the value are stored as data, not structure.
+# Defense-in-depth: regex-validate first — Sparkle EdDSA pubkeys are 32 bytes
+# base64-encoded (44 chars including padding), strict charset.
+if [[ -n "${SU_PUBLIC_ED_KEY}" ]]; then
+  if [[ ! "$SU_PUBLIC_ED_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+    echo "✗ SU_PUBLIC_ED_KEY does not match expected EdDSA base64 format (43 chars + '=')." >&2
+    echo "  Got: ${#SU_PUBLIC_ED_KEY} chars." >&2
+    exit 1
+  fi
+  /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SU_PUBLIC_ED_KEY" \
+    "$APP_OUT/Contents/Info.plist"
+fi
+
+# Post-build assertion: refuse to ship a release build whose Info.plist still
+# contains the literal placeholder. Debug builds may carry the placeholder
+# (Sparkle 2.x refuses to apply updates with a malformed key — safe-by-default).
+if [[ "$CONFIG" == "release" ]] \
+   && grep -q "__SU_PUBLIC_ED_KEY_PLACEHOLDER__" "$APP_OUT/Contents/Info.plist"; then
+  echo "✗ Info.plist still contains SU_PUBLIC_ED_KEY placeholder after substitution." >&2
+  exit 1
+fi
 
 # Embed Sparkle.framework. SwiftPM stages it under .build/<triple>/<config>/
 # but does NOT copy it into the .app — without this step the binary fails to
@@ -166,6 +175,22 @@ if [[ -d "$SPARKLE_SRC" ]]; then
   mkdir -p "$APP_OUT/Contents/Frameworks"
   rm -rf "$APP_OUT/Contents/Frameworks/Sparkle.framework"
   cp -R "$SPARKLE_SRC" "$APP_OUT/Contents/Frameworks/Sparkle.framework"
+
+  # Strip build-time artifacts from the embedded framework. Sparkle's binary
+  # tarball ships Headers/ and PrivateHeaders/ for SDK consumers; shipping them
+  # inside a notarized .app trips Gatekeeper's strict-mode validation on
+  # quarantined launches with "unsealed contents present in the root directory
+  # of an embedded framework" — even though notarytool itself accepts them.
+  EMBEDDED_SPARKLE="$APP_OUT/Contents/Frameworks/Sparkle.framework"
+  find "$EMBEDDED_SPARKLE/Versions" -type d \
+    \( -name Headers -o -name PrivateHeaders \) \
+    -prune -exec rm -rf {} +
+  rm -f "$EMBEDDED_SPARKLE/Headers" "$EMBEDDED_SPARKLE/PrivateHeaders"
+
+  # Strip extended attributes (com.apple.quarantine from the curl download,
+  # com.apple.provenance, etc.). Leftover xattrs invalidate the seal in
+  # strict-mode validation. Apply to the whole .app for safety.
+  xattr -cr "$APP_OUT"
 
   # Add @loader_path/../Frameworks to the main binary's rpath so dyld can
   # resolve @rpath/Sparkle.framework/... at launch. SwiftPM does not add this
@@ -180,24 +205,37 @@ else
   echo "⚠ Sparkle.framework not found at $SPARKLE_SRC; auto-update will fail" >&2
 fi
 
-# Ad-hoc sign with Hardened Runtime + explicit entitlements. Distribution still
-# requires Developer ID + notarization; this is the local-dev posture.
+# Resolve signing identity.
+#   - Release: prefer SIGNING_IDENTITY env var; otherwise auto-pick the first
+#     "Developer ID Application" identity in the login keychain. Falls back to
+#     ad-hoc with a warning so dev builds still work without a cert.
+#   - Debug: ad-hoc unless SIGNING_IDENTITY is explicitly set.
+# When the identity is "-" (ad-hoc), Apple's secure timestamp (TSA) is not
+# available and `--timestamp=none` is used everywhere. When a real Developer ID
+# identity is in use, `--timestamp` is required for notarization.
+if [[ -z "${SIGNING_IDENTITY:-}" ]]; then
+  if [[ "$CONFIG" == "release" ]]; then
+    SIGNING_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+      | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+    if [[ -z "$SIGNING_IDENTITY" ]]; then
+      echo "⚠ no Developer ID Application identity found; falling back to ad-hoc" >&2
+      echo "  (release build will not be notarizable)" >&2
+      SIGNING_IDENTITY="-"
+    fi
+  else
+    SIGNING_IDENTITY="-"
+  fi
+fi
+
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+  TS_FLAG="--timestamp=none"
+else
+  TS_FLAG="--timestamp"
+fi
+echo "→ signing identity: ${SIGNING_IDENTITY}"
+
 ENTITLEMENTS="JamfReports.entitlements"
 if [[ -f "$ENTITLEMENTS" ]]; then
-  if [[ -d "$APP_OUT/Contents/Resources/python" ]]; then
-    echo "→ signing bundled Python components"
-    while IFS= read -r -d '' file; do
-      case "$file" in
-        *.so|*.dylib|*/python|*/python3|*/python3.*)
-          if ! codesign --force --sign - --options runtime "$file" >/dev/null; then
-            echo "✗ codesign failed for $file" >&2
-            exit 1
-          fi
-          ;;
-      esac
-    done < <(find "$APP_OUT/Contents/Resources/python" -type f -print0)
-  fi
-
   # Sparkle requires inside-out signing of its inner helpers BEFORE the outer
   # framework, BEFORE the main app. Order matters; --deep is not sufficient
   # for nested XPC services + the Updater.app helper.
@@ -212,13 +250,13 @@ if [[ -f "$ENTITLEMENTS" ]]; then
       "$SPARKLE_INNER/Autoupdate"
     do
       if [[ -e "$helper" ]]; then
-        if ! codesign --force --sign - --options runtime --timestamp=none "$helper" >/dev/null; then
+        if ! codesign --force --sign "$SIGNING_IDENTITY" --options runtime "$TS_FLAG" "$helper" >/dev/null; then
           echo "✗ codesign failed for $helper" >&2
           exit 1
         fi
       fi
     done
-    if ! codesign --force --sign - --options runtime --timestamp=none "$SPARKLE_FRAMEWORK" >/dev/null; then
+    if ! codesign --force --sign "$SIGNING_IDENTITY" --options runtime "$TS_FLAG" "$SPARKLE_FRAMEWORK" >/dev/null; then
       echo "✗ codesign failed for $SPARKLE_FRAMEWORK" >&2
       exit 1
     fi
@@ -227,8 +265,9 @@ if [[ -f "$ENTITLEMENTS" ]]; then
   echo "→ signing $APP_OUT"
   # Drop --deep: Sparkle.framework was already signed inside-out above; --deep
   # would re-sign helpers without their entitlements/identifiers.
-  if ! codesign --force --sign - \
+  if ! codesign --force --sign "$SIGNING_IDENTITY" \
     --options runtime \
+    "$TS_FLAG" \
     --entitlements "$ENTITLEMENTS" \
     "$APP_OUT" >/dev/null; then
     echo "✗ codesign failed for $APP_OUT" >&2
@@ -237,6 +276,38 @@ if [[ -f "$ENTITLEMENTS" ]]; then
 else
   echo "✗ $ENTITLEMENTS missing — refusing to sign without entitlements" >&2
   exit 1
+fi
+
+# Notarize + staple when:
+#   - building release, AND
+#   - a real Developer ID identity was used (ad-hoc cannot be notarized), AND
+#   - SKIP_NOTARIZE is not set (escape hatch for fast local iteration).
+# Uses the keychain profile stored via `xcrun notarytool store-credentials`.
+NOTARY_PROFILE="${NOTARY_PROFILE:-JamfReports-Notary}"
+if [[ "$CONFIG" == "release" \
+      && "$SIGNING_IDENTITY" != "-" \
+      && -z "${SKIP_NOTARIZE:-}" ]]; then
+  ZIP_OUT="build/JamfReports-notarize.zip"
+  echo "→ packing for notarization: $ZIP_OUT"
+  rm -f "$ZIP_OUT"
+  /usr/bin/ditto -c -k --keepParent "$APP_OUT" "$ZIP_OUT"
+
+  echo "→ submitting to Apple notary service (profile: $NOTARY_PROFILE)"
+  if ! xcrun notarytool submit "$ZIP_OUT" \
+       --keychain-profile "$NOTARY_PROFILE" \
+       --wait; then
+    echo "✗ notarization failed — run 'xcrun notarytool log <id> --keychain-profile $NOTARY_PROFILE' for details" >&2
+    exit 1
+  fi
+
+  echo "→ stapling notarization ticket"
+  if ! xcrun stapler staple "$APP_OUT"; then
+    echo "✗ stapler failed for $APP_OUT" >&2
+    exit 1
+  fi
+
+  rm -f "$ZIP_OUT"
+  echo "✓ notarized + stapled"
 fi
 
 echo "✓ built $APP_OUT"

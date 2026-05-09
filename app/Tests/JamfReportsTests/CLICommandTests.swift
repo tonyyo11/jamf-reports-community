@@ -76,4 +76,22 @@ final class CLICommandTests: XCTestCase {
         XCTAssertEqual(SnapshotKind.schoolDepDevices.rawValue, "school-dep-devices")
         XCTAssertEqual(SnapshotKind.schoolIBeacons.rawValue, "school-ibeacons")
     }
+
+    // MARK: - Invalid profile guard
+
+    /// Verifies the `[]` release safety-net return for invalid profiles.
+    /// Skipped in debug builds where `assertionFailure` would terminate the process.
+    func testArgvReturnsEmptyForInvalidProfile() throws {
+        #if DEBUG
+        throw XCTSkip("assertionFailure fires in debug — invalid-profile argv guard is verified in release builds")
+        #else
+        let invalidProfiles = ["", "../escape", "foo bar", "--config=/etc/passwd", "UPPER"]
+        for profile in invalidProfiles {
+            XCTAssertEqual(
+                CLICommand.proAuthToken(profile: profile).argv, [],
+                "argv must be empty for invalid profile: '\(profile)'"
+            )
+        }
+        #endif
+    }
 }

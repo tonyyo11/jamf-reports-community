@@ -48,6 +48,15 @@ struct FleetOverviewView: View {
             .navigationDestination(for: String.self) { profile in
                 if let row = rows.first(where: { $0.profile == profile }) {
                     profileDetail(row)
+                } else {
+                    // Profile data not yet loaded; show placeholder.
+                    VStack(spacing: 8) {
+                        ProgressView()
+                        Text("Loading \(profile)…")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -76,6 +85,7 @@ struct FleetOverviewView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         Task { await load() }
                     }
+                    .help("Re-aggregate every initialized profile's latest summary snapshot.")
                 }
             )
         }
@@ -157,13 +167,17 @@ struct FleetOverviewView: View {
             if visibleRows.isEmpty && issuesOnly {
                 HStack {
                     Spacer()
-                    VStack(spacing: 8) {
+                    VStack(spacing: 10) {
                         Image(systemName: "checkmark.shield")
                             .font(.system(size: 32, weight: .light))
                             .foregroundStyle(Theme.Colors.teal)
                         Text("No profiles with issues — fleet looks healthy")
                             .font(.system(size: 14))
                             .foregroundStyle(Theme.Colors.fgMuted)
+                        PNPButton(title: "Show all profiles", icon: "list.bullet", size: .sm) {
+                            issuesOnly = false
+                        }
+                        .help("Disable the Issues-Only filter to see every profile.")
                     }
                     .padding(.vertical, 48)
                     Spacer()
@@ -180,6 +194,7 @@ struct FleetOverviewView: View {
                                 .fleetDrillDownChrome()
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Open \(row.profile) fleet details")
                         .help("Open \(row.profile) fleet details")
                     }
                 }
@@ -260,15 +275,19 @@ struct FleetOverviewView: View {
                             PNPButton(title: "Overview", icon: Tab.overview.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .overview)
                             }
+                            .help("Switch to `\(row.profile)` and open the Overview tab.")
                             PNPButton(title: "Devices", icon: Tab.devices.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .devices)
                             }
+                            .help("Switch to `\(row.profile)` and open the Devices tab.")
                             PNPButton(title: "Runs", icon: Tab.runs.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .runs)
                             }
+                            .help("Switch to `\(row.profile)` and open the Runs tab.")
                             PNPButton(title: "Schedules", icon: Tab.schedules.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .schedules)
                             }
+                            .help("Switch to `\(row.profile)` and open the Schedules tab.")
                         }
                     }
                 }
@@ -369,6 +388,13 @@ struct FleetOverviewView: View {
             }
         }
         .frame(height: 200)
+        .accessibilityChartDescriptor(TrendLineChartDescriptor(
+            title: "Stability Trend",
+            seriesName: "Stability Index",
+            dates: points.map(\.date),
+            values: points.map(\.value),
+            unit: "%"
+        ))
     }
 
     private func profileMetricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
@@ -387,10 +413,13 @@ struct FleetOverviewView: View {
                 }
             }
             .frame(height: 8)
+            .accessibilityHidden(true)
             Mono(text: value.map { "\(String(format: "%.1f", $0))%" } ?? "--",
                  color: Theme.Colors.fg)
                 .frame(width: 56, alignment: .trailing)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value.map { "\(String(format: "%.1f", $0))%" } ?? "no data")")
     }
 
     private func stalePercent(_ summary: DailySummary) -> Double {
@@ -575,9 +604,12 @@ private struct FleetProfileCard: View {
                     .frame(width: max(0, min(CGFloat(value ?? 0), 100)) * 1.1)
             }
             .frame(width: 110, height: 6)
+            .accessibilityHidden(true)
             Spacer()
             Mono(text: value.map { "\(String(format: "%.1f", $0))%" } ?? "--")
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value.map { "\(String(format: "%.1f", $0))%" } ?? "no data")")
     }
 
     private func stalePercent(_ summary: DailySummary) -> Double {
@@ -596,6 +628,7 @@ private extension View {
                     .padding(8)
                     .background(.ultraThinMaterial, in: Circle())
                     .padding(10)
+                    .accessibilityHidden(true)
             }
             .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
     }

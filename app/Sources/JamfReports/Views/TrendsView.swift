@@ -8,7 +8,7 @@ struct TrendsView: View {
     @State private var trendStore = TrendStore()
     @State private var bridge = CLIBridge()
     @State private var metric: TrendSeries.Metric = .stability
-    @State private var range: TrendRange = .w26
+    @State private var range: TrendRange = .w4
     @State private var selectedDate: Date? = nil
     @State private var isArchiving = false
     @State private var isExporting = false
@@ -227,6 +227,7 @@ struct TrendsView: View {
         } label: {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
                 Text(m.displayLabel).font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Text("\(dl >= 0 ? "+" : "")\(Int(dl.rounded()))\(m.unit)")
@@ -262,6 +263,7 @@ struct TrendsView: View {
                         .padding(.vertical, 4)
                         .clipShape(RoundedRectangle(cornerRadius: 1, style: .continuous))
                         .transition(.move(edge: .leading).combined(with: .opacity))
+                        .accessibilityHidden(true)
                 }
             }
             .overlay(
@@ -270,6 +272,9 @@ struct TrendsView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(metricPillAccessibilityLabel(m, delta: dl, goodTrend: goodTrend))
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .help("Show \(m.displayLabel) trend")
         .onAppear {
             guard !pillPulse else { return }
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
@@ -389,6 +394,13 @@ struct TrendsView: View {
                     }
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
+                    .accessibilityChartDescriptor(TrendLineChartDescriptor(
+                        title: "\(metric.displayLabel) Trend",
+                        seriesName: metric.displayLabel,
+                        dates: trendPoints.map(\.date),
+                        values: trendPoints.map(\.value),
+                        unit: metric.unit
+                    ))
                 } else {
                     Text("Calculating domain...")
                         .frame(height: 260)
@@ -413,6 +425,7 @@ struct TrendsView: View {
                             SystemActions.openFolder(dir)
                         }
                     }
+                    .help("Open the summaries directory where archived summary.json snapshots live.")
                 }
             }
         }
@@ -501,7 +514,7 @@ struct TrendsView: View {
                 .foregroundStyle(Theme.Colors.fgMuted)
         }
         .frame(maxWidth: .infinity, minHeight: 200)
-        .background(Theme.Colors.codeBG)
+        .background(Color(nsColor: .textBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
@@ -551,6 +564,17 @@ struct TrendsView: View {
                 .chartYAxis(.hidden)
                 .chartLegend(.hidden)
                 .frame(height: 200)
+                .accessibilityChartDescriptor(StackedBarChartDescriptor(
+                    title: "Compliance Distribution Over Time",
+                    dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
+                    bands: DemoData.complianceBands.enumerated().map { bandIdx, band in
+                        StackedBarChartDescriptor.Band(
+                            name: band.label,
+                            dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
+                            values: weeks.map { $0.values[bandIdx] }
+                        )
+                    }
+                ))
             } else {
                 Text("No Data")
                     .frame(height: 200)
@@ -583,11 +607,35 @@ struct TrendsView: View {
                 }
                 .chartLegend(.hidden)
                 .frame(height: 200)
+                .accessibilityChartDescriptor(MultiLineChartDescriptor(
+                    title: "Security Posture Comparison",
+                    seriesList: [
+                        .init(name: "FileVault",
+                              dates: points(for: .fileVault).map(\.date),
+                              values: points(for: .fileVault).map(\.value)),
+                        .init(name: "NIST Compliance",
+                              dates: points(for: .compliance).map(\.date),
+                              values: points(for: .compliance).map(\.value)),
+                        .init(name: "macOS Current",
+                              dates: points(for: .osCurrent).map(\.date),
+                              values: points(for: .osCurrent).map(\.value)),
+                    ]
+                ))
             } else {
                 Text("No Data")
                     .frame(height: 200)
             }
         }
+    }
+
+    private func metricPillAccessibilityLabel(
+        _ m: TrendSeries.Metric,
+        delta: Double,
+        goodTrend: Bool
+    ) -> String {
+        let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
+        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(m.unit)"
+        return "\(m.displayLabel), \(direction), \(deltaStr) change"
     }
 
     private func points(for m: TrendSeries.Metric) -> [TrendPoint] {
@@ -636,6 +684,7 @@ struct TrendsView: View {
                                 SystemActions.openFolder(dir)
                             }
                         }
+                        .help("Open the archived summaries folder so you can inspect or copy snapshot JSON.")
                         PNPButton(
                             title: isArchiving ? "Archiving…" : "Archive now",
                             icon: isArchiving ? "hourglass" : "icloud.and.arrow.up",
@@ -690,10 +739,11 @@ struct TrendsView: View {
         height: CGFloat,
         isLatest: Bool
     ) -> some View {
+        // tealBright adapts better than the static teal token in light mode.
         let isHovered = hoveredArchiveIdx == idx
         return Rectangle()
-            .fill(isLatest ? Theme.Colors.gold : Theme.Colors.teal)
-            .opacity(isLatest ? 1 : 0.45)
+            .fill(isLatest ? Theme.Colors.gold : Theme.Colors.tealBright)
+            .opacity(isLatest ? 1 : 0.6)
             .frame(height: height)
             .frame(maxWidth: .infinity)
             .overlay(alignment: .top) {
@@ -735,6 +785,15 @@ struct TrendsView: View {
                     archivePulse = true
                 }
             }
+            .accessibilityLabel(archiveBarLabel(date: date, value: value, isLatest: isLatest))
+    }
+
+    private func archiveBarLabel(date: Date, value: Double, isLatest: Bool) -> String {
+        let dateStr = SummaryJSONParser.dateFormatter.string(from: date)
+        let valueStr = "\(Int(value.rounded()))\(metric.unit)"
+        return isLatest
+            ? "\(dateStr): \(valueStr), latest snapshot"
+            : "\(dateStr): \(valueStr)"
     }
 
     // MARK: Archive
@@ -742,10 +801,12 @@ struct TrendsView: View {
     private func archiveNow() async {
         let profile = workspaceStore.profile
         isArchiving = true
-        workspaceStore.globalStatus = "jrc collect + generate · profile=\(profile)"
-        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { line in
+        workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
+        // Status-bar race guard — see HealthCheckView.runAudit comment.
+        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspaceStore] line in
             Task { @MainActor in
-                workspaceStore.globalStatus = "jrc · \(line.text)"
+                guard let workspaceStore, self.isArchiving else { return }
+                workspaceStore.globalStatus = line.text
             }
         }
         isArchiving = false

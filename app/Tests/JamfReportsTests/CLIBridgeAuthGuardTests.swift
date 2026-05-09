@@ -34,6 +34,16 @@ final class CLIBridgeAuthGuardTests: XCTestCase {
         XCTAssertEqual(CLIBridge.exitCodeRateLimited, 6)
     }
 
+    func test_exitCodeUsage_isTwo() {
+        // jamf-cli maps bad flags / missing args → exit 2. The constant must not drift.
+        XCTAssertEqual(CLIBridge.exitCodeUsage, 2)
+    }
+
+    func test_exitCodeNotFound_isFour() {
+        // jamf-cli maps HTTP 404 → exit 4. The constant must not drift.
+        XCTAssertEqual(CLIBridge.exitCodeNotFound, 4)
+    }
+
     // MARK: - shouldSkipAuthProbe unit tests
 
     func test_shouldSkipAuthProbe_trueForAPIKey() {

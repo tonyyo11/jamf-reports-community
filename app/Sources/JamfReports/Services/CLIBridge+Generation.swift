@@ -3,6 +3,19 @@ import Foundation
 // Note: `GenerateOutputType` is defined in `Views/GenerateSheet.swift` because
 // it's primarily a UI-state concern. CLIBridge consumes it here.
 
+/// Errors thrown by `CLIBridge` methods.
+enum CLIBridgeError: Error, LocalizedError {
+    /// The requested operation is not yet wired to a live jamf-cli command.
+    /// The associated string names the function and describes what needs to be implemented.
+    case notImplemented(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notImplemented(let detail): return "Not implemented: \(detail)"
+        }
+    }
+}
+
 /// Per-type result of a `generateAll` run.
 /// Tracks successful and failed output types independently so the UI
 /// can report partial success (e.g. "XLSX written, HTML failed").
@@ -108,22 +121,15 @@ extension CLIBridge {
     }
 
     /// List the Extension Attributes configured on the active jamf-cli tenant.
-    /// Stub — always returns an empty array. The real implementation will invoke
-    /// `jamf-cli -p <profile> pro computer-extension-attributes list --output json`
-    /// and decode the response; `throws` is reserved for that wiring.
-    nonisolated func listExtensionAttributes(
-        profile: String
-    ) async throws -> [ExtensionAttribute] {
-        // Best-effort: when jamf-cli is absent, return empty rather than throw —
-        // the wizard step will show its "no EAs configured" empty state.
-        guard ExecutableLocator.locate("jamf-cli") != nil else {
-            return []
-        }
-        // Stub: real implementation would invoke
-        //   `jamf-cli -p <profile> pro computer-extension-attributes list --output json`
-        // and decode the response. Empty array is the safe default until that wiring lands.
-        _ = profile
-        return []
+    ///
+    /// Not yet wired — throws `CLIBridgeError.notImplemented` so callers can surface
+    /// a meaningful error instead of silently showing an empty list.
+    /// Wire to `jamf-cli -p <profile> pro computer-extension-attributes list --output json`
+    /// when that command is available.
+    nonisolated func listExtensionAttributes(profile: String) async throws -> [ExtensionAttribute] {
+        throw CLIBridgeError.notImplemented(
+            "listExtensionAttributes: wire jamf-cli pro computer-extension-attributes list --output json"
+        )
     }
 
     // MARK: - Private helpers

@@ -25,9 +25,21 @@ struct SchedulesView: View {
     @State private var now = Date()
     private let countdownTick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
+    @State private var query = ""
+
     private var filteredSchedules: [Schedule] {
-        if profileFilter == "All" { return workspace.schedules }
-        return workspace.schedules.filter { $0.profile == profileFilter }
+        let scoped = profileFilter == "All"
+            ? workspace.schedules
+            : workspace.schedules.filter { $0.profile == profileFilter }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return scoped }
+        return scoped.filter { schedule in
+            schedule.name.lowercased().contains(trimmed)
+                || schedule.profile.lowercased().contains(trimmed)
+                || schedule.schedule.lowercased().contains(trimmed)
+                || schedule.cadence.lowercased().contains(trimmed)
+                || schedule.mode.rawValue.lowercased().contains(trimmed)
+        }
     }
 
     private var profileCount: Int {
@@ -51,6 +63,7 @@ struct SchedulesView: View {
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
         }
+        .searchable(text: $query, placement: .toolbar, prompt: "Filter by name, profile, cadence, or mode")
         .sheet(isPresented: $showNewSchedule) {
             NewScheduleSheet(
                 form: $newScheduleForm,
@@ -92,10 +105,12 @@ struct SchedulesView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
                     }
+                    .help("Re-scan ~/Library/LaunchAgents for jamfreports schedules.")
                     PNPButton(title: "New schedule", icon: "plus", style: .gold) {
                         newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
                         showNewSchedule = true
                     }
+                    .help("Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
                 }
             )
         }
@@ -125,6 +140,7 @@ struct SchedulesView: View {
                 Pill(text: "All · \(workspace.schedules.count)", tone: profileFilter == "All" ? .gold : .muted)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Show all profiles, \(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s")")
             ForEach(workspace.profiles) { p in
                 let count = workspace.schedules.filter { $0.profile == p.name }.count
                 Button {
@@ -134,6 +150,7 @@ struct SchedulesView: View {
                         .opacity(count > 0 ? 1 : 0.5)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Filter by \(p.name), \(count) schedule\(count == 1 ? "" : "s")")
             }
             Spacer()
             PNPButton(title: "Add profile", icon: "plus", size: .sm) {
@@ -280,6 +297,8 @@ struct SchedulesView: View {
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close run log")
+                .help("Close live output")
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
@@ -299,6 +318,7 @@ struct SchedulesView: View {
                         PNPToggle(isOn: .constant(s.enabled)).allowsHitTesting(false)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(s.enabled ? "Disable \(s.name)" : "Enable \(s.name)")
                 }
                 .width(48)
 
@@ -352,6 +372,8 @@ struct SchedulesView: View {
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Actions for \(s.name)")
+                    .help("Run now or delete \(s.name)")
                 }
                 .width(28)
             }
@@ -363,21 +385,59 @@ struct SchedulesView: View {
     // MARK: - Run modes explainer
 
     private var runModesExplainer: some View {
-        let modes: [(String, String, String, Color)] = [
-            ("snapshot-only", "Refresh jamf-cli JSON · archive CSVs",     "icloud.and.arrow.up",   Theme.Colors.info),
-            ("jamf-cli-only", "Live or cached jamf-cli sheets",           "bolt.fill",             Theme.Colors.gold),
-            ("jamf-cli-full", "Baseline CSV + snapshots + report",        "shield.lefthalf.filled", Theme.Colors.ok),
-            ("csv-assisted",  "CSV inbox + jamf-cli",                     "folder.fill",           Theme.Colors.purple),
+        let iconMap: [Schedule.RunMode: (String, Color)] = [
+            .snapshotOnly: ("icloud.and.arrow.up", Theme.Colors.info),
+            .jamfCLIOnly: ("bolt.fill", Theme.Colors.gold),
+            .jamfCLIFull: ("shield.lefthalf.filled", Theme.Colors.ok),
+            .csvAssisted: ("folder.fill", Theme.Colors.purple),
         ]
-        return HStack(spacing: 10) {
-            ForEach(modes, id: \.0) { mode in
-                Card(padding: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Image(systemName: mode.2).font(.system(size: 14)).foregroundStyle(mode.3)
-                            Text(mode.0).font(Theme.Fonts.mono(12, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Kicker(text: "RUN MODES")
+                Spacer()
+                Menu {
+                    ForEach(Schedule.RunMode.allCases, id: \.id) { mode in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(mode.displayTitle)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Text(mode.displayDescription)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .lineLimit(3)
                         }
-                        Text(mode.1).font(.system(size: 11)).foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .help("Run mode explanations")
+            }
+            HStack(spacing: 10) {
+                ForEach(Schedule.RunMode.allCases, id: \.id) { mode in
+                    let (icon, color) = iconMap[mode] ?? ("questionmark.circle", Theme.Colors.fgMuted)
+                    Card(padding: 12) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 8) {
+                                Image(systemName: icon)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(color)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(mode.displayTitle)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(Theme.Colors.fg)
+                                    Mono(text: mode.rawValue, size: 9, color: Theme.Colors.fgMuted)
+                                }
+                            }
+                            Divider().background(Theme.Colors.hairline)
+                            Text(mode.displayDescription)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .lineLimit(4)
+                        }
                     }
                 }
             }
@@ -474,9 +534,15 @@ struct SchedulesView: View {
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
         switch s {
-        case .ok:   Pill(text: "OK",   tone: .teal,   icon: "checkmark")
-        case .warn: Pill(text: "WARN", tone: .warn,   icon: "exclamationmark")
-        case .fail: Pill(text: "FAIL", tone: .danger, icon: "xmark")
+        case .ok:
+            Pill(text: "OK",   tone: .teal,   icon: "checkmark")
+                .accessibilityLabel("Last run status: OK")
+        case .warn:
+            Pill(text: "WARN", tone: .warn,   icon: "exclamationmark")
+                .accessibilityLabel("Last run status: Warning")
+        case .fail:
+            Pill(text: "FAIL", tone: .danger, icon: "xmark")
+                .accessibilityLabel("Last run status: Failed")
         }
     }
 

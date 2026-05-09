@@ -9,6 +9,20 @@ versions in this repository map to git tags.
 
 ### Added
 
+- **Complete rewrite as a native macOS application**: The project has been rewritten from the ground up as a native Swift/SwiftUI application for macOS 14+. The original single-file Python CLI (`jamf-reports-community.py`) served as the reference implementation; all report generation, data collection, scheduling, and config management logic has been ported to Swift and is now compiled into a self-contained `.app` bundle. Users no longer need Python, pip, or any third-party runtime installed — the app ships with everything required. The Python CLI remains in the repository as a standalone tool for headless or non-Mac environments.
+- **Python-free operation** (macOS app): All interactive GUI paths — collect, generate, generate HTML, export inventory CSV, school collect, school generate, config check, workspace init, and LaunchAgent scheduling — now run exclusively through the native Swift engine (`ReportEngine`). Users no longer need Python installed or a bundled Python runtime for any supported workflow. The only remaining jrc dependency is `backup()` and the multi-profile LaunchAgent fan-out — both are limited to edge-case automation flows and will fail fast with a clear error if jrc is absent.
+- **Auth fail-fast guard** (macOS app): `CLIBridge.collect()` and `collectThenGenerate()` now probe `jamf-cli pro auth token` before launching any API commands. A profile with invalid or unconfigured credentials returns exit code 3 (HTTP 401) and emits an actionable error line, preventing redundant subcommand launches against an unauthorized tenant. Jamf School profiles (`auth-method = apikey`) bypass the probe automatically.
+- **Dynamic Platform Gateway status** (macOS app, Config → Platform API tab): When the active workspace profile uses Platform Gateway auth (`auth-method = platform`), the tab now shows a green "Platform Gateway profile active" callout instead of a static setup instruction, with the profile name and a prompt to enable the Platform API toggle.
+- **VoiceOver / Accessibility** (macOS app): All Swift Charts views — Trends metric charts, hero trend chart, compliance distribution, security posture comparison, OS version distribution, and fleet stability — now expose full VoiceOver chart navigation via `AXChartDescriptorRepresentable`, allowing VoiceOver users to swipe through individual data points. Interactive controls (`PNPButton`, `PNPToggle`, `SegmentedControl`, `StatTile`, sidebar nav items, workspace chip, agent cards, metric pills) have composed accessibility labels that include badges, counts, and trend direction. Decorative elements (sparklines, legend dots, progress bar fills, hover chevrons) are hidden from the accessibility tree.
+- **Design polish** (macOS app): Visual refinements across eight views:
+  - *Sidebar*: Per-profile gradient avatar (hue derived from profile name); compact-mode icon sizing improved; workspace chip shows available workspace count; nav items include badge counts in their accessibility labels.
+  - *Titlebar*: Status dot animates when jamf-cli is missing; demo mode chip is tinted gold; hover popover reveals the resolved jamfCLI binary path.
+  - *Overview*: Stat tiles with downward trends receive a danger tint and border; security agent cards below 80% coverage show a warn-tinted progress bar and gap count; drill-down cards animate border and shadow on hover.
+  - *Fleet Overview*: Profile cards with issues show a warning-colored left-edge accent stripe; first-time profiles (no summary yet) use a dashed border instead of a solid hairline.
+  - *Devices*: Search field shows a gold focus ring on focus; stale devices badge the Last Contact column with a clock icon; responsive column hiding collapses low-priority columns at <1200 pt; security status displayed as colored pills.
+  - *Trends*: Metric pills show a leading accent bar on selection, a micro-sparkline of the last 8 values, and a pulsing danger wash on declining metrics; the hero chart value gets a metric-colored shadow and a date-range label; archive bars show date and value in a hover tooltip.
+  - *Audit*: CRITICAL findings get a red left-edge accent bar; affected-count shown as an inline proportional bar; newly detected findings animate in with a "NEW" badge; resolved findings show a strikethrough with an ok-colored checkmark.
+  - *Schedules*: Next-run tile shows a 60 s-tick countdown with a semicircular progress arc; run log is terminal-styled with per-line color coding for errors, warnings, and success keywords, and auto-scrolls only when already at the bottom.
 - **Protect Computers Sheet**: New 14-column sheet listing Jamf Protect-managed Macs (hostname, serial, UUID, model, OS version, plan, tags, web protection / full disk access status, insights pass/fail/unknown counts, connection status, last connection). Driven by `jamf-cli protect computers list`. Gated by `protect.computers.enabled` (default off). Marked Experimental until pagination shape is verified against a live tenant.
 - **Protect Alerts Sheet**: New 11-column sheet listing Jamf Protect alerts (created, severity, status, event type, computer, serial, plan, analytics, actions, tags, UUID). Driven by `jamf-cli protect alerts list`. Gated by `protect.alerts.enabled` (default off).
 - **Protect Insights Sheet**: New 10-column sheet listing Protect compliance insights (label, section, description, pass/fail/none counts, enabled, tags, CIS IDs, UUID). Driven by `jamf-cli protect insights list`. Gated by `protect.insights.enabled` (default off).
@@ -61,12 +75,7 @@ versions in this repository map to git tags.
 - **Protect collect planner** now gates Protect snapshots on `is_protect_available()` — when Protect is unconfigured for the active profile, the collector emits a single `[skip]` line instead of a misleading auth error. The `cmd_check` Protect probe likewise replaces its placeholder-value heuristic with the same availability call.
 - **Overview screen tile layout**: Stat tiles on the Overview screen now use a fixed-count flexible grid; previously, an asymmetric `minWidth` on the primary tile caused right-side tiles to collapse into single-character columns on live workspaces.
 - **Titlebar breadcrumb is clickable**: The "Tab Name / SUBTITLE" path at the top of every screen now acts as a navigation control — clicking either segment pops the active tab's `NavigationStack` back to root.
-- **Minimum supported jamf-cli is now v1.14.0**; older versions are no longer supported.
-  The pre-v1.4 patch-status `installed`/`total` shape is no longer parsed — only
-  `on_latest`/`on_other` is supported. The older `update-status` shape (`summary`/`ErrorDevices`)
-  is preserved pending live verification against a tenant with active update plans; the
-  `status_summary` shape remains the canonical path. Users on older jamf-cli must upgrade
-  via Homebrew (`brew upgrade jamf-cli`) before generating reports.
+- **Minimum supported jamf-cli is now v1.16.1** (raised from v1.14.0). Picks up the platform-section nil-guard in `pro device <id>` (jamf-cli PR #185). The pre-v1.4 patch-status `installed`/`total` shape is no longer parsed — only `on_latest`/`on_other` is supported. The older `update-status` shape (`summary`/`ErrorDevices`) is preserved pending live verification; `status_summary` remains the canonical path. Users on older versions must upgrade via Homebrew (`brew upgrade jamf-cli`). The app surfaces a notice in Settings when the installed version is below the floor rather than hard-failing — most code paths still work.
 - **v1.6.0 Compatibility**: Updated patch and update-status parsers to support the new JSON schema introduced in jamf-cli v1.6.0.
 - **Python Runtime**: Switched to pinned SHA256 verification for bundled Python runtime assets on both arm64 and x86_64 architectures.
 - **Test Suite**: Expanded Swift test coverage for core services including `ConfigService`, `ProfileService`, `CSVInboxService`, and `LaunchAgent` management. Added negative path testing for security boundaries.
@@ -89,9 +98,9 @@ versions in this repository map to git tags.
   regenerates instead of using corrupt data.
 - Compliance parsing no longer crashes in summary path: removed `sys.exit(1)`
   when unparseable values are found; sets `comp_pct = None` and logs a warning.
-
-### Added
-
+- Font loading on remote Macs: bypassed SwiftPM's `Bundle.module` lookup for font resources so custom fonts load correctly when the app bundle is copied to a different Mac.
+- Canonical macOS bundle layout: normalized the SwiftPM resource bundle directory structure so resource paths resolve correctly in production builds outside the build tree.
+- Per-profile drill-down: fixed pluralization of time-ago labels and corrected a missing Stability trend chart on the per-profile detail view in Fleet Overview.
 - Tests for `max_cache_age_hours` enforcement in `test_bridge.py`:
   `test_max_cache_age_raises_when_cache_too_old`,
   `test_max_cache_age_skips_check_when_zero`,
@@ -100,9 +109,6 @@ versions in this repository map to git tags.
   `test_audit_calls_correct_command`,
   `test_audit_with_category_adds_checks_flag`,
   `test_group_analyze_unused_mode_adds_flag`.
-
-### Fixed
- 
 - Fixed chart layout overflow in the macOS app where charts could go "off the page"
   due to categorical string X-axis; now uses continuous `Date` scaling.
 - Fixed timeline range filtering (W4–W52) to be duration-based rather than

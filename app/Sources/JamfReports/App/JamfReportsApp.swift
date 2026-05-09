@@ -1,8 +1,14 @@
 import SwiftUI
 import Sparkle
 
-@main
+// Entry point lives in main.swift (top-level code) which dispatches to either
+// the SwiftUI UI path or the --scheduled-run / --check CLI paths. The @main
+// attribute on this App struct conflicts with main.swift's top-level code.
 struct JamfReportsApp: App {
+    /// Narrowest supported window width (points). 960 satisfies WCAG 1.4.10
+    /// Reflow at 200% Dynamic Type and lets the app run on a 13" MacBook.
+    /// Update `ResponsiveLayoutTests` if this constant changes.
+    static let minSupportedWidth: CGFloat = 960
     @State private var workspace = WorkspaceStore()
 
     /// Sparkle updater — single shared instance for the app's lifetime.

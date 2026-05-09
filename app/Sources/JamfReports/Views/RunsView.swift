@@ -10,6 +10,7 @@ struct RunsView: View {
 
     private static let dateFmt: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "MMM d HH:mm"
         return f
     }()
@@ -52,10 +53,13 @@ struct RunsView: View {
             AnyView(
                 HStack(spacing: 8) {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
+                        .help("Reload run logs from disk")
                     PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
                         .disabled(selectedRun == nil)
+                        .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
                     PNPButton(title: "Export", icon: "arrow.down.circle") { exportLog() }
                         .disabled(selectedRun == nil)
+                        .help(selectedRun == nil ? "Select a run to export its log" : "Save log file to a chosen location")
                 }
             )
         }
@@ -115,6 +119,12 @@ struct RunsView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { selectRun(run) }
+        .accessibilityLabel(
+            "\(run.name), \(Self.dateFmt.string(from: run.date)), "
+            + "status \(run.status.rawValue)"
+            + (run.duration.map { ", duration \($0)" } ?? "")
+        )
+        .accessibilityAddTraits(.isButton)
     }
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
@@ -152,7 +162,7 @@ struct RunsView: View {
                         Mono(text: selectedRun == nil ? "—" : "Empty log", size: 11.5)
                             .padding(14)
                     } else {
-                        VStack(alignment: .leading, spacing: 4) {
+                        LazyVStack(alignment: .leading, spacing: 4, pinnedViews: []) {
                             ForEach(logLines) { line in
                                 Text(line.text)
                                     .font(Theme.Fonts.mono(11.5))

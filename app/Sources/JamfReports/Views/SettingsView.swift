@@ -17,7 +17,7 @@ struct SettingsView: View {
                     Kicker(text: "Application", tone: .gold)
                     Text("Settings")
                         .font(Theme.Fonts.serif(26, weight: .bold))
-                        .foregroundStyle(Theme.Colors.fg)
+                        .foregroundStyle(Theme.Text.primary)
                 }
                 .padding(.bottom, 8)
 
@@ -50,21 +50,22 @@ struct SettingsView: View {
                     trailing: AnyView(PNPButton(title: "Refresh", size: .sm) {
                         workspace.refreshToolStatus()
                         workspace.reloadFromDisk()
-                    })
+                    }
+                    .help("Re-detect jamf-cli on PATH and reload workspace state from disk."))
                 )
-                Divider().background(Theme.Colors.hairline)
+                Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "jamf-cli updates",
                     sub: jamfCLIUpdateSubtitle,
                     trailing: AnyView(jamfCLIUpdateControls)
                 )
-                Divider().background(Theme.Colors.hairline)
+                Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "Auto-update jamf-cli",
                     sub: "Check on launch",
                     trailing: AnyView(PNPToggle(isOn: $autoUpdate))
                 )
-                Divider().background(Theme.Colors.hairline)
+                Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "Demo mode",
                     sub: "Synthetic data, no API calls",
@@ -78,7 +79,11 @@ struct SettingsView: View {
     private var jamfCLISubtitle: String {
         guard let path = workspace.jamfCLIPath else { return "Not found in /opt/homebrew/bin or /usr/local/bin" }
         let source = workspace.jamfCLIInstallSource ?? "Unknown source"
-        return "\(workspace.jamfCLIVersion ?? "unknown") · \(source) · \(path)"
+        let base = "\(workspace.jamfCLIVersion ?? "unknown") · \(source) · \(path)"
+        if JamfCLIInstaller.isBelowMinimumSupported(workspace.jamfCLIVersion) {
+            return "\(base)\nBelow minimum supported \(JamfCLIInstaller.minimumSupportedVersion) — Device Lookup payloads may be incomplete. Update recommended."
+        }
+        return base
     }
 
     private var jamfCLIUpdateSubtitle: String {
@@ -94,10 +99,12 @@ struct SettingsView: View {
                 PNPButton(title: "Check", size: .sm) {
                     Task { await workspace.checkJamfCLIUpdate() }
                 }
+                .help("Check GitHub releases (or Homebrew, depending on install source) for a newer jamf-cli.")
                 if workspace.jamfCLIUpdateAvailable {
                     PNPButton(title: "Update", icon: "arrow.down.circle", style: .gold, size: .sm) {
                         Task { await workspace.updateJamfCLI() }
                     }
+                    .help("Download and install the newer jamf-cli release.")
                 }
             }
         }
@@ -114,8 +121,8 @@ struct SettingsView: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text(sub).font(Theme.Fonts.mono(11)).foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.primary)
+                Text(sub).font(Theme.Fonts.mono(11)).foregroundStyle(Theme.Text.tertiary)
             }
             Spacer()
             trailing
@@ -136,7 +143,7 @@ struct SettingsView: View {
                                 .frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(c.name).font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(isUnsupported ? Theme.Colors.fgDisabled : Theme.Colors.fg)
+                                    .foregroundStyle(isUnsupported ? Theme.Text.disabled : Theme.Text.primary)
                                 Mono(text: "\(c.url) · \(profileType(c))", size: 10.5)
                                 tokenStatusLabel(for: c.name)
                             }
@@ -149,13 +156,13 @@ struct SettingsView: View {
                         .padding(.vertical, 10)
                         .opacity(isUnsupported ? 0.55 : 1)
                         if idx < workspace.profiles.count - 1 {
-                            Divider().background(Theme.Colors.hairline)
+                            Divider().background(Theme.Hairline.standard)
                         }
                     }
                     if workspace.profiles.isEmpty {
                         Text("No local jamf-cli profiles found.")
                             .font(.system(size: 12.5))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 10)
                     }
@@ -165,14 +172,22 @@ struct SettingsView: View {
                         let process = Process()
                         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
                         process.arguments = ["-a", "Terminal", "-n"]
-                        try? process.run()
-                        SystemActions.copyToClipboard("jamf-cli config add-profile")
-                        addConnectionMessage = "Command copied. Run it in the Terminal window that just opened."
+                        do {
+                            try process.run()
+                            SystemActions.copyToClipboard("jamf-cli config add-profile")
+                            addConnectionMessage =
+                                "Command copied. Run it in the Terminal window that just opened."
+                        } catch {
+                            SystemActions.copyToClipboard("jamf-cli config add-profile")
+                            addConnectionMessage =
+                                "Command copied — could not open Terminal automatically. Run it manually."
+                        }
                     }
+                    .help("Opens a Terminal window and copies `jamf-cli config add-profile` to your clipboard.")
                     if let msg = addConnectionMessage {
                         Text(msg)
                             .font(Theme.Fonts.mono(10.5))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary)
                     }
                 }
                 .padding(.top, 4)
@@ -199,13 +214,14 @@ struct SettingsView: View {
                     testingProfile = nil
                 }
             }
+            .help("Run `jamf-cli pro auth-status` against this profile to verify the API token is valid.")
         }
     }
 
     @ViewBuilder
     private func tokenStatusLabel(for profileName: String) -> some View {
         if loadingTokenProfiles.contains(profileName) {
-            Mono(text: "Token: checking...", size: 10).foregroundStyle(Theme.Colors.fgMuted)
+            Mono(text: "Token: checking...", size: 10).foregroundStyle(Theme.Text.tertiary)
         } else if let status = tokenStatuses[profileName] {
             Mono(text: tokenStatusText(status), size: 10)
                 .foregroundStyle(tokenStatusColor(status))
@@ -229,7 +245,7 @@ struct SettingsView: View {
     }
 
     private func tokenStatusColor(_ status: TokenStatus) -> Color {
-        guard status.isValid else { return Theme.Colors.fgMuted }
+        guard status.isValid else { return Theme.Text.tertiary }
         if let exp = status.expiresAt, exp <= Date() { return Theme.Colors.warn }
         return Theme.Colors.ok
     }
@@ -260,18 +276,17 @@ struct SettingsView: View {
                         Text("project — every flow in this app maps to a CLI command.")
                     }
                     .font(.system(size: 13))
-                    .foregroundStyle(Theme.Colors.fg2)
+                    .foregroundStyle(Theme.Text.secondary)
                     .frame(maxWidth: 620, alignment: .leading)
 
                     Text("The CLI ships independently and stays the source of truth; this app reads and writes its config and orchestrates runs.")
                         .font(.system(size: 13))
-                        .foregroundStyle(Theme.Colors.fg2)
+                        .foregroundStyle(Theme.Text.secondary)
                         .frame(maxWidth: 620, alignment: .leading)
 
                     HStack(spacing: 14) {
                         metaPair(label: "App:", value: appVersion)
                         metaPair(label: "CLI:", value: workspace.jamfCLIVersion ?? "not found")
-                        metaPair(label: "jrc:", value: workspace.jrcPath == nil ? "not found" : "available")
                         metaPair(label: "Maintainer:", value: "@tonyyo11")
                         metaPair(label: "License:", value: "MIT")
                     }
@@ -282,12 +297,15 @@ struct SettingsView: View {
                     PNPButton(title: "View on GitHub", icon: "arrow.up.right.square") {
                         openURL("https://github.com/tonyyo11/jamf-reports-community")
                     }
+                    .help("Open the project's GitHub repository.")
                     PNPButton(title: "Read the docs", icon: "chevron.left.forwardslash.chevron.right") {
                         openURL("https://github.com/tonyyo11/jamf-reports-community#readme")
                     }
+                    .help("Open the README and setup guide on GitHub.")
                     PNPButton(title: "Release notes", icon: "bolt") {
                         openURL("https://github.com/tonyyo11/jamf-reports-community/releases")
                     }
+                    .help("View release notes and download history on GitHub.")
                 }
             }
         }
@@ -311,7 +329,7 @@ struct SettingsView: View {
 
     private func dotColor(for profile: JamfCLIProfile) -> Color {
         if profile.status == .error { return Theme.Colors.warn }
-        return profile.name == workspace.profile ? Theme.Colors.ok : Theme.Colors.fgDisabled
+        return profile.name == workspace.profile ? Theme.Colors.ok : Theme.Text.disabled
     }
 
     private var appVersion: String {
@@ -320,8 +338,8 @@ struct SettingsView: View {
 
     private func metaPair(label: String, value: String) -> some View {
         HStack(spacing: 4) {
-            Text(label).foregroundStyle(Theme.Colors.fgMuted)
-            Text(value).foregroundStyle(Theme.Colors.fg)
+            Text(label).foregroundStyle(Theme.Text.tertiary)
+            Text(value).foregroundStyle(Theme.Text.primary)
         }
         .font(Theme.Fonts.mono(11.5))
     }

@@ -143,6 +143,10 @@ enum ProfileService {
         let process = Process()
         process.executableURL = binary
         process.arguments = ["config", "list", "--output", "json"]
+        // SF-10/B-13: pin a minimal environment so DYLD_*, SSL_CERT_FILE,
+        // JAMF_CLI_* etc. inherited from the parent can't alter how jamf-cli
+        // resolves its config or validates TLS.
+        process.environment = CLIBridge.environmentForJamfCLI()
 
         let stdout = Pipe()
         let stderr = Pipe()

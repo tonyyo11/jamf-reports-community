@@ -36,7 +36,7 @@ enum LaunchAgentWriter {
     // MARK: - Native single-profile LaunchAgent (Swift engine path)
 
     /// Write a LaunchAgent plist that invokes `JamfReports --scheduled-run --profile <slug>`
-    /// directly — no Python or jrc required.
+    /// directly.
     ///
     /// The plist calls the current executable with `--scheduled-run`, which runs
     /// `ReportEngine.collect` + `ReportEngine.generate` in-process and exits.

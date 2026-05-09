@@ -1,9 +1,7 @@
 import Foundation
 
-/// Native Swift implementation of the CSV column scaffolding logic.
-///
-/// Ports the Python `COLUMN_HINTS` / `COLUMN_EXCLUDES` scoring algorithm directly,
-/// so the app no longer shells out to `jrc scaffold` or `jrc workspace-init`.
+/// Native Swift implementation of the CSV column scaffolding logic, porting the
+/// Python `COLUMN_HINTS` / `COLUMN_EXCLUDES` scoring algorithm.
 enum ScaffoldService {
 
     // MARK: - Public types
@@ -178,11 +176,14 @@ enum ScaffoldService {
     // MARK: - Private helpers
 
     /// Escape a string for embedding inside a YAML double-quoted scalar.
-    /// YAML requires `\` → `\\` and `"` → `\"`.
+    /// YAML requires `\` → `\\`, `"` → `\"`, and control chars to be escaped.
     private static func yamlEscape(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
     }
 
     /// Minimal RFC 4180 header parser.

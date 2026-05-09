@@ -31,6 +31,34 @@ struct UnusedGroup: Identifiable, Codable {
         let trimmed = reason?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "Not referenced by any policy or profile." : trimmed
     }
+
+    /// jamf-cli's `pro group-tools analyze --unused` always returns
+    /// `memberCount: 0` regardless of the group's actual size (upstream
+    /// limitation). The platform-API `groups` snapshot has the correct value
+    /// in `membershipCount`, keyed by `groupJamfProId`. This helper builds the
+    /// id → count map from the supplied groups-list JSON and rewrites each
+    /// `UnusedGroup`'s `memberCount` to match. Falls back to the analyzer's
+    /// value (typically 0) when no platform record exists for that id.
+    static func merging(_ unused: [UnusedGroup], withGroupCounts groupsJSON: Data?) -> [UnusedGroup] {
+        guard let data = groupsJSON,
+              let array = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+            return unused
+        }
+        var counts: [String: Int] = [:]
+        for entry in array {
+            guard let id = entry["groupJamfProId"] as? String else { continue }
+            if let n = entry["membershipCount"] as? Int {
+                counts[id] = n
+            } else if let n = entry["membershipCount"] as? NSNumber {
+                counts[id] = n.intValue
+            }
+        }
+        return unused.map { g in
+            guard let real = counts[g.id], real != g.memberCount else { return g }
+            return UnusedGroup(id: g.id, name: g.name, memberCount: real,
+                               type: g.type, reason: g.reason)
+        }
+    }
 }
 
 struct AuditView: View {
@@ -167,26 +195,29 @@ struct AuditView: View {
                     HStack(spacing: 8) {
                         if selectedTab == 0 {
                             PNPButton(
-                                title: isRunningAudit ? "Running..." : "Run Audit",
-                                icon: "play.fill",
+                                title: isRunningAudit ? "Audit running…" : "Run Audit",
+                                icon: isRunningAudit ? "hourglass" : "play.fill",
                                 style: .gold
                             ) {
                                 runAudit()
                             }
                             .disabled(isRunningAudit || workspace.demoMode)
+                            .help("Run a fresh audit against this workspace.")
                         } else {
                             PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
                                 copyGroupIDs()
                             }
                             .disabled(unusedGroups.isEmpty)
+                            .help("Copy the comma-separated list of unused group IDs to the clipboard.")
                             PNPButton(
-                                title: isRunningHygiene ? "Analyzing..." : "Analyze Groups",
-                                icon: "magnifyingglass",
+                                title: isRunningHygiene ? "Analyzing…" : "Analyze Groups",
+                                icon: isRunningHygiene ? "hourglass" : "magnifyingglass",
                                 style: .gold
                             ) {
                                 runHygiene()
                             }
                             .disabled(isRunningHygiene || workspace.demoMode)
+                            .help("Find computer groups not referenced by any policy or profile.")
                         }
                     }
                 }
@@ -372,11 +403,22 @@ struct AuditView: View {
     }
 
     private func openInJamfPro(_ group: UnusedGroup) {
-        guard let groupID = Int(group.id) else { return }
-        let isStatic = group.type.lowercased() == "static"
-        if let url = workspace.consoleURL(forComputerGroupID: groupID, isStatic: isStatic) {
-            SystemActions.open(url)
+        guard let groupID = Int(group.id) else {
+            workspace.toast = Toast(
+                message: "Group `\(group.name)` has a non-numeric id (\(group.id)) — cannot build console URL.",
+                style: .danger
+            )
+            return
         }
+        let isStatic = group.type.lowercased() == "static"
+        guard let url = workspace.consoleURL(forComputerGroupID: groupID, isStatic: isStatic) else {
+            workspace.toast = Toast(
+                message: "Active profile has no Jamf Pro URL configured. Set one in Settings to enable console links.",
+                style: .danger
+            )
+            return
+        }
+        SystemActions.open(url)
     }
 
     private func emptyState(icon: String, text: String) -> some View {
@@ -473,19 +515,29 @@ struct AuditView: View {
         )
         if let latestHygiene = hygieneSnapshots.first,
            let decoded = try? decoder.decode([UnusedGroup].self, from: latestHygiene.data) {
-            unusedGroups = decoded
+            let groupsSnapshots = await bridge.cachedJSONSnapshots(
+                profile: workspace.profile,
+                type: "groups",
+                limit: 1
+            )
+            unusedGroups = UnusedGroup.merging(decoded, withGroupCounts: groupsSnapshots.first?.data)
             lastHygieneDate = latestHygiene.modified
         }
     }
 
     private func runAudit() {
         isRunningAudit = true
-        workspace.globalStatus = "jrc audit · profile=\(workspace.profile)"
+        workspace.globalStatus = "audit · profile=\(workspace.profile)"
         Task {
             let profile = workspace.profile
-            let code = await bridge.audit(profile: profile, category: nil) { line in
+            // Late-arriving onLine callbacks would otherwise overwrite the
+            // post-await `globalStatus = nil` and leave a stale status line.
+            // Guarding on `isRunningAudit` makes the running flag the single
+            // source of truth for "show CLI output."
+            let code = await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
                 Task { @MainActor in
-                    workspace.globalStatus = "jrc · \(line.text)"
+                    guard let workspace, self.isRunningAudit else { return }
+                    workspace.globalStatus = line.text
                 }
             }
             isRunningAudit = false
@@ -501,12 +553,13 @@ struct AuditView: View {
 
     private func runHygiene() {
         isRunningHygiene = true
-        workspace.globalStatus = "jrc group-tools analyze · profile=\(workspace.profile)"
+        workspace.globalStatus = "group-tools analyze · profile=\(workspace.profile)"
         Task {
             let profile = workspace.profile
-            let code = await bridge.groupHygiene(profile: profile) { line in
+            let code = await bridge.groupHygiene(profile: profile) { [weak workspace] line in
                 Task { @MainActor in
-                    workspace.globalStatus = "jrc · \(line.text)"
+                    guard let workspace, self.isRunningHygiene else { return }
+                    workspace.globalStatus = line.text
                 }
             }
             isRunningHygiene = false

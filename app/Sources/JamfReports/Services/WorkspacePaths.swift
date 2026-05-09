@@ -85,14 +85,43 @@ enum WorkspacePaths {
         case invalidProfile(String)
         case configReadError(URL, Error)
         case resolutionEscaped(String, URL)
+        /// An absolute path was supplied that resolves outside the workspace
+        /// AND is not on the allow-list (e.g. it points at `~/Library`,
+        /// `~/.ssh`, `/etc`, `/var`, `/private`, `/System`). Refused even
+        /// when `allow_absolute_paths: true` is set in workspace config.
+        case disallowedAbsolutePath(URL)
 
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let p): "Invalid profile: \(p)"
             case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.localizedDescription)"
             case .resolutionEscaped(let val, let root): "Path '\(val)' escapes workspace root \(root.lastPathComponent)"
+            case .disallowedAbsolutePath(let u): "Disallowed absolute path: \(u.path)"
             }
         }
+    }
+
+    /// True when an absolute path resolves to a known-sensitive location
+    /// (system directories, user dotfiles, keychain config). Used by tests
+    /// of the disallowed-absolute-path policy and by future callers that
+    /// gate `output.allow_absolute_paths` enforcement.
+    static func isSensitiveAbsolutePath(_ url: URL) -> Bool {
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let denied: [String] = [
+            "/etc", "/var", "/private", "/System", "/Library", "/usr", "/bin", "/sbin"
+        ]
+        let home = NSString(string: "~").expandingTildeInPath
+        let homeDenied: [String] = [
+            "\(home)/Library", "\(home)/.ssh", "\(home)/.config",
+            "\(home)/.aws", "\(home)/.gnupg", "\(home)/.kube"
+        ]
+        for prefix in denied {
+            if resolved == prefix || resolved.hasPrefix(prefix + "/") { return true }
+        }
+        for prefix in homeDenied {
+            if resolved == prefix || resolved.hasPrefix(prefix + "/") { return true }
+        }
+        return false
     }
 
     private static func workspaceRoot(for profile: String) -> URL? {
@@ -117,18 +146,52 @@ enum WorkspacePaths {
             candidate = workspace.appendingPathComponent(expanded, isDirectory: true)
         }
         let resolved = candidate.resolvingSymlinksInPath().standardizedFileURL
-        
-        // Absolute paths outside the workspace are allowed, matching the Python side.
+
+        // B-05: default-deny for absolute paths outside the workspace. Even
+        // non-sensitive absolute paths (e.g. /Volumes/Share, another user's
+        // home) are refused unless the workspace's config opts in via
+        // `output.allow_absolute_paths: true`. Sensitive locations are still
+        // refused even when the opt-in is set.
         if expanded.hasPrefix("/") {
-            return resolved
+            if isSensitiveAbsolutePath(resolved) {
+                throw PathError.disallowedAbsolutePath(resolved)
+            }
+            if isInside(resolved, root: workspace) {
+                return resolved
+            }
+            let optedIn = (try? configValue(
+                workspace: workspace, section: "output", key: "allow_absolute_paths"
+            )) ?? nil
+            // SF-8 (option b): record the resolved opt-in value alongside the
+            // policy decision. If a future config shape (flow-style, dotted
+            // keys, tab indentation) ends up parsed as nil, this entry shows
+            // *why* the user got "Disallowed absolute path" rather than the
+            // expected acceptance.
+            AppLogger.engine.info(
+                "WorkspacePaths: allow_absolute_paths resolved to \(optedIn ?? "<nil>", privacy: .public)"
+            )
+            if isTruthyConfigValue(optedIn) {
+                AppLogger.engine.warning(
+                    "WorkspacePaths: accepting absolute path outside workspace via opt-in"
+                )
+                return resolved
+            }
+            throw PathError.disallowedAbsolutePath(resolved)
         }
-        
+
         // If it's relative, it must stay inside the workspace.
         if isInside(resolved, root: workspace) {
             return resolved
         }
-        
+
         throw PathError.resolutionEscaped(value, workspace)
+    }
+
+    /// Recognize the YAML truthy values our minimal scanner produces (already
+    /// trimmed of quotes and comments by `configValue`).
+    private static func isTruthyConfigValue(_ value: String?) -> Bool {
+        guard let v = value?.lowercased() else { return false }
+        return v == "true" || v == "yes" || v == "1" || v == "on"
     }
 
     private static func expandTilde(_ value: String) -> String {
@@ -145,10 +208,15 @@ enum WorkspacePaths {
         return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 
+    /// SF-8: parse `<workspace>/config.yaml` via the project's `YAMLCodec` so
+    /// flow-style mappings (`output: {allow_absolute_paths: true}`), tab
+    /// indentation, dotted keys, and other shapes the previous minimal
+    /// line-scanner silently skipped resolve correctly. Falls through to a
+    /// nil result only when the section/key genuinely isn't present.
     private static func configValue(workspace: URL, section: String, key: String) throws -> String? {
         let configURL = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
-        
+
         let text: String
         do {
             text = try String(contentsOf: configURL, encoding: .utf8)
@@ -156,28 +224,21 @@ enum WorkspacePaths {
             throw PathError.configReadError(configURL, error)
         }
 
-        var inSection = false
-        for rawLine in text.components(separatedBy: .newlines) {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
-
-            if !rawLine.hasPrefix(" "), trimmed.hasSuffix(":") {
-                let header = String(trimmed.dropLast()).trimmingCharacters(in: .whitespaces)
-                inSection = (header == section)
-                continue
+        do {
+            let document = try YAMLCodec.decode(text)
+            if case .mapping(let root) = document.root,
+               case .mapping(let sectionMap)? = root.value(for: section),
+               let value = sectionMap.value(for: key) {
+                return value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
             }
-            guard inSection, let colon = trimmed.firstIndex(of: ":") else { continue }
-
-            let lineKey = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
-            guard lineKey == key else { continue }
-
-            var value = String(trimmed[trimmed.index(after: colon)...])
-                .trimmingCharacters(in: .whitespaces)
-            if let comment = value.firstIndex(of: "#") {
-                value = String(value[..<comment]).trimmingCharacters(in: .whitespaces)
-            }
-            value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            return value
+        } catch {
+            // YAMLCodec rejects only documents whose top level is not a
+            // mapping (e.g. an empty file or a sequence at the root). Both
+            // are legitimate "no value here" outcomes; surface a debug log
+            // so an unparseable config doesn't masquerade as a missing key.
+            AppLogger.engine.warning(
+                "WorkspacePaths: could not parse config.yaml: \(error.localizedDescription, privacy: .private)"
+            )
         }
         return nil
     }

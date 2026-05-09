@@ -8,9 +8,9 @@ enum DemoData {
     static let org = Org(
         name: "Meridian Health",
         short: "MERIDIAN",
-        jamfURL: "https://meridian.jamfcloud.com",
+        jamfURL: "https://meridian.jamfcloud.example",
         profile: "meridian-prod",
-        apiClient: "jrc-reporting-svc",
+        apiClient: "reporting-svc",
         workspaceRoot: "~/Jamf-Reports/meridian-prod"
     )
 
@@ -119,10 +119,14 @@ enum DemoData {
     ]
 
     static let cliProfiles: [JamfCLIProfile] = [
-        .init(name: "meridian-prod", url: "meridian.jamfcloud.com", schedules: 3, status: .ok),
-        .init(name: "harboredu",     url: "harbor.jamfcloud.com",   schedules: 1, status: .ok),
-        .init(name: "dummy",         url: "sandbox.jamfcloud.com",  schedules: 1, status: .idle),
-        .init(name: "prod",          url: "prod-msp.jamfcloud.com", schedules: 0, status: .idle),
+        // Hostnames use the reserved `.example` TLD (RFC 6761) so they cannot
+        // resolve and so don't leak real tenant relationships if the binary is
+        // disassembled (`strings` would otherwise show real `*.jamfcloud.com`
+        // hosts that map to live Jamf infrastructure — security audit TA-03).
+        .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok),
+        .init(name: "harboredu",     url: "harbor.jamfcloud.example",   schedules: 1, status: .ok),
+        .init(name: "dummy",         url: "sandbox.jamfcloud.example",  schedules: 1, status: .idle),
+        .init(name: "prod",          url: "prod-msp.jamfcloud.example", schedules: 0, status: .idle),
     ]
 
     static let sheetCatalog: [SheetGroup] = [

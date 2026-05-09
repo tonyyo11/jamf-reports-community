@@ -122,6 +122,97 @@ final class JamfCLIInstaller {
     private static let githubReleasesURL =
         URL(string: "https://github.com/Jamf-Concepts/jamf-cli/releases")!
 
+    /// Hosts allowed to serve a `jamf-cli` release asset. Even though the URL
+    /// comes from a GitHub API response over TLS, we re-validate the host
+    /// because a tampered API response or an MITM-altered redirect could
+    /// otherwise point the download at an attacker-controlled origin.
+    static let trustedAssetHosts: Set<String> = [
+        "github.com",
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+    ]
+
+    /// B-07: Apple Developer Team ID Jamf signs `jamf-cli` with. The SHA-256
+    /// checksum we already verify only proves integrity against the same
+    /// release's `*.checksums.txt` — a tag/branch swap or a compromised
+    /// maintainer key would replace both. Codesign verification proves
+    /// authenticity (Apple-issued Developer ID required).
+    ///
+    /// To look up Jamf's actual team ID, run on a known-good binary:
+    ///     codesign -dv --verbose=4 /opt/homebrew/bin/jamf-cli 2>&1 | grep TeamIdentifier
+    /// then update `expectedJamfTeamID` below. If Jamf rotates its signing
+    /// identity, this constant needs to be bumped at the same time.
+    ///
+    /// Confirmed via `codesign -dv --verbose=4 /usr/local/bin/jamf-cli` against
+    /// jamf-cli 1.16.1 — `Authority=Developer ID Application: JAMF Software
+    /// (483DWKW443)`. If Jamf rotates its signing identity, this constant must
+    /// be bumped at the same time as the rotation lands in a release.
+    static let expectedJamfTeamID: String = "483DWKW443"
+    static let enforceCodesignVerification: Bool = true
+
+    /// Minimum supported jamf-cli version. Bumping this is a documentation +
+    /// soft-warning change — the app does NOT hard-fail on older binaries
+    /// because most code paths still work; we surface a Settings notice so
+    /// users on older releases know to update.
+    ///
+    /// Floor history:
+    /// - 2026-04: 1.14.0 — when CoreDashboard's W21 work removed pre-v1.4
+    ///   patch-status fallbacks (`installed/total` shape).
+    /// - 2026-05-08: 1.16.1 — to pick up the `pro device <id>` platform-
+    ///   section nil-guard (PR #185) which fixes partial DeviceDetail decodes
+    ///   when scope/deploymentState/target are nil.
+    static let minimumSupportedVersion: String = "1.16.1"
+
+    /// Returns true when `installedVersion` is below `minimumSupportedVersion`.
+    /// Returns false if the installed version is unknown/unparseable so we
+    /// don't nag users when version detection itself failed.
+    static func isBelowMinimumSupported(_ installedVersion: String?) -> Bool {
+        guard let installedVersion,
+              !versionParts(installedVersion).isEmpty else { return false }
+        return compareVersions(installedVersion, minimumSupportedVersion) == .orderedAscending
+    }
+
+    /// Errors raised by `validateAsset(host:name:)` when a release asset
+    /// fails the host allow-list, control-char/path-traversal scrub, or
+    /// archive-suffix pattern. See P9-A-08 in the security audit.
+    enum AssetValidationError: Error, LocalizedError, CustomStringConvertible {
+        case untrustedHost(String?)
+        case invalidName(String)
+
+        var errorDescription: String? { description }
+
+        // String interpolation hits this; tests assert the string contains
+        // "untrusted host" or "invalid asset name" so the description must
+        // include that exact wording.
+        var description: String {
+            switch self {
+            case .untrustedHost(let h): "Untrusted host: \(h ?? "<nil>")"
+            case .invalidName(let n):    "Invalid asset name: \(n)"
+            }
+        }
+    }
+
+    /// Validates a release asset before download. Throws `AssetValidationError`
+    /// when the host is not on the trusted list OR the filename contains
+    /// path separators / `..` / NUL / control chars OR doesn't match the
+    /// strict `jamf-cli*.{tar.gz,tgz,zip}` pattern. Tests cover all three
+    /// rejection paths.
+    static func validateAsset(host: String?, name: String) throws {
+        guard let host, trustedAssetHosts.contains(host.lowercased()) else {
+            throw AssetValidationError.untrustedHost(host)
+        }
+        if name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
+            throw AssetValidationError.invalidName(name)
+        }
+        if name.contains("/") || name.contains("\\") || name.contains("..") {
+            throw AssetValidationError.invalidName(name)
+        }
+        let pattern = #"^jamf-cli[0-9A-Za-z._-]*\.(tar\.gz|tgz|zip)$"#
+        if name.range(of: pattern, options: .regularExpression) == nil {
+            throw AssetValidationError.invalidName(name)
+        }
+    }
+
     private var versionChecked = false
     private var cachedVersion: String?
 
@@ -172,6 +263,8 @@ final class JamfCLIInstaller {
         let process = Process()
         process.executableURL = binary
         process.arguments = ["--version"]
+        // SF-10/B-13: minimal env for jamf-cli invocations.
+        process.environment = CLIBridge.environmentForJamfCLI()
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -439,6 +532,31 @@ final class JamfCLIInstaller {
             let unpackedBinary = try await resolveJamfCLIBinary(
                 from: downloaded, assetName: asset.name, in: tempDir
             )
+            // B-07: codesign authenticity check before staging the binary.
+            // SHA-256 verification above proves integrity against the release's
+            // own checksums file; codesign proves Apple-issued Developer ID
+            // signed with `expectedJamfTeamID`. Gated until the team ID is
+            // confirmed against a known-good Jamf binary.
+            if Self.enforceCodesignVerification && !Self.expectedJamfTeamID.isEmpty {
+                guard CodeSignVerifier.verify(
+                    url: unpackedBinary,
+                    expectedTeamID: Self.expectedJamfTeamID
+                ) else {
+                    throw NSError(
+                        domain: "JamfCLIInstaller",
+                        code: 5,
+                        userInfo: [NSLocalizedDescriptionKey:
+                            "jamf-cli codesign verification failed: signature missing,"
+                            + " invalid, or not issued by team \(Self.expectedJamfTeamID)."]
+                    )
+                }
+            } else {
+                // SF-7: surface the skip in install-audit logs so reviewers can
+                // confirm which gate was off (the feature flag, or the team ID).
+                AppLogger.engine.info(
+                    "JamfCLIInstaller: codesign verification skipped (enforce=\(Self.enforceCodesignVerification, privacy: .public), teamID=\(Self.expectedJamfTeamID.isEmpty ? "empty" : "set", privacy: .public))"
+                )
+            }
             try ensureParentDirectoryExists(for: target)
             try replaceDirectBinary(at: target, with: unpackedBinary)
 
@@ -749,10 +867,20 @@ final class JamfCLIInstaller {
             .compactMap { Int($0) }
     }
 
-    private static func runProcessSync(executable: URL, arguments: [String]) -> CommandResult {
+    /// SF-10: `environment` is opt-in because callers run a mix of brew, tar,
+    /// unzip, and jamf-cli — each needs a different env scope. Pass
+    /// `CLIBridge.environmentForJamfCLI()` for jamf-cli invocations, leave
+    /// nil to inherit the parent (current behavior for brew/tar/unzip, where
+    /// the parent's PATH is required to find Homebrew prefixes).
+    private static func runProcessSync(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) -> CommandResult {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        if let environment { process.environment = environment }
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -773,11 +901,17 @@ final class JamfCLIInstaller {
         )
     }
 
-    private nonisolated static func runProcess(executable: URL, arguments: [String]) async -> CommandResult {
+    /// See `runProcessSync` — same `environment` semantics.
+    private nonisolated static func runProcess(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) async -> CommandResult {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
+            if let environment { process.environment = environment }
 
             let stdout = Pipe()
             let stderr = Pipe()

@@ -140,6 +140,7 @@ struct DevicesView: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
             isSearchFocused = true
         }
+        .searchable(text: $query, placement: .toolbar, prompt: "Search devices")
     }
 
     private var header: some View {
@@ -152,26 +153,25 @@ struct DevicesView: View {
         ) {
             AnyView(
                 HStack(spacing: 8) {
-                    Stepper("Stale \(staleDays)d", value: $staleDays, in: 7...180, step: 1)
-                        .font(Theme.Fonts.mono(11.5))
-                        .foregroundStyle(Theme.Colors.fg2)
-                        .frame(width: 118)
-                        .padding(.horizontal, 10)
-                        .frame(height: 28)
-                        .background(
-                            Color.white.opacity(0.07),
-                            in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous)
-                                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
-                        )
+                    staleDaysPicker
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         Task { await reload() }
                     }
+                    .help("Reload device inventory from the cached jamf-cli snapshots.")
                 }
             )
         }
+    }
+
+    /// Stale-days picker — see `EditableNumberStepper` for the input shape.
+    private var staleDaysPicker: some View {
+        EditableNumberStepper(
+            value: $staleDays,
+            range: AppConstants.staleDaysMin...AppConstants.staleDaysMax,
+            prefix: "Stale",
+            suffix: "d",
+            help: "Devices with no jamf-cli check-in for at least this many days are flagged stale."
+        )
     }
 
     private func navigateToOverview() {
@@ -193,6 +193,7 @@ struct DevicesView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.Colors.fg)
                     .focused($isSearchFocused)
+                    .accessibilityLabel("Search devices")
             }
             .padding(.horizontal, 10)
             .frame(width: 260, height: 30)
@@ -314,6 +315,7 @@ struct DevicesView: View {
                                 Image(systemName: "clock.badge.exclamationmark")
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(Theme.Colors.warn)
+                                    .accessibilityLabel("Stale")
                             }
                             Mono(text: lastContactLabel(device),
                                  color: isStale(device) ? Theme.Colors.warn : Theme.Colors.fgMuted)
@@ -415,6 +417,7 @@ struct DevicesView: View {
                         PNPButton(title: "Copy Serial", icon: "doc.on.doc", size: .sm) {
                             SystemActions.copyToClipboard(device.serial)
                         }
+                        .help("Copy this device's serial number to the clipboard.")
                     }
                 }
                 .textSelection(.enabled)
@@ -547,6 +550,13 @@ struct DevicesView: View {
                         }
                     }
                     .frame(height: 150)
+                    .accessibilityChartDescriptor(BarDistributionChartDescriptor(
+                        title: "macOS Version Distribution",
+                        unit: " devices",
+                        bars: activeSnapshot.osDistribution.prefix(6).map {
+                            .init(label: $0.version, value: Double($0.count))
+                        }
+                    ))
 
                     VStack(spacing: 0) {
                         ForEach(activeSnapshot.osDistribution.prefix(5)) { item in
@@ -724,6 +734,7 @@ struct DevicesView: View {
     private func legendDot(color: Color, label: String) -> some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 6, height: 6)
+                .accessibilityHidden(true)
             Text(label)
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.Colors.fgMuted)

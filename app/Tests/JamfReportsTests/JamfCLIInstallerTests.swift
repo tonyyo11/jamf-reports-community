@@ -92,6 +92,33 @@ final class JamfCLIInstallerTests: XCTestCase {
         _ = JamfCLIInstaller.defaultDirectInstallDirIsOnPATH()
     }
 
+    // MARK: - Minimum supported version
+
+    func test_isBelowMinimumSupported_flagsOlderVersions() {
+        XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("1.14.0"))
+        XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("1.15.0"))
+        XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("1.16.0"))
+        XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("v1.14.0"))
+    }
+
+    func test_isBelowMinimumSupported_acceptsCurrentAndNewer() {
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.16.1"))
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.16.2"))
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.16.10"),
+                       "1.16.10 is above the floor 1.16.1")
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.17.0"))
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("2.0.0"),
+                       "2.0.0 is above the floor 1.16.1")
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("v1.16.1"))
+    }
+
+    func test_isBelowMinimumSupported_returnsFalseOnUnknownInput() {
+        // We don't nag users when version detection itself failed.
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported(nil))
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported(""))
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("garbage"))
+    }
+
     // MARK: - Helpers
 
     private func makeTempFile(contents: Data) throws -> URL {

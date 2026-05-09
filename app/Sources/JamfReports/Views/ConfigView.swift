@@ -91,9 +91,21 @@ struct ConfigView: View {
     }
 
     private func viewYAML() {
-        guard let url = ProfileService.workspaceURL(for: workspace.profile) else { return }
+        guard let url = ProfileService.workspaceURL(for: workspace.profile) else {
+            workspace.toast = Toast(
+                message: "Workspace not found for profile `\(workspace.profile)`.",
+                style: .danger
+            )
+            return
+        }
         let config = url.appendingPathComponent("config.yaml")
-        guard FileManager.default.fileExists(atPath: config.path) else { return }
+        guard FileManager.default.fileExists(atPath: config.path) else {
+            workspace.toast = Toast(
+                message: "config.yaml does not exist yet — save first.",
+                style: .danger
+            )
+            return
+        }
         SystemActions.open(config)
     }
 
@@ -180,7 +192,7 @@ private struct ColumnsTab: View {
                     HStack(spacing: 4) {
                         Text("Mapping logical fields → column headers in your CSV export")
                             .font(.system(size: 11.5))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary)
                     }
                     .padding(.bottom, 12)
 
@@ -228,13 +240,13 @@ private struct ColumnsTab: View {
                                       title: "\(warn) warnings", detail: "Run check for details")
                     }
                     if skip > 0 {
-                        validationRow(icon: "minus.circle", color: Theme.Colors.fgMuted,
+                        validationRow(icon: "minus.circle", color: Theme.Text.tertiary,
                                       title: "\(skip) unmapped", detail: "Sheets that use these will be skipped")
                     }
                 }
-                Divider().background(Theme.Colors.hairline).padding(.vertical, 12)
+                Divider().background(Theme.Hairline.standard).padding(.vertical, 12)
                 if let status = checkStatus {
-                    Mono(text: status, size: 10.5, color: Theme.Colors.fgMuted)
+                    Mono(text: status, size: 10.5, color: Theme.Text.tertiary)
                         .lineLimit(2)
                         .padding(.bottom, 6)
                 }
@@ -253,8 +265,8 @@ private struct ColumnsTab: View {
                 .foregroundStyle(color)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.Colors.fg)
-                Text(detail).font(.system(size: 11)).foregroundStyle(Theme.Colors.fgMuted)
+                Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.Text.primary)
+                Text(detail).font(.system(size: 11)).foregroundStyle(Theme.Text.tertiary)
             }
         }
     }
@@ -266,7 +278,7 @@ private struct ColumnsTab: View {
                 (Text("Run ") + Text("scaffold").font(Theme.Fonts.mono(11)) +
                  Text(" to auto-detect columns from a new CSV export. Existing config is preserved."))
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fg2)
+                    .foregroundStyle(Theme.Text.secondary)
                 PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm, action: runScaffold)
             }
         }
@@ -284,24 +296,42 @@ private struct ColumnsTab: View {
     }
 
     private func openCSV() {
-        guard let url = newestCSVURL() else { return }
+        guard let url = newestCSVURL() else {
+            workspace.toast = Toast(
+                message: "No CSV export found in the workspace yet.",
+                style: .danger
+            )
+            return
+        }
         SystemActions.open(url)
     }
 
     private func runScaffold() {
-        guard let command = cli.resolveJRCCommand(),
-              let wsURL = ProfileService.workspaceURL(for: workspace.profile) else { return }
-        guard let csvURL = newestCSVURL() else { return }
+        guard let wsURL = ProfileService.workspaceURL(for: workspace.profile) else {
+            workspace.toast = Toast(
+                message: "Cannot locate workspace for `\(workspace.profile)`.",
+                style: .danger
+            )
+            return
+        }
+        guard let csvURL = newestCSVURL() else {
+            workspace.toast = Toast(
+                message: "Drop a CSV export into the workspace before scaffolding.",
+                style: .danger
+            )
+            return
+        }
         let configOut = wsURL.appendingPathComponent("config.yaml")
-        let args = command.arguments + [
-            "scaffold",
-            "--csv", csvURL.path,
-            "--out", configOut.path,
-        ]
+        let profile = workspace.profile
         Task {
-            let exit = await cli.run(executable: command.executable, arguments: args) { _ in }
-            if exit == 0 {
+            do {
+                let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
+                try ScaffoldService.writeConfig(to: configOut, result: result, profile: profile)
                 workspace.reloadFromDisk()
+            } catch {
+                await MainActor.run {
+                    workspace.toast = Toast(message: "Scaffold failed: \(error.localizedDescription)", style: .danger)
+                }
             }
         }
     }
@@ -351,16 +381,16 @@ private struct AgentsTab: View {
         @Bindable var ws = workspace
         return VStack(spacing: 0) {
             agentsHeader
-            Divider().background(Theme.Colors.hairline)
+            Divider().background(Theme.Hairline.standard)
             if ws.configState.securityAgents.isEmpty {
                 Text("No security agents configured. Add one to track install rates.")
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary)
                     .padding(16)
             } else {
                 ForEach(ws.configState.securityAgents.indices, id: \.self) { i in
                     agentRow(i)
-                    if i < ws.configState.securityAgents.count - 1 { Divider().background(Theme.Colors.hairline) }
+                    if i < ws.configState.securityAgents.count - 1 { Divider().background(Theme.Hairline.standard) }
                 }
             }
         }
@@ -368,7 +398,7 @@ private struct AgentsTab: View {
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
+                .strokeBorder(Theme.Hairline.standard, lineWidth: 0.5)
         )
     }
 
@@ -386,7 +416,7 @@ private struct AgentsTab: View {
     private func tableHeaderCell(_ title: String, width: CGFloat?) -> some View {
         Text(title)
             .font(Theme.Fonts.mono(10.5, weight: .semibold))
-            .foregroundStyle(Theme.Colors.fgMuted)
+            .foregroundStyle(Theme.Text.tertiary)
             .frame(maxWidth: width ?? .infinity, alignment: .leading)
     }
 
@@ -406,7 +436,7 @@ private struct AgentsTab: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary)
                     .frame(width: 36, height: 28)
                     .contentShape(Rectangle())
             }
@@ -434,7 +464,7 @@ private struct EasTab: View {
                 if ws.configState.customEAs.isEmpty {
                     Text("No custom EA sheets configured.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary)
                 } else {
                     VStack(spacing: 12) {
                         ForEach(ws.configState.customEAs.indices, id: \.self) { i in
@@ -495,7 +525,7 @@ private struct EACardEdit: View {
                 } else if type == "version" {
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "Current versions")
-                        Text("Comma-separated list").font(.system(size: 10)).foregroundStyle(Theme.Colors.fgMuted)
+                        Text("Comma-separated list").font(.system(size: 10)).foregroundStyle(Theme.Text.tertiary)
                         PNPTextField(value: Binding(
                             get: { ws.configState.customEAs[index].currentVersions.joined(separator: ", ") },
                             set: { ws.configState.customEAs[index].currentVersions = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
@@ -508,7 +538,7 @@ private struct EACardEdit: View {
         .background(Color.white.opacity(0.025))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                .strokeBorder(Theme.Hairline.strong, lineWidth: 0.5)
         )
     }
 
@@ -518,7 +548,7 @@ private struct EACardEdit: View {
             HStack(spacing: 8) {
                 PNPTextField(value: value, mono: true).frame(width: 80)
                 if let unit {
-                    Text(unit).font(.system(size: 11)).foregroundStyle(Theme.Colors.fgMuted)
+                    Text(unit).font(.system(size: 11)).foregroundStyle(Theme.Text.tertiary)
                 }
             }
             if let help {
@@ -555,7 +585,7 @@ private struct ThresholdsTab: View {
                         help: "Default expiry warning window for date EAs"
                     )
 
-                    Divider().background(Theme.Colors.hairline).padding(.vertical, 14)
+                    Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
                     SectionHeader(title: "Disk Usage").padding(.bottom, 14)
                     thresholdField(
                         label: "Disk usage warning", key: "warning_disk_percent",
@@ -580,15 +610,15 @@ private struct ThresholdsTab: View {
                         PNPTextField(value: $ws.configState.failuresCountColumn, mono: true)
                         FieldLabel(label: "Failed-list column")
                         PNPTextField(value: $ws.configState.failuresListColumn, mono: true)
-                        Divider().background(Theme.Colors.hairline).padding(.top, 6)
+                        Divider().background(Theme.Hairline.standard).padding(.top, 6)
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Generate compliance sheet")
                                     .font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(Theme.Colors.fg)
+                                    .foregroundStyle(Theme.Text.primary)
                                 Text("Failed-rule counts per device")
                                     .font(.system(size: 11))
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary)
                             }
                             Spacer()
                             PNPToggle(isOn: $ws.configState.complianceEnabled)
@@ -622,7 +652,7 @@ private struct ThresholdsTab: View {
             FieldLabel(label: label, trailing: key)
             HStack(spacing: 8) {
                 PNPTextField(value: value, mono: true).frame(width: 100)
-                Text(unit).font(.system(size: 12)).foregroundStyle(Theme.Colors.fgMuted)
+                Text(unit).font(.system(size: 12)).foregroundStyle(Theme.Text.tertiary)
             }
             FieldHelp(text: help)
         }
@@ -634,6 +664,10 @@ private struct ThresholdsTab: View {
 
 private struct PlatformTab: View {
     @Environment(WorkspaceStore.self) private var workspace
+
+    private var isPlatformProfile: Bool {
+        workspace.profiles.first(where: { $0.name == workspace.profile })?.authMethod == "platform"
+    }
 
     var body: some View {
         @Bindable var ws = workspace
@@ -649,16 +683,22 @@ private struct PlatformTab: View {
                  + Text("pro report").font(Theme.Fonts.mono(11))
                  + Text(" commands."))
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                Divider().background(Theme.Colors.hairline)
+                    .foregroundStyle(Theme.Text.tertiary)
+                Divider().background(Theme.Hairline.standard)
+                if isPlatformProfile {
+                    platformReadyCallout
+                } else {
+                    platformSetupCallout
+                }
+                Divider().background(Theme.Hairline.standard)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Enable Platform API sheets")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Theme.Colors.fg)
+                            .foregroundStyle(Theme.Text.primary)
                         Text("Blueprints, DDM Status, Compliance benchmarks")
                             .font(.system(size: 11))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary)
                     }
                     Spacer()
                     PNPToggle(isOn: $ws.configState.platformEnabled)
@@ -680,6 +720,77 @@ private struct PlatformTab: View {
                 }
             }
         }
+    }
+
+    private var platformReadyCallout: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.Colors.ok)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Platform Gateway profile active")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.Text.primary)
+                Text("Profile \"\(workspace.profile)\" is configured for Platform Gateway auth. "
+                     + "Enable the toggle below to include Platform API sheets in generated reports.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Text.secondary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.ok.opacity(0.06),
+                    in: RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius)
+                .strokeBorder(Theme.Colors.ok.opacity(0.2), lineWidth: 0.5)
+        )
+    }
+
+    private var platformSetupCallout: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.Colors.gold)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Requires a Platform Gateway profile")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.Text.primary)
+                (Text("Run ")
+                 + Text("jamf-cli platform setup").font(Theme.Fonts.mono(11))
+                 + Text(" to create a Platform Gateway profile. "
+                        + "This routes Pro API traffic through the Jamf Platform Gateway "
+                        + "and unlocks Platform API commands used by these sheets."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.Text.secondary)
+                Button {
+                    if let url = URL(string: "https://github.com/Jamf-Concepts/jamf-cli/wiki/"
+                                    + "Setup-Guide#jamf-pro-quick-start--platform-gateway-recommended") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("Setup guide")
+                            .font(.system(size: 11))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundStyle(Theme.Colors.goldBright)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open jamf-cli platform setup guide in browser")
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.gold.opacity(0.06),
+                    in: RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius)
+                .strokeBorder(Theme.Colors.gold.opacity(0.2), lineWidth: 0.5)
+        )
     }
 }
 
@@ -714,25 +825,25 @@ private struct OutputTab: View {
                     }
                     .padding(.top, 14)
 
-                    Divider().background(Theme.Colors.hairline).padding(.vertical, 14)
+                    Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
                     outputToggleRow(
                         title: "Timestamp output filenames",
                         detail: "_2026-04-25_091418",
                         isOn: $ws.configState.timestampOutputs
                     )
-                    Divider().background(Theme.Colors.hairline).padding(.vertical, 10)
+                    Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
                     outputToggleRow(
                         title: "Auto-archive older runs",
                         detail: "Keep latest \(ws.configState.keepLatestRuns)",
                         isOn: $ws.configState.archiveEnabled
                     )
-                    Divider().background(Theme.Colors.hairline).padding(.vertical, 10)
+                    Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "keep_latest_runs")
                         PNPTextField(value: $ws.configState.keepLatestRuns, mono: true)
                             .frame(width: 80)
                     }
-                    Divider().background(Theme.Colors.hairline).padding(.vertical, 10)
+                    Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
                     outputToggleRow(
                         title: "Export PPTX Summary",
                         detail: "PowerPoint executive summary deck",
@@ -792,8 +903,8 @@ private struct OutputTab: View {
     private func outputToggleRow(title: String, detail: String, isOn: Binding<Bool>) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.Colors.fg)
-                Text(detail).font(.system(size: 11)).foregroundStyle(Theme.Colors.fgMuted)
+                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.Text.primary)
+                Text(detail).font(.system(size: 11)).foregroundStyle(Theme.Text.tertiary)
             }
             Spacer()
             PNPToggle(isOn: isOn)
@@ -808,7 +919,7 @@ private struct OutputTab: View {
                     .fill(hexColor)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                            .strokeBorder(Theme.Hairline.strong, lineWidth: 0.5)
                     )
                     .frame(width: 28, height: 28)
                 PNPTextField(value: value, mono: true)
@@ -826,7 +937,7 @@ private struct ColumnFieldRow: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 4) {
-                Mono(text: mapping.key, size: 11.5, color: Theme.Colors.fg2)
+                Mono(text: mapping.key, size: 11.5, color: Theme.Text.secondary)
                 if mapping.required {
                     Text("*").font(.system(size: 10)).foregroundStyle(Theme.Colors.goldBright)
                 }
@@ -852,7 +963,7 @@ private struct ColumnFieldRow: View {
             case .warn:
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.Colors.warn)
             case .skip:
-                Image(systemName: "minus.circle").foregroundStyle(Theme.Colors.fgMuted)
+                Image(systemName: "minus.circle").foregroundStyle(Theme.Text.tertiary)
             case .fail:
                 Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.Colors.danger)
             }
@@ -870,20 +981,20 @@ private struct EACard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ea.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
-                    Mono(text: ea.column, size: 11, color: Theme.Colors.fgMuted)
+                    Text(ea.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Text.primary)
+                    Mono(text: ea.column, size: 11, color: Theme.Text.tertiary)
                 }
                 Spacer()
                 Pill(text: ea.type.rawValue, tone: pillTone)
             }
-            Text(eaDetail).font(.system(size: 11.5)).foregroundStyle(Theme.Colors.fgMuted)
+            Text(eaDetail).font(.system(size: 11.5)).foregroundStyle(Theme.Text.tertiary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.025))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                .strokeBorder(Theme.Hairline.strong, lineWidth: 0.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }

@@ -183,4 +183,19 @@ final class WorkspaceStoreConsoleURLTests: XCTestCase {
         XCTAssertEqual(store.consoleURL(forMobileDeviceID: "9")?.absoluteString,
                        "https://jamf.example.com/mobileDevices.html?id=9&o=r")
     }
+
+    // MARK: - Bare-hostname handling
+
+    func test_consoleURL_computer_bareHostname_prependsHTTPS() {
+        // ProfileService.displayURL stores bare hostnames (no scheme) for sidebar display.
+        // The consoleURL helper must prepend https:// rather than returning nil.
+        let store = WorkspaceStore(demoMode: false)
+        store.profiles = [makeProfile(url: "jamf.example.com")]
+        store.profile = "test"
+
+        let url = store.consoleURL(forComputerID: 42)
+
+        XCTAssertNotNil(url, "bare hostname must resolve to a URL, not nil")
+        XCTAssertEqual(url?.absoluteString, "https://jamf.example.com/computers.html?id=42&o=r")
+    }
 }

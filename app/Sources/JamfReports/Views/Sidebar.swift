@@ -172,6 +172,13 @@ struct Sidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(navAccessibilityLabel(for: item))
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+
+    private func navAccessibilityLabel(for item: Tab) -> String {
+        guard let badge = badge(for: item) else { return item.label }
+        return "\(item.label), \(badge)"
     }
 
     private func badge(for item: Tab) -> String? {
@@ -237,6 +244,7 @@ struct Sidebar: View {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.Colors.fgMuted)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, mode == .compact ? 6 : 10)
@@ -262,6 +270,7 @@ struct Sidebar: View {
         .focused($chipFocused)
         .onHover { chipHovered = $0 }
         .animation(.easeOut(duration: 0.18), value: engaged)
+        .accessibilityLabel("Workspace: \(workspace.profile). \(workspaceSubtitle). Activate to switch workspace.")
     }
 
     /// Subtitle under the workspace name. Shows the initialized-workspace count when

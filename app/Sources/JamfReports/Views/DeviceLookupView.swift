@@ -1,24 +1,40 @@
 import SwiftUI
 
-/// Single-device lookup screen. Search by serial, hostname, asset tag, or any
-/// identifier `jamf-cli pro device <id>` accepts. Reuses the existing
-/// `DeviceDetail` model and `CLIBridge.deviceDetail` plumbing — this screen is a
-/// search-driven entrypoint to the same data Devices renders inline.
+/// Single-device lookup screen. Search by serial, hostname/display name, asset
+/// tag, or any identifier `jamf-cli pro device <id>` (computers) or
+/// `jamf-cli pro mobile-devices get <id>` (mobile) accepts.
+///
+/// Resolution flow:
+///   1. Term is matched against a cache-backed `DeviceLookupIndex` covering
+///      both computers-list and mobile-devices-list snapshots.
+///   2. Single match → fetch that device's detail directly.
+///   3. Multiple matches → show candidate chips so the user picks the right
+///      device (e.g. when a name appears in both inventories).
+///   4. No cache match → fall back to treating the term as a numeric ID and
+///      try a computer detail call, then a mobile detail call.
+///   5. Still nothing → show a "Refresh inventory" button so the user can
+///      re-collect lists without having to leave this screen.
 struct DeviceLookupView: View {
     @Environment(WorkspaceStore.self) private var workspace
 
     @State private var searchTerm = ""
     @State private var submittedTerm = ""
+    @State private var resolvedKind: DeviceLookupIndex.Kind?
     @State private var state: LookupState = .idle
     @State private var detail: DeviceDetail?
     @State private var requestKey = ""
+    @State private var index = DeviceLookupIndex()
+    @State private var candidates: [DeviceLookupIndex.Candidate] = []
+    @State private var refreshing = false
     @FocusState private var searchFocused: Bool
 
     enum LookupState: Equatable {
         case idle
         case loading
         case loaded
+        case ambiguous
         case unavailable(String)
+        case noMatchOfferRefresh(String)
     }
 
     var body: some View {
@@ -35,17 +51,26 @@ struct DeviceLookupView: View {
         }
         .onAppear {
             searchFocused = true
+            index.load(profile: workspace.profile)
+        }
+        .onChange(of: workspace.profile) { _, newValue in
+            index.load(profile: newValue)
+            // Profile change invalidates any in-flight lookup.
+            state = .idle
+            detail = nil
+            candidates = []
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
             searchFocused = true
         }
+        .searchable(text: $searchTerm, placement: .toolbar, prompt: "Serial, hostname, asset tag, or device ID")
     }
 
     private var header: some View {
         PageHeader(
             kicker: "Device",
             title: "Device Lookup",
-            subtitle: "Resolve a single device by serial, hostname, or asset tag via jamf-cli."
+            subtitle: "Resolve a single computer or mobile device by serial, hostname, asset tag, or ID."
         )
     }
 
@@ -70,9 +95,22 @@ struct DeviceLookupView: View {
                     }
                     .disabled(state == .loading || trimmedTerm.isEmpty)
                 }
-                FieldHelp(text: "Calls `jamf-cli -p \(workspace.profile) pro device <id>` and caches the JSON under the active workspace.")
+                FieldHelp(text: helpLineText)
             }
         }
+    }
+
+    private var helpLineText: String {
+        let count = index.candidates.count
+        let countLabel: String
+        if count == 0 {
+            countLabel = "no cached inventory yet — run Refresh to populate"
+        } else {
+            let computers = index.candidates.lazy.filter { $0.kind == .computer }.count
+            let mobiles = count - computers
+            countLabel = "\(computers) computers · \(mobiles) mobile devices indexed"
+        }
+        return "Auto-resolves serials and names against `\(workspace.profile)` cached inventory. \(countLabel)."
     }
 
     @ViewBuilder
@@ -100,15 +138,100 @@ struct DeviceLookupView: View {
                 if let detail {
                     detailCard(detail)
                 }
+            case .ambiguous:
+                ambiguousCard
             case .unavailable(let message):
-                Card(padding: 18) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.Colors.warn)
-                        Text(message)
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(Theme.Colors.warn)
+                unavailableCard(message)
+            case .noMatchOfferRefresh(let message):
+                noMatchCard(message)
+            }
+        }
+    }
+
+    private var ambiguousCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Multiple matches for \(submittedTerm)")
+                Text("Pick the device you want to inspect.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(candidates) { cand in
+                        candidateRow(cand)
                     }
+                }
+            }
+        }
+    }
+
+    private func candidateRow(_ cand: DeviceLookupIndex.Candidate) -> some View {
+        Button {
+            fetchDetail(id: cand.id, kind: cand.kind)
+        } label: {
+            HStack(spacing: 10) {
+                Pill(text: cand.kind.displayLabel,
+                     tone: cand.kind == .computer ? .teal : .gold,
+                     icon: cand.kind == .computer ? "desktopcomputer" : "ipad")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cand.name)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                    HStack(spacing: 8) {
+                        Mono(text: "ID \(cand.id)", size: 10.5, color: Theme.Colors.fgMuted)
+                        if let serial = cand.serial, !serial.isEmpty {
+                            Mono(text: serial, size: 10.5, color: Theme.Colors.fgMuted)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.03))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func unavailableCard(_ message: String) -> some View {
+        Card(padding: 18) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.Colors.warn)
+                Text(message)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.Colors.warn)
+            }
+        }
+    }
+
+    private func noMatchCard(_ message: String) -> some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Image(systemName: "magnifyingglass.circle")
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                    Text(message)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                }
+                HStack(spacing: 8) {
+                    PNPButton(
+                        title: refreshing ? "Refreshing…" : "Refresh inventory",
+                        icon: refreshing ? "hourglass" : "arrow.clockwise",
+                        size: .sm
+                    ) {
+                        refreshIndex()
+                    }
+                    .disabled(refreshing)
+                    Text("Re-runs `jamf-cli pro computers list` and `mobile-devices list`, then retries.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
         }
@@ -120,6 +243,11 @@ struct DeviceLookupView: View {
                 HStack {
                     SectionHeader(title: detailTitle(detail))
                     Spacer()
+                    if let kind = resolvedKind {
+                        Pill(text: kind.displayLabel,
+                             tone: kind == .computer ? .teal : .gold,
+                             icon: kind == .computer ? "desktopcomputer" : "ipad")
+                    }
                     Pill(text: "Loaded", tone: .teal, icon: "checkmark")
                     if let url = computerConsoleURL(for: detail) {
                         PNPButton(
@@ -174,28 +302,106 @@ struct DeviceLookupView: View {
         let profile = workspace.profile
 
         submittedTerm = term
-        let key = "\(profile)|\(term)"
+        let matches = index.resolve(term)
+        candidates = matches
+        switch matches.count {
+        case 0:
+            // No cache hit — fall back to direct ID lookup against both kinds.
+            fallbackToIDLookup(term: term, profile: profile)
+        case 1:
+            fetchDetail(id: matches[0].id, kind: matches[0].kind)
+        default:
+            state = .ambiguous
+            detail = nil
+            resolvedKind = nil
+        }
+    }
+
+    private func fetchDetail(id: String, kind: DeviceLookupIndex.Kind) {
+        let profile = workspace.profile
+        let key = "\(profile)|\(kind.rawValue)|\(id)"
         requestKey = key
         state = .loading
         detail = nil
+        resolvedKind = kind
 
         Task {
-            guard let data = await CLIBridge().deviceDetail(profile: profile, deviceID: term) else {
-                if requestKey == key {
-                    state = .unavailable("jamf-cli could not resolve \(term). Check the identifier or run `jamf-cli pro device \(term)` in a terminal for the underlying error.")
-                }
+            let data: Data?
+            switch kind {
+            case .computer:
+                data = await CLIBridge().deviceDetail(profile: profile, deviceID: id)
+            case .mobile:
+                data = await CLIBridge().mobileDeviceDetail(profile: profile, deviceID: id)
+            }
+            guard requestKey == key else { return }
+            guard let data else {
+                state = .unavailable(
+                    "jamf-cli could not load the \(kind.displayLabel.lowercased()) detail for ID `\(id)` on profile `\(profile)`. Run `\(cliCommand(kind: kind, profile: profile, id: id))` in a terminal for the underlying error."
+                )
                 return
             }
             do {
-                let decoded = try DeviceDetail.decode(from: data, lookupID: term)
-                if requestKey == key {
+                let decoded = try DeviceDetail.decode(from: data, lookupID: id)
+                detail = decoded
+                state = .loaded
+            } catch {
+                state = .unavailable("Could not decode jamf-cli response for \(id) on profile `\(profile)`.")
+            }
+        }
+    }
+
+    /// Cache miss path: try the term as a numeric ID against both kinds.
+    /// Computers first because they're the common case; if that fails, try mobile.
+    /// Final failure offers a refresh.
+    private func fallbackToIDLookup(term: String, profile: String) {
+        let key = "\(profile)|fallback|\(term)"
+        requestKey = key
+        state = .loading
+        detail = nil
+        resolvedKind = nil
+
+        Task {
+            let bridge = CLIBridge()
+            if let data = await bridge.deviceDetail(profile: profile, deviceID: term) {
+                guard requestKey == key else { return }
+                if let decoded = try? DeviceDetail.decode(from: data, lookupID: term) {
+                    resolvedKind = .computer
                     detail = decoded
                     state = .loaded
+                    return
                 }
-            } catch {
-                if requestKey == key {
-                    state = .unavailable("Could not decode jamf-cli response for \(term).")
+            }
+            if let data = await bridge.mobileDeviceDetail(profile: profile, deviceID: term) {
+                guard requestKey == key else { return }
+                if let decoded = try? DeviceDetail.decode(from: data, lookupID: term) {
+                    resolvedKind = .mobile
+                    detail = decoded
+                    state = .loaded
+                    return
                 }
+            }
+            guard requestKey == key else { return }
+            state = .noMatchOfferRefresh(
+                "No cached match for `\(term)` on profile `\(profile)`, and direct ID lookups for computer and mobile both failed. The cache may be stale."
+            )
+        }
+    }
+
+    private func refreshIndex() {
+        let profile = workspace.profile
+        refreshing = true
+        Task {
+            // `collect` already re-fetches the full set of cached snapshots,
+            // including computers-list and mobile-devices-list. It's heavier
+            // than strictly necessary, but it goes through the audited
+            // CLI bridge surface and keeps this screen from owning bespoke
+            // jamf-cli invocation logic.
+            _ = await CLIBridge().collect(profile: profile) { _ in }
+            index.load(profile: profile)
+            refreshing = false
+            // Auto-retry the original lookup against the freshly loaded index.
+            if !submittedTerm.isEmpty {
+                performLookup()
             }
         }
     }
@@ -204,8 +410,15 @@ struct DeviceLookupView: View {
         searchTerm.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private func cliCommand(kind: DeviceLookupIndex.Kind, profile: String, id: String) -> String {
+        switch kind {
+        case .computer: "jamf-cli -p \(profile) pro device \(id)"
+        case .mobile:   "jamf-cli -p \(profile) pro mobile-devices get \(id)"
+        }
+    }
+
     private func detailTitle(_ detail: DeviceDetail) -> String {
-        let candidates = ["name", "computer name", "device name", "host name", "hostname"]
+        let candidates = ["name", "computer name", "device name", "host name", "hostname", "display name"]
         for section in detail.sections {
             for item in section.items where candidates.contains(item.label.lowercased()) {
                 if !item.value.isEmpty { return item.value }
@@ -215,6 +428,9 @@ struct DeviceLookupView: View {
     }
 
     private func computerConsoleURL(for detail: DeviceDetail) -> URL? {
+        // Mobile devices use a different Jamf Pro URL path — only build a
+        // console deep-link when we resolved a computer.
+        guard resolvedKind != .mobile else { return nil }
         let candidates = ["jamf id", "id", "computer id", "udid"]
         for section in detail.sections {
             for item in section.items where candidates.contains(item.label.lowercased()) {
