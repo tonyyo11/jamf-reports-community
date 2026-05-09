@@ -10,8 +10,8 @@ import XCTest
 @MainActor
 final class WorkspaceMigrationTests: XCTestCase {
 
-    private var tempRoot: URL!
-    private var defaults: UserDefaults!
+    private nonisolated(unsafe) var tempRoot: URL!
+    private nonisolated(unsafe) var defaults: UserDefaults!
 
     override func setUpWithError() throws {
         tempRoot = FileManager.default.temporaryDirectory

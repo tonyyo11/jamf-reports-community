@@ -12,7 +12,7 @@ final class ServicesQ2Tests: XCTestCase {
 
     // MARK: - #11 SnapshotRetentionService
 
-    private var tmpRoot: URL!
+    private nonisolated(unsafe) var tmpRoot: URL!
 
     override func setUp() {
         super.setUp()

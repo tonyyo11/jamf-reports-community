@@ -12,18 +12,16 @@ import XCTest
 @MainActor
 final class PDFExporterTests: XCTestCase {
 
-    private var outputDir: URL!
+    private nonisolated(unsafe) var outputDir: URL!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUpWithError() throws {
         outputDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PDFExporterTests_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
     }
 
-    override func tearDown() async throws {
+    override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: outputDir)
-        try await super.tearDown()
     }
 
     // MARK: - Tests

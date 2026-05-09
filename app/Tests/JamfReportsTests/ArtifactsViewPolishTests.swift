@@ -8,6 +8,7 @@ import XCTest
 /// running SwiftUI host — status descriptions, empty-state conditions, and filter logic.
 /// View instantiation smoke tests are omitted because @MainActor SwiftUI views cannot
 /// be constructed in a unit-test target without a running app host.
+@MainActor
 final class ArtifactsViewPolishTests: XCTestCase {
 
     // MARK: - Schedule status pill descriptions

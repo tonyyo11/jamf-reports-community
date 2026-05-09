@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class CLIBridgeTightenOnSuccessTests: XCTestCase {
 
-    private var tempRoot: URL!
+    private nonisolated(unsafe) var tempRoot: URL!
 
     override func setUpWithError() throws {
         tempRoot = FileManager.default.temporaryDirectory

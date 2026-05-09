@@ -2,6 +2,7 @@ import Testing
 @testable import JamfReports
 
 /// Sanity tests for the responsive window sizing constants introduced in Task 4.
+@MainActor
 struct ResponsiveLayoutTests {
 
     /// The minimum supported width must be ≤960 pt to fit a 13" MacBook at native
