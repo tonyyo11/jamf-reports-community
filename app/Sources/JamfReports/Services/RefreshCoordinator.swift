@@ -135,6 +135,10 @@ final class RefreshCoordinator {
             }
         } else {
             failureCounts[key, default: 0] += 1
+            let consecutive = failureCounts[key, default: 0]
+            AppLogger.cli.warning(
+                "Background refresh failed for \(profile)/\(tier.rawValue): exit \(exitCode), consecutive failures: \(consecutive)"
+            )
         }
     }
 

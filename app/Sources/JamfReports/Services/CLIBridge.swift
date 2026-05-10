@@ -88,13 +88,18 @@ final class CLIBridge {
                 return []
             }
             let dir = dataDir.appendingPathComponent(type, isDirectory: true)
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ) else {
+            let entries: [URL]
+            do {
+                entries = try FileManager.default.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: [.contentModificationDateKey],
+                    options: [.skipsHiddenFiles]
+                )
+            } catch let error as NSError where error.code == NSFileReadNoSuchFileError {
+                return []  // Expected on first run before any snapshots exist
+            } catch {
                 AppLogger.cli.warning(
-                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public)"
+                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
                 return []
             }
@@ -256,7 +261,12 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
+            return -1
+        }
         let configURL = workspace.appendingPathComponent("config.yaml")
         let config: ReportConfig
         if FileManager.default.fileExists(atPath: configURL.path) {
@@ -339,7 +349,12 @@ final class CLIBridge {
             return Self.exitCodeUnauthorized
         }
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
+            return -1
+        }
         let configURL = workspace.appendingPathComponent("config.yaml")
         let config: ReportConfig
         if FileManager.default.fileExists(atPath: configURL.path) {
@@ -684,7 +699,12 @@ final class CLIBridge {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
         // authGuard is intentionally omitted — stale/expired credentials do not prevent rendering.
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
+            return -1
+        }
         let configURL = workspace.appendingPathComponent("config.yaml")
         let config: ReportConfig
         if FileManager.default.fileExists(atPath: configURL.path) {
@@ -748,7 +768,12 @@ final class CLIBridge {
             return Self.exitCodeUnauthorized
         }
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
+            return -1
+        }
         let configURL = workspace.appendingPathComponent("config.yaml")
         let config: ReportConfig
         if FileManager.default.fileExists(atPath: configURL.path) {

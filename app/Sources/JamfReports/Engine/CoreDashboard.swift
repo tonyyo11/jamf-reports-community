@@ -1101,8 +1101,8 @@ struct CoreDashboard: Sendable {
         }
 
         let categoryCounts = profileRows.reduce(into: [String: Int]()) { acc, row in
-            let cat = (row["Category"] as? String ?? "").isEmpty ? "Uncategorized"
-                : row["Category"] as! String
+            let catStr = row["Category"] as? String ?? ""
+            let cat = catStr.isEmpty ? "Uncategorized" : catStr
             acc[cat, default: 0] += 1
         }
 

@@ -17,7 +17,9 @@ enum SystemActions {
 
     /// Open a file with the default application or a URL in the default browser.
     static func open(_ url: URL) {
-        if let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) {
+        if let scheme = url.scheme?.lowercased(), scheme == "https" {
+            // Reject non-https schemes disguised as URL components (javascript:, data:, file:).
+            guard let host = url.host, !host.isEmpty else { return }
             NSWorkspace.shared.open(url)
             return
         }

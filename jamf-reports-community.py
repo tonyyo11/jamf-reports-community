@@ -2386,8 +2386,8 @@ def _emit_summary_json(
                             pass
                 if valid_pcts:
                     patch_pct = sum(valid_pcts) / len(valid_pcts)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"  [warn] _emit_summary_json: patch_status failed — patchPct defaulting to 0.0: {exc}")
 
     summary_data: dict[str, Any] = {
         "date": date_str,
@@ -2462,15 +2462,15 @@ def _build_summary_from_bridge(
                     encrypted = _to_int(data.get("filevault_encrypted"))
                     fv_pct = (encrypted / total_devices) * 100.0
                 break
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: security_report failed — fv_pct defaulting to 0.0: {exc}")
 
     if total_devices == 0:
         try:
             inv = bridge.inventory_summary() or []
             total_devices = sum(int(row.get("count") or 0) for row in inv if isinstance(row, dict))
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"  [warn] _build_summary_from_bridge: inventory_summary failed — totalDevices defaulting to 0: {exc}")
 
     if total_devices == 0:
         return None
@@ -2479,8 +2479,8 @@ def _build_summary_from_bridge(
     try:
         comp = bridge.device_compliance() or []
         stale_count = sum(1 for row in comp if isinstance(row, dict) and row.get("stale"))
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
 
     os_pct = 0.0
     current_os_versions: List[str] = []
@@ -2501,8 +2501,8 @@ def _build_summary_from_bridge(
                     current += count
             if total_devices:
                 os_pct = (current / total_devices) * 100.0
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"  [warn] _build_summary_from_bridge: inventory_summary (os adoption) failed — osCurrentPct defaulting to 0.0: {exc}")
 
     patch_pct = 0.0
     try:
@@ -2518,8 +2518,8 @@ def _build_summary_from_bridge(
                         pass
             if valid:
                 patch_pct = sum(valid) / len(valid)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: patch_status failed — patchPct defaulting to 0.0: {exc}")
 
     return {
         "date": date_str,
