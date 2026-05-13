@@ -401,8 +401,7 @@ struct TrendsView: View {
                         unit: metric.unit
                     ))
                 } else {
-                    Text("Calculating domain...")
-                        .frame(height: 260)
+                    ProgressView().frame(height: 260)
                 }
 
                 Divider().background(Theme.Colors.hairline)
@@ -565,8 +564,7 @@ struct TrendsView: View {
                     }
                 ))
             } else {
-                Text("No Data")
-                    .frame(height: 200)
+                ProgressView().frame(height: 200)
             }
         }
     }
@@ -608,8 +606,7 @@ struct TrendsView: View {
                     ]
                 ))
             } else {
-                Text("No Data")
-                    .frame(height: 200)
+                ProgressView().frame(height: 200)
             }
         }
     }
@@ -775,7 +772,6 @@ struct TrendsView: View {
         height: CGFloat,
         isLatest: Bool
     ) -> some View {
-        // tealBright adapts better than the static teal token in light mode.
         let isHovered = hoveredArchiveIdx == idx
         return Rectangle()
             .fill(isLatest ? Theme.Colors.gold : Theme.Colors.tealBright)
@@ -939,8 +935,8 @@ enum TrendDemoSeries {
     }
 }
 
-/// Minimal flow layout for the metric pills row. SwiftUI 16+ has `Layout` but this
-/// runs on macOS 14, so we lay out children into rows by hand.
+/// Minimal flow layout for the metric pills row. Uses the `Layout` protocol
+/// introduced in macOS 14 (SwiftUI 4), which is the app's minimum deployment target.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
