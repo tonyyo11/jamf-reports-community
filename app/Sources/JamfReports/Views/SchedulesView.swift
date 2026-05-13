@@ -320,7 +320,7 @@ struct SchedulesView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
             RunLogConsole(lines: runLogLines, isRunning: isRunning)
-                .frame(width: 520, minHeight: 200, maxHeight: 320)
+                .frame(minWidth: 520, idealWidth: 520, maxWidth: 520, minHeight: 200, maxHeight: 320)
         }
         .background(Theme.Colors.winBG2)
     }
