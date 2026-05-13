@@ -289,7 +289,7 @@ struct Sidebar: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Theme.Surface.high(contrast).opacity(engaged ? 1.2 : 0.5))
+                    .fill(engaged ? Theme.Surface.interactive(contrast) : Theme.Surface.high(contrast).opacity(0.5))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(
