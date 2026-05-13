@@ -55,10 +55,7 @@ struct RunsView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
                         .help("Reload run logs from disk")
                     PNPButton(title: "Reveal", icon: "folder") { revealLog() }
-                        .disabled(selectedRun == nil)
-                        .help(selectedRun == nil
-                              ? "Select a run to reveal its log folder"
-                              : "Reveal the run's log folder in Finder")
+                        .help("Reveal the selected log in Finder, or open the run history folder")
                     PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
                         .disabled(selectedRun == nil)
                         .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
@@ -209,8 +206,13 @@ struct RunsView: View {
     }
 
     private func revealLog() {
-        guard let run = selectedRun else { return }
-        SystemActions.reveal(run.logURL)
+        if let run = selectedRun {
+            SystemActions.reveal(run.logURL)
+        } else {
+            let logsDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Jamf-Reports/\(workspace.profile)/automation/logs")
+            SystemActions.openFolder(logsDir)
+        }
     }
 
     @MainActor
