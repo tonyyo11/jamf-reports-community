@@ -261,7 +261,7 @@ struct ExtensionAttributesView: View {
 
                     if snapshot.coverage.count > 30 {
                         Text("+\(snapshot.coverage.count - 30) more")
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, 8)
@@ -277,7 +277,7 @@ struct ExtensionAttributesView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(coverage.eaName)
-                    .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
+                    .font(.callout.weight(isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? Theme.Colors.fg : Theme.Colors.fg2)
                 Spacer()
                 Text("\(coverage.populatedDevices) / \(coverage.totalDevices)")
@@ -383,12 +383,12 @@ struct ExtensionAttributesView: View {
             VStack(alignment: .leading, spacing: 2) {
                 if distribution.otherCount > 0 {
                     Text("+\(distribution.otherCount) value\(distribution.otherCount == 1 ? "" : "s") in \(distribution.distinctValueCount - distribution.top.count) other bucket\(distribution.distinctValueCount - distribution.top.count == 1 ? "" : "s")")
-                        .font(.system(size: 11))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
                 if snapshot.totalRowCount > Self.largeFleetRowThreshold {
                     Text("Top values shown per EA; generated reports include all values.")
-                        .font(.system(size: 11))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -407,13 +407,13 @@ struct ExtensionAttributesView: View {
 
                 if snapshot.definitions.isEmpty {
                     Text("No EA definitions loaded.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
                     Table(Array(snapshot.definitions.prefix(Self.definitionsDisplayCap))) {
                         TableColumn("Name") { definition in
                             Text(definition.name ?? "Unknown")
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(.callout.weight(.medium))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .accessibilityLabel("\(definition.name ?? "Unknown"), extension attribute name")
                         }
@@ -429,14 +429,14 @@ struct ExtensionAttributesView: View {
 
                         TableColumn("Input") { definition in
                             Text(definition.inputType ?? "Unknown")
-                                .font(.system(size: 12))
+                                .font(.footnote)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                         }
                         .width(min: 80, ideal: 100)
 
                         TableColumn("Enabled") { definition in
                             Text(definition.enabled == true ? "✓" : "✗")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(definition.enabled == true ? Theme.Colors.ok : Theme.Colors.fgMuted)
                                 .accessibilityLabel(definition.enabled == true ? "Enabled" : "Disabled")
                         }
@@ -445,7 +445,7 @@ struct ExtensionAttributesView: View {
                     .frame(minHeight: 200)
                     if snapshot.definitions.count > Self.definitionsDisplayCap {
                         Text("Generated reports include every definition.")
-                            .font(.system(size: 11))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                 }

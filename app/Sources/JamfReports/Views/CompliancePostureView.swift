@@ -102,10 +102,10 @@ struct CompliancePostureView: View {
                     .foregroundStyle(Theme.Colors.fgMuted)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Banded by control-gap count")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     Text("Each device is bucketed by how many of FileVault, SIP, Firewall, and Gatekeeper are failing. For full mSCP failure-count banding, configure a Compliance EA in your Jamf Pro tenant.")
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -185,7 +185,7 @@ struct CompliancePostureView: View {
                         .fill(Color(hex: band.colorHex))
                         .frame(width: 12, height: 12)
                     Text(band.label)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                     Text("(\(band.range))")
                         .font(Theme.Fonts.mono(10.5))
@@ -228,7 +228,7 @@ struct CompliancePostureView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(barColor(for: gap.pct))
                     Text(gap.control)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
@@ -281,7 +281,7 @@ struct CompliancePostureView: View {
                 SectionHeader(title: "Per-OS Breakdown")
                 if snapshot.perOSMajor.isEmpty {
                     Text("Not enough OS version data in this snapshot.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
                     perOSGrid
@@ -295,7 +295,7 @@ struct CompliancePostureView: View {
             ForEach(snapshot.perOSMajor, id: \.osMajor) { row in
                 HStack(alignment: .center, spacing: 12) {
                     Text(osLabel(row.osMajor))
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .frame(width: 150, alignment: .leading)
                     perOSStack(row.bands)

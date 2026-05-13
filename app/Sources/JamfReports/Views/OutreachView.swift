@@ -187,7 +187,7 @@ struct OutreachView: View {
                     Table(devices) {
                         TableColumn("Device") { device in
                             Text(device.displayName)
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(.callout.weight(.medium))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .accessibilityLabel("\(device.displayName), device name")
                         }
@@ -203,7 +203,7 @@ struct OutreachView: View {
                         TableColumn("User/Manager") { device in
                             let displayUser = device.user.isEmpty ? "—" : device.user
                             Text(displayUser)
-                                .font(.system(size: 12))
+                                .font(.footnote)
                                 .foregroundStyle(displayUser == "—" ? Theme.Colors.fgMuted : Theme.Colors.fg2)
                         }
                         .width(min: 120, ideal: 150)
@@ -220,7 +220,7 @@ struct OutreachView: View {
                         TableColumn("Department") { device in
                             let displayDept = device.department.isEmpty ? "—" : device.department
                             Text(displayDept)
-                                .font(.system(size: 12))
+                                .font(.footnote)
                                 .foregroundStyle(displayDept == "—" ? Theme.Colors.fgMuted : Theme.Colors.fg2)
                         }
                         .width(min: 100, ideal: 120)
@@ -247,7 +247,7 @@ struct OutreachView: View {
                     .frame(minHeight: 200)
                 } else {
                     Text("No devices in the \(selectedTier.label.lowercased()) tier.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .padding(.vertical, 20)
                 }

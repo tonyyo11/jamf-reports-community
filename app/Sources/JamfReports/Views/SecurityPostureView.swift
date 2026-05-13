@@ -130,19 +130,19 @@ struct SecurityPostureView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text("Security Score")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.headline)
                             .foregroundStyle(Theme.Colors.fg)
                         Pill(text: score.grade.rawValue,
                              tone: pillTone(for: score.grade))
                     }
                     if !score.available.isEmpty {
                         Text(availabilityText)
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     if !score.missing.isEmpty {
                         Text(missingText)
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                 }
@@ -231,7 +231,7 @@ struct SecurityPostureView: View {
                     .monospacedDigit()
             }
             Text(caption)
-                .font(.system(size: 11.5))
+                .font(.caption)
                 .foregroundStyle(Theme.Colors.fgMuted)
         }
         .padding(12)
@@ -265,7 +265,7 @@ struct SecurityPostureView: View {
                 }
                 if snapshot.osVersions.isEmpty {
                     Text("No OS version data in this snapshot.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
                     osChart

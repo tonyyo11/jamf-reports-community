@@ -220,21 +220,21 @@ struct PolicyProfileView: View {
                             Spacer(minLength: 12)
 
                             Text(finding.policy)
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(.callout.weight(.medium))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .frame(width: 220, alignment: .leading)
 
                             Spacer(minLength: 12)
 
                             Text(finding.check)
-                                .font(.system(size: 12.5))
+                                .font(.callout)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(width: 150, alignment: .leading)
 
                             Spacer(minLength: 12)
 
                             Text(finding.detail)
-                                .font(.system(size: 12.5))
+                                .font(.callout)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -333,21 +333,21 @@ struct PolicyProfileView: View {
                     ForEach(Array(snapshot.profiles.enumerated()), id: \.offset) { _, profile in
                         DataTableRow {
                             Text(profile.name ?? "Unknown Profile")
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(.callout.weight(.medium))
                                 .foregroundStyle(profileNameColor(for: profile))
                                 .frame(width: 220, alignment: .leading)
 
                             Spacer(minLength: 12)
 
                             Text(profile.category ?? "—")
-                                .font(.system(size: 12.5))
+                                .font(.callout)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(width: 120, alignment: .leading)
 
                             Spacer(minLength: 12)
 
                             Text(profile.site ?? "—")
-                                .font(.system(size: 12.5))
+                                .font(.callout)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(width: 100, alignment: .leading)
 
@@ -361,7 +361,7 @@ struct PolicyProfileView: View {
                                 .frame(width: 120, alignment: .leading)
                             } else {
                                 Text("Unknown")
-                                    .font(.system(size: 12.5))
+                                    .font(.callout)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .frame(width: 120, alignment: .leading)
                             }

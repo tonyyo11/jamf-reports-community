@@ -150,7 +150,7 @@ struct PatchView: View {
                 Table(Array(sortedTitles.prefix(Self.titlesDisplayCap))) {
                     TableColumn("Title") { title in
                         Text(title.title)
-                            .font(.system(size: 12.5, weight: .medium))
+                            .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                             .accessibilityLabel("\(title.title), patch title")
                     }
@@ -200,7 +200,7 @@ struct PatchView: View {
                 .frame(minHeight: 200)
                 if sortedTitles.count > Self.titlesDisplayCap {
                     Text("Generated reports include every patch title.")
-                        .font(.system(size: 11))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -239,13 +239,13 @@ struct PatchView: View {
                 SectionHeader(title: "Recent Failures")
                 if snapshot.failures.isEmpty {
                     Text("No recent patch failures recorded.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
                     Table(recentFailures) {
                         TableColumn("Device") { failure in
                             Text(failure.device)
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(.callout.weight(.medium))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .accessibilityLabel("\(failure.device), device name")
                         }
@@ -253,7 +253,7 @@ struct PatchView: View {
 
                         TableColumn("Policy") { failure in
                             Text(failure.policy)
-                                .font(.system(size: 12))
+                                .font(.footnote)
                                 .foregroundStyle(Theme.Colors.fg2)
                         }
                         .width(min: 120, ideal: 160)

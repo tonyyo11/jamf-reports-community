@@ -250,7 +250,7 @@ struct UpdatesView: View {
                         .fill(Color(hex: slice.colorHex))
                         .frame(width: 12, height: 12)
                     Text(slice.label)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                     Spacer()
                     Text("\(slice.count)")
@@ -299,7 +299,7 @@ struct UpdatesView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color(hex: slice.colorHex))
                     Text(slice.label)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
@@ -359,7 +359,7 @@ struct UpdatesView: View {
                             ForEach(Array(snapshot.failedPlans.prefix(50).enumerated()), id: \.offset) { _, plan in
                                 DataTableRow {
                                     Text(plan.name)
-                                        .font(.system(size: 12))
+                                        .font(.footnote)
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .frame(width: 140, alignment: .leading)
 
@@ -381,14 +381,14 @@ struct UpdatesView: View {
                                     Spacer(minLength: 12)
 
                                     Text(plan.action)
-                                        .font(.system(size: 12))
+                                        .font(.footnote)
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .frame(width: 100, alignment: .leading)
 
                                     Spacer(minLength: 12)
 
                                     Text(truncatedError(plan.error))
-                                        .font(.system(size: 11.5))
+                                        .font(.caption)
                                         .foregroundStyle(Theme.Colors.fgMuted)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .lineLimit(1)
@@ -404,7 +404,7 @@ struct UpdatesView: View {
 
                 if snapshot.failedPlans.count > 50 {
                     Text("+ \(snapshot.failedPlans.count - 50) more")
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .padding(.top, 4)
                 }
@@ -434,7 +434,7 @@ struct UpdatesView: View {
                             ForEach(Array(snapshot.errorDevices.enumerated()), id: \.offset) { _, device in
                                 DataTableRow {
                                     Text(device.name)
-                                        .font(.system(size: 12))
+                                        .font(.footnote)
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .frame(width: 140, alignment: .leading)
 
@@ -456,7 +456,7 @@ struct UpdatesView: View {
                                     Spacer(minLength: 12)
 
                                     Text(formatDate(device.updated))
-                                        .font(.system(size: 11.5))
+                                        .font(.caption)
                                         .foregroundStyle(Theme.Colors.fgMuted)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }

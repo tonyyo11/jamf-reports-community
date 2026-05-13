@@ -233,7 +233,7 @@ struct MobileFleetView: View {
         return VStack(spacing: 4) {
             HStack {
                 Text(osVersion)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
                 Text("\(count) device\(count == 1 ? "" : "s")")
@@ -278,7 +278,7 @@ struct MobileFleetView: View {
                 Table(devicesForTable) {
                     TableColumn("Name") { device in
                         Text(deviceDisplayName(device))
-                            .font(.system(size: 12.5, weight: .medium))
+                            .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                     }
                     .width(min: 140, ideal: 180)
@@ -299,7 +299,7 @@ struct MobileFleetView: View {
 
                     TableColumn("User") { device in
                         Text(getUsername(device) ?? "—")
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     .width(min: 100, ideal: 130)
@@ -317,7 +317,7 @@ struct MobileFleetView: View {
                     // light-only rows.
                     TableColumn("Last Inventory") { device in
                         Text(getLastInventoryRelative(device))
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     .width(min: 100, ideal: 120)
@@ -325,7 +325,7 @@ struct MobileFleetView: View {
                 .font(.system(size: 12))
                 if totalMobileDevices > devicesForTable.count {
                     Text("Generated reports include every mobile device.")
-                        .font(.system(size: 11))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -339,21 +339,21 @@ struct MobileFleetView: View {
                 Table(Array(snapshot.profiles.prefix(30).enumerated()).map { ProfileWithIndex(profile: $0.element, index: $0.offset) }) {
                     TableColumn("Name") { item in
                         Text(item.profile.name ?? "Untitled Profile")
-                            .font(.system(size: 12.5, weight: .medium))
+                            .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                     }
                     .width(min: 180, ideal: 220)
 
                     TableColumn("Category") { item in
                         Text(item.profile.category ?? "—")
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     .width(min: 100, ideal: 120)
 
                     TableColumn("Site") { item in
                         Text(item.profile.site ?? "—")
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     .width(min: 80, ideal: 100)
@@ -512,7 +512,7 @@ private struct MobileFleetOSDistributionExport: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
                         Text(row.osVersion)
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(Color(hex: 0x111827))
                         Spacer(minLength: 6)
                         Text("\(row.count)")
