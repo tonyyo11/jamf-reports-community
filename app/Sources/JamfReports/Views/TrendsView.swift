@@ -5,6 +5,7 @@ import Charts
 /// Differentiator vs. JamfDash, which only shows live state.
 struct TrendsView: View {
     @Environment(WorkspaceStore.self) private var workspaceStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @State private var trendStore = TrendStore()
     @State private var bridge = CLIBridge()
@@ -276,7 +277,7 @@ struct TrendsView: View {
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .help("Show \(m.displayLabel) trend")
         .onAppear {
-            guard !pillPulse else { return }
+            guard !pillPulse, !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
                 pillPulse = true
             }
@@ -786,8 +787,8 @@ struct TrendsView: View {
                     Circle()
                         .fill(Theme.Colors.goldBright)
                         .frame(width: 6, height: 6)
-                        .scaleEffect(archivePulse ? 1.4 : 1.0)
-                        .opacity(archivePulse ? 0.0 : 0.9)
+                        .scaleEffect(reduceMotion ? 1.0 : (archivePulse ? 1.4 : 1.0))
+                        .opacity(reduceMotion ? 0.9 : (archivePulse ? 0.0 : 0.9))
                         .offset(y: -3)
                         .allowsHitTesting(false)
                 }
@@ -815,7 +816,7 @@ struct TrendsView: View {
                 hoveredArchiveIdx = inside ? idx : (hoveredArchiveIdx == idx ? nil : hoveredArchiveIdx)
             }
             .onAppear {
-                guard isLatest, !archivePulse else { return }
+                guard isLatest, !archivePulse, !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: false)) {
                     archivePulse = true
                 }
