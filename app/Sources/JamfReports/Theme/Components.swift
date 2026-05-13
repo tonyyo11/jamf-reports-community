@@ -406,7 +406,7 @@ struct StatTile: View {
                 Text(sub).font(.system(size: 11.5)).foregroundStyle(Theme.Colors.fgMuted)
             }
             if let sparkValues, !sparkValues.isEmpty {
-                Sparkline(values: sparkValues, color: sparkColor)
+                Sparkline(values: sparkValues, color: defaultSparklineColor)
                     .frame(height: 32)
                     .padding(.top, 2)
             }
@@ -441,6 +441,18 @@ struct StatTile: View {
         case .up: Theme.Colors.ok
         case .down: Theme.Colors.danger
         case .flat: Theme.Colors.fgMuted
+        }
+    }
+
+    private var defaultSparklineColor: Color {
+        // If caller explicitly set sparkColor, use it; otherwise follow delta trend
+        if sparkColor != Theme.Colors.gold {
+            return sparkColor
+        }
+        switch deltaTrend {
+        case .up: return Theme.Colors.ok
+        case .down: return Theme.Colors.danger
+        case .flat: return Theme.Colors.gold
         }
     }
 }

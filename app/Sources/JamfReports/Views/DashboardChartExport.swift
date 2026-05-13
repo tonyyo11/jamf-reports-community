@@ -141,17 +141,22 @@ enum DashboardChartExport {
     }
 }
 
-/// Fixed-size light-mode canvas used by `DashboardChartExport.run`. Stands
-/// alone — no environment dependencies — so it renders correctly off-screen
-/// under `ImageRenderer`.
-private struct DashboardExportCanvas<Content: View>: View {
+/// Shared export header used by both `DashboardExportCanvas` and other custom
+/// export views like `BarChartExportView`. Provides consistent title typography
+/// across all export templates.
+public struct DashboardExportHeader: View {
     let title: String
     let subtitle: String?
-    let footnote: String?
-    @ViewBuilder let content: () -> Content
+    let headerTrailing: AnyView?
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+    public init(title: String, subtitle: String? = nil, headerTrailing: (() -> AnyView)? = nil) {
+        self.title = title
+        self.subtitle = subtitle
+        self.headerTrailing = headerTrailing?()
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle.uppercased())
@@ -165,6 +170,24 @@ private struct DashboardExportCanvas<Content: View>: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
+            Spacer()
+            headerTrailing
+        }
+    }
+}
+
+/// Fixed-size light-mode canvas used by `DashboardChartExport.run`. Stands
+/// alone — no environment dependencies — so it renders correctly off-screen
+/// under `ImageRenderer`.
+private struct DashboardExportCanvas<Content: View>: View {
+    let title: String
+    let subtitle: String?
+    let footnote: String?
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            DashboardExportHeader(title: title, subtitle: subtitle)
 
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -184,7 +207,8 @@ private struct DashboardExportCanvas<Content: View>: View {
 
     private static func timestamp() -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.dateFormat = "yyyy-MM-dd HH:mm 'UTC'"
+        formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: Date())
     }
 }

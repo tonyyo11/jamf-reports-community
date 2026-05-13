@@ -215,9 +215,6 @@ struct SecurityPostureView: View {
                     actionTile(level: "P1", count: actionItems.p1,
                                caption: "Gatekeeper gaps",
                                tone: .warn)
-                    actionTile(level: "P2", count: actionItems.p2,
-                               caption: "Reserved",
-                               tone: .muted)
                 }
             }
         }

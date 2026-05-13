@@ -14,6 +14,7 @@ struct Sidebar: View {
     // glow/ring shown around the avatar and chip surface.
     @State private var chipHovered: Bool = false
     @FocusState private var chipFocused: Bool
+    @State private var hoveredItem: Tab? = nil
 
     private struct NavGroup {
         let group: String
@@ -182,13 +183,19 @@ struct Sidebar: View {
             .frame(minHeight: mode == .compact ? 0 : 28)
             .background(
                 RoundedRectangle(cornerRadius: mode == .compact ? 8 : 6, style: .continuous)
-                    .fill(isActive ? Theme.Colors.gold.opacity(0.18) : .clear)
+                    .fill(
+                        isActive ? Theme.Colors.gold.opacity(0.18) :
+                        (hoveredItem == item && !isActive ? Color.white.opacity(0.04) : .clear)
+                    )
                     .padding(.horizontal, mode == .compact ? 4 : 0)
             )
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredItem = hovering ? item : (hoveredItem == item ? nil : hoveredItem)
+        }
         .accessibilityLabel(navAccessibilityLabel(for: item))
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
@@ -314,7 +321,7 @@ struct Sidebar: View {
     /// the chip is engaged.
     @ViewBuilder
     private func workspaceAvatar(engaged: Bool) -> some View {
-        let initial = workspace.profile.first.map { String($0).uppercased() } ?? "?"
+        let monogram = String(workspace.profile.prefix(2)).uppercased()
         let hue = avatarHue(for: workspace.profile)
         ZStack {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -325,7 +332,7 @@ struct Sidebar: View {
                     ],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ))
-            Text(String(workspace.profile.prefix(2)).uppercased())
+            Text(monogram)
                 .font(Theme.Fonts.mono(9, weight: .bold))
                 .foregroundStyle(.white)
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -334,15 +341,15 @@ struct Sidebar: View {
                     lineWidth: engaged ? 1.2 : 0.5
                 )
         }
-        .accessibilityLabel("Workspace \(initial)")
+        .accessibilityLabel("Workspace \(monogram)")
     }
 
     /// Stable hue in [0,1) derived from the profile name, so the same workspace
     /// always renders with the same gradient.
     private func avatarHue(for name: String) -> Double {
         guard let first = name.unicodeScalars.first else { return 0.12 }
-        // 0.12 ≈ gold-ish; offset by character so distinct profiles diverge predictably.
-        let base = Double(first.value % 360) / 360.0
-        return base
+        // Spread adjacent letters in the alphabet using multiplication factor, avoid gold band (~0.10–0.18)
+        let base = Double((first.value &* 47) % 360) / 360.0
+        return ((base + 0.30).truncatingRemainder(dividingBy: 1.0))
     }
 }

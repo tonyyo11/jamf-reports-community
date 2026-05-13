@@ -307,9 +307,6 @@ struct ExtensionAttributesView: View {
             isSelected ? Theme.Colors.hairline : Color.clear,
             in: RoundedRectangle(cornerRadius: 6)
         )
-        .onTapGesture {
-            selectedEA = coverage.eaName
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(coverage.eaName) extension attribute coverage, \(String(format: "%.1f", coverage.coveragePct)) percent, \(coverage.populatedDevices) of \(coverage.totalDevices) devices")
     }
@@ -532,24 +529,20 @@ private struct BarChartExportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 20) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(distribution.eaName)
-                        .font(.system(size: 30, weight: .bold, design: .serif))
-                        .foregroundStyle(Color(hex: 0x111827))
-                    Text(dateText)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color(hex: 0x475569))
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 5) {
-                    Text("\(distribution.top.count)")
-                        .font(.system(size: 28, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(hex: 0xC9970A))
-                    Text("distinct values shown")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color(hex: 0x64748B))
-                }
+            DashboardExportHeader(
+                title: distribution.eaName,
+                subtitle: dateText
+            ) {
+                AnyView(
+                    VStack(alignment: .trailing, spacing: 5) {
+                        Text("\(distribution.top.count)")
+                            .font(.system(size: 28, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color(hex: 0xC9970A))
+                        Text("distinct values shown")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color(hex: 0x64748B))
+                    }
+                )
             }
 
             Chart(bars) { bar in

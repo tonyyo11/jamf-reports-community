@@ -56,7 +56,9 @@ struct ProtectView: View {
         guard snapshot.isDetected else { return nil }
         let parts: [String] = [
             snapshot.totalComputers > 0 ? "\(snapshot.totalComputers) computer\(snapshot.totalComputers == 1 ? "" : "s")" : nil,
-            !snapshot.alerts.isEmpty ? "\(snapshot.alerts.count) alert\(snapshot.alerts.count == 1 ? "" : "s")" : nil,
+            !snapshot.alerts.isEmpty ? "\(snapshot.alerts.count) alert\(snapshot.alerts.count == 1 ? "" : "s")" :
+                (snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts > 0 ?
+                 "\(snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts) alert\(snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts == 1 ? "" : "s")" : nil),
             !snapshot.insights.isEmpty ? "\(snapshot.insights.count) insight\(snapshot.insights.count == 1 ? "" : "s")" : nil
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
@@ -78,10 +80,10 @@ struct ProtectView: View {
 
     private static let demoSnapshot = ProtectDashboardService.Snapshot(
         isDetected: true,
-        overviewItems: [], // Use computed demo state rather than fake instances
-        alerts: [], // Use computed demo state rather than fake instances
-        computers: [], // Use computed demo state rather than fake instances
-        insights: [], // Use computed demo state rather than fake instances
+        overviewItems: [],
+        alerts: [],
+        computers: [],
+        insights: [],
         totalComputers: 12,
         webProtectionActiveCount: 10,
         fullDiskAccessCount: 9,
@@ -97,8 +99,7 @@ struct ProtectView: View {
 
     // MARK: - Demo Data Helpers
 
-    private var demoAlerts: [(severity: String, eventType: String, hostName: String, created: String, status: String)] {
-        [
+    private static let demoDemoAlerts: [(severity: String, eventType: String, hostName: String, created: String, status: String)] = [
             ("Critical", "Malware", "MacBook-001", "2024-05-12T09:30:00Z", "Open"),
             ("High", "Suspicious Network", "MacBook-002", "2024-05-12T08:15:00Z", "Investigating"),
             ("Medium", "Policy Violation", "iMac-003", "2024-05-11T16:45:00Z", "Resolved"),
@@ -108,10 +109,8 @@ struct ProtectView: View {
             ("Medium", "Unauthorized Access", "MacBook-007", "2024-05-10T18:30:00Z", "Open"),
             ("Low", "Config Change", "iMac-008", "2024-05-10T15:45:00Z", "Resolved")
         ]
-    }
 
-    private var demoComputers: [(hostName: String, osString: String, planName: String, webProtection: Bool, fullDisk: Bool, connected: Bool, lastConnection: String)] {
-        [
+    private static let demoDemoComputers: [(hostName: String, osString: String, planName: String, webProtection: Bool, fullDisk: Bool, connected: Bool, lastConnection: String)] = [
             ("MacBook-001", "macOS 15.4.1", "Standard", true, true, true, "2024-05-12T10:00:00Z"),
             ("MacBook-002", "macOS 15.4.1", "Standard", true, true, true, "2024-05-12T09:45:00Z"),
             ("iMac-003", "macOS 14.7.5", "Standard", true, false, true, "2024-05-12T09:30:00Z"),
@@ -125,10 +124,8 @@ struct ProtectView: View {
             ("MacBook-011", "macOS 15.4.1", "Standard", true, true, true, "2024-05-12T10:15:00Z"),
             ("MacBook-012", "macOS 15.4.1", "Premium", true, true, true, "2024-05-12T09:55:00Z")
         ]
-    }
 
-    private var demoInsights: [(label: String, section: String, totalPass: Int, totalFail: Int, enabled: Bool)] {
-        [
+    private static let demoDemoInsights: [(label: String, section: String, totalPass: Int, totalFail: Int, enabled: Bool)] = [
             ("Firewall Configuration", "Network Security", 10, 2, true),
             ("FileVault Status", "Data Protection", 12, 0, true),
             ("Gatekeeper Policy", "Application Security", 11, 1, true),
@@ -136,7 +133,6 @@ struct ProtectView: View {
             ("XProtect Updates", "Malware Protection", 9, 3, false),
             ("Certificate Validation", "PKI", 11, 1, true)
         ]
-    }
 
     // MARK: - Sections
 
@@ -169,7 +165,7 @@ struct ProtectView: View {
                 StatTile(
                     label: "Web Protection",
                     value: "\(snapshot.webProtectionActiveCount)",
-                    sub: String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)
+                    sub: "\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"
                 )
             }
 
@@ -177,14 +173,15 @@ struct ProtectView: View {
                 StatTile(
                     label: "Full Disk Access",
                     value: "\(snapshot.fullDiskAccessCount)",
-                    sub: String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)
+                    sub: "\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"
                 )
             }
 
             if snapshot.totalComputers > 0 {
                 StatTile(
                     label: "Connected",
-                    value: "\(snapshot.connectedCount)"
+                    value: "\(snapshot.connectedCount)",
+                    sub: "\(snapshot.connectedCount) of \(snapshot.totalComputers)"
                 )
             }
 
@@ -306,8 +303,8 @@ struct ProtectView: View {
 
                 if workspace.demoMode {
                     VStack(spacing: 0) {
-                        ForEach(Array(demoAlerts.enumerated()), id: \.offset) { index, alert in
-                            demoAlertRow(alert, isLast: index == demoAlerts.count - 1)
+                        ForEach(Array(Self.demoDemoAlerts.enumerated()), id: \.offset) { index, alert in
+                            demoAlertRow(alert, isLast: index == Self.demoDemoAlerts.count - 1)
                         }
                     }
                 } else {
@@ -438,8 +435,8 @@ struct ProtectView: View {
 
                 if workspace.demoMode {
                     VStack(spacing: 0) {
-                        ForEach(Array(demoComputers.enumerated()), id: \.offset) { index, computer in
-                            demoComputerRow(computer, isLast: index == demoComputers.count - 1)
+                        ForEach(Array(Self.demoDemoComputers.enumerated()), id: \.offset) { index, computer in
+                            demoComputerRow(computer, isLast: index == Self.demoDemoComputers.count - 1)
                         }
                     }
                 } else {
@@ -588,7 +585,7 @@ struct ProtectView: View {
 
                 VStack(spacing: 8) {
                     if workspace.demoMode {
-                        ForEach(Array(demoInsights.enumerated()), id: \.offset) { index, insight in
+                        ForEach(Array(Self.demoDemoInsights.enumerated()), id: \.offset) { index, insight in
                             demoInsightRow(insight)
                         }
                     } else {
@@ -738,17 +735,18 @@ struct ProtectView: View {
         }
 
         let now = Date()
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.day, .hour, .minute], from: date, to: now)
+        let daysSince = Calendar.current.dateComponents([.day], from: date, to: now).day ?? 0
 
-        if let days = components.day, days >= 1 {
-            return "\(days)d ago"
-        } else if let hours = components.hour, hours >= 1 {
-            return "\(hours)h ago"
-        } else if let minutes = components.minute, minutes >= 1 {
-            return "\(minutes)m ago"
+        if daysSince >= 60 {
+            // For spans ≥60 days, use absolute date
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            return formatter.string(from: date)
         } else {
-            return "Now"
+            // For spans <60 days, use relative formatting
+            let relativeFormatter = RelativeDateTimeFormatter()
+            relativeFormatter.unitsStyle = .abbreviated
+            return relativeFormatter.localizedString(for: date, relativeTo: now)
         }
     }
 }
