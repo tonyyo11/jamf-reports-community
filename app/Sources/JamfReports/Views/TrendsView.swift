@@ -737,11 +737,12 @@ struct TrendsView: View {
 
                 let currentMetricValues = values
                 let lastIdx = currentMetricValues.indices.last
+                let rangeMax = max(currentMetricValues.max() ?? 1.0, 1.0)
                 HStack(spacing: 4) {
                     ForEach(Array(trendDates.enumerated()), id: \.offset) { idx, date in
                         let isLatest = idx == lastIdx
                         let v = currentMetricValues[safe: idx] ?? 0
-                        let h = 4 + min(v / metric.maxY, 1.0) * 36
+                        let h = 4 + (v / rangeMax) * 36
                         archiveBar(
                             idx: idx,
                             date: date,
