@@ -216,12 +216,13 @@ struct TrendsView: View {
     private func metricPill(_ m: TrendSeries.Metric) -> some View {
         let series = points(for: m).map(\.value)
         let dl = (series.last ?? 0) - (series.first ?? 0)
-        let goodTrend = m == .stale ? dl < 0 : dl > 0
+        let deltaInt = Int(dl.rounded())
+        let deltaState: DeltaState = deltaInt > 0 ? .positive : deltaInt < 0 ? .negative : .flat
+        let goodTrend = m == .stale ? deltaState == .negative : deltaState == .positive
         let isActive = metric == m
         let color = Color(hex: m.colorHex)
-        // Tail of the series for the in-pill micro sparkline.
         let sparkValues = Array(series.suffix(8))
-        let isBadTrend = dl < 0 && m != .stale
+        let isBadTrend = deltaState == .negative && m != .stale
 
         return Button {
             withAnimation(.snappy(duration: 0.25)) { metric = m }
@@ -231,13 +232,17 @@ struct TrendsView: View {
                     .accessibilityHidden(true)
                 Text(m.displayLabel).font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.Colors.fg)
-                Text("\(dl >= 0 ? "+" : "")\(Int(dl.rounded()))\(m.unit)")
+                Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
-                    .foregroundStyle(goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
+                    .foregroundStyle(
+                        deltaState == .flat ? Theme.Colors.fgMuted
+                            : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
+                    )
                 if sparkValues.count >= 2 {
                     Sparkline(
                         values: sparkValues,
-                        color: goodTrend ? Theme.Colors.ok : Theme.Colors.danger
+                        color: deltaState == .flat ? Theme.Colors.gold
+                            : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
                     )
                     .frame(width: 40, height: 18)
                     .opacity(0.85)
@@ -886,6 +891,8 @@ struct TrendsView: View {
 
 
 // MARK: - Helpers
+
+private enum DeltaState { case positive, negative, flat }
 
 extension Array {
     subscript(safe idx: Int) -> Element? { indices.contains(idx) ? self[idx] : nil }
