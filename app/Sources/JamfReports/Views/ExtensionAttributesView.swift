@@ -201,7 +201,7 @@ struct ExtensionAttributesView: View {
     private var emptyState: some View {
         Card(padding: 24) {
             EmptyStateView(
-                systemImage: "tag",
+                systemImage: "slider.horizontal.below.rectangle",
                 title: "No Extension Attribute data yet",
                 message: "Run `jamf-cli pro report ea-results --all` (Sources tab → Refresh) and this screen will populate."
             )
