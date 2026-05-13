@@ -404,7 +404,7 @@ struct StatTile: View {
     enum Trend { case up, down, flat }
     var deltaTrend: Trend = .flat
     var sparkValues: [Double]? = nil
-    var sparkColor: Color = Theme.Colors.gold
+    var sparkColor: Color? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -467,10 +467,7 @@ struct StatTile: View {
     }
 
     private var defaultSparklineColor: Color {
-        // If caller explicitly set sparkColor, use it; otherwise follow delta trend
-        if sparkColor != Theme.Colors.gold {
-            return sparkColor
-        }
+        if let sparkColor { return sparkColor }
         switch deltaTrend {
         case .up: return Theme.Colors.ok
         case .down: return Theme.Colors.danger
