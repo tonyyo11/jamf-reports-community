@@ -325,7 +325,17 @@ private struct Parser {
             index += 1
             let value: YAMLCodec.YAMLValue
             if parsed.value.isEmpty {
-                value = parseBlock(indent: indent + 2)
+                // Accept compact block-sequence syntax where list items share the
+                // parent key's indent (valid YAML, accepted by PyYAML / ruamel):
+                //   security_agents:
+                //   - name: foo
+                //   - name: bar
+                // …as well as the conventional indent + 2 form.
+                if let listIndent = peekBlockSequenceIndent(maxIndent: indent + 2) {
+                    value = .sequence(parseSequence(indent: listIndent))
+                } else {
+                    value = parseBlock(indent: indent + 2)
+                }
             } else {
                 value = parseScalar(parsed.value)
             }
@@ -333,6 +343,24 @@ private struct Parser {
         }
 
         return .init(entries: entries)
+    }
+
+    /// Returns the indent of the next block-sequence item if it begins at
+    /// indent ≤ `maxIndent` and is the next non-blank content line; nil otherwise.
+    private func peekBlockSequenceIndent(maxIndent: Int) -> Int? {
+        var i = index
+        while i < lines.count {
+            let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                i += 1
+                continue
+            }
+            let lineIndent = indentation(of: lines[i])
+            let content = trimmedContent(lines[i])
+            guard content.hasPrefix("- "), lineIndent <= maxIndent else { return nil }
+            return lineIndent
+        }
+        return nil
     }
 
     private mutating func parseSequence(indent: Int) -> [YAMLCodec.YAMLValue] {

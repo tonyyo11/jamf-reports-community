@@ -216,13 +216,10 @@ final class CLIBridge {
             stdout.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
-                
+                // stdout is the structured payload (typically JSON) consumed by the
+                // report engine — do NOT stream it to onLine, only capture it. Progress
+                // messages from jamf-cli arrive on stderr and are streamed below.
                 box.append(data)
-                
-                guard let s = String(data: data, encoding: .utf8) else { return }
-                for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                    onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
-                }
             }
             stderr.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
