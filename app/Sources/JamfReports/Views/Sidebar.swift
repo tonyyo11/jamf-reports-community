@@ -113,6 +113,8 @@ struct Sidebar: View {
                     .font(Theme.Fonts.mono(10.5, weight: .bold))
                     .tracking(1.4)
                     .foregroundStyle(Theme.Colors.fg)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text("Jamf Reports · v\(appVersion)")
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.fgMuted)
