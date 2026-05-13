@@ -158,21 +158,40 @@ enum LaunchAgentWriter {
         let stderrPath = plist["StandardErrorPath"] as? String
         let workingDir = plist["WorkingDirectory"] as? String
 
-        guard let stdoutURL = validatedMultiLogURL(stdoutPath, label: label, filename: "stdout.log"),
-              let stderrURL = validatedMultiLogURL(stderrPath, label: label, filename: "stderr.log"),
-              isExpectedMultiWorkingDirectory(workingDir) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi LaunchAgent paths are not trusted"))
+        guard let stdoutURL = validatedMultiLogURL(stdoutPath, label: label, filename: "stdout.log") else {
+            onLine(.init(
+                timestamp: Date(),
+                level: .fail,
+                text: "[error] multi LaunchAgent stdout path does not match the expected "
+                    + "~/Library/Logs/JamfReports/\(label)/stdout.log — delete and re-save this schedule"
+            ))
+            return -1
+        }
+        guard let stderrURL = validatedMultiLogURL(stderrPath, label: label, filename: "stderr.log") else {
+            onLine(.init(
+                timestamp: Date(),
+                level: .fail,
+                text: "[error] multi LaunchAgent stderr path does not match the expected "
+                    + "~/Library/Logs/JamfReports/\(label)/stderr.log — delete and re-save this schedule"
+            ))
+            return -1
+        }
+        guard isExpectedMultiWorkingDirectory(workingDir) else {
+            onLine(.init(
+                timestamp: Date(),
+                level: .fail,
+                text: "[error] multi LaunchAgent WorkingDirectory must be \(ProfileService.workspacesRoot().path)"
+            ))
             return -1
         }
 
         let execPath = args[0]
+        let effectiveWorkingDir = workingDir ?? ProfileService.workspacesRoot().path
         return await withCheckedContinuation { cont in
             let p = Process()
             p.executableURL = URL(fileURLWithPath: execPath)
             p.arguments = Array(args.dropFirst())
-            if let workingDir = workingDir {
-                p.currentDirectoryURL = URL(fileURLWithPath: workingDir)
-            }
+            p.currentDirectoryURL = URL(fileURLWithPath: effectiveWorkingDir)
             p.environment = launchEnvironment(from: plist)
 
             var outFile: FileHandle?
@@ -375,6 +394,7 @@ enum LaunchAgentWriter {
                 "--profile", schedule.profile,
                 "--all-profiles",
             ],
+            "WorkingDirectory": ProfileService.workspacesRoot().path,
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
             "StartCalendarInterval": cadence.startCalendarIntervals,
@@ -823,8 +843,11 @@ enum LaunchAgentWriter {
         return url
     }
 
+    /// A missing `WorkingDirectory` key is accepted — the caller will fall back to
+    /// `ProfileService.workspacesRoot()`. If the key is present, it must resolve to that root.
     static func isExpectedMultiWorkingDirectory(_ raw: String?) -> Bool {
-        guard let raw, let url = expandedFileURL(raw) else { return false }
+        guard let raw else { return true }
+        guard let url = expandedFileURL(raw) else { return false }
         return sameResolvedPath(url, ProfileService.workspacesRoot())
     }
 

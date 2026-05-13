@@ -54,6 +54,11 @@ struct RunsView: View {
                 HStack(spacing: 8) {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
                         .help("Reload run logs from disk")
+                    PNPButton(title: "Reveal", icon: "folder") { revealLog() }
+                        .disabled(selectedRun == nil)
+                        .help(selectedRun == nil
+                              ? "Select a run to reveal its log folder"
+                              : "Reveal the run's log folder in Finder")
                     PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
                         .disabled(selectedRun == nil)
                         .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
@@ -119,6 +124,13 @@ struct RunsView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { selectRun(run) }
+        .contextMenu {
+            Button {
+                SystemActions.reveal(run.logURL)
+            } label: {
+                Label("Reveal log in Finder", systemImage: "folder")
+            }
+        }
         .accessibilityLabel(
             "\(run.name), \(Self.dateFmt.string(from: run.date)), "
             + "status \(run.status.rawValue)"
@@ -195,6 +207,11 @@ struct RunsView: View {
     private func copyLog() {
         let text = logLines.map(\.text).joined(separator: "\n")
         SystemActions.copyToClipboard(text)
+    }
+
+    private func revealLog() {
+        guard let run = selectedRun else { return }
+        SystemActions.reveal(run.logURL)
     }
 
     @MainActor

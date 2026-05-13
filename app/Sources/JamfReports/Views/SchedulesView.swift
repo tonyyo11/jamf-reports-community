@@ -297,6 +297,18 @@ struct SchedulesView: View {
                     Pill(text: msg.contains("exit 0") ? "EXIT 0" : "DONE",
                          tone: msg.contains("exit 0") ? .teal : .warn)
                 }
+                Button {
+                    let joined = runLogLines.map(\.text).joined(separator: "\n")
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(joined, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 11))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                }
+                .buttonStyle(.plain)
+                .disabled(runLogLines.isEmpty)
+                .accessibilityLabel("Copy all output")
+                .help("Copy entire log to clipboard")
                 Button { showRunLog = false } label: {
                     Image(systemName: "xmark").font(.system(size: 11))
                         .foregroundStyle(Theme.Colors.fgMuted)
@@ -590,6 +602,7 @@ private struct RunLogConsole: View {
                                 Text(line.text)
                                     .font(Theme.Fonts.mono(12))
                                     .foregroundStyle(color(for: line))
+                                    .textSelection(.enabled)
                                 if idx == lines.count - 1 { cursor }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
