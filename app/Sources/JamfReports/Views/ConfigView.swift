@@ -205,7 +205,7 @@ private struct ColumnsTab: View {
 
                     HStack(spacing: 4) {
                         Text("Mapping logical fields → column headers in your CSV export")
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary)
                     }
                     .padding(.bottom, 12)
@@ -1001,7 +1001,7 @@ private struct EACard: View {
                 Spacer()
                 Pill(text: ea.type.rawValue, tone: pillTone)
             }
-            Text(eaDetail).font(.system(size: 11.5)).foregroundStyle(Theme.Text.tertiary)
+            Text(eaDetail).font(.caption).foregroundStyle(Theme.Text.tertiary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

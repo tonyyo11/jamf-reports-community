@@ -54,17 +54,19 @@ struct EmptyStateView: View {
             }
 
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.callout.weight(.semibold))
                 .foregroundStyle(Theme.Colors.fg)
 
             Text(message)
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
 
             if !commands.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(commands, id: \.self) { command in
-                        Mono(text: command, size: 11)
+                        Text(command)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Colors.fgMuted)
                     }
                 }
                 .padding(.top, 4)

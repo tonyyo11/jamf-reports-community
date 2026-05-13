@@ -121,7 +121,7 @@ struct BackupsView: View {
                 .foregroundStyle(Theme.Text.tertiary)
             TextField("Label", text: $backupLabel)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.callout)
                 .foregroundStyle(Theme.Text.primary)
         }
         .padding(.horizontal, 10)

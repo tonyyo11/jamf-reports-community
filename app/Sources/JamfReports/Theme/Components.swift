@@ -425,7 +425,7 @@ struct StatTile: View {
                 }
             }
             if let sub {
-                Text(sub).font(.system(size: 11.5)).foregroundStyle(Theme.Colors.fgMuted)
+                Text(sub).font(.caption).foregroundStyle(Theme.Colors.fgMuted)
             }
             if let sparkValues, !sparkValues.isEmpty {
                 Sparkline(values: sparkValues, color: defaultSparklineColor)
@@ -545,7 +545,7 @@ struct FieldLabel: View {
     var trailing: String? = nil
     var body: some View {
         HStack {
-            Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.Colors.fg2)
+            Text(label).font(.footnote.weight(.medium)).foregroundStyle(Theme.Colors.fg2)
             Spacer()
             if let trailing {
                 Text(trailing).font(Theme.Fonts.mono(10)).foregroundStyle(Theme.Colors.fgMuted)
@@ -557,7 +557,7 @@ struct FieldLabel: View {
 struct FieldHelp: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 11.5)).foregroundStyle(Theme.Colors.fgMuted)
+        Text(text).font(.caption).foregroundStyle(Theme.Colors.fgMuted)
             .padding(.top, 4)
     }
 }
@@ -615,7 +615,7 @@ struct SectionHeader: View {
 
             if let trailingValue {
                 Text(trailingValue)
-                    .font(.system(size: 11.5))
+                    .font(.caption)
                     .foregroundStyle(Theme.Colors.fg2)
             }
         }

@@ -98,7 +98,7 @@ struct CompliancePostureView: View {
         Card(padding: 14) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "info.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(Theme.Colors.fgMuted)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Banded by control-gap count")

@@ -314,7 +314,7 @@ struct DevicesView: View {
                     TableColumn("Device", value: \.displayName) { device in
                         if isCompact {
                             Text(device.displayName)
-                                .font(.system(size: 12.5, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .lineLimit(1)
                                 .textSelection(.enabled)
@@ -322,7 +322,7 @@ struct DevicesView: View {
                         } else {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(device.displayName)
-                                    .font(.system(size: 12.5, weight: .semibold))
+                                    .font(.footnote.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
                                     .textSelection(.enabled)
                                 Text(device.model.isEmpty ? device.source : device.model)
@@ -430,7 +430,7 @@ struct DevicesView: View {
                             ForEach(device.patchFailures) { failure in
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(failure.title)
-                                        .font(.system(size: 12.5, weight: .semibold))
+                                        .font(.footnote.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                     HStack(spacing: 6) {
                                         Pill(text: failure.status, tone: .warn)
@@ -465,7 +465,7 @@ struct DevicesView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     SectionHeader(title: "No Device Selected")
                     Text("No inventory rows match the current filters.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -491,7 +491,7 @@ struct DevicesView: View {
 
             if workspace.demoMode {
                 Text("Available in live mode only.")
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
             } else {
                 switch deviceDetailState {
