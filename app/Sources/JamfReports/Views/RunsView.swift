@@ -119,9 +119,21 @@ struct RunsView: View {
         .onTapGesture { selectRun(run) }
         .contextMenu {
             Button {
+                let text = RunHistoryService.loadLog(run.logURL).map(\.text).joined(separator: "\n")
+                SystemActions.copyToClipboard(text)
+            } label: {
+                Label("Copy log", systemImage: "doc.on.doc")
+            }
+            Button {
+                exportLogFile(run.logURL)
+            } label: {
+                Label("Export log…", systemImage: "arrow.down.circle")
+            }
+            Divider()
+            Button {
                 SystemActions.reveal(run.logURL)
             } label: {
-                Label("Reveal log in Finder", systemImage: "folder")
+                Label("Reveal in Finder", systemImage: "folder")
             }
         }
         .accessibilityLabel(
@@ -218,12 +230,17 @@ struct RunsView: View {
     @MainActor
     private func exportLog() {
         guard let run = selectedRun else { return }
+        exportLogFile(run.logURL)
+    }
+
+    @MainActor
+    private func exportLogFile(_ url: URL) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = run.logURL.lastPathComponent
+        panel.nameFieldStringValue = url.lastPathComponent
         panel.allowedContentTypes = [.plainText]
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
-            try? FileManager.default.copyItem(at: run.logURL, to: dest)
+            try? FileManager.default.copyItem(at: url, to: dest)
         }
     }
 
