@@ -230,7 +230,7 @@ struct TrendsView: View {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 6, height: 6)
                     .accessibilityHidden(true)
-                Text(m.displayLabel).font(.system(size: 12, weight: .medium))
+                Text(m.displayLabel).font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
@@ -414,12 +414,12 @@ struct TrendsView: View {
                 HStack(spacing: 16) {
                     HStack(spacing: 6) {
                         Rectangle().fill(Color(hex: metric.colorHex)).frame(width: 14, height: 2)
-                        Text("Weekly snapshot").font(.system(size: 11.5))
+                        Text("Weekly snapshot").font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     HStack(spacing: 6) {
                         Image(systemName: "info.circle").font(.system(size: 11))
-                        Text("\(trendDates.count) archived summaries").font(.system(size: 11.5))
+                        Text("\(trendDates.count) archived summaries").font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
@@ -456,7 +456,7 @@ struct TrendsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         SectionHeader(title: "Compliance Distribution Over Time")
                         Text("Devices grouped by failed-rule count, weekly")
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
@@ -477,7 +477,7 @@ struct TrendsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     SectionHeader(title: "Security Posture · Compared")
                     Text("FileVault vs. Compliance vs. macOS Current")
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
                 multilineComparisonChart
@@ -497,7 +497,7 @@ struct TrendsView: View {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(Color(hex: band.colorHex))
                         .frame(width: 10, height: 10)
-                    Text(band.label).font(.system(size: 11)).foregroundStyle(Theme.Colors.fg2)
+                    Text(band.label).font(.caption).foregroundStyle(Theme.Colors.fg2)
                     Text(band.range).font(Theme.Fonts.mono(10.5)).foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -517,7 +517,7 @@ struct TrendsView: View {
     private func legendDot(color: Color, label: String) -> some View {
         HStack(spacing: 5) {
             Rectangle().fill(color).frame(width: 14, height: 2)
-            Text(label).font(.system(size: 11)).foregroundStyle(Theme.Colors.fg2)
+            Text(label).font(.caption).foregroundStyle(Theme.Colors.fg2)
         }
     }
 
@@ -712,7 +712,7 @@ struct TrendsView: View {
                                 .font(Theme.Fonts.mono(11))
                             Text(" run")
                         }
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
