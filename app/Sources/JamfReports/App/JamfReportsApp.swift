@@ -28,7 +28,7 @@ struct JamfReportsApp: App {
         WindowGroup {
             ContentView()
                 .environment(workspace)
-                .frame(minWidth: 1200, minHeight: 760)
+                .frame(minWidth: Self.minSupportedWidth, minHeight: 760)
                 .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
@@ -64,8 +64,14 @@ struct JamfReportsApp: App {
                 Divider()
 
                 CheckForUpdatesView(updater: updaterController.updater)
+                AcknowledgementsMenuButton()
             }
         }
+
+        Window("Acknowledgements", id: "acknowledgements") {
+            AcknowledgementsView()
+        }
+        .windowResizability(.contentSize)
     }
 }
 

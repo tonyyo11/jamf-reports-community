@@ -5,6 +5,7 @@ import Charts
 /// Differentiator vs. JamfDash, which only shows live state.
 struct TrendsView: View {
     @Environment(WorkspaceStore.self) private var workspaceStore
+    @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @State private var trendStore = TrendStore()
     @State private var bridge = CLIBridge()
     @State private var metric: TrendSeries.Metric = .stability
@@ -38,6 +39,19 @@ struct TrendsView: View {
             return TrendDemoSeries.chartDomain(for: metric, range: range)
         }
         return trendStore.chartDomain
+    }
+
+    /// Y-axis domain that respects the metric's preferred "good frame" but
+    /// always expands to fit actual data. Without this, a Stability Index of
+    /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
+    /// clips off the top of `metric.maxY = 60`. Floor at 0 — values are
+    /// non-negative by construction (validated in the data layer).
+    private var chartYDomain: ClosedRange<Double> {
+        let dataMin = values.min()
+        let dataMax = values.max()
+        let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
+        let hi = max(metric.maxY, dataMax ?? metric.maxY)
+        return lo...hi
     }
 
     private var selectedPoint: TrendPoint? {
@@ -102,6 +116,9 @@ struct TrendsView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .onAppear {
+            if let preferred = TrendRange(rawValue: defaultTrendRangeRaw), preferred != range {
+                range = preferred
+            }
             if !workspaceStore.demoMode {
                 trendStore.load(profile: workspaceStore.profile, range: range)
             }
@@ -115,6 +132,7 @@ struct TrendsView: View {
         }
         .onChange(of: range) { _, newValue in
             selectedDate = nil
+            defaultTrendRangeRaw = newValue.rawValue
             if !workspaceStore.demoMode {
                 withAnimation(.snappy) {
                     trendStore.load(profile: workspaceStore.profile, range: newValue)
@@ -189,6 +207,8 @@ struct TrendsView: View {
                         Task { await exportChartPNG() }
                     }
                     .disabled(isExporting)
+                    .accessibilityLabel("Export \(metric.displayLabel) trend chart as PNG")
+                    .help("Save the current trend chart as a PNG image")
                 }
             )
         }
@@ -220,7 +240,7 @@ struct TrendsView: View {
         let color = Color(hex: m.colorHex)
         // Tail of the series for the in-pill micro sparkline.
         let sparkValues = Array(series.suffix(8))
-        let isBadTrend = !goodTrend && m != .stale
+        let isBadTrend = dl < 0 && m != .stale
 
         return Button {
             withAnimation(.snappy(duration: 0.25)) { metric = m }
@@ -343,12 +363,12 @@ struct TrendsView: View {
                                              Color(hex: metric.colorHex).opacity(0.0)],
                                     startPoint: .top, endPoint: .bottom
                                 ))
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                             LineMark(x: .value("Date", point.date),
                                      y: .value(metric.displayLabel, point.value))
                                 .foregroundStyle(Color(hex: metric.colorHex))
                                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                         }
 
                         if let selectedPoint {
@@ -378,12 +398,10 @@ struct TrendsView: View {
                         }
                     }
                     .chartXScale(domain: domain)
+                    .chartYScale(domain: chartYDomain)
                     .chartXSelection(value: $selectedDate)
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day, count: range == .w4 ? 7 : 28)) { _ in
-                            AxisValueLabel().font(Theme.Fonts.mono(10))
-                                .foregroundStyle(Theme.Colors.fgMuted)
-                        }
+                        trendXAxisMarks(for: range)
                     }
                     .chartYAxis {
                         AxisMarks(position: .leading) {
@@ -556,10 +574,7 @@ struct TrendsView: View {
                 }
                 .chartXScale(domain: domain)
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: range == .w4 ? 7 : 28)) { _ in
-                        AxisValueLabel().font(Theme.Fonts.mono(10))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                    }
+                    trendXAxisMarks(for: range)
                 }
                 .chartYAxis(.hidden)
                 .chartLegend(.hidden)
@@ -591,12 +606,9 @@ struct TrendsView: View {
                     series("macOS Current", color: Theme.Colors.info, points: points(for: .osCurrent))
                 }
                 .chartXScale(domain: domain)
-                .chartYScale(domain: 30...100)
+                .chartYScale(domain: 0...100)
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: range == .w4 ? 7 : 56)) { _ in
-                        AxisValueLabel().font(Theme.Fonts.mono(10))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                    }
+                    trendXAxisMarks(for: range)
                 }
                 .chartYAxis {
                     AxisMarks(position: .leading) {
@@ -642,6 +654,56 @@ struct TrendsView: View {
         workspaceStore.demoMode
             ? TrendDemoSeries.points(for: m, range: range)
             : trendStore.points(metric: m)
+    }
+
+    /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless
+    /// of how wide the visible window is, so labels don't collide.
+    /// `.all` returns 0 as a sentinel — the builder switches to `.automatic`
+    /// because the visible span depends on how much history exists.
+    private func xAxisStrideDays(for range: TrendRange) -> Int {
+        switch range {
+        case .w4:  return 7
+        case .w12: return 14
+        case .w26: return 28
+        case .w52: return 56
+        case .all: return 0
+        }
+    }
+
+    /// Date format that scales with range width.
+    /// - .w4/.w12: "Apr 1" — month + day
+    /// - .w26/.w52: "Apr '26" — month + 2-digit year
+    /// - .all: "2026" — year only
+    private func xAxisDateFormat(for range: TrendRange) -> Date.FormatStyle {
+        switch range {
+        case .w4, .w12:
+            return .dateTime.month(.abbreviated).day()
+        case .w26, .w52:
+            return .dateTime.month(.abbreviated).year(.twoDigits)
+        case .all:
+            return .dateTime.year()
+        }
+    }
+
+    /// Shared X-axis marks for all three trend charts. Stride scales with
+    /// range; `.all` defers to Swift Charts' automatic spacing with a
+    /// desired-count hint so multi-year data stays readable.
+    @AxisContentBuilder
+    private func trendXAxisMarks(for range: TrendRange) -> some AxisContent {
+        let format = xAxisDateFormat(for: range)
+        if range == .all {
+            AxisMarks(values: .automatic(desiredCount: 8)) { _ in
+                AxisValueLabel(format: format)
+                    .font(Theme.Fonts.mono(10))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+        } else {
+            AxisMarks(values: .stride(by: .day, count: xAxisStrideDays(for: range))) { _ in
+                AxisValueLabel(format: format)
+                    .font(Theme.Fonts.mono(10))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
     }
 
     @ChartContentBuilder
@@ -703,7 +765,7 @@ struct TrendsView: View {
                     ForEach(Array(trendDates.enumerated()), id: \.offset) { idx, date in
                         let isLatest = idx == lastIdx
                         let v = currentMetricValues[safe: idx] ?? 0
-                        let h = 4 + (v / 100) * 36
+                        let h = 4 + min(v / metric.maxY, 1.0) * 36
                         archiveBar(
                             idx: idx,
                             date: date,

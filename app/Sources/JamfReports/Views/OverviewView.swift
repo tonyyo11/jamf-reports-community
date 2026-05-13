@@ -3,11 +3,16 @@ import Charts
 
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @State private var bridge = CLIBridge()
     @State private var trendStore = TrendStore()
     @State private var isRunning = false
     @State private var activitySelection: DeviceInventoryRecord.ID? = nil
     @State private var navigationPath = NavigationPath()
+
+    private var defaultTrendRange: TrendRange {
+        TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
+    }
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -38,18 +43,23 @@ struct OverviewView: View {
         .tint(Theme.Colors.goldBright)
         .onAppear {
             if !workspace.demoMode {
-                trendStore.load(profile: workspace.profile, range: .w12)
+                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
             }
         }
         .onChange(of: workspace.profile) { _, newValue in
             if !workspace.demoMode {
-                trendStore.load(profile: newValue, range: .w12)
+                trendStore.load(profile: newValue, range: defaultTrendRange)
+            }
+        }
+        .onChange(of: defaultTrendRangeRaw) { _, _ in
+            if !workspace.demoMode {
+                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             workspace.reloadFromDisk()
             if !workspace.demoMode {
-                trendStore.load(profile: workspace.profile, range: .w12)
+                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
@@ -174,7 +184,7 @@ struct OverviewView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
                         if !workspace.demoMode {
-                            trendStore.load(profile: workspace.profile, range: .w12)
+                            trendStore.load(profile: workspace.profile, range: defaultTrendRange)
                         }
                     }
                     .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
@@ -221,14 +231,12 @@ struct OverviewView: View {
     }
 
     private var statRow: some View {
-        // Fixed-count flexible columns guarantee equal widths; an asymmetric
-        // child minWidth (previously 200 on the primary tile only) inside an
-        // adaptive grid let one column dominate and squeezed the rest into
-        // single-character vertical strips on live workspaces.
+        // Adaptive grid that collapses to fewer columns at narrow widths rather
+        // than cramming tiles into unreadable strips.
         LazyVGrid(
             columns: Array(
-                repeating: GridItem(.flexible(minimum: 0), spacing: 12),
-                count: max(workspace.selectedScoreCards.count, 1)
+                repeating: GridItem(.adaptive(minimum: 220), spacing: 12),
+                count: 1
             ),
             spacing: 12
         ) {
@@ -279,7 +287,7 @@ struct OverviewView: View {
         }()
 
         let deltaStr: String = {
-            guard lastValue != nil else { return "No Data" }
+            guard lastValue != nil, values.count >= 2 else { return "No Data" }
             let absDiff = abs(diff)
             if metric.unit == "%" {
                 return "\(diff >= 0 ? "+" : "−")\(String(format: "%.1f", absDiff))pp"
@@ -300,7 +308,7 @@ struct OverviewView: View {
         return StatTile(
             label: metric.displayLabel,
             value: valueStr,
-            delta: deltaStr,
+            delta: values.count >= 2 ? deltaStr : nil,
             deltaTrend: trend,
             sparkValues: values,
             sparkColor: Color(hex: metric.colorHex)
@@ -831,6 +839,8 @@ struct OverviewView: View {
             "Open Devices to focus on stale inventory records."
         case .patch:
             "Open Devices to review devices with patch failures."
+        case .securityScore:
+            "Weighted composite from Security Posture. Open that tab to see the breakdown."
         }
         return Text(text)
             .font(.system(size: 12.5))
@@ -843,8 +853,8 @@ struct OverviewView: View {
             return [.trends, .audit]
         case .activeDevices, .fileVault, .osCurrent, .stale, .patch:
             return [.devices]
-        case .compliance:
-            return [.audit]
+        case .compliance, .securityScore:
+            return [.securityPosture, .compliancePosture]
         case .crowdstrike:
             return [.devices, .config]
         }

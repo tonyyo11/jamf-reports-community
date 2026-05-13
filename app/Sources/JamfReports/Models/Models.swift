@@ -798,20 +798,25 @@ struct TokenStatus: Sendable, Codable {
 struct TrendSeries: Identifiable, Sendable {
     enum Metric: String, CaseIterable, Identifiable, Sendable {
         case stability, activeDevices, compliance, fileVault, osCurrent, crowdstrike, stale, patch
+        /// v3.5 weighted security score (0–100). Populated from
+        /// LegacyHistoryImporter and from future Swift ReportEngine runs that
+        /// emit the field in summary.json.
+        case securityScore
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
-            case .stability: return "Stability Index"
+            case .stability:     return "Stability Index"
             case .activeDevices: return "Active Devices"
-            case .compliance:  return "NIST 800-53r5 Moderate"
-            case .fileVault:   return "FileVault Encryption"
-            case .osCurrent:   return "On Current macOS"
-            case .crowdstrike: return "CrowdStrike Installed"
-            case .stale:       return "Stale Devices (30d+)"
-            case .patch:       return "Patch Compliance"
+            case .compliance:    return "NIST 800-53r5 Moderate"
+            case .fileVault:     return "FileVault Encryption"
+            case .osCurrent:     return "On Current macOS"
+            case .crowdstrike:   return "CrowdStrike Installed"
+            case .stale:         return "Stale Devices (30d+)"
+            case .patch:         return "Patch Compliance"
+            case .securityScore: return "Security Score (Weighted)"
             }
         }
-        var unit: String { 
+        var unit: String {
             switch self {
             case .stale, .activeDevices: return ""
             default: return "%"
@@ -820,43 +825,45 @@ struct TrendSeries: Identifiable, Sendable {
         var minY: Double {
             switch self {
             case .activeDevices: return 0
-            case .stability:   return 40
-            case .compliance:  return 40
-            case .fileVault:   return 60
-            case .osCurrent:   return 30
-            case .crowdstrike: return 70
-            case .stale:       return 0
-            case .patch:       return 40
+            case .stability:     return 40
+            case .compliance:    return 40
+            case .fileVault:     return 60
+            case .osCurrent:     return 30
+            case .crowdstrike:   return 70
+            case .stale:         return 0
+            case .patch:         return 40
+            case .securityScore: return 60
             }
         }
-        var maxY: Double { 
+        var maxY: Double {
             switch self {
             case .activeDevices: return 1000
-            case .stale: return 60
-            default: return 100
+            case .stale:         return 60
+            default:             return 100
             }
         }
         var colorHex: UInt32 {
             switch self {
-            case .stability:   return 0xE8B614
+            case .stability:     return 0xE8B614
             case .activeDevices: return 0x8E8E93
-            case .compliance:  return 0xC9970A
-            case .fileVault:   return 0x30D158
-            case .osCurrent:   return 0x0A84FF
-            case .crowdstrike: return 0x3A8A8A
-            case .stale:       return 0xFF9F0A
-            case .patch:       return 0xBF5AF2
+            case .compliance:    return 0xC9970A
+            case .fileVault:     return 0x30D158
+            case .osCurrent:     return 0x0A84FF
+            case .crowdstrike:   return 0x3A8A8A
+            case .stale:         return 0xFF9F0A
+            case .patch:         return 0xBF5AF2
+            case .securityScore: return 0xFF453A
             }
         }
     }
 
     static func stabilityIndex(
         compliancePct: Double?,
-        patchPct: Double,
+        patchPct: Double?,
         staleCount: Int,
         totalDevices: Int
     ) -> Double? {
-        guard let compliancePct else { return nil }
+        guard let compliancePct, let patchPct else { return nil }
         let stalePct = totalDevices > 0
             ? (Double(staleCount) / Double(totalDevices)) * 100
             : 0

@@ -467,7 +467,8 @@ struct Sparkline: View {
     }
 
     private func makePath(in size: CGSize) -> Path {
-        guard let lo = values.min(), let hi = values.max(), hi != lo else { return Path() }
+        guard let rawLo = values.min(), let hi = values.max(), hi != rawLo else { return Path() }
+        let lo = max(rawLo, 0)  // Clamp min to 0 to prevent negative Y baseline for percentage-like metrics
         let n = values.count
         var p = Path()
         for (i, v) in values.enumerated() {

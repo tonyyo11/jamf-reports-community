@@ -4,6 +4,10 @@ struct Sidebar: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Binding var activeTab: Tab
     let mode: SidebarMode
+    /// Per-user tab visibility — backed by `@AppStorage("hiddenTabs")` at the
+    /// app root. The Sidebar filters out hidden items and skips groups that
+    /// would render empty so the layout never shows orphan headers.
+    @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
 
     // Workspace chip affordance: SwiftUI's Menu does not expose its open state, so
     // we approximate "engaged" by combining hover + keyboard focus. Both feed the
@@ -18,10 +22,23 @@ struct Sidebar: View {
 
     private let groups: [NavGroup] = [
         .init(group: "REPORTS", items: [.overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports]),
+        .init(group: "POSTURE", items: [.securityPosture, .compliancePosture, .outreach]),
+        .init(group: "OPERATIONS", items: [.patch, .updates, .policyProfile, .extensionAttributes]),
+        .init(group: "FLEET", items: [.mobileFleet, .protectDashboard]),
         .init(group: "AUTOMATION", items: [.schedules, .runs]),
         .init(group: "CONFIGURATION", items: [.config, .customize, .sources, .backups]),
         .init(group: "SYSTEM", items: [.settings]),
     ]
+
+    /// Groups filtered by user visibility. Empty groups are dropped entirely.
+    private var visibleGroups: [NavGroup] {
+        let visibility = TabVisibility.parse(hiddenTabsRaw)
+        return groups.compactMap { group in
+            let visible = group.items.filter { visibility.isVisible($0) }
+            guard !visible.isEmpty else { return nil }
+            return NavGroup(group: group.group, items: visible)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,12 +51,12 @@ struct Sidebar: View {
                 .padding(.horizontal, mode == .compact ? 14 : 16)
                 .padding(.bottom, 14)
 
-            navStack
-                .background(alignment: .top) {
-                    if mode == .compact { compactRailTray }
-                }
-
-            Spacer()
+            ScrollView {
+                navStack
+                    .background(alignment: .top) {
+                        if mode == .compact { compactRailTray }
+                    }
+            }
 
             workspaceChip
                 .padding(.horizontal, 12)
@@ -54,7 +71,7 @@ struct Sidebar: View {
     @ViewBuilder
     private var navStack: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(groups, id: \.group) { group in
+            ForEach(visibleGroups, id: \.group) { group in
                 navSection(group)
             }
         }

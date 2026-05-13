@@ -598,10 +598,12 @@ enum LaunchAgentWriter {
             throw ManualRunError.untrustedExecutable(executable.path)
         }
 
-        // Log paths are in ~/Library/Logs/JamfReports/<label>/.
-        let logDir = expectedMultiLogURL(label: label, filename: "").deletingLastPathComponent()
-        let expectedStdout = logDir.appendingPathComponent("stdout.log")
-        let expectedStderr = logDir.appendingPathComponent("stderr.log")
+        // Log paths are in ~/Library/Logs/JamfReports/<label>/. Build the
+        // expected URLs directly via the helper — passing filename: "" plus
+        // deletingLastPathComponent() strips the label folder and points at
+        // the parent directory, which never matches what the writer emits.
+        let expectedStdout = expectedMultiLogURL(label: label, filename: "stdout.log")
+        let expectedStderr = expectedMultiLogURL(label: label, filename: "stderr.log")
 
         guard let rawStdout = plist["StandardOutPath"] as? String,
               let stdoutURL = expandedFileURL(rawStdout),

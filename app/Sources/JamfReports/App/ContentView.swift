@@ -4,6 +4,7 @@ struct ContentView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @State private var tab: Tab = .trends
     @AppStorage("sidebarMode") private var sidebarModeRaw: String = SidebarMode.expanded.rawValue
+    @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
 
     private var sidebarMode: SidebarMode {
         get { SidebarMode(rawValue: sidebarModeRaw) ?? .expanded }
@@ -71,41 +72,59 @@ struct ContentView: View {
     @ViewBuilder
     private var detailView: some View {
         switch tab {
-        case .overview:     OverviewView()
-        case .fleet:        FleetOverviewView()
-        case .devices:      DevicesView()
-        case .deviceLookup: DeviceLookupView()
-        case .trends:     TrendsView()
-        case .audit:      AuditView()
-        case .reports:    ReportsView()
-        case .schedules:  SchedulesView()
-        case .runs:       RunsView()
-        case .config:     ConfigView()
-        case .customize:  CustomizeView()
-        case .sources:    SourcesView()
-        case .backups:    BackupsView()
-        case .settings:   SettingsView()
-        case .onboarding: OnboardingView()
+        case .overview:          OverviewView()
+        case .fleet:             FleetOverviewView()
+        case .devices:           DevicesView()
+        case .deviceLookup:      DeviceLookupView()
+        case .trends:            TrendsView()
+        case .audit:             AuditView()
+        case .reports:           ReportsView()
+        case .schedules:         SchedulesView()
+        case .runs:              RunsView()
+        case .config:            ConfigView()
+        case .customize:         CustomizeView()
+        case .sources:           SourcesView()
+        case .backups:           BackupsView()
+        case .settings:          SettingsView()
+        case .onboarding:        OnboardingView()
+        case .securityPosture:   SecurityPostureView()
+        case .compliancePosture: CompliancePostureView()
+        case .patch:             PatchView()
+        case .updates:           UpdatesView()
+        case .policyProfile:     PolicyProfileView()
+        case .extensionAttributes: ExtensionAttributesView()
+        case .outreach:          OutreachView()
+        case .protectDashboard:  ProtectView()
+        case .mobileFleet:       MobileFleetView()
         }
     }
 
     private func subtitle(for tab: Tab) -> String? {
         switch tab {
-        case .overview:     "FLEET"
-        case .fleet:        "MULTI-PROFILE"
-        case .devices:      "INVENTORY"
-        case .deviceLookup: "LOOKUP"
-        case .trends:     "26W"
-        case .audit:      "HEALTH & HYGIENE"
-        case .schedules:  "LAUNCHAGENT"
-        case .runs:       "STDOUT"
-        case .config:     "CONFIG.YAML"
-        case .customize:  "SHEETS"
-        case .sources:    "INPUTS"
-        case .backups:    "CONFIG SNAPSHOTS"
-        case .settings:   "APP"
-        case .onboarding: "FIRST RUN"
-        case .reports:    nil
+        case .overview:          "FLEET"
+        case .fleet:             "MULTI-PROFILE"
+        case .devices:           "INVENTORY"
+        case .deviceLookup:      "LOOKUP"
+        case .trends:            TrendRange(rawValue: defaultTrendRangeRaw)?.rawValue ?? TrendRange.w4.rawValue
+        case .audit:             "HEALTH & HYGIENE"
+        case .schedules:         "LAUNCHAGENT"
+        case .runs:              "STDOUT"
+        case .config:            "CONFIG.YAML"
+        case .customize:         "SHEETS"
+        case .sources:           "INPUTS"
+        case .backups:           "CONFIG SNAPSHOTS"
+        case .settings:          "APP"
+        case .onboarding:        "FIRST RUN"
+        case .reports:           nil
+        case .securityPosture:   "SCORE & CONTROLS"
+        case .compliancePosture: "BANDS & GAPS"
+        case .patch:             "TITLES & FAILURES"
+        case .updates:           "PLANS & FAILURES"
+        case .policyProfile:     "FINDINGS & STATUS"
+        case .extensionAttributes: "COVERAGE & VALUES"
+        case .outreach:          "STALE TIERS"
+        case .protectDashboard:  "ALERTS & AGENTS"
+        case .mobileFleet:       "IOS · IPADOS"
         }
     }
 

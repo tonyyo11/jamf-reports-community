@@ -295,20 +295,32 @@ struct ReportEngine: Sendable {
         }
 
         var totalDevices = 0
-        var fileVaultPct = 0.0
+        // nil = source data absent or failed to decode; not the same as 0%.
+        var fileVaultPct: Double? = nil
+        // v3.5 fleet-health expansion (all optional — populated only when
+        // the security summary section carries the source counts).
+        var fileVaultCount: Int?
+        var sipCount: Int?
+        var firewallCount: Int?
+        var gatekeeperCount: Int?
 
-        // Security report: total_devices + filevault_encrypted_pct
+        // Security report: total_devices + per-control counts
         if let secData = cachedData(kind: "security"),
            let items = try? JSONDecoder().decode([SecurityReportItem].self, from: secData) {
             for item in items {
                 if case .summary(let s) = item {
                     totalDevices = s.data.totalDevices ?? 0
+                    fileVaultCount = s.data.fileVaultEncrypted
+                    sipCount = s.data.sipEnabled
+                    firewallCount = s.data.firewallEnabled
+                    gatekeeperCount = s.data.gatekeeperEnabled
                     if let pctStr = s.data.fileVaultEncryptedPct,
                        let pct = parsePercentString(pctStr) {
                         fileVaultPct = pct
                     } else if totalDevices > 0, let enc = s.data.fileVaultEncrypted {
                         fileVaultPct = Double(enc) / Double(totalDevices) * 100.0
                     }
+                    // If neither source is available fileVaultPct remains nil.
                     break
                 }
             }
@@ -330,25 +342,26 @@ struct ReportEngine: Sendable {
             staleCount = rows.filter { $0.stale == true }.count
         }
 
-        // OS current % — requires current_versions config
-        var osCurrentPct = 0.0
+        // OS current % — requires current_versions config; nil when unconfigured or
+        // inventory data is absent (not the same as 0%).
+        var osCurrentPct: Double? = nil
         let currentVersions: [String] = config.customEas?
             .first { $0.type == .version && $0.name.lowercased().contains("macos") }
             .flatMap { $0.currentVersions }?.map { $0.lowercased() } ?? []
 
         if !currentVersions.isEmpty,
            let invData = cachedData(kind: "inventory-summary"),
-           let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
+           let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData),
+           totalDevices > 0 {
             let current = rows
                 .filter { row in currentVersions.contains { row.osVersion.lowercased().hasPrefix($0) } }
                 .reduce(0) { $0 + $1.count }
-            if totalDevices > 0 {
-                osCurrentPct = Double(current) / Double(totalDevices) * 100.0
-            }
+            osCurrentPct = Double(current) / Double(totalDevices) * 100.0
         }
 
-        // Patch % — average compliance_pct across patch-status rows
-        var patchPct = 0.0
+        // Patch % — average compliance_pct across patch-status rows; nil when
+        // patch-status data is absent (not the same as 0%).
+        var patchPct: Double? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {
             let values = rows.compactMap { parsePercentString($0.compliancePct) }
@@ -357,17 +370,55 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // Derive per-control percentages and the weighted v3.5 security
+        // score from the same counts the summary section provided. These are
+        // all optional — when a tenant lacks any of these signals the field
+        // is left nil so consumers (TrendStore, SecurityPostureView) can
+        // distinguish "no data" from a zero.
+        let sipPct = pct(of: sipCount, total: totalDevices)
+        let firewallPct = pct(of: firewallCount, total: totalDevices)
+        let gatekeeperPct = pct(of: gatekeeperCount, total: totalDevices)
+
+        var compliantCounts: [SecurityScore.Metric: Int] = [:]
+        if let n = fileVaultCount { compliantCounts[.fileVault] = n }
+        if let n = sipCount { compliantCounts[.sip] = n }
+        if let n = firewallCount { compliantCounts[.firewall] = n }
+        let score = SecurityScoreCalculator.score(
+            input: .init(totalDevices: totalDevices, compliantCounts: compliantCounts)
+        )
+        // Score is only meaningful when at least one metric contributed.
+        let securityScore: Double? = score.available.isEmpty ? nil : score.value
+
+        // P0 = devices missing FileVault, SIP, or Firewall. P1 = Gatekeeper
+        // gaps. Mirrors v3.5 SecurityPostureView action-items taxonomy.
+        let p0 = [fileVaultCount, sipCount, firewallCount]
+            .compactMap { $0 }
+            .map { totalDevices - $0 }
+            .reduce(0, +)
+        let p1 = gatekeeperCount.map { totalDevices - $0 } ?? 0
+
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
-            fileVaultPct: round1(fileVaultPct),
+            fileVaultPct: fileVaultPct.map(round1),
             compliancePct: nil,
             staleCount: staleCount,
-            osCurrentPct: round1(osCurrentPct),
+            osCurrentPct: osCurrentPct.map(round1),
             crowdstrikePct: nil,
-            patchPct: round1(patchPct),
-            source: "jamf-cli"
+            patchPct: patchPct.map(round1),
+            source: "jamf-cli",
+            sipPct: sipPct.map(round1),
+            firewallPct: firewallPct.map(round1),
+            gatekeeperPct: gatekeeperPct.map(round1),
+            securityScore: securityScore.map(round1),
+            actionItemsP0: fileVaultCount != nil ? p0 : nil,
+            actionItemsP1: gatekeeperCount.map { _ in p1 }
         )
+    }
+
+    private func pct(of count: Int?, total: Int) -> Double? {
+        guard let count, total > 0 else { return nil }
+        return Double(count) / Double(total) * 100
     }
 
     private func parsePercentString(_ raw: String) -> Double? {
@@ -416,10 +467,12 @@ struct ReportEngine: Sendable {
 
         // --- FileVault / patch trend (security metrics) ---
         let fvPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            return (s.parsedDate, s.fileVaultPct)
+            guard let pct = s.fileVaultPct else { return nil }
+            return (s.parsedDate, pct)
         }
         let patchPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            return (s.parsedDate, s.patchPct)
+            guard let pct = s.patchPct else { return nil }
+            return (s.parsedDate, pct)
         }
         var secSeries: [ChartSeries] = []
         if !fvPoints.isEmpty {
@@ -602,9 +655,22 @@ struct ReportEngine: Sendable {
     ///   - profile: jamf-cli profile slug.
     ///   - workspacePaths: Typed path constants for the workspace.
     ///   - onLine: Progress callback; receives log lines in real time.
+    /// Per-device commands that hit every device under management and are
+    /// expensive on on-prem Jamf servers. The Settings "Skip expensive
+    /// collections" toggle filters these out of the manual refresh path.
+    /// Scheduled collects (run via LaunchAgent → main.swift) ignore the
+    /// toggle and always include them.
+    static let expensivePerDeviceKinds: Set<String> = [
+        "ea-results",
+        "patch-device-failures",
+        "update-device-failures",
+        "device-compliance"
+    ]
+
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
+        skipExpensive: Bool = false,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
@@ -672,8 +738,23 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "departments", "list", "--output", "json"], "departments"),
         ]
 
+        let plannedCommands: [(args: [String], kind: String)]
+        if skipExpensive {
+            plannedCommands = commands.filter { !Self.expensivePerDeviceKinds.contains($0.kind) }
+            let skipped = commands
+                .filter { Self.expensivePerDeviceKinds.contains($0.kind) }
+                .map(\.kind)
+                .joined(separator: ", ")
+            onLine(.init(
+                timestamp: Date(), level: .info,
+                text: "[info] skipping per-device commands (\(skipped)) — Settings: Skip expensive collections"
+            ))
+        } else {
+            plannedCommands = commands
+        }
+
         let bridge = CLIBridge()
-        for (args, kind) in commands {
+        for (args, kind) in plannedCommands {
             onLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[info] collecting \(kind) for \(profile)"

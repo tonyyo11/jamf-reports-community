@@ -35,24 +35,26 @@ struct DevicesView: View {
     }
 
     private enum DeviceFilter: String, CaseIterable, Identifiable {
-        case all, stale, patch, security
+        case all, stale, patch, security, priorityAction
         var id: String { rawValue }
 
         var label: String {
             switch self {
-            case .all:      "All"
-            case .stale:    "Stale"
-            case .patch:    "Patch"
-            case .security: "Security"
+            case .all:            "All"
+            case .stale:          "Stale"
+            case .patch:          "Patch"
+            case .security:       "Security"
+            case .priorityAction: "Priority"
             }
         }
 
         var icon: String {
             switch self {
-            case .all:      "list.bullet"
-            case .stale:    "clock.badge.exclamationmark"
-            case .patch:    "square.and.arrow.down.badge.clock"
-            case .security: "lock.shield"
+            case .all:            "list.bullet"
+            case .stale:          "clock.badge.exclamationmark"
+            case .patch:          "square.and.arrow.down.badge.clock"
+            case .security:       "lock.shield"
+            case .priorityAction: "exclamationmark.triangle.fill"
             }
         }
     }
@@ -78,8 +80,22 @@ struct DevicesView: View {
                 return device.patchFailureCount > 0
             case .security:
                 return device.securityGapCount > 0 || device.failedRules > 0
+            case .priorityAction:
+                // Devices that score in the v3.5 Critical or High band
+                // via the configurable RiskScoringService. Note: the inline
+                // `device.risk` enum is a legacy heuristic; this is the
+                // authoritative scorer used by the new Priority Action List.
+                let risk = Self.priorityRisk(for: device)
+                return risk.level >= .high
             }
         }.sorted(using: sortOrder)
+    }
+
+    /// Authoritative per-device risk via `RiskScoringService`. Memoizing
+    /// would help if the filter cost showed up in profiling, but the live
+    /// table re-renders on selection change rather than per filter pass.
+    static func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
+        RiskScoringService.score(input: .from(record: device))
     }
 
     private var selectedDevice: DeviceInventoryRecord? {
@@ -403,6 +419,8 @@ struct DevicesView: View {
 
                     securitySection(for: device)
 
+                    priorityRiskSection(for: device)
+
                     VStack(alignment: .leading, spacing: 8) {
                         SectionHeader(title: "Patch")
                         if device.patchFailures.isEmpty {
@@ -648,16 +666,11 @@ struct DevicesView: View {
 
     private var emptyState: some View {
         Card(padding: 32) {
-            VStack(spacing: 12) {
-                Image(systemName: "desktopcomputer.and.arrow.down")
-                    .font(.system(size: 40))
-                    .foregroundStyle(Theme.Colors.hairlineStrong)
-                Text("No device inventory yet")
-                    .font(Theme.Fonts.serif(18, weight: .bold))
-                Text("run Generate Report to populate")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "desktopcomputer.and.arrow.down",
+                title: "No device inventory yet",
+                message: "run Generate Report to populate"
+            )
             .frame(maxWidth: .infinity)
         }
     }
@@ -709,6 +722,62 @@ struct DevicesView: View {
                 }
                 .padding(.vertical, 4)
             }
+        }
+    }
+
+    /// Computed Priority Action List section — only visible when the
+    /// `RiskScoringService` has triggered factors. Clean devices skip this
+    /// block entirely so the detail panel stays uncluttered for healthy
+    /// inventory. Lifts v3.5's "Priority Action List" remediation hints
+    /// directly into the per-device drill.
+    @ViewBuilder
+    private func priorityRiskSection(for device: DeviceInventoryRecord) -> some View {
+        let risk = Self.priorityRisk(for: device)
+        if !risk.triggered.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    SectionHeader(title: "Priority Risk")
+                    Spacer()
+                    Pill(
+                        text: "\(risk.level.displayLabel) · \(risk.score)",
+                        tone: priorityRiskTone(for: risk.level)
+                    )
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(risk.triggered, id: \.factor) { entry in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(entry.factor.displayLabel)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Theme.Colors.fg)
+                                if let detail = entry.detail {
+                                    Mono(text: detail)
+                                }
+                                Spacer()
+                                Pill(text: "+\(entry.points)", tone: .warn)
+                            }
+                            Text(entry.factor.remediation)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                        }
+                        .padding(.vertical, 3)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(
+                            "\(entry.factor.displayLabel), \(entry.points) points. " +
+                            "Remediation: \(entry.factor.remediation)"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func priorityRiskTone(for level: DeviceRisk.Level) -> Pill.Tone {
+        switch level {
+        case .clean, .low: return .muted
+        case .medium:      return .gold
+        case .high:        return .warn
+        case .critical:    return .danger
         }
     }
 
