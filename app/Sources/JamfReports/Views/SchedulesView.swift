@@ -125,7 +125,7 @@ struct SchedulesView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
                 Text(message)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg2)
                 Spacer()
             }
@@ -198,7 +198,7 @@ struct SchedulesView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Kicker(text: "Next up", tone: .gold)
                     Text(next?.name ?? "No schedules enabled")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 4) {
                         if let s = next {
@@ -341,7 +341,7 @@ struct SchedulesView: View {
 
                 TableColumn("Schedule") { s in
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(s.name).font(.system(size: 13, weight: .semibold))
+                        Text(s.name).font(.callout.weight(.semibold))
                         Mono(text: labelText(for: s), size: 10.5)
                     }
                 }
@@ -418,10 +418,10 @@ struct SchedulesView: View {
                     ForEach(Schedule.RunMode.allCases, id: \.id) { mode in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(mode.displayTitle)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.fg)
                             Text(mode.displayDescription)
-                                .font(.system(size: 11))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .lineLimit(3)
                         }
@@ -446,14 +446,14 @@ struct SchedulesView: View {
                                     .foregroundStyle(color)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(mode.displayTitle)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.caption.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                     Mono(text: mode.rawValue, size: 9, color: Theme.Colors.fgMuted)
                                 }
                             }
                             Divider().background(Theme.Colors.hairline)
                             Text(mode.displayDescription)
-                                .font(.system(size: 10.5))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .lineLimit(4)
                         }
@@ -787,7 +787,7 @@ private struct NewScheduleSheet: View {
             // Title bar
             HStack {
                 Text("New Schedule")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.headline)
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
                 Button(action: onCancel) {
@@ -812,7 +812,7 @@ private struct NewScheduleSheet: View {
                                 }
                             if nameWasTouched && form.name.trimmingCharacters(in: .whitespaces).isEmpty {
                                 Text("Schedule name is required")
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(Theme.Colors.warn)
                             }
                         }
@@ -852,7 +852,7 @@ private struct NewScheduleSheet: View {
                             Toggle("Run profiles one at a time", isOn: $form.multiSequential)
                                 .labelsHidden()
                             Text("Run profiles one at a time")
-                                .font(.system(size: 11.5))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                         }
                     }
