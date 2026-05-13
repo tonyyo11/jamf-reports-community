@@ -34,6 +34,8 @@ struct SettingsView: View {
                     cliCard
                     connectionsCard
                 }
+                dataAndChartsCard
+                sidebarVisibilityCard
                 aboutCard
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -395,5 +397,139 @@ struct SettingsView: View {
             Text(value).foregroundStyle(Theme.Text.primary)
         }
         .font(Theme.Fonts.mono(11.5))
+    }
+
+    // MARK: - Sidebar visibility
+
+    /// Lets the user hide tabs they don't use. Backed by `@AppStorage`
+    /// (parsed/serialized via `TabVisibility`). Grouped by the same sidebar
+    /// sections so the layout mirrors what the user sees on the left.
+    @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
+
+    /// Defaults that fan out across every trend-aware screen. Stored as raw
+    /// strings so adding new `TrendRange` cases later doesn't shift saved prefs.
+    @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
+
+    /// When ON, `ReportEngine.collect()` skips the four per-device commands
+    /// (ea-results, patch-device-failures, update-device-failures,
+    /// device-compliance). Off by default — the cold tier already paces them
+    /// at 24h, so most users want them.
+    @AppStorage("skipExpensiveCollections") private var skipExpensiveCollections: Bool = false
+
+    private var dataAndChartsCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Data & Charts")
+                settingsRow(
+                    label: "Default trend range",
+                    sub: "Applies to Overview and Trends until you change the picker in-view.",
+                    trailing: AnyView(trendRangePicker)
+                )
+                Divider().background(Theme.Hairline.standard)
+                settingsRow(
+                    label: "Skip expensive collections",
+                    sub: skipExpensiveCollectionsSubtitle,
+                    trailing: AnyView(PNPToggle(isOn: $skipExpensiveCollections))
+                )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Data and charts settings")
+    }
+
+    private var trendRangePicker: some View {
+        Picker("Default trend range", selection: $defaultTrendRangeRaw) {
+            Text("4 weeks").tag(TrendRange.w4.rawValue)
+            Text("12 weeks").tag(TrendRange.w12.rawValue)
+            Text("26 weeks").tag(TrendRange.w26.rawValue)
+            Text("52 weeks").tag(TrendRange.w52.rawValue)
+            Text("All").tag(TrendRange.all.rawValue)
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: 130)
+    }
+
+    private var skipExpensiveCollectionsSubtitle: String {
+        if skipExpensiveCollections {
+            return "Per-device commands paused. Posture, Patch, Updates, and Extension Attributes dashboards will show last cached values until refreshed."
+        }
+        return "Run the four per-device commands (ea-results, patch-device-failures, update-device-failures, device-compliance) on every collect."
+    }
+
+    private var sidebarVisibilityCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SectionHeader(title: "Sidebar Visibility")
+                    Spacer()
+                    PNPButton(title: "Show all", size: .sm) {
+                        var v = TabVisibility.parse(hiddenTabsRaw)
+                        v.showAll()
+                        hiddenTabsRaw = v.serialize()
+                    }
+                    .help("Restore every hidden tab to the sidebar.")
+                }
+                Text("Hide dashboards you don't use. Core tabs (Overview, Devices, Sources, Settings) cannot be hidden.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                ForEach(SettingsView.toggleableGroups, id: \.label) { group in
+                    visibilityGroupRow(label: group.label, tabs: group.tabs)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Sidebar visibility settings")
+    }
+
+    private static let toggleableGroups: [(label: String, tabs: [Tab])] = [
+        ("Reports",       [.fleet, .deviceLookup, .trends, .audit, .reports]),
+        ("Posture",       [.securityPosture, .compliancePosture, .outreach]),
+        ("Operations",    [.patch, .updates, .policyProfile, .extensionAttributes]),
+        ("Fleet",         [.mobileFleet, .protectDashboard]),
+        ("Automation",    [.schedules, .runs]),
+        ("Configuration", [.config, .customize, .backups])
+    ]
+
+    private func visibilityGroupRow(label: String, tabs: [Tab]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label.uppercased())
+                .font(Theme.Fonts.mono(10, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(Theme.Colors.fgMuted)
+            ForEach(tabs, id: \.self) { tab in
+                visibilityRow(for: tab)
+            }
+        }
+    }
+
+    private func visibilityRow(for tab: Tab) -> some View {
+        let visibility = TabVisibility.parse(hiddenTabsRaw)
+        let isVisible = visibility.isVisible(tab)
+        return HStack(spacing: 10) {
+            Image(systemName: tab.sfSymbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.Colors.fgMuted)
+                .frame(width: 16, alignment: .center)
+            Text(tab.label)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.Colors.fg)
+            Spacer()
+            PNPToggle(
+                isOn: Binding(
+                    get: { isVisible },
+                    set: { newValue in
+                        var v = TabVisibility.parse(hiddenTabsRaw)
+                        // The toggle binds to "isVisible". A true→false flip
+                        // means the user wants the tab hidden, so we call
+                        // toggle() when the current state and new state differ.
+                        if v.isVisible(tab) != newValue { v.toggle(tab) }
+                        hiddenTabsRaw = v.serialize()
+                    }
+                ),
+                label: "\(tab.label) visibility"
+            )
+        }
+        .padding(.vertical, 2)
     }
 }

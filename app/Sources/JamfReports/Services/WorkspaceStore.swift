@@ -572,46 +572,68 @@ final class WorkspaceStore {
 enum Tab: String, CaseIterable, Identifiable, Hashable {
     case overview, fleet, devices, deviceLookup, trends, audit, reports, schedules, runs
     case config, customize, sources, backups, settings, onboarding
+    case securityPosture, compliancePosture
+    case patch, updates
+    case policyProfile, extensionAttributes
+    case outreach, protectDashboard, mobileFleet
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .overview:     "Overview"
-        case .fleet:        "Fleet Overview"
-        case .devices:      "Devices"
-        case .deviceLookup: "Device Lookup"
-        case .trends:       "Trends"
-        case .audit:        "Health Audit"
-        case .reports:      "Generated"
-        case .schedules:    "Schedules"
-        case .runs:         "Run History"
-        case .config:       "Config"
-        case .customize:    "Customize"
-        case .sources:      "Data Sources"
-        case .backups:      "Backups"
-        case .settings:     "Settings"
-        case .onboarding:   "Onboarding"
+        case .overview:          "Overview"
+        case .fleet:             "Fleet Overview"
+        case .devices:           "Devices"
+        case .deviceLookup:      "Device Lookup"
+        case .trends:            "Trends"
+        case .audit:             "Health Audit"
+        case .reports:           "Generated"
+        case .schedules:         "Schedules"
+        case .runs:              "Run History"
+        case .config:            "Config"
+        case .customize:         "Customize"
+        case .sources:           "Data Sources"
+        case .backups:           "Backups"
+        case .settings:          "Settings"
+        case .onboarding:        "Onboarding"
+        case .securityPosture:   "Security Posture"
+        case .compliancePosture: "Compliance Posture"
+        case .patch:             "Patch Compliance"
+        case .updates:           "OS Updates"
+        case .policyProfile:     "Policies & Profiles"
+        case .extensionAttributes: "Extension Attributes"
+        case .outreach:          "Offline Outreach"
+        case .protectDashboard:  "Jamf Protect"
+        case .mobileFleet:       "Mobile Fleet"
         }
     }
 
     var sfSymbol: String {
         switch self {
-        case .overview:     "house"
-        case .fleet:        "rectangle.grid.2x2"
-        case .devices:      "laptopcomputer"
-        case .deviceLookup: "magnifyingglass"
-        case .trends:       "chart.line.uptrend.xyaxis"
-        case .audit:        "shield.checkered"
-        case .reports:      "doc.text"
-        case .schedules:    "clock"
-        case .runs:         "terminal"
-        case .config:       "wrench.and.screwdriver"
-        case .customize:    "sparkles"
-        case .sources:      "externaldrive"
-        case .backups:      "externaldrive.badge.timemachine"
-        case .settings:     "gear"
-        case .onboarding:   "wand.and.stars"
+        case .overview:          "house"
+        case .fleet:             "rectangle.grid.2x2"
+        case .devices:           "laptopcomputer"
+        case .deviceLookup:      "magnifyingglass"
+        case .trends:            "chart.line.uptrend.xyaxis"
+        case .audit:             "shield.checkered"
+        case .reports:           "doc.text"
+        case .schedules:         "clock"
+        case .runs:              "terminal"
+        case .config:            "wrench.and.screwdriver"
+        case .customize:         "sparkles"
+        case .sources:           "externaldrive"
+        case .backups:           "externaldrive.badge.timemachine"
+        case .settings:          "gear"
+        case .onboarding:        "wand.and.stars"
+        case .securityPosture:   "lock.shield"
+        case .compliancePosture: "checkmark.shield"
+        case .patch:             "shippingbox"
+        case .updates:           "arrow.down.circle"
+        case .policyProfile:     "doc.badge.gearshape"
+        case .extensionAttributes: "tag.fill"
+        case .outreach:          "envelope.badge"
+        case .protectDashboard:  "shield.lefthalf.filled"
+        case .mobileFleet:       "ipad"
         }
     }
 
@@ -627,6 +649,79 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     }
 
     var badgeIsGold: Bool { self == .trends }
+
+    /// Tabs the user cannot hide. These are the bones of the app — hiding
+    /// them would break navigation or leave the user without a way back to
+    /// configuration. Everything else is toggleable via `TabVisibility`.
+    var isCoreTab: Bool {
+        switch self {
+        case .overview, .devices, .sources, .settings, .onboarding:
+            return true
+        case .fleet, .deviceLookup, .trends, .audit, .reports,
+             .schedules, .runs, .config, .customize, .backups,
+             .securityPosture, .compliancePosture,
+             .patch, .updates, .policyProfile, .extensionAttributes,
+             .outreach, .protectDashboard, .mobileFleet:
+            return false
+        }
+    }
+}
+
+// MARK: - Tab visibility
+
+/// Per-user sidebar visibility preferences. Backed by `@AppStorage("hiddenTabs")`
+/// as a comma-separated string of `Tab.rawValue` slugs. Core tabs (see
+/// `Tab.isCoreTab`) are never hidden even if their slug appears in storage.
+///
+/// Lives outside `WorkspaceStore` because visibility is a per-user UX
+/// preference, not workspace-bound state — switching profiles shouldn't
+/// re-show tabs the user has hidden.
+struct TabVisibility: Sendable, Equatable {
+    private var hidden: Set<Tab>
+
+    init(hidden: Set<Tab> = []) {
+        // Core tabs can never be hidden — strip them on construction so
+        // downstream code does not need to check twice.
+        self.hidden = hidden.filter { !$0.isCoreTab }
+    }
+
+    /// True when this tab should appear in the sidebar.
+    func isVisible(_ tab: Tab) -> Bool {
+        tab.isCoreTab || !hidden.contains(tab)
+    }
+
+    /// True when this tab is explicitly hidden by the user.
+    func isHidden(_ tab: Tab) -> Bool { !isVisible(tab) }
+
+    /// Toggle a tab's visibility. Core tabs are no-ops.
+    mutating func toggle(_ tab: Tab) {
+        guard !tab.isCoreTab else { return }
+        if hidden.contains(tab) { hidden.remove(tab) }
+        else { hidden.insert(tab) }
+    }
+
+    /// Show every tab again (used by "Reset to defaults" button).
+    mutating func showAll() {
+        hidden.removeAll()
+    }
+
+    /// Parse from `@AppStorage` string: comma-separated raw values.
+    /// Unknown slugs (e.g. tabs removed in a future version) are silently
+    /// dropped. Core-tab slugs are stripped via the `init` filter.
+    static func parse(_ raw: String) -> TabVisibility {
+        let parts = raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let tabs = parts.compactMap { Tab(rawValue: $0) }
+        return TabVisibility(hidden: Set(tabs))
+    }
+
+    /// Serialize back to `@AppStorage` string. Sorted for stability across
+    /// edits so persisted state diffs cleanly.
+    func serialize() -> String {
+        hidden.map(\.rawValue).sorted().joined(separator: ",")
+    }
 }
 
 /// Sidebar collapse state. Persisted via `@AppStorage`. Standard macOS shortcut

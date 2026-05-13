@@ -8,10 +8,12 @@ struct WhatsNewBanner: View {
     let onShowCustomize: () -> Void
 
     private let highlights: [(icon: String, text: String)] = [
-        ("play.circle.fill",    "Generate XLSX, HTML, and PDF from one place — try the new \"Generate\u{2026}\" button"),
-        ("arrow.up.arrow.down", "Drag to reorder report sheets in Customize \u{2192} Workbook Preview"),
-        ("wand.and.sparkles",   "Personalize your reports with the new wizard (Customize \u{2192} Personalize\u{2026})"),
-        ("chart.bar.fill",      "HTML reports now lead with a Compliance Posture tile + non-compliant device list"),
+        ("shield.lefthalf.filled", "9 new dashboards: Security Posture, Compliance Posture, Patch, Updates, Policy/Profile, EAs, Outreach, Protect, Mobile Fleet"),
+        ("slider.horizontal.3",    "Hide dashboards you don't use in Settings \u{2192} Sidebar Visibility (core tabs stay pinned)"),
+        ("scalemass",              "Edit Security Score weights in Config \u{2192} Scoring — Risk scoring factors are configurable too"),
+        ("chart.xyaxis.line",      "Default trend range is now 4 weeks (Settings \u{2192} Data & Charts), and every chart honors your pick"),
+        ("clock.arrow.circlepath", "Skip per-device collections from Settings to spare on-prem Jamf servers between full refreshes"),
+        ("play.circle.fill",       "Generate XLSX, HTML, and PDF from one place — try the new \"Generate\u{2026}\" button"),
     ]
 
     var body: some View {

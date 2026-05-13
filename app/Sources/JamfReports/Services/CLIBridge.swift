@@ -414,10 +414,16 @@ final class CLIBridge {
             return Self.exitCodeUnauthorized
         }
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        // Honor the Settings "Skip expensive collections" toggle. UserDefaults
+        // backs the @AppStorage in SettingsView, so this is a direct read.
+        // Scheduled collects run from main.swift and pass skipExpensive=false
+        // unconditionally — the toggle only affects manual GUI refreshes.
+        let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
         do {
             try await ReportEngine.collect(
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
+                skipExpensive: skipExpensive,
                 onLine: onLine
             )
             tightenOnSuccess(0, profile: profile)

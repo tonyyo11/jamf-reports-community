@@ -8,7 +8,7 @@ struct ConfigView: View {
     @State private var cli = CLIBridge()
 
     enum ConfigTab: String, CaseIterable {
-        case columns, agents, eas, thresholds, platform, output
+        case columns, agents, eas, thresholds, platform, output, scoring
         var label: String {
             switch self {
             case .columns:    "Columns"
@@ -17,6 +17,7 @@ struct ConfigView: View {
             case .thresholds: "Thresholds"
             case .platform:   "Platform API"
             case .output:     "Output"
+            case .scoring:    "Scoring"
             }
         }
         var icon: String {
@@ -27,6 +28,7 @@ struct ConfigView: View {
             case .thresholds: "bolt"
             case .platform:   "arrow.triangle.branch"
             case .output:     "folder"
+            case .scoring:    "scalemass"
             }
         }
     }
@@ -148,6 +150,7 @@ struct ConfigView: View {
         case .thresholds: ThresholdsTab()
         case .platform:   PlatformTab()
         case .output:     OutputTab()
+        case .scoring:    ScoringTab()
         }
     }
 
@@ -1034,3 +1037,100 @@ private struct EACard: View {
         }
     }
 }
+
+// MARK: - Scoring tab
+
+/// Lets the user override the weighted Security Score formula lifted from
+/// v3.5. Backed by `@AppStorage(ScoringConfig.storageKey)`. Edits are
+/// applied immediately to `SecurityScoreCalculator` callers that read
+/// `ScoringConfig.parse(...)` from storage. Tenants without certain agent
+/// stacks (e.g. no CrowdStrike) can zero out the matching weight to drop
+/// that metric from the score entirely.
+private struct ScoringTab: View {
+    @AppStorage(ScoringConfig.storageKey) private var raw: String = ""
+
+    private var config: ScoringConfig {
+        raw.isEmpty ? ScoringConfig() : ScoringConfig.parse(raw)
+    }
+
+    private func update(_ mutate: (inout SecurityScoreWeights) -> Void) {
+        var c = config
+        mutate(&c.weights)
+        raw = c.serialize()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Card(padding: 18) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        SectionHeader(title: "Security Score Weights")
+                        Spacer()
+                        Pill(
+                            text: "Sum: \(Int(totalWeight))",
+                            tone: totalWeight == 100 ? .teal : .gold,
+                            icon: totalWeight == 100 ? "checkmark" : "scalemass"
+                        )
+                        PNPButton(title: "Reset to v3.5 defaults", size: .sm) {
+                            raw = ""
+                        }
+                        .help("Restore the eight default weights from the v3.5 production script.")
+                    }
+                    Text("These weights drive the Security Score on the Security Posture screen. " +
+                         "Set a weight to 0 to drop that metric entirely. Missing metrics in your " +
+                         "data are auto-renormalized so the score still scales to 100.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                    VStack(spacing: 6) {
+                        weightRow("FileVault Encryption",
+                                  value: Binding(get: { Int(config.weights.fileVault) },
+                                                 set: { v in update { $0.fileVault = Double(v) } }))
+                        weightRow("System Integrity Protection",
+                                  value: Binding(get: { Int(config.weights.sip) },
+                                                 set: { v in update { $0.sip = Double(v) } }))
+                        weightRow("Firewall Enabled",
+                                  value: Binding(get: { Int(config.weights.firewall) },
+                                                 set: { v in update { $0.firewall = Double(v) } }))
+                        weightRow("CrowdStrike Connected",
+                                  value: Binding(get: { Int(config.weights.crowdstrike) },
+                                                 set: { v in update { $0.crowdstrike = Double(v) } }))
+                        weightRow("mSCP Compliance",
+                                  value: Binding(get: { Int(config.weights.mscp) },
+                                                 set: { v in update { $0.mscp = Double(v) } }))
+                        weightRow("XProtect Current",
+                                  value: Binding(get: { Int(config.weights.xprotect) },
+                                                 set: { v in update { $0.xprotect = Double(v) } }))
+                        weightRow("CVE Clean",
+                                  value: Binding(get: { Int(config.weights.cve) },
+                                                 set: { v in update { $0.cve = Double(v) } }))
+                        weightRow("Secure Boot (Full)",
+                                  value: Binding(get: { Int(config.weights.secureBoot) },
+                                                 set: { v in update { $0.secureBoot = Double(v) } }))
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Security score weight configuration")
+        }
+    }
+
+    private var totalWeight: Double {
+        let w = config.weights
+        return w.fileVault + w.sip + w.firewall + w.crowdstrike +
+               w.mscp + w.xprotect + w.cve + w.secureBoot
+    }
+
+    @ViewBuilder
+    private func weightRow(_ label: String, value: Binding<Int>) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Theme.Colors.fg)
+            Spacer()
+            EditableNumberStepper(value: value, range: 0...100, suffix: "pts")
+                .accessibilityLabel("\(label) weight")
+                .accessibilityValue("\(value.wrappedValue) points out of 100")
+        }
+    }
+}
+

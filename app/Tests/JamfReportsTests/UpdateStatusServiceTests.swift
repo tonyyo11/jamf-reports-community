@@ -1,0 +1,200 @@
+import XCTest
+@testable import JamfReports
+
+/// Tests for UpdateStatusService and UpdatesView instantiation.
+@MainActor
+final class UpdateStatusServiceTests: XCTestCase {
+
+    func testUpdatesViewInstantiatesInDemoMode() throws {
+        let workspace = WorkspaceStore()
+        workspace.profile = "test"
+        workspace.demoMode = true
+
+        _ = UpdatesView().environment(workspace)
+    }
+
+    func testUpdatesViewInstantiatesOutsideDemoMode() throws {
+        let workspace = WorkspaceStore()
+        workspace.profile = "test"
+        workspace.demoMode = false
+
+        _ = UpdatesView().environment(workspace)
+    }
+
+    /// Tests decode parity with summary-only JSON (no failure arrays).
+    func testUpdateStatusServiceDecodesSummaryOnlyReport() throws {
+        let json = """
+        [
+          {
+            "total": 150,
+            "status_summary": [
+              {"status": "COMPLETED", "count": 120},
+              {"status": "PENDING", "count": 20},
+              {"status": "ERROR", "count": 10}
+            ],
+            "plan_total": 8,
+            "plan_state_summary": [
+              {"state": "PlanCompleted", "count": 5},
+              {"state": "PlanActive", "count": 2},
+              {"state": "PlanFailed", "count": 1}
+            ]
+          }
+        ]
+        """
+
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("update-status-test-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: tmp))
+
+        XCTAssertEqual(snapshot.total, 150)
+        XCTAssertEqual(snapshot.planTotal, 8)
+        XCTAssertEqual(snapshot.statusBreakdown.count, 3)
+        XCTAssertEqual(snapshot.planStateBreakdown.count, 3)
+        XCTAssertTrue(snapshot.errorDevices.isEmpty)
+        XCTAssertTrue(snapshot.failedPlans.isEmpty)
+
+        // Verify breakdown contents
+        let statusByLabel = Dictionary(uniqueKeysWithValues:
+            snapshot.statusBreakdown.map { ($0.label, $0.count) }
+        )
+        XCTAssertEqual(statusByLabel["COMPLETED"], 120)
+        XCTAssertEqual(statusByLabel["PENDING"], 20)
+        XCTAssertEqual(statusByLabel["ERROR"], 10)
+
+        let planByLabel = Dictionary(uniqueKeysWithValues:
+            snapshot.planStateBreakdown.map { ($0.label, $0.count) }
+        )
+        XCTAssertEqual(planByLabel["PlanCompleted"], 5)
+        XCTAssertEqual(planByLabel["PlanActive"], 2)
+        XCTAssertEqual(planByLabel["PlanFailed"], 1)
+    }
+
+    /// Tests decode parity with scan-failures JSON.
+    func testUpdateStatusServiceDecodesFailuresReport() throws {
+        let json = """
+        [
+          {
+            "total": 100,
+            "status_summary": [
+              {"status": "COMPLETED", "count": 80},
+              {"status": "ERROR", "count": 20}
+            ],
+            "error_devices": [
+              {
+                "name": "MacBook-001",
+                "serial": "ABC123",
+                "device_type": "Computer",
+                "os_version": "15.2.1",
+                "username": "jdoe",
+                "status": "ERROR",
+                "product_key": "macOS Sequoia 15.3",
+                "updated": "2026-05-10T10:30:00Z"
+              }
+            ],
+            "plan_total": 5,
+            "plan_state_summary": [
+              {"state": "PlanCompleted", "count": 4},
+              {"state": "PlanFailed", "count": 1}
+            ],
+            "failed_plans": [
+              {
+                "name": "MacBook-035",
+                "serial": "JKL012",
+                "device_type": "Computer",
+                "os_version": "14.7.5",
+                "username": "cjohnson",
+                "state": "PlanFailed",
+                "action": "Install",
+                "version": "15.3",
+                "error": "Insufficient disk space",
+                "last_event": "2026-05-11T14:20:00Z"
+              }
+            ]
+          }
+        ]
+        """
+
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("update-failures-test-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: tmp))
+
+        XCTAssertEqual(snapshot.total, 100)
+        XCTAssertEqual(snapshot.planTotal, 5)
+        XCTAssertEqual(snapshot.errorDevices.count, 1)
+        XCTAssertEqual(snapshot.failedPlans.count, 1)
+
+        // Verify error device
+        let errorDevice = snapshot.errorDevices.first!
+        XCTAssertEqual(errorDevice.name, "MacBook-001")
+        XCTAssertEqual(errorDevice.serial, "ABC123")
+        XCTAssertEqual(errorDevice.status, "ERROR")
+
+        // Verify failed plan
+        let failedPlan = snapshot.failedPlans.first!
+        XCTAssertEqual(failedPlan.name, "MacBook-035")
+        XCTAssertEqual(failedPlan.serial, "JKL012")
+        XCTAssertEqual(failedPlan.state, "PlanFailed")
+        XCTAssertEqual(failedPlan.error, "Insufficient disk space")
+    }
+
+    /// Tests color mapping for plan states.
+    func testUpdateStatusServiceSliceColorMapping() throws {
+        let json = """
+        [
+          {
+            "total": 50,
+            "status_summary": [],
+            "plan_total": 3,
+            "plan_state_summary": [
+              {"state": "PlanCompleted", "count": 1},
+              {"state": "PlanFailed", "count": 1},
+              {"state": "PlanActive", "count": 1}
+            ]
+          }
+        ]
+        """
+
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("color-mapping-test-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: tmp))
+
+        let colorByState = Dictionary(uniqueKeysWithValues:
+            snapshot.planStateBreakdown.map { ($0.label, $0.colorHex) }
+        )
+
+        XCTAssertEqual(colorByState["PlanCompleted"], 0x30D158)  // green
+        XCTAssertEqual(colorByState["PlanFailed"], 0xFF453A)     // red
+        XCTAssertEqual(colorByState["PlanActive"], 0x007AFF)     // blue
+    }
+
+    /// Tests empty input handling.
+    func testUpdateStatusServiceHandlesEmptyInput() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("empty-test-\(UUID().uuidString).json")
+        try "invalid json".write(to: tmp, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let snapshot = UpdateStatusService.load(from: tmp)
+        XCTAssertNil(snapshot)
+    }
+
+    func testUpdateStatusServiceReturnsEmptyForMissingFile() throws {
+        let snapshot = UpdateStatusService.load(profile: "nonexistent-profile")
+        XCTAssertEqual(snapshot, .empty)
+        XCTAssertEqual(snapshot.total, 0)
+        XCTAssertEqual(snapshot.planTotal, 0)
+        XCTAssertTrue(snapshot.statusBreakdown.isEmpty)
+        XCTAssertTrue(snapshot.planStateBreakdown.isEmpty)
+        XCTAssertTrue(snapshot.errorDevices.isEmpty)
+        XCTAssertTrue(snapshot.failedPlans.isEmpty)
+    }
+}
