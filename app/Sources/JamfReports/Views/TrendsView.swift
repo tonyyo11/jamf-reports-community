@@ -151,40 +151,20 @@ struct TrendsView: View {
     // MARK: Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 24) {
-            Spacer().frame(height: 100)
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 64))
-                .foregroundStyle(Theme.Colors.hairlineStrong)
-            
-            VStack(spacing: 8) {
-                Text("No trend data yet")
-                    .font(Theme.Fonts.serif(24, weight: .bold))
-                Text("Historical trends populate after 2+ scheduled runs.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
-            
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToTab,
-                    object: nil,
-                    userInfo: ["tab": Tab.schedules.rawValue]
-                )
-            } label: {
-                Text("Go to Schedules")
-                    .font(.system(size: 13, weight: .semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Theme.Colors.gold)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .foregroundStyle(.black)
-            }
-            .buttonStyle(.plain)
-            
-            Spacer()
+        Card(padding: 24) {
+            EmptyStateView(
+                systemImage: "chart.line.uptrend.xyaxis",
+                title: "No trend data yet",
+                message: "Historical trends populate after 2+ scheduled runs.",
+                primaryAction: EmptyStateAction(label: "Go to Schedules", icon: "calendar") {
+                    NotificationCenter.default.post(
+                        name: .navigateToTab,
+                        object: nil,
+                        userInfo: ["tab": Tab.schedules.rawValue]
+                    )
+                }
+            )
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: Header
@@ -520,20 +500,13 @@ struct TrendsView: View {
     }
 
     private var complianceBandUnavailable: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "chart.bar.doc.horizontal")
-                .font(.system(size: 28))
-                .foregroundStyle(Theme.Colors.hairlineStrong)
-            Text("Compliance band history is not available for live data yet.")
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(Theme.Colors.fg2)
-            Text("The summary cache does not include per-band failed-rule counts.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+        Card(padding: 24) {
+            EmptyStateView(
+                systemImage: "chart.bar.doc.horizontal",
+                title: "Compliance band history unavailable",
+                message: "The summary cache does not include per-band failed-rule counts."
+            )
         }
-        .frame(maxWidth: .infinity, minHeight: 200)
-        .background(Color(nsColor: .textBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func legendDot(color: Color, label: String) -> some View {
