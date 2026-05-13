@@ -228,8 +228,8 @@ struct RunsView: View {
         switch level {
         case .info: Theme.Colors.fg2
         case .ok:   Theme.Colors.ok
-        case .warn: Theme.Colors.warn
-        case .fail: Theme.Colors.danger
+        case .warn: Theme.Colors.warnSoft
+        case .fail: Theme.Colors.dangerSoft
         }
     }
 }

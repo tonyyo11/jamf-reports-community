@@ -36,7 +36,9 @@ enum Theme {
 
         // Status
         static let danger      = Color(hex: 0xFF453A)
+        static let dangerSoft  = Color(hex: 0xFFA39A)
         static let warn        = Color(hex: 0xFF9F0A)
+        static let warnSoft    = Color(hex: 0xFFCE7A)
         static let ok          = Color(hex: 0x30D158)
         static let info        = Color(hex: 0x0A84FF)
         static let purple      = Color(hex: 0xBF5AF2)
