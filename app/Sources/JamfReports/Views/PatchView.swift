@@ -204,9 +204,9 @@ struct PatchView: View {
 
     private func complianceColor(for pct: Double) -> Color {
         switch pct {
-        case ..<50:  return Color(hex: 0xFF453A)  // red
-        case ..<80:  return Color(hex: 0xFF9F0A)  // orange
-        case 90...:  return Color(hex: 0x30D158)  // green
+        case ..<50:  return Theme.Colors.danger
+        case ..<80:  return Theme.Colors.warn
+        case 90...:  return Theme.Colors.ok
         default:     return Theme.Colors.fgMuted  // gray for 80-89
         }
     }
@@ -270,11 +270,11 @@ struct PatchView: View {
         let lowercased = action.lowercased()
         switch true {
         case lowercased.contains("fail"):
-            return Color(hex: 0xFF453A)  // red
+            return Theme.Colors.danger
         case lowercased.contains("retry"):
-            return Color(hex: 0xFF9F0A)  // orange
+            return Theme.Colors.warn
         case lowercased.contains("success"):
-            return Color(hex: 0x30D158)  // green
+            return Theme.Colors.ok
         default:
             return Theme.Colors.fgMuted
         }

@@ -313,7 +313,8 @@ struct SecurityPostureView: View {
     }
 
     private var osChart: some View {
-        Chart(osChartRows, id: \.osVersion) { row in
+        let orderedKeys = osChartRows.sorted { $0.count > $1.count }.map(\.osVersion)
+        return Chart(osChartRows, id: \.osVersion) { row in
             SectorMark(
                 angle: .value("Count", row.count),
                 innerRadius: .ratio(0.62),
@@ -323,6 +324,7 @@ struct SecurityPostureView: View {
             .accessibilityLabel(row.osVersion)
             .accessibilityValue("\(row.count) devices, \(Int(row.pct.rounded()))%")
         }
+        .chartForegroundStyleScale(domain: orderedKeys, range: Theme.ChartPalette.osVersionInApp)
         // ViewThatFits picks the trailing legend when there's room, otherwise
         // falls back to a bottom legend so narrow cards don't truncate.
         .chartLegend(position: .bottom, alignment: .leading, spacing: 8)
@@ -389,12 +391,7 @@ private struct SecurityPostureOSDonutExport: View {
 
     /// Fixed palette chosen for legibility on the light export canvas. Mirrors
     /// the ChartExportView color discipline — saturated but not neon.
-    private static let palette: [Color] = [
-        Color(hex: 0x2563EB), Color(hex: 0x059669), Color(hex: 0xD97706),
-        Color(hex: 0xDC2626), Color(hex: 0x7C3AED), Color(hex: 0x0891B2),
-        Color(hex: 0xDB2777), Color(hex: 0x65A30D), Color(hex: 0xEA580C),
-        Color(hex: 0x475569), Color(hex: 0x9333EA)
-    ]
+    private static let palette: [Color] = Theme.ChartPalette.osVersionExport
 
     var body: some View {
         HStack(alignment: .center, spacing: 24) {

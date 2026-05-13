@@ -253,10 +253,10 @@ struct CompliancePostureView: View {
 
     private func barColor(for pct: Double) -> Color {
         switch pct {
-        case ..<1:  return Color(hex: 0x30D158)  // ok
-        case ..<5:  return Color(hex: 0xE8B614)  // gold
-        case ..<15: return Color(hex: 0xFF9F0A)  // warn
-        default:    return Color(hex: 0xFF453A)  // danger
+        case ..<1:  return Theme.Colors.ok
+        case ..<5:  return Theme.Colors.goldBright
+        case ..<15: return Theme.Colors.warn
+        default:    return Theme.Colors.danger
         }
     }
 

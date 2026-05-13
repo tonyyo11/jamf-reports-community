@@ -40,7 +40,7 @@ struct EmptyStateView: View {
                 HStack {
                     icon
                         .font(.system(size: 28))
-                        .foregroundStyle(Theme.Colors.hairlineStrong)
+                        .foregroundStyle(Theme.Colors.fgMuted)
                         .accessibilityHidden(true)
                     Spacer()
                 }
@@ -70,16 +70,6 @@ struct EmptyStateView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title). \(message)")
         .accessibilityHint(primaryAction != nil ? "Double-tap to \(primaryAction?.label ?? "")" : "")
-        .onAppear {
-            // Announce the empty state for screen readers
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                NSAccessibility.post(
-                    element: NSApp.keyWindow as Any,
-                    notification: .announcementRequested,
-                    userInfo: [.announcement: "\(title). \(message)"]
-                )
-            }
-        }
     }
 }
 

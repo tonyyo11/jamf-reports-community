@@ -236,16 +236,16 @@ struct ProtectView: View {
                 if totalAlerts > 0 {
                     VStack(spacing: 6) {
                         if snapshot.criticalAlerts > 0 {
-                            alertSeverityBar(label: "Critical", count: snapshot.criticalAlerts, total: totalAlerts, color: Color(hex: 0xFF5757))
+                            alertSeverityBar(label: "Critical", count: snapshot.criticalAlerts, total: totalAlerts, color: Theme.Severity.critical.inApp)
                         }
                         if snapshot.highAlerts > 0 {
-                            alertSeverityBar(label: "High", count: snapshot.highAlerts, total: totalAlerts, color: Color(hex: 0xFFB340))
+                            alertSeverityBar(label: "High", count: snapshot.highAlerts, total: totalAlerts, color: Theme.Severity.high.inApp)
                         }
                         if snapshot.mediumAlerts > 0 {
-                            alertSeverityBar(label: "Medium", count: snapshot.mediumAlerts, total: totalAlerts, color: Color(hex: 0xFFD55F))
+                            alertSeverityBar(label: "Medium", count: snapshot.mediumAlerts, total: totalAlerts, color: Theme.Severity.medium.inApp)
                         }
                         if snapshot.lowAlerts > 0 {
-                            alertSeverityBar(label: "Low", count: snapshot.lowAlerts, total: totalAlerts, color: Color(hex: 0x6DC0C0))
+                            alertSeverityBar(label: "Low", count: snapshot.lowAlerts, total: totalAlerts, color: Theme.Severity.low.inApp)
                         }
                     }
                 }
@@ -367,7 +367,7 @@ struct ProtectView: View {
                 }
 
                 statusPill(alert.status)
-                    .frame(width: 88, alignment: .trailing)
+                    .frame(width: 104, alignment: .trailing)
             }
             .padding(.vertical, 8)
 
@@ -403,7 +403,7 @@ struct ProtectView: View {
                     .frame(width: 80, alignment: .trailing)
 
                 statusPill(alert.status)
-                    .frame(width: 88, alignment: .trailing)
+                    .frame(width: 104, alignment: .trailing)
             }
             .padding(.vertical, 8)
 
@@ -418,10 +418,10 @@ struct ProtectView: View {
         let text = severity?.capitalized ?? "Unknown"
         let tone: Pill.Tone = {
             guard let sev = severity?.lowercased() else { return .muted }
-            if sev.contains("critical") { return .danger }
-            if sev.contains("high") { return .warn }
-            if sev.contains("medium") || sev.contains("med") { return .gold }
-            if sev.contains("low") { return .teal }
+            if sev.contains("critical") { return Theme.Severity.critical.pillTone }
+            if sev.contains("high") { return Theme.Severity.high.pillTone }
+            if sev.contains("medium") || sev.contains("med") { return Theme.Severity.medium.pillTone }
+            if sev.contains("low") { return Theme.Severity.low.pillTone }
             return .muted
         }()
 
@@ -789,16 +789,16 @@ private struct ProtectAlertsSeverityExport: View {
     private struct Row: Identifiable {
         let label: String
         let count: Int
-        let colorHex: UInt32
+        let color: Color
         var id: String { label }
     }
 
     private var rows: [Row] {
         [
-            Row(label: "Critical", count: critical, colorHex: 0xDC2626),
-            Row(label: "High",     count: high,     colorHex: 0xD97706),
-            Row(label: "Medium",   count: medium,   colorHex: 0xCA8A04),
-            Row(label: "Low",      count: low,      colorHex: 0x0891B2)
+            Row(label: "Critical", count: critical, color: Theme.Severity.critical.export),
+            Row(label: "High",     count: high,     color: Theme.Severity.high.export),
+            Row(label: "Medium",   count: medium,   color: Theme.Severity.medium.export),
+            Row(label: "Low",      count: low,      color: Theme.Severity.low.export)
         ].filter { $0.count > 0 }
     }
 
@@ -829,7 +829,7 @@ private struct ProtectAlertsSeverityExport: View {
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(Color(hex: 0xE2E8F0))
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Color(hex: row.colorHex))
+                                .fill(row.color)
                                 .frame(width: max(2, geo.size.width * pct / 100))
                         }
                     }

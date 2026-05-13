@@ -206,6 +206,8 @@ struct Pill: View {
         .padding(.vertical, 2)
         .padding(.horizontal, 8)
         .background(bg, in: Capsule())
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var bg: Color {

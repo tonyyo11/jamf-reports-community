@@ -107,3 +107,71 @@ extension Theme.Metrics {
     /// Corner radius for profile/workspace chip surfaces.
     static let chipRadius: CGFloat = 8
 }
+
+// MARK: - Severity semantic palette
+
+extension Theme {
+    enum Severity {
+        case critical, high, medium, low
+
+        /// In-app dark-mode color, matched to Pill tones below.
+        var inApp: Color {
+            switch self {
+            case .critical: Theme.Colors.danger       // 0xFF453A
+            case .high:     Theme.Colors.warn         // 0xFF9F0A
+            case .medium:   Theme.Colors.goldBright   // 0xE8B614
+            case .low:      Theme.Colors.teal         // 0x2A6B6B
+            }
+        }
+
+        /// Light-canvas export color (saturated, not neon on #F8FAFC).
+        var export: Color {
+            switch self {
+            case .critical: Color(hex: 0xDC2626)
+            case .high:     Color(hex: 0xD97706)
+            case .medium:   Color(hex: 0xCA8A04)
+            case .low:      Color(hex: 0x0891B2)
+            }
+        }
+
+        /// Map to existing Pill tone so chips match bars.
+        var pillTone: Pill.Tone {
+            switch self {
+            case .critical: .danger
+            case .high:     .warn
+            case .medium:   .gold
+            case .low:      .teal
+            }
+        }
+    }
+}
+
+// MARK: - Chart palette semantic tokens
+
+extension Theme {
+    enum ChartPalette {
+        /// Ordered palette for OS version distributions. Read at small slice sizes
+        /// in both dark in-app and light export canvases.
+        static let osVersionInApp: [Color] = [
+            Theme.Colors.goldBright,     // 0xE8B614
+            Theme.Colors.teal,           // 0x2A6B6B - promote existing teal token
+            Color(hex: 0x7DA3F9),        // soft blue
+            Color(hex: 0xC58AF9),        // soft purple
+            Color(hex: 0xF98AA3),        // soft pink
+            Color(hex: 0xF9C58A),        // soft orange
+            Color(hex: 0x8AF9C5),        // soft mint
+            Color(hex: 0xA8A8AD)         // neutral gray
+        ]
+
+        static let osVersionExport: [Color] = [
+            Color(hex: 0xCA8A04),
+            Color(hex: 0x0891B2),
+            Color(hex: 0x2563EB),
+            Color(hex: 0x7C3AED),
+            Color(hex: 0xDB2777),
+            Color(hex: 0xEA580C),
+            Color(hex: 0x059669),
+            Color(hex: 0x6B7280)
+        ]
+    }
+}

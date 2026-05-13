@@ -533,7 +533,7 @@ private struct MobileFleetOSDistributionExport: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color(hex: 0xE2E8F0))
                             RoundedRectangle(cornerRadius: 2)
-                                .fill(Color(hex: 0xD97706))
+                                .fill(Theme.ChartPalette.osVersionExport[0]) // Use muted gold export color
                                 .frame(width: max(0, geo.size.width * pct / 100))
                         }
                     }

@@ -300,10 +300,10 @@ struct OutreachView: View {
 
     private func daysSinceColor(for days: Int) -> Color {
         switch days {
-        case ..<30:  return Color(hex: 0x30D158)  // green
-        case 30..<91: return Color(hex: 0xE8B614) // gold
-        case 91..<181: return Color(hex: 0xFF9F0A) // warn
-        default:     return Color(hex: 0xFF453A)  // danger
+        case ..<30:  return Theme.Colors.ok
+        case 30..<91: return Theme.Colors.goldBright
+        case 91..<181: return Theme.Colors.warn
+        default:     return Theme.Colors.danger
         }
     }
 
