@@ -270,7 +270,7 @@ struct ProtectView: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(color)
                     Text(label)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
@@ -339,7 +339,7 @@ struct ProtectView: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(alert.eventType ?? "Unknown")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
 
@@ -379,7 +379,7 @@ struct ProtectView: View {
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(alert.eventType)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
 
@@ -477,7 +477,7 @@ struct ProtectView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(computer.hostName ?? "Unknown")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
 
@@ -525,7 +525,7 @@ struct ProtectView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(computer.hostName)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
 
@@ -624,7 +624,7 @@ struct ProtectView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(insight.label ?? "Unknown Insight")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
 
                 Spacer()
@@ -636,7 +636,7 @@ struct ProtectView: View {
 
             if let section = insight.section {
                 Text(section)
-                    .font(.system(size: 10.5))
+                    .font(.caption)
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
 
@@ -685,7 +685,7 @@ struct ProtectView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(insight.label)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
 
                 Spacer()
@@ -694,7 +694,7 @@ struct ProtectView: View {
             }
 
             Text(insight.section)
-                .font(.system(size: 10.5))
+                .font(.caption)
                 .foregroundStyle(Theme.Colors.fgMuted)
 
             if total > 0 {
