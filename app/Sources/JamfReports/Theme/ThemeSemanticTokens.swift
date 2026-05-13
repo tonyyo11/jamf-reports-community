@@ -60,6 +60,10 @@ extension Theme {
         static func input(_ contrast: ColorSchemeContrast) -> Color {
             Color.white.opacity(contrast == .increased ? 0.10 : 0.05)
         }
+        /// Hover / pointer-over tint for nav items and interactive rows.
+        static func hover(_ contrast: ColorSchemeContrast) -> Color {
+            Color.white.opacity(contrast == .increased ? 0.10 : 0.05)
+        }
     }
 
     // MARK: Hairline

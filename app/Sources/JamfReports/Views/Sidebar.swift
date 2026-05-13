@@ -188,7 +188,7 @@ struct Sidebar: View {
                 RoundedRectangle(cornerRadius: mode == .compact ? 8 : 6, style: .continuous)
                     .fill(
                         isActive ? Theme.Colors.gold.opacity(0.18) :
-                        (hoveredItem == item && !isActive ? Color.white.opacity(0.04) : .clear)
+                        (hoveredItem == item && !isActive ? Theme.Surface.hover(contrast) : .clear)
                     )
                     .padding(.horizontal, mode == .compact ? 4 : 0)
             )
