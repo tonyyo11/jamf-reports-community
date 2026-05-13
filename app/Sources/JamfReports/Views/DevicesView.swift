@@ -120,7 +120,7 @@ struct DevicesView: View {
                 header
                 if let err = exportError {
                     Text(err)
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.danger)
                         .padding(.horizontal, 4)
                         .onTapGesture { exportError = nil }
@@ -228,7 +228,7 @@ struct DevicesView: View {
                     .foregroundStyle(Theme.Colors.fgMuted)
                 TextField("Search devices", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.callout)
                     .foregroundStyle(Theme.Colors.fg)
                     .focused($isSearchFocused)
                     .accessibilityLabel("Search devices")
@@ -326,7 +326,7 @@ struct DevicesView: View {
                                     .foregroundStyle(Theme.Colors.fg)
                                     .textSelection(.enabled)
                                 Text(device.model.isEmpty ? device.source : device.model)
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .lineLimit(1)
                             }
@@ -342,7 +342,7 @@ struct DevicesView: View {
                     TableColumn("User", value: \.user) { device in
                         if !isCompact {
                             Text(device.user.isEmpty ? "Unassigned" : device.user)
-                                .font(.system(size: 12))
+                                .font(.footnote)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .lineLimit(1)
                         }
@@ -497,13 +497,13 @@ struct DevicesView: View {
                 switch deviceDetailState {
                 case .idle:
                     Text("Select a device to load jamf-cli detail.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 case .loading:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading device detail...")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                 case .loaded:
@@ -512,7 +512,7 @@ struct DevicesView: View {
                     }
                 case .unavailable(let message):
                     Text(message)
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.warn)
                 }
             }
@@ -527,12 +527,12 @@ struct DevicesView: View {
                     ForEach(section.items.prefix(8)) { item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(item.label)
-                                .font(.system(size: 11.5))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(width: 112, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.value)
-                                    .font(.system(size: 12.2))
+                                    .font(.footnote)
                                     .foregroundStyle(Theme.Colors.fg2)
                                     .lineLimit(3)
                                 if !item.note.isEmpty {
@@ -554,7 +554,7 @@ struct DevicesView: View {
             }
             ForEach(detail.warnings, id: \.self) { warning in
                 Text(warning)
-                    .font(.system(size: 11.5))
+                    .font(.caption)
                     .foregroundStyle(Theme.Colors.warn)
             }
         }
@@ -571,7 +571,7 @@ struct DevicesView: View {
 
                 if activeSnapshot.osDistribution.isEmpty {
                     Text("No OS data available.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
                     Chart(activeSnapshot.osDistribution.prefix(6)) { item in
@@ -638,7 +638,7 @@ struct DevicesView: View {
 
                 if activeSnapshot.sourceFiles.isEmpty {
                     Text("No current inventory, compliance, or patch snapshots were found.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
                     ForEach(activeSnapshot.sourceFiles, id: \.self) { file in
@@ -656,7 +656,7 @@ struct DevicesView: View {
                     Divider().background(Theme.Colors.hairline)
                     ForEach(activeSnapshot.warnings, id: \.self) { warning in
                         Text(warning)
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.warn)
                     }
                 }
@@ -687,7 +687,7 @@ struct DevicesView: View {
                             .foregroundStyle(Theme.Colors.fgMuted)
                             .frame(width: 92, alignment: .leading)
                         Text(row.1)
-                            .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .system(size: 12.5))
+                            .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                             .lineLimit(2)
                         Spacer(minLength: 0)
@@ -716,7 +716,7 @@ struct DevicesView: View {
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .frame(width: 92, alignment: .leading)
                     Text(device.failedRules == 0 ? "0" : "\(device.failedRules)")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(device.failedRules == 0 ? Theme.Colors.fg2 : Theme.Colors.warn)
                     Spacer(minLength: 0)
                 }
@@ -748,7 +748,7 @@ struct DevicesView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(entry.factor.displayLabel)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.footnote.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
                                 if let detail = entry.detail {
                                     Mono(text: detail)
@@ -757,7 +757,7 @@ struct DevicesView: View {
                                 Pill(text: "+\(entry.points)", tone: .warn)
                             }
                             Text(entry.factor.remediation)
-                                .font(.system(size: 11.5))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                         }
                         .padding(.vertical, 3)
@@ -827,7 +827,7 @@ struct DevicesView: View {
             Circle().fill(color).frame(width: 6, height: 6)
                 .accessibilityHidden(true)
             Text(label)
-                .font(.system(size: 11))
+                .font(.caption)
                 .foregroundStyle(Theme.Colors.fgMuted)
         }
     }

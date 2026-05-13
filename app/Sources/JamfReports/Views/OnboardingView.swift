@@ -76,7 +76,7 @@ struct OnboardingView: View {
                     .foregroundStyle(current ? Theme.Colors.goldBright : Theme.Colors.fgMuted)
             }
             Text(step.label)
-                .font(.system(size: 11.5))
+                .font(.caption)
                 .foregroundStyle(current ? Theme.Colors.fg :
                                  done ? Theme.Colors.fg2 : Theme.Colors.fgMuted)
         }
@@ -223,7 +223,7 @@ struct OnboardingView: View {
                     statusIcon(ok: flow.jamfCLIInstalled)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(flow.jamfCLIInstalled ? "jamf-cli detected" : "jamf-cli not detected")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.headline)
                             .foregroundStyle(Theme.Colors.fg)
                         Mono(
                             text: flow.jamfCLIVersion.map { "Version \($0)" } ?? "Search paths: /opt/homebrew/bin, /usr/local/bin, /usr/bin, /bin",
@@ -335,7 +335,7 @@ struct OnboardingView: View {
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(Theme.Colors.fg)
                             Text("Policy: accepted locations are Documents, Downloads, and Desktop.")
-                                .font(.system(size: 12))
+                                .font(.footnote)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                         }
                         Spacer()
@@ -414,7 +414,7 @@ struct OnboardingView: View {
     private var privilegesBox: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Required Jamf Pro API privileges")
-                .font(.system(size: 12, weight: .medium))
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3), spacing: 6) {
                 ForEach(privileges, id: \.self) { privilege in
@@ -422,7 +422,7 @@ struct OnboardingView: View {
                         Image(systemName: "checkmark")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Color(hex: 0x6DC0C0))
-                        Text(privilege).font(.system(size: 11)).foregroundStyle(Theme.Colors.fg2)
+                        Text(privilege).font(.caption).foregroundStyle(Theme.Colors.fg2)
                     }
                 }
             }
@@ -444,7 +444,7 @@ struct OnboardingView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
                 Text(error)
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg2)
                 Spacer()
             }
@@ -561,7 +561,7 @@ struct OnboardingView: View {
                 .font(.system(size: 9, weight: .bold))
             Text(text)
         }
-        .font(.system(size: 11.5))
+        .font(.caption)
         .foregroundStyle(ok ? Color(hex: 0x6DC0C0) : Theme.Colors.danger)
     }
 

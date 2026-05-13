@@ -119,7 +119,7 @@ struct DeviceLookupView: View {
         if workspace.demoMode {
             Card(padding: 18) {
                 Text("Device lookup is available in live mode only.")
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
         } else {
@@ -131,7 +131,7 @@ struct DeviceLookupView: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Resolving \(submittedTerm) via jamf-cli…")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                 }
@@ -154,7 +154,7 @@ struct DeviceLookupView: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Multiple matches for \(submittedTerm)")
                 Text("Pick the device you want to inspect.")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(candidates) { cand in
@@ -175,7 +175,7 @@ struct DeviceLookupView: View {
                      icon: cand.kind == .computer ? "desktopcomputer" : "ipad")
                 VStack(alignment: .leading, spacing: 2) {
                     Text(cand.name)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 8) {
                         Mono(text: "ID \(cand.id)", size: 10.5, color: Theme.Colors.fgMuted)
@@ -208,7 +208,7 @@ struct DeviceLookupView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
                 Text(clarifiedUnavailableMessage(message))
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Colors.warn)
             }
         }
@@ -235,7 +235,7 @@ struct DeviceLookupView: View {
                     Image(systemName: "magnifyingglass.circle")
                         .foregroundStyle(Theme.Colors.fgMuted)
                     Text(message)
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
                 HStack(spacing: 8) {
@@ -258,7 +258,7 @@ struct DeviceLookupView: View {
                         }
                     }
                     Text("Re-runs `jamf-cli pro computers list` and `mobile-devices list`, then retries.")
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -294,12 +294,12 @@ struct DeviceLookupView: View {
                         ForEach(section.items) { item in
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text(item.label)
-                                    .font(.system(size: 11.5))
+                                    .font(.caption)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .frame(width: 140, alignment: .leading)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.value)
-                                        .font(.system(size: 12.2))
+                                        .font(.footnote)
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .textSelection(.enabled)
                                     if !item.note.isEmpty {
@@ -315,7 +315,7 @@ struct DeviceLookupView: View {
 
                 ForEach(detail.warnings, id: \.self) { warning in
                     Text(warning)
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.warn)
                 }
             }

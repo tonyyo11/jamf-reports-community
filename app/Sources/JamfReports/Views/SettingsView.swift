@@ -131,7 +131,7 @@ struct SettingsView: View {
     private func settingsRow(label: String, sub: String, trailing: AnyView) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.system(size: 13, weight: .medium))
+                Text(label).font(.callout.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 Text(sub).font(Theme.Fonts.mono(11)).foregroundStyle(Theme.Text.tertiary)
             }
@@ -153,7 +153,7 @@ struct SettingsView: View {
                                 .fill(dotColor(for: c))
                                 .frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(c.name).font(.system(size: 12.5, weight: .medium))
+                                Text(c.name).font(.footnote.weight(.medium))
                                     .foregroundStyle(isUnsupported ? Theme.Text.disabled : Theme.Text.primary)
                                 Mono(text: "\(c.url) · \(profileType(c))", size: 10.5)
                                 tokenStatusLabel(for: c.name)
@@ -172,7 +172,7 @@ struct SettingsView: View {
                     }
                     if workspace.profiles.isEmpty {
                         Text("No local jamf-cli profiles found.")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 10)
@@ -196,7 +196,7 @@ struct SettingsView: View {
                     }
                     .help("Opens a Terminal window and copies `jamf-cli config add-profile` to your clipboard.")
                     Text("Opens Terminal and copies the auth command. Paste it in the Terminal window and follow the prompts.")
-                        .font(.system(size: 11))
+                        .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let msg = addConnectionMessage {
@@ -219,7 +219,7 @@ struct SettingsView: View {
                     ProgressView().controlSize(.small)
                     if testingTooLong {
                         Text("Taking longer than usual…")
-                            .font(.system(size: 11))
+                            .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary)
                     }
                 }
@@ -330,12 +330,12 @@ struct SettingsView: View {
                             .font(Theme.Fonts.mono(13))
                         Text("project — every flow in this app maps to a CLI command.")
                     }
-                    .font(.system(size: 13))
+                    .font(.callout)
                     .foregroundStyle(Theme.Text.secondary)
                     .frame(maxWidth: 620, alignment: .leading)
 
                     Text("The CLI ships independently and stays the source of truth; this app reads and writes its config and orchestrates runs.")
-                        .font(.system(size: 13))
+                        .font(.callout)
                         .foregroundStyle(Theme.Text.secondary)
                         .frame(maxWidth: 620, alignment: .leading)
 
@@ -471,7 +471,7 @@ struct SettingsView: View {
                     .help("Restore every hidden tab to the sidebar.")
                 }
                 Text("Hide dashboards you don't use. Core tabs (Overview, Devices, Sources, Settings) cannot be hidden.")
-                    .font(.system(size: 11.5))
+                    .font(.caption)
                     .foregroundStyle(Theme.Colors.fgMuted)
                 ForEach(SettingsView.toggleableGroups, id: \.label) { group in
                     visibilityGroupRow(label: group.label, tabs: group.tabs)
@@ -512,7 +512,7 @@ struct SettingsView: View {
                 .foregroundStyle(Theme.Colors.fgMuted)
                 .frame(width: 16, alignment: .center)
             Text(tab.label)
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(Theme.Colors.fg)
             Spacer()
             PNPToggle(

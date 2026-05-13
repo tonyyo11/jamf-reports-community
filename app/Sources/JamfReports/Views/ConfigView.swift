@@ -54,7 +54,7 @@ struct ConfigView: View {
                 )
                 if let err = workspace.configError {
                     Text(err)
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.danger)
                         .padding(.horizontal, 4)
                         .accessibilityLabel("Configuration error: \(err)")
@@ -275,12 +275,12 @@ private struct ColumnsTab: View {
     private func validationRow(icon: String, color: Color, title: String, detail: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.callout.weight(.semibold))
                 .foregroundStyle(color)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.Text.primary)
-                Text(detail).font(.system(size: 11)).foregroundStyle(Theme.Text.tertiary)
+                Text(title).font(.footnote.weight(.medium)).foregroundStyle(Theme.Text.primary)
+                Text(detail).font(.caption).foregroundStyle(Theme.Text.tertiary)
             }
         }
     }
@@ -291,7 +291,7 @@ private struct ColumnsTab: View {
                 SectionHeader(title: "Tip")
                 (Text("Run ") + Text("scaffold").font(Theme.Fonts.mono(11)) +
                  Text(" to auto-detect columns from a new CSV export. Existing config is preserved."))
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
                 PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm, action: runScaffold)
             }
@@ -398,7 +398,7 @@ private struct AgentsTab: View {
             Divider().background(Theme.Hairline.standard)
             if ws.configState.securityAgents.isEmpty {
                 Text("No security agents configured. Add one to track install rates.")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary)
                     .padding(16)
             } else {
@@ -449,7 +449,7 @@ private struct AgentsTab: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary)
                     .frame(width: 36, height: 28)
                     .contentShape(Rectangle())
@@ -477,7 +477,7 @@ private struct EasTab: View {
                 }
                 if ws.configState.customEAs.isEmpty {
                     Text("No custom EA sheets configured.")
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary)
                 } else {
                     VStack(spacing: 12) {
@@ -562,7 +562,7 @@ private struct EACardEdit: View {
             HStack(spacing: 8) {
                 PNPTextField(value: value, mono: true).frame(width: 80)
                 if let unit {
-                    Text(unit).font(.system(size: 11)).foregroundStyle(Theme.Text.tertiary)
+                    Text(unit).font(.caption).foregroundStyle(Theme.Text.tertiary)
                 }
             }
             if let help {
@@ -666,7 +666,7 @@ private struct ThresholdsTab: View {
             FieldLabel(label: label, trailing: key)
             HStack(spacing: 8) {
                 PNPTextField(value: value, mono: true).frame(width: 100)
-                Text(unit).font(.system(size: 12)).foregroundStyle(Theme.Text.tertiary)
+                Text(unit).font(.footnote).foregroundStyle(Theme.Text.tertiary)
             }
             FieldHelp(text: help)
         }
@@ -696,7 +696,7 @@ private struct PlatformTab: View {
                  + Text(" build with ")
                  + Text("pro report").font(Theme.Fonts.mono(11))
                  + Text(" commands."))
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary)
                 Divider().background(Theme.Hairline.standard)
                 if isPlatformProfile {
@@ -708,10 +708,10 @@ private struct PlatformTab: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Enable Platform API sheets")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Text.primary)
                         Text("Blueprints, DDM Status, Compliance benchmarks")
-                            .font(.system(size: 11))
+                            .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary)
                     }
                     Spacer()
@@ -744,11 +744,11 @@ private struct PlatformTab: View {
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Platform Gateway profile active")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 Text("Profile \"\(workspace.profile)\" is configured for Platform Gateway auth. "
                      + "Enable the toggle below to include Platform API sheets in generated reports.")
-                    .font(.system(size: 11))
+                    .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
             }
         }
@@ -787,7 +787,7 @@ private struct PlatformTab: View {
                 } label: {
                     HStack(spacing: 3) {
                         Text("Setup guide")
-                            .font(.system(size: 11))
+                            .font(.caption)
                         Image(systemName: "arrow.up.right")
                             .font(.system(size: 9, weight: .semibold))
                     }
@@ -917,8 +917,8 @@ private struct OutputTab: View {
     private func outputToggleRow(title: String, detail: String, isOn: Binding<Bool>) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.Text.primary)
-                Text(detail).font(.system(size: 11)).foregroundStyle(Theme.Text.tertiary)
+                Text(title).font(.callout.weight(.medium)).foregroundStyle(Theme.Text.primary)
+                Text(detail).font(.caption).foregroundStyle(Theme.Text.tertiary)
             }
             Spacer()
             PNPToggle(isOn: isOn)
@@ -995,7 +995,7 @@ private struct EACard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ea.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Text.primary)
+                    Text(ea.name).font(.callout.weight(.semibold)).foregroundStyle(Theme.Text.primary)
                     Mono(text: ea.column, size: 11, color: Theme.Text.tertiary)
                 }
                 Spacer()
@@ -1079,7 +1079,7 @@ private struct ScoringTab: View {
                     Text("These weights drive the Security Score on the Security Posture screen. " +
                          "Set a weight to 0 to drop that metric entirely. Missing metrics in your " +
                          "data are auto-renormalized so the score still scales to 100.")
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                     VStack(spacing: 6) {
                         weightRow("FileVault Encryption",
@@ -1124,7 +1124,7 @@ private struct ScoringTab: View {
     private func weightRow(_ label: String, value: Binding<Int>) -> some View {
         HStack {
             Text(label)
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(Theme.Colors.fg)
             Spacer()
             EditableNumberStepper(value: value, range: 0...100, suffix: "pts")
