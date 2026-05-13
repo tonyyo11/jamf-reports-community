@@ -333,6 +333,12 @@ private struct Parser {
                 // …as well as the conventional indent + 2 form.
                 if let listIndent = peekBlockSequenceIndent(maxIndent: indent + 2) {
                     value = .sequence(parseSequence(indent: listIndent))
+                } else if !hasChildContent(indent: indent) {
+                    // `key:` with no following child content (next line is a
+                    // sibling/parent key) — emit null rather than an empty
+                    // mapping. An empty mapping would later fail to decode as
+                    // [Element] or Optional<Element>.
+                    value = .scalar(.null)
                 } else {
                     value = parseBlock(indent: indent + 2)
                 }
@@ -343,6 +349,22 @@ private struct Parser {
         }
 
         return .init(entries: entries)
+    }
+
+    /// Returns true if the next non-blank, non-comment content line is indented
+    /// strictly deeper than `indent` — i.e. the current key actually has a
+    /// child value. False when the next line is a sibling or parent key, or EOF.
+    private func hasChildContent(indent: Int) -> Bool {
+        var i = index
+        while i < lines.count {
+            let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                i += 1
+                continue
+            }
+            return indentation(of: lines[i]) > indent
+        }
+        return false
     }
 
     /// Returns the indent of the next block-sequence item if it begins at

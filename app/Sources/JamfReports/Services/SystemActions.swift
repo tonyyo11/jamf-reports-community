@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 
 /// Thin wrapper around `NSWorkspace` for the "Reveal in Finder", "Open file",
 /// and "Copy to clipboard" actions wired throughout the UI.
@@ -9,10 +10,19 @@ import AppKit
 /// revealing or opening files outside the sandboxed scope.
 enum SystemActions {
 
-    /// Reveal a file or directory in Finder. No-op if the path doesn't exist.
-    static func reveal(_ url: URL) {
-        guard let resolved = canonicalize(url) else { return }
+    /// Reveal a file or directory in Finder. Returns `false` if the path is
+    /// outside the allow-list or fails canonicalization; the rejection is also
+    /// logged via `AppLogger.ui` so operators tailing console logs can spot it.
+    @discardableResult
+    static func reveal(_ url: URL) -> Bool {
+        guard let resolved = canonicalize(url) else {
+            AppLogger.ui.warning(
+                "SystemActions.reveal: path not in allow-list: \(url.path, privacy: .private)"
+            )
+            return false
+        }
         NSWorkspace.shared.activateFileViewerSelecting([resolved])
+        return true
     }
 
     /// Open a file with the default application or a URL in the default browser.

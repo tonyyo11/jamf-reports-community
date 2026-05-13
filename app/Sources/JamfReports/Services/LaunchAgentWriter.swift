@@ -187,6 +187,14 @@ enum LaunchAgentWriter {
 
         let execPath = args[0]
         let effectiveWorkingDir = workingDir ?? ProfileService.workspacesRoot().path
+        if workingDir == nil {
+            onLine(.init(
+                timestamp: Date(),
+                level: .warn,
+                text: "[warn] LaunchAgent WorkingDirectory key missing; defaulting to \(effectiveWorkingDir) "
+                    + "— re-save this schedule to persist the key"
+            ))
+        }
         return await withCheckedContinuation { cont in
             let p = Process()
             p.executableURL = URL(fileURLWithPath: execPath)

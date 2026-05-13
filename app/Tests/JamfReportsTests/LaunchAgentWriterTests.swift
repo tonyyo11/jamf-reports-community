@@ -236,4 +236,67 @@ final class LaunchAgentWriterTests: XCTestCase {
             enabled: true
         )
     }
+
+    // MARK: - WorkingDirectory contract (Phase: schedule fix 9804b69, 5d69c28)
+
+    /// Self-heal contract: a missing key returns true; the caller substitutes
+    /// `ProfileService.workspacesRoot()`. Locks behavior for pre-existing plists.
+    func testIsExpectedMultiWorkingDirectoryAcceptsNil() {
+        XCTAssertTrue(LaunchAgentWriter.isExpectedMultiWorkingDirectory(nil))
+    }
+
+    func testIsExpectedMultiWorkingDirectoryAcceptsCanonicalRoot() {
+        let root = ProfileService.workspacesRoot().path
+        XCTAssertTrue(LaunchAgentWriter.isExpectedMultiWorkingDirectory(root))
+    }
+
+    func testIsExpectedMultiWorkingDirectoryRejectsWrongPath() {
+        XCTAssertFalse(LaunchAgentWriter.isExpectedMultiWorkingDirectory("/tmp/wrong"))
+        XCTAssertFalse(LaunchAgentWriter.isExpectedMultiWorkingDirectory("/Users/elsewhere"))
+    }
+
+    func testIsExpectedMultiWorkingDirectoryRejectsMalformedPath() {
+        // Non-absolute paths and empty strings must be rejected.
+        XCTAssertFalse(LaunchAgentWriter.isExpectedMultiWorkingDirectory(""))
+    }
+
+    /// Round-trip: `nativeMultiWrite` must persist `WorkingDirectory` so a
+    /// future `runMultiNow` validates without the self-heal branch.
+    func testNativeMultiWritePersistsWorkingDirectory() throws {
+        let scheduleObj = schedule(name: "Test-Multi-WorkingDir")
+        guard let agentLabel = LaunchAgentWriter.label(for: scheduleObj) else {
+            XCTFail("Expected a valid label for schedule")
+            return
+        }
+        let tempExec = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fake-jamf-reports-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tempExec.path, contents: Data("#!/bin/sh\nexit 0\n".utf8))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))],
+            ofItemAtPath: tempExec.path
+        )
+        defer { try? FileManager.default.removeItem(at: tempExec) }
+
+        let plan = try LaunchAgentWriter.nativeMultiWrite(
+            for: scheduleObj,
+            executableURL: tempExec,
+            load: false
+        )
+        defer {
+            try? FileManager.default.removeItem(at: plan.plistURL)
+            let logDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+            try? FileManager.default.removeItem(at: logDir)
+        }
+
+        let data = try Data(contentsOf: plan.plistURL)
+        guard let plist = try PropertyListSerialization.propertyList(
+            from: data, format: nil
+        ) as? [String: Any] else {
+            return XCTFail("plist did not deserialize as dictionary")
+        }
+        let workingDir = plist["WorkingDirectory"] as? String
+        XCTAssertEqual(workingDir, ProfileService.workspacesRoot().path)
+        XCTAssertTrue(LaunchAgentWriter.isExpectedMultiWorkingDirectory(workingDir))
+    }
 }
