@@ -53,7 +53,7 @@ struct ReportsView: View {
                                 )
                             }
                             TableColumn("Source schedule") { r in
-                                Text(r.source).font(.system(size: 12.5))
+                                Text(r.source).font(.footnote)
                             }
                             TableColumn("Sheets") { r in Mono(text: "\(r.sheets)") }
                             TableColumn("Devices") { r in Mono(text: "\(r.devices)") }
@@ -149,7 +149,7 @@ struct ReportsView: View {
             }
             if let err = reportError {
                 Text(err)
-                    .font(.system(size: 12))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Colors.danger)
                     .accessibilityLabel("Error: \(err)")
             }
@@ -163,7 +163,7 @@ struct ReportsView: View {
                 .foregroundStyle(Theme.Colors.gold)
                 .accessibilityHidden(true)
             Text("No reports yet — run Generate from Overview")
-                .font(.system(size: 13, weight: .medium))
+                .font(.callout.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg)
             PNPButton(title: "Go to Overview", icon: "house", style: .gold) {
                 requestOverviewTab()
@@ -180,7 +180,7 @@ struct ReportsView: View {
                 .foregroundStyle(Theme.Colors.fgMuted)
                 .accessibilityHidden(true)
             Text("No \(filter) reports found")
-                .font(.system(size: 13, weight: .medium))
+                .font(.callout.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg)
         }
         .frame(maxWidth: .infinity, minHeight: 360)

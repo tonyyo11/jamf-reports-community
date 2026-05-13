@@ -140,7 +140,7 @@ struct BackupsView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
                 Text(errorMessage)
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
                 Spacer()
             }
@@ -162,7 +162,7 @@ struct BackupsView: View {
                     TableColumn("Backup") { backup in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(backup.label.isEmpty ? backup.name : backup.label)
-                                .font(.system(size: 12.5, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.Text.primary)
                             if backup.label.isEmpty {
                                 Text("No label set")
@@ -221,10 +221,10 @@ struct BackupsView: View {
                 .font(.system(size: 28))
                 .foregroundStyle(Theme.Colors.gold)
             Text("No backups yet")
-                .font(.system(size: 13, weight: .medium))
+                .font(.callout.weight(.medium))
                 .foregroundStyle(Theme.Text.primary)
             Text("Create a restore point before making config changes.")
-                .font(.system(size: 12))
+                .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary)
             PNPButton(title: "New Backup", icon: "externaldrive.badge.plus", style: .gold) {
                 runBackup()

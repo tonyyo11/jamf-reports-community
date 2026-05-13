@@ -397,7 +397,7 @@ struct AuditView: View {
                             }
                             TableColumn("Why Flagged") { g in
                                 Text(g.reasonLabel)
-                                    .font(.system(size: 12))
+                                    .font(.footnote)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .lineLimit(2)
                             }
@@ -687,7 +687,7 @@ private struct FindingDetailPopover: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(finding.name)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.headline)
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 6) {
                         Pill(text: finding.severity, tone: tone)

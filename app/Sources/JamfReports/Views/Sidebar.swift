@@ -114,7 +114,7 @@ struct Sidebar: View {
                     .tracking(1.4)
                     .foregroundStyle(Theme.Colors.fg)
                 Text("Jamf Reports · v\(appVersion)")
-                    .font(.system(size: 10.5))
+                    .font(.caption)
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
         }
@@ -163,7 +163,7 @@ struct Sidebar: View {
 
                 if mode != .compact {
                     Text(item.label)
-                        .font(.system(size: 13))
+                        .font(.callout)
                         .foregroundStyle(isActive ? Theme.Colors.fg : Theme.Colors.fg2)
                     Spacer()
                     if let badge = badge(for: item) {

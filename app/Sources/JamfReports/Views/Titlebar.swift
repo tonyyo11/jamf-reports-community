@@ -25,7 +25,7 @@ struct Titlebar: View {
 
             Button(action: popToRoot) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg)
             }
             .buttonStyle(.plain)
