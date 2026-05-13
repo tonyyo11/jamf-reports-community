@@ -293,9 +293,15 @@ struct UpdatesView: View {
                 ? (Double(slice.count) / Double(snapshot.total)) * 100
                 : 0
             HStack {
-                Text(slice.label)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Theme.Colors.fg)
+                HStack(spacing: 4) {
+                    let icon = statusIcon(for: slice.label)
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color(hex: slice.colorHex))
+                    Text(slice.label)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Theme.Colors.fg)
+                }
                 Spacer()
                 Text("\(slice.count) devices")
                     .font(Theme.Fonts.mono(11))
@@ -320,6 +326,14 @@ struct UpdatesView: View {
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(slice.label) device status, \(String(format: "%.1f", snapshot.total > 0 ? (Double(slice.count) / Double(snapshot.total)) * 100 : 0)) percent, \(slice.count) devices")
+    }
+
+    private func statusIcon(for status: String) -> String {
+        let lower = status.lowercased()
+        if lower.contains("completed") { return "checkmark.circle" }
+        if lower.contains("pending") || lower.contains("installing") { return "arrow.triangle.2.circlepath" }
+        if lower.contains("error") { return "exclamationmark.triangle" }
+        return "circle.fill"
     }
 
     @ViewBuilder

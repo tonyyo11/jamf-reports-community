@@ -165,11 +165,16 @@ struct PatchView: View {
 
                     TableColumn("Compliance") { title in
                         let pct = PatchStatusService.parseCompliancePct(title.compliancePct)
-                        Text(title.compliancePct)
-                            .font(Theme.Fonts.mono(11, weight: .semibold))
-                            .foregroundStyle(complianceColor(for: pct))
-                            .monospacedDigit()
-                            .accessibilityLabel("\(title.compliancePct) compliance rate")
+                        HStack(spacing: 3) {
+                            Image(systemName: complianceIcon(for: pct))
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(complianceColor(for: pct))
+                            Text(title.compliancePct)
+                                .font(Theme.Fonts.mono(11, weight: .semibold))
+                                .foregroundStyle(complianceColor(for: pct))
+                                .monospacedDigit()
+                        }
+                        .accessibilityLabel("\(title.compliancePct) compliance rate")
                     }
                     .width(min: 80, ideal: 90)
 
@@ -216,6 +221,14 @@ struct PatchView: View {
         case ..<80:  return Theme.Colors.warn
         case 90...:  return Theme.Colors.ok
         default:     return Theme.Colors.fgMuted  // gray for 80-89
+        }
+    }
+
+    private func complianceIcon(for pct: Double) -> String {
+        switch pct {
+        case ..<80:  return "exclamationmark.triangle"
+        case ..<90:  return "exclamationmark.circle"
+        default:     return "checkmark.circle"
         }
     }
 

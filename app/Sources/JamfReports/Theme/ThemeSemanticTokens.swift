@@ -20,6 +20,15 @@ extension Theme {
         static let tertiary:  Color = Theme.Colors.fgMuted
         /// Disabled state.
         static let disabled:  Color = Theme.Colors.fgDisabled
+
+        /// Accessibility-aware supporting text.
+        static func tertiary(_ contrast: ColorSchemeContrast) -> Color {
+            contrast == .increased ? Theme.Colors.fg2 : Theme.Colors.fgMuted
+        }
+        /// Accessibility-aware disabled state.
+        static func disabled(_ contrast: ColorSchemeContrast) -> Color {
+            contrast == .increased ? Theme.Colors.fgMuted : Theme.Colors.fgDisabled
+        }
     }
 
     // MARK: Surface
@@ -38,6 +47,19 @@ extension Theme {
         static let interactive: Color = Color.white.opacity(0.12)
         /// Text field / input background.
         static let input:       Color = Color.white.opacity(0.05)
+
+        /// Accessibility-aware higher-elevation chips and popovers.
+        static func high(_ contrast: ColorSchemeContrast) -> Color {
+            Color.white.opacity(contrast == .increased ? 0.14 : 0.08)
+        }
+        /// Accessibility-aware interactive element fill.
+        static func interactive(_ contrast: ColorSchemeContrast) -> Color {
+            Color.white.opacity(contrast == .increased ? 0.20 : 0.12)
+        }
+        /// Accessibility-aware text field / input background.
+        static func input(_ contrast: ColorSchemeContrast) -> Color {
+            Color.white.opacity(contrast == .increased ? 0.10 : 0.05)
+        }
     }
 
     // MARK: Hairline
@@ -48,6 +70,11 @@ extension Theme {
         static let standard: Color = Theme.Colors.hairline
         /// Stronger 1pt divider used around cards.
         static let strong:   Color = Theme.Colors.hairlineStrong
+
+        /// Accessibility-aware standard divider.
+        static func standard(_ contrast: ColorSchemeContrast) -> Color {
+            contrast == .increased ? Theme.Colors.hairlineStrong : Theme.Colors.hairline
+        }
     }
 
     // MARK: ButtonColors
@@ -141,6 +168,16 @@ extension Theme {
             case .high:     .warn
             case .medium:   .gold
             case .low:      .teal
+            }
+        }
+
+        /// SF Symbol icon for color-blind-safe redundancy.
+        var systemImage: String {
+            switch self {
+            case .critical: "exclamationmark.triangle.fill"
+            case .high:     "exclamationmark.circle.fill"
+            case .medium:   "info.circle.fill"
+            case .low:      "circle.fill"
             }
         }
     }

@@ -212,7 +212,8 @@ struct PolicyProfileView: View {
                         DataTableRow {
                             Pill(
                                 text: finding.severity,
-                                tone: severityTone(for: finding.severity)
+                                tone: severityTone(for: finding.severity),
+                                icon: severityIcon(for: finding.severity)
                             )
                             .frame(width: 90, alignment: .leading)
 
@@ -262,6 +263,13 @@ struct PolicyProfileView: View {
         if lower.contains("critical") { return .danger }
         if lower.contains("warning") { return .warn }
         return .muted
+    }
+
+    private func severityIcon(for severity: String) -> String {
+        let lower = severity.lowercased()
+        if lower.contains("critical") { return Theme.Severity.critical.systemImage }
+        if lower.contains("warning") { return Theme.Severity.high.systemImage }
+        return Theme.Severity.low.systemImage
     }
 
     private func severityPriority(_ severity: String) -> Int {

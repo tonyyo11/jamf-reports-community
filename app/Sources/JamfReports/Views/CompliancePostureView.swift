@@ -222,9 +222,15 @@ struct CompliancePostureView: View {
     private func controlBar(for gap: CompliancePostureService.Snapshot.ControlGap) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(gap.control)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Theme.Colors.fg)
+                HStack(spacing: 4) {
+                    let icon = controlIcon(for: gap.pct)
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(barColor(for: gap.pct))
+                    Text(gap.control)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Theme.Colors.fg)
+                }
                 Spacer()
                 Text("\(gap.failingDevices) failing")
                     .font(Theme.Fonts.mono(11))
@@ -257,6 +263,15 @@ struct CompliancePostureView: View {
         case ..<5:  return Theme.Colors.goldBright
         case ..<15: return Theme.Colors.warn
         default:    return Theme.Colors.danger
+        }
+    }
+
+    private func controlIcon(for pct: Double) -> String {
+        switch pct {
+        case ..<1:  return "checkmark.circle.fill"
+        case ..<5:  return Theme.Severity.medium.systemImage
+        case ..<15: return Theme.Severity.high.systemImage
+        default:    return Theme.Severity.critical.systemImage
         }
     }
 

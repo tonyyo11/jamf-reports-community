@@ -9,6 +9,9 @@ struct Sidebar: View {
     /// would render empty so the layout never shows orphan headers.
     @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
 
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     // Workspace chip affordance: SwiftUI's Menu does not expose its open state, so
     // we approximate "engaged" by combining hover + keyboard focus. Both feed the
     // glow/ring shown around the avatar and chip surface.
@@ -63,7 +66,7 @@ struct Sidebar: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
         }
-        .background(.regularMaterial)
+        .background(reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.regularMaterial))
         .overlay(alignment: .trailing) {
             Rectangle().fill(Theme.Colors.hairline).frame(width: 0.5)
         }
@@ -273,7 +276,7 @@ struct Sidebar: View {
                         Text(workspace.lastSyncedRelative(for: workspace.profile))
                             .font(Theme.Fonts.mono(9.5))
                             .tracking(0.4)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
@@ -286,7 +289,7 @@ struct Sidebar: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(engaged ? 0.07 : 0.04))
+                    .fill(Theme.Surface.high(contrast).opacity(engaged ? 1.2 : 0.5))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(

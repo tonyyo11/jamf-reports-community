@@ -264,9 +264,15 @@ struct ProtectView: View {
 
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(label)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.Colors.fg)
+                HStack(spacing: 4) {
+                    let icon = severityIcon(for: label)
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(color)
+                    Text(label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.Colors.fg)
+                }
                 Spacer()
                 Text("\(count)")
                     .font(Theme.Fonts.mono(12, weight: .semibold))
@@ -402,30 +408,41 @@ struct ProtectView: View {
 
     private func severityPill(_ severity: String?) -> some View {
         let text = severity?.capitalized ?? "Unknown"
-        let tone: Pill.Tone = {
-            guard let sev = severity?.lowercased() else { return .muted }
-            if sev.contains("critical") { return Theme.Severity.critical.pillTone }
-            if sev.contains("high") { return Theme.Severity.high.pillTone }
-            if sev.contains("medium") || sev.contains("med") { return Theme.Severity.medium.pillTone }
-            if sev.contains("low") { return Theme.Severity.low.pillTone }
-            return .muted
+        let (tone, icon): (Pill.Tone, String) = {
+            guard let sev = severity?.lowercased() else { return (.muted, "circle.fill") }
+            if sev.contains("critical") { return (Theme.Severity.critical.pillTone, Theme.Severity.critical.systemImage) }
+            if sev.contains("high") { return (Theme.Severity.high.pillTone, Theme.Severity.high.systemImage) }
+            if sev.contains("medium") || sev.contains("med") { return (Theme.Severity.medium.pillTone, Theme.Severity.medium.systemImage) }
+            if sev.contains("low") { return (Theme.Severity.low.pillTone, Theme.Severity.low.systemImage) }
+            return (.muted, "circle.fill")
         }()
 
-        return Pill(text: text, tone: tone)
+        return Pill(text: text, tone: tone, icon: icon)
             .accessibilityLabel("\(text) severity")
     }
 
     private func statusPill(_ status: String?) -> some View {
         let text = status?.capitalized ?? "Unknown"
-        let tone: Pill.Tone = {
-            guard let stat = status?.lowercased() else { return .muted }
-            if stat.contains("resolved") || stat.contains("closed") { return .teal }
-            if stat.contains("open") { return .warn }
-            if stat.contains("investigating") { return .gold }
-            return .muted
+        let (tone, icon): (Pill.Tone, String) = {
+            guard let stat = status?.lowercased() else { return (.muted, "info.circle") }
+            if stat.contains("resolved") { return (.teal, "checkmark.circle") }
+            if stat.contains("closed") { return (.teal, "checkmark") }
+            if stat.contains("open") { return (.warn, "exclamationmark.circle") }
+            if stat.contains("investigating") { return (.gold, "magnifyingglass") }
+            return (.muted, "info.circle")
         }()
 
-        return Pill(text: text, tone: tone)
+        return Pill(text: text, tone: tone, icon: icon)
+    }
+
+    private func severityIcon(for label: String) -> String {
+        switch label.lowercased() {
+        case "critical": Theme.Severity.critical.systemImage
+        case "high": Theme.Severity.high.systemImage
+        case "medium": Theme.Severity.medium.systemImage
+        case "low": Theme.Severity.low.systemImage
+        default: "circle.fill"
+        }
     }
 
     private var computersCard: some View {

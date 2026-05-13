@@ -10,6 +10,8 @@ struct EmptyStateView: View {
     let commands: [String]
     let primaryAction: EmptyStateAction?
 
+    @Environment(\.colorSchemeContrast) private var contrast
+
     init(
         icon: Image? = nil,
         title: String,
@@ -57,7 +59,7 @@ struct EmptyStateView: View {
 
             Text(message)
                 .font(.system(size: 12.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
 
             if !commands.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {

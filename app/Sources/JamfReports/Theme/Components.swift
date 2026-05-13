@@ -175,14 +175,22 @@ struct GlassPane<Content: View>: View {
     var borderColor: Color = Theme.Colors.hairlineStrong
     @ViewBuilder var content: () -> Content
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     var body: some View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius, style: .continuous))
+            .background(
+                reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.regularMaterial),
+                in: RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius, style: .continuous)
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: 0.5)
+                    .strokeBorder(
+                        reduceTransparency ? Theme.Colors.hairlineStrong : borderColor,
+                        lineWidth: 0.5
+                    )
             )
     }
 }
@@ -194,6 +202,8 @@ struct Pill: View {
     let text: String
     var tone: Tone = .muted
     var icon: String? = nil
+
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(spacing: 4) {
@@ -211,12 +221,24 @@ struct Pill: View {
     }
 
     private var bg: Color {
+        let opacityScale = bgOpacityScale
+        let opacity = contrast == .increased ? opacityScale.increased : opacityScale.base
         switch tone {
-        case .muted:  Color.white.opacity(0.07)
-        case .gold:   Theme.Colors.gold.opacity(0.18)
-        case .teal:   Theme.Colors.teal.opacity(0.30)
-        case .warn:   Theme.Colors.warn.opacity(0.20)
-        case .danger: Theme.Colors.danger.opacity(0.20)
+        case .muted:  return Color.white.opacity(opacity)
+        case .gold:   return Theme.Colors.gold.opacity(opacity)
+        case .teal:   return Theme.Colors.teal.opacity(opacity)
+        case .warn:   return Theme.Colors.warn.opacity(opacity)
+        case .danger: return Theme.Colors.danger.opacity(opacity)
+        }
+    }
+
+    private var bgOpacityScale: (base: Double, increased: Double) {
+        switch tone {
+        case .muted:  (0.07, 0.12)
+        case .gold:   (0.18, 0.30)
+        case .teal:   (0.30, 0.46)
+        case .warn:   (0.20, 0.34)
+        case .danger: (0.20, 0.34)
         }
     }
 
@@ -463,15 +485,18 @@ struct Sparkline: View {
     let values: [Double]
     var color: Color = Theme.Colors.gold
 
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
         GeometryReader { geo in
             let path = makePath(in: geo.size)
+            let fillOpacity = contrast == .increased ? 0.40 : 0.25
             ZStack {
                 path
                     .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 fill(in: geo.size).fill(
                     LinearGradient(
-                        colors: [color.opacity(0.25), color.opacity(0.0)],
+                        colors: [color.opacity(fillOpacity), color.opacity(0.0)],
                         startPoint: .top, endPoint: .bottom
                     )
                 )
@@ -602,6 +627,8 @@ struct SectionHeader: View {
 struct StatusBar: View {
     let status: String?
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     var body: some View {
         HStack(spacing: 8) {
             if let status {
@@ -624,7 +651,7 @@ struct StatusBar: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 24)
-        .background(.ultraThinMaterial)
+        .background(reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.ultraThinMaterial))
         .overlay(alignment: .top) {
             Divider().background(Theme.Colors.hairline)
         }
