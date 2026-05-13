@@ -244,11 +244,11 @@ struct Pill: View {
 
     private var fg: Color {
         switch tone {
-        case .muted:  Theme.Colors.fgMuted
+        case .muted:  Theme.Colors.fg2
         case .gold:   Theme.Colors.goldBright
         case .teal:   Color(hex: 0x6DC0C0)
-        case .warn:   Color(hex: 0xFFB340)
-        case .danger: Color(hex: 0xFF8077)
+        case .warn:   Color(hex: 0xFFCE7A)
+        case .danger: Color(hex: 0xFFA39A)
         }
     }
 }
@@ -301,7 +301,7 @@ struct PNPButton: View {
         case .neutral: Theme.Colors.fg
         case .gold:    Color(hex: 0x1A1408)
         case .ghost:   Theme.Colors.goldBright
-        case .danger:  Color(hex: 0xFF8077)
+        case .danger:  Color(hex: 0xFFA39A)
         }
     }
     private var border: Color {

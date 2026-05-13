@@ -640,10 +640,10 @@ private struct RunLogConsole: View {
     private func color(for line: CLIBridge.LogLine) -> Color {
         let lower = line.text.lowercased()
         if lower.contains("error") || lower.contains("fail") || line.level == .fail {
-            return Color(hex: 0xFF8077)
+            return Color(hex: 0xFFA39A)
         }
         if lower.contains("warn") || line.level == .warn {
-            return Color(hex: 0xFFB340)
+            return Color(hex: 0xFFCE7A)
         }
         if line.text.contains("✓") || lower.contains("success") || lower.contains("done") || line.level == .ok {
             return Theme.Colors.ok
