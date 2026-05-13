@@ -294,8 +294,12 @@ struct SchedulesView: View {
                 if isRunning {
                     ProgressView().scaleEffect(0.6)
                 } else if let msg = lastRunMessage {
-                    Pill(text: msg.contains("exit 0") ? "EXIT 0" : "DONE",
-                         tone: msg.contains("exit 0") ? .teal : .warn)
+                    let exitCode = msg.components(separatedBy: "exit ").last.flatMap(Int.init) ?? -1
+                    Pill(
+                        text: "EXIT \(exitCode)",
+                        tone: exitCode == 0 ? .teal : .danger,
+                        icon: exitCode == 0 ? "checkmark" : "xmark"
+                    )
                 }
                 Button {
                     let joined = runLogLines.map(\.text).joined(separator: "\n")
