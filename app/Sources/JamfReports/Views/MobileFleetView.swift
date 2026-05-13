@@ -108,19 +108,16 @@ struct MobileFleetView: View {
 
     private var emptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No mobile device data detected")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text("Run `jamf-cli pro mobile-devices list` (and optionally inventory-details and ios-profiles) to populate this dashboard.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "ipad.and.iphone",
+                title: "No mobile device data detected",
+                message: "Run `jamf-cli pro mobile-devices list` (and optionally inventory-details and ios-profiles) to populate this dashboard."
+            )
         }
     }
 
     private var kpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
                 label: "Total Mobile Devices",
@@ -166,7 +163,7 @@ struct MobileFleetView: View {
     @ViewBuilder
     private var complianceKpiGrid: some View {
         if !snapshot.richDevices.isEmpty {
-            let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+            let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
             LazyVGrid(columns: columns, spacing: 12) {
                 StatTile(
                     label: "Passcode Compliant",
@@ -338,7 +335,7 @@ struct MobileFleetView: View {
     private var profilesTable: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Config Profiles", trailing: "Showing first 30")
+                SectionHeader(title: "Config Profiles", trailingTag: snapshot.profiles.count <= 30 ? nil : "\(min(30, snapshot.profiles.count)) of \(snapshot.profiles.count)")
                 Table(Array(snapshot.profiles.prefix(30).enumerated()).map { ProfileWithIndex(profile: $0.element, index: $0.offset) }) {
                     TableColumn("Name") { item in
                         Text(item.profile.name ?? "Untitled Profile")

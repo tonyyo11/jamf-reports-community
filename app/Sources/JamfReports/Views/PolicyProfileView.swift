@@ -150,19 +150,16 @@ struct PolicyProfileView: View {
 
     private var policyEmptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No policy data yet")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text("Run `jamf-cli pro report policy-status` (Sources tab → Refresh) and this screen will populate.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "list.bullet.indent",
+                title: "No policy data yet",
+                message: "Run `jamf-cli pro report policy-status` (Sources tab → Refresh) and this screen will populate."
+            )
         }
     }
 
     private var policyKpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             if let summary = snapshot.summary {
                 StatTile(
@@ -202,56 +199,44 @@ struct PolicyProfileView: View {
     private var findingsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Configuration Findings")
+                SectionHeader(title: "Configuration Findings", trailingTag: snapshot.findings.count <= 100 ? nil : "\(min(100, snapshot.findings.count)) of \(snapshot.findings.count)")
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("SEVERITY")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(width: 90, alignment: .leading)
-                        Text("POLICY")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(width: 220, alignment: .leading)
-                        Text("CHECK")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(width: 150, alignment: .leading)
-                        Text("DETAIL")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-                    .background(Theme.Colors.winBG3)
+                    DataTableHeader(columns: [
+                        DataTableColumn(title: "Severity", width: 90, alignment: .leading),
+                        DataTableColumn(title: "Policy", width: 220, alignment: .leading),
+                        DataTableColumn(title: "Check", width: 150, alignment: .leading),
+                        DataTableColumn(title: "Detail", width: nil, alignment: .leading)
+                    ])
 
                     ForEach(Array(sortedFindings.enumerated()), id: \.offset) { _, finding in
-                        HStack {
+                        DataTableRow {
                             Pill(
                                 text: finding.severity,
                                 tone: severityTone(for: finding.severity)
                             )
                             .frame(width: 90, alignment: .leading)
 
+                            Spacer(minLength: 12)
+
                             Text(finding.policy)
                                 .font(.system(size: 12.5, weight: .medium))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .frame(width: 220, alignment: .leading)
+
+                            Spacer(minLength: 12)
 
                             Text(finding.check)
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(width: 150, alignment: .leading)
 
+                            Spacer(minLength: 12)
+
                             Text(finding.detail)
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(Color.clear)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("Policy finding, \(finding.severity) severity, \(finding.policy), \(finding.check), \(finding.detail)")
                     }
@@ -290,19 +275,16 @@ struct PolicyProfileView: View {
 
     private var profileEmptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No profile data yet")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text("Run `jamf-cli pro classic-macos-profiles list` (Sources tab → Refresh) and this screen will populate.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "doc.badge.gearshape",
+                title: "No profile data yet",
+                message: "Run `jamf-cli pro classic-macos-profiles list` (Sources tab → Refresh) and this screen will populate."
+            )
         }
     }
 
     private var profileKpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
                 label: "Total Profiles",
@@ -332,48 +314,36 @@ struct PolicyProfileView: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Profile Status")
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("NAME")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(width: 220, alignment: .leading)
-                        Text("CATEGORY")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(width: 120, alignment: .leading)
-                        Text("SITE")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(width: 100, alignment: .leading)
-                        Text("STATUS")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(width: 120, alignment: .leading)
-                        Text("ERRORS")
-                            .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                            .frame(width: 80, alignment: .leading)
-                    }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-                    .background(Theme.Colors.winBG3)
+                    DataTableHeader(columns: [
+                        DataTableColumn(title: "Name", width: 220, alignment: .leading),
+                        DataTableColumn(title: "Category", width: 120, alignment: .leading),
+                        DataTableColumn(title: "Site", width: 100, alignment: .leading),
+                        DataTableColumn(title: "Status", width: 120, alignment: .leading),
+                        DataTableColumn(title: "Errors", width: 80, alignment: .leading)
+                    ])
 
                     ForEach(Array(snapshot.profiles.enumerated()), id: \.offset) { _, profile in
-                        HStack {
+                        DataTableRow {
                             Text(profile.name ?? "Unknown Profile")
                                 .font(.system(size: 12.5, weight: .medium))
                                 .foregroundStyle(profileNameColor(for: profile))
                                 .frame(width: 220, alignment: .leading)
+
+                            Spacer(minLength: 12)
 
                             Text(profile.category ?? "—")
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(width: 120, alignment: .leading)
 
+                            Spacer(minLength: 12)
+
                             Text(profile.site ?? "—")
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(width: 100, alignment: .leading)
+
+                            Spacer(minLength: 12)
 
                             if let status = profile.managementStatus {
                                 Pill(
@@ -388,6 +358,8 @@ struct PolicyProfileView: View {
                                     .frame(width: 120, alignment: .leading)
                             }
 
+                            Spacer(minLength: 12)
+
                             if let errorCount = profile.errorCount?.value as? Int {
                                 Text("\(errorCount)")
                                     .font(Theme.Fonts.mono(11))
@@ -401,9 +373,6 @@ struct PolicyProfileView: View {
                                     .frame(width: 80, alignment: .leading)
                             }
                         }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(Color.clear)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel("Profile \(profile.name ?? "unknown"), status \(profile.managementStatus ?? "unknown"), \(profile.errorCount?.value as? Int ?? 0) errors")
                     }

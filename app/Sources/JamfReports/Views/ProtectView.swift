@@ -142,33 +142,22 @@ struct ProtectView: View {
 
     private var emptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("No Jamf Protect data detected")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-
-                Text("No Jamf Protect data detected in this workspace. Run the following commands to collect Protect telemetry:")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Mono(text: "`jamf-cli protect overview`")
-                    Mono(text: "`jamf-cli protect alerts list`")
-                    Mono(text: "`jamf-cli protect computers list`")
-                    Mono(text: "`jamf-cli protect insights list`")
-                }
-                .padding(.top, 8)
-
-                Text("These dashboards will populate once data collection is complete.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                    .padding(.top, 8)
-            }
+            EmptyStateView(
+                systemImage: "shield.lefthalf.filled",
+                title: "No Jamf Protect data detected",
+                message: "No Jamf Protect data detected in this workspace. Run the following commands to collect Protect telemetry:",
+                commands: [
+                    "`jamf-cli protect overview`",
+                    "`jamf-cli protect alerts list`",
+                    "`jamf-cli protect computers list`",
+                    "`jamf-cli protect insights list`"
+                ]
+            )
         }
     }
 
     private var kpiGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)], spacing: 16) {
             if snapshot.totalComputers > 0 {
                 StatTile(
                     label: "Total Computers",

@@ -113,14 +113,11 @@ struct SecurityPostureView: View {
 
     private var emptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No security snapshot yet")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text("Run `jamf-cli pro report security` (Sources tab → Refresh) and this screen will populate.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "lock.shield",
+                title: "No security snapshot yet",
+                message: "Run `jamf-cli pro report security` (Sources tab → Refresh) and this screen will populate."
+            )
         }
     }
 
@@ -174,7 +171,7 @@ struct SecurityPostureView: View {
     }
 
     private var kpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             kpiTile(label: "FileVault", count: snapshot.fileVaultEncrypted)
             kpiTile(label: "SIP", count: snapshot.sipEnabled)

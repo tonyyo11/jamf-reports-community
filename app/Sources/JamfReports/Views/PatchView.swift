@@ -82,19 +82,16 @@ struct PatchView: View {
 
     private var emptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No patch data yet")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text("Run `jamf-cli pro report patch-status` (Sources tab → Refresh) and this screen will populate.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "shippingbox",
+                title: "No patch data yet",
+                message: "Run `jamf-cli pro report patch-status` (Sources tab → Refresh) and this screen will populate."
+            )
         }
     }
 
     private var kpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
                 label: "Total Titles",
@@ -133,12 +130,23 @@ struct PatchView: View {
     private var patchTitlesCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(
-                    title: "Patch Titles",
-                    trailing: sortedTitles.count > Self.titlesDisplayCap
-                        ? "\(Self.titlesDisplayCap) of \(sortedTitles.count) shown"
-                        : nil
-                )
+                HStack {
+                    SectionHeader(
+                        title: "Patch Titles",
+                        trailing: sortedTitles.count > Self.titlesDisplayCap
+                            ? "\(Self.titlesDisplayCap) of \(sortedTitles.count) shown"
+                            : nil
+                    )
+                    PNPButton(
+                        title: "Export PNG",
+                        icon: "square.and.arrow.down",
+                        style: .neutral,
+                        size: .sm,
+                        action: exportPatchTitlesTable
+                    )
+                    .accessibilityLabel("Export patch titles table as PNG")
+                    .help("Save the patch titles table as a PNG image")
+                }
                 Table(Array(sortedTitles.prefix(Self.titlesDisplayCap))) {
                     TableColumn("Title") { title in
                         Text(title.title)
@@ -278,5 +286,107 @@ struct PatchView: View {
         default:
             return Theme.Colors.fgMuted
         }
+    }
+
+    private func exportPatchTitlesTable() {
+        DashboardChartExport.run(
+            title: "Patch Titles",
+            subtitle: "Fleet patch compliance summary",
+            suggestedFilename: "patch-titles-table-\(workspace.profile)"
+        ) {
+            PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
+        }
+    }
+}
+
+// MARK: - Patch Titles Table Export View
+
+struct PatchTitlesTableExport: View {
+    let titles: [PatchStatusRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Patch Titles")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(.black)
+
+            VStack(alignment: .leading, spacing: 2) {
+                // Header row
+                HStack(spacing: 12) {
+                    Text("Title")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 200, alignment: .leading)
+                    Text("Latest Version")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 120, alignment: .leading)
+                    Text("On Latest")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 80, alignment: .trailing)
+                    Text("On Other")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 80, alignment: .trailing)
+                    Text("Total")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 80, alignment: .trailing)
+                    Text("Compliance %")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 100, alignment: .trailing)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.gray.opacity(0.1))
+
+                // Data rows
+                ForEach(Array(titles.enumerated()), id: \.element.id) { index, title in
+                    HStack(spacing: 12) {
+                        Text(title.title)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.black)
+                            .frame(width: 200, alignment: .leading)
+                        Text(title.latest)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.black)
+                            .frame(width: 120, alignment: .leading)
+                        Text("\(title.onLatest)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.black)
+                            .frame(width: 80, alignment: .trailing)
+                        Text("\(title.onOther)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.black)
+                            .frame(width: 80, alignment: .trailing)
+                        Text("\(title.total)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.black)
+                            .frame(width: 80, alignment: .trailing)
+                        Text(title.compliancePct)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.black)
+                            .frame(width: 100, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    if index < titles.count - 1 {
+                        Divider()
+                            .background(.gray.opacity(0.3))
+                    }
+                }
+            }
+            .background(.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.gray.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .padding(24)
+        .frame(width: 848, height: 448)
+        .background(.white)
+        .colorScheme(.light)
     }
 }

@@ -556,13 +556,31 @@ struct PNPTextField: View {
 
 struct SectionHeader: View {
     let title: String
-    var trailing: String? = nil
+    var trailing: String? = nil  // Legacy single parameter, now maps to trailingTag
+    var trailingTag: String? = nil
+    var trailingValue: String? = nil
     var size: CGFloat = 15
+
     var body: some View {
         HStack {
             Text(title).font(.system(size: size, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
             Spacer()
-            if let trailing { Kicker(text: trailing) }
+
+            // Handle legacy trailing parameter
+            if let trailing {
+                Kicker(text: trailing)
+            }
+
+            // Handle new specific trailing types
+            if let trailingTag {
+                Kicker(text: trailingTag)
+            }
+
+            if let trailingValue {
+                Text(trailingValue)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.Colors.fg2)
+            }
         }
     }
 }
@@ -658,5 +676,72 @@ struct EditableNumberStepper: View {
                 .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
         )
         .help(help ?? "")
+    }
+}
+
+// MARK: - Data Table Components
+
+/// Reusable table header for hand-rolled tables that need custom row layouts.
+/// A column with `width == nil` flexes to fill remaining space.
+struct DataTableHeader: View {
+    let columns: [DataTableColumn]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(columns) { column in
+                Group {
+                    if let width = column.width {
+                        Text(column.title.uppercased())
+                            .frame(width: width, alignment: column.alignment.textAlignment)
+                    } else {
+                        Text(column.title.uppercased())
+                            .frame(maxWidth: .infinity, alignment: column.alignment.textAlignment)
+                    }
+                }
+                .font(Theme.Fonts.mono(10, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fgMuted)
+                if column.id != columns.last?.id {
+                    Spacer(minLength: 12)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Theme.Colors.winBG3)
+    }
+}
+
+/// Reusable table row wrapper for consistent styling
+struct DataTableRow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Color.clear)
+    }
+}
+
+/// Column configuration for DataTableHeader.
+/// Pass `width: nil` for a flex column that fills remaining space.
+struct DataTableColumn: Identifiable {
+    let id = UUID()
+    let title: String
+    let width: CGFloat?
+    let alignment: DataTableAlignment
+
+    enum DataTableAlignment {
+        case leading, center, trailing
+
+        var textAlignment: Alignment {
+            switch self {
+            case .leading: return .leading
+            case .center: return .center
+            case .trailing: return .trailing
+            }
+        }
     }
 }

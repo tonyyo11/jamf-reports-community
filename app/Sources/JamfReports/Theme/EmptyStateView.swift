@@ -7,17 +7,20 @@ struct EmptyStateView: View {
     let icon: Image?
     let title: String
     let message: String
+    let commands: [String]
     let primaryAction: EmptyStateAction?
 
     init(
         icon: Image? = nil,
         title: String,
         message: String,
+        commands: [String] = [],
         primaryAction: EmptyStateAction? = nil
     ) {
         self.icon = icon
         self.title = title
         self.message = message
+        self.commands = commands
         self.primaryAction = primaryAction
     }
 
@@ -26,11 +29,13 @@ struct EmptyStateView: View {
         systemImage: String,
         title: String,
         message: String,
+        commands: [String] = [],
         primaryAction: EmptyStateAction? = nil
     ) {
         self.icon = Image(systemName: systemImage)
         self.title = title
         self.message = message
+        self.commands = commands
         self.primaryAction = primaryAction
     }
 
@@ -53,6 +58,15 @@ struct EmptyStateView: View {
             Text(message)
                 .font(.system(size: 12.5))
                 .foregroundStyle(Theme.Colors.fgMuted)
+
+            if !commands.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(commands, id: \.self) { command in
+                        Mono(text: command, size: 11)
+                    }
+                }
+                .padding(.top, 4)
+            }
 
             if let primaryAction = primaryAction {
                 HStack {

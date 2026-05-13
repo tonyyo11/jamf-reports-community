@@ -144,19 +144,16 @@ struct UpdatesView: View {
 
     private var emptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No update status data yet")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text("Run `jamf-cli pro report update-status` (Sources tab → Refresh) and this screen will populate.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "arrow.triangle.2.circlepath",
+                title: "No update status data yet",
+                message: "Run `jamf-cli pro report update-status` (Sources tab → Refresh) and this screen will populate."
+            )
         }
     }
 
     private var kpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
                 label: "Total Devices",
@@ -332,54 +329,56 @@ struct UpdatesView: View {
                 SectionHeader(title: "Failed Plans", trailing: "\(snapshot.failedPlans.count) total")
 
                 VStack(spacing: 4) {
-                    // Header
-                    HStack {
-                        Text("Device")
-                            .frame(width: 140, alignment: .leading)
-                        Text("Serial")
-                            .frame(width: 100, alignment: .leading)
-                        Text("OS Version")
-                            .frame(width: 100, alignment: .leading)
-                        Text("State")
-                            .frame(width: 138, alignment: .leading)
-                        Text("Action")
-                            .frame(width: 100, alignment: .leading)
-                        Text("Error")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    DataTableHeader(columns: [
+                        DataTableColumn(title: "Device", width: 140, alignment: .leading),
+                        DataTableColumn(title: "Serial", width: 100, alignment: .leading),
+                        DataTableColumn(title: "OS Version", width: 100, alignment: .leading),
+                        DataTableColumn(title: "State", width: 138, alignment: .leading),
+                        DataTableColumn(title: "Action", width: 100, alignment: .leading),
+                        DataTableColumn(title: "Error", width: nil, alignment: .leading)
+                    ])
 
                     Divider()
 
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             ForEach(Array(snapshot.failedPlans.prefix(50).enumerated()), id: \.offset) { _, plan in
-                                HStack {
+                                DataTableRow {
                                     Text(plan.name)
                                         .font(.system(size: 12))
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .frame(width: 140, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Mono(text: plan.serial, size: 11)
                                         .frame(width: 100, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Mono(text: plan.osVersion, size: 11)
                                         .frame(width: 100, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Pill(text: plan.state, tone: pillTone(for: plan.state))
                                         .frame(width: 138, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Text(plan.action)
                                         .font(.system(size: 12))
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .frame(width: 100, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Text(truncatedError(plan.error))
                                         .font(.system(size: 11.5))
                                         .foregroundStyle(Theme.Colors.fgMuted)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .lineLimit(1)
                                 }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
                                 .background(Color.white.opacity(0.03))
                                 .accessibilityElement(children: .combine)
                                 .accessibilityLabel("Failed plan for \(plan.name), state \(plan.state), error \(plan.error)")
@@ -406,47 +405,47 @@ struct UpdatesView: View {
                 SectionHeader(title: "Error Devices", trailing: "\(snapshot.errorDevices.count) total")
 
                 VStack(spacing: 4) {
-                    // Header
-                    HStack {
-                        Text("Device")
-                            .frame(width: 140, alignment: .leading)
-                        Text("Serial")
-                            .frame(width: 100, alignment: .leading)
-                        Text("Status")
-                            .frame(width: 100, alignment: .leading)
-                        Text("Product Key")
-                            .frame(width: 180, alignment: .leading)
-                        Text("Updated")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    DataTableHeader(columns: [
+                        DataTableColumn(title: "Device", width: 140, alignment: .leading),
+                        DataTableColumn(title: "Serial", width: 100, alignment: .leading),
+                        DataTableColumn(title: "Status", width: 100, alignment: .leading),
+                        DataTableColumn(title: "Product Key", width: 180, alignment: .leading),
+                        DataTableColumn(title: "Updated", width: nil, alignment: .leading)
+                    ])
 
                     Divider()
 
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             ForEach(Array(snapshot.errorDevices.enumerated()), id: \.offset) { _, device in
-                                HStack {
+                                DataTableRow {
                                     Text(device.name)
                                         .font(.system(size: 12))
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .frame(width: 140, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Mono(text: device.serial, size: 11)
                                         .frame(width: 100, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Pill(text: device.status, tone: .danger)
                                         .frame(width: 100, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Mono(text: device.productKey, size: 10.5, color: Theme.Colors.fg2)
                                         .frame(width: 180, alignment: .leading)
+
+                                    Spacer(minLength: 12)
+
                                     Text(formatDate(device.updated))
                                         .font(.system(size: 11.5))
                                         .foregroundStyle(Theme.Colors.fgMuted)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
                                 .background(Color.white.opacity(0.03))
                                 .accessibilityElement(children: .combine)
                                 .accessibilityLabel("Error device \(device.name), status \(device.status), product \(device.productKey)")

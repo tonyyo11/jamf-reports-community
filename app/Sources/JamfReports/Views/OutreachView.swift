@@ -97,19 +97,16 @@ struct OutreachView: View {
 
     private var emptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No device inventory yet")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text("Run device collection (Sources tab → Refresh) and this screen will populate.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "envelope",
+                title: "No device inventory yet",
+                message: "Run device collection (Sources tab → Refresh) and this screen will populate."
+            )
         }
     }
 
     private var tierKPIGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             ForEach(StaleDeviceService.Tier.allCases, id: \.rawValue) { tier in
                 StatTile(

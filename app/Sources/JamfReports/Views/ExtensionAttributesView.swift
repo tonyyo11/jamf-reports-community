@@ -200,19 +200,16 @@ struct ExtensionAttributesView: View {
 
     private var emptyState: some View {
         Card(padding: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No Extension Attribute data yet")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fg)
-                Text("Run `jamf-cli pro report ea-results --all` (Sources tab → Refresh) and this screen will populate.")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "tag",
+                title: "No Extension Attribute data yet",
+                message: "Run `jamf-cli pro report ea-results --all` (Sources tab → Refresh) and this screen will populate."
+            )
         }
     }
 
     private var kpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 180, maximum: 320), spacing: 12)]
+        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
                 label: "Total EAs",
@@ -336,8 +333,7 @@ struct ExtensionAttributesView: View {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        SectionHeader(title: "Value Distribution", trailing: eaName)
-                        Spacer()
+                        SectionHeader(title: "Value Distribution", trailingValue: eaName)
                         PNPButton(
                             title: "Export PNG",
                             icon: "square.and.arrow.down",
