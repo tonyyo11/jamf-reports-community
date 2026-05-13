@@ -73,16 +73,12 @@ struct RunsView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        Card(padding: 32) {
-            VStack(spacing: 10) {
-                Image(systemName: "terminal").font(.system(size: 32)).foregroundStyle(Theme.Colors.fgMuted)
-                Text("No run logs yet")
-                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
-                Text("Logs appear here after a scheduled run or a manual \"Run now\".")
-                    .font(.system(size: 12)).foregroundStyle(Theme.Colors.fgMuted)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity)
+        Card(padding: 24) {
+            EmptyStateView(
+                systemImage: "terminal",
+                title: "No run logs yet",
+                message: "Logs appear here after a scheduled run or a manual \"Run now\"."
+            )
         }
     }
 
@@ -106,7 +102,7 @@ struct RunsView: View {
                 Spacer()
                 statusPill(for: run.status)
             }
-            Text(run.name).font(.system(size: 12, weight: .medium))
+            Text(run.name).font(.footnote.weight(.medium))
                 .foregroundStyle(selected ? Theme.Colors.fg : Theme.Colors.fg2)
             if let dur = run.duration {
                 Mono(text: dur, size: 10)
