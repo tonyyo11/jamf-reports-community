@@ -67,11 +67,12 @@ struct LegacyHistoryImporter: Sendable {
         }
     }
 
-    /// Default path to the legacy history file. Used as the file-picker
-    /// default in the Settings action; callers can pass an arbitrary URL.
+    /// Default path used as the file-picker starting location in the Settings
+    /// action. Callers always let the user browse to the real file — this is
+    /// only the initial directory hint, not a required location.
     static var defaultHistoryURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents/Mac_Engineering/Jamf Reports/Generated Reports/fleet_health_metrics_history.json")
+            .appendingPathComponent("Downloads/fleet_health_metrics_history.json")
     }
 
     /// Reads `source`, translates each entry to `DailySummary`, and writes
