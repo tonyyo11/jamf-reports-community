@@ -91,7 +91,7 @@ final class TemplatedEngineTests: XCTestCase {
         let registry = SheetRegistry(plan: dashboard.sheetPlan)
         let template = OperationalTemplate()
 
-        let (written, _) = registry.writeSelected(template: template)
+        let (written, _, _) = registry.writeSelected(template: template)
 
         // All written sheets must be in the template's includedSheets.
         let templateNames = Set(template.includedSheets.map(\.rawValue))
@@ -108,7 +108,7 @@ final class TemplatedEngineTests: XCTestCase {
         let registry = SheetRegistry(plan: dashboard.sheetPlan)
         let template = ComplianceTemplate()
 
-        let (written, _) = registry.writeSelected(template: template)
+        let (written, _, _) = registry.writeSelected(template: template)
 
         // The subset of written sheets must appear in the same relative order
         // as they do in the template's includedSheets list.
@@ -123,9 +123,10 @@ final class TemplatedEngineTests: XCTestCase {
         let registry = SheetRegistry(plan: [])
         let template = ExecutiveTemplate()
 
-        let (written, unimplemented) = registry.writeSelected(template: template)
+        let (written, failures, unimplemented) = registry.writeSelected(template: template)
 
         XCTAssertTrue(written.isEmpty, "Empty plan should produce no written sheets")
+        XCTAssertTrue(failures.isEmpty, "Empty plan should produce no failures")
         XCTAssertEqual(unimplemented.count, template.includedSheets.count,
                        "All template sheets should be reported as unimplemented")
     }
@@ -137,7 +138,7 @@ final class TemplatedEngineTests: XCTestCase {
         let registry = SheetRegistry(plan: dashboard.sheetPlan)
         let template = ExecutiveTemplate()
 
-        let (written, _) = registry.writeSelected(template: template)
+        let (written, _, _) = registry.writeSelected(template: template)
 
         // ExecutiveTemplate does not include Protect or DDM sheets.
         let protectAndDDM: Set<String> = [

@@ -94,8 +94,9 @@ final class SchoolDashboardTests: XCTestCase {
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
         let dash = makeDashboard(dataDir: tmp)
-        let written = dash.writeAll()
+        let (written, failures) = dash.writeAll()
         XCTAssertTrue(written.isEmpty, "Expected no sheets written on empty dataDir")
+        XCTAssertTrue(failures.isEmpty, "Expected no failures on empty dataDir — noCachedData is a skip")
     }
 
     func testWriteAllWritesIBeaconsAndDepDevicesWhenAvailable() throws {
@@ -107,9 +108,10 @@ final class SchoolDashboardTests: XCTestCase {
             throw XCTSkip("school fixture(s) not available")
         }
         let dash = makeDashboard(dataDir: dataDir)
-        let written = dash.writeAll()
+        let (written, failures) = dash.writeAll()
         XCTAssertTrue(written.contains("iBeacons"), "Expected iBeacons sheet to be written")
         XCTAssertTrue(written.contains("DEP Devices"), "Expected DEP Devices sheet to be written")
+        XCTAssertTrue(failures.isEmpty, "No unexpected failures expected for valid fixture data")
     }
 
     // MARK: - SchoolCSVDashboard nil-init on empty data

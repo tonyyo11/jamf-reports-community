@@ -20,10 +20,18 @@ struct SchoolDashboard: Sendable {
 
     // MARK: - writeAll
 
-    /// Write all Jamf School sheets; silently skip missing/malformed data.
-    /// Returns names of sheets successfully written.
+    /// Write all Jamf School sheets; skip missing snapshots, collect unexpected failures.
+    ///
+    /// Returns `(written, failures)` where:
+    /// - `written`: sheets successfully generated.
+    /// - `failures`: sheets that threw an unexpected error (not `SheetSkippable`).
+    ///   A non-empty `failures` list means the caller should emit a partial-success log.
+    ///
+    /// `SchoolDashboardError.noCachedData` (and any `SheetSkippable` conformer) is treated
+    /// as an expected-absent skip — tenants that haven't collected school snapshots get
+    /// empty written lists, not failures.
     @discardableResult
-    func writeAll() -> [String] {
+    func writeAll() -> (written: [String], failures: [SheetFailure]) {
         let plan: [(String, () throws -> Void)] = [
             ("School Overview", writeSchoolOverview),
             ("Device Groups", writeSchoolDeviceGroups),
@@ -40,15 +48,21 @@ struct SchoolDashboard: Sendable {
             ("Stale Devices", writeSchoolStaleDevices),
         ]
         var written: [String] = []
+        var failures: [SheetFailure] = []
         for (name, fn) in plan {
             do {
                 try fn()
                 written.append(name)
+            } catch let skippable as SheetSkippable {
+                // Cached data absent — expected for tenants that haven't collected school snapshots.
+                print("  [skip] \(name): \(skippable)")
             } catch {
-                // Data absent or malformed — skip sheet silently.
+                let label = "\(type(of: error)): \(error)"
+                failures.append(SheetFailure(sheet: name, error: label))
+                print("  [fail] \(name): unexpected error — \(label)")
             }
         }
-        return written
+        return (written, failures)
     }
 
     // MARK: - School Overview
@@ -543,7 +557,7 @@ struct SchoolCSVDashboard: Sendable {
 
 // MARK: - Errors
 
-enum SchoolDashboardError: Error, LocalizedError {
+enum SchoolDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
 
     var errorDescription: String? {

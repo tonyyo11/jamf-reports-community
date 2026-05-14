@@ -36,12 +36,16 @@ struct ReportEngine: Sendable {
     ///   - onLine: Optional streaming log callback. Post-generate side-effect warnings
     ///             (archive rotation, CSV snapshot, summary JSON) are routed here when
     ///             provided, so callers with a live log view (e.g. GenerateSheet) see them.
+    /// - Returns: A list of `SheetFailure` entries for sheets that encountered unexpected
+    ///            errors. An empty list means all sheets that had data were written cleanly.
+    ///            Sheets that threw `SheetSkippable` (absent cached data) are not included.
+    @discardableResult
     func generate(
         csvURL: URL?,
         outputURL: URL,
         template: any ReportTemplate = ExecutiveTemplate(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
-    ) async throws {
+    ) async throws -> [SheetFailure] {
         let workbook = Workbook(accentColor: config.branding?.resolvedAccentColor ?? "#2D5EA2")
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
@@ -60,7 +64,8 @@ struct ReportEngine: Sendable {
         let core = CoreDashboard(config: config, dataDir: dataDir, workbook: workbook,
                                  provenance: prov)
         let registry = SheetRegistry(plan: core.sheetPlan)
-        let (writtenCore, unimplementedSheets) = registry.writeSelected(template: template)
+        let (writtenCore, coreFailures, unimplementedSheets) = registry.writeSelected(template: template)
+        let allFailures: [SheetFailure] = coreFailures
         for sheetID in unimplementedSheets {
             let msg = "[warn] template '\(template.identifier)': SheetID '\(sheetID.rawValue)' " +
                       "has no writer in CoreDashboard — skipped (engine follow-up required)"
@@ -75,7 +80,8 @@ struct ReportEngine: Sendable {
             }
         }
 
-        // CSVDashboard sheets
+        // CSVDashboard sheets — Swift CSV writers are non-throwing; failures are captured
+        // in writeAll()'s return value (currently always empty, reserved for future writers).
         if let csvURL {
             let csvData = try Data(contentsOf: csvURL)
             guard let csv = CSVDashboard(
@@ -86,7 +92,9 @@ struct ReportEngine: Sendable {
             ) else {
                 throw ReportEngineError.csvParseFailed(csvURL)
             }
-            csv.writeAll()
+            // CSVDashboard.writeAll returns [String] — its closures are non-throwing
+            // so there is no failure list here. Named for clarity if the contract widens.
+            _ = csv.writeAll()
         }
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
@@ -126,6 +134,8 @@ struct ReportEngine: Sendable {
         if let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
             emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
         }
+
+        return allFailures
     }
 
     // MARK: - Output rotation (mirrors Python _archive_old_output_runs)
@@ -1123,23 +1133,30 @@ struct ReportEngine: Sendable {
     /// Build a Jamf School Excel report from cached jamf-cli school data and/or a CSV export.
     ///
     /// Mirrors the Python `cmd_school_generate` function.
+    ///
+    /// - Returns: A list of `SheetFailure` entries for school sheets that encountered
+    ///            unexpected errors. Absent snapshots (`SchoolDashboardError.noCachedData`)
+    ///            are graceful skips and are not included.
+    @discardableResult
     static func schoolGenerate(
         config: ReportConfig,
         csvURL: URL?,
         dataDir: URL,
         outputURL: URL
-    ) async throws {
+    ) async throws -> [SheetFailure] {
         let workbook = Workbook(accentColor: config.branding?.resolvedAccentColor ?? "#2D5EA2")
         let core = SchoolDashboard(config: config, dataDir: dataDir, workbook: workbook)
-        core.writeAll()
+        let (_, schoolFailures) = core.writeAll()
 
         if let csvURL {
             let csvData = try Data(contentsOf: csvURL)
             let school = SchoolCSVDashboard(config: config, csvData: csvData, workbook: workbook)
-            school?.writeAll()
+            // SchoolCSVDashboard.writeAll() is currently a stub returning [].
+            _ = school?.writeAll()
         }
 
         try workbook.write(to: outputURL)
+        return schoolFailures
     }
 
     // MARK: - Convenience: timestamped output path

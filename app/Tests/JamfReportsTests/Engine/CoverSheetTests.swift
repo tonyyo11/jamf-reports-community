@@ -52,7 +52,7 @@ final class CoverSheetTests: XCTestCase {
         // Cover itself is in sheetPlan, so the manifest should list planCount entries.
         // We verify this by running writeAll (which calls writeCoverSheet) and counting
         // sheets written. writeCoverSheet always succeeds, so it will appear in written.
-        let written = dash.writeAll(selectedNames: ["cover"])
+        let (written, _) = dash.writeAll(selectedNames: ["cover"])
         XCTAssertEqual(written, ["Cover"],
                        "writeAll with only 'cover' selected should write exactly Cover")
         // planCount is the expected manifest row count — we trust it matches since
@@ -65,7 +65,7 @@ final class CoverSheetTests: XCTestCase {
 
     func testCoverSheetRendersViaWriteAll() {
         let dash = makeDashboard()
-        let written = dash.writeAll()
+        let (written, _) = dash.writeAll()
         XCTAssertTrue(written.contains("Cover"), "writeAll should write Cover sheet")
     }
 
@@ -73,7 +73,7 @@ final class CoverSheetTests: XCTestCase {
 
     func testWriteAllWithEmptySelectionWritesNothing() {
         let dash = makeDashboard()
-        let written = dash.writeAll(selectedNames: Set<String>())
+        let (written, _) = dash.writeAll(selectedNames: Set<String>())
         XCTAssertTrue(written.isEmpty, "Empty selection should produce zero written sheets")
     }
 

@@ -286,9 +286,21 @@ final class CLIBridge {
             }
         }
         do {
-            try await engine.generate(csvURL: csvURL, outputURL: outputURL, template: template, onLine: onLine)
-            onLine(.init(timestamp: Date(), level: .ok,
-                         text: "[ok] report written: \(outputURL.lastPathComponent)"))
+            let failures = try await engine.generate(
+                csvURL: csvURL, outputURL: outputURL, template: template, onLine: onLine
+            )
+            if failures.isEmpty {
+                onLine(.init(timestamp: Date(), level: .ok,
+                             text: "[ok] report written: \(outputURL.lastPathComponent)"))
+            } else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[partial] Report written with \(failures.count) sheet failure(s): " +
+                                   outputURL.lastPathComponent))
+                for f in failures {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                                 text: "  failed sheet: \(f.sheet): \(f.error)"))
+                }
+            }
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -393,14 +405,24 @@ final class CLIBridge {
             }
         }
         do {
-            try await ReportEngine.schoolGenerate(
+            let failures = try await ReportEngine.schoolGenerate(
                 config: config,
                 csvURL: csvURL,
                 dataDir: dataDir,
                 outputURL: outputURL
             )
-            onLine(.init(timestamp: Date(), level: .ok,
-                         text: "[ok] school report written: \(outputURL.lastPathComponent)"))
+            if failures.isEmpty {
+                onLine(.init(timestamp: Date(), level: .ok,
+                             text: "[ok] school report written: \(outputURL.lastPathComponent)"))
+            } else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[partial] School report written with \(failures.count) sheet failure(s): " +
+                                   outputURL.lastPathComponent))
+                for f in failures {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                                 text: "  failed sheet: \(f.sheet): \(f.error)"))
+                }
+            }
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
