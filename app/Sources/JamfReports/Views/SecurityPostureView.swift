@@ -13,7 +13,7 @@ struct SecurityPostureView: View {
     /// Empty string ⇒ the v3.5 defaults via `ScoringConfig.parse`.
     @AppStorage(ScoringConfig.storageKey) private var scoringRaw: String = ""
 
-    /// Encryption-category templates from jamf-cli `pro sg` (v1.17+).
+    /// Encryption-category templates from jamf-cli `pro sg` (PR #205, target release TBD).
     /// Loaded once per profile; empty when feature-detect fails (older jamf-cli).
     @State private var encryptionTemplates: [SmartGroupTemplate] = []
     @State private var selectedTemplate: SmartGroupTemplate?

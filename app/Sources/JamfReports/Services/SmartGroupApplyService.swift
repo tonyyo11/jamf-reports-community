@@ -1,6 +1,7 @@
 import Foundation
 
-/// Wraps the destructive `pro sg apply` operation (jamf-cli v1.17+, PR #205).
+/// Wraps the destructive `pro sg apply` operation (jamf-cli PR #205, target release
+/// TBD — not in v1.17.0; expected to land in a future release).
 ///
 /// **First write surface in the app.** Every existing flow is read-only; this
 /// service is the only path that creates or updates state in a Jamf Pro tenant.
@@ -39,8 +40,9 @@ struct SmartGroupApplyResult: Sendable, Equatable {
 // MARK: - Errors
 
 enum SmartGroupApplyError: Error, Equatable {
-    /// jamf-cli's `pro sg` namespace is missing — the binary is older than v1.17.
-    /// Callers should feature-detect upstream and not reach this.
+    /// jamf-cli's `pro sg` namespace is missing — PR #205 hasn't shipped yet, or
+    /// the installed jamf-cli predates its eventual release. Callers should
+    /// feature-detect upstream and not reach this.
     case featureNotAvailable
     /// Jamf API rejected the request — 401 (auth), 403 (permission), 429 (rate
     /// limit), etc. Surfaced to the user with the original code.

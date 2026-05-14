@@ -11,7 +11,7 @@ struct UpdatesView: View {
 
     /// `pro sg` templates the Updates dashboard offers as actionable
     /// remediations. Loaded once per profile. `nil` until the feature-detect
-    /// completes; if jamf-cli is older than v1.17 or `pro sg` errors out the
+    /// completes; if jamf-cli doesn't include PR #205 yet or `pro sg` errors out the
     /// menu stays hidden so older installs see no regression.
     @State private var updateTemplates: [SmartGroupTemplate] = []
     @State private var selectedTemplate: SmartGroupTemplate?

@@ -84,7 +84,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
         guard case .previewFailed(let message) = vm.phase else {
             return XCTFail("expected previewFailed, got \(vm.phase)")
         }
-        XCTAssertTrue(message.contains("v1.17"), "operator should see upgrade hint: \(message)")
+        XCTAssertTrue(message.contains("PR #205"), "operator should see upgrade hint: \(message)")
     }
 
     func testLoadPreviewUnknownTemplateSurfacesUsefulMessage() async {

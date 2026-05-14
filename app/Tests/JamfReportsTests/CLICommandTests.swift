@@ -34,7 +34,7 @@ final class CLICommandTests: XCTestCase {
         )
     }
 
-    // MARK: - Smart-group templates (jamf-cli v1.17+, PR #205)
+    // MARK: - Smart-group templates (jamf-cli PR #205, target release TBD)
 
     func testProSmartGroupTemplatesArgv() {
         let command = CLICommand.proSmartGroupTemplates(profile: "harbor")

@@ -26,17 +26,17 @@ enum CLICommand: Sendable, Equatable {
     /// `jamf-cli -p <profile> school ibeacons list --output json` (v1.14+).
     case schoolIBeaconsList(profile: String)
 
-    /// `jamf-cli -p <profile> pro sg templates --output json` (v1.17+, PR #205).
+    /// `jamf-cli -p <profile> pro sg templates --output json` (jamf-cli PR #205, target release TBD).
     /// Lists the 23 curated smart-group templates. Read-only.
     case proSmartGroupTemplates(profile: String)
 
-    /// `jamf-cli -p <profile> pro sg preview --template <slug> [params...] --output json` (v1.17+).
+    /// `jamf-cli -p <profile> pro sg preview --template <slug> [params...] --output json` (target release TBD).
     /// Returns the JSON body that `apply` would POST. No API call to Jamf.
     /// `params` is a list of `--<name>=<value>` pairs the template requires.
     case proSmartGroupPreview(profile: String, templateSlug: String, params: [String: String])
 
     /// `jamf-cli -p <profile> pro sg apply --template <slug> --name <NAME> [params...]
-    /// [--recalculate] [--dry-run] [--yes] --output json` (v1.17+).
+    /// [--recalculate] [--dry-run] [--yes] --output json` (target release TBD).
     /// **Destructive** — creates or updates a smart group by name in the live tenant
     /// when `dryRun` is false. Always pass `yes: true` from a GUI context (no TTY for
     /// interactive prompts). Caller must already have collected explicit user consent.
@@ -49,7 +49,7 @@ enum CLICommand: Sendable, Equatable {
         dryRun: Bool
     )
 
-    /// `jamf-cli -p <profile> pro sg verify-templates --output json` (v1.17+).
+    /// `jamf-cli -p <profile> pro sg verify-templates --output json` (target release TBD).
     /// Smoke-tests every template against the live tenant. Diagnostic; reports OK /
     /// zero-match / error per template. Read-only by default (cleans up after itself).
     case proSmartGroupVerifyTemplates(profile: String)

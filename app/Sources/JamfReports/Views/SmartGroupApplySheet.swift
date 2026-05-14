@@ -104,7 +104,9 @@ final class SmartGroupApplySheetViewModel {
             phase = .previewFailed("Unknown template: \(message)")
         } catch SmartGroupTemplateServiceError.featureNotAvailable {
             phase = .previewFailed(
-                "jamf-cli is missing the smart-group templates command. Update jamf-cli to v1.17 or later."
+                "jamf-cli is missing the smart-group templates command. "
+                + "This feature is pending merge of Jamf-Concepts/jamf-cli PR #205 — "
+                + "watch the project for the next release that includes it."
             )
         } catch {
             phase = .previewFailed(String(describing: error))
@@ -133,7 +135,9 @@ final class SmartGroupApplySheetViewModel {
         } catch SmartGroupApplyError.featureNotAvailable {
             phase = .applyFailed(
                 preview,
-                "jamf-cli is missing the smart-group apply command. Update jamf-cli to v1.17 or later."
+                "jamf-cli is missing the smart-group apply command. "
+                + "This feature is pending merge of Jamf-Concepts/jamf-cli PR #205 — "
+                + "watch the project for the next release that includes it."
             )
         } catch let SmartGroupApplyError.unexpectedOutput(stderr) {
             phase = .applyFailed(preview, "Unexpected jamf-cli output:\n\(stderr)")

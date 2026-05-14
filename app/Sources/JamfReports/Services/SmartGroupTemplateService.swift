@@ -1,7 +1,8 @@
 import Foundation
 
 /// Data models and read-only service for jamf-cli's smart-group template namespace
-/// (`pro sg`, introduced upstream in jamf-cli PR #205 — landing in v1.17+).
+/// (`pro sg`, introduced upstream in jamf-cli PR #205 — target release TBD;
+/// not in v1.17.0, expected to land in a future release).
 ///
 /// **Scope of this file (Stage 1):** read-only operations — `templates` and `preview`.
 /// The destructive `apply` operation lives in a sibling service so the trust-boundary

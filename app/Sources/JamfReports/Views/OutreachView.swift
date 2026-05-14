@@ -72,15 +72,15 @@ struct OutreachView: View {
     }
 
     /// Loads the `stale-checkin` template once per profile. Silently no-ops when
-    /// jamf-cli is missing or older than v1.17; the Create button just stays hidden.
+    /// jamf-cli is missing or missing PR #205; the Create button just stays hidden.
     private func loadSmartGroupTemplate() async {
         let service = SmartGroupTemplateService(executor: DefaultCLIExecutor(bridge: bridge))
         do {
             let templates = try await service.listTemplates(profile: workspace.profile)
             staleCheckinTemplate = templates.first(where: { $0.slug == "stale-checkin" })
         } catch SmartGroupTemplateServiceError.featureNotAvailable {
-            // Expected on jamf-cli < v1.17 or when the binary is missing — silent
-            // hide is the documented behavior.
+            // Expected when jamf-cli is missing or doesn't include PR #205 yet —
+            // silent hide is the documented behavior.
             staleCheckinTemplate = nil
         } catch {
             // Network, auth, decode, or other real failure — log so the operator

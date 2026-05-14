@@ -10,7 +10,7 @@ struct CompliancePostureView: View {
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
     @State private var hasLoaded = false
 
-    /// Compliance-category templates from jamf-cli `pro sg` (v1.17+).
+    /// Compliance-category templates from jamf-cli `pro sg` (PR #205, target release TBD).
     /// Loaded once per profile; empty when feature-detect fails.
     @State private var complianceTemplates: [SmartGroupTemplate] = []
     @State private var selectedTemplate: SmartGroupTemplate?
