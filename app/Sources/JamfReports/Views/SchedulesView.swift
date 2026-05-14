@@ -579,7 +579,9 @@ struct SchedulesView: View {
     /// formats may omit the leading separator. Returns nil when the message
     /// does not carry a parseable exit code — callers should suppress the
     /// EXIT pill rather than rendering a bogus "EXIT -1" sentinel.
-    static func extractExitCode(from message: String) -> Int? {
+    /// `nonisolated` so unit tests can call it without inheriting the
+    /// implicit `@MainActor` View isolation under Swift 6 strict concurrency.
+    nonisolated static func extractExitCode(from message: String) -> Int? {
         // Anchor on the literal " exit " (or "exit " at start of string)
         // followed by an optional sign and digits to end-of-string. The
         // trailing-only match avoids picking up "Exit Code in" or similar
