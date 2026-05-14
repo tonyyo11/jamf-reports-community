@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+from pathlib import Path
 
 import pytest
 
@@ -262,3 +264,128 @@ def test_config_factory_redirects_trend_summaries_to_tmp_path(
 
     assert historical_dir == tmp_path / "snapshots"
     assert fixtures_root not in historical_dir.parents
+
+
+# ---------------------------------------------------------------------------
+# Partial-success propagation — Sheet generation must not silently drop tabs.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_generate_all_sheets_succeed_reports_status_ok(
+    config_factory,
+    fixtures_root: Path,
+    tmp_path: Path,
+    jrc,
+    capsys,
+) -> None:
+    """All-sheets-succeed path: status=ok, no failures key, success log line."""
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = False
+    csv_path = fixtures_root / "csv" / "dummy_all_macs.csv"
+    historical_dir = tmp_path / "snapshots" / "computers"
+    shutil.copytree(fixtures_root / "snapshots" / "computers", historical_dir)
+    out_path = tmp_path / "ok-report.xlsx"
+    summary_path = tmp_path / "ok-summary.json"
+
+    jrc.cmd_generate(
+        config,
+        str(csv_path),
+        str(out_path),
+        str(historical_dir),
+        summary_json=str(summary_path),
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "ok"
+    assert payload["counts"]["sheet_failures"] == 0
+    assert payload["sheets"]["failures"] == []
+    assert "[partial]" not in captured.out
+    assert "\nReport written:" in captured.out
+
+
+@pytest.mark.integration
+def test_generate_failed_sheet_reports_status_partial(
+    config_factory,
+    fixtures_root: Path,
+    tmp_path: Path,
+    jrc,
+    monkeypatch,
+    capsys,
+) -> None:
+    """One-sheet-fails path: status=partial, failure listed, partial log line."""
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = False
+    csv_path = fixtures_root / "csv" / "dummy_all_macs.csv"
+    historical_dir = tmp_path / "snapshots" / "computers"
+    shutil.copytree(fixtures_root / "snapshots" / "computers", historical_dir)
+    out_path = tmp_path / "partial-report.xlsx"
+    summary_path = tmp_path / "partial-summary.json"
+
+    def boom(self) -> None:
+        raise ValueError("simulated security-controls writer crash")
+
+    monkeypatch.setattr(jrc.CSVDashboard, "_write_security_controls", boom)
+
+    jrc.cmd_generate(
+        config,
+        str(csv_path),
+        str(out_path),
+        str(historical_dir),
+        summary_json=str(summary_path),
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "partial"
+    assert payload["counts"]["sheet_failures"] == 1
+    failures = payload["sheets"]["failures"]
+    assert len(failures) == 1
+    assert failures[0]["sheet"] == "Security Controls"
+    assert "ValueError" in failures[0]["error"]
+    assert "simulated security-controls writer crash" in failures[0]["error"]
+    assert "Security Controls" not in payload["sheets"]["csv"]
+    # The output log must distinguish partial from ok runs.
+    assert "[partial] Report written with 1 sheet failure(s):" in captured.out
+    assert "failed sheet: Security Controls" in captured.out
+
+
+@pytest.mark.integration
+def test_school_generate_failed_sheet_reports_status_partial(
+    jrc,
+    fixtures_root: Path,
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """school-generate emits partial-success status when a sheet writer crashes."""
+    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
+    config._data["output"]["output_dir"] = str(tmp_path / "Generated Reports")
+    csv_path = str(fixtures_root / "csv" / "harboredu_school_devices.csv")
+    out_file = str(tmp_path / "school_report.xlsx")
+    summary_path = tmp_path / "school-partial-summary.json"
+
+    def boom(self, ws) -> None:
+        raise ValueError("simulated school OS-versions crash")
+
+    monkeypatch.setattr(jrc.SchoolDashboard, "_write_os_versions", boom)
+
+    jrc.cmd_school_generate(
+        config,
+        csv_path=csv_path,
+        out_file=out_file,
+        summary_json=str(summary_path),
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "partial"
+    assert payload["counts"]["sheet_failures"] == 1
+    failures = payload["sheets"]["failures"]
+    assert len(failures) == 1
+    assert failures[0]["sheet"] == "OS Versions"
+    assert "ValueError" in failures[0]["error"]
+    assert "OS Versions" not in payload["sheets"]["school"]
+    assert "[partial] School report written with 1 sheet failure(s):" in captured.out
+    assert "failed sheet: OS Versions" in captured.out

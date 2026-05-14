@@ -27,12 +27,18 @@ When fixing an item, remove it from this file in the same commit.
 
 ### From Codex GPT-5.5 security-best-practices review (2026-05-13)
 
-- **MUST-FIX — Sheet generation silently drops tabs while run reports success.**
+- **MUST-FIX — Sheet generation silently drops tabs while run reports success
+  (Swift side only — Python side resolved).** Python `cmd_generate` and
+  `cmd_school_generate` now thread per-sheet failure lists through the dashboard
+  loops, set `status: "partial"` in the run summary when any sheet writer raises,
+  and log `[partial] Report written with N sheet failure(s)` instead of a blanket
+  success line. Swift sites still pending:
   `app/Sources/JamfReports/Engine/SheetRegistry.swift:76`,
   `app/Sources/JamfReports/Engine/SchoolDashboard.swift:43`,
   `app/Sources/JamfReports/Services/CLIBridge.swift:306` (emits `[ok] report
-  written` even when individual sheets failed). Treat sheet failures as report
-  failures, or emit explicit partial-success output.
+  written` even when individual sheets failed). Mirror the Python contract:
+  treat sheet failures as report failures, or emit explicit partial-success
+  output with a failure list.
 
 - **MUST-FIX — Config failures fail open to defaults.**
   `app/Sources/JamfReports/Services/CLIBridge.swift:270,358,714,783` replace an

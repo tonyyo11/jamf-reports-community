@@ -5589,9 +5589,20 @@ class CoreDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Write all enabled core sheets. Returns list of sheet names written."""
-        written = []
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Write all enabled core sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` is the list of
+            sheets that were generated successfully and ``failures`` is a list
+            of ``{"sheet": name, "error": "<ErrorType>: <message>"}`` entries
+            for sheets whose writer raised. ``RuntimeError`` is treated as a
+            data-shape miss (logged as ``[skip]`` and excluded from
+            ``failures``) — only unexpected exceptions become failures so
+            partial-success reflects genuine bugs rather than absent inputs.
+        """
+        written: list[str] = []
+        failures: list[dict[str, str]] = []
         sheets = self.sheet_plan()
         for name, fn in sheets:
             if selected_names is not None and _normalized_sheet_name(name) not in selected_names:
@@ -5604,8 +5615,10 @@ class CoreDashboard:
             except RuntimeError as exc:
                 print(f"  [skip] {name}: {exc}")
             except Exception as exc:  # unexpected shape or type from jamf-cli JSON
-                print(f"  [skip] {name}: unexpected error — {type(exc).__name__}: {exc}")
-        return written
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": name, "error": error_label})
+                print(f"  [fail] {name}: unexpected error — {error_label}")
+        return written, failures
 
     def _write_overview(self) -> None:
         ws = self._wb.add_worksheet("Fleet Overview")
@@ -8695,9 +8708,20 @@ class CSVDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Write all enabled CSV-derived sheets. Returns list of sheet names written."""
-        written = []
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Write all enabled CSV-derived sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` is the list of
+            sheets generated successfully and ``failures`` records sheets that
+            errored unexpectedly as ``{"sheet": name, "error": ...}`` entries.
+            ``RuntimeError`` / ``NotImplementedError`` for non-required sheets
+            are still logged as ``[skip]`` and excluded from ``failures``.
+            Required sheets that fail still raise ``SystemExit`` — partial
+            success is reserved for optional sheets.
+        """
+        written: list[str] = []
+        failures: list[dict[str, str]] = []
         required_failures: list[str] = []
         compliance_enabled = bool(self._config.compliance.get("enabled"))
         for name, fn in self.sheet_plan():
@@ -8718,19 +8742,23 @@ class CSVDashboard:
                 else:
                     print(f"  [skip] {name}: {msg}")
             except (KeyError, ValueError) as exc:
+                error_label = f"{type(exc).__name__}: {exc}"
                 if name == "Compliance" and compliance_enabled:
-                    required_failures.append(f"{name}: {type(exc).__name__}: {exc}")
-                    print(f"  [fail] {name}: {type(exc).__name__}: {exc}")
+                    required_failures.append(f"{name}: {error_label}")
+                    print(f"  [fail] {name}: {error_label}")
                 else:
-                    print(f"  [skip] {name}: {exc}")
+                    failures.append({"sheet": name, "error": error_label})
+                    print(f"  [fail] {name}: {error_label}")
             except Exception as exc:
-                print(f"  [skip] {name}: unexpected error — {type(exc).__name__}: {exc}")
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": name, "error": error_label})
+                print(f"  [fail] {name}: unexpected error — {error_label}")
         if required_failures:
             raise SystemExit(
                 "Error: required sheet(s) failed:\n"
                 + "\n".join(f"  {f}" for f in required_failures)
             )
-        return written
+        return written, failures
 
     def _col(self, logical: str) -> Optional[str]:
         return self._mapper.get(logical)
@@ -9569,9 +9597,19 @@ class SchoolDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Build all enabled school report sheets and return the names written."""
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Build all enabled school report sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` lists sheets that
+            were generated (including data-unavailable sheets that received a
+            ``[Data unavailable: ...]`` annotation), and ``failures`` records
+            sheets whose writer raised an unexpected exception. ``RuntimeError``
+            is treated as a data-shape miss and produces an annotation rather
+            than a failure entry, matching ``CoreDashboard``.
+        """
         written: list[str] = []
+        failures: list[dict[str, str]] = []
         for title, fn in self.sheet_plan():
             if selected_names is not None and _normalized_sheet_name(title) not in selected_names:
                 print(f"  [disabled] {title}: skipped via {filter_label or 'sheet filter'}")
@@ -9585,7 +9623,13 @@ class SchoolDashboard:
                 if ws:
                     _safe_write(ws, 1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
                     written.append(title)
-        return written
+                else:
+                    print(f"  [skip] {title}: {exc}")
+            except Exception as exc:
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": title, "error": error_label})
+                print(f"  [fail] {title}: unexpected error — {error_label}")
+        return written, failures
 
     # ------------------------------------------------------------------
     # Bridge-driven sheets
@@ -12237,6 +12281,7 @@ def cmd_generate(
     sheets_written = 0
     jamf_cli_written: list[str] = []
     csv_written: list[str] = []
+    sheet_failures: list[dict[str, str]] = []
     chart_source = ""
     chart_png_paths: list[Path] = []
     charts_embedded = False
@@ -12308,9 +12353,13 @@ def cmd_generate(
 
         if jamf_cli_enabled and bridge is not None and jamf_cli_ready:
             print("\nGenerating jamf-cli sheets...")
-            jamf_cli_written = (
-                core.write_all(selected_sheet_names, filter_label) if core is not None else []
-            )
+            if core is not None:
+                jamf_cli_written, core_failures = core.write_all(
+                    selected_sheet_names, filter_label
+                )
+                sheet_failures.extend(core_failures)
+            else:
+                jamf_cli_written = []
             sheets_written += len(jamf_cli_written)
         elif jamf_cli_enabled:
             print("\nWarning: jamf-cli not available — skipping core dashboard sheets.")
@@ -12327,7 +12376,8 @@ def cmd_generate(
                     f"Error: cannot read explicit CSV '{csv_path_str}': {csv_init_error}"
                 )
             print("\nGenerating CSV sheets...")
-            csv_written = csv_dash.write_all(selected_sheet_names, filter_label)
+            csv_written, csv_failures = csv_dash.write_all(selected_sheet_names, filter_label)
+            sheet_failures.extend(csv_failures)
             sheets_written += len(csv_written)
         else:
             print("\nNo CSV provided — skipping inventory sheets.")
@@ -12503,7 +12553,16 @@ def cmd_generate(
         archived_output_paths = archived_paths
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older output file(s) to {archive_dir}")
-    print(f"\nReport written: {out_path}")
+    run_status = "partial" if sheet_failures else "ok"
+    if sheet_failures:
+        print(
+            f"\n[partial] Report written with {len(sheet_failures)} sheet failure(s): "
+            f"{out_path}"
+        )
+        for failure in sheet_failures:
+            print(f"  failed sheet: {failure['sheet']}: {failure['error']}")
+    else:
+        print(f"\nReport written: {out_path}")
     if notify_url:
         print("  Sending Teams notification...")
         _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
@@ -12522,7 +12581,7 @@ def cmd_generate(
             print(f"  PPTX export: {pptx_path}")
     summary.update(
         {
-            "status": "ok",
+            "status": run_status,
             "outputs": [_summary_file_entry("xlsx", out_path)],
             "inputs": {
                 "csv": str(csv_path_obj) if csv_path_obj is not None else None,
@@ -12537,6 +12596,7 @@ def cmd_generate(
                 "csv_sheets": len(csv_written),
                 "chart_pngs": len(chart_png_paths),
                 "archived_outputs": len(archived_output_paths),
+                "sheet_failures": len(sheet_failures),
             },
             "sheets": {
                 "all": (
@@ -12549,6 +12609,7 @@ def cmd_generate(
                 "csv": csv_written,
                 "charts_embedded": charts_embedded,
                 "report_sources": report_sources_written,
+                "failures": sheet_failures,
             },
             "sources": source_details,
             "charts": {
@@ -12569,7 +12630,7 @@ def cmd_generate(
             },
         }
     )
-    _finish_command_summary(summary)
+    _finish_command_summary(summary, status=run_status)
     _write_summary_json(summary_json, summary)
     return out_path
 
@@ -17465,16 +17526,25 @@ def cmd_school_generate(
             config,
             [name for name, _ in dashboard.sheet_plan()],
         )
-        written = dashboard.build_all(selected_names, filter_label)
+        written, sheet_failures = dashboard.build_all(selected_names, filter_label)
         if not written:
             raise SystemExit("Error: sheets filter removed every school workbook tab for this run.")
     finally:
         workbook.close()
 
-    print(f"Done. Report written to: {out_path}")
+    run_status = "partial" if sheet_failures else "ok"
+    if sheet_failures:
+        print(
+            f"[partial] School report written with {len(sheet_failures)} sheet "
+            f"failure(s): {out_path}"
+        )
+        for failure in sheet_failures:
+            print(f"  failed sheet: {failure['sheet']}: {failure['error']}")
+    else:
+        print(f"Done. Report written to: {out_path}")
     summary.update(
         {
-            "status": "ok",
+            "status": run_status,
             "outputs": [_summary_file_entry("xlsx", out_path)],
             "inputs": {
                 "csv": str(Path(csv_path).expanduser()) if csv_path else None,
@@ -17484,13 +17554,15 @@ def cmd_school_generate(
             "counts": {
                 "sheets_written": len(written),
                 "csv_rows": len(csv_df) if csv_df is not None else 0,
+                "sheet_failures": len(sheet_failures),
             },
             "sheets": {
                 "school": written,
+                "failures": sheet_failures,
             },
         }
     )
-    _finish_command_summary(summary)
+    _finish_command_summary(summary, status=run_status)
     _write_summary_json(summary_json, summary)
 
 
