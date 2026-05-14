@@ -188,6 +188,42 @@ final class SecurityHardeningTests: XCTestCase {
         )
     }
 
+    // MARK: - Archive entry preflight (P-new-02)
+
+    @MainActor
+    func test_rejectUnsafeArchiveEntry_rejectsAbsolutePath() {
+        XCTAssertThrowsError(try JamfCLIInstaller.rejectUnsafeArchiveEntry("/etc/passwd"))
+    }
+
+    @MainActor
+    func test_rejectUnsafeArchiveEntry_rejectsTraversal() {
+        XCTAssertThrowsError(try JamfCLIInstaller.rejectUnsafeArchiveEntry("../../etc/passwd"))
+        XCTAssertThrowsError(try JamfCLIInstaller.rejectUnsafeArchiveEntry("foo/../bar"))
+    }
+
+    @MainActor
+    func test_rejectUnsafeArchiveEntry_rejectsTarSymlinkTraversal() {
+        // BSD tar verbose listings surface symlinks as `name -> target`.
+        // A `..` anywhere on the line is rejected, which catches the target side too.
+        XCTAssertThrowsError(
+            try JamfCLIInstaller.rejectUnsafeArchiveEntry("link -> ../../etc/hosts")
+        )
+    }
+
+    @MainActor
+    func test_rejectUnsafeArchiveEntry_rejectsControlChars() {
+        XCTAssertThrowsError(
+            try JamfCLIInstaller.rejectUnsafeArchiveEntry("safe-name\u{0001}.txt")
+        )
+    }
+
+    @MainActor
+    func test_rejectUnsafeArchiveEntry_acceptsSafeNames() throws {
+        try JamfCLIInstaller.rejectUnsafeArchiveEntry("jamf-cli")
+        try JamfCLIInstaller.rejectUnsafeArchiveEntry("bin/jamf-cli")
+        try JamfCLIInstaller.rejectUnsafeArchiveEntry("jamf-cli-1.14.0/jamf-cli")
+    }
+
     // MARK: - Helpers
 
     /// Walk up from the test bundle to the `app/` source directory so we can

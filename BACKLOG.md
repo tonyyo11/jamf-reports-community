@@ -115,19 +115,6 @@ When fixing an item, remove it from this file in the same commit.
 
 ### From Codex GPT-5.5 security-best-practices review (2026-05-14)
 
-- **MUST-FIX — `JamfCLIInstaller.validateAsset` declared but never
-  enforced.** `app/Sources/JamfReports/Services/JamfCLIInstaller.swift:200`
-  defines the check (trusted host + filename pattern + no traversal
-  chars), with tests covering all rejection paths. But `_performInstall`
-  at lines 515–525 calls `preferredAsset(...)` → `download(asset:to:)`
-  without calling `validateAsset`. Additionally, archive extraction at
-  lines 763–779 (`tar -xzf`, `unzip`) does not preflight entries for
-  traversal — a malicious archive entry can escape the temp dir.
-  SHA-256 verification protects against MITM tampering but not against
-  malicious-but-checksum-matching archives. Fix: invoke `validateAsset`
-  before `download`; preflight all archive entries against the target
-  directory before extracting.
-
 - **SHOULD-FIX — `ExecutableLocator` falls back to current working
   directory.** `app/Sources/JamfReports/Services/CLIBridge.swift:24`.
   When `jamf-cli` is not found on any trusted system path,
