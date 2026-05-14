@@ -293,8 +293,7 @@ struct SchedulesView: View {
                 Spacer()
                 if isRunning {
                     ProgressView().scaleEffect(0.6)
-                } else if let msg = lastRunMessage {
-                    let exitCode = msg.components(separatedBy: "exit ").last.flatMap(Int.init) ?? -1
+                } else if let msg = lastRunMessage, let exitCode = Self.extractExitCode(from: msg) {
                     Pill(
                         text: "EXIT \(exitCode)",
                         tone: exitCode == 0 ? .teal : .danger,
@@ -575,6 +574,29 @@ struct SchedulesView: View {
         LaunchAgentWriter.label(for: schedule) ?? "(invalid label)"
     }
 
+    /// Extracts the exit code from a run-completion message. The producer is
+    /// `runSchedule` which emits `"\(name) · exit \(code)"`. Older log
+    /// formats may omit the leading separator. Returns nil when the message
+    /// does not carry a parseable exit code — callers should suppress the
+    /// EXIT pill rather than rendering a bogus "EXIT -1" sentinel.
+    static func extractExitCode(from message: String) -> Int? {
+        // Anchor on the literal " exit " (or "exit " at start of string)
+        // followed by an optional sign and digits to end-of-string. The
+        // trailing-only match avoids picking up "Exit Code in" or similar
+        // mid-sentence occurrences if the format ever changes.
+        guard let range = message.range(
+            of: #"(?:^|\s)exit\s+(-?\d+)\s*$"#,
+            options: .regularExpression
+        ) else {
+            return nil
+        }
+        // Extract the captured digit run from the matched substring.
+        let matched = message[range]
+        guard let digits = matched.range(of: #"-?\d+"#, options: .regularExpression) else {
+            return nil
+        }
+        return Int(matched[digits])
+    }
 }
 
 // MARK: - Run log console (terminal-styled live output)
