@@ -13,6 +13,22 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From python-reviewer audit of wave 1+2 (2026-05-14)
+
+- **SHOULD-FIX — Partial runs render as `.ok` in the Runs screen.**
+  `app/Sources/JamfReports/Services/RunHistoryService.swift:49–52`.
+  `parseLogTail` classifies a run by exit code: 0 → `.ok`, non-zero →
+  `.fail`. Wave 2 introduced partial-success runs that exit 0 but write
+  `status: "partial"` to `summary.json` and emit a `[partial]` log line.
+  The Runs screen shows a green OK pill on a partial run, so an operator
+  scanning the history won't see the data-quality issue. Surface the
+  partial state by either (a) parsing the `[partial] Report written…`
+  marker out of the log tail and adding a `.partial` case to
+  `Schedule.LastStatus`, or (b) reading `summary.json` next to the log
+  to determine the status. The first option matches the design-review
+  pill-icon work for color-blind safety. (Discovered: python-reviewer
+  audit, 2026-05-14.)
+
 ### From in-session bug fixes
 
 - **SHOULD-FIX — `LaunchAgentWriter.nativeManualRunPlan` has no round-trip
