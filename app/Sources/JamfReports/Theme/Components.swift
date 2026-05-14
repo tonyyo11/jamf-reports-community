@@ -473,8 +473,9 @@ struct StatTile: View {
     /// Pure helper, exposed for unit tests. Explicit override wins; otherwise
     /// the color follows `deltaTrend`. Flat trends use `gold` (a neutral
     /// emphasis) rather than `fgMuted` so the sparkline reads as data, not
-    /// chrome.
-    static func sparklineColor(override: Color?, trend: Trend) -> Color {
+    /// chrome. `nonisolated` so unit tests can call it without inheriting
+    /// `StatTile`'s implicit `@MainActor` View isolation.
+    nonisolated static func sparklineColor(override: Color?, trend: Trend) -> Color {
         if let override { return override }
         switch trend {
         case .up: return Theme.Colors.ok
