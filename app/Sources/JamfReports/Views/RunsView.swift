@@ -100,7 +100,24 @@ struct RunsView: View {
 
     private func runListItem(_ run: RunHistoryService.RunSummary) -> some View {
         let selected = selectedRun?.id == run.id
-        return VStack(alignment: .leading, spacing: 2) {
+        return runListItemContent(run, selected: selected)
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(runListItemBackground(selected: selected))
+            .overlay(runListItemBorder(selected: selected))
+            .contentShape(Rectangle())
+            .onTapGesture { selectRun(run) }
+            .contextMenu { runListItemContextMenu(run) }
+            .accessibilityLabel(runListItemAccessibilityLabel(run))
+            .accessibilityAddTraits(.isButton)
+    }
+
+    @ViewBuilder
+    private func runListItemContent(
+        _ run: RunHistoryService.RunSummary,
+        selected: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Mono(text: Self.dateFmt.string(from: run.date), size: 10.5)
                 Spacer()
@@ -112,43 +129,51 @@ struct RunsView: View {
                 Mono(text: dur, size: 10)
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(selected ? Theme.Colors.gold.opacity(0.12) : .clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(selected ? Theme.Colors.gold.opacity(0.3) : .clear, lineWidth: 0.5)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture { selectRun(run) }
-        .contextMenu {
-            Button {
-                let text = RunHistoryService.loadLog(run.logURL).map(\.text).joined(separator: "\n")
-                SystemActions.copyToClipboard(text)
-            } label: {
-                Label("Copy log", systemImage: "doc.on.doc")
-            }
-            Button {
-                exportLogFile(run.logURL)
-            } label: {
-                Label("Export log…", systemImage: "arrow.down.circle")
-            }
-            Divider()
-            Button {
-                SystemActions.reveal(run.logURL)
-            } label: {
-                Label("Reveal in Finder", systemImage: "folder")
-            }
+    }
+
+    private func runListItemBackground(selected: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(selected ? Theme.Colors.gold.opacity(0.12) : .clear)
+    }
+
+    private func runListItemBorder(selected: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .strokeBorder(
+                selected ? Theme.Colors.gold.opacity(0.3) : .clear,
+                lineWidth: 0.5
+            )
+    }
+
+    @ViewBuilder
+    private func runListItemContextMenu(_ run: RunHistoryService.RunSummary) -> some View {
+        Button {
+            let text = RunHistoryService.loadLog(run.logURL).map(\.text).joined(separator: "\n")
+            SystemActions.copyToClipboard(text)
+        } label: {
+            Label("Copy log", systemImage: "doc.on.doc")
         }
-        .accessibilityLabel(
-            "\(run.name), \(Self.dateFmt.string(from: run.date)), "
-            + "status \(run.status.rawValue)"
-            + (run.duration.map { ", duration \($0)" } ?? "")
-        )
-        .accessibilityAddTraits(.isButton)
+        Button {
+            exportLogFile(run.logURL)
+        } label: {
+            Label("Export log…", systemImage: "arrow.down.circle")
+        }
+        Divider()
+        Button {
+            SystemActions.reveal(run.logURL)
+        } label: {
+            Label("Reveal in Finder", systemImage: "folder")
+        }
+    }
+
+    private func runListItemAccessibilityLabel(
+        _ run: RunHistoryService.RunSummary
+    ) -> String {
+        var label = "\(run.name), \(Self.dateFmt.string(from: run.date)), "
+        label += "status \(run.status.rawValue)"
+        if let duration = run.duration {
+            label += ", duration \(duration)"
+        }
+        return label
     }
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
