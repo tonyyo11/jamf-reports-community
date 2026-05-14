@@ -21,6 +21,7 @@ struct HealthCheckView: View {
     @State private var query = ""
     @State private var sortOrderAudit = [KeyPathComparator(\AuditFinding.name)]
     @State private var sortOrderHygiene = [KeyPathComparator(\UnusedGroup.name)]
+    @State private var cacheDecodeError: String? = nil
     @FocusState private var isSearchFocused: Bool
 
     private var filteredFindings: [AuditFinding] {
@@ -98,6 +99,32 @@ struct HealthCheckView: View {
                     }
 
                     Spacer()
+                }
+
+                if let cacheDecodeError, selectedTab == 0 {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.Colors.warn)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Audit cache could not be loaded")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Text("\(cacheDecodeError). Re-run the audit to rebuild.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.fg2)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Theme.Colors.warn.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(Theme.Colors.warn.opacity(0.3), lineWidth: 0.5)
+                    )
                 }
 
                 if selectedTab == 0 {
@@ -449,17 +476,28 @@ struct HealthCheckView: View {
             type: "audit",
             limit: 2
         )
-        if let current = auditSnapshots.first,
-           let decoded = try? decoder.decode([AuditFinding].self, from: current.data) {
-            findings = decoded
-            lastAuditDate = current.modified
+        cacheDecodeError = nil
+        if let current = auditSnapshots.first {
+            do {
+                let decoded = try decoder.decode([AuditFinding].self, from: current.data)
+                findings = decoded
+                lastAuditDate = current.modified
 
-            let previous = auditSnapshots.dropFirst().first
-                .flatMap { try? decoder.decode([AuditFinding].self, from: $0.data) } ?? []
-            let currentKeys = Set(decoded.map(\.driftKey))
-            let previousKeys = Set(previous.map(\.driftKey))
-            newFindingKeys = auditSnapshots.count > 1 ? currentKeys.subtracting(previousKeys) : []
-            resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+                let previous = auditSnapshots.dropFirst().first.flatMap { snapshot in
+                    try? decoder.decode([AuditFinding].self, from: snapshot.data)
+                } ?? []
+                let currentKeys = Set(decoded.map(\.driftKey))
+                let previousKeys = Set(previous.map(\.driftKey))
+                newFindingKeys = auditSnapshots.count > 1 ? currentKeys.subtracting(previousKeys) : []
+                resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+            } catch {
+                // Distinguish "no audit run yet" (empty findings, no banner) from "audit
+                // cache exists but is corrupt" (empty findings, banner prompting re-run).
+                cacheDecodeError = "Audit cache is corrupt: \(error.localizedDescription)"
+                findings = []
+                newFindingKeys = []
+                resolvedFindings = []
+            }
         }
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(

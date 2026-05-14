@@ -7,6 +7,8 @@ struct RunsView: View {
     @State private var runs: [RunHistoryService.RunSummary] = []
     @State private var selectedRun: RunHistoryService.RunSummary? = nil
     @State private var logLines: [CLIBridge.LogLine] = []
+    @State private var showExportError = false
+    @State private var exportError: String? = nil
 
     private static let dateFmt: DateFormatter = {
         let f = DateFormatter()
@@ -34,6 +36,11 @@ struct RunsView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .task(id: workspace.profile) { reload() }
+        .alert("Export Failed", isPresented: $showExportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportError ?? "Unknown error")
+        }
     }
 
     // MARK: - Header
@@ -238,7 +245,14 @@ struct RunsView: View {
         panel.allowedContentTypes = [.plainText]
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
-            try? FileManager.default.copyItem(at: url, to: dest)
+            do {
+                try FileManager.default.copyItem(at: url, to: dest)
+            } catch {
+                Task { @MainActor in
+                    exportError = "Could not export \(url.lastPathComponent): \(error.localizedDescription)"
+                    showExportError = true
+                }
+            }
         }
     }
 

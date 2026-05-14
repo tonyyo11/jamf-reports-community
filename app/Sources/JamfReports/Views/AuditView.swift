@@ -82,6 +82,8 @@ struct AuditView: View {
     @State private var query = ""
     @State private var sortOrderAudit = [KeyPathComparator(\AuditFinding.name)]
     @State private var sortOrderHygiene = [KeyPathComparator(\UnusedGroup.name)]
+    @State private var showExportError = false
+    @State private var exportError: String? = nil
     @FocusState private var isSearchFocused: Bool
 
     private var filteredFindings: [AuditFinding] {
@@ -173,6 +175,11 @@ struct AuditView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
             if selectedTab == 0 { isSearchFocused = true }
+        }
+        .alert("Export Failed", isPresented: $showExportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportError ?? "Unknown error")
         }
     }
 
@@ -512,7 +519,12 @@ struct AuditView: View {
                 .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
                 .joined(separator: ",")
         }.joined(separator: "\n")
-        try? (header + body).write(to: url, atomically: true, encoding: .utf8)
+        do {
+            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            exportError = "Could not write \(url.lastPathComponent): \(error.localizedDescription)"
+            showExportError = true
+        }
     }
 
     private func loadCached() async {
