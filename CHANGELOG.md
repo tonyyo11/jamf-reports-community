@@ -92,6 +92,18 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Tracked jamf-cli dependency updated to v1.17.0. No code changes required.
+  Notable upstream changes since v1.14.0:
+  - v1.15.0: Spec-generated platform commands and bulk delete functionality added.
+  - v1.16.0: New `jcds download <fileName>` and `jcds sync --dir <path>` commands for
+    Jamf Cloud Distribution Service — not used by the app.
+  - v1.16.1: Nil-safety fix for device platform section fields — picked up by the app's
+    v1.16.1 minimum version floor (see entry below).
+  - v1.17.0: New `--compact` flag (token-efficient output), `--select` flag (multi-field
+    projection), and `doctor` diagnostic command. Inventory preload CSV export and app
+    store app backup capabilities added. Classic API extended with ebooks, user-groups,
+    and VPP scope support. Destructive commands annotated with `jamf:destructive`.
+    None of these changes affect commands or flags used by the app.
 - **Partial-success status for sheet-write failures** (Python CLI + macOS engine): When one or more sheets fail to write during `generate` / `school-generate`, the run now emits `status: "partial"` in `summary.json`, lists the failed sheets in `sheets.failures` (with `{"sheet": name, "error": "<Type>: <message>"}` entries), populates `counts.sheet_failures`, and logs `[partial] Report written with N sheet failure(s)` instead of the plain success line. Previously, sheet exceptions were swallowed and the run reported `status: "ok"` regardless. **Operator note**: tenants whose CSV column mapping has a pre-existing tolerated miss (`KeyError`/`ValueError` on a non-required sheet) will now surface as `status: "partial"` rather than silently skipping. Required sheets (e.g. Compliance with `compliance.enabled: true`) still raise `SystemExit` and fail the run as before. Required sheets are evaluated by `CSVDashboard.required_failures` on the Python side and by the `SheetSkippable`-conforming error protocol on the Swift side; non-conforming throws land in `failures` rather than being swallowed.
 
 - **Design review pass across the dashboards** (macOS app):
