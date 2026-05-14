@@ -9583,7 +9583,7 @@ class SchoolDashboard:
             except RuntimeError as exc:
                 ws = self._wb.get_worksheet_by_name(title)
                 if ws:
-                    ws.write(1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
+                    _safe_write(ws, 1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
                     written.append(title)
         return written
 

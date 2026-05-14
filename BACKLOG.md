@@ -140,13 +140,6 @@ When fixing an item, remove it from this file in the same commit.
   before `download`; preflight all archive entries against the target
   directory before extracting.
 
-- **MUST-FIX — Python `_safe_write` invariant bypassed in School
-  dashboard fallback.** `jamf-reports-community.py:9586` writes
-  `f"[Data unavailable: {exc}]"` via `ws.write(...)` rather than
-  `_safe_write(...)`. The exception text can include jamf-cli output,
-  bypassing formula-injection / control-char / NaN guards. Fix: route
-  through `_safe_write`.
-
 - **SHOULD-FIX — `ExecutableLocator` falls back to current working
   directory.** `app/Sources/JamfReports/Services/CLIBridge.swift:24`.
   When `jamf-cli` is not found on any trusted system path,
