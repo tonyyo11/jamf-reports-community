@@ -103,16 +103,32 @@ final class SmartGroupApplyService {
     // MARK: - Internal helpers (exposed for tests)
 
     /// Translates jamf-cli stderr / exit-code patterns into the typed error space.
-    /// The dispatch is text-pattern-based because jamf-cli doesn't emit a stable
-    /// error-classification field; PR #205's apply path forwards Jamf Pro API
-    /// errors as `"Error: HTTP <code>: <message>"` (see the upstream
-    /// `cliCtx.Client.Do` wrapper).
+    /// jamf-cli emits documented exit codes for the common Jamf Pro API failure
+    /// modes (3=401, 4=404, 5=403, 6=429) — those are authoritative. Text patterns
+    /// are a fallback for generic exit codes (typically 1) where stderr carries
+    /// `"Error: HTTP <code>: <message>"` from `cliCtx.Client.Do`.
     static func classifyError(code: Int32, stderr: String) -> SmartGroupApplyError {
         let lower = stderr.lowercased()
+        let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Feature-detect wins on text alone — `pro sg` missing on an older jamf-cli
+        // surfaces with exit code 2 (usage), which would otherwise fall through.
         if lower.contains("unknown command") || lower.contains("unknown subcommand") {
             return .featureNotAvailable
         }
-        // HTTP <code>: <message> — common case from cliCtx.Client.Do.
+        // Authoritative exit-code dispatch for documented API errors.
+        switch code {
+        case CLIBridge.exitCodeUnauthorized:
+            return .apiError(httpStatus: 401, message: trimmed.isEmpty ? "Unauthorized" : trimmed)
+        case CLIBridge.exitCodeNotFound:
+            return .apiError(httpStatus: 404, message: trimmed.isEmpty ? "Not Found" : trimmed)
+        case CLIBridge.exitCodePermissionDenied:
+            return .apiError(httpStatus: 403, message: trimmed.isEmpty ? "Forbidden" : trimmed)
+        case CLIBridge.exitCodeRateLimited:
+            return .apiError(httpStatus: 429, message: trimmed.isEmpty ? "Too Many Requests" : trimmed)
+        default:
+            break
+        }
+        // HTTP <code>: <message> — common case from cliCtx.Client.Do under exit code 1.
         if let httpInfo = Self.extractHTTPError(from: stderr) {
             return .apiError(httpStatus: httpInfo.code, message: httpInfo.message)
         }
@@ -121,7 +137,7 @@ final class SmartGroupApplyService {
         let networkPatterns = ["connection refused", "i/o timeout", "no such host",
                                "tls handshake", "context deadline exceeded"]
         if networkPatterns.contains(where: lower.contains) {
-            return .networkFailure(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            return .networkFailure(trimmed)
         }
         return .executionFailed(code: code, stderr: stderr)
     }

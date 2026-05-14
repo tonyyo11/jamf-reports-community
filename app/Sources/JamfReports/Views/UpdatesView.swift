@@ -132,7 +132,12 @@ struct UpdatesView: View {
             let all = try await service.listTemplates(profile: workspace.profile)
             let bySlug = Dictionary(uniqueKeysWithValues: all.map { ($0.slug, $0) })
             updateTemplates = Self.templateOrder.compactMap { bySlug[$0] }
+        } catch SmartGroupTemplateServiceError.featureNotAvailable {
+            updateTemplates = []
         } catch {
+            AppLogger.cli.error(
+                "UpdatesView smart-group templates load failed: \(String(describing: error), privacy: .private)"
+            )
             updateTemplates = []
         }
     }

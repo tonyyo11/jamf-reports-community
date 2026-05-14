@@ -78,8 +78,16 @@ struct OutreachView: View {
         do {
             let templates = try await service.listTemplates(profile: workspace.profile)
             staleCheckinTemplate = templates.first(where: { $0.slug == "stale-checkin" })
+        } catch SmartGroupTemplateServiceError.featureNotAvailable {
+            // Expected on jamf-cli < v1.17 or when the binary is missing — silent
+            // hide is the documented behavior.
+            staleCheckinTemplate = nil
         } catch {
-            // Any error — feature missing, network, decode — hides the button.
+            // Network, auth, decode, or other real failure — log so the operator
+            // can diagnose why the create-smart-group button is missing from the UI.
+            AppLogger.cli.error(
+                "OutreachView smart-group templates load failed: \(String(describing: error), privacy: .private)"
+            )
             staleCheckinTemplate = nil
         }
     }

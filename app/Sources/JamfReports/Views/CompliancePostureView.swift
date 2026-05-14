@@ -121,7 +121,12 @@ struct CompliancePostureView: View {
             let all = try await service.listTemplates(profile: workspace.profile)
             let bySlug = Dictionary(uniqueKeysWithValues: all.map { ($0.slug, $0) })
             complianceTemplates = Self.templateOrder.compactMap { bySlug[$0] }
+        } catch SmartGroupTemplateServiceError.featureNotAvailable {
+            complianceTemplates = []
         } catch {
+            AppLogger.cli.error(
+                "CompliancePostureView smart-group templates load failed: \(String(describing: error), privacy: .private)"
+            )
             complianceTemplates = []
         }
     }

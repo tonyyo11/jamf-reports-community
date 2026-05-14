@@ -122,7 +122,12 @@ struct SecurityPostureView: View {
             let all = try await service.listTemplates(profile: workspace.profile)
             let bySlug = Dictionary(uniqueKeysWithValues: all.map { ($0.slug, $0) })
             encryptionTemplates = Self.templateOrder.compactMap { bySlug[$0] }
+        } catch SmartGroupTemplateServiceError.featureNotAvailable {
+            encryptionTemplates = []
         } catch {
+            AppLogger.cli.error(
+                "SecurityPostureView smart-group templates load failed: \(String(describing: error), privacy: .private)"
+            )
             encryptionTemplates = []
         }
     }

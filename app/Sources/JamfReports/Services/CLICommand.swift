@@ -174,16 +174,40 @@ struct DefaultCLIExecutor: CLIExecutor {
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             throw CLIExecutorError.binaryNotFound("jamf-cli")
         }
+        // `runAndCapture` captures stdout into `data` and streams stderr via `onLine`.
+        // We need stderr to classify auth/HTTP/network errors thrown by jamf-cli,
+        // so accumulate it here rather than discarding it.
+        let stderrBuffer = StderrAccumulator()
         let (exitCode, data) = await bridge.runAndCapture(
             executable: bin,
             arguments: argv,
-            onLine: { _ in }
+            onLine: { line in stderrBuffer.append(line.text) }
         )
         guard exitCode == 0 else {
-            let stderr = String(data: data, encoding: .utf8) ?? ""
-            throw CLIExecutorError.nonZeroExit(code: exitCode, stderr: stderr)
+            throw CLIExecutorError.nonZeroExit(code: exitCode, stderr: stderrBuffer.snapshot())
         }
         return data
+    }
+}
+
+/// Thread-safe stderr line collector used by `DefaultCLIExecutor`. `runAndCapture`
+/// invokes `onLine` from a background `readabilityHandler` queue, so the buffer
+/// is locked on append. `snapshot()` joins lines back with newlines for pattern
+/// matching by the typed-error classifiers.
+private final class StderrAccumulator: @unchecked Sendable {
+    private var lines: [String] = []
+    private let lock = NSLock()
+
+    func append(_ line: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        lines.append(line)
+    }
+
+    func snapshot() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return lines.joined(separator: "\n")
     }
 }
 

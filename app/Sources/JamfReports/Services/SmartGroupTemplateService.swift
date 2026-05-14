@@ -154,7 +154,13 @@ final class SmartGroupTemplateService {
             if Self.stderrIndicatesUnknownTemplate(stderr) {
                 throw SmartGroupTemplateServiceError.unknownTemplate(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
             }
-            throw SmartGroupTemplateServiceError.executionFailed(code: code, stderr: stderr)
+            // Rewrite the stderr for documented API-error exit codes so the log
+            // line at the caller carries a recognisable HTTP-shape signal even
+            // when jamf-cli's raw stderr is empty or terse.
+            throw SmartGroupTemplateServiceError.executionFailed(
+                code: code,
+                stderr: Self.annotate(stderr: stderr, withExitCode: code)
+            )
         } catch CLIExecutorError.binaryNotFound {
             // jamf-cli not installed at all is "feature not available" from the
             // GUI's perspective — same outcome (hide buttons).
@@ -162,6 +168,23 @@ final class SmartGroupTemplateService {
         } catch {
             throw SmartGroupTemplateServiceError.executionFailed(code: -1, stderr: String(describing: error))
         }
+    }
+
+    /// Prefixes a documented HTTP-shape annotation onto stderr so executionFailed
+    /// log lines distinguish auth/permission/rate-limit failures from generic
+    /// errors, even when jamf-cli emits no stderr for the failing call.
+    static func annotate(stderr: String, withExitCode code: Int32) -> String {
+        let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix: String?
+        switch code {
+        case CLIBridge.exitCodeUnauthorized:    prefix = "HTTP 401 Unauthorized"
+        case CLIBridge.exitCodePermissionDenied: prefix = "HTTP 403 Forbidden"
+        case CLIBridge.exitCodeNotFound:        prefix = "HTTP 404 Not Found"
+        case CLIBridge.exitCodeRateLimited:     prefix = "HTTP 429 Too Many Requests"
+        default:                                prefix = nil
+        }
+        guard let prefix else { return stderr }
+        return trimmed.isEmpty ? prefix : "\(prefix): \(trimmed)"
     }
 
     /// jamf-cli's cobra-generated unknown-command error string starts with
