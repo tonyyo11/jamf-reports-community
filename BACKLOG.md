@@ -137,15 +137,6 @@ When fixing an item, remove it from this file in the same commit.
   reaches that binary. Fix: remove the CWD fallback (or gate it behind
   `#if DEBUG`).
 
-- **SHOULD-FIX — `ruff check .` reports 21 errors.** Three categories:
-  (1) `F821 Undefined name 'Dict'/'List'` at
-  `jamf-reports-community.py:2408`, `:2437`, `:2486` — latent bug; only
-  works today because `from __future__ import annotations` defers
-  evaluation. (2) `F401` unused imports. (3) `F541` f-string without
-  placeholders at `jamf-reports-community.py:11769`. Fix:
-  `ruff check --fix --unsafe-fixes` then resolve remaining manually
-  (import `Dict`, `List` from `typing` for the three F821 sites).
-
 ---
 
 ## Code hygiene (from in-session reviews — deferred)

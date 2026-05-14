@@ -13,11 +13,9 @@ Covers:
 from __future__ import annotations
 
 import hashlib
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -28,7 +26,6 @@ import pytest
 # ---------------------------------------------------------------------------
 
 import importlib.util
-import sys
 
 _SCRIPT = Path(__file__).parent.parent / "jamf-reports-community.py"
 

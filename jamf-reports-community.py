@@ -46,7 +46,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import xlsxwriter
@@ -11766,7 +11766,7 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
         if latest_path is not None:
             print(f"    latest: {latest_path.name}")
         else:
-            print(f"    latest: none")
+            print("    latest: none")
         print(f"    note: {note}")
     if not manifest_found:
         print("  No enabled report_families entries.")
@@ -11910,7 +11910,6 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     protect_enabled = config.get("protect", "enabled", default=False) is True
     platform_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
-    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
     live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
     bridge = _build_jamf_cli_bridge(config, save_output=False)
@@ -14938,7 +14937,6 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         active_alerts = self._ov(ov, "Active Alerts")
         managed_computers = self._ov(ov, "Managed Computers")
         unmanaged_computers = self._ov(ov, "Unmanaged Computers")
-        managed_devices = self._ov(ov, "Managed Devices")
         checkin_freq = self._ov(ov, "Check-In Frequency")
         dep_token_exp = self._ov(ov, "DEP Token Expires")
         ca_expires = self._ov(ov, "Built-in CA Expires")
@@ -15414,7 +15412,6 @@ def _collect_snapshots(
 
     collected = 0
     jamf_cli_enabled = _jamf_cli_enabled(config)
-    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
     protect_enabled = config.get("protect", "enabled", default=False) is True
     platform_enabled = config.get("platform", "enabled", default=False) is True
@@ -15943,8 +15940,8 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
     enrich_workers = _to_int(inv_cfg.get("max_workers", 20), 20)
     if skip_enrichment:
         print(
-            f"  [skip] security detail enrichment"
-            f" (inventory_csv.skip_security_enrichment: true)"
+            "  [skip] security detail enrichment"
+            " (inventory_csv.skip_security_enrichment: true)"
         )
         detail_enriched, detail_failures, detail_unresolved = 0, 0, 0
     else:

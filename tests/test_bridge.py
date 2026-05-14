@@ -449,8 +449,6 @@ def test_audit_calls_correct_command(monkeypatch, jrc) -> None:
     bridge = jrc.JamfCLIBridge(save_output=False, use_cached_data=False)
     captured: dict[str, Any] = {}
 
-    original_run_and_save = bridge._run_and_save
-
     def fake_run_and_save(report_type, args, cache_names, timeout=None):
         captured["report_type"] = report_type
         captured["args"] = list(args)
