@@ -220,9 +220,7 @@ struct RunsView: View {
     private func revealLog() {
         if let run = selectedRun {
             SystemActions.reveal(run.logURL)
-        } else {
-            let logsDir = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Jamf-Reports/\(workspace.profile)/automation/logs")
+        } else if let logsDir = try? WorkspacePaths.runHistoryDir(for: workspace.profile) {
             SystemActions.openFolder(logsDir)
         }
     }

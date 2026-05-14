@@ -149,6 +149,28 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
         }
     }
 
+    // MARK: - runHistoryDir (automation/logs — fixed convention, no config)
+
+    func test_runHistoryDir_validProfile_returnsExpectedPath() throws {
+        _ = try makeWorkspace(profile: "runhisttest", configBody: "")
+
+        let result = try WorkspacePaths.runHistoryDir(for: "runhisttest")
+        let root = fileManager.temporaryDirectory  // approximate; check suffix instead
+        _ = root  // unused — verify by suffix
+        XCTAssertTrue(
+            result.path.hasSuffix("runhisttest/automation/logs"),
+            "Expected path ending in runhisttest/automation/logs, got \(result.path)"
+        )
+    }
+
+    func test_runHistoryDir_invalidProfile_throws() {
+        XCTAssertThrowsError(try WorkspacePaths.runHistoryDir(for: "../escape")) { error in
+            guard case WorkspacePaths.PathError.invalidProfile = error else {
+                return XCTFail("expected invalidProfile, got \(error)")
+            }
+        }
+    }
+
     // MARK: - archiveDir containment (output.archive_dir)
 
     func test_archiveDir_absolutePath_rejectedByDefault() throws {

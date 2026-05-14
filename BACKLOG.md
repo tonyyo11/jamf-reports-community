@@ -82,19 +82,6 @@ When fixing an item, remove it from this file in the same commit.
   older than the expected interval.** Currently the staleness threshold is
   in code but not surfaced in the UI. Threat-model T-8.
 
-### From Claude design-review-fixes-3 security review (2026-05-14)
-
-- **CONSIDER — Path construction for run-history dir bypasses
-  `WorkspacePaths`.** `app/Sources/JamfReports/Views/RunsView.swift:225` and
-  `app/Sources/JamfReports/Services/RunHistoryService.swift:107` interpolate
-  `workspace.profile` into a path string directly. Not a vulnerability —
-  `ProfileService.isValid` regex-constrains the profile name and
-  `SystemActions.openFolder` enforces the `~/Jamf-Reports` allow-list — but
-  drifts from the documented invariant in `CLAUDE.md` that all path
-  construction goes through `WorkspacePaths`. Fix: add
-  `WorkspacePaths.runHistoryDir(for:) throws -> URL` and point both callers
-  at it.
-
 ---
 
 ## Code hygiene (from in-session reviews — deferred)
