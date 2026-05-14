@@ -98,6 +98,40 @@ When fixing an item, remove it from this file in the same commit.
   older than the expected interval.** Currently the staleness threshold is
   in code but not surfaced in the UI. Threat-model T-8.
 
+### From Google Gemini cross-review of design-review-3 (2026-05-14)
+
+- **SHOULD-FIX — Log redaction layer for `RunHistoryService`.**
+  Run logs surfaced by `RunsView` are read through
+  `RunHistoryService.loadLog(_:)` and fed to clipboard exports and
+  on-disk file exports without any sanitization pass. jamf-cli output
+  is supposed to redact tokens, but a misbehaving subprocess or a
+  future debug-mode flag could echo secrets to stderr. In a CBP /
+  government context this is a real exfiltration path via accidental
+  paste or shared log file. Design: add a redaction filter to
+  `RunHistoryService.loadLog` (or a sibling `loadRedactedLog`) that
+  scrubs known sensitive patterns (Bearer tokens, OAuth client
+  secrets, Basic auth headers, anything that looks like a JWT). Apply
+  the redacted form to both clipboard and file exports. Keep the raw
+  file on disk untouched — admins still need to investigate runs.
+  Need a policy doc on which patterns to match (false-positive cost
+  matters) before implementing.
+
+- **CONSIDER — Dynamic Type 300% audit on `OverviewView`.** Wave 1's
+  Dynamic Type pass (commits `08148c1`, `17bfb63`, etc.) covered the
+  font-token swaps but didn't verify the visual layout at 300% scale.
+  Walk OverviewView with Larger Text bumped to maximum and confirm
+  none of the critical KPI metrics truncate or clip into adjacent
+  cards. Manual visual audit — no automatable test.
+
+- **CONSIDER — Verify `dangerSoft` (`#FFA39A`) contrast against
+  `codeBG` (`#0E0F12`).** The `dangerSoft` / `warnSoft` tokens added
+  in wave 1 commit `3229dd1` were tuned for Pill backgrounds, then
+  also used on the log-console surface (`Theme.Colors.codeBG`).
+  Re-check contrast on the new background — if `dangerSoft` falls
+  below AA Normal (4.5:1) against `codeBG`, choose a slightly
+  brighter coral or bump `codeBG` toward fully black. Update
+  `accessibility-audit.md` either way.
+
 ---
 
 ## Code hygiene (from in-session reviews — deferred)
