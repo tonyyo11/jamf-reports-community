@@ -10,6 +10,22 @@ struct CompliancePostureView: View {
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
     @State private var hasLoaded = false
 
+    /// Compliance-category templates from jamf-cli `pro sg` (v1.17+).
+    /// Loaded once per profile; empty when feature-detect fails.
+    @State private var complianceTemplates: [SmartGroupTemplate] = []
+    @State private var selectedTemplate: SmartGroupTemplate?
+    @State private var bridge = CLIBridge()
+
+    /// Order matches the on-screen controlCoverageCard column flow plus
+    /// `non-compliant-baseline` at the bottom (most-actionable individual
+    /// controls first, then the broader baseline rollup).
+    private static let templateOrder: [String] = [
+        "gatekeeper-disabled",
+        "sip-disabled",
+        "firewall-disabled",
+        "non-compliant-baseline",
+    ]
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -25,6 +41,9 @@ struct CompliancePostureView: View {
                 } else {
                     bandsHeroCard
                     controlCoverageCard
+                    if !complianceTemplates.isEmpty {
+                        complianceSmartGroupBar
+                    }
                     perOSBreakdownCard
                 }
             }
@@ -37,9 +56,73 @@ struct CompliancePostureView: View {
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
+        .task(id: workspace.profile) { await loadComplianceTemplates() }
         .onChange(of: workspace.profile) { _, _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reload()
+        }
+        .sheet(item: $selectedTemplate) { template in
+            SmartGroupApplySheet(
+                viewModel: SmartGroupApplySheetViewModel(
+                    template: template,
+                    profile: workspace.profile,
+                    templateService: SmartGroupTemplateService(
+                        executor: DefaultCLIExecutor(bridge: bridge)
+                    ),
+                    applyService: SmartGroupApplyService(
+                        executor: DefaultCLIExecutor(bridge: bridge)
+                    )
+                )
+            )
+            .environment(workspace)
+        }
+    }
+
+    /// Sits between the control-coverage card and the per-OS breakdown so the
+    /// operator can scan "which control is failing" → "create a smart group
+    /// for that control" without leaving the page. Same menu-picker shape as
+    /// SecurityPostureView for visual consistency across the posture dashboards.
+    private var complianceSmartGroupBar: some View {
+        Card(padding: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.shield")
+                    .foregroundStyle(Theme.Colors.gold)
+                Text("Compliance remediation")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
+                Spacer()
+                Menu("Create smart group") {
+                    ForEach(complianceTemplates) { template in
+                        Button {
+                            selectedTemplate = template
+                        } label: {
+                            Text(Self.menuLabel(for: template))
+                        }
+                    }
+                }
+                .help("Open a template-driven sheet to create a smart group for a compliance gap")
+            }
+        }
+    }
+
+    private static func menuLabel(for template: SmartGroupTemplate) -> String {
+        switch template.slug {
+        case "gatekeeper-disabled":     return "Gatekeeper disabled"
+        case "sip-disabled":            return "SIP disabled"
+        case "firewall-disabled":       return "Firewall disabled"
+        case "non-compliant-baseline":  return "Not meeting baseline"
+        default:                        return template.description.isEmpty ? template.slug : template.description
+        }
+    }
+
+    private func loadComplianceTemplates() async {
+        let service = SmartGroupTemplateService(executor: DefaultCLIExecutor(bridge: bridge))
+        do {
+            let all = try await service.listTemplates(profile: workspace.profile)
+            let bySlug = Dictionary(uniqueKeysWithValues: all.map { ($0.slug, $0) })
+            complianceTemplates = Self.templateOrder.compactMap { bySlug[$0] }
+        } catch {
+            complianceTemplates = []
         }
     }
 
