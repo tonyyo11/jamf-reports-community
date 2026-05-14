@@ -113,17 +113,6 @@ When fixing an item, remove it from this file in the same commit.
   `WorkspacePaths.runHistoryDir(for:) throws -> URL` and point both callers
   at it.
 
-### From Codex GPT-5.5 security-best-practices review (2026-05-14)
-
-- **SHOULD-FIX — `ExecutableLocator` falls back to current working
-  directory.** `app/Sources/JamfReports/Services/CLIBridge.swift:24`.
-  When `jamf-cli` is not found on any trusted system path,
-  `ExecutableLocator.locate` checks `CWD` last. First-launch onboarding
-  pipes the Jamf Pro API secret to `jamf-cli`'s stdin; if the app
-  launches from a directory containing a planted `jamf-cli`, the secret
-  reaches that binary. Fix: remove the CWD fallback (or gate it behind
-  `#if DEBUG`).
-
 ---
 
 ## Code hygiene (from in-session reviews — deferred)

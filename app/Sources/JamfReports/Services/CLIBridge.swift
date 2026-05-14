@@ -20,12 +20,9 @@ enum ExecutableLocator {
                 return url
             }
         }
-
-        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(binary)
-        if FileManager.default.isExecutableFile(atPath: cwd.path) {
-            return cwd
-        }
+        // CWD fallback removed: first-launch onboarding pipes the Jamf Pro API
+        // secret to jamf-cli stdin; launching from a directory containing a
+        // planted `jamf-cli` would otherwise hand the secret to that binary.
         return nil
     }
 }

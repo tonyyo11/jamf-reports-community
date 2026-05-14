@@ -48,6 +48,31 @@ final class FailureModeTests: XCTestCase {
         XCTAssertNotNil(result, "sh must be found via ExecutableLocator")
     }
 
+    func testLocateDoesNotFallBackToCWD() throws {
+        // First-launch onboarding pipes the Jamf Pro API secret to jamf-cli
+        // stdin; if the locator picked up a binary from the current working
+        // directory, a planted `jamf-cli` in CWD would receive the secret.
+        // Regression gate: the CWD fallback must stay removed.
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-cwd-locate-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let stubName = "jrc-cwd-locate-stub-\(UUID().uuidString)"
+        let stub = tmp.appendingPathComponent(stubName)
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: stub)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: stub.path
+        )
+
+        // The stub name is unique to `tmp` and won't exist on any trusted
+        // system path. If the locator restored its CWD fallback, this would
+        // resolve when CWD equals `tmp`; with the fallback gone, it returns nil.
+        let result = ExecutableLocator.locate(stubName)
+        XCTAssertNil(result, "ExecutableLocator must not fall back to CWD")
+    }
+
     // MARK: - CLIBridge.isJamfCLIAvailable
 
     func testIsJamfCLIAvailableReturnsBoolWithoutCrashing() {
