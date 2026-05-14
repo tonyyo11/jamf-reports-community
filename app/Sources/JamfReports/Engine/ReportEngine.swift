@@ -91,7 +91,7 @@ struct ReportEngine: Sendable {
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
         if config.charts?.isEnabled == true,
-           let summariesDir = resolvedSummariesDir(outputURL: outputURL) {
+           let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
             renderChartSheet(workbook: workbook, summariesDir: summariesDir)
         }
 
@@ -104,7 +104,7 @@ struct ReportEngine: Sendable {
         // Archive CSV snapshot only after a successful write — avoids archiving when generate fails.
         if let csvURL,
            config.charts?.archiveCurrentCsv == true,
-           let historicalDir = resolvedHistoricalDir(outputURL: outputURL) {
+           let historicalDir = resolvedHistoricalDir(profile: profile, onLine: onLine) {
             archiveCurrentCSV(csvURL: csvURL, historicalDir: historicalDir, onLine: onLine)
         }
 
@@ -112,7 +112,7 @@ struct ReportEngine: Sendable {
         let outputDir = outputURL.deletingLastPathComponent()
         let stem = stemFromURL(outputURL)
         if config.output?.isArchiveEnabled == true {
-            let archiveDir = resolvedArchiveDir(outputDir: outputDir)
+            let archiveDir = resolvedArchiveDir(profile: profile, outputDir: outputDir, onLine: onLine)
             let keep = config.output?.resolvedKeepLatestRuns ?? 10
             archiveOldRuns(
                 outputDir: outputDir,
@@ -123,7 +123,7 @@ struct ReportEngine: Sendable {
             )
         }
 
-        if let summariesDir = resolvedSummariesDir(outputURL: outputURL) {
+        if let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
             emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
         }
     }
@@ -573,25 +573,53 @@ struct ReportEngine: Sendable {
         return CGColor(red: r, green: g, blue: b, alpha: 1)
     }
 
-    private func resolvedHistoricalDir(outputURL: URL) -> URL? {
-        let raw = config.charts?.historicalCsvDir ?? "snapshots"
-        if raw.hasPrefix("/") { return URL(fileURLWithPath: raw) }
-        let workspace = outputURL.deletingLastPathComponent().deletingLastPathComponent()
-        return workspace.appendingPathComponent(raw, isDirectory: true)
+    /// Routes through `WorkspacePaths.historicalDir(for:)` so that
+    /// config-supplied absolute paths are subject to the same containment check
+    /// as all other workspace-relative paths. Returns nil and logs when the
+    /// profile is invalid or the path escapes the workspace — both are non-fatal
+    /// because CSV archival is a best-effort post-write side effect.
+    private func resolvedHistoricalDir(
+        profile: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL? {
+        do {
+            return try WorkspacePaths.historicalDir(for: profile)
+        } catch {
+            let msg = "[warn] could not resolve historical_csv_dir for '\(profile)': " +
+                      "\(error.localizedDescription) — CSV archival skipped"
+            AppLogger.engine.warning("\(msg, privacy: .public)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return nil
+        }
     }
 
-    private func resolvedSummariesDir(outputURL: URL) -> URL? {
-        resolvedHistoricalDir(outputURL: outputURL)?
+    private func resolvedSummariesDir(
+        profile: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL? {
+        resolvedHistoricalDir(profile: profile, onLine: onLine)?
             .appendingPathComponent("summaries", isDirectory: true)
     }
 
-    private func resolvedArchiveDir(outputDir: URL) -> URL {
-        let raw = config.output?.archiveDir?.trimmingCharacters(in: .whitespaces) ?? ""
-        if !raw.isEmpty {
-            if raw.hasPrefix("/") { return URL(fileURLWithPath: raw) }
-            return outputDir.appendingPathComponent(raw, isDirectory: true)
+    /// Routes through `WorkspacePaths.archiveDir(for:)` so that config-supplied
+    /// absolute archive paths are subject to the workspace containment check.
+    /// Falls back to `<outputDir>/archive` on failure and logs a warning — archive
+    /// rotation is a non-fatal post-write side effect.
+    private func resolvedArchiveDir(
+        profile: String,
+        outputDir: URL,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL {
+        do {
+            return try WorkspacePaths.archiveDir(for: profile)
+        } catch {
+            let fallback = outputDir.appendingPathComponent("archive", isDirectory: true)
+            let msg = "[warn] could not resolve archive_dir for '\(profile)': " +
+                      "\(error.localizedDescription) — using \(fallback.lastPathComponent)"
+            AppLogger.engine.warning("\(msg, privacy: .public)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return fallback
         }
-        return outputDir.appendingPathComponent("archive", isDirectory: true)
     }
 
     private func stemFromURL(_ url: URL) -> String {

@@ -115,18 +115,6 @@ When fixing an item, remove it from this file in the same commit.
 
 ### From Codex GPT-5.5 security-best-practices review (2026-05-14)
 
-- **MUST-FIX — `ReportEngine` resolves `historical_csv_dir` /
-  `archive_dir` outside `WorkspacePaths`.**
-  `app/Sources/JamfReports/Engine/ReportEngine.swift:578` and
-  `app/Sources/JamfReports/Engine/ReportEngine.swift:591` accept
-  config-supplied absolute paths without containment check
-  (`if raw.hasPrefix("/") { return URL(fileURLWithPath: raw) }`). A
-  `config.yaml` with `charts.historical_csv_dir: /etc/foo` or
-  `output.archive_dir: /System/...` redirects snapshots and archives
-  outside `~/Jamf-Reports/<profile>/`. Fix: route through
-  `WorkspacePaths` with explicit containment validation; reject or
-  remap out-of-workspace values.
-
 - **MUST-FIX — `JamfCLIInstaller.validateAsset` declared but never
   enforced.** `app/Sources/JamfReports/Services/JamfCLIInstaller.swift:200`
   defines the check (trusted host + filename pattern + no traversal
@@ -148,14 +136,6 @@ When fixing an item, remove it from this file in the same commit.
   launches from a directory containing a planted `jamf-cli`, the secret
   reaches that binary. Fix: remove the CWD fallback (or gate it behind
   `#if DEBUG`).
-
-- **SHOULD-FIX — Org-specific developer path in production code.**
-  `app/Sources/JamfReports/Services/LegacyHistoryImporter.swift:74`
-  hardcodes `Documents/Mac_Engineering/Jamf Reports/Generated Reports/...`
-  as the default URL for the legacy-history file picker. This is the
-  CBP developer's internal work folder. The community-audience rule in
-  `CLAUDE.md` bans hardcoded org identifiers. Fix: use a generic default
-  (e.g., `~/Downloads/`) or pull from a configurable setting.
 
 - **SHOULD-FIX — `ruff check .` reports 21 errors.** Three categories:
   (1) `F821 Undefined name 'Dict'/'List'` at
