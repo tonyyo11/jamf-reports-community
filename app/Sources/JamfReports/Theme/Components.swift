@@ -467,8 +467,16 @@ struct StatTile: View {
     }
 
     private var defaultSparklineColor: Color {
-        if let sparkColor { return sparkColor }
-        switch deltaTrend {
+        Self.sparklineColor(override: sparkColor, trend: deltaTrend)
+    }
+
+    /// Pure helper, exposed for unit tests. Explicit override wins; otherwise
+    /// the color follows `deltaTrend`. Flat trends use `gold` (a neutral
+    /// emphasis) rather than `fgMuted` so the sparkline reads as data, not
+    /// chrome.
+    static func sparklineColor(override: Color?, trend: Trend) -> Color {
+        if let override { return override }
+        switch trend {
         case .up: return Theme.Colors.ok
         case .down: return Theme.Colors.danger
         case .flat: return Theme.Colors.gold
