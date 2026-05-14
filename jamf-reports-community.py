@@ -46,7 +46,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import pandas as pd
 import xlsxwriter
@@ -2405,7 +2405,7 @@ def _emit_summary_json(
     _atomic_write_summary(summary_file, summaries_dir, summary_data)
 
 
-def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: Dict[str, Any]) -> None:
+def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: dict[str, Any]) -> None:
     """Atomically write a summary.json under summaries_dir.
 
     Uses a `.tmp` suffix so an interrupted write doesn't leave a stray `.json`
@@ -2434,7 +2434,7 @@ def _build_summary_from_bridge(
     config: Config,
     bridge: Optional["JamfCLIBridge"],
     date_str: str,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """Compute the trend summary metrics from cached jamf-cli JSON when no CSV is present.
 
     Pure-CLI users still need historical trend data. We mine the same JSON snapshots
@@ -2483,7 +2483,7 @@ def _build_summary_from_bridge(
         print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
 
     os_pct = 0.0
-    current_os_versions: List[str] = []
+    current_os_versions: list[str] = []
     for ea in config.custom_eas:
         if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
             current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]

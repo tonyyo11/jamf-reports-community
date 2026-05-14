@@ -352,6 +352,54 @@ def test_generate_failed_sheet_reports_status_partial(
 
 
 @pytest.mark.integration
+@pytest.mark.filterwarnings("ignore:No artists with labels found to put in legend")
+def test_generate_aggregates_failures_across_dashboards(
+    config_factory,
+    fixtures_root: Path,
+    tmp_path: Path,
+    jrc,
+    monkeypatch,
+    capsys,
+) -> None:
+    """Failures from CoreDashboard and CSVDashboard aggregate into counts.sheet_failures."""
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["enabled"] = True
+    config._data["jamf_cli"]["allow_live_overview"] = False
+    monkeypatch.setattr(jrc, "_find_jamf_cli_binary", lambda: None)
+    csv_path = fixtures_root / "csv" / "dummy_all_macs.csv"
+    historical_dir = tmp_path / "snapshots" / "computers"
+    shutil.copytree(fixtures_root / "snapshots" / "computers", historical_dir)
+    out_path = tmp_path / "multi-partial-report.xlsx"
+    summary_path = tmp_path / "multi-partial-summary.json"
+
+    def core_boom(self) -> None:
+        raise ValueError("simulated core overview crash")
+
+    def csv_boom(self) -> None:
+        raise ValueError("simulated security-controls crash")
+
+    monkeypatch.setattr(jrc.CoreDashboard, "_write_overview", core_boom)
+    monkeypatch.setattr(jrc.CSVDashboard, "_write_security_controls", csv_boom)
+
+    jrc.cmd_generate(
+        config,
+        str(csv_path),
+        str(out_path),
+        str(historical_dir),
+        summary_json=str(summary_path),
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["status"] == "partial"
+    assert payload["counts"]["sheet_failures"] == 2
+    failed_sheets = {entry["sheet"] for entry in payload["sheets"]["failures"]}
+    assert "Fleet Overview" in failed_sheets
+    assert "Security Controls" in failed_sheets
+    assert "[partial] Report written with 2 sheet failure(s):" in captured.out
+
+
+@pytest.mark.integration
 def test_school_generate_failed_sheet_reports_status_partial(
     jrc,
     fixtures_root: Path,
