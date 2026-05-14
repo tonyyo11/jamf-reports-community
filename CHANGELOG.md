@@ -71,6 +71,18 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Tracked jamf-cli dependency updated to v1.17.0. No code changes required.
+  Notable upstream changes since v1.14.0:
+  - v1.15.0: Spec-generated platform commands and bulk delete functionality added.
+  - v1.16.0: New `jcds download <fileName>` and `jcds sync --dir <path>` commands for
+    Jamf Cloud Distribution Service — not used by the app.
+  - v1.16.1: Nil-safety fix for device platform section fields — picked up by the app's
+    v1.16.1 minimum version floor (see entry below).
+  - v1.17.0: New `--compact` flag (token-efficient output), `--select` flag (multi-field
+    projection), and `doctor` diagnostic command. Inventory preload CSV export and app
+    store app backup capabilities added. Classic API extended with ebooks, user-groups,
+    and VPP scope support. Destructive commands annotated with `jamf:destructive`.
+    None of these changes affect commands or flags used by the app.
 - **Protect Bridge graduation**: `JamfCLIBridge.protect_*` shim methods (deprecated in v2.0) have been removed. Internal callers now construct a `ProtectCLIBridge` via `_build_protect_bridge(config)`, which honors the dedicated `protect.*` config block (`data_dir`, `profile`, `use_cached_data`) so Pro and Protect can target different tenants. `_protect_commands` / `_require_protect_command` likewise moved from `JamfCLIBridge` to `ProtectCLIBridge` where they always belonged.
 - **Protect collect planner** now gates Protect snapshots on `is_protect_available()` — when Protect is unconfigured for the active profile, the collector emits a single `[skip]` line instead of a misleading auth error. The `cmd_check` Protect probe likewise replaces its placeholder-value heuristic with the same availability call.
 - **Overview screen tile layout**: Stat tiles on the Overview screen now use a fixed-count flexible grid; previously, an asymmetric `minWidth` on the primary tile caused right-side tiles to collapse into single-character columns on live workspaces.
