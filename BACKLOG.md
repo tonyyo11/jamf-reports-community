@@ -100,6 +100,79 @@ When fixing an item, remove it from this file in the same commit.
   older than the expected interval.** Currently the staleness threshold is
   in code but not surfaced in the UI. Threat-model T-8.
 
+### From Claude design-review-fixes-3 security review (2026-05-14)
+
+- **CONSIDER — Path construction for run-history dir bypasses
+  `WorkspacePaths`.** `app/Sources/JamfReports/Views/RunsView.swift:225` and
+  `app/Sources/JamfReports/Services/RunHistoryService.swift:107` interpolate
+  `workspace.profile` into a path string directly. Not a vulnerability —
+  `ProfileService.isValid` regex-constrains the profile name and
+  `SystemActions.openFolder` enforces the `~/Jamf-Reports` allow-list — but
+  drifts from the documented invariant in `CLAUDE.md` that all path
+  construction goes through `WorkspacePaths`. Fix: add
+  `WorkspacePaths.runHistoryDir(for:) throws -> URL` and point both callers
+  at it.
+
+### From Codex GPT-5.5 security-best-practices review (2026-05-14)
+
+- **MUST-FIX — `ReportEngine` resolves `historical_csv_dir` /
+  `archive_dir` outside `WorkspacePaths`.**
+  `app/Sources/JamfReports/Engine/ReportEngine.swift:578` and
+  `app/Sources/JamfReports/Engine/ReportEngine.swift:591` accept
+  config-supplied absolute paths without containment check
+  (`if raw.hasPrefix("/") { return URL(fileURLWithPath: raw) }`). A
+  `config.yaml` with `charts.historical_csv_dir: /etc/foo` or
+  `output.archive_dir: /System/...` redirects snapshots and archives
+  outside `~/Jamf-Reports/<profile>/`. Fix: route through
+  `WorkspacePaths` with explicit containment validation; reject or
+  remap out-of-workspace values.
+
+- **MUST-FIX — `JamfCLIInstaller.validateAsset` declared but never
+  enforced.** `app/Sources/JamfReports/Services/JamfCLIInstaller.swift:200`
+  defines the check (trusted host + filename pattern + no traversal
+  chars), with tests covering all rejection paths. But `_performInstall`
+  at lines 515–525 calls `preferredAsset(...)` → `download(asset:to:)`
+  without calling `validateAsset`. Additionally, archive extraction at
+  lines 763–779 (`tar -xzf`, `unzip`) does not preflight entries for
+  traversal — a malicious archive entry can escape the temp dir.
+  SHA-256 verification protects against MITM tampering but not against
+  malicious-but-checksum-matching archives. Fix: invoke `validateAsset`
+  before `download`; preflight all archive entries against the target
+  directory before extracting.
+
+- **MUST-FIX — Python `_safe_write` invariant bypassed in School
+  dashboard fallback.** `jamf-reports-community.py:9586` writes
+  `f"[Data unavailable: {exc}]"` via `ws.write(...)` rather than
+  `_safe_write(...)`. The exception text can include jamf-cli output,
+  bypassing formula-injection / control-char / NaN guards. Fix: route
+  through `_safe_write`.
+
+- **SHOULD-FIX — `ExecutableLocator` falls back to current working
+  directory.** `app/Sources/JamfReports/Services/CLIBridge.swift:24`.
+  When `jamf-cli` is not found on any trusted system path,
+  `ExecutableLocator.locate` checks `CWD` last. First-launch onboarding
+  pipes the Jamf Pro API secret to `jamf-cli`'s stdin; if the app
+  launches from a directory containing a planted `jamf-cli`, the secret
+  reaches that binary. Fix: remove the CWD fallback (or gate it behind
+  `#if DEBUG`).
+
+- **SHOULD-FIX — Org-specific developer path in production code.**
+  `app/Sources/JamfReports/Services/LegacyHistoryImporter.swift:74`
+  hardcodes `Documents/Mac_Engineering/Jamf Reports/Generated Reports/...`
+  as the default URL for the legacy-history file picker. This is the
+  CBP developer's internal work folder. The community-audience rule in
+  `CLAUDE.md` bans hardcoded org identifiers. Fix: use a generic default
+  (e.g., `~/Downloads/`) or pull from a configurable setting.
+
+- **SHOULD-FIX — `ruff check .` reports 21 errors.** Three categories:
+  (1) `F821 Undefined name 'Dict'/'List'` at
+  `jamf-reports-community.py:2408`, `:2437`, `:2486` — latent bug; only
+  works today because `from __future__ import annotations` defers
+  evaluation. (2) `F401` unused imports. (3) `F541` f-string without
+  placeholders at `jamf-reports-community.py:11769`. Fix:
+  `ruff check --fix --unsafe-fixes` then resolve remaining manually
+  (import `Dict`, `List` from `typing` for the three F821 sites).
+
 ---
 
 ## Code hygiene (from in-session reviews — deferred)
