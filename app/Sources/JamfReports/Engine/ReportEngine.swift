@@ -709,14 +709,20 @@ struct ReportEngine: Sendable {
         }
         let dataDir = try workspacePaths.dataDir(for: profile)
         // Respect use_cached_data: when false, a failed collect is fatal for that kind.
+        // File-missing is a legitimate first-run state and defaults to true.
+        // File-exists-but-unparseable is fatal — throw so the caller surfaces the error
+        // rather than silently proceeding with stale cache.
         let useCachedData: Bool
-        if let workspace = ProfileService.workspaceURL(for: profile),
-           let config = try? ConfigLoader.load(
-               from: workspace.appendingPathComponent("config.yaml")
-           ) {
-            useCachedData = config.jamfCli?.isCachedDataEnabled ?? true
+        if let workspace = ProfileService.workspaceURL(for: profile) {
+            let configURL = workspace.appendingPathComponent("config.yaml")
+            if FileManager.default.fileExists(atPath: configURL.path) {
+                let config = try ConfigLoader.load(from: configURL)
+                useCachedData = config.jamfCli?.isCachedDataEnabled ?? true
+            } else {
+                useCachedData = true
+            }
         } else {
-            useCachedData = true
+            useCachedData = false
         }
 
         // Commands to collect and their snapshot kind names.

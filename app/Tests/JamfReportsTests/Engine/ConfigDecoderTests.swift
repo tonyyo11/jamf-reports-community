@@ -108,6 +108,54 @@ final class ConfigDecoderTests: XCTestCase {
         XCTAssertEqual(out.keepLatestRuns, 5)
     }
 
+    // MARK: - Fail-closed behavior
+
+    /// A missing config file throws `LoadError.fileNotFound` — the caller distinguishes
+    /// this from a parse failure and may apply defaults safely (legitimate first-run).
+    func testLoadFromMissingFileThrowsFileNotFound() {
+        let missing = URL(fileURLWithPath: "/tmp/nonexistent-jamfreports-\(UUID().uuidString)/config.yaml")
+        XCTAssertThrowsError(try ConfigLoader.load(from: missing)) { error in
+            guard case ConfigLoader.LoadError.fileNotFound = error else {
+                XCTFail("Expected LoadError.fileNotFound, got \(error)")
+                return
+            }
+        }
+    }
+
+    /// A config file that exists but has a non-mapping root (a bare scalar) throws
+    /// `LoadError.decodeError`. Callers must treat this as fatal rather than falling back
+    /// to defaults — the user expects configured behavior, not silent fallback.
+    func testLoadFromNonMappingRootYAMLThrowsDecodeError() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ConfigDecoderTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("config.yaml")
+        // YAML with a top-level sequence — not a mapping. YAMLCodec.decode throws
+        // invalidTopLevel, which ConfigLoader wraps as LoadError.decodeError.
+        try "- item1\n- item2\n".write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try ConfigLoader.load(from: url)) { error in
+            guard case ConfigLoader.LoadError.decodeError = error else {
+                XCTFail("Expected LoadError.decodeError for non-mapping root, got \(error)")
+                return
+            }
+        }
+    }
+
+    /// A valid (but minimal) config.yaml succeeds and merges defaults.
+    func testLoadFromValidYAMLSucceeds() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ConfigDecoderTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("config.yaml")
+        try "columns:\n  computer_name: \"Mac Name\"\n".write(to: url, atomically: true, encoding: .utf8)
+        let config = try ConfigLoader.load(from: url)
+        XCTAssertEqual(config.columns?.computerName, "Mac Name")
+        // withDefaults() must have run — thresholds should be non-nil.
+        XCTAssertNotNil(config.thresholds)
+    }
+
     // MARK: - Helper
 
     private var fixturesDir: URL {

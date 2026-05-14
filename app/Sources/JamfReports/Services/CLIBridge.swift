@@ -262,19 +262,7 @@ final class CLIBridge {
             return -1
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
-                AppLogger.cli.warning("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: msg))
-                config = ReportConfig()
-            }
-        } else {
-            config = ReportConfig()
-        }
+        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -308,6 +296,38 @@ final class CLIBridge {
                          text: "[error] generate failed: \(error.localizedDescription)"))
             tightenOnSuccess(-1, profile: profile)
             return -1
+        }
+    }
+
+    /// Load config.yaml, distinguishing file-missing from parse-failure.
+    ///
+    /// File-missing is a legitimate first-run state; defaults are returned silently.
+    /// File-exists-but-unparseable indicates corruption or tampering; the caller
+    /// receives `nil` and must abort the operation.
+    ///
+    /// Detection mechanism: `FileManager.fileExists` is checked before calling
+    /// `ConfigLoader.load`. The `catch` branch is reached only when the file exists
+    /// but cannot be decoded — there is no ambiguity between the two cases.
+    ///
+    /// - Parameters:
+    ///   - url: Absolute URL of `config.yaml` within the workspace.
+    ///   - onLine: Progress callback; receives a `[error]` line on parse failure.
+    /// - Returns: A decoded and defaulted `ReportConfig` on success or file-missing;
+    ///   `nil` when the file exists but cannot be parsed.
+    private func loadConfig(
+        at url: URL,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) -> ReportConfig? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return ReportConfig()
+        }
+        do {
+            return try ConfigLoader.load(from: url)
+        } catch {
+            let msg = "[error] config.yaml parse failed — aborting: \(error.localizedDescription)"
+            AppLogger.cli.error("\(msg, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .fail, text: msg))
+            return nil
         }
     }
 
@@ -350,19 +370,7 @@ final class CLIBridge {
             return -1
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
-                AppLogger.cli.warning("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: msg))
-                config = ReportConfig()
-            }
-        } else {
-            config = ReportConfig()
-        }
+        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -706,19 +714,7 @@ final class CLIBridge {
             return -1
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
-                AppLogger.cli.warning("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: msg))
-                config = ReportConfig()
-            }
-        } else {
-            config = ReportConfig()
-        }
+        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -775,19 +771,7 @@ final class CLIBridge {
             return -1
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
-                AppLogger.cli.warning("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: msg))
-                config = ReportConfig()
-            }
-        } else {
-            config = ReportConfig()
-        }
+        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
         let outputURL: URL
         if let path = outFile {
             outputURL = URL(fileURLWithPath: path)

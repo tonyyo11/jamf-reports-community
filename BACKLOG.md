@@ -40,13 +40,6 @@ When fixing an item, remove it from this file in the same commit.
   treat sheet failures as report failures, or emit explicit partial-success
   output with a failure list.
 
-- **MUST-FIX — Config failures fail open to defaults.**
-  `app/Sources/JamfReports/Services/CLIBridge.swift:270,358,714,783` replace an
-  unreadable `config.yaml` with `ReportConfig()`.
-  `app/Sources/JamfReports/Engine/ReportEngine.swift:680` defaults
-  `useCachedData` to `true` on config-load failure — a profile that intended
-  fail-closed silently uses stale cache.
-
 - **SHOULD-FIX — Summary builders zero-fill on decode failure (Python side
   only — Swift side resolved 2026-05-13).** Python
   `jamf-reports-community.py:2465,2480,2507`. The Swift sites at
