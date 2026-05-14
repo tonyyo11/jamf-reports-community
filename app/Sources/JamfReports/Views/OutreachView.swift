@@ -77,7 +77,7 @@ struct OutreachView: View {
         let service = SmartGroupTemplateService(executor: DefaultCLIExecutor(bridge: bridge))
         do {
             let templates = try await service.listTemplates(profile: workspace.profile)
-            staleCheckinTemplate = templates.first(where: { $0.slug == "stale-checkin" })
+            staleCheckinTemplate = templates.first(where: { $0.slug == "mdm/stale-checkin" })
         } catch SmartGroupTemplateServiceError.featureNotAvailable {
             // Expected when jamf-cli is missing or doesn't include PR #205 yet —
             // silent hide is the documented behavior.

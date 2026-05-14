@@ -20,10 +20,10 @@ struct UpdatesView: View {
     /// Stable order of templates in the menu — matches the operational priority
     /// from the design plan, not alphabetical.
     private static let templateOrder: [String] = [
-        "os-version-below",
-        "major-version-behind",
-        "rsr-not-applied",
-        "beta-os",
+        "updates/os-version-below",
+        "updates/major-version-behind",
+        "updates/rsr-not-applied",
+        "updates/beta-os",
     ]
 
     var body: some View {
@@ -115,10 +115,10 @@ struct UpdatesView: View {
     /// template description is empty.
     private static func menuLabel(for template: SmartGroupTemplate) -> String {
         switch template.slug {
-        case "os-version-below":    return "Devices below an OS version…"
-        case "major-version-behind": return "A major OS version behind"
-        case "rsr-not-applied":     return "Rapid Security Response not applied"
-        case "beta-os":             return "Running a beta OS"
+        case "updates/os-version-below":    return "Devices below an OS version…"
+        case "updates/major-version-behind": return "A major OS version behind"
+        case "updates/rsr-not-applied":     return "Rapid Security Response not applied"
+        case "updates/beta-os":             return "Running a beta OS"
         default:                    return template.description.isEmpty ? template.slug : template.description
         }
     }

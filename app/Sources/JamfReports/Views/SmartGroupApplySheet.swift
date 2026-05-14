@@ -159,19 +159,21 @@ final class SmartGroupApplySheetViewModel {
         }
     }
 
-    /// Generates a sensible default group name from a template's description.
+    /// Generates a sensible default group name from a template's slug.
+    /// PR #205 slugs follow the shape `<category>/<name>` (e.g. `encryption/not-encrypted`);
+    /// we strip the category prefix and Title Case the rest.
     /// Examples:
-    ///   "Computers that have not checked in for 90+ days." → "Stale Check-in (Jamf Reports)"
-    ///   "Computers without FileVault encryption."          → "Not Encrypted (Jamf Reports)"
-    /// Falls back to the slug if the description is empty.
+    ///   "encryption/not-encrypted" → "Not Encrypted (Jamf Reports)"
+    ///   "mdm/stale-checkin"        → "Stale Checkin (Jamf Reports)"
     static func defaultName(for template: SmartGroupTemplate) -> String {
         let suffix = " (Jamf Reports)"
-        // Slug-based fallback first — it's always present and stable.
-        let slugCleaned = template.slug
+        // Strip the category prefix if present — the leaf is the human-meaningful piece.
+        let leaf = template.slug.split(separator: "/").last.map(String.init) ?? template.slug
+        let cleaned = leaf
             .split(separator: "-")
             .map { $0.capitalized }
             .joined(separator: " ")
-        return slugCleaned + suffix
+        return cleaned + suffix
     }
 }
 

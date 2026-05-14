@@ -41,6 +41,12 @@ struct SmartGroupTemplate: Codable, Sendable, Equatable, Identifiable {
 }
 
 /// Parameter accepted by a template. Mirrors `internal/smartgroup.ParamSpec` upstream.
+///
+/// PR #205 emits `default` as the parameter's native JSON type — an `Int` for
+/// integer params (`stalled-after`, `within-days`), `null` for params with no
+/// default. The decoder normalizes every non-null primitive into a `String`
+/// because the SwiftUI form binding uses a `TextField`. `type` carries the
+/// declared param type (`int`, `version`, …) so callers can validate input.
 struct SmartGroupTemplateParam: Codable, Sendable, Equatable {
     /// Flag name passed via `--<name>=<value>` to `pro sg preview`/`apply`.
     let name: String
@@ -54,7 +60,60 @@ struct SmartGroupTemplateParam: Codable, Sendable, Equatable {
 
     /// Optional default value to pre-populate UI inputs. `nil` when the template
     /// requires the operator to specify a value (e.g. an OS version threshold).
+    /// Always a `String` even if the upstream JSON emitted a numeric literal.
     let `default`: String?
+
+    /// Declared param type (`int`, `version`, `string`, …). `nil` if upstream
+    /// did not emit the field — older or stripped builds.
+    let type: String?
+
+    init(
+        name: String,
+        required: Bool,
+        description: String,
+        default: String?,
+        type: String? = nil
+    ) {
+        self.name = name
+        self.required = required
+        self.description = description
+        self.default = `default`
+        self.type = type
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name, required, description, type
+        case `default`
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedName = try c.decode(String.self, forKey: .name)
+        let decodedRequired = (try? c.decode(Bool.self, forKey: .required)) ?? false
+        let decodedDescription = (try? c.decode(String.self, forKey: .description)) ?? ""
+        let decodedType = try c.decodeIfPresent(String.self, forKey: .type)
+        // `default` can arrive as String, Int, Double, Bool, or null. Tolerate
+        // every JSON primitive and normalize to String for UI binding.
+        let decodedDefault: String?
+        if let s = try? c.decode(String.self, forKey: .default) {
+            decodedDefault = s
+        } else if let i = try? c.decode(Int.self, forKey: .default) {
+            decodedDefault = String(i)
+        } else if let d = try? c.decode(Double.self, forKey: .default) {
+            decodedDefault = String(d)
+        } else if let b = try? c.decode(Bool.self, forKey: .default) {
+            decodedDefault = String(b)
+        } else {
+            decodedDefault = nil
+        }
+        self.init(
+            name: decodedName,
+            required: decodedRequired,
+            description: decodedDescription,
+            default: decodedDefault,
+            type: decodedType
+        )
+    }
 }
 
 /// The criteria JSON body that `apply` would POST. Returned by `pro sg preview` and

@@ -23,9 +23,9 @@ struct SecurityPostureView: View {
     /// the most actionable (devices with FV completely off), followed by IRK
     /// problems where the policy is partially applied but recovery is broken.
     private static let templateOrder: [String] = [
-        "not-encrypted",
-        "invalid-recovery-key",
-        "escrow-missing",
+        "encryption/not-encrypted",
+        "encryption/invalid-recovery-key",
+        "encryption/escrow-missing",
     ]
 
     var body: some View {
@@ -109,9 +109,9 @@ struct SecurityPostureView: View {
 
     private static func menuLabel(for template: SmartGroupTemplate) -> String {
         switch template.slug {
-        case "not-encrypted":        return "Devices not encrypted"
-        case "invalid-recovery-key": return "Invalid recovery key"
-        case "escrow-missing":       return "Recovery key escrow missing"
+        case "encryption/not-encrypted":        return "Devices not encrypted"
+        case "encryption/invalid-recovery-key": return "Invalid recovery key"
+        case "encryption/escrow-missing":       return "Recovery key escrow missing"
         default:                     return template.description.isEmpty ? template.slug : template.description
         }
     }

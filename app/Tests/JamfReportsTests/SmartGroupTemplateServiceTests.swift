@@ -13,34 +13,45 @@ final class SmartGroupTemplateServiceTests: XCTestCase {
     // MARK: - listTemplates
 
     func testListTemplatesDecodesPR205Shape() async throws {
-        // Two-template fixture in the shape PR #205's `pro sg templates --output json`
-        // emits. Real output has 23 templates; two is enough to verify decode + sort.
+        // Fixture mirrors the actual shape emitted by `pro sg templates --output json`
+        // built from PR #205 head c2ed951 — category-prefixed slugs and integer
+        // defaults with a typed `type` discriminator. Real output has 23 templates;
+        // three is enough to exercise the decode + sort + int-default cases.
         let json = """
         [
           {
-            "slug": "stale-checkin",
+            "slug": "mdm/stale-checkin",
             "category": "mdm",
-            "description": "Computers that have not checked in for 90+ days.",
-            "params": []
+            "description": "Computers that have not checked in for N+ days.",
+            "params": [
+              {
+                "name": "days",
+                "type": "int",
+                "default": 7,
+                "description": "Days since last inventory update",
+                "required": false
+              }
+            ]
           },
           {
-            "slug": "os-version-below",
+            "slug": "updates/os-version-below",
             "category": "updates",
             "description": "Computers running an OS version below a threshold.",
             "params": [
               {
-                "name": "platform",
-                "required": true,
-                "description": "macOS | iOS | iPadOS",
-                "default": "macOS"
-              },
-              {
-                "name": "version",
-                "required": true,
+                "name": "below-version",
+                "type": "version",
+                "default": null,
                 "description": "Threshold OS version (e.g. 15.0)",
-                "default": null
+                "required": true
               }
             ]
+          },
+          {
+            "slug": "compliance/firewall-disabled",
+            "category": "compliance",
+            "description": "Macs with the application firewall disabled",
+            "params": []
           }
         ]
         """
@@ -51,18 +62,22 @@ final class SmartGroupTemplateServiceTests: XCTestCase {
 
         let templates = try await service.listTemplates(profile: "harbor")
 
-        XCTAssertEqual(templates.count, 2)
-        // Sort: mdm < updates alphabetically.
-        XCTAssertEqual(templates[0].slug, "stale-checkin")
-        XCTAssertEqual(templates[0].category, "mdm")
+        XCTAssertEqual(templates.count, 3)
+        // Sort: compliance < mdm < updates alphabetically by category, then by slug.
+        XCTAssertEqual(templates[0].slug, "compliance/firewall-disabled")
         XCTAssertTrue(templates[0].params.isEmpty)
-        XCTAssertEqual(templates[1].slug, "os-version-below")
-        XCTAssertEqual(templates[1].category, "updates")
-        XCTAssertEqual(templates[1].params.count, 2)
-        XCTAssertEqual(templates[1].params[0].name, "platform")
-        XCTAssertEqual(templates[1].params[0].default, "macOS")
-        XCTAssertTrue(templates[1].params[0].required)
-        XCTAssertNil(templates[1].params[1].default)
+        XCTAssertEqual(templates[1].slug, "mdm/stale-checkin")
+        XCTAssertEqual(templates[1].params.count, 1)
+        XCTAssertEqual(templates[1].params[0].name, "days")
+        // Int default `7` normalizes to "7" so the SwiftUI TextField binding works.
+        XCTAssertEqual(templates[1].params[0].default, "7")
+        XCTAssertEqual(templates[1].params[0].type, "int")
+        XCTAssertFalse(templates[1].params[0].required)
+        XCTAssertEqual(templates[2].slug, "updates/os-version-below")
+        XCTAssertEqual(templates[2].params[0].name, "below-version")
+        XCTAssertNil(templates[2].params[0].default)
+        XCTAssertEqual(templates[2].params[0].type, "version")
+        XCTAssertTrue(templates[2].params[0].required)
     }
 
     func testListTemplatesSortsByCategoryThenSlug() async throws {

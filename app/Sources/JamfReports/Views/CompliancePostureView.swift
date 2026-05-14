@@ -20,10 +20,10 @@ struct CompliancePostureView: View {
     /// `non-compliant-baseline` at the bottom (most-actionable individual
     /// controls first, then the broader baseline rollup).
     private static let templateOrder: [String] = [
-        "gatekeeper-disabled",
-        "sip-disabled",
-        "firewall-disabled",
-        "non-compliant-baseline",
+        "compliance/gatekeeper-disabled",
+        "compliance/sip-disabled",
+        "compliance/firewall-disabled",
+        "compliance/non-compliant-baseline",
     ]
 
     var body: some View {
@@ -107,10 +107,10 @@ struct CompliancePostureView: View {
 
     private static func menuLabel(for template: SmartGroupTemplate) -> String {
         switch template.slug {
-        case "gatekeeper-disabled":     return "Gatekeeper disabled"
-        case "sip-disabled":            return "SIP disabled"
-        case "firewall-disabled":       return "Firewall disabled"
-        case "non-compliant-baseline":  return "Not meeting baseline"
+        case "compliance/gatekeeper-disabled":     return "Gatekeeper disabled"
+        case "compliance/sip-disabled":            return "SIP disabled"
+        case "compliance/firewall-disabled":       return "Firewall disabled"
+        case "compliance/non-compliant-baseline":  return "Not meeting baseline"
         default:                        return template.description.isEmpty ? template.slug : template.description
         }
     }
