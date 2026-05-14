@@ -165,6 +165,7 @@ final class SmartGroupApplySheetViewModel {
     /// Examples:
     ///   "encryption/not-encrypted" → "Not Encrypted (Jamf Reports)"
     ///   "mdm/stale-checkin"        → "Stale Checkin (Jamf Reports)"
+    ///   "" (degenerate)            → "Smart Group (Jamf Reports)"
     static func defaultName(for template: SmartGroupTemplate) -> String {
         let suffix = " (Jamf Reports)"
         // Strip the category prefix if present — the leaf is the human-meaningful piece.
@@ -173,7 +174,9 @@ final class SmartGroupApplySheetViewModel {
             .split(separator: "-")
             .map { $0.capitalized }
             .joined(separator: " ")
-        return cleaned + suffix
+        // Guard the degenerate "" slug case so we never produce a name like " (Jamf Reports)".
+        let label = cleaned.isEmpty ? "Smart Group" : cleaned
+        return label + suffix
     }
 }
 
