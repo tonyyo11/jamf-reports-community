@@ -353,7 +353,7 @@ Named constants in `CLIBridge`. Reference: jamf-cli Error Handling & Exit Codes 
 
 The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data.
 
-#### Key views (24 screens, 9 new in v3.5-port wave)
+#### Key views (27 screens plus utilities, 9 dashboards from v3.5-port wave)
 
 Core: `Sidebar`, `Titlebar`, `OverviewView`, `FleetOverviewView`, `DevicesView`,
 `DeviceLookupView`, `TrendsView`, `ReportsView`, `BackupsView`, `SchedulesView`,
@@ -373,6 +373,9 @@ Operations group: `PatchView` (titles table + per-title failure drawer),
 Fleet group: `MobileFleetView` (iPad/iPhone breakdown + iOS version
 distribution + devices table), `ProtectView` (alerts/computers/insights or
 explicit "Protect not detected" empty state).
+
+Utilities: `AppToolbar`, `WhatsNewBanner`, `DashboardChartExport`,
+`GenerateSheet`, `SecureSecretField`, `WorkspaceView`, `HealthCheckView`.
 
 DevicesView gains a `.priorityAction` filter + per-device "Priority Risk"
 section in the detail panel — driven by `RiskScoringService`.
