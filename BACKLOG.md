@@ -47,10 +47,6 @@ When fixing an item, remove it from this file in the same commit.
   `useCachedData` to `true` on config-load failure — a profile that intended
   fail-closed silently uses stale cache.
 
-- **MUST-FIX — Onboarding jamf-cli signature gate untested.**
-  `app/Sources/JamfReports/Services/OnboardingFlow.swift:230`. Add tests for
-  reject-untrusted, enforcement-disabled, and redacted failure output.
-
 - **SHOULD-FIX — Summary builders zero-fill on decode failure (Python side
   only — Swift side resolved 2026-05-13).** Python
   `jamf-reports-community.py:2465,2480,2507`. The Swift sites at

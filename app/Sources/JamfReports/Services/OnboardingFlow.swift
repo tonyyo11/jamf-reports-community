@@ -229,14 +229,7 @@ final class OnboardingFlow {
 
     func registerJamfCLIProfile() async throws {
         guard let binary = CLIBridge().locate("jamf-cli") else { throw FlowError.missingJamfCLI }
-        if JamfCLIIdentity.enforceSignatureCheck {
-            guard let teamID = JamfCLIIdentity.expectedTeamID,
-                  CodeSignVerifier.verify(url: binary, expectedTeamID: teamID) else {
-                throw FlowError.processFailed(
-                    "jamf-cli signature verification failed — binary may be untrusted"
-                )
-            }
-        }
+        try verifyJamfCLISignatureGate(binary: binary)
         guard let url = normalizedJamfURL else { throw FlowError.invalidJamfURL }
         guard isProfileNameValid else { throw FlowError.invalidProfile }
 
@@ -401,6 +394,40 @@ final class OnboardingFlow {
             workspaceStore.reloadFromDisk()
         } else {
             lastError = "Generate exited \(exit) — check the log above."
+        }
+    }
+
+    /// Verifies the jamf-cli binary's code signature before credentials are passed to it.
+    ///
+    /// Extracted from `registerJamfCLIProfile` so the gate logic can be exercised
+    /// in tests without spawning a PTY or requiring a live jamf-cli binary. The
+    /// defaulted parameters reflect production behaviour; tests override them.
+    ///
+    /// - Parameters:
+    ///   - binary: The resolved URL of the jamf-cli binary to inspect.
+    ///   - enforce: Whether the gate is active. Defaults to `JamfCLIIdentity.enforceSignatureCheck`.
+    ///   - expectedTeamID: The Team ID the binary must be signed by. Defaults to
+    ///     `JamfCLIIdentity.expectedTeamID`.
+    ///   - verify: Closure that performs the actual signature check. Defaults to
+    ///     `CodeSignVerifier.verify(url:expectedTeamID:)`.
+    /// - Throws: `FlowError.processFailed` when enforcement is on and verification fails.
+    internal func verifyJamfCLISignatureGate(
+        binary: URL,
+        enforce: Bool = JamfCLIIdentity.enforceSignatureCheck,
+        expectedTeamID: String? = JamfCLIIdentity.expectedTeamID,
+        verify: (URL, String) -> Bool = { CodeSignVerifier.verify(url: $0, expectedTeamID: $1) }
+    ) throws {
+        if enforce {
+            guard let teamID = expectedTeamID, verify(binary, teamID) else {
+                throw FlowError.processFailed(
+                    "jamf-cli signature verification failed — binary may be untrusted"
+                )
+            }
+        } else {
+            // SF-7: audit-log the skip so reviewers can confirm which gate was off.
+            AppLogger.engine.info(
+                "OnboardingFlow: codesign verification skipped (enforce=false, teamID=\(expectedTeamID == nil ? "nil" : "set", privacy: .public))"
+            )
         }
     }
 
