@@ -248,7 +248,7 @@ conflict.
 
 ## PR-8 — Dead-code removal + TemplateApplier tripwire test (C-09, C-10, C-12)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #63, commit f160aa9, 2026-05-15)
 - **finding ids in scope:** [C-09, C-10, C-12]
 - **dropped per council (2026-05-15, budgeted invocation):**
   - **S-06** dropped. Council went 3-1 against landing the refactor.
@@ -302,7 +302,7 @@ conflict.
 
 ## PR-9 — Trivial CONSIDER cleanup (C-15, C-16, C-17)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #64, commit 290cf1e, 2026-05-15)
 - **finding ids:** [C-15, C-16, C-17]
 - **files it touches:**
   - `app/Sources/JamfReports/Engine/JamfCLIDecoder.swift` (lines 604-610, 616-628 — remove redundant identity-mapped `CodingKeys`; line 368 — one-line comment on INTEGER → percentage heuristic)
