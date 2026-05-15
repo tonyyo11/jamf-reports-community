@@ -1,11 +1,21 @@
-{
-  "httpStatus": 503,
-  "errors": [
-    {
-      "code": null,
-      "description": "This endpoint cannot be used if the Managed Software Update Plans toggle is off.",
-      "id": "0",
-      "field": null
-    }
-  ]
-}
+[
+  {
+    "plan_state_summary": [
+      {
+        "count": 104,
+        "state": "PlanFailed"
+      },
+      {
+        "count": 3,
+        "state": "PlanException"
+      },
+      {
+        "count": 1,
+        "state": "SchedulingScanForOSUpdates"
+      }
+    ],
+    "plan_total": 108,
+    "status_summary": [],
+    "total": 0
+  }
+]

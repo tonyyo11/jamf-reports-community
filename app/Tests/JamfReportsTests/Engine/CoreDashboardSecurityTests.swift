@@ -202,15 +202,12 @@ final class CoreDashboardSecurityTests: XCTestCase {
         guard let json = fixtureData(kind: "update-status") else {
             throw XCTSkip("update-status fixture not available")
         }
-        // Validate the fixture decodes as [UpdateStatusReport] before running the sheet test.
-        // The committed fixture may be an error response (e.g. 503) when the tenant's
-        // Managed Software Update Plans toggle is off — skip in that case.
-        guard (try? JSONDecoder().decode(
-            [UpdateStatusReport].self, from: Data(json.utf8))
-        ) != nil else {
-            throw XCTSkip("update-status fixture is not a valid UpdateStatusReport shape")
-        }
-
+        // S-07 (PR-5): the committed fixture is the happy-path shape;
+        // the prior conditional skip ("not a valid UpdateStatusReport
+        // shape") was masking an out-of-spec fixture and is no longer
+        // needed. The 503-error response shape is preserved in
+        // tests/fixtures/jamf-cli-data-variants/update-status/update-status-error-503.json
+        // for any future test that wants to exercise the error path.
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         try seedJSON(json, kind: "update-status", in: dir)

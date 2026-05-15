@@ -136,7 +136,7 @@ conflict.
 
 ## PR-4 — SmartGroup integration safety (S-09)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #59, commit 3868293, 2026-05-15)
 - **finding ids:** [S-09]
 - **files it touches:**
   - `app/Sources/JamfReports/Services/SmartGroupApplyService.swift` (line 189 default)
@@ -161,7 +161,7 @@ conflict.
 
 ## PR-5 — Zero-warnings + skipped-fixture cleanup (S-05, S-07, C-01)
 
-- **status:** `pending`
+- **status:** `in_progress`
 - **finding ids:** [S-05, S-07, C-01]
 - **files it touches:**
   - `app/Sources/JamfReports/Services/PDFExporter.swift` (line 190 `WKNavigationDelegate` near-match)

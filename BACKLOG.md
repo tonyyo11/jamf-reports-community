@@ -13,6 +13,35 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-5 review (2026-05-15)
+
+Three scope-adjacent items surfaced during the zero-warnings +
+fixture cleanup PR. PR-5 itself addressed S-05, S-07, C-01 fully;
+these are pre-existing patterns the review gates noticed in the
+touched files.
+
+- **SHOULD-FIX — `OutputValidatorTests.writeTempFile` silently swallows write failures.**
+  `app/Tests/JamfReportsTests/OutputValidatorTests.swift:281`.
+  Helper uses `try? content.write(to:atomically:encoding:)` so a
+  filesystem error during test setup produces a misleading
+  XCTSkip or wrong-path assertion rather than a clear test
+  failure. Replace with `try` + a descriptive XCTFail on error.
+- **CONSIDER — Programmatic XLSX tests don't round-trip through the production writer.**
+  `app/Tests/JamfReportsTests/OutputValidatorTests.swift:185-206`.
+  `testProgrammaticXLSXPassesValidation` builds a synthetic XLSX
+  via the test helper, not via `XLSXWriter`. The original golden
+  fixture would have caught writer regressions; the programmatic
+  variant only catches validator regressions. Add a round-trip
+  test: generate via production writer, validate, assert no
+  errors.
+- **CONSIDER — `fixtureData(kind:)` picks `files.first` with undefined directory ordering.**
+  `app/Tests/JamfReportsTests/Engine/CoreDashboardSecurityTests.swift:39`.
+  Single fixture per kind today; if a kind grows a second file
+  (the update-status variants dir is the canonical example), the
+  test could pick the wrong one non-deterministically. Either
+  sort lexicographically before `.first` or accept a filename
+  parameter.
+
 ### From PR-3 review (2026-05-15)
 
 silent-failure-hunter flagged two scope-adjacent items during the
