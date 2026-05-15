@@ -246,10 +246,22 @@ conflict.
 
 ---
 
-## PR-8 — Templates simplification + dead-code removal (S-06, C-09, C-10, C-12, C-13)
+## PR-8 — Dead-code removal + TemplateApplier tripwire test (C-09, C-10, C-12)
 
-- **status:** `pending`
-- **finding ids:** [S-06, C-09, C-10, C-12, C-13]
+- **status:** `in_progress`
+- **finding ids in scope:** [C-09, C-10, C-12]
+- **dropped per council (2026-05-15, budgeted invocation):**
+  - **S-06** dropped. Council went 3-1 against landing the refactor.
+    Decisive: Critic surfaced Swift 6 strict-concurrency regression
+    (`TemplateApplier.apply()` is `@MainActor`; moving switches onto
+    `Sendable` protocol forces viral isolation or silent loss of
+    guarantee). Replaced with a ~25-LOC exhaustiveness test in
+    `TemplateApplierTests` that fails when a new template identifier
+    is added without revisiting the four switches.
+  - **C-13** dropped. Investigation found `SummaryJSONParser` provides
+    a useful namespace for `dateFormatter` (8 callsites) + two static
+    methods. Inlining would either pollute global namespace or require
+    verbose callsite renames. Routed to `BACKLOG.md` as disputed.
 - **NOT in this PR:** C-11 (`JamfCLIIdentity.swift`) — PR-2 expanded it
   with the fingerprint cache; it is no longer dead code. Dropped from
   scope per Phase 0 conflict resolution.

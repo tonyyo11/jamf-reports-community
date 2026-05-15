@@ -13,6 +13,45 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-8 council (2026-05-15)
+
+`/council` ran on the S-06 Templates refactor (the budgeted judgment-call
+invocation for the 10-PR sequence). All three external voices (Skeptic,
+Pragmatist, Critic) aligned 3-1 against landing the refactor as REPORT.md
+describes. Key load-bearing dissent: Critic surfaced that `TemplateApplier
+.apply()` is `@MainActor` to guard `WizardState` mutation, and moving the
+four switches onto a `Sendable` protocol would force either viral
+`@MainActor` annotation or silent loss of the isolation guarantee — a
+Swift 6 strict-concurrency regression. Council also rejected C-13 as
+misdiagnosed (`SummaryJSONParser` is a useful namespace, not over-
+engineering). Items routed here:
+
+- **CONSIDER (S-06 deferred) — Audit whether each of `TemplateApplier`'s 4 switches is actually per-template, or per-*category*.**
+  Skeptic's challenge: `keepLatestRuns` and `recommendedStaleDays` may
+  not vary by template — they may vary by audience-category (executive
+  vs operational vs auditor) and could collapse to a single default +
+  override map for outliers. If true, the right move is **deletion** of
+  1-2 switches, not relocation. Spike before any future refactor.
+- **CONSIDER — Tripwire test gap: case-deletion not caught.**
+  `testEveryShippingTemplateIsExplicitlyCovered` in
+  `TemplateApplierTests.swift` catches "added a template, forgot to
+  update TemplateApplier" but NOT "deleted a `case "x":` arm while
+  `"x"` still ships in `TemplateResolver.allTemplates`." Closing this
+  gap requires per-template behavioral assertions (extend
+  `testApplyExecutiveTemplate` / `testRecommendedStaleDays` /
+  `testEAKeywords` to be exhaustive across all 6 templates). PR-8
+  hunter SHOULD-FIX, deferred because reviewer noted the asymmetry
+  is consistent with the `default:` arm's documented load-bearing
+  safety design.
+- **CONSIDER — C-13 (`SummaryJSONParser` wrapper struct) is disputed.**
+  REPORT.md flagged the 30-line struct as over-engineered. Investigation
+  during PR-8 found it provides a useful namespace for `dateFormatter`
+  (consumed at 8 callsites in `AccessibilityDescriptors`, `TrendsView`)
+  plus two static methods (`parse`, `parseDirectory`) called from
+  `FleetOverviewView` and `Sidebar`. Inlining would either pollute the
+  global namespace or require verbose renames at every callsite. Leave
+  alone unless a stronger reason surfaces.
+
 ### From PR-7 review (2026-05-15)
 
 - **CONSIDER — `patch-managed` doc says "Jamf Pro v2 API" — the actual endpoint is v1.**

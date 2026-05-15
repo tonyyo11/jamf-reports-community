@@ -64,35 +64,6 @@ enum CLISuggester {
         )
     }
 
-    /// Score an EA for template relevance (0.0 = no match, 1.0 = perfect match).
-    /// Used internally by suggestion algorithms.
-    nonisolated private static func relevanceScore(
-        for ea: ExtensionAttribute,
-        template: any ReportTemplate
-    ) -> Double {
-        let keywords = TemplateApplier.eaKeywords(for: template)
-        guard !keywords.isEmpty else { return 0.0 }
-
-        let name = (ea.name ?? "").lowercased()
-        let desc = (ea.description ?? "").lowercased()
-        let searchText = "\(name) \(desc)"
-
-        let matches = keywords.filter { keyword in
-            searchText.contains(keyword.lowercased())
-        }
-
-        // Weight by match count and position (name matches score higher)
-        var score = Double(matches.count) / Double(keywords.count)
-
-        // Boost if keyword appears in name (more relevant than description)
-        let nameMatches = keywords.filter { name.contains($0.lowercased()) }
-        if !nameMatches.isEmpty {
-            score += 0.3
-        }
-
-        return min(1.0, score)
-    }
-
     // MARK: - Exceptions Suggestion
 
     /// Draft exception generated from audit findings for operator review.
