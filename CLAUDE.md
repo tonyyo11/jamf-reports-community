@@ -165,9 +165,9 @@ python3 jamf-reports-community.py patch-managed --managed {true,false}
 python3 jamf-reports-community.py capabilities [--output {json,text}]
 
 # Jamf Pro — automation / scheduling
-python3 jamf-reports-community.py workspace-init [--workspace-root DIR]
+python3 jamf-reports-community.py workspace-init [--profile PROFILE]
+                                                 [--workspace-root DIR]
                                                  [--workspace-name NAME]
-                                                 [--base-profile PROFILE]
                                                  [--seed-config PATH] [--overwrite-config]
 python3 jamf-reports-community.py launchagent-setup --mode MODE --schedule SCHED
                                                     [--label LABEL] [--time-of-day HH:MM]
@@ -176,10 +176,12 @@ python3 jamf-reports-community.py launchagent-setup --mode MODE --schedule SCHED
                                                     [--launchagents-dir DIR]
                                                     [--csv-inbox-dir DIR]
                                                     [--csv-freshness-days N]
+                                                    [--historical-csv-dir DIR]
                                                     [--notify WEBHOOK_URL]
                                                     [--skip-load] [--run-now] [--disabled]
 python3 jamf-reports-community.py launchagent-run   --mode MODE [--csv-inbox-dir DIR]
                                                     [--csv-freshness-days N]
+                                                    [--historical-csv-dir DIR]
                                                     [--status-file PATH]
                                                     [--notify WEBHOOK_URL]
 python3 jamf-reports-community.py multi-launchagent-run --multi-profiles PROFILES
@@ -210,10 +212,11 @@ archives a CSV snapshot if `--csv` and `--historical-csv-dir` are both provided.
 **`inventory-csv`** — export a wide CSV from jamf-cli `computers list` + EA results,
 suitable for use as a `--csv` source on systems without a Jamf Pro CSV export.
 
-**`export-reports`** — run the configured per-report export schedule, writing each
-report kind (xlsx, html) into the workspace's `Generated Reports/` directory if its
-schedule allows. Uses state files under `jamf-cli-data/state/export-*.last` to
-throttle reruns. `--csv` overrides auto-location of the latest inventory CSV.
+**`export-reports`** — generate filtered CSV slices of the wide inventory CSV per
+the `export_reports:` config section. Each entry defines a named filter that
+becomes a CSV file in the workspace's output dir; entries skip when not scheduled
+today or already written today. `--csv` pins the input inventory CSV; omit to
+auto-locate the most recent `automation_inventory_*.csv` in `output_dir`.
 
 **`backup`** — export Jamf Pro configuration objects (policies, profiles, scripts,
 smart groups, etc.) via `jamf-cli pro backup` into the workspace's `backups/` dir.
@@ -229,15 +232,16 @@ Jamf Pro v2 API. Requires `jamf-cli` v1.14.0+. Use `--dry-run` first to preview.
 capabilities (data sources, supported reports, status surfaces). Used by the
 GUI's Sources screen and by integration tooling.
 
-**`workspace-init`** — create a per-profile reporting workspace skeleton under
-`~/Jamf-Reports/<profile>/` (or the `--workspace-root` override). Seeds a
-`config.yaml` from `--seed-config` or `--base-profile`'s config if provided.
+**`workspace-init`** — create a per-profile reporting workspace skeleton
+(jamf-cli-data, snapshots, Generated Reports, csv-inbox, automation/logs) under
+the seed config's directory, or under `--workspace-root` if supplied. Seeds a
+`config.yaml` from `--seed-config` when provided.
 
 **`launchagent-setup`** / **`launchagent-run`** / **`multi-launchagent-run`** —
 generate, run, and run-multi-profile macOS user `LaunchAgent` jobs for scheduled
-reporting. `setup` creates `~/Library/LaunchAgents/com.jamfreports.*.plist`;
-`run` and `multi-launchagent-run` are the runner entry points that the agents
-invoke.
+reporting. `setup` creates plists under `~/Library/LaunchAgents/` using the
+label prefix `com.github.tonyyo11.jamf-reports-community.<slug>`; `run` and
+`multi-launchagent-run` are the runner entry points that the agents invoke.
 
 ### `--historical-csv-dir` usage
 
