@@ -189,7 +189,7 @@ conflict.
 
 ## PR-6 — Decoder + dashboard test coverage (S-10, S-11)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #61, commit 498da1a, 2026-05-15)
 - **finding ids:** [S-10, S-11]
 - **files it touches:**
   - `app/Tests/JamfReportsTests/Engine/JamfCLIDecoderTests.swift` (extend with ~18 inline-JSON smoke tests)
@@ -217,7 +217,7 @@ conflict.
 
 ## PR-7 — Documentation drift (S-08, C-02, C-04)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #62, commit aa32d2f, 2026-05-15)
 - **finding ids:** [S-08, C-02, C-04]
 - **files it touches:**
   - `CLAUDE.md` (CLI commands section — currently lists 10, actual is 19. Adds: `export-reports`, `backup`, `workspace-init`, `launchagent-setup`, `launchagent-run`, `multi-launchagent-run`, `capabilities`, `device`, `patch-managed`)
