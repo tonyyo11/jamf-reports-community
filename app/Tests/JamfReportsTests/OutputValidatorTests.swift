@@ -177,19 +177,33 @@ final class OutputValidatorTests: XCTestCase {
         )
     }
 
-    // MARK: - XLSXValidator — golden fixture
+    // MARK: - XLSXValidator — positive path
+    //
+    // C-01 (PR-5): the prior `testGoldenXLSXPassesValidation` and
+    // `testGoldenXLSXHasNoErrors` both loaded `golden_workbook.xlsx`
+    // from `Bundle.module`, which was never shipped in the test
+    // bundle — they skipped perpetually. Replaced with programmatic
+    // tests that build a minimal valid XLSX via the same helpers the
+    // negative-path tests use (`buildXLSXWithCell`), so the positive
+    // path actually runs in CI. This couples positive and negative
+    // coverage to a shared synthetic baseline, which is the correct
+    // tradeoff once the bundle fixture is acknowledged as absent.
 
-    func testGoldenXLSXPassesValidation() throws {
-        let url = try fixtureURL("golden_workbook.xlsx")
-        let report = try XLSXValidator().validate(at: url)
-        XCTAssertTrue(report.isValid, "Golden XLSX must pass: \(report.issues.map(\.message))")
+    func testProgrammaticXLSXPassesValidation() throws {
+        let xlsx = try buildXLSXWithCell(value: "OK")
+        defer { try? FileManager.default.removeItem(at: xlsx) }
+        let report = try XLSXValidator().validate(at: xlsx)
+        XCTAssertTrue(report.isValid,
+                      "Synthetic valid XLSX must pass: \(report.issues.map(\.message))")
     }
 
-    func testGoldenXLSXHasNoErrors() throws {
-        let url = try fixtureURL("golden_workbook.xlsx")
-        let report = try XLSXValidator().validate(at: url)
+    func testProgrammaticXLSXHasNoErrorIssues() throws {
+        let xlsx = try buildXLSXWithCell(value: "OK")
+        defer { try? FileManager.default.removeItem(at: xlsx) }
+        let report = try XLSXValidator().validate(at: xlsx)
         let errors = report.issues.filter { $0.severity == .error }
-        XCTAssertTrue(errors.isEmpty, "Golden XLSX should produce no errors: \(errors.map(\.message))")
+        XCTAssertTrue(errors.isEmpty,
+                      "Synthetic valid XLSX should produce no error issues: \(errors.map(\.message))")
     }
 
     // MARK: - XLSXValidator — corrupted variants

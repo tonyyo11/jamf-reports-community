@@ -178,9 +178,10 @@ extension RiskScoringService.Input {
         guard !trimmed.isEmpty else { return nil }
         // Accept "94%", "94", "94.5%", "0.94", etc. Prefer the leading
         // numeric token and infer 0–1 vs. 0–100 from magnitude.
+        // S-05: `scanDouble(_:)` is deprecated since macOS 10.15; use
+        // the no-arg variant that returns Double?.
         let scanner = Scanner(string: trimmed)
-        var value: Double = 0
-        guard scanner.scanDouble(&value) else { return nil }
+        guard let value = scanner.scanDouble() else { return nil }
         if value > 0, value <= 1 { return value * 100 }   // 0.94 → 94
         return value
     }

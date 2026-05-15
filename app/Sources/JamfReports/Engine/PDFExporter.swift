@@ -187,10 +187,15 @@ private final class Coordinator: NSObject, WKNavigationDelegate {
     /// navigation (HTTP fetch, file:// load, redirect chain) is cancelled. The
     /// initial load shows up with `navigationType == .other` and a URL of
     /// `about:blank` because no `baseURL` is set.
+    ///
+    /// Signature note: `WKNavigationDelegate`'s optional requirement is
+    /// `@MainActor @Sendable` for the `decisionHandler` closure under
+    /// Swift 6 strict concurrency. Match it exactly to silence the
+    /// "nearly matches optional requirement" warning (S-05).
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
         let url = navigationAction.request.url
         let scheme = url?.scheme?.lowercased() ?? ""
