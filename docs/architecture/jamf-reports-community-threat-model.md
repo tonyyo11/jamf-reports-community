@@ -109,19 +109,23 @@ Scope basis: full repo (`app/`, `jamf-reports-community.py`, CI workflows, scrip
 
 For each: **goal → path → assets → likelihood × impact → priority**, with file evidence where applicable. Mitigations split into **existing** vs **recommended**.
 
-### T-1. Malicious shim at `/opt/homebrew/bin/jamf-cli` exfiltrates onboarding secret
-- **Goal:** Steal Jamf API client secret during the onboarding flow.
-- **Path:** A1 (local same-user malware) drops a `jamf-cli` binary earlier on `PATH` than the real one, or backdoors the Homebrew tap (A4). When the user clicks "Authenticate" the app would normally pipe `clientID + "\n" + secret + "\n"` to stdin (`OnboardingFlow.swift:250`).
-- **Assets:** API client secret → full Jamf tenant compromise.
+### T-1. Malicious shim at `/opt/homebrew/bin/jamf-cli` exfiltrates onboarding secret or command-time data
+- **Goal:** Steal the Jamf API client secret during onboarding, or hijack a later routine command to receive credentials / corrupt collected data.
+- **Path:** A1 (local same-user malware) drops a `jamf-cli` binary earlier on `PATH` than the real one, or backdoors the Homebrew tap (A4). When the user clicks "Authenticate" the app pipes `clientID + "\n" + secret + "\n"` to stdin (`OnboardingFlow.swift:250`). For routine commands, every `collect`/`audit`/`backup`/`deviceDetail`/`validateConnection`/`groupHygiene` call routes through `CLIBridge.run` or `runAndCapture`, which previously launched the binary at the discovered path with no further codesign verification — so a post-onboarding binary swap on the user-writable Homebrew path received credentials too.
+- **Assets:** API client secret → full Jamf tenant compromise. Also: live inventory data → ability to fabricate compliance posture by returning malformed JSON.
 - **Existing mitigations:**
-  - `CodeSignVerifier.verify(url: jamfCLIURL, expectedTeamID: JamfCLITeamID)` is called *before* the secret is written to stdin (`OnboardingFlow.swift:234`). Untrusted binaries are rejected with `CLIBridgeError.untrustedJamfCLI`.
-  - Stdin buffer is zeroed via `resetBytes(in:)` after dispatch (`OnboardingFlow.swift:250-252`).
-  - Pinned env (`environmentForJamfCLI`) prevents `DYLD_INSERT_LIBRARIES`-style hijack.
-- **Likelihood:** Low. Two stacked defenses (Team-ID + pinned env).
-- **Impact:** Critical (full tenant secret).
-- **Priority: MEDIUM** — primarily because the residual risk is upstream tap compromise (A4) producing a binary that *is* signed by the expected Team-ID but otherwise malicious. Codesign defends against shims, not against a compromised official binary.
+  - **Onboarding gate:** `CodeSignVerifier.verify(url: jamfCLIURL, expectedTeamID: JamfCLIIdentity.expectedTeamID)` runs *before* the secret is written to stdin (`OnboardingFlow.swift:418`). Untrusted binaries are rejected.
+  - **Install gate:** `JamfCLIInstaller.swift:543` re-verifies after auto-update before the new binary replaces the staged copy.
+  - **Routine-command gate (M-01 fix, PR-2):** Every `process.run()` of `jamf-cli` in `CLIBridge.run`, `CLIBridge.runAndCapture`, and `runDeviceDetailProcess` invokes the codesign gate via `JamfCLIIdentity.ensureVerifiedJamfCLI`. The gate checks a per-process cache keyed on `(path, size, mtime)` — successful verifications short-circuit so per-command overhead is negligible; a binary swap (different size) or homebrew upgrade (different mtime) produces a different fingerprint and forces re-verification. A failed verify returns exit `-1` with a `[fatal] jamf-cli signature verification failed` user-facing diagnostic (or AppLogger-only for `runDeviceDetailProcess`); no `Process` is spawned.
+  - **Coverage gap (tracked in BACKLOG):** Three lower-volume `jamf-cli` spawns still go through their own `Process` and bypass the gate: `Provenance.captureJamfCLIVersion` (single `--version` at startup), `JamfCLIInstaller.installedVersion(at:)` (single check during install/upgrade), and `ProfileService.discoverJamfCLIProfiles` (single `config list` for the sidebar). These are protected by the install-time and onboarding-time gates already in place, so the residual exposure is small, but they are scope-adjacent items left for a follow-up PR.
+  - **Stdin scrubbing:** Stdin buffer zeroed via `resetBytes(in:)` after dispatch (`OnboardingFlow.swift:250-252`).
+  - **Pinned env:** `environmentForJamfCLI` is now the default for `CLIBridge.run` / `runAndCapture` (S-02 fix, PR-2) — any future caller that omits the `environment:` argument can no longer inherit `DYLD_INSERT_LIBRARIES`, `SSL_CERT_FILE`, etc. The whitelisted keys are PATH/HOME/LANG/TMPDIR plus proxy vars.
+- **Likelihood:** Low. Three stacked defenses now (install + onboarding + per-command Team-ID + pinned env).
+- **Impact:** Critical (full tenant secret + data integrity).
+- **Priority: LOW** (was MEDIUM) — the M-01 closure removed the routine-command exposure window. Residual risk is upstream tap compromise (A4) producing a binary that *is* signed by the expected Team-ID but otherwise malicious; codesign defends against shims, not against a compromised official binary.
+- **Residual risk — stat/exec TOCTOU:** The fingerprint check (`stat` for path/size/mtime) and the subsequent `process.run()` are not atomic on POSIX. An attacker with same-user write access to the binary path can swap the file in the window between the fingerprint check and exec. This is an inherent limitation of stat-based file verification — the only true fix is to open an `O_EXEC` file descriptor and verify the open handle, which requires a private API not appropriate here. Mitigated in practice by: (a) the user-writable Homebrew path being protected by the codesign gate at install time, so the swap would have to be after install; (b) the gate firing immediately before exec, narrowing the window to microseconds.
 - **Recommended mitigations:**
-  - Document and review the Team-ID embedded in `JamfCLITeamID` for changes in PRs.
+  - Document and review the Team-ID embedded in `JamfCLIIdentity.expectedTeamID` for changes in PRs.
   - When `jamf-cli` is auto-updated via `JamfCLIInstaller`, log the post-update signing certificate fingerprint to `automation/logs/` so a silent identity flip is auditable.
 
 ### T-2. Tampered cached JSON leads to misleading reports / charts shared with management
@@ -249,7 +253,7 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 
 | Threat | Priority | Notes |
 |---|---|---|
-| T-1 Secret exfil via shim/upstream `jamf-cli` | MEDIUM | Codesign defends shims; upstream compromise still possible |
+| T-1 Secret exfil via shim/upstream `jamf-cli` | LOW | Codesign defends shims at install, onboarding, **and every routine command spawn** (M-01 fix); upstream compromise still possible |
 | T-9 Supply-chain (Python runtime / deps) | MEDIUM | Pin hashes; protect lock-file paths via CODEOWNERS rule |
 | T-2 Tampered cached JSON in shared reports | MEDIUM | Add per-file digest record |
 | T-3 HTML XSS in shared report | LOW–MEDIUM | Add CSP meta + XSS regression test |
@@ -269,7 +273,7 @@ Confirmed with user (2026-05-12):
 - Generated report distribution is **unknown / varies** — so output-side injection threats (T-3, T-4) cannot be ruled out; they are kept at LOW–MEDIUM rather than LOW.
 
 Material assumptions still in effect:
-- The Team-ID compared in `CodeSignVerifier.verify(...)` (the constant `JamfCLITeamID` used at call sites) is the legitimate Team ID of the jamf-cli publisher and is reviewed when changed. If false, T-1 jumps to HIGH.
+- The Team-ID compared in `CodeSignVerifier.verify(...)` (constant `JamfCLIIdentity.expectedTeamID`, currently `"483DWKW443"`) is the legitimate Team ID of the jamf-cli publisher and is reviewed when changed. If false, T-1 jumps to HIGH.
 - `python-runtime.lock` SHA-256 values are reviewed in PR and not auto-bumped by a bot. If false, T-9 jumps to HIGH.
 - `automation/logs/` is treated as same-trust as the workspace (user-readable, not world-readable after `WorkspacePermissionHardener` runs). Verified by hardening sweep, but not by a permission-regression test.
 - The app never auto-updates its own binary (only `jamf-cli` via Homebrew). If a future auto-update path is added, re-rank T-9.

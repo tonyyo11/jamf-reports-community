@@ -16,7 +16,6 @@ final class CLIBridgeStreamingTests: XCTestCase {
         let (exit, data) = await bridge.runAndCapture(
             executable: URL(fileURLWithPath: "/bin/sh"),
             arguments: ["-c", "printf 'PAYLOAD-LINE-1\\nPAYLOAD-LINE-2\\n'; printf 'PROGRESS-LINE\\n' 1>&2"],
-            environment: nil,
             onLine: { line in collector.append(line) }
         )
         XCTAssertEqual(exit, 0)
@@ -53,11 +52,13 @@ final class CLIBridgeStreamingTests: XCTestCase {
         let (exit, data) = await bridge.runAndCapture(
             executable: URL(fileURLWithPath: "/bin/sh"),
             arguments: ["-c", "printf '%s' '\(payload)'"],
-            environment: nil,
             onLine: { line in collector.append(line) }
         )
         XCTAssertEqual(exit, 0)
         XCTAssertEqual(String(data: data, encoding: .utf8), payload)
+        // Default environment is now environmentForJamfCLI() (S-02), so
+        // no inherited variables can leak into the child. The test
+        // command writes only to stdout so collector stays empty.
         XCTAssertTrue(collector.snapshot().isEmpty, "no log lines should leak for clean stdout-only command")
     }
 }
