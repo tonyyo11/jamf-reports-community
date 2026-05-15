@@ -4,14 +4,17 @@ import XCTest
 
 final class ProfileServiceTests: XCTestCase {
     func testProfileSlugValidationAcceptsSupportedShape() {
+        // S-03 (PR-3, 2026-05-15): `.` is no longer a permitted
+        // character in profile slugs — it caused ambiguous LaunchAgent
+        // label parsing in `LaunchAgentService.profileAndSlug`.
         let valid = [
             "a",
             "0",
             "dummy",
             "harbor-edu",
-            "school.test",
+            "school-test",
             "profile_01",
-            "tenant-1.prod",
+            "tenant-1-prod",
         ]
 
         for profile in valid {
@@ -32,6 +35,11 @@ final class ProfileServiceTests: XCTestCase {
             "dummy$",
             "dummy\nprofile",
             "dummy:profile",
+            // S-03: dotted names cause ambiguous LaunchAgent label parsing.
+            "school.test",
+            "tenant-1.prod",
+            "dummy.prod",
+            "a.b.c",
         ]
 
         for profile in invalid {
@@ -43,8 +51,8 @@ final class ProfileServiceTests: XCTestCase {
         let root = try temporaryWorkspaceRoot()
 
         try withTemporaryWorkspaceRoot(root) {
-            let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: "dummy.profile-1"))
-            let expected = root.appendingPathComponent("dummy.profile-1", isDirectory: true)
+            let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: "dummy-profile-1"))
+            let expected = root.appendingPathComponent("dummy-profile-1", isDirectory: true)
 
             XCTAssertEqual(workspace, expected)
         }

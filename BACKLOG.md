@@ -13,6 +13,34 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-3 review (2026-05-15)
+
+silent-failure-hunter flagged two scope-adjacent items during the
+S-03 (dotted-profile rejection) review. PR-3 closed the structural
+bug at both the writer and parser; these items are about how the
+migration is *surfaced* to the user, not whether the bug is closed.
+
+- **SHOULD-FIX — Migration warning for dotted legacy workspaces / agents is log-only.**
+  `app/Sources/JamfReports/Services/ProfileService.swift` (discoverLocal) +
+  `app/Sources/JamfReports/Services/LaunchAgentService.swift` (dottedLegacyAgents).
+  Both helpers emit `AppLogger.engine.warning` listing the affected
+  names. A user who upgrades to PR-3 and finds a profile or schedule
+  missing has no in-app indication of why or what to do. Route the
+  flagged names through a `WhatsNewBanner`-style first-launch
+  surface, or a `Settings → Diagnostics` panel that lists "legacy
+  workspaces needing rename" and "legacy schedules needing manual
+  removal", with an "open in Finder" affordance for the workspace
+  case.
+- **CONSIDER — `LaunchAgentService.removeAgents(profile:)` silently returns `[]` for dotted legacy profile names.**
+  `app/Sources/JamfReports/Services/LaunchAgentService.swift:55-56`.
+  The guard `ProfileService.isValid(profile)` is correct for new
+  operations but means programmatic cleanup of a legacy dotted name
+  (e.g. during demo-mode teardown that pre-dated the fix) silently
+  no-ops. Either log a warning when the guard rejects, or offer a
+  separate `removeLegacyAgent(byLabel:)` API that operates on the
+  full label string for migration cleanup. Plists from dotted-profile
+  schedules continue to fire via launchd until manually `bootout`-ed.
+
 ### From PR-2 review (2026-05-15)
 
 Code-reviewer flagged three additional `jamf-cli` spawn sites that
