@@ -365,6 +365,10 @@ struct ExtensionAttribute: Decodable, Sendable, Identifiable {
         switch (dataType ?? "").uppercased() {
         case "BOOLEAN":  return "boolean"
         case "DATE":     return "date"
+        // INTEGER → percentage is a heuristic, not a 1:1 mapping: most INTEGER
+        // EAs we've seen in real tenants are percentages (disk usage, battery
+        // capacity). Tenants with raw-count INTEGER EAs should override the
+        // generated `type` in config.yaml.
         case "INTEGER":  return "percentage"
         default:         return "text"
         }
@@ -600,14 +604,6 @@ struct ComplianceDeviceRow: Decodable, Sendable {
     let rulesFailed: Int?
     let rulesPassed: Int?
     let compliance: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case device
-        case deviceId = "deviceId"
-        case rulesFailed = "rulesFailed"
-        case rulesPassed = "rulesPassed"
-        case compliance
-    }
 }
 
 // MARK: - Platform compliance rules
@@ -620,11 +616,6 @@ struct ComplianceRuleRow: Decodable, Sendable {
     let unknown: Int?
     let devices: Int?
     let passRate: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case rule, passed, failed, unknown, devices
-        case passRate = "passRate"
-    }
 }
 
 // MARK: - DDM status

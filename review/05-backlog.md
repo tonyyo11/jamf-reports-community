@@ -302,7 +302,7 @@ conflict.
 
 ## PR-9 — Trivial CONSIDER cleanup (C-15, C-16, C-17)
 
-- **status:** `pending`
+- **status:** `in_progress`
 - **finding ids:** [C-15, C-16, C-17]
 - **files it touches:**
   - `app/Sources/JamfReports/Engine/JamfCLIDecoder.swift` (lines 604-610, 616-628 — remove redundant identity-mapped `CodingKeys`; line 368 — one-line comment on INTEGER → percentage heuristic)
