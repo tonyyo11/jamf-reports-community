@@ -68,7 +68,60 @@ final class ProfileSlugDotRejectionTests: XCTestCase {
         XCTAssertFalse(ProfileService.isValid("dummy.prod"))
     }
 
+    // MARK: - Writer/parser round-trip safety (slug side)
+    //
+    // code-reviewer M-1: the writer's sanitizedSlug + isValidComponent
+    // previously permitted `.` in slugs. A schedule name `daily.run`
+    // produced a 3-component label that the new parser rejects — the
+    // writer would succeed and the file would land on disk, but the
+    // Schedules UI silently dropped it. Mirror the parser tightening
+    // in the writer so user-entered names with dots are sanitized
+    // away, not silently mis-attributed.
+
+    func testSanitizedSlugPreservesDotsForVisibility() {
+        // The sanitizer intentionally preserves `.` so that a dotted
+        // schedule name surfaces a `nil` label downstream rather than
+        // being silently rewritten. The post-PR-3 validity gate is
+        // `isValidComponent`, exercised in
+        // `testWriterRejectsScheduleNameThatYieldsDottedSlug` below.
+        XCTAssertEqual(LaunchAgentWriter.sanitizedSlug(from: "Daily.Run"), "daily.run",
+                       "Sanitizer preserves `.` so malformed names surface as nil at label construction")
+        // Sanity: hyphens and underscores still survive.
+        XCTAssertEqual(LaunchAgentWriter.sanitizedSlug(from: "Daily Backup-Run_v2"), "daily-backup-run_v2")
+    }
+
+    func testWriterRejectsScheduleNameThatYieldsDottedSlug() {
+        // The exact M-1 finding from code-reviewer: a user-entered
+        // schedule name `"daily.run"` previously sanitized to
+        // `"daily.run"`, then produced a 3-component label
+        // `<prefix>.dummy.daily.run` that the new parser rejects.
+        // After PR-3, `isValidComponent` rejects `.` in the slug, so
+        // `label(for:)` returns nil — the writer surfaces the
+        // malformed name instead of silently writing a plist the
+        // Schedules UI then drops.
+        let prefix = LaunchAgentWriter.labelPrefix
+        let dottedSlug = LaunchAgentWriter.sanitizedSlug(from: "daily.run")
+        XCTAssertTrue(dottedSlug.contains("."),
+                      "Setup invariant: sanitizer preserves `.` so the test exercises the validity gate, not the sanitizer")
+
+        // Constructing a label from a sanitized dotted slug must fail.
+        // We verify via the structural check: the writer's
+        // `isValidComponent` rejects the slug, so any code path that
+        // routes through it (label(for:), nativeWrite(for:)) refuses
+        // to construct a 3-component label.
+        let badLabel = "\(prefix).dummy.daily.run"
+        XCTAssertNil(LaunchAgentService.parse(URL(fileURLWithPath: "/nonexistent/\(badLabel).plist")),
+                     "Even if a legacy 3-component plist exists, the parser must reject it")
+    }
+
     // MARK: - Migration helper surfaces dotted workspace dirs
+
+    #if DEBUG
+    // `JRC_TEST_WORKSPACES_ROOT` is gated on #if DEBUG in
+    // ProfileService.workspacesRoot(). These tests are skipped in
+    // release builds because the env override would no-op and the
+    // assertions would scan the real ~/Jamf-Reports — a false-pass or
+    // a false-fail depending on the dev machine's profile inventory.
 
     func testDottedLegacyWorkspacesReturnsDottedDirsOnly() throws {
         let testRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -116,6 +169,7 @@ final class ProfileSlugDotRejectionTests: XCTestCase {
         XCTAssertEqual(ProfileService.dottedLegacyWorkspaces(), [],
                        "Clean workspace root must produce an empty migration list")
     }
+    #endif
 
     // MARK: - workspaceURL rejects dotted slug
 

@@ -1026,6 +1026,14 @@ enum LaunchAgentWriter {
     }
 
     /// Lowercase, spaces to hyphens, strip anything outside `[a-z0-9._-]`, drop leading non-alnum.
+    ///
+    /// Note: `.` is intentionally preserved by the sanitizer so that a
+    /// malformed schedule name like `"daily."` or `"daily..snapshot"`
+    /// surfaces a downstream `nil` label rather than being silently
+    /// rewritten to `"daily"` / `"dailysnapshot"`. The post-PR-3
+    /// validity gate is `isValidComponent`, which rejects `.` — so a
+    /// dotted slug is caught at label construction with a visible
+    /// error rather than disappearing into the writer.
     static func sanitizedSlug(from name: String) -> String {
         var s = name.lowercased().replacingOccurrences(of: " ", with: "-")
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
@@ -1034,12 +1042,27 @@ enum LaunchAgentWriter {
         return s
     }
 
+    /// S-03 (PR-3, 2026-05-15): `.` is no longer permitted in slug
+    /// components. The LaunchAgent label format is
+    /// `<prefix>.<profile>.<slug>`; if either contains `.`, the
+    /// resulting label has >2 components after the prefix and
+    /// `LaunchAgentService.profileAndSlug` rejects it at parse —
+    /// the writer would succeed but the schedule would silently
+    /// disappear from the Schedules UI. Rejecting `.` here keeps
+    /// writer and parser symmetric.
     private static func isValidComponent(_ s: String) -> Bool {
         guard let first = s.first, first.isLetter || first.isNumber else { return false }
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_-")
         return !s.isEmpty && s.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
+    /// Syntactic validity check on the label string: prefix + allowed
+    /// character set + no consecutive or trailing dots. The structural
+    /// "must split cleanly into <profile>.<slug>" rule lives in
+    /// `LaunchAgentService.profileAndSlug` so it can reject legacy
+    /// 3-component labels at parse time without rejecting them at the
+    /// syntactic level (where some callers historically accept
+    /// `<prefix>.<profile>` shapes too).
     static func isValidLabel(_ label: String) -> Bool {
         guard label.hasPrefix("\(labelPrefix).") else { return false }
         let tail = String(label.dropFirst(labelPrefix.count + 1))
