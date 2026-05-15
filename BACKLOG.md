@@ -13,6 +13,29 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-6 test-coverage work (2026-05-15)
+
+While adding inline-JSON decode smoke tests for `JamfCLIDecoder.swift`, two
+fixtures were found to contain data of the wrong shape for their directory.
+Both directories are loaded by their writers and would crash or silently
+discard rows on a real run with this data — but currently the writers gate
+on `loadLatestJSON` returning `[[String: Any]]`, so the bad fixtures
+manifest only as decoder-side `keyNotFound` when consumed by typed code.
+
+- **SHOULD-FIX — `tests/fixtures/jamf-cli-data/patch-device-failures/patch-device-failures.json` contains PatchStatusRow rows, not PatchFailureRow rows.**
+  Real `pro report patch-status --scan-failures --output json` emits
+  rows with `policy`, `policy_id`, `device`, `device_id`, `status_date`,
+  `attempt`, `last_action`, `serial`, `os_version`, `username`. The
+  committed fixture has `compliance_pct`, `id`, `latest`, `on_latest`,
+  `on_other`, `title`, `total` — that's the patch-status shape, not the
+  patch-failure shape. Capture from a tenant with active patch policies
+  and replace.
+- **SHOULD-FIX — `tests/fixtures/jamf-cli-data/update-device-failures/update-device-failures.json` is a 503 error envelope, not an UpdateFailuresReport.**
+  Content is `{"httpStatus": 503, "errors": [...]}` rather than
+  `[{"total": ..., "status_summary": [...], "error_devices": [...]}]`.
+  Likely captured from a tenant that had Managed Software Update Plans
+  toggled off. Recapture from a tenant with the feature enabled.
+
 ### From PR-5 review (2026-05-15)
 
 Three scope-adjacent items surfaced during the zero-warnings +
