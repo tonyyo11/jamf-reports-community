@@ -106,12 +106,17 @@ final class TemplateApplierTests: XCTestCase {
     // hard-crash), but it also means a typo in a `case` label would silently
     // fall through with no compile-time warning.
     //
-    // This test is the typo tripwire: every shipping template identifier from
-    // `TemplateResolver.allTemplates` must appear in the `explicitlyCovered`
-    // set below. Adding a new template forces the author to (a) add it here
-    // and (b) revisit each of the four switches in `TemplateApplier.swift` to
-    // decide whether the default-by-design behavior is correct or whether an
-    // explicit case is needed.
+    // This test is the addition tripwire: every shipping template identifier
+    // from `TemplateResolver.allTemplates` must appear in the
+    // `explicitlyCovered` set below. Adding a new template forces the author
+    // to (a) add it here and (b) revisit each of the four switches in
+    // `TemplateApplier.swift` to decide whether the default-by-design behavior
+    // is correct or whether an explicit case is needed.
+    //
+    // Coverage gap (intentional): does NOT catch deletion of an existing
+    // `case "x":` arm while `"x"` still ships — that scenario silently
+    // falls through to `default:` by design. Per-template behavioral
+    // assertions would be needed to close that gap; logged to BACKLOG.
 
     func testEveryShippingTemplateIsExplicitlyCovered() {
         let shipping = Set(TemplateResolver.allTemplates.map(\.identifier))

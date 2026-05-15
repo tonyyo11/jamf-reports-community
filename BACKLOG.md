@@ -32,6 +32,17 @@ engineering). Items routed here:
   vs operational vs auditor) and could collapse to a single default +
   override map for outliers. If true, the right move is **deletion** of
   1-2 switches, not relocation. Spike before any future refactor.
+- **CONSIDER — Tripwire test gap: case-deletion not caught.**
+  `testEveryShippingTemplateIsExplicitlyCovered` in
+  `TemplateApplierTests.swift` catches "added a template, forgot to
+  update TemplateApplier" but NOT "deleted a `case "x":` arm while
+  `"x"` still ships in `TemplateResolver.allTemplates`." Closing this
+  gap requires per-template behavioral assertions (extend
+  `testApplyExecutiveTemplate` / `testRecommendedStaleDays` /
+  `testEAKeywords` to be exhaustive across all 6 templates). PR-8
+  hunter SHOULD-FIX, deferred because reviewer noted the asymmetry
+  is consistent with the `default:` arm's documented load-bearing
+  safety design.
 - **CONSIDER — C-13 (`SummaryJSONParser` wrapper struct) is disputed.**
   REPORT.md flagged the 30-line struct as over-engineered. Investigation
   during PR-8 found it provides a useful namespace for `dateFormatter`
