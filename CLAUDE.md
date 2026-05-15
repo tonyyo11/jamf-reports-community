@@ -37,6 +37,56 @@ Neither component should contain any org-specific values in the code.
 
 ---
 
+## Anti-churn discipline
+
+This branch absorbed substantial AI-assisted churn during its initial build.
+The `review/REPORT.md` audit documents four within-branch waste patterns
+(F1–F4) including 2,171 lines of scaffolded dashboards deleted as "dead
+code" three days after landing and a same-day SwiftUI layout self-revert
+75 minutes after merge. The rules below exist to keep that from recurring.
+Read them before the first edit of every session.
+
+**`review/REPORT.md` is the authoritative inventory of known issues.** Read
+it before any change adjacent to a flagged finding. Fix only items in the
+current PR's scope; log all others to `BACKLOG.md` per protocol. Do not
+edit `review/REPORT.md` — track execution status in `review/05-backlog.md`
+(or in the PR description). New findings go to `BACKLOG.md`, not into the
+current PR.
+
+**Branch-history check before edit.** Before editing any file, run
+`git log --oneline origin/main..HEAD -- <path>` and state the count in
+the conversation. If the file has ≥3 commits on this branch, articulate
+explicitly: "I've touched this file N times on this branch. Today's
+change is X. This is not undoing my prior work because Y." If you can't
+write Y, reconsider whether the change is necessary. A `PreToolUse` hook
+auto-surfaces this history for every `Edit`/`Write` call — don't ignore
+the output.
+
+**No scaffolding without wiring.** Do not add a new
+Service/View/Model/Engine file unless a caller for it lands in the same
+PR. A button, a tab, a route, or a test that exercises it — something
+concrete. "I'll wire it up next session" is not acceptable scope. If the
+natural change requires scaffolding ahead of consumption, split into two
+PRs: caller-first (with stub or empty state), then the real
+implementation.
+
+**SwiftUI layout-primitive changes require visual verification.** Before
+committing any change to `HStack`, `VStack`, `LazyVGrid`, `frame`,
+`layoutPriority`, `Spacer`, padding, or spacing values, launch the app
+or describe explicitly how you verified the layout at
+`PageScaffold.minSupportedWidth`. "Looks reasonable in the code" is not
+verification. If you can't visually verify in the session, mark the
+commit body `DRAFT — needs visual verification` and ask the user to
+verify before merging.
+
+**No same-session self-reverts without explanation.** If you find
+yourself editing a file you authored a commit on earlier in the same
+session, stop. State why the prior commit was incomplete and why the
+new approach won't repeat the cycle. Commit message bodies should
+reference the SHA of the commit being revised.
+
+---
+
 ## Architecture
 
 ### Python CLI Engine

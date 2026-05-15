@@ -98,6 +98,180 @@ When fixing an item, remove it from this file in the same commit.
   older than the expected interval.** Currently the staleness threshold is
   in code but not surfaced in the UI. Threat-model T-8.
 
+### From WCAG 2.2 AA accessibility audit (2026-05-15)
+
+Two-surface audit covering the SwiftUI app and the HTML report
+(`HtmlReport` in `jamf-reports-community.py`). Findings categorized by
+severity; SwiftUI items reference Apple HIG accessibility APIs, HTML items
+cite WCAG 2.2 Success Criteria.
+
+**SwiftUI — MUST-FIX**
+
+- **Chart descriptors defined but not applied.**
+  `app/Sources/JamfReports/Theme/AccessibilityDescriptors.swift` defines
+  five `AXChartDescriptor` types (Trend / MultiLine / Sector / Bar /
+  Stacked) but only ~6 of 16 `Chart {}` blocks attach one via
+  `.accessibilityChartDescriptor(...)`. Unattached sites:
+  `Views/UpdatesView.swift:326,615`,
+  `Views/CompliancePostureView.swift:254,449`,
+  `Views/SecurityPostureView.swift:397,478`,
+  `Views/ExtensionAttributesView.swift:346,548`,
+  `Views/TrendsView.swift:1037`. VoiceOver Audio Graph is silent on
+  those charts. PNG-export-only renderers can use
+  `.accessibilityHidden(true)` instead.
+
+- **Icon-only buttons rely on `.help(...)` only.** `.help` is a hover
+  tooltip; VoiceOver does not read it. Add `.accessibilityLabel(...)`
+  (state-aware where relevant): `Views/Titlebar.swift:16-23` (sidebar
+  toggle), `Views/AppToolbar.swift:187-195` (demo-mode toggle),
+  `Views/CustomizeView.swift:42-49` (dismiss banner),
+  `Views/SourcesView.swift:230-244` (per-row ellipsis menu).
+
+- **Severity icon distinguishable by color only.**
+  `Views/AuditView.swift:457-464` returns the same
+  `exclamationmark.triangle.fill` glyph in three colors for
+  Critical/Warning/OK. Adjacent `Pill` text mitigates, but the icon
+  viewed alone fails SC 1.4.1. Vary the SF Symbol per severity
+  (`octagon.fill` / `triangle.fill` / `checkmark.circle.fill`) or set
+  `.accessibilityLabel(severity)` on the `Image`.
+
+**HTML report — MUST-FIX**
+
+- **No headings or landmarks.** `jamf-reports-community.py:15102-15278`.
+  Zero `<h1>`–`<h6>` elements; zero `<header>`/`<main>`/`<nav>`/
+  `<footer>`. SR users can't navigate by structure (SC 1.3.1). Wrap
+  topbar, page, and footer in landmarks; promote `.topbar-brand` →
+  `<h1>`, `.section-block-title` → `<h2>`, `.section-title` → `<h3>`.
+
+- **Tables missing `scope` and `<caption>`.**
+  `jamf-reports-community.py:13595,13645,14400,14475,14517,14563-14564`.
+  All `<th>` lack `scope="col"`; no `<caption>` on any data table.
+  Cells aren't programmatically associated with column headers
+  (SC 1.3.1).
+
+- **Security status cells color-coded with no text differentiator.**
+  `jamf-reports-community.py:14454-14457,14544-14548`. FileVault / SIP
+  / Firewall cells convey pass/fail via `val-ok` (green) vs `val-err`
+  (red) CSS classes — cell text is identical. Fails SC 1.4.1.
+  Prepend ✓ / ✗ glyph or `[OK]`/`[FAIL]` text.
+
+- **Trend SVG has no text alternative.**
+  `jamf-reports-community.py:13473` (`_render_line_chart_svg`). Only a
+  generic `aria-label="Trend chart"`; data exists solely as SVG
+  geometry. OS distribution chart at `:13594-13597` already does this
+  correctly (paired visually-hidden `<table>`) — mirror the pattern
+  (SC 1.1.1).
+
+- **Click-bound `<div>`s and untyped tablists.**
+  `jamf-reports-community.py:14286-14289` `.cat-toggle` is a `<div>`
+  with onclick — no `role`, `tabindex`, `aria-expanded`, no keyboard
+  handler (SC 2.1.1). `.tree-tab` at `:14345` is a real `<button>` but
+  missing `role="tab"`/`aria-selected`/`aria-controls`; `.tree-tabs`
+  missing `role="tablist"`. Update JS handlers at `:14075-14083` and
+  `:14085-14095`.
+
+- **Contrast and focus-visible gaps.**
+  `jamf-reports-community.py:13884-13888`. `--muted #64748b` on
+  `--surface-2 #f8fafc` at 0.68rem ≈ 4.4:1 — fails 4.5:1 (SC 1.4.3).
+  No `:focus-visible` rule anywhere — dark-mode toggle's default focus
+  ring is invisible on `#004165` topbar. Darken `--muted` to slate-600
+  / `#475569`; add `:focus-visible { outline: 2px solid var(--blue);
+  outline-offset: 2px; }` plus a high-contrast topbar variant. Needs
+  Stark/axe pass to confirm all dark-mode badge pairs.
+
+**SwiftUI — SHOULD-FIX**
+
+- **Reduce-motion not honored on Titlebar pulsing dot.**
+  `Views/Titlebar.swift:67-72`. Pulsing breath animation on the "CLI
+  missing" indicator doesn't gate on `accessibilityReduceMotion`.
+  `Views/SecurityPostureView.swift:423-436` is the right pattern to
+  copy.
+
+- **Destructive write buttons missing hints.**
+  `Views/SmartGroupApplySheet.swift:391-397` ("Create in Jamf Pro"),
+  `Views/BackupsView.swift:195-200` (Delete backup),
+  `Views/SourcesView.swift:390-399` (Full Admin scope elevation). Add
+  `.accessibilityHint("...")` describing the side effect.
+
+- **TextField placeholders aren't labels for VoiceOver.**
+  `Views/SmartGroupApplySheet.swift:297-298,308`,
+  `Views/BackupsView.swift:122-126`, `Views/AuditView.swift:141`.
+  Add explicit `.accessibilityLabel(...)`. Also set `.defaultFocus`
+  on the SmartGroupApplySheet name field.
+
+- **SecureSecretField missing hint.**
+  `Views/SecureSecretField.swift:35-36`. Has AppKit
+  `setAccessibilityLabel("Client Secret")` but no
+  `setAccessibilityHelp(...)`. Add hint noting credential is stored in
+  the keychain and not displayed.
+
+- **Composite candidate row not flattened.**
+  `Views/DeviceLookupView.swift:168-203`. The Button wraps Pill + Text
+  + Mono + chevron without `.accessibilityElement(children: .combine)`
+  — VO reads each child separately.
+
+- **Dynamic status text has no live-region trait.**
+  `Views/RunsView.swift`, `Views/SchedulesView.swift`,
+  `Theme/Components.swift:633` (`StatusBar`). "Running…" /
+  "Collecting…" updates won't be announced. Add
+  `.accessibilityAddTraits(.updatesFrequently)`.
+
+- **Hit target below WCAG 2.5.8 floor.**
+  `Theme/Components.swift:286` (`PNPButton.size = .sm` at 22pt high),
+  `:328` (`PNPToggle` 36×22pt). Raise minimum to 24pt or expand
+  `.contentShape(...)` hit area.
+
+**HTML report — SHOULD-FIX**
+
+- **Generic "Open" link text per row.**
+  `jamf-reports-community.py:14442,14467`. Each row's "Open" reads
+  identically in a SR links list. Add
+  `aria-label="Open {device name} in Jamf Pro"` (SC 2.4.4).
+
+- **Reflow on narrow viewports.** `jamf-reports-community.py:13790-13796`.
+  `overview-table` and `mobile-inventory` aren't wrapped in
+  `.table-wrap { overflow-x: auto }`. Only `.data-table` (flagged
+  devices) is wrapped. Fails SC 1.4.10 on 320 CSS-px width.
+
+- **Dark-mode toggle missing `aria-pressed`.**
+  `jamf-reports-community.py:14070-14072`. Update in `applyDark()`.
+
+- **Sortable headers missing `aria-sort`.**
+  `jamf-reports-community.py:14472-14474`. Add to the `<th>` and
+  update in JS sort handler at `:14163-14177`.
+
+**CONSIDER**
+
+- **Dynamic Type:** ~14 fixed `.font(.system(size: N))` calls in
+  `Views/PatchView.swift`, `Views/OnboardingView.swift`,
+  `Views/FleetOverviewView.swift`, `Views/ExtensionAttributesView.swift`,
+  `Views/ConfigView.swift`. Migrate body/label content to semantic
+  styles. Keep chart axis ticks fixed.
+
+- **Reduce Motion gaps:** `Theme/Components.swift:323` (`PNPToggle`
+  `withAnimation(.snappy(...))` unconditional).
+
+- **HTML `prefers-reduced-motion`:** `.sec-bar-fill` transition at
+  `jamf-reports-community.py:13873` and `.dark-toggle` at `:13761`
+  animate unconditionally.
+
+- **HTML print stylesheet:** `@media print` to hide toolbar buttons,
+  dark toggle, and search inputs for PDF saves.
+
+- **HTML skip-link:** sticky topbar + no skip-link makes keyboard
+  navigation slow.
+
+- **Theme contrast ratios:** `Theme/ThemeSemanticTokens.swift` defines
+  opacity scales but no documented WCAG ratios. A pass with Stark / axe
+  on every token pair (especially dark-mode badge variants) would let
+  us cite numbers — the audit's contrast estimates are mental
+  arithmetic, not tool output.
+
+- **No accessibility tests:** project has good Swift test coverage but
+  nothing asserting accessibility. Worth a XCTest pass that builds
+  each Chart and asserts an `AXChartDescriptor` is wired up, or
+  snapshot-tests VoiceOver labels for key components.
+
 ### From Google Gemini cross-review of design-review-3 (2026-05-14)
 
 - **SHOULD-FIX — Log redaction layer for `RunHistoryService`.**
