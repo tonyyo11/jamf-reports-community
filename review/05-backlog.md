@@ -161,7 +161,7 @@ conflict.
 
 ## PR-5 — Zero-warnings + skipped-fixture cleanup (S-05, S-07, C-01)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #60, commit b79eb64, 2026-05-15)
 - **finding ids:** [S-05, S-07, C-01]
 - **files it touches:**
   - `app/Sources/JamfReports/Services/PDFExporter.swift` (line 190 `WKNavigationDelegate` near-match)
