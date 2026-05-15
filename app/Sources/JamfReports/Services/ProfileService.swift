@@ -73,14 +73,25 @@ enum ProfileService {
     /// `discoverLocal()` — the user sees why their previously-visible
     /// profile has dropped from the sidebar after the S-03 tightening.
     ///
-    /// Returns an empty list when no dotted directories exist.
+    /// Returns an empty list when no dotted directories exist. A
+    /// filesystem error (e.g. permission-denied on the workspace
+    /// root) is surfaced via AppLogger so the silent-empty fallback
+    /// here doesn't mask the underlying problem.
     static func dottedLegacyWorkspaces() -> [String] {
         let root = workspacesRoot()
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        let entries: [URL]
+        do {
+            entries = try FileManager.default.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch let error as NSError where error.code == NSFileReadNoSuchFileError {
+            return [] // workspace root doesn't exist yet — first-run state
+        } catch {
+            AppLogger.engine.error(
+                "dottedLegacyWorkspaces: enumeration failed at \(root.path, privacy: .public): \(error.localizedDescription, privacy: .private)"
+            )
             return []
         }
         return entries

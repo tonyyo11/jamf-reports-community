@@ -28,6 +28,47 @@ enum LaunchAgentService {
             .sorted { $0.name < $1.name }
     }
 
+    /// LaunchAgent plist labels that look like JRC schedules but cannot be
+    /// unambiguously attributed to a current profile slug — typically
+    /// because they were written before S-03 tightened
+    /// `ProfileService.isValid`, so they encode a dotted profile name
+    /// (`com.…jamf-reports-community.tenant-1.prod.daily`).
+    ///
+    /// Surfaced so the caller can log a one-shot migration warning per
+    /// label after PR-3. The plist files are left on disk untouched —
+    /// the user should `launchctl bootout` and remove them manually, or
+    /// the upcoming UI surfacing pass (tracked in BACKLOG) will offer a
+    /// "remove legacy schedule" action.
+    ///
+    /// - Parameter dir: Directory to scan. Defaults to the user's
+    ///   `~/Library/LaunchAgents`. Tests pass a temp dir to avoid
+    ///   touching the real home directory.
+    static func dottedLegacyAgents(in dir: URL = agentsDir) -> [String] {
+        let prefix = "\(LaunchAgentWriter.labelPrefix)."
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return entries
+            .filter { $0.pathExtension == "plist" }
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+            .compactMap { url -> String? in
+                let label = plistLabel(url) ?? url.deletingPathExtension().lastPathComponent
+                guard label.hasPrefix(prefix) else { return nil }
+                let tail = String(label.dropFirst(prefix.count))
+                // Multi labels are well-formed by construction; skip.
+                if tail.hasPrefix("multi.") { return nil }
+                let parts = tail.components(separatedBy: ".")
+                // After PR-3 a well-formed non-multi label has exactly 2
+                // post-prefix components (profile + slug). More than 2
+                // means a dotted profile name slipped through the old
+                // validator — flag for migration.
+                return parts.count > 2 ? label : nil
+            }
+            .sorted()
+    }
+
     /// Delete old Swift-owned `com.tonyyo.jrc.*` plists once at app launch.
     static func cleanupLegacyAgents() -> LegacyCleanupResult {
         let legacyURLs = launchAgentEntries()
@@ -157,8 +198,20 @@ enum LaunchAgentService {
             return LabelParts(profile: "", slug: slug, isMulti: true)
         }
         let parts = tail.components(separatedBy: ".")
+        // S-03: after PR-3 every valid profile and slug is dot-free, so a
+        // well-formed non-multi label has exactly 2 components after the
+        // prefix (profile + slug). A label with `parts.count > 2` is a
+        // legacy plist written before the validator was tightened — the
+        // old behavior was to take `parts.first` as the profile and
+        // join the rest as the slug, which silently re-attributed the
+        // plist to a different (valid-by-itself) profile. Reject so the
+        // Schedules UI cannot operate on a mis-attributed legacy plist;
+        // the file on disk is preserved and surfaced via
+        // `LaunchAgentService.dottedLegacyAgents()` for migration.
+        guard parts.count == 2 else { return nil }
         guard let profile = parts.first, ProfileService.isValid(profile) else { return nil }
-        let slug = parts.dropFirst().joined(separator: ".")
+        let slug = parts[1]
+        guard !slug.isEmpty else { return nil }
         return LabelParts(profile: profile, slug: slug, isMulti: false)
     }
 

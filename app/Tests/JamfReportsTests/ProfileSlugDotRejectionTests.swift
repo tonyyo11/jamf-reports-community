@@ -123,4 +123,72 @@ final class ProfileSlugDotRejectionTests: XCTestCase {
         XCTAssertNil(ProfileService.workspaceURL(for: "dummy.prod"),
                      "Dotted slugs must not resolve to a workspace URL after S-03 tightening")
     }
+
+    // MARK: - LaunchAgent label parser rejects legacy dotted-profile plists
+    //
+    // silent-failure-hunter B-1 finding: a pre-existing plist with a
+    // label like `com.<prefix>.tenant-1.prod.daily` would previously
+    // parse as profile=`tenant-1`, slug=`prod.daily` because
+    // `parts.first` is a valid undotted slug. The parser silently
+    // re-attributed the plist to the WRONG profile. PR-3 tightens the
+    // parser to require exactly 2 post-prefix components for non-multi
+    // labels — anything else is rejected and surfaced via
+    // dottedLegacyAgents() for migration.
+
+    func testDottedLegacyAgentsFlagsMisattributableLabels() throws {
+        let testRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("DottedLegacyAgents-\(UUID().uuidString)", isDirectory: true)
+        let launchAgentsDir = testRoot.appendingPathComponent("LaunchAgents", isDirectory: true)
+        try FileManager.default.createDirectory(at: launchAgentsDir, withIntermediateDirectories: true)
+
+        // Two legacy plists with dotted-profile labels (parts.count == 3+
+        // after the prefix); one well-formed modern plist (parts.count == 2).
+        let prefix = LaunchAgentWriter.labelPrefix
+        let dottedLabels = [
+            "\(prefix).tenant-1.prod.daily",
+            "\(prefix).dummy.prod.daily",
+        ]
+        let cleanLabel = "\(prefix).valid-profile.daily"
+
+        for label in dottedLabels + [cleanLabel] {
+            let url = launchAgentsDir.appendingPathComponent("\(label).plist")
+            let plist: [String: Any] = ["Label": label, "ProgramArguments": ["/bin/true"]]
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: plist, format: .xml, options: 0
+            )
+            try data.write(to: url)
+        }
+
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let flagged = LaunchAgentService.dottedLegacyAgents(in: launchAgentsDir)
+        XCTAssertEqual(Set(flagged), Set(dottedLabels),
+                       "Migration helper must surface every dotted-profile legacy label and skip well-formed labels")
+    }
+
+    func testProfileAndSlugParserRejectsLegacyDottedLabels() {
+        // The internal parser is exercised through `parse(url:)`. A
+        // legacy plist with a dotted-profile label must produce nil
+        // (rejection) rather than silently re-attributing to the wrong
+        // profile.
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("ParserReject-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let prefix = LaunchAgentWriter.labelPrefix
+        let legacyLabel = "\(prefix).tenant-1.prod.daily"
+        let url = dir.appendingPathComponent("\(legacyLabel).plist")
+        let plist: [String: Any] = ["Label": legacyLabel, "ProgramArguments": ["/bin/true"]]
+        guard let data = try? PropertyListSerialization.data(
+            fromPropertyList: plist, format: .xml, options: 0
+        ) else {
+            XCTFail("Failed to serialize plist for test")
+            return
+        }
+        try? data.write(to: url)
+
+        XCTAssertNil(LaunchAgentService.parse(url),
+                     "Legacy dotted-profile plist must not parse as a valid Schedule — it must be rejected so the Schedules UI cannot mis-attribute it")
+    }
 }
