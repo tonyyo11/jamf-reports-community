@@ -70,7 +70,7 @@ conflict.
 
 ## PR-2 — Codesign on routine paths (M-01 + S-02)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #57, commit eb683cc, 2026-05-15)
 - **finding ids:** [M-01, S-02]
 - **files it touches:**
   - `app/Sources/JamfReports/Services/CLIBridge.swift` (lines 123 `run`, 127 env default, 181 `runAndCapture`, 181 env default)
@@ -104,7 +104,7 @@ conflict.
 
 ## PR-3 — Profile-slug regex tighten (S-03)
 
-- **status:** `pending`
+- **status:** `in_progress`
 - **finding ids:** [S-03]
 - **files it touches:**
   - `app/Sources/JamfReports/Services/ProfileService.swift` (`isValid` regex)

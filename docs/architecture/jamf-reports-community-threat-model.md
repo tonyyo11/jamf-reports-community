@@ -183,15 +183,18 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   - Add a regression test for the exact prefix-without-slash case (`~/Jamf-ReportsX/`).
   - Consider also rejecting paths where any intermediate component is a symlink (currently only the final resolve is checked), to defeat partial-path swaps.
 
-### T-6. LaunchAgent plist takeover persists attacker code as the user
-- **Goal:** Persist code that runs at every interval boundary.
-- **Path:** A1 overwrites `~/Library/LaunchAgents/com.jamfreports.<profile>-hot.plist` with a `ProgramArguments` pointing to attacker code. On next `launchctl bootstrap` (or login) the attacker's binary runs as the user.
+### T-6. LaunchAgent plist takeover or label-parsing confusion persists attacker code as the user
+- **Goal:** Persist code that runs at every interval boundary, or trick the in-app schedule editor into operating on the wrong plist by exploiting label-parsing ambiguity.
+- **Path:** Two variants:
+  - **T-6a (plist overwrite):** A1 overwrites `~/Library/LaunchAgents/com.jamfreports.<profile>-hot.plist` with a `ProgramArguments` pointing to attacker code. On next `launchctl bootstrap` (or login) the attacker's binary runs as the user.
+  - **T-6b (label-parsing confusion, S-03 fix in PR-3, closed):** Previously the validator `ProfileService.isValid` permitted `.` in profile slugs while the LaunchAgent label format `com.jamfreports.<profile>.<slug>` and the parser `LaunchAgentService.profileAndSlug(from:)` both split on `.`. A profile named `dummy.prod` plus a slug `daily` produced the label `com.jamfreports.dummy.prod.daily`, which the parser silently re-interpreted as profile=`dummy`, slug=`prod.daily`. The in-app schedule editor could then disable/enable/delete a plist different from the one displayed — disabling a profile's daily by clicking what looked like a different profile's job, or editing across profiles. Path-side checks were prefix-bounded and safe; the label channel was the only crossover.
 - **Existing mitigations:**
   - App writes plists atomically with `replaceItem(at:withItemAt:)`.
   - Only user-agents, never LaunchDaemons (so no privilege escalation past the current user).
-- **Likelihood:** Medium *given* A1 is assumed; without A1 the file is not writable by network attackers.
-- **Impact:** Medium (persists user-level access the attacker presumably already had).
-- **Priority: LOW.** This is largely the user's macOS / LaunchAgent attack surface, not specific to this app. The relevant defense (FileVault, EDR, login-item review) is OS-level.
+  - **S-03 fix (PR-3):** `ProfileService.isValid` now rejects any `.` in profile slugs. The validator is consulted at every label-construction site (`LaunchAgentWriter.label(for:)`) and at the parser (`LaunchAgentService.profileAndSlug`). Constructing or parsing an ambiguous dotted label is now structurally impossible. Existing workspace directories on disk with dots in their names are surfaced via `ProfileService.dottedLegacyWorkspaces()` and logged on `discoverLocal()` so they don't silently disappear from the sidebar — the user is told to rename them.
+- **Likelihood:** Medium *given* A1 is assumed for T-6a; without A1 the file is not writable by network attackers. Negligible for T-6b after the fix.
+- **Impact:** Medium for T-6a (persists user-level access the attacker presumably already had). Low for T-6b (cross-profile operation confusion, not credential disclosure).
+- **Priority: LOW.** T-6a is largely the user's macOS / LaunchAgent attack surface (defended at the OS layer by FileVault, EDR, login-item review). T-6b is closed by validator tightening.
 - **Recommended mitigations:**
   - On app start, `LaunchAgentService` parses existing plists — make it warn if a `com.jamfreports.*` plist points to a `ProgramArguments[0]` that is not the app's own bundle executable URL. Cheap drift detection.
 

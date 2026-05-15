@@ -44,15 +44,52 @@ enum ProfileService {
         }
     }
 
-    /// `^[a-z0-9][a-z0-9._-]*$` — the regex from the design handoff. Profile
-    /// names are used in path construction (`~/Jamf-Reports/<name>/`) and
-    /// LaunchAgent labels (`com.github.tonyyo11.jamf-reports-community.<name>.…`);
-    /// a permissive pattern would let attackers slip in path traversal or
-    /// arbitrary plist labels.
+    /// `^[a-z0-9][a-z0-9_-]*$` — the regex used everywhere a profile
+    /// slug enters either path construction (`~/Jamf-Reports/<name>/`)
+    /// or LaunchAgent labels
+    /// (`com.github.tonyyo11.jamf-reports-community.<name>.<slug>`).
+    ///
+    /// S-03 (2026-05-15): `.` was previously permitted but caused
+    /// ambiguous parsing in `LaunchAgentService.profileAndSlug`. The
+    /// parser splits the label on `.` and takes the first component as
+    /// the profile; a profile named `dummy.prod` plus a slug `daily`
+    /// produced `com.jamfreports.dummy.prod.daily`, which the parser
+    /// silently re-interpreted as profile=`dummy`, slug=`prod.daily`.
+    /// Path-side checks were safe (prefix-bounded), but label parsing
+    /// was not. Tightening the regex closes the ambiguity at the root.
+    ///
+    /// Migration: any workspace directory on disk whose name fails
+    /// this rule is surfaced via `dottedLegacyWorkspaces()` so the
+    /// user knows why a previously-visible profile no longer appears.
     static func isValid(_ name: String) -> Bool {
         guard let first = name.first, first.isLowercase || first.isNumber else { return false }
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_-")
         return name.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    /// Workspace directory names on disk that fail the current
+    /// `isValid` rule because they contain a `.`. Surfaced so the
+    /// caller can emit a one-shot migration warning per name in
+    /// `discoverLocal()` — the user sees why their previously-visible
+    /// profile has dropped from the sidebar after the S-03 tightening.
+    ///
+    /// Returns an empty list when no dotted directories exist.
+    static func dottedLegacyWorkspaces() -> [String] {
+        let root = workspacesRoot()
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return entries
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
+            .map { $0.lastPathComponent }
+            .filter { name in
+                !isValid(name) && name.contains(".")
+            }
+            .sorted()
     }
 
     /// Workspace root, always inside the user's home dir.
@@ -86,6 +123,17 @@ enum ProfileService {
 
         var profiles = discoverJamfCLIProfiles(scheduleCounts: scheduleCounts)
         let namesFromCLI = Set(profiles.map(\.name))
+
+        // S-03 migration: surface dotted legacy workspace dirs so the
+        // user knows why a previously-visible profile is no longer
+        // listed. The directory stays on disk untouched; only its
+        // discovery is gated.
+        let dotted = dottedLegacyWorkspaces()
+        if !dotted.isEmpty {
+            AppLogger.engine.warning(
+                "ProfileService.discoverLocal: \(dotted.count, privacy: .public) legacy workspace dir(s) contain '.' and are no longer valid profile slugs; rename them under ~/Jamf-Reports/ to surface them again. Names: \(dotted.joined(separator: ", "), privacy: .public)"
+            )
+        }
 
         let root = workspacesRoot()
         guard let entries = try? FileManager.default.contentsOfDirectory(
