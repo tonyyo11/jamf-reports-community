@@ -228,7 +228,7 @@ load) protected by the install-time + onboarding-time gates.
 
 - **CONSIDER — Force unwraps in production-safe contexts.**
   `app/Sources/JamfReports/Services/DeviceInventoryService.swift:195`,
-  `app/Sources/JamfReports/Services/LaunchAgentWriter.swift:500`. Replace
+  `app/Sources/JamfReports/Services/LaunchAgentWriter.swift:528`. Replace
   with `guard let` / `if let` to match the repo convention.
 
 ### From Google Gemini 3 security-review (2026-05-12)
