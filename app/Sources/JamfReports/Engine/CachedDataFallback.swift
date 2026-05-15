@@ -117,6 +117,7 @@ enum CachedDataFallback {
         }
 
         var lastCorruptedURL: URL?
+        var lastIOError: Error?
         for cachedURL in candidates {
             if maxCacheAgeHours > 0 {
                 let mtime = (try? cachedURL.resourceValues(
@@ -132,7 +133,20 @@ enum CachedDataFallback {
                 }
             }
 
-            guard let data = try? Data(contentsOf: cachedURL) else { continue }
+            let data: Data
+            do {
+                data = try Data(contentsOf: cachedURL)
+            } catch {
+                // Capture the I/O error rather than silently skipping —
+                // disk-full or permission-denied should not be reported
+                // as "no cached snapshot found" or accuse a different
+                // file of corruption.
+                AppLogger.engine.warning(
+                    "Cached snapshot read failed for \(cachedURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                )
+                lastIOError = error
+                continue
+            }
             // Reject malformed JSON — a truncated snapshot must not
             // reach the decoder. JSONSerialization is the cheapest
             // structural check that catches every case the decoder
@@ -148,12 +162,22 @@ enum CachedDataFallback {
             return (data, .cachedFallback)
         }
 
+        // Preference order when no candidate is usable:
+        // 1. The original live-call error (most informative to the user).
+        // 2. The last I/O error (the actual problem, e.g. disk-full).
+        // 3. Corruption — only when we genuinely saw corrupted files and
+        //    nothing else went wrong.
+        // 4. Generic noCache.
+        if let upstream = underlyingError {
+            throw CLIFallbackError.noCache(underlying: upstream)
+        }
+        if let io = lastIOError {
+            throw CLIFallbackError.noCache(underlying: io)
+        }
         if let corrupted = lastCorruptedURL {
             throw CLIFallbackError.corruptedSnapshot(path: corrupted)
         }
-        let base: Error = underlyingError
-            ?? CLIFallbackError.noCache(underlying: ReportEngineError.noCachedData(dataDir))
-        throw CLIFallbackError.noCache(underlying: base)
+        throw CLIFallbackError.noCache(underlying: ReportEngineError.noCachedData(dataDir))
     }
 
     /// Return every cached `.json` candidate matching either layout,

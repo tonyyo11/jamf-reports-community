@@ -26,31 +26,45 @@ conflict.
 
 ## PR-1 — Correctness fixes (M-02 + S-01)
 
-- **status:** `pending`
+- **status:** `in_progress`
 - **finding ids:** [M-02, S-01]
 - **files it touches:**
   - `app/Sources/JamfReports/Views/OverviewView.swift` (lines 365, 716, 973, 983, 1025, 1028)
-  - `app/Sources/JamfReports/Services/CLIBridge.swift` (line 926)
-  - `app/Sources/JamfReports/Engine/CachedDataFallback.swift` (lines 128-153, decode-validity guard)
-  - `app/Tests/JamfReportsTests/Views/OverviewViewTests.swift` (or new) — AgentCardView pct math
-  - `app/Tests/JamfReportsTests/Services/CLIBridgeAtomicWriteTests.swift` (or new) — truncated-JSON rejection
+  - `app/Sources/JamfReports/Models/DemoData.swift` (add `totalDevices` constant for demo denominator)
+  - `app/Sources/JamfReports/Services/CLIBridge.swift` (line 926 — atomic write; lines 114-117 — JSON validity probe on production read path)
+  - `app/Sources/JamfReports/Engine/CachedDataFallback.swift` (validity probe + I/O-error preservation on the fallback library path — defense-in-depth even though it is currently test-only callable)
+  - `app/Tests/JamfReportsTests/OverviewViewFleetCountTests.swift` (new) — AgentCardView pct math
+  - `app/Tests/JamfReportsTests/CachedDataFallbackCorruptionTests.swift` (new) — library-side corruption rejection
+  - `app/Tests/JamfReportsTests/CLIBridgeCachedSnapshotCorruptionTests.swift` (new) — production read-path corruption rejection
+  - `app/Tests/JamfReportsTests/Engine/CLIBridgeFallbackTests.swift` (fixture update — non-JSON payload now correctly rejected by the validity probe)
 - **depends on:** none (first PR after foundation)
 - **acceptance criteria:**
   - `AgentCardView` percentages compute from the live device count
     (`DeviceInventoryService` snapshot already feeds adjacent tiles) —
     100-device tenant reads "47 / 100", not "47 / 502".
   - `CLIBridge.saveJSONSnapshot` writes with `options: [.atomic]`.
-  - `CachedDataFallback` rejects truncated/partial JSON on read so the
-    fallback path doesn't render green on a corrupted snapshot.
+  - **Production read path** (`CLIBridge.cachedJSONSnapshots`,
+    consumed by AuditView, HealthCheckView, CustomizationWizard)
+    rejects truncated/partial JSON so corrupted snapshots don't render
+    as empty/missing data with no warning.
 - **pre-fix tests required:**
   - Failing test: `AgentCardView` (or the underlying view model) computes
     `pct = installed / fleetCount` against an injected `fleetCount=100`,
     asserts a specific string output that proves `502` is gone.
-  - Failing test: drop a truncated JSON snapshot in a temp dir, invoke
-    `CachedDataFallback` for that type, assert it rejects rather than
-    decoding partial data.
+  - Failing test: drop a truncated JSON snapshot in a temp workspace,
+    invoke `CLIBridge.cachedJSONSnapshots`, assert the corrupted file is
+    filtered and a valid older snapshot is returned.
 - **judgment-call?** `false`
 - **threat-model-touch?** `false`
+- **mid-PR scope correction (2026-05-15):** silent-failure-hunter
+  surfaced that REPORT.md S-01 named
+  `CachedDataFallback.swift:128-153` as the read-side remediation site,
+  but `CachedDataFallback.loadFromCache` has **zero production
+  callers**. The actual production read path is
+  `CLIBridge.cachedJSONSnapshots`. PR-1 was expanded to add the JSON
+  validity probe to both locations and a dedicated test against the
+  production path. The acceptance criterion above was rewritten to
+  reflect the corrected diagnosis.
 
 ---
 

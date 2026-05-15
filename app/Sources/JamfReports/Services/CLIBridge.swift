@@ -111,8 +111,20 @@ final class CLIBridge {
                 }
                 .sorted { $0.modified > $1.modified }
                 .prefix(max(limit, 0))
-                .compactMap { item in
+                .compactMap { item -> CachedJSONSnapshot? in
                     guard let data = try? Data(contentsOf: item.url) else { return nil }
+                    // S-01: reject truncated / malformed snapshots so a
+                    // partially-written file from a crash mid-write does
+                    // not render green in AuditView, HealthCheckView, or
+                    // CustomizationWizard. Structural JSON probe is the
+                    // cheapest check that catches every case the
+                    // downstream decoder would.
+                    guard (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil else {
+                        AppLogger.cli.warning(
+                            "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .public)"
+                        )
+                        return nil
+                    }
                     return CachedJSONSnapshot(data: data, modified: item.modified)
                 }
         }.value
