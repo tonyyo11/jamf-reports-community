@@ -118,8 +118,11 @@ final class CLIBridge {
                     // not render green in AuditView, HealthCheckView, or
                     // CustomizationWizard. Structural JSON probe is the
                     // cheapest check that catches every case the
-                    // downstream decoder would.
-                    guard (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil else {
+                    // downstream decoder would. Default JSONSerialization
+                    // rejects bare fragments (strings, numbers, null) at
+                    // the top level — every jamf-cli output is an array
+                    // or object, so a fragment is by definition truncated.
+                    guard (try? JSONSerialization.jsonObject(with: data, options: [])) != nil else {
                         AppLogger.cli.warning(
                             "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .public)"
                         )

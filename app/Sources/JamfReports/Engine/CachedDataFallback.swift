@@ -150,8 +150,11 @@ enum CachedDataFallback {
             // Reject malformed JSON — a truncated snapshot must not
             // reach the decoder. JSONSerialization is the cheapest
             // structural check that catches every case the decoder
-            // would.
-            guard (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil else {
+            // would. Default options reject bare fragments (strings,
+            // numbers, null) at the top level — every jamf-cli output
+            // is an array or object, so a fragment is by definition
+            // truncated.
+            guard (try? JSONSerialization.jsonObject(with: data, options: [])) != nil else {
                 AppLogger.engine.warning(
                     "Cached snapshot rejected as corrupted: \(cachedURL.lastPathComponent, privacy: .public)"
                 )

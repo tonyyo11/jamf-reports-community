@@ -97,4 +97,40 @@ final class OverviewViewFleetCountTests: XCTestCase {
         XCTAssertFalse(subtitle.contains("502"),
                        "Subtitle must reflect the live fleet count, not a stale 502")
     }
+
+    // MARK: - Unknown-fleet placeholder behavior
+    //
+    // `fleetCount <= 0` signals "fleet total unknown" (e.g. live mode
+    // before any trend snapshot lands). Helpers must not render
+    // nonsensical "47 / 0" or "across 0 active devices".
+
+    func testInstalledLabelDropsDenominatorWhenFleetUnknown() {
+        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: 0), "47",
+                       "fleetCount=0 must render the count alone, not '47 / 0'")
+        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: -1), "47",
+                       "Negative fleetCount is treated as unknown")
+    }
+
+    func testAccessibilityLabelOmitsDenominatorWhenFleetUnknown() {
+        let agent = SecurityAgent(
+            name: "Test Agent",
+            installed: 47,
+            pct: 47.0,
+            column: "Test - Status",
+            trend: .flat
+        )
+        let label = agentCardAccessibilityLabel(agent: agent, fleetCount: 0)
+        XCTAssertTrue(label.contains("47 installed"),
+                      "Accessibility label must announce installed count alone when fleet is unknown: '\(label)'")
+        XCTAssertFalse(label.contains("of 0"),
+                       "Must not announce 'of 0 installed' when fleet is unknown: '\(label)'")
+        XCTAssertFalse(label.contains("not installed"),
+                       "Gap clause must be omitted when fleet is unknown: '\(label)'")
+    }
+
+    func testFailingRulesSubtitleDropsAcrossClauseWhenFleetUnknown() {
+        let subtitle = failingRulesSubtitle(baseline: "NIST 800-53r5 Moderate", fleetCount: 0)
+        XCTAssertEqual(subtitle, "NIST 800-53r5 Moderate",
+                       "fleetCount=0 must render the baseline alone, not 'across 0 active devices'")
+    }
 }

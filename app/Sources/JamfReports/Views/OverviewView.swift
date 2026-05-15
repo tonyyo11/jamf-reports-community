@@ -20,10 +20,10 @@ struct OverviewView: View {
     ///
     /// - Demo mode: the canonical demo fleet total (DemoData.totalDevices,
     ///   currently 524, derived from `totalDevicesTrend`).
-    /// - Live mode: the most recent trend-summary total devices, falling
-    ///   back to the demo value if no trend data has been collected yet
-    ///   (the affected cards only render in demo mode today, but the
-    ///   fallback keeps any future live wiring safe).
+    /// - Live mode: the most recent trend-summary total devices, or `0`
+    ///   if no trend data has been collected yet. `0` signals "unknown"
+    ///   to the helpers, which render a placeholder rather than
+    ///   nonsensical math like "47 / 0".
     ///
     /// M-02 fix: replaces a hardcoded `502` literal that was internally
     /// inconsistent with the rest of demo mode (other tiles already use
@@ -32,7 +32,7 @@ struct OverviewView: View {
         if workspace.demoMode {
             return DemoData.totalDevices
         }
-        return trendStore.filteredSummaries.last?.totalDevices ?? DemoData.totalDevices
+        return trendStore.filteredSummaries.last?.totalDevices ?? 0
     }
 
     var body: some View {
@@ -734,7 +734,7 @@ struct OverviewView: View {
             )
             HStack(spacing: 12) {
                 StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
-                StatTile(label: "Installed", value: "\(agent.installed)", sub: "of \(overviewFleetCount) tracked devices")
+                StatTile(label: "Installed", value: "\(agent.installed)", sub: overviewFleetCount > 0 ? "of \(overviewFleetCount) tracked devices" : "tracked devices")
                 StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
             }
             Card(padding: 18) {
@@ -1051,24 +1051,35 @@ struct AgentCardView: View {
 // would fail `OverviewViewFleetCountTests`.
 
 /// Inline label rendered as "<installed> / <fleetCount>" beside an
-/// agent's coverage percentage.
+/// agent's coverage percentage. `fleetCount <= 0` signals "fleet total
+/// unknown" (e.g. live mode before any trend snapshot lands) — render
+/// the count alone rather than nonsensical "47 / 0".
 func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
-    "\(installed) / \(fleetCount)"
+    guard fleetCount > 0 else { return "\(installed)" }
+    return "\(installed) / \(fleetCount)"
 }
 
 /// Composite accessibility label announcing coverage and gap.
+/// `fleetCount <= 0` omits the "of N installed" and gap clauses.
 func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> String {
-    var parts = [
+    var parts: [String] = [
         "\(agent.name): \(String(format: "%.1f", agent.pct))% coverage",
-        "\(agent.installed) of \(fleetCount) installed",
     ]
+    if fleetCount > 0 {
+        parts.append("\(agent.installed) of \(fleetCount) installed")
+    } else {
+        parts.append("\(agent.installed) installed")
+    }
     if agent.trend == .up { parts.append("trending up") }
     let gap = max(0, fleetCount - agent.installed)
-    if gap > 0 { parts.append("\(gap) not installed") }
+    if fleetCount > 0, gap > 0 { parts.append("\(gap) not installed") }
     return parts.joined(separator: ", ")
 }
 
 /// "Top Failing Rules" card subtitle — "<baseline> · across <N> active devices".
+/// `fleetCount <= 0` falls back to the baseline alone rather than
+/// "across 0 active devices".
 func failingRulesSubtitle(baseline: String, fleetCount: Int) -> String {
-    "\(baseline) · across \(fleetCount) active devices"
+    guard fleetCount > 0 else { return baseline }
+    return "\(baseline) · across \(fleetCount) active devices"
 }
