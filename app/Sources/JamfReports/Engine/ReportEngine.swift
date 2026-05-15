@@ -65,7 +65,6 @@ struct ReportEngine: Sendable {
                                  provenance: prov)
         let registry = SheetRegistry(plan: core.sheetPlan)
         let (writtenCore, coreFailures, unimplementedSheets) = registry.writeSelected(template: template)
-        let allFailures: [SheetFailure] = coreFailures
         for sheetID in unimplementedSheets {
             let msg = "[warn] template '\(template.identifier)': SheetID '\(sheetID.rawValue)' " +
                       "has no writer in CoreDashboard — skipped (engine follow-up required)"
@@ -135,7 +134,7 @@ struct ReportEngine: Sendable {
             emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
         }
 
-        return allFailures
+        return coreFailures
     }
 
     // MARK: - Output rotation (mirrors Python _archive_old_output_runs)
