@@ -923,7 +923,11 @@ final class CLIBridge {
 
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try data.write(to: file)
+            // S-01: write atomically so a crash, OOM, or full-disk
+            // mid-write leaves no truncated <type>_<ts>.json poisoning
+            // the cached-fallback path. Mirrors the .atomic discipline
+            // of every other JSON write in this file.
+            try data.write(to: file, options: .atomic)
             // MFS-1: ensure the freshly-written snapshot is owner-only readable.
             try? FileManager.default.setAttributes(
                 [.posixPermissions: NSNumber(value: Int16(0o600))],
