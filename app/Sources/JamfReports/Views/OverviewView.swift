@@ -14,6 +14,27 @@ struct OverviewView: View {
         TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
     }
 
+    /// Single source of truth for "fleet total" denominators used by
+    /// security-agent cards, the failing-rules subtitle, and other
+    /// coverage math on this screen.
+    ///
+    /// - Demo mode: the canonical demo fleet total (DemoData.totalDevices,
+    ///   currently 524, derived from `totalDevicesTrend`).
+    /// - Live mode: the most recent trend-summary total devices, or `0`
+    ///   if no trend data has been collected yet. `0` signals "unknown"
+    ///   to the helpers, which render a placeholder rather than
+    ///   nonsensical math like "47 / 0".
+    ///
+    /// M-02 fix: replaces a hardcoded `502` literal that was internally
+    /// inconsistent with the rest of demo mode (other tiles already use
+    /// 524).
+    private var overviewFleetCount: Int {
+        if workspace.demoMode {
+            return DemoData.totalDevices
+        }
+        return trendStore.filteredSummaries.last?.totalDevices ?? 0
+    }
+
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ScrollView {
@@ -362,7 +383,7 @@ struct OverviewView: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 2) {
                                 SectionHeader(title: "Top Failing Rules")
-                                Text("NIST 800-53r5 Moderate · across 502 active devices")
+                                Text(failingRulesSubtitle(baseline: "NIST 800-53r5 Moderate", fleetCount: overviewFleetCount))
                                     .font(.caption)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                             }
@@ -464,7 +485,7 @@ struct OverviewView: View {
     }
 
     private func agentCard(_ a: SecurityAgent) -> some View {
-        AgentCardView(agent: a)
+        AgentCardView(agent: a, fleetCount: overviewFleetCount)
     }
 
     // MARK: Recent activity table
@@ -713,7 +734,7 @@ struct OverviewView: View {
             )
             HStack(spacing: 12) {
                 StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
-                StatTile(label: "Installed", value: "\(agent.installed)", sub: "of 502 tracked devices")
+                StatTile(label: "Installed", value: "\(agent.installed)", sub: overviewFleetCount > 0 ? "of \(overviewFleetCount) tracked devices" : "tracked devices")
                 StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
             }
             Card(padding: 18) {
@@ -960,8 +981,9 @@ private struct StatTileHealthModifier: ViewModifier {
     }
 }
 
-private struct AgentCardView: View {
+struct AgentCardView: View {
     let agent: SecurityAgent
+    let fleetCount: Int
     @State private var isHovering = false
 
     var body: some View {
@@ -970,7 +992,7 @@ private struct AgentCardView: View {
         let barColor: Color = pct > 90 ? Theme.Colors.ok :
                               pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
         let trackColor: Color = isAtRisk ? Theme.Colors.warn.opacity(0.15) : Color.white.opacity(0.05)
-        let gap = max(0, 502 - agent.installed)
+        let gap = max(0, fleetCount - agent.installed)
 
         return VStack(alignment: .leading, spacing: 4) {
             Text(agent.name).font(.footnote.weight(.semibold))
@@ -980,7 +1002,7 @@ private struct AgentCardView: View {
                 .foregroundStyle(Theme.Colors.fg)
                 .monospacedDigit()
             HStack(spacing: 6) {
-                Mono(text: "\(agent.installed) / 502", size: 10.5)
+                Mono(text: agentInstalledOverTotalLabel(installed: agent.installed, fleetCount: fleetCount), size: 10.5)
                 if agent.trend == .up {
                     Image(systemName: "arrow.up").font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Theme.Colors.ok)
@@ -1016,17 +1038,48 @@ private struct AgentCardView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(agentCardAccessibilityLabel)
+        .accessibilityLabel(agentCardAccessibilityLabel(agent: agent, fleetCount: fleetCount))
     }
+}
 
-    private var agentCardAccessibilityLabel: String {
-        var parts = [
-            "\(agent.name): \(String(format: "%.1f", agent.pct))% coverage",
-            "\(agent.installed) of 502 installed",
-        ]
-        if agent.trend == .up { parts.append("trending up") }
-        let gap = max(0, 502 - agent.installed)
-        if gap > 0 { parts.append("\(gap) not installed") }
-        return parts.joined(separator: ", ")
+// MARK: - Pure helpers (testable; M-02 regression guard)
+//
+// AgentCardView previously hardcoded a fleet size of 502 in its progress
+// labels, accessibility text, and the "Top Failing Rules" subtitle. The
+// helpers below are the single source of truth for those strings and
+// take the fleet count as an explicit parameter — a future hardcode
+// would fail `OverviewViewFleetCountTests`.
+
+/// Inline label rendered as "<installed> / <fleetCount>" beside an
+/// agent's coverage percentage. `fleetCount <= 0` signals "fleet total
+/// unknown" (e.g. live mode before any trend snapshot lands) — render
+/// the count alone rather than nonsensical "47 / 0".
+func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
+    guard fleetCount > 0 else { return "\(installed)" }
+    return "\(installed) / \(fleetCount)"
+}
+
+/// Composite accessibility label announcing coverage and gap.
+/// `fleetCount <= 0` omits the "of N installed" and gap clauses.
+func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> String {
+    var parts: [String] = [
+        "\(agent.name): \(String(format: "%.1f", agent.pct))% coverage",
+    ]
+    if fleetCount > 0 {
+        parts.append("\(agent.installed) of \(fleetCount) installed")
+    } else {
+        parts.append("\(agent.installed) installed")
     }
+    if agent.trend == .up { parts.append("trending up") }
+    let gap = max(0, fleetCount - agent.installed)
+    if fleetCount > 0, gap > 0 { parts.append("\(gap) not installed") }
+    return parts.joined(separator: ", ")
+}
+
+/// "Top Failing Rules" card subtitle — "<baseline> · across <N> active devices".
+/// `fleetCount <= 0` falls back to the baseline alone rather than
+/// "across 0 active devices".
+func failingRulesSubtitle(baseline: String, fleetCount: Int) -> String {
+    guard fleetCount > 0 else { return baseline }
+    return "\(baseline) · across \(fleetCount) active devices"
 }

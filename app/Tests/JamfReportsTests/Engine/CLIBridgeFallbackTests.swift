@@ -96,7 +96,11 @@ final class CLIBridgeFallbackTests: XCTestCase {
     func testRunWithFallbackLoadsCacheOnLiveFailure() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let cachedPayload = Data("cached-result".utf8)
+        // S-01: CachedDataFallback now rejects non-JSON cached bytes via
+        // a structural validity probe. The fixture must be valid JSON
+        // for this test to exercise the fallback path rather than the
+        // corruption-reject path.
+        let cachedPayload = Data(#"["cached-result"]"#.utf8)
         try writeSnapshot(cachedPayload, to: dir, name: "overview")
 
         let (data, mode) = try await CachedDataFallback.runWithFallback(

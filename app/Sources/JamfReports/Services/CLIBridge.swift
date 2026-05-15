@@ -111,8 +111,23 @@ final class CLIBridge {
                 }
                 .sorted { $0.modified > $1.modified }
                 .prefix(max(limit, 0))
-                .compactMap { item in
+                .compactMap { item -> CachedJSONSnapshot? in
                     guard let data = try? Data(contentsOf: item.url) else { return nil }
+                    // S-01: reject truncated / malformed snapshots so a
+                    // partially-written file from a crash mid-write does
+                    // not render green in AuditView, HealthCheckView, or
+                    // CustomizationWizard. Structural JSON probe is the
+                    // cheapest check that catches every case the
+                    // downstream decoder would. Default JSONSerialization
+                    // rejects bare fragments (strings, numbers, null) at
+                    // the top level — every jamf-cli output is an array
+                    // or object, so a fragment is by definition truncated.
+                    guard (try? JSONSerialization.jsonObject(with: data, options: [])) != nil else {
+                        AppLogger.cli.warning(
+                            "cachedJSONSnapshots: rejecting corrupted JSON \(item.url.lastPathComponent, privacy: .public)"
+                        )
+                        return nil
+                    }
                     return CachedJSONSnapshot(data: data, modified: item.modified)
                 }
         }.value
@@ -923,7 +938,11 @@ final class CLIBridge {
 
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try data.write(to: file)
+            // S-01: write atomically so a crash, OOM, or full-disk
+            // mid-write leaves no truncated <type>_<ts>.json poisoning
+            // the cached-fallback path. Mirrors the .atomic discipline
+            // of every other JSON write in this file.
+            try data.write(to: file, options: .atomic)
             // MFS-1: ensure the freshly-written snapshot is owner-only readable.
             try? FileManager.default.setAttributes(
                 [.posixPermissions: NSNumber(value: Int16(0o600))],

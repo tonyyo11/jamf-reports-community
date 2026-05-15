@@ -39,6 +39,11 @@ enum DemoData {
     }
 
     static let totalDevicesTrend = trend(start: 486, end: 524, jitter: 3.5)
+    /// Canonical demo-mode fleet total. Used as the denominator for
+    /// security-agent coverage, failing-rules subtitle, and any other
+    /// "N of M" rendering. Derived from the end of `totalDevicesTrend`
+    /// so all demo cards stay internally consistent.
+    static let totalDevices: Int = Int((totalDevicesTrend.last ?? 524).rounded())
     private static let fileVaultTrend = trend(start: 78, end: 96, jitter: 2.2)
     private static let complianceTrend = trend(start: 54, end: 81, jitter: 4)
     private static let staleTrend = trend(start: 48, end: 22, jitter: 4)
