@@ -20,6 +20,15 @@ extension Theme {
         static let tertiary:  Color = Theme.Colors.fgMuted
         /// Disabled state.
         static let disabled:  Color = Theme.Colors.fgDisabled
+
+        /// Accessibility-aware supporting text.
+        static func tertiary(_ contrast: ColorSchemeContrast) -> Color {
+            contrast == .increased ? Theme.Colors.fg2 : Theme.Colors.fgMuted
+        }
+        /// Accessibility-aware disabled state.
+        static func disabled(_ contrast: ColorSchemeContrast) -> Color {
+            contrast == .increased ? Theme.Colors.fgMuted : Theme.Colors.fgDisabled
+        }
     }
 
     // MARK: Surface
@@ -38,6 +47,23 @@ extension Theme {
         static let interactive: Color = Color.white.opacity(0.12)
         /// Text field / input background.
         static let input:       Color = Color.white.opacity(0.05)
+
+        /// Accessibility-aware higher-elevation chips and popovers.
+        static func high(_ contrast: ColorSchemeContrast) -> Color {
+            Color.white.opacity(contrast == .increased ? 0.14 : 0.08)
+        }
+        /// Accessibility-aware interactive element fill.
+        static func interactive(_ contrast: ColorSchemeContrast) -> Color {
+            Color.white.opacity(contrast == .increased ? 0.20 : 0.12)
+        }
+        /// Accessibility-aware text field / input background.
+        static func input(_ contrast: ColorSchemeContrast) -> Color {
+            Color.white.opacity(contrast == .increased ? 0.10 : 0.05)
+        }
+        /// Hover / pointer-over tint for nav items and interactive rows.
+        static func hover(_ contrast: ColorSchemeContrast) -> Color {
+            Color.white.opacity(contrast == .increased ? 0.10 : 0.05)
+        }
     }
 
     // MARK: Hairline
@@ -48,6 +74,11 @@ extension Theme {
         static let standard: Color = Theme.Colors.hairline
         /// Stronger 1pt divider used around cards.
         static let strong:   Color = Theme.Colors.hairlineStrong
+
+        /// Accessibility-aware standard divider.
+        static func standard(_ contrast: ColorSchemeContrast) -> Color {
+            contrast == .increased ? Theme.Colors.hairlineStrong : Theme.Colors.hairline
+        }
     }
 
     // MARK: ButtonColors
@@ -106,4 +137,82 @@ extension Theme.Metrics {
 
     /// Corner radius for profile/workspace chip surfaces.
     static let chipRadius: CGFloat = 8
+}
+
+// MARK: - Severity semantic palette
+
+extension Theme {
+    enum Severity {
+        case critical, high, medium, low
+
+        /// In-app dark-mode color, matched to Pill tones below.
+        var inApp: Color {
+            switch self {
+            case .critical: Theme.Colors.danger       // 0xFF453A
+            case .high:     Theme.Colors.warn         // 0xFF9F0A
+            case .medium:   Theme.Colors.goldBright   // 0xE8B614
+            case .low:      Theme.Colors.teal         // 0x2A6B6B
+            }
+        }
+
+        /// Light-canvas export color (saturated, not neon on #F8FAFC).
+        var export: Color {
+            switch self {
+            case .critical: Color(hex: 0xDC2626)
+            case .high:     Color(hex: 0xD97706)
+            case .medium:   Color(hex: 0xCA8A04)
+            case .low:      Color(hex: 0x0891B2)
+            }
+        }
+
+        /// Map to existing Pill tone so chips match bars.
+        var pillTone: Pill.Tone {
+            switch self {
+            case .critical: .danger
+            case .high:     .warn
+            case .medium:   .gold
+            case .low:      .teal
+            }
+        }
+
+        /// SF Symbol icon for color-blind-safe redundancy.
+        var systemImage: String {
+            switch self {
+            case .critical: "exclamationmark.triangle.fill"
+            case .high:     "exclamationmark.circle.fill"
+            case .medium:   "info.circle.fill"
+            case .low:      "circle.fill"
+            }
+        }
+    }
+}
+
+// MARK: - Chart palette semantic tokens
+
+extension Theme {
+    enum ChartPalette {
+        /// Ordered palette for OS version distributions. Read at small slice sizes
+        /// in both dark in-app and light export canvases.
+        static let osVersionInApp: [Color] = [
+            Theme.Colors.goldBright,     // 0xE8B614
+            Theme.Colors.teal,           // 0x2A6B6B - promote existing teal token
+            Color(hex: 0x7DA3F9),        // soft blue
+            Color(hex: 0xC58AF9),        // soft purple
+            Color(hex: 0xF98AA3),        // soft pink
+            Color(hex: 0xF9C58A),        // soft orange
+            Color(hex: 0x8AF9C5),        // soft mint
+            Color(hex: 0xA8A8AD)         // neutral gray
+        ]
+
+        static let osVersionExport: [Color] = [
+            Color(hex: 0xCA8A04),
+            Color(hex: 0x0891B2),
+            Color(hex: 0x2563EB),
+            Color(hex: 0x7C3AED),
+            Color(hex: 0xDB2777),
+            Color(hex: 0xEA580C),
+            Color(hex: 0x059669),
+            Color(hex: 0x6B7280)
+        ]
+    }
 }

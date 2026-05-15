@@ -231,7 +231,7 @@ struct FleetOverviewView: View {
                     )
                     StatTile(
                         label: "Patch",
-                        value: row.summary.map { "\(String(format: "%.1f", $0.patchPct))%" } ?? "--",
+                        value: row.summary?.patchPct.map { "\(String(format: "%.1f", $0))%" } ?? "--",
                         sub: "Patch compliance"
                     )
                 }
@@ -664,7 +664,9 @@ func fleetProfileHasIssue(_ summary: DailySummary?) -> Bool {
     guard let summary else { return true }
     if let stability = summary.stabilityIndex, stability < 70 { return true }
     if summary.staleCount > 0 { return true }
-    if summary.fileVaultPct < 90 { return true }
-    if summary.patchPct < 80 { return true }
+    // Absent metric data isn't grounds for flagging the profile — under-flag rather
+    // than over-flag. A nil here means the snapshot didn't carry the field at all.
+    if let fileVaultPct = summary.fileVaultPct, fileVaultPct < 90 { return true }
+    if let patchPct = summary.patchPct, patchPct < 80 { return true }
     return false
 }

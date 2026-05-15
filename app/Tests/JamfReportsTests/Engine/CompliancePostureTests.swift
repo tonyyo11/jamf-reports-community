@@ -216,7 +216,7 @@ final class CompliancePostureTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         let dash = makeDashboard(dataDir: tmp)
-        let written = dash.writeAll(selectedNames: ["compliance posture"])
+        let (written, _) = dash.writeAll(selectedNames: ["compliance posture"])
         XCTAssertEqual(written, ["Compliance Posture"])
     }
 }

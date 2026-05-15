@@ -36,12 +36,16 @@ struct ReportEngine: Sendable {
     ///   - onLine: Optional streaming log callback. Post-generate side-effect warnings
     ///             (archive rotation, CSV snapshot, summary JSON) are routed here when
     ///             provided, so callers with a live log view (e.g. GenerateSheet) see them.
+    /// - Returns: A list of `SheetFailure` entries for sheets that encountered unexpected
+    ///            errors. An empty list means all sheets that had data were written cleanly.
+    ///            Sheets that threw `SheetSkippable` (absent cached data) are not included.
+    @discardableResult
     func generate(
         csvURL: URL?,
         outputURL: URL,
         template: any ReportTemplate = ExecutiveTemplate(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
-    ) async throws {
+    ) async throws -> [SheetFailure] {
         let workbook = Workbook(accentColor: config.branding?.resolvedAccentColor ?? "#2D5EA2")
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
@@ -60,7 +64,8 @@ struct ReportEngine: Sendable {
         let core = CoreDashboard(config: config, dataDir: dataDir, workbook: workbook,
                                  provenance: prov)
         let registry = SheetRegistry(plan: core.sheetPlan)
-        let (writtenCore, unimplementedSheets) = registry.writeSelected(template: template)
+        let (writtenCore, coreFailures, unimplementedSheets) = registry.writeSelected(template: template)
+        let allFailures: [SheetFailure] = coreFailures
         for sheetID in unimplementedSheets {
             let msg = "[warn] template '\(template.identifier)': SheetID '\(sheetID.rawValue)' " +
                       "has no writer in CoreDashboard — skipped (engine follow-up required)"
@@ -75,7 +80,8 @@ struct ReportEngine: Sendable {
             }
         }
 
-        // CSVDashboard sheets
+        // CSVDashboard sheets — Swift CSV writers are non-throwing; failures are captured
+        // in writeAll()'s return value (currently always empty, reserved for future writers).
         if let csvURL {
             let csvData = try Data(contentsOf: csvURL)
             guard let csv = CSVDashboard(
@@ -86,12 +92,14 @@ struct ReportEngine: Sendable {
             ) else {
                 throw ReportEngineError.csvParseFailed(csvURL)
             }
-            csv.writeAll()
+            // CSVDashboard.writeAll returns [String] — its closures are non-throwing
+            // so there is no failure list here. Named for clarity if the contract widens.
+            _ = csv.writeAll()
         }
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
         if config.charts?.isEnabled == true,
-           let summariesDir = resolvedSummariesDir(outputURL: outputURL) {
+           let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
             renderChartSheet(workbook: workbook, summariesDir: summariesDir)
         }
 
@@ -104,7 +112,7 @@ struct ReportEngine: Sendable {
         // Archive CSV snapshot only after a successful write — avoids archiving when generate fails.
         if let csvURL,
            config.charts?.archiveCurrentCsv == true,
-           let historicalDir = resolvedHistoricalDir(outputURL: outputURL) {
+           let historicalDir = resolvedHistoricalDir(profile: profile, onLine: onLine) {
             archiveCurrentCSV(csvURL: csvURL, historicalDir: historicalDir, onLine: onLine)
         }
 
@@ -112,7 +120,7 @@ struct ReportEngine: Sendable {
         let outputDir = outputURL.deletingLastPathComponent()
         let stem = stemFromURL(outputURL)
         if config.output?.isArchiveEnabled == true {
-            let archiveDir = resolvedArchiveDir(outputDir: outputDir)
+            let archiveDir = resolvedArchiveDir(profile: profile, outputDir: outputDir, onLine: onLine)
             let keep = config.output?.resolvedKeepLatestRuns ?? 10
             archiveOldRuns(
                 outputDir: outputDir,
@@ -123,9 +131,11 @@ struct ReportEngine: Sendable {
             )
         }
 
-        if let summariesDir = resolvedSummariesDir(outputURL: outputURL) {
+        if let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
             emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
         }
+
+        return allFailures
     }
 
     // MARK: - Output rotation (mirrors Python _archive_old_output_runs)
@@ -295,20 +305,32 @@ struct ReportEngine: Sendable {
         }
 
         var totalDevices = 0
-        var fileVaultPct = 0.0
+        // nil = source data absent or failed to decode; not the same as 0%.
+        var fileVaultPct: Double? = nil
+        // v3.5 fleet-health expansion (all optional — populated only when
+        // the security summary section carries the source counts).
+        var fileVaultCount: Int?
+        var sipCount: Int?
+        var firewallCount: Int?
+        var gatekeeperCount: Int?
 
-        // Security report: total_devices + filevault_encrypted_pct
+        // Security report: total_devices + per-control counts
         if let secData = cachedData(kind: "security"),
            let items = try? JSONDecoder().decode([SecurityReportItem].self, from: secData) {
             for item in items {
                 if case .summary(let s) = item {
                     totalDevices = s.data.totalDevices ?? 0
+                    fileVaultCount = s.data.fileVaultEncrypted
+                    sipCount = s.data.sipEnabled
+                    firewallCount = s.data.firewallEnabled
+                    gatekeeperCount = s.data.gatekeeperEnabled
                     if let pctStr = s.data.fileVaultEncryptedPct,
                        let pct = parsePercentString(pctStr) {
                         fileVaultPct = pct
                     } else if totalDevices > 0, let enc = s.data.fileVaultEncrypted {
                         fileVaultPct = Double(enc) / Double(totalDevices) * 100.0
                     }
+                    // If neither source is available fileVaultPct remains nil.
                     break
                 }
             }
@@ -330,25 +352,26 @@ struct ReportEngine: Sendable {
             staleCount = rows.filter { $0.stale == true }.count
         }
 
-        // OS current % — requires current_versions config
-        var osCurrentPct = 0.0
+        // OS current % — requires current_versions config; nil when unconfigured or
+        // inventory data is absent (not the same as 0%).
+        var osCurrentPct: Double? = nil
         let currentVersions: [String] = config.customEas?
             .first { $0.type == .version && $0.name.lowercased().contains("macos") }
             .flatMap { $0.currentVersions }?.map { $0.lowercased() } ?? []
 
         if !currentVersions.isEmpty,
            let invData = cachedData(kind: "inventory-summary"),
-           let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
+           let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData),
+           totalDevices > 0 {
             let current = rows
                 .filter { row in currentVersions.contains { row.osVersion.lowercased().hasPrefix($0) } }
                 .reduce(0) { $0 + $1.count }
-            if totalDevices > 0 {
-                osCurrentPct = Double(current) / Double(totalDevices) * 100.0
-            }
+            osCurrentPct = Double(current) / Double(totalDevices) * 100.0
         }
 
-        // Patch % — average compliance_pct across patch-status rows
-        var patchPct = 0.0
+        // Patch % — average compliance_pct across patch-status rows; nil when
+        // patch-status data is absent (not the same as 0%).
+        var patchPct: Double? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {
             let values = rows.compactMap { parsePercentString($0.compliancePct) }
@@ -357,17 +380,55 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // Derive per-control percentages and the weighted v3.5 security
+        // score from the same counts the summary section provided. These are
+        // all optional — when a tenant lacks any of these signals the field
+        // is left nil so consumers (TrendStore, SecurityPostureView) can
+        // distinguish "no data" from a zero.
+        let sipPct = pct(of: sipCount, total: totalDevices)
+        let firewallPct = pct(of: firewallCount, total: totalDevices)
+        let gatekeeperPct = pct(of: gatekeeperCount, total: totalDevices)
+
+        var compliantCounts: [SecurityScore.Metric: Int] = [:]
+        if let n = fileVaultCount { compliantCounts[.fileVault] = n }
+        if let n = sipCount { compliantCounts[.sip] = n }
+        if let n = firewallCount { compliantCounts[.firewall] = n }
+        let score = SecurityScoreCalculator.score(
+            input: .init(totalDevices: totalDevices, compliantCounts: compliantCounts)
+        )
+        // Score is only meaningful when at least one metric contributed.
+        let securityScore: Double? = score.available.isEmpty ? nil : score.value
+
+        // P0 = devices missing FileVault, SIP, or Firewall. P1 = Gatekeeper
+        // gaps. Mirrors v3.5 SecurityPostureView action-items taxonomy.
+        let p0 = [fileVaultCount, sipCount, firewallCount]
+            .compactMap { $0 }
+            .map { totalDevices - $0 }
+            .reduce(0, +)
+        let p1 = gatekeeperCount.map { totalDevices - $0 } ?? 0
+
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
-            fileVaultPct: round1(fileVaultPct),
+            fileVaultPct: fileVaultPct.map(round1),
             compliancePct: nil,
             staleCount: staleCount,
-            osCurrentPct: round1(osCurrentPct),
+            osCurrentPct: osCurrentPct.map(round1),
             crowdstrikePct: nil,
-            patchPct: round1(patchPct),
-            source: "jamf-cli"
+            patchPct: patchPct.map(round1),
+            source: "jamf-cli",
+            sipPct: sipPct.map(round1),
+            firewallPct: firewallPct.map(round1),
+            gatekeeperPct: gatekeeperPct.map(round1),
+            securityScore: securityScore.map(round1),
+            actionItemsP0: fileVaultCount != nil ? p0 : nil,
+            actionItemsP1: gatekeeperCount.map { _ in p1 }
         )
+    }
+
+    private func pct(of count: Int?, total: Int) -> Double? {
+        guard let count, total > 0 else { return nil }
+        return Double(count) / Double(total) * 100
     }
 
     private func parsePercentString(_ raw: String) -> Double? {
@@ -416,10 +477,12 @@ struct ReportEngine: Sendable {
 
         // --- FileVault / patch trend (security metrics) ---
         let fvPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            return (s.parsedDate, s.fileVaultPct)
+            guard let pct = s.fileVaultPct else { return nil }
+            return (s.parsedDate, pct)
         }
         let patchPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            return (s.parsedDate, s.patchPct)
+            guard let pct = s.patchPct else { return nil }
+            return (s.parsedDate, pct)
         }
         var secSeries: [ChartSeries] = []
         if !fvPoints.isEmpty {
@@ -520,25 +583,53 @@ struct ReportEngine: Sendable {
         return CGColor(red: r, green: g, blue: b, alpha: 1)
     }
 
-    private func resolvedHistoricalDir(outputURL: URL) -> URL? {
-        let raw = config.charts?.historicalCsvDir ?? "snapshots"
-        if raw.hasPrefix("/") { return URL(fileURLWithPath: raw) }
-        let workspace = outputURL.deletingLastPathComponent().deletingLastPathComponent()
-        return workspace.appendingPathComponent(raw, isDirectory: true)
+    /// Routes through `WorkspacePaths.historicalDir(for:)` so that
+    /// config-supplied absolute paths are subject to the same containment check
+    /// as all other workspace-relative paths. Returns nil and logs when the
+    /// profile is invalid or the path escapes the workspace — both are non-fatal
+    /// because CSV archival is a best-effort post-write side effect.
+    private func resolvedHistoricalDir(
+        profile: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL? {
+        do {
+            return try WorkspacePaths.historicalDir(for: profile)
+        } catch {
+            let msg = "[warn] could not resolve historical_csv_dir for '\(profile)': " +
+                      "\(error.localizedDescription) — CSV archival skipped"
+            AppLogger.engine.warning("\(msg, privacy: .public)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return nil
+        }
     }
 
-    private func resolvedSummariesDir(outputURL: URL) -> URL? {
-        resolvedHistoricalDir(outputURL: outputURL)?
+    private func resolvedSummariesDir(
+        profile: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL? {
+        resolvedHistoricalDir(profile: profile, onLine: onLine)?
             .appendingPathComponent("summaries", isDirectory: true)
     }
 
-    private func resolvedArchiveDir(outputDir: URL) -> URL {
-        let raw = config.output?.archiveDir?.trimmingCharacters(in: .whitespaces) ?? ""
-        if !raw.isEmpty {
-            if raw.hasPrefix("/") { return URL(fileURLWithPath: raw) }
-            return outputDir.appendingPathComponent(raw, isDirectory: true)
+    /// Routes through `WorkspacePaths.archiveDir(for:)` so that config-supplied
+    /// absolute archive paths are subject to the workspace containment check.
+    /// Falls back to `<outputDir>/archive` on failure and logs a warning — archive
+    /// rotation is a non-fatal post-write side effect.
+    private func resolvedArchiveDir(
+        profile: String,
+        outputDir: URL,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL {
+        do {
+            return try WorkspacePaths.archiveDir(for: profile)
+        } catch {
+            let fallback = outputDir.appendingPathComponent("archive", isDirectory: true)
+            let msg = "[warn] could not resolve archive_dir for '\(profile)': " +
+                      "\(error.localizedDescription) — using \(fallback.lastPathComponent)"
+            AppLogger.engine.warning("\(msg, privacy: .public)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return fallback
         }
-        return outputDir.appendingPathComponent("archive", isDirectory: true)
     }
 
     private func stemFromURL(_ url: URL) -> String {
@@ -602,9 +693,22 @@ struct ReportEngine: Sendable {
     ///   - profile: jamf-cli profile slug.
     ///   - workspacePaths: Typed path constants for the workspace.
     ///   - onLine: Progress callback; receives log lines in real time.
+    /// Per-device commands that hit every device under management and are
+    /// expensive on on-prem Jamf servers. The Settings "Skip expensive
+    /// collections" toggle filters these out of the manual refresh path.
+    /// Scheduled collects (run via LaunchAgent → main.swift) ignore the
+    /// toggle and always include them.
+    static let expensivePerDeviceKinds: Set<String> = [
+        "ea-results",
+        "patch-device-failures",
+        "update-device-failures",
+        "device-compliance"
+    ]
+
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
+        skipExpensive: Bool = false,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
@@ -615,14 +719,20 @@ struct ReportEngine: Sendable {
         }
         let dataDir = try workspacePaths.dataDir(for: profile)
         // Respect use_cached_data: when false, a failed collect is fatal for that kind.
+        // File-missing is a legitimate first-run state and defaults to true.
+        // File-exists-but-unparseable is fatal — throw so the caller surfaces the error
+        // rather than silently proceeding with stale cache.
         let useCachedData: Bool
-        if let workspace = ProfileService.workspaceURL(for: profile),
-           let config = try? ConfigLoader.load(
-               from: workspace.appendingPathComponent("config.yaml")
-           ) {
-            useCachedData = config.jamfCli?.isCachedDataEnabled ?? true
+        if let workspace = ProfileService.workspaceURL(for: profile) {
+            let configURL = workspace.appendingPathComponent("config.yaml")
+            if FileManager.default.fileExists(atPath: configURL.path) {
+                let config = try ConfigLoader.load(from: configURL)
+                useCachedData = config.jamfCli?.isCachedDataEnabled ?? true
+            } else {
+                useCachedData = true
+            }
         } else {
-            useCachedData = true
+            useCachedData = false
         }
 
         // Commands to collect and their snapshot kind names.
@@ -672,8 +782,23 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "departments", "list", "--output", "json"], "departments"),
         ]
 
+        let plannedCommands: [(args: [String], kind: String)]
+        if skipExpensive {
+            plannedCommands = commands.filter { !Self.expensivePerDeviceKinds.contains($0.kind) }
+            let skipped = commands
+                .filter { Self.expensivePerDeviceKinds.contains($0.kind) }
+                .map(\.kind)
+                .joined(separator: ", ")
+            onLine(.init(
+                timestamp: Date(), level: .info,
+                text: "[info] skipping per-device commands (\(skipped)) — Settings: Skip expensive collections"
+            ))
+        } else {
+            plannedCommands = commands
+        }
+
         let bridge = CLIBridge()
-        for (args, kind) in commands {
+        for (args, kind) in plannedCommands {
             onLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[info] collecting \(kind) for \(profile)"
@@ -1008,23 +1133,30 @@ struct ReportEngine: Sendable {
     /// Build a Jamf School Excel report from cached jamf-cli school data and/or a CSV export.
     ///
     /// Mirrors the Python `cmd_school_generate` function.
+    ///
+    /// - Returns: A list of `SheetFailure` entries for school sheets that encountered
+    ///            unexpected errors. Absent snapshots (`SchoolDashboardError.noCachedData`)
+    ///            are graceful skips and are not included.
+    @discardableResult
     static func schoolGenerate(
         config: ReportConfig,
         csvURL: URL?,
         dataDir: URL,
         outputURL: URL
-    ) async throws {
+    ) async throws -> [SheetFailure] {
         let workbook = Workbook(accentColor: config.branding?.resolvedAccentColor ?? "#2D5EA2")
         let core = SchoolDashboard(config: config, dataDir: dataDir, workbook: workbook)
-        core.writeAll()
+        let (_, schoolFailures) = core.writeAll()
 
         if let csvURL {
             let csvData = try Data(contentsOf: csvURL)
             let school = SchoolCSVDashboard(config: config, csvData: csvData, workbook: workbook)
-            school?.writeAll()
+            // SchoolCSVDashboard.writeAll() is currently a stub returning [].
+            _ = school?.writeAll()
         }
 
         try workbook.write(to: outputURL)
+        return schoolFailures
     }
 
     // MARK: - Convenience: timestamped output path

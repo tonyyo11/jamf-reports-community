@@ -14,6 +14,8 @@ struct BackupsView: View {
     @State private var isRunningDiff = false
     @State private var showingDiff = false
     @State private var errorMessage: String?
+    @State private var pendingDelete: BackupRecord?
+    @State private var showDeleteConfirm = false
 
     private var backupsDirectory: URL {
         let root = ProfileService.workspaceURL(for: workspace.profile)
@@ -54,6 +56,17 @@ struct BackupsView: View {
         }
         .sheet(isPresented: $showingDiff) {
             diffSheet
+        }
+        .confirmationDialog(
+            "Delete \"\(pendingDelete?.name ?? "")\"?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Backup", role: .destructive) {
+                if let b = pendingDelete { Task { await deleteBackup(b) } }
+            }
+        } message: {
+            Text("This cannot be undone.")
         }
         .task(id: workspace.profile) {
             reload()
@@ -108,7 +121,7 @@ struct BackupsView: View {
                 .foregroundStyle(Theme.Text.tertiary)
             TextField("Label", text: $backupLabel)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.callout)
                 .foregroundStyle(Theme.Text.primary)
         }
         .padding(.horizontal, 10)
@@ -127,7 +140,7 @@ struct BackupsView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
                 Text(errorMessage)
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
                 Spacer()
             }
@@ -149,7 +162,7 @@ struct BackupsView: View {
                     TableColumn("Backup") { backup in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(backup.label.isEmpty ? backup.name : backup.label)
-                                .font(.system(size: 12.5, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.Text.primary)
                             if backup.label.isEmpty {
                                 Text("No label set")
@@ -179,6 +192,20 @@ struct BackupsView: View {
                             }
                             .disabled(workspace.demoMode || isRunningDiff || latestBackup?.id == backup.id)
                             .help(workspace.demoMode ? "Available in live mode only" : "")
+                            PNPButton(title: "Delete", icon: "trash", style: .danger, size: .sm) {
+                                pendingDelete = backup
+                                showDeleteConfirm = true
+                            }
+                            .disabled(workspace.demoMode || isRunningBackup)
+                            .help(workspace.demoMode ? "Available in live mode only" : "Delete this backup")
+                        }
+                        .contextMenu {
+                            Button("Reveal in Finder") { SystemActions.reveal(backup.url) }
+                            Divider()
+                            Button("Delete…", role: .destructive) {
+                                pendingDelete = backup
+                                showDeleteConfirm = true
+                            }
                         }
                     }
                 }
@@ -194,11 +221,15 @@ struct BackupsView: View {
                 .font(.system(size: 28))
                 .foregroundStyle(Theme.Colors.gold)
             Text("No backups yet")
-                .font(.system(size: 13, weight: .medium))
+                .font(.callout.weight(.medium))
                 .foregroundStyle(Theme.Text.primary)
-            Text("Run New Backup to create the first configuration snapshot.")
-                .font(.system(size: 12))
+            Text("Create a restore point before making config changes.")
+                .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary)
+            PNPButton(title: "New Backup", icon: "externaldrive.badge.plus", style: .gold) {
+                runBackup()
+            }
+            .disabled(workspace.demoMode || isRunningBackup)
         }
         .frame(maxWidth: .infinity, minHeight: 360)
     }
@@ -334,6 +365,16 @@ struct BackupsView: View {
     private func reload() {
         backups = BackupLibrary().list(profile: workspace.profile)
         selectedBackups = selectedBackups.intersection(Set(backups.map(\.id)))
+    }
+
+    @MainActor
+    private func deleteBackup(_ backup: BackupRecord) async {
+        do {
+            try FileManager.default.removeItem(at: backup.url)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        reload()
     }
 
     private func color(for level: CLIBridge.LogLevel) -> Color {

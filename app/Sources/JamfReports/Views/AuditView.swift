@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct AuditFinding: Identifiable, Codable {
     let id = UUID()
@@ -80,6 +82,8 @@ struct AuditView: View {
     @State private var query = ""
     @State private var sortOrderAudit = [KeyPathComparator(\AuditFinding.name)]
     @State private var sortOrderHygiene = [KeyPathComparator(\UnusedGroup.name)]
+    @State private var showExportError = false
+    @State private var exportError: String? = nil
     @FocusState private var isSearchFocused: Bool
 
     private var filteredFindings: [AuditFinding] {
@@ -136,7 +140,7 @@ struct AuditView: View {
                                 .foregroundStyle(Theme.Colors.fgMuted)
                             TextField("Search findings", text: $query)
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 13))
+                                .font(.callout)
                                 .foregroundStyle(Theme.Colors.fg)
                                 .focused($isSearchFocused)
                         }
@@ -172,6 +176,11 @@ struct AuditView: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
             if selectedTab == 0 { isSearchFocused = true }
         }
+        .alert("Export Failed", isPresented: $showExportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportError ?? "Unknown error")
+        }
     }
 
     private var header: some View {
@@ -203,12 +212,22 @@ struct AuditView: View {
                             }
                             .disabled(isRunningAudit || workspace.demoMode)
                             .help("Run a fresh audit against this workspace.")
+                            PNPButton(title: "Export Findings", icon: "square.and.arrow.up", style: .neutral) {
+                                Task { await exportFindings() }
+                            }
+                            .disabled(findings.isEmpty || workspace.demoMode)
+                            .help("Export all audit findings to a CSV file")
                         } else {
                             PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
                                 copyGroupIDs()
                             }
                             .disabled(unusedGroups.isEmpty)
                             .help("Copy the comma-separated list of unused group IDs to the clipboard.")
+                            PNPButton(title: "Copy All", icon: "doc.on.clipboard", style: .neutral) {
+                                copyAllGroups()
+                            }
+                            .disabled(sortedHygiene.isEmpty || workspace.demoMode)
+                            .help("Copy all unused group IDs and names as tab-separated values")
                             PNPButton(
                                 title: isRunningHygiene ? "Analyzing…" : "Analyze Groups",
                                 icon: isRunningHygiene ? "hourglass" : "magnifyingglass",
@@ -253,7 +272,7 @@ struct AuditView: View {
                                     .frame(width: 3)
                                     .frame(maxHeight: .infinity)
                                 severityIcon(f.severity)
-                                Text(f.name).font(.system(size: 13, weight: .semibold))
+                                Text(f.name).font(.callout.weight(.semibold))
                                 if newFindingKeys.contains(f.driftKey) {
                                     Pill(text: "New", tone: .gold, icon: "sparkle")
                                         .transition(.scale.combined(with: .opacity))
@@ -266,7 +285,7 @@ struct AuditView: View {
                             Pill(text: f.severity, tone: pillTone(f.severity))
                         }
                         TableColumn("Category", value: \.category) { f in
-                            Text(f.category.capitalized).font(.system(size: 12.5))
+                            Text(f.category.capitalized).font(.footnote)
                         }
                         TableColumn("Affected", value: \.affected) { f in
                             AffectedBar(value: f.affected, maxValue: maxAffected, tone: pillTone(f.severity))
@@ -274,7 +293,7 @@ struct AuditView: View {
                         TableColumn("Recommendation") { f in
                             HStack(spacing: 8) {
                                 Text(f.recommendation)
-                                    .font(.system(size: 12.5))
+                                    .font(.footnote)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
@@ -312,15 +331,15 @@ struct AuditView: View {
                         ForEach(Array(resolvedFindings.enumerated()), id: \.element.id) { idx, finding in
                             HStack(spacing: 10) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.callout.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.ok)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(finding.name)
-                                        .font(.system(size: 12.5, weight: .semibold))
+                                        .font(.footnote.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                         .strikethrough(true, color: Theme.Colors.fgMuted)
                                     Text(finding.recommendation)
-                                        .font(.system(size: 11.5))
+                                        .font(.caption)
                                         .foregroundStyle(Theme.Colors.fgMuted)
                                         .lineLimit(1)
                                 }
@@ -372,7 +391,7 @@ struct AuditView: View {
 
                         Table(sortedHygiene, sortOrder: $sortOrderHygiene) {
                             TableColumn("Group Name", value: \.name) { g in
-                                Text(g.name).font(.system(size: 12.5, weight: .semibold))
+                                Text(g.name).font(.footnote.weight(.semibold))
                             }
                             TableColumn("Type", value: \.type) { g in
                                 groupTypePill(g.type)
@@ -385,7 +404,7 @@ struct AuditView: View {
                             }
                             TableColumn("Why Flagged") { g in
                                 Text(g.reasonLabel)
-                                    .font(.system(size: 12))
+                                    .font(.footnote)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .lineLimit(2)
                             }
@@ -427,7 +446,7 @@ struct AuditView: View {
                 .font(.system(size: 32))
                 .foregroundStyle(Theme.Colors.gold.opacity(0.5))
             Text(text)
-                .font(.system(size: 13))
+                .font(.callout)
                 .foregroundStyle(Theme.Colors.fgMuted)
         }
         .frame(maxWidth: .infinity, minHeight: 300)
@@ -475,6 +494,37 @@ struct AuditView: View {
     private func copyGroupIDs() {
         let ids = unusedGroups.map(\.id).joined(separator: "\n")
         SystemActions.copyToClipboard(ids)
+    }
+
+    private func copyAllGroups() {
+        let rows = sortedHygiene.map { "\($0.id)\t\($0.name)" }.joined(separator: "\n")
+        SystemActions.copyToClipboard(rows)
+    }
+
+    @MainActor
+    private func exportFindings() async {
+        let panel = NSSavePanel()
+        let dateStr = ISO8601DateFormatter.string(
+            from: Date(), timeZone: .current,
+            formatOptions: [.withFullDate]
+        )
+        panel.nameFieldStringValue = "audit-findings-\(workspace.profile)-\(dateStr).csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard SystemActions.userExportTargetIsAllowed(url) else { return }
+        let header = "Severity,Name,Category,Affected,Recommendation\n"
+        let body = findings.map { f in
+            [f.severity, f.name, f.category, "\(f.affected)", f.recommendation]
+                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        do {
+            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            exportError = "Could not write \(url.lastPathComponent): \(error.localizedDescription)"
+            showExportError = true
+        }
     }
 
     private func loadCached() async {
@@ -649,7 +699,7 @@ private struct FindingDetailPopover: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(finding.name)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.headline)
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 6) {
                         Pill(text: finding.severity, tone: tone)
@@ -665,7 +715,7 @@ private struct FindingDetailPopover: View {
             VStack(alignment: .leading, spacing: 6) {
                 Kicker(text: "Recommendation")
                 Text(finding.recommendation)
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg2)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -674,7 +724,8 @@ private struct FindingDetailPopover: View {
             HStack {
                 Spacer()
                 PNPButton(title: "Copy", icon: "doc.on.doc", size: .sm) {
-                    SystemActions.copyToClipboard(finding.recommendation)
+                    let text = "[\(finding.severity)] \(finding.name)\n\(finding.category)\n\(finding.recommendation)"
+                    SystemActions.copyToClipboard(text)
                 }
             }
         }

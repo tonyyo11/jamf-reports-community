@@ -4,12 +4,20 @@ struct Sidebar: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Binding var activeTab: Tab
     let mode: SidebarMode
+    /// Per-user tab visibility — backed by `@AppStorage("hiddenTabs")` at the
+    /// app root. The Sidebar filters out hidden items and skips groups that
+    /// would render empty so the layout never shows orphan headers.
+    @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
+
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     // Workspace chip affordance: SwiftUI's Menu does not expose its open state, so
     // we approximate "engaged" by combining hover + keyboard focus. Both feed the
     // glow/ring shown around the avatar and chip surface.
     @State private var chipHovered: Bool = false
     @FocusState private var chipFocused: Bool
+    @State private var hoveredItem: Tab? = nil
 
     private struct NavGroup {
         let group: String
@@ -18,10 +26,23 @@ struct Sidebar: View {
 
     private let groups: [NavGroup] = [
         .init(group: "REPORTS", items: [.overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports]),
+        .init(group: "POSTURE", items: [.securityPosture, .compliancePosture, .outreach]),
+        .init(group: "OPERATIONS", items: [.patch, .updates, .policyProfile, .extensionAttributes]),
+        .init(group: "FLEET", items: [.mobileFleet, .protectDashboard]),
         .init(group: "AUTOMATION", items: [.schedules, .runs]),
         .init(group: "CONFIGURATION", items: [.config, .customize, .sources, .backups]),
         .init(group: "SYSTEM", items: [.settings]),
     ]
+
+    /// Groups filtered by user visibility. Empty groups are dropped entirely.
+    private var visibleGroups: [NavGroup] {
+        let visibility = TabVisibility.parse(hiddenTabsRaw)
+        return groups.compactMap { group in
+            let visible = group.items.filter { visibility.isVisible($0) }
+            guard !visible.isEmpty else { return nil }
+            return NavGroup(group: group.group, items: visible)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,18 +55,18 @@ struct Sidebar: View {
                 .padding(.horizontal, mode == .compact ? 14 : 16)
                 .padding(.bottom, 14)
 
-            navStack
-                .background(alignment: .top) {
-                    if mode == .compact { compactRailTray }
-                }
-
-            Spacer()
+            ScrollView {
+                navStack
+                    .background(alignment: .top) {
+                        if mode == .compact { compactRailTray }
+                    }
+            }
 
             workspaceChip
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
         }
-        .background(.regularMaterial)
+        .background(reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.regularMaterial))
         .overlay(alignment: .trailing) {
             Rectangle().fill(Theme.Colors.hairline).frame(width: 0.5)
         }
@@ -54,7 +75,7 @@ struct Sidebar: View {
     @ViewBuilder
     private var navStack: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(groups, id: \.group) { group in
+            ForEach(visibleGroups, id: \.group) { group in
                 navSection(group)
             }
         }
@@ -92,8 +113,10 @@ struct Sidebar: View {
                     .font(Theme.Fonts.mono(10.5, weight: .bold))
                     .tracking(1.4)
                     .foregroundStyle(Theme.Colors.fg)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text("Jamf Reports · v\(appVersion)")
-                    .font(.system(size: 10.5))
+                    .font(.caption)
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
         }
@@ -142,7 +165,7 @@ struct Sidebar: View {
 
                 if mode != .compact {
                     Text(item.label)
-                        .font(.system(size: 13))
+                        .font(.callout)
                         .foregroundStyle(isActive ? Theme.Colors.fg : Theme.Colors.fg2)
                     Spacer()
                     if let badge = badge(for: item) {
@@ -165,13 +188,19 @@ struct Sidebar: View {
             .frame(minHeight: mode == .compact ? 0 : 28)
             .background(
                 RoundedRectangle(cornerRadius: mode == .compact ? 8 : 6, style: .continuous)
-                    .fill(isActive ? Theme.Colors.gold.opacity(0.18) : .clear)
+                    .fill(
+                        isActive ? Theme.Colors.gold.opacity(0.18) :
+                        (hoveredItem == item && !isActive ? Theme.Surface.hover(contrast) : .clear)
+                    )
                     .padding(.horizontal, mode == .compact ? 4 : 0)
             )
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            hoveredItem = hovering ? item : (hoveredItem == item ? nil : hoveredItem)
+        }
         .accessibilityLabel(navAccessibilityLabel(for: item))
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
@@ -216,8 +245,10 @@ struct Sidebar: View {
                 Button {
                     workspace.setProfile(p.name)
                 } label: {
+                    let count = workspace.deviceCount(for: p.name)
                     HStack {
                         Text(p.name)
+                        if count > 0 { Text("· \(count) devices").foregroundStyle(.secondary) }
                         if p.name == workspace.profile { Image(systemName: "checkmark") }
                     }
                 }
@@ -226,8 +257,17 @@ struct Sidebar: View {
             Button("Add workspace…") { activeTab = .onboarding }
         } label: {
             HStack(spacing: 10) {
+                let activeProfile = workspace.profiles.first(where: { $0.name == workspace.profile })
                 workspaceAvatar(engaged: engaged)
                     .frame(width: 22, height: 22)
+                    .overlay(alignment: .topTrailing) {
+                        if activeProfile?.status == .error {
+                            Circle()
+                                .fill(Theme.Colors.danger)
+                                .frame(width: 6, height: 6)
+                                .offset(x: 2, y: -2)
+                        }
+                    }
 
                 if mode != .compact {
                     VStack(alignment: .leading, spacing: 1) {
@@ -235,10 +275,10 @@ struct Sidebar: View {
                             .font(Theme.Fonts.mono(12, weight: .semibold))
                             .foregroundStyle(Theme.Colors.fg)
                             .lineLimit(1)
-                        Text(workspaceSubtitle)
+                        Text(workspace.lastSyncedRelative(for: workspace.profile))
                             .font(Theme.Fonts.mono(9.5))
                             .tracking(0.4)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
@@ -251,7 +291,7 @@ struct Sidebar: View {
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.white.opacity(engaged ? 0.07 : 0.04))
+                    .fill(engaged ? Theme.Surface.interactive(contrast) : Theme.Surface.high(contrast).opacity(0.5))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(
@@ -286,7 +326,7 @@ struct Sidebar: View {
     /// the chip is engaged.
     @ViewBuilder
     private func workspaceAvatar(engaged: Bool) -> some View {
-        let initial = workspace.profile.first.map { String($0).uppercased() } ?? "?"
+        let monogram = String(workspace.profile.prefix(2)).uppercased()
         let hue = avatarHue(for: workspace.profile)
         ZStack {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -297,7 +337,7 @@ struct Sidebar: View {
                     ],
                     startPoint: .topLeading, endPoint: .bottomTrailing
                 ))
-            Text(String(workspace.profile.prefix(2)).uppercased())
+            Text(monogram)
                 .font(Theme.Fonts.mono(9, weight: .bold))
                 .foregroundStyle(.white)
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -306,15 +346,15 @@ struct Sidebar: View {
                     lineWidth: engaged ? 1.2 : 0.5
                 )
         }
-        .accessibilityLabel("Workspace \(initial)")
+        .accessibilityLabel("Workspace \(monogram)")
     }
 
     /// Stable hue in [0,1) derived from the profile name, so the same workspace
     /// always renders with the same gradient.
     private func avatarHue(for name: String) -> Double {
         guard let first = name.unicodeScalars.first else { return 0.12 }
-        // 0.12 ≈ gold-ish; offset by character so distinct profiles diverge predictably.
-        let base = Double(first.value % 360) / 360.0
-        return base
+        // Spread adjacent letters in the alphabet using multiplication factor, avoid gold band (~0.10–0.18)
+        let base = Double((first.value &* 47) % 360) / 360.0
+        return ((base + 0.30).truncatingRemainder(dividingBy: 1.0))
     }
 }

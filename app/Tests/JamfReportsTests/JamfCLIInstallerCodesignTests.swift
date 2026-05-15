@@ -15,12 +15,11 @@ final class JamfCLIInstallerCodesignTests: XCTestCase {
         XCTAssertNotNil(JamfCLIInstaller.expectedJamfTeamID as String?)
     }
 
-    func test_enforcementDisabledUntilTeamIDConfirmed() {
-        // Sanity: as long as the constant is empty, enforcement must remain
-        // off so installs aren't blocked by a placeholder mismatch.
-        if JamfCLIInstaller.expectedJamfTeamID.isEmpty {
-            XCTAssertFalse(JamfCLIInstaller.enforceCodesignVerification)
-        }
+    func test_enforcementEnabled_withKnownTeamID() {
+        // Team ID is confirmed — enforcement must be on and the ID must match.
+        // Any regression that resets these (merge conflict, accidental nil) fails here.
+        XCTAssertEqual(JamfCLIInstaller.expectedJamfTeamID, "483DWKW443")
+        XCTAssertTrue(JamfCLIInstaller.enforceCodesignVerification)
     }
 
     func test_codesignVerifier_rejectsUnsignedTempFile() throws {
@@ -34,5 +33,24 @@ final class JamfCLIInstallerCodesignTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
 
         XCTAssertFalse(CodeSignVerifier.verify(url: url, expectedTeamID: "ABCDE12345"))
+    }
+
+    func test_codesignVerifier_rejectsUnsignedBinary_withProductionTeamID() throws {
+        // Regression gate: verify that the production Team ID ("483DWKW443") correctly
+        // rejects an unsigned binary. If expectedTeamID is ever changed to a value that
+        // accepts any binary (e.g., empty string or a pattern match bug), this fails.
+        guard let teamID = JamfCLIIdentity.expectedTeamID else {
+            XCTFail("JamfCLIIdentity.expectedTeamID must be non-nil when enforcement is active")
+            return
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-unsigned-prod-\(UUID().uuidString)")
+        try Data("not a mach-o".utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertFalse(
+            CodeSignVerifier.verify(url: url, expectedTeamID: teamID),
+            "Production team ID '\(teamID)' must reject an unsigned binary"
+        )
     }
 }

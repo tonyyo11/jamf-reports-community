@@ -103,11 +103,12 @@ struct CoreDashboard: Sendable {
     /// Applies `sheets.only`, `sheets.skip`, and `sheets.order` from config before
     /// iterating. `selectedNames` further narrows to a caller-specified subset (used by
     /// the UI when the user wants a single sheet regenerated).
-    /// Returns list of sheet names successfully written.
+    /// Returns list of sheet names successfully written and any unexpected failures.
     @discardableResult
-    func writeAll(selectedNames: Set<String>? = nil) -> [String] {
+    func writeAll(selectedNames: Set<String>? = nil) -> (written: [String], failures: [SheetFailure]) {
         let effectivePlan = (config.sheets ?? SheetsConfig()).applyTo(sheetPlan)
         var written: [String] = []
+        var failures: [SheetFailure] = []
         for (name, fn) in effectivePlan {
             if let sel = selectedNames,
                !sel.contains(name.lowercased()) {
@@ -116,9 +117,13 @@ struct CoreDashboard: Sendable {
             do {
                 try fn()
                 written.append(name)
+            } catch let skippable as SheetSkippable {
+                // Cached data absent — expected for jamf-cli snapshots not yet collected.
+                print("  [skip] \(name): \(skippable)")
             } catch {
-                // Data absent or malformed — skip sheet, don't crash.
-                // This mirrors the Python `[skip] SheetName: ...` behavior.
+                let label = "\(type(of: error)): \(error)"
+                failures.append(SheetFailure(sheet: name, error: label))
+                print("  [fail] \(name): unexpected error — \(label)")
             }
         }
         if let logoData = CSVDashboard.loadLogoData(from: config) {
@@ -129,7 +134,7 @@ struct CoreDashboard: Sendable {
                 }
             }
         }
-        return written
+        return (written, failures)
     }
 
     // MARK: - Sheet title helper
@@ -1101,8 +1106,8 @@ struct CoreDashboard: Sendable {
         }
 
         let categoryCounts = profileRows.reduce(into: [String: Int]()) { acc, row in
-            let cat = (row["Category"] as? String ?? "").isEmpty ? "Uncategorized"
-                : row["Category"] as! String
+            let catStr = row["Category"] as? String ?? ""
+            let cat = catStr.isEmpty ? "Uncategorized" : catStr
             acc[cat, default: 0] += 1
         }
 
@@ -2204,7 +2209,7 @@ struct CoreDashboard: Sendable {
 
 // MARK: - CoreDashboard errors
 
-enum CoreDashboardError: Error, LocalizedError {
+enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
     case noCachedData(names: [String])
 
     var errorDescription: String? {

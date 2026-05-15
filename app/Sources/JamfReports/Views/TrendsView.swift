@@ -5,6 +5,8 @@ import Charts
 /// Differentiator vs. JamfDash, which only shows live state.
 struct TrendsView: View {
     @Environment(WorkspaceStore.self) private var workspaceStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @State private var trendStore = TrendStore()
     @State private var bridge = CLIBridge()
     @State private var metric: TrendSeries.Metric = .stability
@@ -38,6 +40,19 @@ struct TrendsView: View {
             return TrendDemoSeries.chartDomain(for: metric, range: range)
         }
         return trendStore.chartDomain
+    }
+
+    /// Y-axis domain that respects the metric's preferred "good frame" but
+    /// always expands to fit actual data. Without this, a Stability Index of
+    /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
+    /// clips off the top of `metric.maxY = 60`. Floor at 0 — values are
+    /// non-negative by construction (validated in the data layer).
+    private var chartYDomain: ClosedRange<Double> {
+        let dataMin = values.min()
+        let dataMax = values.max()
+        let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
+        let hi = max(metric.maxY, dataMax ?? metric.maxY)
+        return lo...hi
     }
 
     private var selectedPoint: TrendPoint? {
@@ -102,6 +117,9 @@ struct TrendsView: View {
                                 trailing: Theme.Metrics.pagePadH))
         }
         .onAppear {
+            if let preferred = TrendRange(rawValue: defaultTrendRangeRaw), preferred != range {
+                range = preferred
+            }
             if !workspaceStore.demoMode {
                 trendStore.load(profile: workspaceStore.profile, range: range)
             }
@@ -115,6 +133,7 @@ struct TrendsView: View {
         }
         .onChange(of: range) { _, newValue in
             selectedDate = nil
+            defaultTrendRangeRaw = newValue.rawValue
             if !workspaceStore.demoMode {
                 withAnimation(.snappy) {
                     trendStore.load(profile: workspaceStore.profile, range: newValue)
@@ -133,40 +152,20 @@ struct TrendsView: View {
     // MARK: Empty State
 
     private var emptyState: some View {
-        VStack(spacing: 24) {
-            Spacer().frame(height: 100)
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 64))
-                .foregroundStyle(Theme.Colors.hairlineStrong)
-            
-            VStack(spacing: 8) {
-                Text("No trend data yet")
-                    .font(Theme.Fonts.serif(24, weight: .bold))
-                Text("Historical trends populate after 2+ scheduled runs.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
-            
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToTab,
-                    object: nil,
-                    userInfo: ["tab": Tab.schedules.rawValue]
-                )
-            } label: {
-                Text("Go to Schedules")
-                    .font(.system(size: 13, weight: .semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Theme.Colors.gold)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .foregroundStyle(.black)
-            }
-            .buttonStyle(.plain)
-            
-            Spacer()
+        Card(padding: 24) {
+            EmptyStateView(
+                systemImage: "chart.line.uptrend.xyaxis",
+                title: "No trend data yet",
+                message: "Historical trends populate after 2+ scheduled runs.",
+                primaryAction: EmptyStateAction(label: "Go to Schedules", icon: "calendar") {
+                    NotificationCenter.default.post(
+                        name: .navigateToTab,
+                        object: nil,
+                        userInfo: ["tab": Tab.schedules.rawValue]
+                    )
+                }
+            )
         }
-        .frame(maxWidth: .infinity)
     }
 
     // MARK: Header
@@ -189,6 +188,8 @@ struct TrendsView: View {
                         Task { await exportChartPNG() }
                     }
                     .disabled(isExporting)
+                    .accessibilityLabel("Export \(metric.displayLabel) trend chart as PNG")
+                    .help("Save the current trend chart as a PNG image")
                 }
             )
         }
@@ -215,12 +216,13 @@ struct TrendsView: View {
     private func metricPill(_ m: TrendSeries.Metric) -> some View {
         let series = points(for: m).map(\.value)
         let dl = (series.last ?? 0) - (series.first ?? 0)
-        let goodTrend = m == .stale ? dl < 0 : dl > 0
+        let deltaInt = Int(dl.rounded())
+        let deltaState: DeltaState = deltaInt > 0 ? .positive : deltaInt < 0 ? .negative : .flat
+        let goodTrend = m == .stale ? deltaState == .negative : deltaState == .positive
         let isActive = metric == m
         let color = Color(hex: m.colorHex)
-        // Tail of the series for the in-pill micro sparkline.
         let sparkValues = Array(series.suffix(8))
-        let isBadTrend = !goodTrend && m != .stale
+        let isBadTrend = deltaState == .negative && m != .stale
 
         return Button {
             withAnimation(.snappy(duration: 0.25)) { metric = m }
@@ -228,15 +230,19 @@ struct TrendsView: View {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 6, height: 6)
                     .accessibilityHidden(true)
-                Text(m.displayLabel).font(.system(size: 12, weight: .medium))
+                Text(m.displayLabel).font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
-                Text("\(dl >= 0 ? "+" : "")\(Int(dl.rounded()))\(m.unit)")
+                Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
-                    .foregroundStyle(goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
+                    .foregroundStyle(
+                        deltaState == .flat ? Theme.Colors.fgMuted
+                            : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
+                    )
                 if sparkValues.count >= 2 {
                     Sparkline(
                         values: sparkValues,
-                        color: goodTrend ? Theme.Colors.ok : Theme.Colors.danger
+                        color: deltaState == .flat ? Theme.Colors.gold
+                            : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
                     )
                     .frame(width: 40, height: 18)
                     .opacity(0.85)
@@ -276,7 +282,7 @@ struct TrendsView: View {
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .help("Show \(m.displayLabel) trend")
         .onAppear {
-            guard !pillPulse else { return }
+            guard !pillPulse, !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
                 pillPulse = true
             }
@@ -343,12 +349,12 @@ struct TrendsView: View {
                                              Color(hex: metric.colorHex).opacity(0.0)],
                                     startPoint: .top, endPoint: .bottom
                                 ))
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                             LineMark(x: .value("Date", point.date),
                                      y: .value(metric.displayLabel, point.value))
                                 .foregroundStyle(Color(hex: metric.colorHex))
                                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                         }
 
                         if let selectedPoint {
@@ -378,12 +384,10 @@ struct TrendsView: View {
                         }
                     }
                     .chartXScale(domain: domain)
+                    .chartYScale(domain: chartYDomain)
                     .chartXSelection(value: $selectedDate)
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day, count: range == .w4 ? 7 : 28)) { _ in
-                            AxisValueLabel().font(Theme.Fonts.mono(10))
-                                .foregroundStyle(Theme.Colors.fgMuted)
-                        }
+                        trendXAxisMarks(for: range)
                     }
                     .chartYAxis {
                         AxisMarks(position: .leading) {
@@ -402,8 +406,7 @@ struct TrendsView: View {
                         unit: metric.unit
                     ))
                 } else {
-                    Text("Calculating domain...")
-                        .frame(height: 260)
+                    ProgressView().frame(height: 260)
                 }
 
                 Divider().background(Theme.Colors.hairline)
@@ -411,12 +414,12 @@ struct TrendsView: View {
                 HStack(spacing: 16) {
                     HStack(spacing: 6) {
                         Rectangle().fill(Color(hex: metric.colorHex)).frame(width: 14, height: 2)
-                        Text("Weekly snapshot").font(.system(size: 11.5))
+                        Text("Weekly snapshot").font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     HStack(spacing: 6) {
                         Image(systemName: "info.circle").font(.system(size: 11))
-                        Text("\(trendDates.count) archived summaries").font(.system(size: 11.5))
+                        Text("\(trendDates.count) archived summaries").font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
@@ -453,7 +456,7 @@ struct TrendsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         SectionHeader(title: "Compliance Distribution Over Time")
                         Text("Devices grouped by failed-rule count, weekly")
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
@@ -474,7 +477,7 @@ struct TrendsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     SectionHeader(title: "Security Posture · Compared")
                     Text("FileVault vs. Compliance vs. macOS Current")
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
                 multilineComparisonChart
@@ -494,7 +497,7 @@ struct TrendsView: View {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(Color(hex: band.colorHex))
                         .frame(width: 10, height: 10)
-                    Text(band.label).font(.system(size: 11)).foregroundStyle(Theme.Colors.fg2)
+                    Text(band.label).font(.caption).foregroundStyle(Theme.Colors.fg2)
                     Text(band.range).font(Theme.Fonts.mono(10.5)).foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -502,26 +505,19 @@ struct TrendsView: View {
     }
 
     private var complianceBandUnavailable: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "chart.bar.doc.horizontal")
-                .font(.system(size: 28))
-                .foregroundStyle(Theme.Colors.hairlineStrong)
-            Text("Compliance band history is not available for live data yet.")
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(Theme.Colors.fg2)
-            Text("The summary cache does not include per-band failed-rule counts.")
-                .font(.system(size: 11.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+        Card(padding: 24) {
+            EmptyStateView(
+                systemImage: "chart.bar.doc.horizontal",
+                title: "Compliance band history unavailable",
+                message: "The summary cache does not include per-band failed-rule counts."
+            )
         }
-        .frame(maxWidth: .infinity, minHeight: 200)
-        .background(Color(nsColor: .textBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func legendDot(color: Color, label: String) -> some View {
         HStack(spacing: 5) {
             Rectangle().fill(color).frame(width: 14, height: 2)
-            Text(label).font(.system(size: 11)).foregroundStyle(Theme.Colors.fg2)
+            Text(label).font(.caption).foregroundStyle(Theme.Colors.fg2)
         }
     }
 
@@ -556,10 +552,7 @@ struct TrendsView: View {
                 }
                 .chartXScale(domain: domain)
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: range == .w4 ? 7 : 28)) { _ in
-                        AxisValueLabel().font(Theme.Fonts.mono(10))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                    }
+                    trendXAxisMarks(for: range)
                 }
                 .chartYAxis(.hidden)
                 .chartLegend(.hidden)
@@ -576,8 +569,7 @@ struct TrendsView: View {
                     }
                 ))
             } else {
-                Text("No Data")
-                    .frame(height: 200)
+                ProgressView().frame(height: 200)
             }
         }
     }
@@ -591,12 +583,9 @@ struct TrendsView: View {
                     series("macOS Current", color: Theme.Colors.info, points: points(for: .osCurrent))
                 }
                 .chartXScale(domain: domain)
-                .chartYScale(domain: 30...100)
+                .chartYScale(domain: 0...100)
                 .chartXAxis {
-                    AxisMarks(values: .stride(by: .day, count: range == .w4 ? 7 : 56)) { _ in
-                        AxisValueLabel().font(Theme.Fonts.mono(10))
-                            .foregroundStyle(Theme.Colors.fgMuted)
-                    }
+                    trendXAxisMarks(for: range)
                 }
                 .chartYAxis {
                     AxisMarks(position: .leading) {
@@ -622,8 +611,7 @@ struct TrendsView: View {
                     ]
                 ))
             } else {
-                Text("No Data")
-                    .frame(height: 200)
+                ProgressView().frame(height: 200)
             }
         }
     }
@@ -642,6 +630,56 @@ struct TrendsView: View {
         workspaceStore.demoMode
             ? TrendDemoSeries.points(for: m, range: range)
             : trendStore.points(metric: m)
+    }
+
+    /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless
+    /// of how wide the visible window is, so labels don't collide.
+    /// `.all` returns 0 as a sentinel — the builder switches to `.automatic`
+    /// because the visible span depends on how much history exists.
+    private func xAxisStrideDays(for range: TrendRange) -> Int {
+        switch range {
+        case .w4:  return 7
+        case .w12: return 14
+        case .w26: return 28
+        case .w52: return 56
+        case .all: return 0
+        }
+    }
+
+    /// Date format that scales with range width.
+    /// - .w4/.w12: "Apr 1" — month + day
+    /// - .w26/.w52: "Apr '26" — month + 2-digit year
+    /// - .all: "2026" — year only
+    private func xAxisDateFormat(for range: TrendRange) -> Date.FormatStyle {
+        switch range {
+        case .w4, .w12:
+            return .dateTime.month(.abbreviated).day()
+        case .w26, .w52:
+            return .dateTime.month(.abbreviated).year(.twoDigits)
+        case .all:
+            return .dateTime.year()
+        }
+    }
+
+    /// Shared X-axis marks for all three trend charts. Stride scales with
+    /// range; `.all` defers to Swift Charts' automatic spacing with a
+    /// desired-count hint so multi-year data stays readable.
+    @AxisContentBuilder
+    private func trendXAxisMarks(for range: TrendRange) -> some AxisContent {
+        let format = xAxisDateFormat(for: range)
+        if range == .all {
+            AxisMarks(values: .automatic(desiredCount: 8)) { _ in
+                AxisValueLabel(format: format)
+                    .font(Theme.Fonts.mono(10))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+        } else {
+            AxisMarks(values: .stride(by: .day, count: xAxisStrideDays(for: range))) { _ in
+                AxisValueLabel(format: format)
+                    .font(Theme.Fonts.mono(10))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
     }
 
     @ChartContentBuilder
@@ -674,7 +712,7 @@ struct TrendsView: View {
                                 .font(Theme.Fonts.mono(11))
                             Text(" run")
                         }
-                        .font(.system(size: 11.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Colors.fgMuted)
                     }
                     Spacer()
@@ -699,11 +737,12 @@ struct TrendsView: View {
 
                 let currentMetricValues = values
                 let lastIdx = currentMetricValues.indices.last
+                let rangeMax = max(currentMetricValues.max() ?? 1.0, 1.0)
                 HStack(spacing: 4) {
                     ForEach(Array(trendDates.enumerated()), id: \.offset) { idx, date in
                         let isLatest = idx == lastIdx
                         let v = currentMetricValues[safe: idx] ?? 0
-                        let h = 4 + (v / 100) * 36
+                        let h = 4 + (v / rangeMax) * 36
                         archiveBar(
                             idx: idx,
                             date: date,
@@ -739,7 +778,6 @@ struct TrendsView: View {
         height: CGFloat,
         isLatest: Bool
     ) -> some View {
-        // tealBright adapts better than the static teal token in light mode.
         let isHovered = hoveredArchiveIdx == idx
         return Rectangle()
             .fill(isLatest ? Theme.Colors.gold : Theme.Colors.tealBright)
@@ -751,8 +789,8 @@ struct TrendsView: View {
                     Circle()
                         .fill(Theme.Colors.goldBright)
                         .frame(width: 6, height: 6)
-                        .scaleEffect(archivePulse ? 1.4 : 1.0)
-                        .opacity(archivePulse ? 0.0 : 0.9)
+                        .scaleEffect(reduceMotion ? 1.0 : (archivePulse ? 1.4 : 1.0))
+                        .opacity(reduceMotion ? 0.9 : (archivePulse ? 0.0 : 0.9))
                         .offset(y: -3)
                         .allowsHitTesting(false)
                 }
@@ -780,7 +818,7 @@ struct TrendsView: View {
                 hoveredArchiveIdx = inside ? idx : (hoveredArchiveIdx == idx ? nil : hoveredArchiveIdx)
             }
             .onAppear {
-                guard isLatest, !archivePulse else { return }
+                guard isLatest, !archivePulse, !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: false)) {
                     archivePulse = true
                 }
@@ -828,32 +866,34 @@ struct TrendsView: View {
         isExporting = true
         defer { isExporting = false }
 
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "\(metric.displayLabel.replacingOccurrences(of: " ", with: "-")).png"
-        panel.title = "Export Chart as PNG"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let pts = trendPoints
+        let m = metric
+        let dom = chartDomain
 
-        let snapshot = ChartExportView(
-            trendPoints: trendPoints,
-            metric: metric,
-            domain: chartDomain
-        )
-        let renderer = ImageRenderer(content: snapshot)
-        renderer.scale = 2.0
-
-        guard let image = renderer.nsImage,
-              let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            return
+        var subtitle: String?
+        if let first = pts.first, let last = pts.last {
+            let f = SummaryJSONParser.dateFormatter
+            subtitle = first.date == last.date
+                ? "\(f.string(from: first.date)) · 1 snapshot"
+                : "\(f.string(from: first.date)) → \(f.string(from: last.date)) · \(pts.count) snapshots"
         }
-        try? pngData.write(to: url)
+
+        let exportResult = DashboardChartExport.run(
+            title: m.displayLabel,
+            subtitle: subtitle,
+            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel)
+        ) { ChartExportView(trendPoints: pts, metric: m, domain: dom) }
+
+        if case .failure(let error) = exportResult {
+            workspaceStore.toast = Toast(message: error.userMessage, style: .danger)
+        }
     }
 }
 
 
 // MARK: - Helpers
+
+private enum DeltaState { case positive, negative, flat }
 
 extension Array {
     subscript(safe idx: Int) -> Element? { indices.contains(idx) ? self[idx] : nil }
@@ -903,8 +943,8 @@ enum TrendDemoSeries {
     }
 }
 
-/// Minimal flow layout for the metric pills row. SwiftUI 16+ has `Layout` but this
-/// runs on macOS 14, so we lay out children into rows by hand.
+/// Minimal flow layout for the metric pills row. Uses the `Layout` protocol
+/// introduced in macOS 14 (SwiftUI 4), which is the app's minimum deployment target.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
@@ -945,10 +985,10 @@ struct FlowLayout: Layout {
     }
 }
 
-// MARK: - Chart export snapshot view
+// MARK: - Chart export content view
 
-/// Fixed-size view rendered to PNG by `ImageRenderer`. Stands alone — no
-/// environment dependencies — so it renders correctly off-screen.
+/// Chart-only content view used as the body of DashboardChartExport.run.
+/// DashboardExportCanvas owns the outer frame, background, title, and footnote.
 private struct ChartExportView: View {
     let trendPoints: [TrendPoint]
     let metric: TrendSeries.Metric
@@ -958,26 +998,18 @@ private struct ChartExportView: View {
         let index: Int
         let date: Date
         let value: Double
-
         var id: Int { index }
     }
 
     private var points: [ExportPoint] {
-        trendPoints.enumerated().map { idx, point in
-            ExportPoint(index: idx, date: point.date, value: point.value)
-        }
+        trendPoints.enumerated().map { idx, pt in ExportPoint(index: idx, date: pt.date, value: pt.value) }
     }
 
     private var isPercentMetric: Bool { metric.unit == "%" }
-    private var firstPoint: ExportPoint? { points.first }
     private var lastPoint: ExportPoint? { points.last }
     private var values: [Double] { points.map(\.value) }
     private var minValue: Double { values.min() ?? 0 }
     private var maxValue: Double { values.max() ?? 0 }
-    private var averageValue: Double {
-        values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
-    }
-    private var delta: Double { (values.last ?? 0) - (values.first ?? 0) }
 
     private var yDomain: ClosedRange<Date> {
         domain ?? (Date().addingTimeInterval(-26*7*24*3600)...Date())
@@ -1001,218 +1033,116 @@ private struct ChartExportView: View {
         return Array(Set(indices)).sorted().map { dates[$0] }
     }
 
-    private var dateRangeText: String {
-        guard let firstPoint, let lastPoint else { return "No snapshots" }
-        let f = SummaryJSONParser.dateFormatter
-        if firstPoint.date == lastPoint.date {
-            return "\(f.string(from: firstPoint.date)) · 1 snapshot"
-        }
-        return "\(f.string(from: firstPoint.date)) → \(f.string(from: lastPoint.date)) · \(points.count) snapshots"
-    }
-
-    private var changeText: String {
-        let sign = delta >= 0 ? "+" : "−"
-        let absolute = abs(delta)
-        if isPercentMetric {
-            return "\(sign)\(String(format: "%.1f", absolute))pp"
-        }
-        return "\(sign)\(Int(absolute.rounded()))"
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 20) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(metric.displayLabel)
-                        .font(.system(size: 30, weight: .bold, design: .serif))
+        Chart {
+            ForEach(points) { point in
+                AreaMark(
+                    x: .value("Date", point.date),
+                    y: .value(metric.displayLabel, point.value)
+                )
+                .foregroundStyle(LinearGradient(
+                    colors: [Color(hex: metric.colorHex).opacity(0.26),
+                             Color(hex: metric.colorHex).opacity(0.03)],
+                    startPoint: .top, endPoint: .bottom
+                ))
+                .interpolationMethod(.catmullRom)
+
+                LineMark(
+                    x: .value("Date", point.date),
+                    y: .value(metric.displayLabel, point.value)
+                )
+                .foregroundStyle(Color(hex: metric.colorHex))
+                .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                .interpolationMethod(.catmullRom)
+
+                PointMark(
+                    x: .value("Date", point.date),
+                    y: .value(metric.displayLabel, point.value)
+                )
+                .foregroundStyle(Color.white)
+                .symbolSize(point.index == points.indices.last ? 82 : 46)
+                .annotation(position: .overlay) {
+                    Circle()
+                        .stroke(Color(hex: metric.colorHex), lineWidth: 2.2)
+                        .frame(width: point.index == points.indices.last ? 11 : 8,
+                               height: point.index == points.indices.last ? 11 : 8)
+                }
+            }
+
+            if let lastPoint {
+                RuleMark(x: .value("Latest", lastPoint.date))
+                    .foregroundStyle(Color(hex: 0x94A3B8).opacity(0.65))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
+
+                PointMark(
+                    x: .value("Latest", lastPoint.date),
+                    y: .value(metric.displayLabel, lastPoint.value)
+                )
+                .foregroundStyle(Color(hex: metric.colorHex))
+                .symbolSize(130)
+                .annotation(position: .top, alignment: .trailing, spacing: 8) {
+                    Text(formatValue(lastPoint.value))
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundStyle(Color(hex: 0x111827))
-                    Text(dateRangeText)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color(hex: 0x475569))
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        .overlay(RoundedRectangle(cornerRadius: 5)
+                            .stroke(Color(hex: metric.colorHex), lineWidth: 1))
                 }
-                Spacer()
-                if let lastPoint {
-                    VStack(alignment: .trailing, spacing: 5) {
-                        Text(formatValue(lastPoint.value))
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(hex: metric.colorHex))
-                        Text("latest · \(SummaryJSONParser.dateFormatter.string(from: lastPoint.date))")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color(hex: 0x64748B))
-                    }
-                }
-            }
-
-            Chart {
-                ForEach(points) { point in
-                    AreaMark(
-                        x: .value("Date", point.date),
-                        y: .value(metric.displayLabel, point.value)
-                    )
-                    .foregroundStyle(LinearGradient(
-                        colors: [
-                            Color(hex: metric.colorHex).opacity(0.26),
-                            Color(hex: metric.colorHex).opacity(0.03)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ))
-                    .interpolationMethod(.catmullRom)
-
-                    LineMark(
-                        x: .value("Date", point.date),
-                        y: .value(metric.displayLabel, point.value)
-                    )
-                    .foregroundStyle(Color(hex: metric.colorHex))
-                    .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    .interpolationMethod(.catmullRom)
-
-                    PointMark(
-                        x: .value("Date", point.date),
-                        y: .value(metric.displayLabel, point.value)
-                    )
-                    .foregroundStyle(Color.white)
-                    .symbolSize(point.index == points.indices.last ? 82 : 46)
-                    .annotation(position: .overlay) {
-                        Circle()
-                            .stroke(Color(hex: metric.colorHex), lineWidth: 2.2)
-                            .frame(width: point.index == points.indices.last ? 11 : 8,
-                                   height: point.index == points.indices.last ? 11 : 8)
-                    }
-                }
-
-                if let lastPoint {
-                    RuleMark(x: .value("Latest", lastPoint.date))
-                        .foregroundStyle(Color(hex: 0x94A3B8).opacity(0.65))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
-
-                    PointMark(
-                        x: .value("Latest", lastPoint.date),
-                        y: .value(metric.displayLabel, lastPoint.value)
-                    )
-                    .foregroundStyle(Color(hex: metric.colorHex))
-                    .symbolSize(130)
-                    .annotation(position: .top, alignment: .trailing, spacing: 8) {
-                        Text(formatValue(lastPoint.value))
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(hex: 0x111827))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 5)
-                                    .stroke(Color(hex: metric.colorHex), lineWidth: 1)
-                            )
-                    }
-                }
-            }
-            .chartXScale(domain: yDomain)
-            .chartYScale(domain: yValueDomain)
-            .chartXAxis {
-                AxisMarks(values: tickDates) { value in
-                    AxisGridLine()
-                        .foregroundStyle(Color(hex: 0xE2E8F0))
-                    AxisTick()
-                        .foregroundStyle(Color(hex: 0x94A3B8))
-                    AxisValueLabel {
-                        if let date = value.as(Date.self) {
-                            Text(SummaryJSONParser.dateFormatter.string(from: date))
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color(hex: 0x475569))
-                        }
-                    }
-                }
-            }
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisGridLine()
-                        .foregroundStyle(Color(hex: 0xE2E8F0))
-                    AxisTick()
-                        .foregroundStyle(Color(hex: 0x94A3B8))
-                    AxisValueLabel {
-                        if let y = value.as(Double.self) {
-                            Text(formatAxisValue(y))
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color(hex: 0x475569))
-                        }
-                    }
-                }
-            }
-            .chartXAxisLabel("Snapshot date", position: .bottom, alignment: .center)
-            .chartYAxisLabel(metric.displayLabel, position: .leading, alignment: .center)
-            .chartPlotStyle { plotArea in
-                plotArea
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color(hex: 0xE2E8F0), lineWidth: 1)
-                    )
-            }
-            .frame(height: 278)
-
-            HStack(spacing: 14) {
-                exportStat("Start", firstPoint.map { formatValue($0.value) } ?? "—")
-                exportStat("Latest", lastPoint.map { formatValue($0.value) } ?? "—")
-                exportStat("Change", changeText)
-                exportStat("Min / Max", "\(formatValue(minValue)) / \(formatValue(maxValue))")
-                exportStat("Avg", formatValue(averageValue))
-                Spacer()
-                Text("Source: snapshots/summaries · Generated \(exportDateString())")
-                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color(hex: 0x64748B))
             }
         }
-        .padding(24)
-        .frame(width: 848, height: 448)
-        .background(Color(hex: 0xF8FAFC))
-    }
-
-
-    private func exportStat(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label.uppercased())
-                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color(hex: 0x64748B))
-            Text(value)
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color(hex: 0x111827))
+        .chartXScale(domain: yDomain)
+        .chartYScale(domain: yValueDomain)
+        .chartXAxis {
+            AxisMarks(values: tickDates) { value in
+                AxisGridLine().foregroundStyle(Color(hex: 0xE2E8F0))
+                AxisTick().foregroundStyle(Color(hex: 0x94A3B8))
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(SummaryJSONParser.dateFormatter.string(from: date))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color(hex: 0x475569))
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) { value in
+                AxisGridLine().foregroundStyle(Color(hex: 0xE2E8F0))
+                AxisTick().foregroundStyle(Color(hex: 0x94A3B8))
+                AxisValueLabel {
+                    if let y = value.as(Double.self) {
+                        Text(formatAxisValue(y))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color(hex: 0x475569))
+                    }
+                }
+            }
+        }
+        .chartXAxisLabel("Snapshot date", position: .bottom, alignment: .center)
+        .chartYAxisLabel(metric.displayLabel, position: .leading, alignment: .center)
+        .chartPlotStyle { plotArea in
+            plotArea.background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: 0xE2E8F0), lineWidth: 1))
         }
     }
 
     private func formatValue(_ value: Double) -> String {
-        if isPercentMetric {
-            return "\(String(format: "%.1f", value))%"
-        }
-        return "\(Int(value.rounded()))"
+        isPercentMetric ? "\(String(format: "%.1f", value))%" : "\(Int(value.rounded()))"
     }
 
     private func formatAxisValue(_ value: Double) -> String {
-        if isPercentMetric {
-            return "\(Int(value.rounded()))%"
-        }
-        return "\(Int(value.rounded()))"
+        isPercentMetric ? "\(Int(value.rounded()))%" : "\(Int(value.rounded()))"
     }
 
     private func niceCeiling(_ value: Double) -> Double {
         guard value > 0 else { return 10 }
         let magnitude = pow(10, floor(log10(value)))
         let normalized = value / magnitude
-        let nice: Double
-        if normalized <= 2 {
-            nice = 2
-        } else if normalized <= 5 {
-            nice = 5
-        } else {
-            nice = 10
-        }
-        return nice * magnitude
-    }
-
-    private func exportDateString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter.string(from: Date())
+        if normalized <= 2 { return 2 * magnitude }
+        if normalized <= 5 { return 5 * magnitude }
+        return 10 * magnitude
     }
 }

@@ -61,7 +61,11 @@ enum CachedDataFallback {
     ) async throws -> (Data, SourceMode) {
         do {
             let data = try await liveFetch()
-            try? saveSnapshot(data)
+            do {
+                try saveSnapshot(data)
+            } catch {
+                AppLogger.engine.warning("Cache write failed: \(error.localizedDescription)")
+            }
             return (data, .live)
         } catch {
             guard useCachedData else { throw error }

@@ -8,6 +8,11 @@ any changes.
 > **Note:** `AGENTS.md` is a mirror of this file for OpenAI-compatible agents. Keep them
 > in sync when making changes here.
 
+> **Note:** `BACKLOG.md` at the repo root captures valid review findings that are out of
+> scope for the current change. Check it before starting work — you may be picking up an
+> item already triaged. When you fix a backlog item, remove it from `BACKLOG.md` in the
+> same commit. When you defer a new finding, add it there rather than leaving a TODO.
+
 ---
 
 ## What This Project Is
@@ -314,6 +319,21 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `SystemActions` | `NSWorkspace` file open/reveal, strictly bounded to allowed paths. |
 | `YAMLCodec` | Minimal YAML reader/writer for `config.yaml` fields the GUI exposes. |
 | `JamfCLIInstaller` | Auto-update check and installation via Homebrew. |
+| `SecurityScoreCalculator` | v3.5-parity weighted Security Score (FV 15 + SIP 15 + Firewall 15 + CrowdStrike 10 + mSCP 20 + XProtect 5 + CVE 15 + Secure Boot 5). Drops missing metrics from the denominator and renormalizes so tenants without specific agent stacks still get a comparable score. Weights configurable via ConfigView → Scoring tab (backed by `@AppStorage("securityScoreWeights")` and `ScoringConfig`). |
+| `RiskScoringService` | v3.5-parity 14-factor per-device risk scorer. Bands: Critical ≥20, High ≥15, Medium ≥10, Low >0, Clean = 0. Triggered factors carry remediation strings rendered in the DevicesView detail panel. |
+| `ComplianceBandingService` | Buckets per-device failure counts into Pass / Low (1–10) / Med-Low (11–30) / Medium (31–50) / High (>50) / No Data. Reuses `ComplianceBand` from Models.swift. |
+| `SecurityPostureService` | Reads `pro security report` snapshots into a single Snapshot the SecurityPostureView renders. |
+| `CompliancePostureService` | Same data source as SecurityPostureService but derives per-device control-gap counts (0–4) for the compliance band donut. Honest "proxy for true mSCP failure count — configure an EA for full banding" callout in the view. |
+| `PatchStatusService` | Reads `patch-status/` + `patch-device-failures/` snapshots; aggregates fleet compliance and groups failures by title for PatchView. |
+| `UpdateStatusService` | Reads `update-status/` snapshots (both summary-only and `--scan-failures` shapes). Provides plan-state donut data, error device list, failed plans list for UpdatesView. |
+| `PolicyHealthService` | Reads `policy-status/` + `profile-status/`; surfaces config findings grouped by severity and profile assignment failures for PolicyProfileView. |
+| `ExtensionAttributeService` | Reads `ea-results/` + `computer-extension-attributes/`; computes per-EA coverage (% of fleet populated) and top-10 value distributions. Returns `.empty` Snapshot for empty content, nil only when no input URLs given. |
+| `StaleDeviceService` | Buckets DeviceInventoryService records into Recent (0–30d) / Offline (31–90d) / Inactive (91–180d) / Dormant (180d+) for OutreachView. |
+| `ProtectDashboardService` | Reads `protect-overview/` + `protect-alerts/` + `protect-computers/` + `protect-insights/`. `isDetected` flag is true when at least one file decoded successfully (even to an empty array) — distinguishes "tenant doesn't run Protect" from "tenant runs Protect, just no current data". |
+| `MobileFleetService` | Reads `mobile-devices-list/` (light) + `mobile-device-inventory-details/` (rich) + `classic-ios-profiles/`. Surfaces iOS/iPadOS KPIs, OS distribution, compliance signals. |
+| `LegacyHistoryImporter` | One-shot import from v3.5's `fleet_health_metrics_history.json` into the workspace's summaries dir. Translates snake_case + yyyyMMdd → camelCase + yyyy-MM-dd; idempotent unless overwriteExisting=true. Triggered from SettingsView. |
+
+**Tab visibility model.** Every non-core sidebar tab is toggleable via SettingsView → Sidebar Visibility. Backed by `@AppStorage("hiddenTabs")` parsed/serialized through `TabVisibility`. Core tabs (`Tab.isCoreTab` — Overview, Devices, Sources, Settings, Onboarding) are filtered out at the toggle UI level and protected at the model level (toggling a core tab is a no-op). Sidebar groups with all-hidden contents auto-collapse so the layout never shows orphan headers. Visibility is a per-user UX preference, not workspace-bound.
 
 **Convention:** New jamf-cli command wrappers go through the `CLICommand` enum and `CLIExecutor` protocol (`Services/CLICommand.swift`), not bespoke `CLIBridge` methods. Existing helpers (`generate`, `collect`, `audit`, `deviceDetail`, …) stay as-is per `.claude/plans/ADR-W21-clicommand-enum.md` (Hybrid scope).
 
@@ -333,11 +353,35 @@ Named constants in `CLIBridge`. Reference: jamf-cli Error Handling & Exit Codes 
 
 The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data.
 
-#### Key views (13 screens)
+#### Key views (27 screens plus utilities, 9 dashboards from v3.5-port wave)
 
-`Sidebar`, `Titlebar`, `OverviewView`, `FleetOverviewView`, `DevicesView`,
-`TrendsView`, `ReportsView`, `BackupsView`, `SchedulesView`, `RunsView`,
-`ConfigView`, `CustomizeView`, `SourcesView`, `AuditView`, `OnboardingView`, `SettingsView`
+Core: `Sidebar`, `Titlebar`, `OverviewView`, `FleetOverviewView`, `DevicesView`,
+`DeviceLookupView`, `TrendsView`, `ReportsView`, `BackupsView`, `SchedulesView`,
+`RunsView`, `ConfigView`, `CustomizeView`, `SourcesView`, `AuditView`,
+`OnboardingView`, `SettingsView`
+
+Posture group: `SecurityPostureView` (weighted score ring + per-control KPIs +
+P0/P1/P2 action items + OS donut), `CompliancePostureView` (compliance band
+donut + control-gap bars + per-OS breakdown), `OutreachView` (stale tier cards
++ devices table + clipboard mail-merge).
+
+Operations group: `PatchView` (titles table + per-title failure drawer),
+`UpdatesView` (plan state donut + failed-plans table + error-devices table),
+`PolicyProfileView` (two-tab segment: Policies findings + Profiles status),
+`ExtensionAttributesView` (coverage grid + value-distribution chart).
+
+Fleet group: `MobileFleetView` (iPad/iPhone breakdown + iOS version
+distribution + devices table), `ProtectView` (alerts/computers/insights or
+explicit "Protect not detected" empty state).
+
+Utilities: `AppToolbar`, `WhatsNewBanner`, `DashboardChartExport`,
+`GenerateSheet`, `SecureSecretField`, `WorkspaceView`, `HealthCheckView`.
+
+DevicesView gains a `.priorityAction` filter + per-device "Priority Risk"
+section in the detail panel — driven by `RiskScoringService`.
+
+TrendsView's metric picker auto-includes `.securityScore` once any summary
+file (legacy import or live run) populates that field.
 
 #### Security model
 
@@ -611,6 +655,10 @@ jamf-reports-community/
 ├── COMMUNITY_README.md         # End-user setup and usage guide
 ├── CLAUDE.md                   # This file
 ├── AGENTS.md                   # Mirror of CLAUDE.md for OpenAI-compatible agents
+├── BACKLOG.md                  # Deferred review findings — check before working, remove on fix
+├── LICENSE                     # MIT — canonical; mirrored to app/Sources/JamfReports/Resources/
+├── NOTICE.md                   # Trademark/affiliation notice — canonical; mirrored to Resources
+├── THIRD_PARTY_NOTICES.md      # Third-party attribution — canonical; mirrored to Resources
 ├── PROJECT_CONTEXT.md          # Session context, known issues, enhancement backlog
 ├── requirements.txt            # xlsxwriter, pandas, pyyaml, matplotlib
 ├── requirements-dev.txt        # pytest and dev tools

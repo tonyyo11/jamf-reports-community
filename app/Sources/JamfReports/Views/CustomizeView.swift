@@ -36,7 +36,7 @@ struct CustomizeView: View {
                             .foregroundStyle(.red)
                             .font(.system(size: 13))
                         Text("Save failed: \(err)")
-                            .font(.system(size: 12))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Text.primary)
                         Spacer()
                         Button {
@@ -157,7 +157,7 @@ struct CustomizeView: View {
                     .padding(.bottom, 10)
                 
                 Text("Select up to 4 metrics for the dashboard.")
-                    .font(.system(size: 10.5))
+                    .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary)
                     .padding(.bottom, 12)
 
@@ -178,7 +178,7 @@ struct CustomizeView: View {
                     VStack(spacing: 0) {
                         HStack {
                             Text(metric.displayLabel)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.footnote.weight(.medium))
                                 .foregroundStyle(Theme.Text.primary)
                             Spacer()
                             PNPToggle(isOn: isOn)
@@ -215,7 +215,7 @@ struct CustomizeView: View {
                                     .font(.system(size: 11))
                                     .foregroundStyle(Theme.Colors.gold)
                                 Text(item.name)
-                                    .font(.system(size: 11.5))
+                                    .font(.caption)
                                     .foregroundStyle(Theme.Text.secondary)
                                 Spacer()
                                 Mono(text: item.req, size: 9.5, color: Theme.Text.tertiary)
@@ -230,7 +230,7 @@ struct CustomizeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
                 Text("Estimated workbook · ~1.1 MB · \(enabledSheets.count) sheets · matplotlib charts embedded")
-                    .font(.system(size: 11))
+                    .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary)
             }
         }
@@ -286,10 +286,10 @@ struct CustomizeView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Text.primary)
                     Text(detail)
-                        .font(.system(size: 10.5))
+                        .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary)
                 }
                 Spacer()
@@ -382,7 +382,7 @@ private struct SheetToggleCell: View {
                 }
 
                 Text(item.name)
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(item.on ? Theme.Text.primary : Theme.Text.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .lineLimit(1)

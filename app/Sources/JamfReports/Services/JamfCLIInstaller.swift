@@ -519,6 +519,8 @@ final class JamfCLIInstaller {
                 )
             }
 
+            try validateAsset(host: asset.browserDownloadURL.host, name: asset.name)
+
             let tempDir = try makeTemporaryDirectory()
             defer { try? FileManager.default.removeItem(at: tempDir) }
 
@@ -589,6 +591,20 @@ final class JamfCLIInstaller {
                 userInfo: [NSLocalizedDescriptionKey:
                     "Release \(release.tagName) does not publish a checksums file;"
                     + " refusing to install unverified asset."]
+            )
+        }
+
+        // The checksums asset name does not match the binary-asset regex
+        // (it's `*.txt`, not `*.{tar.gz,tgz,zip}`), so we re-use the trusted
+        // host allow-list directly rather than `validateAsset(...)`.
+        let checksumsHost = checksumsAsset.browserDownloadURL.host?.lowercased()
+        guard let checksumsHost, trustedAssetHosts.contains(checksumsHost) else {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 6,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Checksums asset host is not in the trusted allow-list;"
+                    + " refusing to download from \(checksumsAsset.browserDownloadURL.host ?? "<nil>")."]
             )
         }
 
@@ -759,6 +775,7 @@ final class JamfCLIInstaller {
         assetName: String,
         in directory: URL
     ) async throws -> URL {
+        try await preflightArchive(at: downloaded.path, assetName: assetName)
         let lower = assetName.lowercased()
         if lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") {
             let extract = await runProcess(
@@ -794,6 +811,74 @@ final class JamfCLIInstaller {
             return downloaded
         }
         return try findExtractedJamfCLI(in: directory)
+    }
+
+    /// Lists the entries of an archive without extracting them, and rejects any
+    /// entry whose path resolves outside the extract directory. Catches "zip
+    /// slip" / "tar slip" attacks (entries like `../../../etc/passwd` or
+    /// absolute paths) that SHA-256 verification alone cannot detect because a
+    /// malicious-but-checksum-matching archive would still pass integrity.
+    /// Plain-binary downloads (no archive suffix) are passed through.
+    static func preflightArchive(at path: String, assetName: String) async throws {
+        let lower = assetName.lowercased()
+        let executable: URL
+        let arguments: [String]
+        if lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") {
+            executable = URL(fileURLWithPath: "/usr/bin/tar")
+            arguments = ["-tzf", path]
+        } else if lower.hasSuffix(".zip") {
+            executable = URL(fileURLWithPath: "/usr/bin/unzip")
+            arguments = ["-Z", "-1", path]
+        } else {
+            return
+        }
+
+        let listing = await runProcess(executable: executable, arguments: arguments)
+        guard listing.exitCode == 0 else {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 7,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Archive listing failed for \(assetName): \(summarize(listing))"]
+            )
+        }
+
+        for raw in listing.stdout.split(whereSeparator: \.isNewline) {
+            let entry = String(raw).trimmingCharacters(in: .whitespaces)
+            if entry.isEmpty { continue }
+            try Self.rejectUnsafeArchiveEntry(entry)
+        }
+    }
+
+    /// Pure helper: rejects an archive entry name that would escape the
+    /// extract directory. Split out so it can be unit-tested without
+    /// constructing real archives.
+    static func rejectUnsafeArchiveEntry(_ entry: String) throws {
+        if entry.hasPrefix("/") {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 8,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Archive entry rejected (absolute path): \(entry)"]
+            )
+        }
+        // Catches `..`, `../foo`, `foo/../bar`, and tar verbose `name -> ../target` symlinks.
+        if entry.contains("..") {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 8,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Archive entry rejected (traversal): \(entry)"]
+            )
+        }
+        if entry.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
+            throw NSError(
+                domain: "JamfCLIInstaller",
+                code: 9,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Archive entry rejected (control character in name)"]
+            )
+        }
     }
 
     private static func findExtractedJamfCLI(in directory: URL) throws -> URL {

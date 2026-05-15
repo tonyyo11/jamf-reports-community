@@ -1,5 +1,7 @@
 import SwiftUI
+import AppKit
 import Charts
+import UniformTypeIdentifiers
 
 struct DevicesView: View {
     @Environment(WorkspaceStore.self) private var workspace
@@ -14,6 +16,8 @@ struct DevicesView: View {
     @State private var deviceDetailState: DeviceDetailState = .idle
     @State private var deviceDetailRequestKey = ""
     @State private var sortOrder = [KeyPathComparator(\DeviceInventoryRecord.displayName)]
+    @State private var isExportingCSV = false
+    @State private var exportError: String?
     // Tracks the Devices page width so the inventory table can hide low-priority
     // columns under 1200pt — avoids truncation on 13" displays.
     @State private var pageWidth: CGFloat = 1400
@@ -31,24 +35,26 @@ struct DevicesView: View {
     }
 
     private enum DeviceFilter: String, CaseIterable, Identifiable {
-        case all, stale, patch, security
+        case all, stale, patch, security, priorityAction
         var id: String { rawValue }
 
         var label: String {
             switch self {
-            case .all:      "All"
-            case .stale:    "Stale"
-            case .patch:    "Patch"
-            case .security: "Security"
+            case .all:            "All"
+            case .stale:          "Stale"
+            case .patch:          "Patch"
+            case .security:       "Security"
+            case .priorityAction: "Priority"
             }
         }
 
         var icon: String {
             switch self {
-            case .all:      "list.bullet"
-            case .stale:    "clock.badge.exclamationmark"
-            case .patch:    "square.and.arrow.down.badge.clock"
-            case .security: "lock.shield"
+            case .all:            "list.bullet"
+            case .stale:          "clock.badge.exclamationmark"
+            case .patch:          "square.and.arrow.down.badge.clock"
+            case .security:       "lock.shield"
+            case .priorityAction: "exclamationmark.triangle.fill"
             }
         }
     }
@@ -74,8 +80,22 @@ struct DevicesView: View {
                 return device.patchFailureCount > 0
             case .security:
                 return device.securityGapCount > 0 || device.failedRules > 0
+            case .priorityAction:
+                // Devices that score in the v3.5 Critical or High band
+                // via the configurable RiskScoringService. Note: the inline
+                // `device.risk` enum is a legacy heuristic; this is the
+                // authoritative scorer used by the new Priority Action List.
+                let risk = Self.priorityRisk(for: device)
+                return risk.level >= .high
             }
         }.sorted(using: sortOrder)
+    }
+
+    /// Authoritative per-device risk via `RiskScoringService`. Memoizing
+    /// would help if the filter cost showed up in profiling, but the live
+    /// table re-renders on selection change rather than per filter pass.
+    static func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
+        RiskScoringService.score(input: .from(record: device))
     }
 
     private var selectedDevice: DeviceInventoryRecord? {
@@ -98,6 +118,13 @@ struct DevicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                if let err = exportError {
+                    Text(err)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.danger)
+                        .padding(.horizontal, 4)
+                        .onTapGesture { exportError = nil }
+                }
                 if !workspace.demoMode && activeSnapshot.devices.isEmpty && !isLoading {
                     emptyState
                 } else {
@@ -158,6 +185,17 @@ struct DevicesView: View {
                         Task { await reload() }
                     }
                     .help("Reload device inventory from the cached jamf-cli snapshots.")
+                    PNPButton(
+                        title: isExportingCSV ? "Exporting…" : "Export CSV",
+                        icon: "square.and.arrow.up",
+                        style: .neutral
+                    ) {
+                        Task { await exportFilteredCSV() }
+                    }
+                    .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
+                    .help(workspace.demoMode
+                          ? "Available in live mode only"
+                          : "Export the currently filtered device list to a CSV file")
                 }
             )
         }
@@ -190,7 +228,7 @@ struct DevicesView: View {
                     .foregroundStyle(Theme.Colors.fgMuted)
                 TextField("Search devices", text: $query)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.callout)
                     .foregroundStyle(Theme.Colors.fg)
                     .focused($isSearchFocused)
                     .accessibilityLabel("Search devices")
@@ -276,7 +314,7 @@ struct DevicesView: View {
                     TableColumn("Device", value: \.displayName) { device in
                         if isCompact {
                             Text(device.displayName)
-                                .font(.system(size: 12.5, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .lineLimit(1)
                                 .textSelection(.enabled)
@@ -284,11 +322,11 @@ struct DevicesView: View {
                         } else {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(device.displayName)
-                                    .font(.system(size: 12.5, weight: .semibold))
+                                    .font(.footnote.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
                                     .textSelection(.enabled)
                                 Text(device.model.isEmpty ? device.source : device.model)
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .lineLimit(1)
                             }
@@ -304,7 +342,7 @@ struct DevicesView: View {
                     TableColumn("User", value: \.user) { device in
                         if !isCompact {
                             Text(device.user.isEmpty ? "Unassigned" : device.user)
-                                .font(.system(size: 12))
+                                .font(.footnote)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .lineLimit(1)
                         }
@@ -381,6 +419,8 @@ struct DevicesView: View {
 
                     securitySection(for: device)
 
+                    priorityRiskSection(for: device)
+
                     VStack(alignment: .leading, spacing: 8) {
                         SectionHeader(title: "Patch")
                         if device.patchFailures.isEmpty {
@@ -390,7 +430,7 @@ struct DevicesView: View {
                             ForEach(device.patchFailures) { failure in
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(failure.title)
-                                        .font(.system(size: 12.5, weight: .semibold))
+                                        .font(.footnote.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                     HStack(spacing: 6) {
                                         Pill(text: failure.status, tone: .warn)
@@ -425,7 +465,7 @@ struct DevicesView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     SectionHeader(title: "No Device Selected")
                     Text("No inventory rows match the current filters.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -451,19 +491,19 @@ struct DevicesView: View {
 
             if workspace.demoMode {
                 Text("Available in live mode only.")
-                    .font(.system(size: 12.5))
+                    .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
             } else {
                 switch deviceDetailState {
                 case .idle:
                     Text("Select a device to load jamf-cli detail.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 case .loading:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading device detail...")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     }
                 case .loaded:
@@ -472,7 +512,7 @@ struct DevicesView: View {
                     }
                 case .unavailable(let message):
                     Text(message)
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.warn)
                 }
             }
@@ -487,12 +527,12 @@ struct DevicesView: View {
                     ForEach(section.items.prefix(8)) { item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(item.label)
-                                .font(.system(size: 11.5))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .frame(width: 112, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.value)
-                                    .font(.system(size: 12.2))
+                                    .font(.footnote)
                                     .foregroundStyle(Theme.Colors.fg2)
                                     .lineLimit(3)
                                 if !item.note.isEmpty {
@@ -514,7 +554,7 @@ struct DevicesView: View {
             }
             ForEach(detail.warnings, id: \.self) { warning in
                 Text(warning)
-                    .font(.system(size: 11.5))
+                    .font(.caption)
                     .foregroundStyle(Theme.Colors.warn)
             }
         }
@@ -531,7 +571,7 @@ struct DevicesView: View {
 
                 if activeSnapshot.osDistribution.isEmpty {
                     Text("No OS data available.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
                     Chart(activeSnapshot.osDistribution.prefix(6)) { item in
@@ -598,7 +638,7 @@ struct DevicesView: View {
 
                 if activeSnapshot.sourceFiles.isEmpty {
                     Text("No current inventory, compliance, or patch snapshots were found.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 } else {
                     ForEach(activeSnapshot.sourceFiles, id: \.self) { file in
@@ -616,7 +656,7 @@ struct DevicesView: View {
                     Divider().background(Theme.Colors.hairline)
                     ForEach(activeSnapshot.warnings, id: \.self) { warning in
                         Text(warning)
-                            .font(.system(size: 11.5))
+                            .font(.caption)
                             .foregroundStyle(Theme.Colors.warn)
                     }
                 }
@@ -626,16 +666,11 @@ struct DevicesView: View {
 
     private var emptyState: some View {
         Card(padding: 32) {
-            VStack(spacing: 12) {
-                Image(systemName: "desktopcomputer.and.arrow.down")
-                    .font(.system(size: 40))
-                    .foregroundStyle(Theme.Colors.hairlineStrong)
-                Text("No device inventory yet")
-                    .font(Theme.Fonts.serif(18, weight: .bold))
-                Text("run Generate Report to populate")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-            }
+            EmptyStateView(
+                systemImage: "desktopcomputer.and.arrow.down",
+                title: "No device inventory yet",
+                message: "run Generate Report to populate"
+            )
             .frame(maxWidth: .infinity)
         }
     }
@@ -652,7 +687,7 @@ struct DevicesView: View {
                             .foregroundStyle(Theme.Colors.fgMuted)
                             .frame(width: 92, alignment: .leading)
                         Text(row.1)
-                            .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .system(size: 12.5))
+                            .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .footnote)
                             .foregroundStyle(Theme.Colors.fg2)
                             .lineLimit(2)
                         Spacer(minLength: 0)
@@ -681,12 +716,68 @@ struct DevicesView: View {
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .frame(width: 92, alignment: .leading)
                     Text(device.failedRules == 0 ? "0" : "\(device.failedRules)")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(device.failedRules == 0 ? Theme.Colors.fg2 : Theme.Colors.warn)
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 4)
             }
+        }
+    }
+
+    /// Computed Priority Action List section — only visible when the
+    /// `RiskScoringService` has triggered factors. Clean devices skip this
+    /// block entirely so the detail panel stays uncluttered for healthy
+    /// inventory. Lifts v3.5's "Priority Action List" remediation hints
+    /// directly into the per-device drill.
+    @ViewBuilder
+    private func priorityRiskSection(for device: DeviceInventoryRecord) -> some View {
+        let risk = Self.priorityRisk(for: device)
+        if !risk.triggered.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    SectionHeader(title: "Priority Risk")
+                    Spacer()
+                    Pill(
+                        text: "\(risk.level.displayLabel) · \(risk.score)",
+                        tone: priorityRiskTone(for: risk.level)
+                    )
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(risk.triggered, id: \.factor) { entry in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(entry.factor.displayLabel)
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(Theme.Colors.fg)
+                                if let detail = entry.detail {
+                                    Mono(text: detail)
+                                }
+                                Spacer()
+                                Pill(text: "+\(entry.points)", tone: .warn)
+                            }
+                            Text(entry.factor.remediation)
+                                .font(.caption)
+                                .foregroundStyle(Theme.Colors.fgMuted)
+                        }
+                        .padding(.vertical, 3)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(
+                            "\(entry.factor.displayLabel), \(entry.points) points. " +
+                            "Remediation: \(entry.factor.remediation)"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func priorityRiskTone(for level: DeviceRisk.Level) -> Pill.Tone {
+        switch level {
+        case .clean, .low: return .muted
+        case .medium:      return .gold
+        case .high:        return .warn
+        case .critical:    return .danger
         }
     }
 
@@ -736,7 +827,7 @@ struct DevicesView: View {
             Circle().fill(color).frame(width: 6, height: 6)
                 .accessibilityHidden(true)
             Text(label)
-                .font(.system(size: 11))
+                .font(.caption)
                 .foregroundStyle(Theme.Colors.fgMuted)
         }
     }
@@ -822,6 +913,40 @@ struct DevicesView: View {
         if !serial.isEmpty { return serial }
         let name = device.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? nil : name
+    }
+
+    @MainActor
+    private func exportFilteredCSV() async {
+        let panel = NSSavePanel()
+        let dateStr = ISO8601DateFormatter.string(
+            from: Date(), timeZone: .current,
+            formatOptions: [.withFullDate]
+        )
+        panel.nameFieldStringValue = "devices-\(workspace.profile)-\(dateStr).csv"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard SystemActions.userExportTargetIsAllowed(url) else {
+            exportError = "Choose a location in Documents, Downloads, or Desktop."
+            return
+        }
+        isExportingCSV = true
+        defer { isExportingCSV = false }
+        let rows = filteredDevices
+        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
+        let body = rows.map { d in
+            [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
+             d.fileVault, d.lastContact, d.risk.rawValue]
+                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        do {
+            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+            // Path is user-confirmed via NSSavePanel — safe to reveal directly.
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            exportError = error.localizedDescription
+        }
     }
 }
 

@@ -15,7 +15,7 @@ enum Theme {
         static let goldBright  = Color(hex: 0xE8B614)
         static let goldDim     = Color(hex: 0x8E6B06)
         static let teal        = Color(hex: 0x2A6B6B)
-        static let tealBright  = Color(hex: 0x3A8A8A)
+        static let tealBright  = Color(hex: 0x4FAAAA)
 
         // Tahoe dark surfaces
         static let winBG       = Color(hex: 0x1D1D1F)
@@ -28,7 +28,7 @@ enum Theme {
         static let fg          = Color(hex: 0xF2F2F7)
         static let fg2         = Color(hex: 0xD8D8DD)
         static let fgMuted     = Color(hex: 0x8E8E93)
-        static let fgDisabled  = Color(hex: 0x5A5A60)
+        static let fgDisabled  = Color(hex: 0x8A8A90)
 
         // Hairlines
         static let hairline       = Color.white.opacity(0.07)
@@ -36,7 +36,9 @@ enum Theme {
 
         // Status
         static let danger      = Color(hex: 0xFF453A)
+        static let dangerSoft  = Color(hex: 0xFFA39A)
         static let warn        = Color(hex: 0xFF9F0A)
+        static let warnSoft    = Color(hex: 0xFFCE7A)
         static let ok          = Color(hex: 0x30D158)
         static let info        = Color(hex: 0x0A84FF)
         static let purple      = Color(hex: 0xBF5AF2)

@@ -275,16 +275,14 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertEqual(circleCount, 5)
     }
 
-    // MARK: - Helper: htmlEscape
+    // MARK: - Helper: HtmlSectionFormatters.escapeHTML
 
     func testHtmlEscapeAmpersand() {
-        let report = makeReport()
-        XCTAssertEqual(report.htmlEscape("A&B"), "A&amp;B")
+        XCTAssertEqual(HtmlSectionFormatters.escapeHTML("A&B"), "A&amp;B")
     }
 
     func testHtmlEscapeTags() {
-        let report = makeReport()
-        XCTAssertEqual(report.htmlEscape("<b>bold</b>"), "&lt;b&gt;bold&lt;/b&gt;")
+        XCTAssertEqual(HtmlSectionFormatters.escapeHTML("<b>bold</b>"), "&lt;b&gt;bold&lt;/b&gt;")
     }
 
     // MARK: - Helper: asInt
@@ -661,8 +659,8 @@ final class HtmlReportTests: XCTestCase {
         // We use the closing </main> tag's predecessor as the structural anchor:
         // the appendix block is rendered inside <main> immediately before </main>.
         let mainOpen = html.range(of: "<main>")
-        // Anchor on the rendered <div class="appendix-section"> (not the CSS class
-        // definition that also contains the substring "appendix-section").
+        // Anchor on the rendered <div class=\"appendix-section\"> (not the CSS class
+        // definition that also contains the substring \"appendix-section\").
         let appendixRange = html.range(of: "<div class=\"appendix-section\">")
         let mainClose = html.range(of: "</main>")
         guard let mainOpen, let appendixRange, let mainClose else {
@@ -758,7 +756,7 @@ final class HtmlReportTests: XCTestCase {
             patchStatus: [],
             accentColor: "#2D5EA2"
         )
-        // JSON encoding renders U+2028 as   — the raw codepoint must not appear.
+        // JSON encoding renders U+2028 as   — the raw codepoint must not appear.
         XCTAssertFalse(
             html.contains("\u{2028}"),
             "U+2028 LINE SEPARATOR must be JSON-escaped, not passed raw into JS"

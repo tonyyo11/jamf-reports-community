@@ -90,4 +90,140 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - historicalDir containment (charts.historical_csv_dir)
+
+    func test_historicalDir_absolutePath_rejectedByDefault() throws {
+        let outside = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".jrc-test-hist-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
+
+        let body = """
+        charts:
+          historical_csv_dir: \(outside.path)
+        """
+        _ = try makeWorkspace(profile: "histabsdefault", configBody: body)
+
+        XCTAssertThrowsError(try WorkspacePaths.historicalDir(for: "histabsdefault")) { error in
+            guard case WorkspacePaths.PathError.disallowedAbsolutePath = error else {
+                return XCTFail("expected disallowedAbsolutePath, got \(error)")
+            }
+        }
+    }
+
+    func test_historicalDir_absolutePath_acceptedWithOptIn() throws {
+        let outside = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".jrc-test-hist-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
+
+        let body = """
+        charts:
+          historical_csv_dir: \(outside.path)
+        output:
+          allow_absolute_paths: true
+        """
+        _ = try makeWorkspace(profile: "histabsoptin", configBody: body)
+
+        let resolved = try WorkspacePaths.historicalDir(for: "histabsoptin")
+        XCTAssertEqual(
+            resolved.standardizedFileURL.path,
+            outside.standardizedFileURL.path
+        )
+    }
+
+    func test_historicalDir_sensitivePath_rejectedEvenWithOptIn() throws {
+        let body = """
+        charts:
+          historical_csv_dir: /etc/snapshots
+        output:
+          allow_absolute_paths: true
+        """
+        _ = try makeWorkspace(profile: "histabssensitive", configBody: body)
+
+        XCTAssertThrowsError(try WorkspacePaths.historicalDir(for: "histabssensitive")) { error in
+            guard case WorkspacePaths.PathError.disallowedAbsolutePath = error else {
+                return XCTFail("expected disallowedAbsolutePath, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - runHistoryDir (automation/logs — fixed convention, no config)
+
+    func test_runHistoryDir_validProfile_returnsExpectedPath() throws {
+        _ = try makeWorkspace(profile: "runhisttest", configBody: "")
+
+        let result = try WorkspacePaths.runHistoryDir(for: "runhisttest")
+        let root = fileManager.temporaryDirectory  // approximate; check suffix instead
+        _ = root  // unused — verify by suffix
+        XCTAssertTrue(
+            result.path.hasSuffix("runhisttest/automation/logs"),
+            "Expected path ending in runhisttest/automation/logs, got \(result.path)"
+        )
+    }
+
+    func test_runHistoryDir_invalidProfile_throws() {
+        XCTAssertThrowsError(try WorkspacePaths.runHistoryDir(for: "../escape")) { error in
+            guard case WorkspacePaths.PathError.invalidProfile = error else {
+                return XCTFail("expected invalidProfile, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - archiveDir containment (output.archive_dir)
+
+    func test_archiveDir_absolutePath_rejectedByDefault() throws {
+        let outside = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".jrc-test-archive-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
+
+        let body = """
+        output:
+          archive_dir: \(outside.path)
+        """
+        _ = try makeWorkspace(profile: "archiveabsdefault", configBody: body)
+
+        XCTAssertThrowsError(try WorkspacePaths.archiveDir(for: "archiveabsdefault")) { error in
+            guard case WorkspacePaths.PathError.disallowedAbsolutePath = error else {
+                return XCTFail("expected disallowedAbsolutePath, got \(error)")
+            }
+        }
+    }
+
+    func test_archiveDir_absolutePath_acceptedWithOptIn() throws {
+        let outside = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".jrc-test-archive-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
+
+        let body = """
+        output:
+          archive_dir: \(outside.path)
+          allow_absolute_paths: true
+        """
+        _ = try makeWorkspace(profile: "archiveabsoptin", configBody: body)
+
+        let resolved = try WorkspacePaths.archiveDir(for: "archiveabsoptin")
+        XCTAssertEqual(
+            resolved.standardizedFileURL.path,
+            outside.standardizedFileURL.path
+        )
+    }
+
+    func test_archiveDir_sensitivePath_rejectedEvenWithOptIn() throws {
+        let body = """
+        output:
+          archive_dir: /etc/archive
+          allow_absolute_paths: true
+        """
+        _ = try makeWorkspace(profile: "archiveabssensitive", configBody: body)
+
+        XCTAssertThrowsError(try WorkspacePaths.archiveDir(for: "archiveabssensitive")) { error in
+            guard case WorkspacePaths.PathError.disallowedAbsolutePath = error else {
+                return XCTFail("expected disallowedAbsolutePath, got \(error)")
+            }
+        }
+    }
 }

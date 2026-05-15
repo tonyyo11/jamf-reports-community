@@ -22,8 +22,7 @@ enum RunHistoryService {
 
     /// All run summaries for `profile`, newest first. Returns [] for invalid profiles.
     static func list(profile: String) -> [RunSummary] {
-        guard ProfileService.isValid(profile) else { return [] }
-        let logsDir = logDirectory(for: profile)
+        guard let logsDir = try? WorkspacePaths.runHistoryDir(for: profile) else { return [] }
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: logsDir,
             includingPropertiesForKeys: [.contentModificationDateKey],
@@ -103,11 +102,6 @@ enum RunHistoryService {
     }
 
     // MARK: - Private
-
-    private static func logDirectory(for profile: String) -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Jamf-Reports/\(profile)/automation/logs")
-    }
 
     /// Validate `url` resolves inside `~/Jamf-Reports/<valid-profile>/automation/logs/`.
     private static func isInsideLogsDir(_ url: URL) -> Bool {

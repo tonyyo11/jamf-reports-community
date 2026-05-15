@@ -46,12 +46,15 @@ final class SummaryJSONEmitTests: XCTestCase {
         let decoded = try JSONDecoder().decode(DailySummary.self, from: data)
         XCTAssertEqual(decoded.date, original.date)
         XCTAssertEqual(decoded.totalDevices, original.totalDevices)
-        XCTAssertEqual(decoded.fileVaultPct, original.fileVaultPct, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(decoded.fileVaultPct), try XCTUnwrap(original.fileVaultPct),
+                       accuracy: 0.01)
         XCTAssertEqual(decoded.compliancePct, original.compliancePct)
         XCTAssertEqual(decoded.staleCount, original.staleCount)
-        XCTAssertEqual(decoded.osCurrentPct, original.osCurrentPct, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(decoded.osCurrentPct), try XCTUnwrap(original.osCurrentPct),
+                       accuracy: 0.01)
         XCTAssertEqual(decoded.crowdstrikePct, original.crowdstrikePct)
-        XCTAssertEqual(decoded.patchPct, original.patchPct, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(decoded.patchPct), try XCTUnwrap(original.patchPct),
+                       accuracy: 0.01)
         XCTAssertEqual(decoded.source, original.source)
     }
 
@@ -59,21 +62,23 @@ final class SummaryJSONEmitTests: XCTestCase {
         let summary = DailySummary(
             date: "2024-06-15",
             totalDevices: 100,
-            fileVaultPct: 90.0,
+            fileVaultPct: nil,
             compliancePct: nil,
             staleCount: 5,
-            osCurrentPct: 60.0,
+            osCurrentPct: nil,
             crowdstrikePct: nil,
-            patchPct: 75.0,
+            patchPct: nil,
             source: "jamf-cli",
             provenance: nil
         )
         let data = try JSONEncoder().encode(summary)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertNil(json?["fileVaultPct"], "fileVaultPct must be absent when nil")
         XCTAssertNil(json?["compliancePct"], "compliancePct must be absent when nil")
+        XCTAssertNil(json?["osCurrentPct"], "osCurrentPct must be absent when nil")
         XCTAssertNil(json?["crowdstrikePct"], "crowdstrikePct must be absent when nil")
+        XCTAssertNil(json?["patchPct"], "patchPct must be absent when nil")
         XCTAssertNil(json?["provenance"], "provenance must be absent when nil")
-        XCTAssertNotNil(json?["patchPct"])
     }
 
     func testSummaryJSONContainsProvenanceWhenSupplied() throws {

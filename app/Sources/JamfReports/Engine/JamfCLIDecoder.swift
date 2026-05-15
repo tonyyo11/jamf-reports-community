@@ -67,12 +67,28 @@ struct SecurityOSVersion: Decodable, Sendable {
     }
 }
 
-/// `section == "device"` row from the security report.
+/// `section == "device"` row from the security report. v1.7+ flattens
+/// per-device control fields onto the row; v1.6 nested them under `data`.
+/// All new fields are optional and decode-if-present for cross-version
+/// compatibility — older fixtures and tenants that only emit `data: {}`
+/// continue to decode cleanly.
 struct SecurityDevice: Decodable, Sendable {
     let section: String
     let name: String?
     let serial: String?
     let data: [String: AnyCodable]?
+    let osVersion: String?
+    let fileVault: String?
+    let sip: String?
+    let firewall: Bool?
+    let gatekeeper: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case section, name, serial, data
+        case osVersion = "os_version"
+        case fileVault = "filevault"
+        case sip, firewall, gatekeeper
+    }
 }
 
 // MARK: - Policy status
@@ -121,7 +137,7 @@ struct PolicyFinding: Decodable, Sendable {
 // MARK: - Patch status
 // `jamf-cli pro report patch-status --output json`
 
-struct PatchStatusRow: Decodable, Sendable {
+struct PatchStatusRow: Decodable, Sendable, Identifiable, Equatable {
     let title: String
     let id: String
     /// Devices on the latest version (v1.14+ shape).
@@ -144,7 +160,7 @@ struct PatchStatusRow: Decodable, Sendable {
 // MARK: - Patch scan failures
 // `jamf-cli pro report patch-status --scan-failures --output json`
 
-struct PatchFailureRow: Decodable, Sendable {
+struct PatchFailureRow: Decodable, Sendable, Identifiable, Equatable {
     let policy: String
     let policyId: String
     let device: String
@@ -155,6 +171,8 @@ struct PatchFailureRow: Decodable, Sendable {
     let serial: String
     let osVersion: String
     let username: String
+
+    var id: String { "\(deviceId)-\(policyId)-\(attempt)" }
 
     private enum CodingKeys: String, CodingKey {
         case policy

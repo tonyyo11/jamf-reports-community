@@ -1,5 +1,35 @@
 import Foundation
 
+// MARK: - SheetSkippable
+
+/// Marker protocol for errors that represent absent-but-expected data.
+///
+/// When a sheet writer throws a `SheetSkippable` error the loop treats it as
+/// a graceful skip — the sheet is omitted from the workbook but the run is
+/// **not** marked partial. This mirrors Python's `RuntimeError`-skip semantics:
+/// `CoreDashboardError.noCachedData` and `SchoolDashboardError.noCachedData`
+/// both conform so tenants without specific jamf-cli snapshots don't generate
+/// spurious partial-success reports.
+///
+/// Genuine unexpected failures (decode bugs, type mismatches, I/O errors on
+/// data that *is* present) should not conform — they land in `SheetFailure`
+/// and trigger the `[partial]` log line.
+protocol SheetSkippable: Error {}
+
+// MARK: - SheetFailure
+
+/// Records a sheet that failed with an unexpected error during a generate run.
+///
+/// The `error` string follows the Python convention `"<ErrorType>: <message>"`
+/// so downstream consumers (log parsers, run-summary readers) can handle both
+/// engines uniformly.
+struct SheetFailure: Sendable {
+    /// The sheet name as it appears in `sheetPlan`.
+    let sheet: String
+    /// Serialized error: `"\(type(of: error)): \(error)"`.
+    let error: String
+}
+
 // MARK: - SheetRegistry
 
 /// Maps `SheetID` values to the write closures exposed by `CoreDashboard.sheetPlan`.
@@ -55,15 +85,21 @@ struct SheetRegistry: @unchecked Sendable {
     ///
     /// For each `SheetID` in `template.includedSheets`:
     /// - If the registry contains a matching write action, it is called.
-    /// - If the action throws (missing or malformed data), the sheet is silently
-    ///   skipped — same graceful behavior as `CoreDashboard.writeAll()`.
+    /// - If the action throws a `SheetSkippable` error (e.g. `noCachedData`),
+    ///   the sheet is silently skipped — expected-absent data is not a failure.
+    /// - If the action throws any other error, the sheet is recorded in `failures`
+    ///   and a `[fail]` line is printed — unexpected errors surface as partial-success.
     /// - If the `SheetID.rawValue` has no entry in the registry, a warning is
     ///   printed and the ID is added to the returned `unimplemented` list.
     ///
-    /// Returns the names of all sheets that were successfully written.
+    /// Returns the names of all sheets successfully written, any that failed
+    /// unexpectedly, and any `SheetID`s with no registered writer.
     @discardableResult
-    func writeSelected(template: any ReportTemplate) -> (written: [String], unimplemented: [SheetID]) {
+    func writeSelected(
+        template: any ReportTemplate
+    ) -> (written: [String], failures: [SheetFailure], unimplemented: [SheetID]) {
         var written: [String] = []
+        var failures: [SheetFailure] = []
         var unimplemented: [SheetID] = []
         for sheetID in template.includedSheets {
             let name = sheetID.rawValue
@@ -76,10 +112,15 @@ struct SheetRegistry: @unchecked Sendable {
             do {
                 try action()
                 written.append(name)
+            } catch let skippable as SheetSkippable {
+                // Data absent or expected-missing — omit sheet, not a failure.
+                print("  [skip] \(name): \(skippable)")
             } catch {
-                // Data absent or malformed — skip sheet gracefully, matching CoreDashboard behavior.
+                let label = "\(type(of: error)): \(error)"
+                failures.append(SheetFailure(sheet: name, error: label))
+                print("  [fail] \(name): unexpected error — \(label)")
             }
         }
-        return (written, unimplemented)
+        return (written, failures, unimplemented)
     }
 }

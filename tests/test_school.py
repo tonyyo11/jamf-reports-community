@@ -197,10 +197,8 @@ def test_school_dashboard_device_inventory_has_rows(jrc, fixtures_root, tmp_path
 
 def test_school_dashboard_os_versions_counts(jrc, fixtures_root, tmp_path) -> None:
     """OS Versions sheet should sum to the total device count."""
-    import xlsxwriter
     from collections import Counter
 
-    config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
     csv_path = fixtures_root / "csv" / SCHOOL_CSV
     df = jrc._school_csv_load(str(csv_path))
 

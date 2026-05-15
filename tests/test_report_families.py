@@ -13,11 +13,9 @@ Covers:
 from __future__ import annotations
 
 import hashlib
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -28,7 +26,6 @@ import pytest
 # ---------------------------------------------------------------------------
 
 import importlib.util
-import sys
 
 _SCRIPT = Path(__file__).parent.parent / "jamf-reports-community.py"
 
@@ -304,6 +301,35 @@ def test_archive_csv_snapshot_allows_different_content(tmp_path: Path) -> None:
     dest2, created2 = _jrc._archive_csv_snapshot(str(src2), str(hist))
     assert created2 is True
     assert dest2 != dest1
+
+
+def test_archive_csv_snapshot_follows_symlink_to_real_file(tmp_path: Path) -> None:
+    # Verify .resolve() is called: a symlink pointing to a real CSV is archived correctly.
+    real = tmp_path / "real.csv"
+    real.write_text("col1,col2\nval1,val2\n")
+    link = tmp_path / "link.csv"
+    link.symlink_to(real)
+    hist = tmp_path / "snapshots"
+    hist.mkdir()
+
+    dest, created = _jrc._archive_csv_snapshot(str(link), str(hist))
+    assert created is True
+    assert dest is not None
+    assert dest.exists()
+    assert dest.read_text() == real.read_text()
+
+
+def test_archive_csv_snapshot_returns_none_for_broken_symlink(tmp_path: Path) -> None:
+    # A symlink pointing to a non-existent target resolves to a path where is_file()
+    # returns False — the function must return (None, False) cleanly, not crash.
+    link = tmp_path / "broken_link.csv"
+    link.symlink_to(tmp_path / "does_not_exist.csv")
+    hist = tmp_path / "snapshots"
+    hist.mkdir()
+
+    dest, created = _jrc._archive_csv_snapshot(str(link), str(hist))
+    assert dest is None
+    assert created is False
 
 
 # ---------------------------------------------------------------------------

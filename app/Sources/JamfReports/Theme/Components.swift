@@ -175,14 +175,22 @@ struct GlassPane<Content: View>: View {
     var borderColor: Color = Theme.Colors.hairlineStrong
     @ViewBuilder var content: () -> Content
 
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     var body: some View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius, style: .continuous))
+            .background(
+                reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.regularMaterial),
+                in: RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius, style: .continuous)
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: 0.5)
+                    .strokeBorder(
+                        reduceTransparency ? Theme.Colors.hairlineStrong : borderColor,
+                        lineWidth: 0.5
+                    )
             )
     }
 }
@@ -195,6 +203,8 @@ struct Pill: View {
     var tone: Tone = .muted
     var icon: String? = nil
 
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
         HStack(spacing: 4) {
             if let icon { Image(systemName: icon).font(.system(size: 9, weight: .semibold)) }
@@ -206,25 +216,39 @@ struct Pill: View {
         .padding(.vertical, 2)
         .padding(.horizontal, 8)
         .background(bg, in: Capsule())
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var bg: Color {
+        let opacityScale = bgOpacityScale
+        let opacity = contrast == .increased ? opacityScale.increased : opacityScale.base
         switch tone {
-        case .muted:  Color.white.opacity(0.07)
-        case .gold:   Theme.Colors.gold.opacity(0.18)
-        case .teal:   Theme.Colors.teal.opacity(0.30)
-        case .warn:   Theme.Colors.warn.opacity(0.20)
-        case .danger: Theme.Colors.danger.opacity(0.20)
+        case .muted:  return Color.white.opacity(opacity)
+        case .gold:   return Theme.Colors.gold.opacity(opacity)
+        case .teal:   return Theme.Colors.teal.opacity(opacity)
+        case .warn:   return Theme.Colors.warn.opacity(opacity)
+        case .danger: return Theme.Colors.danger.opacity(opacity)
+        }
+    }
+
+    private var bgOpacityScale: (base: Double, increased: Double) {
+        switch tone {
+        case .muted:  (0.07, 0.12)
+        case .gold:   (0.18, 0.30)
+        case .teal:   (0.30, 0.46)
+        case .warn:   (0.20, 0.34)
+        case .danger: (0.20, 0.34)
         }
     }
 
     private var fg: Color {
         switch tone {
-        case .muted:  Theme.Colors.fgMuted
+        case .muted:  Theme.Colors.fg2
         case .gold:   Theme.Colors.goldBright
         case .teal:   Color(hex: 0x6DC0C0)
-        case .warn:   Color(hex: 0xFFB340)
-        case .danger: Color(hex: 0xFF8077)
+        case .warn:   Theme.Colors.warnSoft
+        case .danger: Theme.Colors.dangerSoft
         }
     }
 }
@@ -277,7 +301,7 @@ struct PNPButton: View {
         case .neutral: Theme.Colors.fg
         case .gold:    Color(hex: 0x1A1408)
         case .ghost:   Theme.Colors.goldBright
-        case .danger:  Color(hex: 0xFF8077)
+        case .danger:  Theme.Colors.dangerSoft
         }
     }
     private var border: Color {
@@ -380,7 +404,7 @@ struct StatTile: View {
     enum Trend { case up, down, flat }
     var deltaTrend: Trend = .flat
     var sparkValues: [Double]? = nil
-    var sparkColor: Color = Theme.Colors.gold
+    var sparkColor: Color? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -401,10 +425,10 @@ struct StatTile: View {
                 }
             }
             if let sub {
-                Text(sub).font(.system(size: 11.5)).foregroundStyle(Theme.Colors.fgMuted)
+                Text(sub).font(.caption).foregroundStyle(Theme.Colors.fgMuted)
             }
             if let sparkValues, !sparkValues.isEmpty {
-                Sparkline(values: sparkValues, color: sparkColor)
+                Sparkline(values: sparkValues, color: defaultSparklineColor)
                     .frame(height: 32)
                     .padding(.top, 2)
             }
@@ -441,6 +465,24 @@ struct StatTile: View {
         case .flat: Theme.Colors.fgMuted
         }
     }
+
+    private var defaultSparklineColor: Color {
+        Self.sparklineColor(override: sparkColor, trend: deltaTrend)
+    }
+
+    /// Pure helper, exposed for unit tests. Explicit override wins; otherwise
+    /// the color follows `deltaTrend`. Flat trends use `gold` (a neutral
+    /// emphasis) rather than `fgMuted` so the sparkline reads as data, not
+    /// chrome. `nonisolated` so unit tests can call it without inheriting
+    /// `StatTile`'s implicit `@MainActor` View isolation.
+    nonisolated static func sparklineColor(override: Color?, trend: Trend) -> Color {
+        if let override { return override }
+        switch trend {
+        case .up: return Theme.Colors.ok
+        case .down: return Theme.Colors.danger
+        case .flat: return Theme.Colors.gold
+        }
+    }
 }
 
 // MARK: - Sparkline (lightweight, used inside KPIs)
@@ -449,15 +491,18 @@ struct Sparkline: View {
     let values: [Double]
     var color: Color = Theme.Colors.gold
 
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
         GeometryReader { geo in
             let path = makePath(in: geo.size)
+            let fillOpacity = contrast == .increased ? 0.40 : 0.25
             ZStack {
                 path
                     .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 fill(in: geo.size).fill(
                     LinearGradient(
-                        colors: [color.opacity(0.25), color.opacity(0.0)],
+                        colors: [color.opacity(fillOpacity), color.opacity(0.0)],
                         startPoint: .top, endPoint: .bottom
                     )
                 )
@@ -467,7 +512,8 @@ struct Sparkline: View {
     }
 
     private func makePath(in size: CGSize) -> Path {
-        guard let lo = values.min(), let hi = values.max(), hi != lo else { return Path() }
+        guard let rawLo = values.min(), let hi = values.max(), hi != rawLo else { return Path() }
+        let lo = max(rawLo, 0)  // Clamp min to 0 to prevent negative Y baseline for percentage-like metrics
         let n = values.count
         var p = Path()
         for (i, v) in values.enumerated() {
@@ -505,7 +551,7 @@ struct FieldLabel: View {
     var trailing: String? = nil
     var body: some View {
         HStack {
-            Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.Colors.fg2)
+            Text(label).font(.footnote.weight(.medium)).foregroundStyle(Theme.Colors.fg2)
             Spacer()
             if let trailing {
                 Text(trailing).font(Theme.Fonts.mono(10)).foregroundStyle(Theme.Colors.fgMuted)
@@ -517,7 +563,7 @@ struct FieldLabel: View {
 struct FieldHelp: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 11.5)).foregroundStyle(Theme.Colors.fgMuted)
+        Text(text).font(.caption).foregroundStyle(Theme.Colors.fgMuted)
             .padding(.top, 4)
     }
 }
@@ -553,13 +599,31 @@ struct PNPTextField: View {
 
 struct SectionHeader: View {
     let title: String
-    var trailing: String? = nil
+    var trailing: String? = nil  // Legacy single parameter, now maps to trailingTag
+    var trailingTag: String? = nil
+    var trailingValue: String? = nil
     var size: CGFloat = 15
+
     var body: some View {
         HStack {
             Text(title).font(.system(size: size, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
             Spacer()
-            if let trailing { Kicker(text: trailing) }
+
+            // Handle legacy trailing parameter
+            if let trailing {
+                Kicker(text: trailing)
+            }
+
+            // Handle new specific trailing types
+            if let trailingTag {
+                Kicker(text: trailingTag)
+            }
+
+            if let trailingValue {
+                Text(trailingValue)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.fg2)
+            }
         }
     }
 }
@@ -568,6 +632,8 @@ struct SectionHeader: View {
 
 struct StatusBar: View {
     let status: String?
+
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         HStack(spacing: 8) {
@@ -591,7 +657,7 @@ struct StatusBar: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 24)
-        .background(.ultraThinMaterial)
+        .background(reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.ultraThinMaterial))
         .overlay(alignment: .top) {
             Divider().background(Theme.Colors.hairline)
         }
@@ -655,5 +721,72 @@ struct EditableNumberStepper: View {
                 .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
         )
         .help(help ?? "")
+    }
+}
+
+// MARK: - Data Table Components
+
+/// Reusable table header for hand-rolled tables that need custom row layouts.
+/// A column with `width == nil` flexes to fill remaining space.
+struct DataTableHeader: View {
+    let columns: [DataTableColumn]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(columns) { column in
+                Group {
+                    if let width = column.width {
+                        Text(column.title.uppercased())
+                            .frame(width: width, alignment: column.alignment.textAlignment)
+                    } else {
+                        Text(column.title.uppercased())
+                            .frame(maxWidth: .infinity, alignment: column.alignment.textAlignment)
+                    }
+                }
+                .font(Theme.Fonts.mono(10, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fgMuted)
+                if column.id != columns.last?.id {
+                    Spacer(minLength: 12)
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Theme.Colors.winBG3)
+    }
+}
+
+/// Reusable table row wrapper for consistent styling
+struct DataTableRow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 0) {
+            content
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Color.clear)
+    }
+}
+
+/// Column configuration for DataTableHeader.
+/// Pass `width: nil` for a flex column that fills remaining space.
+struct DataTableColumn: Identifiable {
+    let id = UUID()
+    let title: String
+    let width: CGFloat?
+    let alignment: DataTableAlignment
+
+    enum DataTableAlignment {
+        case leading, center, trailing
+
+        var textAlignment: Alignment {
+            switch self {
+            case .leading: return .leading
+            case .center: return .center
+            case .trailing: return .trailing
+            }
+        }
     }
 }

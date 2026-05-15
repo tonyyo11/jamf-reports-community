@@ -732,7 +732,7 @@ def _resolve_cli_input_path(
     candidates = _cli_input_candidates(path_value, config)
     for candidate in candidates:
         if candidate.exists():
-            return candidate
+            return candidate.resolve()
     return candidates[0] if candidates else None
 
 
@@ -2221,11 +2221,11 @@ def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
 
 def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[Path], bool]:
     """Copy the current CSV into the historical snapshot directory for future trend runs."""
-    source = Path(csv_path)
+    source = Path(csv_path).resolve()
     if not source.is_file():
         return None, False
 
-    out_dir = Path(historical_dir)
+    out_dir = Path(historical_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     source_size = source.stat().st_size
     source_digest = _sha256_file(source)
@@ -2386,8 +2386,8 @@ def _emit_summary_json(
                             pass
                 if valid_pcts:
                     patch_pct = sum(valid_pcts) / len(valid_pcts)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"  [warn] _emit_summary_json: patch_status failed — patchPct defaulting to 0.0: {exc}")
 
     summary_data: dict[str, Any] = {
         "date": date_str,
@@ -2405,7 +2405,7 @@ def _emit_summary_json(
     _atomic_write_summary(summary_file, summaries_dir, summary_data)
 
 
-def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: Dict[str, Any]) -> None:
+def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: dict[str, Any]) -> None:
     """Atomically write a summary.json under summaries_dir.
 
     Uses a `.tmp` suffix so an interrupted write doesn't leave a stray `.json`
@@ -2434,7 +2434,7 @@ def _build_summary_from_bridge(
     config: Config,
     bridge: Optional["JamfCLIBridge"],
     date_str: str,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """Compute the trend summary metrics from cached jamf-cli JSON when no CSV is present.
 
     Pure-CLI users still need historical trend data. We mine the same JSON snapshots
@@ -2462,15 +2462,15 @@ def _build_summary_from_bridge(
                     encrypted = _to_int(data.get("filevault_encrypted"))
                     fv_pct = (encrypted / total_devices) * 100.0
                 break
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: security_report failed — fv_pct defaulting to 0.0: {exc}")
 
     if total_devices == 0:
         try:
             inv = bridge.inventory_summary() or []
             total_devices = sum(int(row.get("count") or 0) for row in inv if isinstance(row, dict))
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"  [warn] _build_summary_from_bridge: inventory_summary failed — totalDevices defaulting to 0: {exc}")
 
     if total_devices == 0:
         return None
@@ -2479,11 +2479,11 @@ def _build_summary_from_bridge(
     try:
         comp = bridge.device_compliance() or []
         stale_count = sum(1 for row in comp if isinstance(row, dict) and row.get("stale"))
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
 
     os_pct = 0.0
-    current_os_versions: List[str] = []
+    current_os_versions: list[str] = []
     for ea in config.custom_eas:
         if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
             current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
@@ -2501,8 +2501,8 @@ def _build_summary_from_bridge(
                     current += count
             if total_devices:
                 os_pct = (current / total_devices) * 100.0
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"  [warn] _build_summary_from_bridge: inventory_summary (os adoption) failed — osCurrentPct defaulting to 0.0: {exc}")
 
     patch_pct = 0.0
     try:
@@ -2518,8 +2518,8 @@ def _build_summary_from_bridge(
                         pass
             if valid:
                 patch_pct = sum(valid) / len(valid)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: patch_status failed — patchPct defaulting to 0.0: {exc}")
 
     return {
         "date": date_str,
@@ -5589,9 +5589,20 @@ class CoreDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Write all enabled core sheets. Returns list of sheet names written."""
-        written = []
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Write all enabled core sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` is the list of
+            sheets that were generated successfully and ``failures`` is a list
+            of ``{"sheet": name, "error": "<ErrorType>: <message>"}`` entries
+            for sheets whose writer raised. ``RuntimeError`` is treated as a
+            data-shape miss (logged as ``[skip]`` and excluded from
+            ``failures``) — only unexpected exceptions become failures so
+            partial-success reflects genuine bugs rather than absent inputs.
+        """
+        written: list[str] = []
+        failures: list[dict[str, str]] = []
         sheets = self.sheet_plan()
         for name, fn in sheets:
             if selected_names is not None and _normalized_sheet_name(name) not in selected_names:
@@ -5604,8 +5615,10 @@ class CoreDashboard:
             except RuntimeError as exc:
                 print(f"  [skip] {name}: {exc}")
             except Exception as exc:  # unexpected shape or type from jamf-cli JSON
-                print(f"  [skip] {name}: unexpected error — {type(exc).__name__}: {exc}")
-        return written
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": name, "error": error_label})
+                print(f"  [fail] {name}: unexpected error — {error_label}")
+        return written, failures
 
     def _write_overview(self) -> None:
         ws = self._wb.add_worksheet("Fleet Overview")
@@ -8695,9 +8708,20 @@ class CSVDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Write all enabled CSV-derived sheets. Returns list of sheet names written."""
-        written = []
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Write all enabled CSV-derived sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` is the list of
+            sheets generated successfully and ``failures`` records sheets that
+            errored unexpectedly as ``{"sheet": name, "error": ...}`` entries.
+            ``RuntimeError`` / ``NotImplementedError`` for non-required sheets
+            are still logged as ``[skip]`` and excluded from ``failures``.
+            Required sheets that fail still raise ``SystemExit`` — partial
+            success is reserved for optional sheets.
+        """
+        written: list[str] = []
+        failures: list[dict[str, str]] = []
         required_failures: list[str] = []
         compliance_enabled = bool(self._config.compliance.get("enabled"))
         for name, fn in self.sheet_plan():
@@ -8718,19 +8742,23 @@ class CSVDashboard:
                 else:
                     print(f"  [skip] {name}: {msg}")
             except (KeyError, ValueError) as exc:
+                error_label = f"{type(exc).__name__}: {exc}"
                 if name == "Compliance" and compliance_enabled:
-                    required_failures.append(f"{name}: {type(exc).__name__}: {exc}")
-                    print(f"  [fail] {name}: {type(exc).__name__}: {exc}")
+                    required_failures.append(f"{name}: {error_label}")
+                    print(f"  [fail] {name}: {error_label}")
                 else:
-                    print(f"  [skip] {name}: {exc}")
+                    failures.append({"sheet": name, "error": error_label})
+                    print(f"  [fail] {name}: {error_label}")
             except Exception as exc:
-                print(f"  [skip] {name}: unexpected error — {type(exc).__name__}: {exc}")
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": name, "error": error_label})
+                print(f"  [fail] {name}: unexpected error — {error_label}")
         if required_failures:
             raise SystemExit(
                 "Error: required sheet(s) failed:\n"
                 + "\n".join(f"  {f}" for f in required_failures)
             )
-        return written
+        return written, failures
 
     def _col(self, logical: str) -> Optional[str]:
         return self._mapper.get(logical)
@@ -9569,9 +9597,19 @@ class SchoolDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Build all enabled school report sheets and return the names written."""
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Build all enabled school report sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` lists sheets that
+            were generated (including data-unavailable sheets that received a
+            ``[Data unavailable: ...]`` annotation), and ``failures`` records
+            sheets whose writer raised an unexpected exception. ``RuntimeError``
+            is treated as a data-shape miss and produces an annotation rather
+            than a failure entry, matching ``CoreDashboard``.
+        """
         written: list[str] = []
+        failures: list[dict[str, str]] = []
         for title, fn in self.sheet_plan():
             if selected_names is not None and _normalized_sheet_name(title) not in selected_names:
                 print(f"  [disabled] {title}: skipped via {filter_label or 'sheet filter'}")
@@ -9583,9 +9621,15 @@ class SchoolDashboard:
             except RuntimeError as exc:
                 ws = self._wb.get_worksheet_by_name(title)
                 if ws:
-                    ws.write(1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
+                    _safe_write(ws, 1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
                     written.append(title)
-        return written
+                else:
+                    print(f"  [skip] {title}: {exc}")
+            except Exception as exc:
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": title, "error": error_label})
+                print(f"  [fail] {title}: unexpected error — {error_label}")
+        return written, failures
 
     # ------------------------------------------------------------------
     # Bridge-driven sheets
@@ -11766,7 +11810,7 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
         if latest_path is not None:
             print(f"    latest: {latest_path.name}")
         else:
-            print(f"    latest: none")
+            print("    latest: none")
         print(f"    note: {note}")
     if not manifest_found:
         print("  No enabled report_families entries.")
@@ -11910,7 +11954,6 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     protect_enabled = config.get("protect", "enabled", default=False) is True
     platform_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
-    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
     live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
     bridge = _build_jamf_cli_bridge(config, save_output=False)
@@ -12238,6 +12281,7 @@ def cmd_generate(
     sheets_written = 0
     jamf_cli_written: list[str] = []
     csv_written: list[str] = []
+    sheet_failures: list[dict[str, str]] = []
     chart_source = ""
     chart_png_paths: list[Path] = []
     charts_embedded = False
@@ -12309,9 +12353,13 @@ def cmd_generate(
 
         if jamf_cli_enabled and bridge is not None and jamf_cli_ready:
             print("\nGenerating jamf-cli sheets...")
-            jamf_cli_written = (
-                core.write_all(selected_sheet_names, filter_label) if core is not None else []
-            )
+            if core is not None:
+                jamf_cli_written, core_failures = core.write_all(
+                    selected_sheet_names, filter_label
+                )
+                sheet_failures.extend(core_failures)
+            else:
+                jamf_cli_written = []
             sheets_written += len(jamf_cli_written)
         elif jamf_cli_enabled:
             print("\nWarning: jamf-cli not available — skipping core dashboard sheets.")
@@ -12328,7 +12376,8 @@ def cmd_generate(
                     f"Error: cannot read explicit CSV '{csv_path_str}': {csv_init_error}"
                 )
             print("\nGenerating CSV sheets...")
-            csv_written = csv_dash.write_all(selected_sheet_names, filter_label)
+            csv_written, csv_failures = csv_dash.write_all(selected_sheet_names, filter_label)
+            sheet_failures.extend(csv_failures)
             sheets_written += len(csv_written)
         else:
             print("\nNo CSV provided — skipping inventory sheets.")
@@ -12504,7 +12553,16 @@ def cmd_generate(
         archived_output_paths = archived_paths
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older output file(s) to {archive_dir}")
-    print(f"\nReport written: {out_path}")
+    run_status = "partial" if sheet_failures else "ok"
+    if sheet_failures:
+        print(
+            f"\n[partial] Report written with {len(sheet_failures)} sheet failure(s): "
+            f"{out_path}"
+        )
+        for failure in sheet_failures:
+            print(f"  failed sheet: {failure['sheet']}: {failure['error']}")
+    else:
+        print(f"\nReport written: {out_path}")
     if notify_url:
         print("  Sending Teams notification...")
         _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
@@ -12523,7 +12581,7 @@ def cmd_generate(
             print(f"  PPTX export: {pptx_path}")
     summary.update(
         {
-            "status": "ok",
+            "status": run_status,
             "outputs": [_summary_file_entry("xlsx", out_path)],
             "inputs": {
                 "csv": str(csv_path_obj) if csv_path_obj is not None else None,
@@ -12538,6 +12596,7 @@ def cmd_generate(
                 "csv_sheets": len(csv_written),
                 "chart_pngs": len(chart_png_paths),
                 "archived_outputs": len(archived_output_paths),
+                "sheet_failures": len(sheet_failures),
             },
             "sheets": {
                 "all": (
@@ -12550,6 +12609,7 @@ def cmd_generate(
                 "csv": csv_written,
                 "charts_embedded": charts_embedded,
                 "report_sources": report_sources_written,
+                "failures": sheet_failures,
             },
             "sources": source_details,
             "charts": {
@@ -12570,7 +12630,7 @@ def cmd_generate(
             },
         }
     )
-    _finish_command_summary(summary)
+    _finish_command_summary(summary, status=run_status)
     _write_summary_json(summary_json, summary)
     return out_path
 
@@ -14938,7 +14998,6 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         active_alerts = self._ov(ov, "Active Alerts")
         managed_computers = self._ov(ov, "Managed Computers")
         unmanaged_computers = self._ov(ov, "Unmanaged Computers")
-        managed_devices = self._ov(ov, "Managed Devices")
         checkin_freq = self._ov(ov, "Check-In Frequency")
         dep_token_exp = self._ov(ov, "DEP Token Expires")
         ca_expires = self._ov(ov, "Built-in CA Expires")
@@ -15414,7 +15473,6 @@ def _collect_snapshots(
 
     collected = 0
     jamf_cli_enabled = _jamf_cli_enabled(config)
-    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
     protect_enabled = config.get("protect", "enabled", default=False) is True
     platform_enabled = config.get("platform", "enabled", default=False) is True
@@ -15943,8 +16001,8 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
     enrich_workers = _to_int(inv_cfg.get("max_workers", 20), 20)
     if skip_enrichment:
         print(
-            f"  [skip] security detail enrichment"
-            f" (inventory_csv.skip_security_enrichment: true)"
+            "  [skip] security detail enrichment"
+            " (inventory_csv.skip_security_enrichment: true)"
         )
         detail_enriched, detail_failures, detail_unresolved = 0, 0, 0
     else:
@@ -17468,16 +17526,25 @@ def cmd_school_generate(
             config,
             [name for name, _ in dashboard.sheet_plan()],
         )
-        written = dashboard.build_all(selected_names, filter_label)
+        written, sheet_failures = dashboard.build_all(selected_names, filter_label)
         if not written:
             raise SystemExit("Error: sheets filter removed every school workbook tab for this run.")
     finally:
         workbook.close()
 
-    print(f"Done. Report written to: {out_path}")
+    run_status = "partial" if sheet_failures else "ok"
+    if sheet_failures:
+        print(
+            f"[partial] School report written with {len(sheet_failures)} sheet "
+            f"failure(s): {out_path}"
+        )
+        for failure in sheet_failures:
+            print(f"  failed sheet: {failure['sheet']}: {failure['error']}")
+    else:
+        print(f"Done. Report written to: {out_path}")
     summary.update(
         {
-            "status": "ok",
+            "status": run_status,
             "outputs": [_summary_file_entry("xlsx", out_path)],
             "inputs": {
                 "csv": str(Path(csv_path).expanduser()) if csv_path else None,
@@ -17487,13 +17554,15 @@ def cmd_school_generate(
             "counts": {
                 "sheets_written": len(written),
                 "csv_rows": len(csv_df) if csv_df is not None else 0,
+                "sheet_failures": len(sheet_failures),
             },
             "sheets": {
                 "school": written,
+                "failures": sheet_failures,
             },
         }
     )
-    _finish_command_summary(summary)
+    _finish_command_summary(summary, status=run_status)
     _write_summary_json(summary_json, summary)
 
 

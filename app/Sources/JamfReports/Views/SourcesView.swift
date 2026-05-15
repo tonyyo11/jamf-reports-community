@@ -62,7 +62,7 @@ struct SourcesView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(Theme.Colors.danger)
                         Text(error)
-                            .font(.system(size: 12.5, weight: .medium))
+                            .font(.footnote.weight(.medium))
                             .foregroundStyle(Theme.Colors.danger)
                         Spacer()
                     }
@@ -144,7 +144,7 @@ struct SourcesView: View {
                 .font(Theme.Fonts.serif(26, weight: .bold))
                 .foregroundStyle(Theme.Text.primary)
             Text("Live API · cached snapshots · CSV inboxes · historical archives")
-                .font(.system(size: 12.5))
+                .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary)
         }
     }
@@ -179,7 +179,7 @@ struct SourcesView: View {
                             Mono(text: c.label, color: Theme.Text.secondary)
                             Spacer()
                             Text(c.status)
-                                .font(.system(size: 11))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary)
                         }
                         .padding(.vertical, 6)
@@ -300,7 +300,7 @@ struct SourcesView: View {
                         TableColumn("Storage") { f in Mono(text: FileDisplay.size(f.totalBytes)) }
                         TableColumn("Used By") { f in
                             Text(f.usedBy.isEmpty ? "—" : f.usedBy)
-                                .font(.system(size: 11.5))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary)
                         }
                     }
@@ -314,10 +314,10 @@ struct SourcesView: View {
     private var emptyCSVState: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("No CSV files in the inbox.")
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.Text.primary)
             Text("Drop Jamf exports here before running a CSV-assisted report.")
-                .font(.system(size: 11.5))
+                .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary)
         }
         .padding(.vertical, 10)
@@ -326,10 +326,10 @@ struct SourcesView: View {
     private var emptyFamiliesState: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("No snapshot families yet.")
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.Text.primary)
             Text("Historical trend snapshots will appear after collection or CSV archival runs.")
-                .font(.system(size: 11.5))
+                .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)

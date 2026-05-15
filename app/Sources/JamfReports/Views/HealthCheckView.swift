@@ -21,6 +21,7 @@ struct HealthCheckView: View {
     @State private var query = ""
     @State private var sortOrderAudit = [KeyPathComparator(\AuditFinding.name)]
     @State private var sortOrderHygiene = [KeyPathComparator(\UnusedGroup.name)]
+    @State private var cacheDecodeError: String? = nil
     @FocusState private var isSearchFocused: Bool
 
     private var filteredFindings: [AuditFinding] {
@@ -81,7 +82,7 @@ struct HealthCheckView: View {
                                 .foregroundStyle(Theme.Colors.fgMuted)
                             TextField("Search findings", text: $query)
                                 .textFieldStyle(.plain)
-                                .font(.system(size: 13))
+                                .font(.callout)
                                 .foregroundStyle(Theme.Colors.fg)
                                 .focused($isSearchFocused)
                         }
@@ -98,6 +99,32 @@ struct HealthCheckView: View {
                     }
 
                     Spacer()
+                }
+
+                if let cacheDecodeError, selectedTab == 0 {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.Colors.warn)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Audit cache could not be loaded")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Text("\(cacheDecodeError). Re-run the audit to rebuild.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.fg2)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        Theme.Colors.warn.opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(Theme.Colors.warn.opacity(0.3), lineWidth: 0.5)
+                    )
                 }
 
                 if selectedTab == 0 {
@@ -185,10 +212,17 @@ struct HealthCheckView: View {
     private var auditSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             if findings.isEmpty {
-                emptyState(
-                    icon: "shield.checkered",
-                    text: "No audit findings yet. Run an audit to scan your instance."
-                )
+                Card(padding: 24) {
+                    EmptyStateView(
+                        systemImage: "shield.checkered",
+                        title: "No Findings",
+                        message: "No audit findings yet. Run an audit to scan your instance.",
+                        primaryAction: EmptyStateAction(
+                            label: "Run Health Check",
+                            icon: "play.fill"
+                        ) { runAudit() }
+                    )
+                }
             } else {
                 auditSummaryStrip
                 Card(padding: 0) {
@@ -203,7 +237,7 @@ struct HealthCheckView: View {
                                     .frame(maxHeight: .infinity)
                                 severityIcon(f.severity)
                                 Text(f.name)
-                                    .font(.system(size: 13).weight(.semibold))
+                                    .font(.callout.weight(.semibold))
                                 if newFindingKeys.contains(f.driftKey) {
                                     Pill(text: "New", tone: .gold, icon: "sparkle")
                                         .transition(.scale.combined(with: .opacity))
@@ -216,7 +250,7 @@ struct HealthCheckView: View {
                             Pill(text: f.severity, tone: pillTone(f.severity))
                         }
                         TableColumn("Category", value: \.category) { f in
-                            Text(f.category.capitalized).font(.system(size: 12, weight: .medium))
+                            Text(f.category.capitalized).font(.footnote.weight(.medium))
                         }
                         TableColumn("Affected", value: \.affected) { f in
                             AffectedBar(value: f.affected, maxValue: maxAffected, tone: pillTone(f.severity))
@@ -224,7 +258,7 @@ struct HealthCheckView: View {
                         TableColumn("Recommendation") { f in
                             HStack(spacing: 8) {
                                 Text(f.recommendation)
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.footnote.weight(.medium))
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
@@ -266,11 +300,11 @@ struct HealthCheckView: View {
                                     .foregroundStyle(Theme.Colors.ok)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(finding.name)
-                                        .font(.system(size: 12, weight: .semibold))
+                                        .font(.footnote.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                         .strikethrough(true, color: Theme.Colors.fgMuted)
                                     Text(finding.recommendation)
-                                        .font(.system(size: 11))
+                                        .font(.caption)
                                         .foregroundStyle(Theme.Colors.fgMuted)
                                         .lineLimit(1)
                                 }
@@ -304,10 +338,17 @@ struct HealthCheckView: View {
     private var hygieneSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             if unusedGroups.isEmpty {
-                emptyState(
-                    icon: "wand.and.stars",
-                    text: "No unused groups identified. Run analysis to check for redundant groups."
-                )
+                Card(padding: 24) {
+                    EmptyStateView(
+                        systemImage: "wand.and.stars",
+                        title: "No Unused Groups",
+                        message: "No unused groups identified. Run analysis to check for redundant groups.",
+                        primaryAction: EmptyStateAction(
+                            label: "Analyze Groups",
+                            icon: "magnifyingglass"
+                        ) { runHygiene() }
+                    )
+                }
             } else {
                 Card(padding: 0) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -322,7 +363,7 @@ struct HealthCheckView: View {
 
                         Table(sortedHygiene, sortOrder: $sortOrderHygiene) {
                             TableColumn("Group Name", value: \.name) { g in
-                                Text(g.name).font(.system(size: 12, weight: .semibold))
+                                Text(g.name).font(.footnote.weight(.semibold))
                             }
                             TableColumn("Type", value: \.type) { g in
                                 groupTypePill(g.type)
@@ -335,7 +376,7 @@ struct HealthCheckView: View {
                             }
                             TableColumn("Why Flagged") { g in
                                 Text(g.reasonLabel)
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.footnote.weight(.medium))
                                     .foregroundStyle(Theme.Colors.fgMuted)
                                     .lineLimit(2)
                             }
@@ -369,20 +410,6 @@ struct HealthCheckView: View {
             return
         }
         SystemActions.open(url)
-    }
-
-    private func emptyState(icon: String, text: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundStyle(Theme.Colors.gold.opacity(0.5))
-            Text(text)
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.Colors.fgMuted)
-        }
-        .frame(maxWidth: .infinity, minHeight: 300)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius))
     }
 
     private func severityIcon(_ severity: String) -> some View {
@@ -449,17 +476,28 @@ struct HealthCheckView: View {
             type: "audit",
             limit: 2
         )
-        if let current = auditSnapshots.first,
-           let decoded = try? decoder.decode([AuditFinding].self, from: current.data) {
-            findings = decoded
-            lastAuditDate = current.modified
+        cacheDecodeError = nil
+        if let current = auditSnapshots.first {
+            do {
+                let decoded = try decoder.decode([AuditFinding].self, from: current.data)
+                findings = decoded
+                lastAuditDate = current.modified
 
-            let previous = auditSnapshots.dropFirst().first
-                .flatMap { try? decoder.decode([AuditFinding].self, from: $0.data) } ?? []
-            let currentKeys = Set(decoded.map(\.driftKey))
-            let previousKeys = Set(previous.map(\.driftKey))
-            newFindingKeys = auditSnapshots.count > 1 ? currentKeys.subtracting(previousKeys) : []
-            resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+                let previous = auditSnapshots.dropFirst().first.flatMap { snapshot in
+                    try? decoder.decode([AuditFinding].self, from: snapshot.data)
+                } ?? []
+                let currentKeys = Set(decoded.map(\.driftKey))
+                let previousKeys = Set(previous.map(\.driftKey))
+                newFindingKeys = auditSnapshots.count > 1 ? currentKeys.subtracting(previousKeys) : []
+                resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+            } catch {
+                // Distinguish "no audit run yet" (empty findings, no banner) from "audit
+                // cache exists but is corrupt" (empty findings, banner prompting re-run).
+                cacheDecodeError = "Audit cache is corrupt: \(error.localizedDescription)"
+                findings = []
+                newFindingKeys = []
+                resolvedFindings = []
+            }
         }
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
@@ -607,7 +645,7 @@ private struct FindingDetailPopover: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(finding.name)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.headline)
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 6) {
                         Pill(text: finding.severity, tone: tone)
@@ -623,7 +661,7 @@ private struct FindingDetailPopover: View {
             VStack(alignment: .leading, spacing: 6) {
                 Kicker(text: "Recommendation")
                 Text(finding.recommendation)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg2)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)

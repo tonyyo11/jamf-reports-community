@@ -82,6 +82,43 @@ The first generation runs entirely on cached jamf-cli JSON. No CSV export is req
 If you have a Jamf Pro CSV export and want CSV-only sheets (Stale Devices, Security
 Controls, Custom EAs), drop it into the Data Sources tab and re-generate.
 
+## Tab reference
+
+JamfReports ships with 24 dashboards organized into sidebar groups. Hide any
+tab in **Settings → Sidebar Visibility**; core tabs (Overview, Devices, Sources,
+Settings) cannot be hidden.
+
+| Group | Tab | What it shows | Data source |
+|-------|-----|---------------|-------------|
+| (top) | Overview | Headline KPIs, recent activity, agent coverage. | `summary.json`, `security`, `software-installs` |
+| (top) | Devices | Per-device inventory and a Priority Action filter driven by the risk score. | `computers`, `ea-results`, `device-compliance` |
+| (top) | Device Lookup | Search by serial/host/tag/id, opens DeviceDetail. | `pro device <id>` |
+| Reports | Fleet Overview | Multi-profile rollup across workspaces. | All profile `summary.json` files |
+| Reports | Trends | Historical line charts using archived summaries. Range defaults to 4 weeks. | `snapshots/summaries/` |
+| Reports | Reports | Browse and open generated artifacts. | `Generated Reports/` |
+| Reports | Audit | Health & hygiene findings (stale groups, missing scope, etc.). | `pro audit` |
+| Posture | Security Posture | Hero Security Score (configurable weights) + per-control drill-downs. | `security`, `ea-results`, `device-compliance` |
+| Posture | Compliance Posture | Pass/Low/MedLow/Medium/High banded distribution + per-OS breakdown. | `device-compliance`, `ea-results` |
+| Posture | Outreach | Stale tier outreach lists for 31–90/91–180/180+ day buckets. | `computers`, `device-compliance` |
+| Operations | Patch | Patch title compliance and failure detail. | `patch-status`, `patch-status --scan-failures` |
+| Operations | Updates | Update plan state, failed plans, OS adoption. | `update-status`, `update-status --scan-failures` |
+| Operations | Policy/Profile | Policy findings and profile assignment status. | `policy-status`, `profile-status` |
+| Operations | Extension Attributes | EA coverage and value distribution. | `ea-results --all`, `computer-extension-attributes` |
+| Fleet | Mobile Fleet | iOS/iPadOS inventory and config profiles. | `mobile-devices`, mobile-config-profiles |
+| Fleet | Protect | Jamf Protect alerts/insights/agents. | `protect overview/alerts/computers/insights` |
+| Automation | Schedules | LaunchAgent management for tiered background refresh. | `~/Library/LaunchAgents/com.jamfreports.*` |
+| Automation | Runs | Streaming stdout/stderr from collect/generate runs. | `automation/logs/` |
+| Configuration | Config | `config.yaml` editor + new Scoring tab for Security/Risk weights. | `config.yaml` |
+| Configuration | Customize | Drag-to-reorder Workbook Preview + Personalize wizard. | `config.yaml` |
+| Configuration | Backups | Snapshot/restore for `config.yaml`. | `backups/` |
+| (top) | Sources | Inputs inbox, CSV staging, jamf-cli command surface. | Workspace inbox |
+| (top) | Settings | App-level prefs (jamf-cli auto-update, connections, Data & Charts, Sidebar Visibility). | UserDefaults |
+| (top) | Onboarding | First-run wizard (auto-hidden after profile creation). | — |
+
+The Posture, Operations, and Fleet groups all read existing cached snapshots
+already produced by `collect`. Adding these dashboards does **not** issue any
+new `jamf-cli` commands.
+
 ## Mental model
 
 ```

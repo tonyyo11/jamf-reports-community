@@ -12,9 +12,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     private var allSummaries: [DailySummary] = []
     private(set) var filteredSummaries: [DailySummary] = []
     private(set) var currentProfile: String?
-    private(set) var currentRange: TrendRange = .w26
+    private(set) var currentRange: TrendRange = .w4
 
-    init(summaries: [DailySummary] = [], range: TrendRange = .w26) {
+    init(summaries: [DailySummary] = [], range: TrendRange = .w4) {
         allSummaries = summaries
         currentRange = range
         filterSummaries(range: range)
@@ -126,14 +126,15 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     private func value(for metric: TrendSeries.Metric, in summary: DailySummary) -> Double? {
         switch metric {
-        case .stability: return summary.stabilityIndex
+        case .stability:     return summary.stabilityIndex
         case .activeDevices: return Double(summary.totalDevices)
-        case .compliance:  return summary.compliancePct
-        case .fileVault:   return summary.fileVaultPct
-        case .osCurrent:   return summary.osCurrentPct
-        case .crowdstrike: return summary.crowdstrikePct
-        case .stale:       return Double(summary.staleCount)
-        case .patch:       return summary.patchPct
+        case .compliance:    return summary.compliancePct
+        case .fileVault:     return summary.fileVaultPct
+        case .osCurrent:     return summary.osCurrentPct
+        case .crowdstrike:   return summary.crowdstrikePct
+        case .stale:         return Double(summary.staleCount)
+        case .patch:         return summary.patchPct
+        case .securityScore: return summary.securityScore
         }
     }
 

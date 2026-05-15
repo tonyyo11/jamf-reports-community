@@ -3,11 +3,16 @@ import Charts
 
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @State private var bridge = CLIBridge()
     @State private var trendStore = TrendStore()
     @State private var isRunning = false
     @State private var activitySelection: DeviceInventoryRecord.ID? = nil
     @State private var navigationPath = NavigationPath()
+
+    private var defaultTrendRange: TrendRange {
+        TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
+    }
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -38,18 +43,23 @@ struct OverviewView: View {
         .tint(Theme.Colors.goldBright)
         .onAppear {
             if !workspace.demoMode {
-                trendStore.load(profile: workspace.profile, range: .w12)
+                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
             }
         }
         .onChange(of: workspace.profile) { _, newValue in
             if !workspace.demoMode {
-                trendStore.load(profile: newValue, range: .w12)
+                trendStore.load(profile: newValue, range: defaultTrendRange)
+            }
+        }
+        .onChange(of: defaultTrendRangeRaw) { _, _ in
+            if !workspace.demoMode {
+                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             workspace.reloadFromDisk()
             if !workspace.demoMode {
-                trendStore.load(profile: workspace.profile, range: .w12)
+                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
@@ -77,10 +87,10 @@ struct OverviewView: View {
                     .foregroundStyle(Theme.Colors.gold)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Configuration incomplete")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     Text(workspace.workspaceInitMessage ?? workspaceInitDefaultMessage)
-                        .font(.system(size: 12))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -135,7 +145,7 @@ struct OverviewView: View {
                 if trendStore.filteredSummaries.isEmpty {
                     Divider().background(Theme.Colors.hairline)
                     Text("No cached tenant summaries are available for this profile yet.")
-                        .font(.system(size: 12.5))
+                        .font(.footnote)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -174,7 +184,7 @@ struct OverviewView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
                         if !workspace.demoMode {
-                            trendStore.load(profile: workspace.profile, range: .w12)
+                            trendStore.load(profile: workspace.profile, range: defaultTrendRange)
                         }
                     }
                     .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
@@ -221,14 +231,12 @@ struct OverviewView: View {
     }
 
     private var statRow: some View {
-        // Fixed-count flexible columns guarantee equal widths; an asymmetric
-        // child minWidth (previously 200 on the primary tile only) inside an
-        // adaptive grid let one column dominate and squeezed the rest into
-        // single-character vertical strips on live workspaces.
+        // Adaptive grid that collapses to fewer columns at narrow widths rather
+        // than cramming tiles into unreadable strips.
         LazyVGrid(
             columns: Array(
-                repeating: GridItem(.flexible(minimum: 0), spacing: 12),
-                count: max(workspace.selectedScoreCards.count, 1)
+                repeating: GridItem(.adaptive(minimum: 220), spacing: 12),
+                count: 1
             ),
             spacing: 12
         ) {
@@ -279,7 +287,7 @@ struct OverviewView: View {
         }()
 
         let deltaStr: String = {
-            guard lastValue != nil else { return "No Data" }
+            guard lastValue != nil, values.count >= 2 else { return "No Data" }
             let absDiff = abs(diff)
             if metric.unit == "%" {
                 return "\(diff >= 0 ? "+" : "−")\(String(format: "%.1f", absDiff))pp"
@@ -300,7 +308,7 @@ struct OverviewView: View {
         return StatTile(
             label: metric.displayLabel,
             value: valueStr,
-            delta: deltaStr,
+            delta: values.count >= 2 ? deltaStr : nil,
             deltaTrend: trend,
             sparkValues: values,
             sparkColor: Color(hex: metric.colorHex)
@@ -328,7 +336,7 @@ struct OverviewView: View {
                                             .fill(Color(hex: o.colorHex))
                                             .frame(width: 8, height: 8)
                                         Text(o.version)
-                                            .font(.system(size: 12))
+                                            .font(.footnote)
                                             .foregroundStyle(o.current ? Theme.Colors.fg : Theme.Colors.fgMuted)
                                         Spacer(minLength: 0)
                                         Mono(text: "\(o.count)")
@@ -355,7 +363,7 @@ struct OverviewView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 SectionHeader(title: "Top Failing Rules")
                                 Text("NIST 800-53r5 Moderate · across 502 active devices")
-                                    .font(.system(size: 11.5))
+                                    .font(.caption)
                                     .foregroundStyle(Theme.Colors.fgMuted)
                             }
                             Spacer()
@@ -470,7 +478,7 @@ struct OverviewView: View {
                     Pill(text: "8 of 524", tone: .muted)
                     NavigationLink(value: OverviewDrillDown.recentActivity) {
                         Text("View all")
-                            .font(.system(size: 11.5, weight: .medium))
+                            .font(.caption.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
                             .padding(.horizontal, 8)
                             .frame(height: 22)
@@ -487,14 +495,14 @@ struct OverviewView: View {
 
                 Table(DemoData.deviceSample, selection: $activitySelection) {
                     TableColumn("Device") { d in
-                        Text(d.name).font(.system(size: 12.5, weight: .semibold))
+                        Text(d.name).font(.callout.weight(.semibold))
                     }
                     TableColumn("Serial") { d in Mono(text: d.serial) }
                     TableColumn("macOS") { d in Mono(text: d.os) }
                     TableColumn("User") { d in
-                        Text(d.user).font(.system(size: 12.5)).foregroundStyle(Theme.Colors.fgMuted)
+                        Text(d.user).font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                     }
-                    TableColumn("Department") { d in Text(d.dept).font(.system(size: 12.5)) }
+                    TableColumn("Department") { d in Text(d.dept).font(.footnote) }
                     TableColumn("FV") { d in
                         Image(systemName: d.fileVault ? "checkmark" : "xmark")
                             .foregroundStyle(d.fileVault ? Theme.Colors.ok : Theme.Colors.danger)
@@ -601,7 +609,7 @@ struct OverviewView: View {
                     SectionHeader(title: "Snapshot Values")
                     if values.isEmpty {
                         Text("No trend summaries are available for this metric yet.")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Colors.fgMuted)
                     } else {
                         Sparkline(values: values, color: Color(hex: metric.colorHex))
@@ -649,7 +657,7 @@ struct OverviewView: View {
                     Divider().background(Theme.Colors.hairline)
                     HStack {
                         Text("Use Devices to inspect individual records and filter by OS version.")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Colors.fgMuted)
                         Spacer()
                         PNPButton(title: "Open Devices", icon: Tab.devices.sfSymbol, size: .sm) {
@@ -683,7 +691,7 @@ struct OverviewView: View {
                     Divider().background(Theme.Colors.hairline)
                     HStack {
                         Text("Open Health Audit for finding context and remediation guidance.")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Colors.fgMuted)
                         Spacer()
                         PNPButton(title: "Open Health Audit", icon: Tab.audit.sfSymbol, size: .sm) {
@@ -719,7 +727,7 @@ struct OverviewView: View {
                     Divider().background(Theme.Colors.hairline)
                     HStack {
                         Text("Open Devices for host-level status, or Config to adjust tracked agent columns.")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Colors.fgMuted)
                         Spacer()
                         PNPButton(title: "Devices", icon: Tab.devices.sfSymbol, size: .sm) {
@@ -745,12 +753,12 @@ struct OverviewView: View {
             Card(padding: 0) {
                 Table(DemoData.deviceSample, selection: $activitySelection) {
                     TableColumn("Device") { d in
-                        Text(d.name).font(.system(size: 12.5, weight: .semibold))
+                        Text(d.name).font(.callout.weight(.semibold))
                     }
                     TableColumn("Serial") { d in Mono(text: d.serial) }
                     TableColumn("macOS") { d in Mono(text: d.os) }
                     TableColumn("User") { d in
-                        Text(d.user).font(.system(size: 12.5)).foregroundStyle(Theme.Colors.fgMuted)
+                        Text(d.user).font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                     }
                     TableColumn("Failed Rules") { d in failurePill(d.fails) }
                     TableColumn("Last Seen") { d in
@@ -795,7 +803,7 @@ struct OverviewView: View {
     ) -> some View {
         HStack(spacing: 10) {
             Text(label)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg2)
                 .lineLimit(1)
                 .frame(width: 260, alignment: .leading)
@@ -831,9 +839,11 @@ struct OverviewView: View {
             "Open Devices to focus on stale inventory records."
         case .patch:
             "Open Devices to review devices with patch failures."
+        case .securityScore:
+            "Weighted composite from Security Posture. Open that tab to see the breakdown."
         }
         return Text(text)
-            .font(.system(size: 12.5))
+            .font(.footnote)
             .foregroundStyle(Theme.Colors.fgMuted)
     }
 
@@ -843,8 +853,8 @@ struct OverviewView: View {
             return [.trends, .audit]
         case .activeDevices, .fileVault, .osCurrent, .stale, .patch:
             return [.devices]
-        case .compliance:
-            return [.audit]
+        case .compliance, .securityScore:
+            return [.securityPosture, .compliancePosture]
         case .crowdstrike:
             return [.devices, .config]
         }
@@ -963,7 +973,7 @@ private struct AgentCardView: View {
         let gap = max(0, 502 - agent.installed)
 
         return VStack(alignment: .leading, spacing: 4) {
-            Text(agent.name).font(.system(size: 12, weight: .semibold))
+            Text(agent.name).font(.footnote.weight(.semibold))
                 .foregroundStyle(Theme.Colors.fg)
             Text("\(String(format: "%.1f", pct))%")
                 .font(Theme.Fonts.serif(22, weight: .bold))

@@ -77,7 +77,10 @@ extension Tab {
     /// navigates to Schedules or Runs would be noisy and misleading.
     var isDataDriven: Bool {
         switch self {
-        case .overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports:
+        case .overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports,
+             .securityPosture, .compliancePosture, .patch, .updates,
+             .policyProfile, .extensionAttributes,
+             .outreach, .protectDashboard, .mobileFleet:
             return true
         case .schedules, .runs, .config, .customize, .sources, .backups, .settings, .onboarding:
             return false

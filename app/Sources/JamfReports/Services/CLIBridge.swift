@@ -20,12 +20,9 @@ enum ExecutableLocator {
                 return url
             }
         }
-
-        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(binary)
-        if FileManager.default.isExecutableFile(atPath: cwd.path) {
-            return cwd
-        }
+        // CWD fallback removed: first-launch onboarding pipes the Jamf Pro API
+        // secret to jamf-cli stdin; launching from a directory containing a
+        // planted `jamf-cli` would otherwise hand the secret to that binary.
         return nil
     }
 }
@@ -88,13 +85,18 @@ final class CLIBridge {
                 return []
             }
             let dir = dataDir.appendingPathComponent(type, isDirectory: true)
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ) else {
+            let entries: [URL]
+            do {
+                entries = try FileManager.default.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: [.contentModificationDateKey],
+                    options: [.skipsHiddenFiles]
+                )
+            } catch let error as NSError where error.code == NSFileReadNoSuchFileError {
+                return []  // Expected on first run before any snapshots exist
+            } catch {
                 AppLogger.cli.warning(
-                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public)"
+                    "cachedJSONSnapshots: could not enumerate \(type, privacy: .public) for \(profile, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
                 return []
             }
@@ -211,13 +213,10 @@ final class CLIBridge {
             stdout.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
-                
+                // stdout is the structured payload (typically JSON) consumed by the
+                // report engine — do NOT stream it to onLine, only capture it. Progress
+                // messages from jamf-cli arrive on stderr and are streamed below.
                 box.append(data)
-                
-                guard let s = String(data: data, encoding: .utf8) else { return }
-                for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                    onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
-                }
             }
             stderr.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
@@ -256,21 +255,14 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
-                AppLogger.cli.warning("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: msg))
-                config = ReportConfig()
-            }
-        } else {
-            config = ReportConfig()
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
+            return -1
         }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -294,9 +286,21 @@ final class CLIBridge {
             }
         }
         do {
-            try await engine.generate(csvURL: csvURL, outputURL: outputURL, template: template, onLine: onLine)
-            onLine(.init(timestamp: Date(), level: .ok,
-                         text: "[ok] report written: \(outputURL.lastPathComponent)"))
+            let failures = try await engine.generate(
+                csvURL: csvURL, outputURL: outputURL, template: template, onLine: onLine
+            )
+            if failures.isEmpty {
+                onLine(.init(timestamp: Date(), level: .ok,
+                             text: "[ok] report written: \(outputURL.lastPathComponent)"))
+            } else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[partial] Report written with \(failures.count) sheet failure(s): " +
+                                   outputURL.lastPathComponent))
+                for f in failures {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                                 text: "  failed sheet: \(f.sheet): \(f.error)"))
+                }
+            }
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -304,6 +308,38 @@ final class CLIBridge {
                          text: "[error] generate failed: \(error.localizedDescription)"))
             tightenOnSuccess(-1, profile: profile)
             return -1
+        }
+    }
+
+    /// Load config.yaml, distinguishing file-missing from parse-failure.
+    ///
+    /// File-missing is a legitimate first-run state; defaults are returned silently.
+    /// File-exists-but-unparseable indicates corruption or tampering; the caller
+    /// receives `nil` and must abort the operation.
+    ///
+    /// Detection mechanism: `FileManager.fileExists` is checked before calling
+    /// `ConfigLoader.load`. The `catch` branch is reached only when the file exists
+    /// but cannot be decoded — there is no ambiguity between the two cases.
+    ///
+    /// - Parameters:
+    ///   - url: Absolute URL of `config.yaml` within the workspace.
+    ///   - onLine: Progress callback; receives a `[error]` line on parse failure.
+    /// - Returns: A decoded and defaulted `ReportConfig` on success or file-missing;
+    ///   `nil` when the file exists but cannot be parsed.
+    private func loadConfig(
+        at url: URL,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) -> ReportConfig? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return ReportConfig()
+        }
+        do {
+            return try ConfigLoader.load(from: url)
+        } catch {
+            let msg = "[error] config.yaml parse failed — aborting: \(error.localizedDescription)"
+            AppLogger.cli.error("\(msg, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .fail, text: msg))
+            return nil
         }
     }
 
@@ -339,21 +375,14 @@ final class CLIBridge {
             return Self.exitCodeUnauthorized
         }
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
-                AppLogger.cli.warning("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: msg))
-                config = ReportConfig()
-            }
-        } else {
-            config = ReportConfig()
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
+            return -1
         }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -376,14 +405,24 @@ final class CLIBridge {
             }
         }
         do {
-            try await ReportEngine.schoolGenerate(
+            let failures = try await ReportEngine.schoolGenerate(
                 config: config,
                 csvURL: csvURL,
                 dataDir: dataDir,
                 outputURL: outputURL
             )
-            onLine(.init(timestamp: Date(), level: .ok,
-                         text: "[ok] school report written: \(outputURL.lastPathComponent)"))
+            if failures.isEmpty {
+                onLine(.init(timestamp: Date(), level: .ok,
+                             text: "[ok] school report written: \(outputURL.lastPathComponent)"))
+            } else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[partial] School report written with \(failures.count) sheet failure(s): " +
+                                   outputURL.lastPathComponent))
+                for f in failures {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                                 text: "  failed sheet: \(f.sheet): \(f.error)"))
+                }
+            }
             tightenOnSuccess(0, profile: profile)
             return 0
         } catch {
@@ -399,10 +438,16 @@ final class CLIBridge {
             return Self.exitCodeUnauthorized
         }
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        // Honor the Settings "Skip expensive collections" toggle. UserDefaults
+        // backs the @AppStorage in SettingsView, so this is a direct read.
+        // Scheduled collects run from main.swift and pass skipExpensive=false
+        // unconditionally — the toggle only affects manual GUI refreshes.
+        let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
         do {
             try await ReportEngine.collect(
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
+                skipExpensive: skipExpensive,
                 onLine: onLine
             )
             tightenOnSuccess(0, profile: profile)
@@ -684,21 +729,14 @@ final class CLIBridge {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
         // authGuard is intentionally omitted — stale/expired credentials do not prevent rendering.
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
-                AppLogger.cli.warning("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: msg))
-                config = ReportConfig()
-            }
-        } else {
-            config = ReportConfig()
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
+            return -1
         }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -748,21 +786,14 @@ final class CLIBridge {
             return Self.exitCodeUnauthorized
         }
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
-        guard let workspace = ProfileService.workspaceURL(for: profile) else { return -1 }
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        let config: ReportConfig
-        if FileManager.default.fileExists(atPath: configURL.path) {
-            do {
-                config = try ConfigLoader.load(from: configURL)
-            } catch {
-                let msg = "[warn] config.yaml parse failed — using defaults: \(error.localizedDescription)"
-                AppLogger.cli.warning("\(msg, privacy: .private)")
-                onLine(.init(timestamp: Date(), level: .warn, text: msg))
-                config = ReportConfig()
-            }
-        } else {
-            config = ReportConfig()
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
+            return -1
         }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
         let outputURL: URL
         if let path = outFile {
             outputURL = URL(fileURLWithPath: path)

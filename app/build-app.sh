@@ -97,8 +97,12 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>2.0.0</string>
+    <!-- CFBundleVersion is Sparkle's monotonic build number across the entire
+         project lifetime. Bump per beta (10 → 11 → 12 …). Never reuse or reset,
+         even when the marketing version changes — the next 2.0.1 beta starts at
+         build > 10. Re-using a build number makes Sparkle refuse the update. -->
     <key>CFBundleVersion</key>
-    <string>2.0.0</string>
+    <string>10</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>

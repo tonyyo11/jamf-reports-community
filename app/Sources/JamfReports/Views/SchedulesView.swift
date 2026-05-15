@@ -110,7 +110,10 @@ struct SchedulesView: View {
                         newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
                         showNewSchedule = true
                     }
-                    .help("Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? "Available in live mode only"
+                          : "Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
                 }
             )
         }
@@ -122,7 +125,7 @@ struct SchedulesView: View {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.warn)
                 Text(message)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg2)
                 Spacer()
             }
@@ -195,7 +198,7 @@ struct SchedulesView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Kicker(text: "Next up", tone: .gold)
                     Text(next?.name ?? "No schedules enabled")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 4) {
                         if let s = next {
@@ -225,6 +228,8 @@ struct SchedulesView: View {
                         showRunLog = true
                         Task { await runNextScheduledNow() }
                     }
+                    .disabled(workspace.demoMode || isRunning)
+                    .help(workspace.demoMode ? "Available in live mode only" : "")
                     if let msg = lastRunMessage {
                         Mono(text: msg, size: 10, color: Theme.Colors.fgMuted)
                     }
@@ -288,10 +293,25 @@ struct SchedulesView: View {
                 Spacer()
                 if isRunning {
                     ProgressView().scaleEffect(0.6)
-                } else if let msg = lastRunMessage {
-                    Pill(text: msg.contains("exit 0") ? "EXIT 0" : "DONE",
-                         tone: msg.contains("exit 0") ? .teal : .warn)
+                } else if let msg = lastRunMessage, let exitCode = Self.extractExitCode(from: msg) {
+                    Pill(
+                        text: "EXIT \(exitCode)",
+                        tone: exitCode == 0 ? .teal : .danger,
+                        icon: exitCode == 0 ? "checkmark" : "xmark"
+                    )
                 }
+                Button {
+                    let joined = runLogLines.map(\.text).joined(separator: "\n")
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(joined, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 11))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                }
+                .buttonStyle(.plain)
+                .disabled(runLogLines.isEmpty)
+                .accessibilityLabel("Copy all output")
+                .help("Copy entire log to clipboard")
                 Button { showRunLog = false } label: {
                     Image(systemName: "xmark").font(.system(size: 11))
                         .foregroundStyle(Theme.Colors.fgMuted)
@@ -303,7 +323,7 @@ struct SchedulesView: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
             RunLogConsole(lines: runLogLines, isRunning: isRunning)
-                .frame(width: 520, height: 260)
+                .frame(minWidth: 520, idealWidth: 520, maxWidth: 520, minHeight: 200, maxHeight: 320)
         }
         .background(Theme.Colors.winBG2)
     }
@@ -324,7 +344,7 @@ struct SchedulesView: View {
 
                 TableColumn("Schedule") { s in
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(s.name).font(.system(size: 13, weight: .semibold))
+                        Text(s.name).font(.callout.weight(.semibold))
                         Mono(text: labelText(for: s), size: 10.5)
                     }
                 }
@@ -351,20 +371,22 @@ struct SchedulesView: View {
                 TableColumn("") { s in
                     Menu {
                         Button {
-                            guard !isRunning else { return }
+                            guard !isRunning, !workspace.demoMode else { return }
                             showRunLog = true
                             Task { await runScheduleNow(s) }
                         } label: {
                             Label("Run now", systemImage: "play.fill")
                         }
-                        .disabled(isRunning)
+                        .disabled(isRunning || workspace.demoMode)
                         Divider()
                         Button(role: .destructive) {
+                            guard !workspace.demoMode else { return }
                             pendingDelete = s
                             showDeleteConfirm = true
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
+                        .disabled(workspace.demoMode)
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .foregroundStyle(Theme.Colors.fgMuted)
@@ -399,10 +421,10 @@ struct SchedulesView: View {
                     ForEach(Schedule.RunMode.allCases, id: \.id) { mode in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(mode.displayTitle)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.fg)
                             Text(mode.displayDescription)
-                                .font(.system(size: 11))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .lineLimit(3)
                         }
@@ -427,14 +449,14 @@ struct SchedulesView: View {
                                     .foregroundStyle(color)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(mode.displayTitle)
-                                        .font(.system(size: 11, weight: .semibold))
+                                        .font(.caption.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
                                     Mono(text: mode.rawValue, size: 9, color: Theme.Colors.fgMuted)
                                 }
                             }
                             Divider().background(Theme.Colors.hairline)
                             Text(mode.displayDescription)
-                                .font(.system(size: 10.5))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                                 .lineLimit(4)
                         }
@@ -477,6 +499,7 @@ struct SchedulesView: View {
     }
 
     private func toggleSchedule(_ schedule: Schedule) async {
+        guard !workspace.demoMode else { return }
         guard let idx = workspace.schedules.firstIndex(where: { $0.id == schedule.id }) else { return }
 
         let original = workspace.schedules[idx].enabled
@@ -503,6 +526,7 @@ struct SchedulesView: View {
     }
 
     private func deleteSchedule(_ schedule: Schedule) {
+        guard !workspace.demoMode else { return }
         guard let label = LaunchAgentWriter.label(for: schedule) else {
             writeError = "Schedule name or profile produces an invalid LaunchAgent label."
             showWriteError = true
@@ -550,6 +574,31 @@ struct SchedulesView: View {
         LaunchAgentWriter.label(for: schedule) ?? "(invalid label)"
     }
 
+    /// Extracts the exit code from a run-completion message. The producer is
+    /// `runSchedule` which emits `"\(name) · exit \(code)"`. Older log
+    /// formats may omit the leading separator. Returns nil when the message
+    /// does not carry a parseable exit code — callers should suppress the
+    /// EXIT pill rather than rendering a bogus "EXIT -1" sentinel.
+    /// `nonisolated` so unit tests can call it without inheriting the
+    /// implicit `@MainActor` View isolation under Swift 6 strict concurrency.
+    nonisolated static func extractExitCode(from message: String) -> Int? {
+        // Anchor on the literal " exit " (or "exit " at start of string)
+        // followed by an optional sign and digits to end-of-string. The
+        // trailing-only match avoids picking up "Exit Code in" or similar
+        // mid-sentence occurrences if the format ever changes.
+        guard let range = message.range(
+            of: #"(?:^|\s)exit\s+(-?\d+)\s*$"#,
+            options: .regularExpression
+        ) else {
+            return nil
+        }
+        // Extract the captured digit run from the matched substring.
+        let matched = message[range]
+        guard let digits = matched.range(of: #"-?\d+"#, options: .regularExpression) else {
+            return nil
+        }
+        return Int(matched[digits])
+    }
 }
 
 // MARK: - Run log console (terminal-styled live output)
@@ -581,6 +630,7 @@ private struct RunLogConsole: View {
                                 Text(line.text)
                                     .font(Theme.Fonts.mono(12))
                                     .foregroundStyle(color(for: line))
+                                    .textSelection(.enabled)
                                 if idx == lines.count - 1 { cursor }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -631,10 +681,10 @@ private struct RunLogConsole: View {
     private func color(for line: CLIBridge.LogLine) -> Color {
         let lower = line.text.lowercased()
         if lower.contains("error") || lower.contains("fail") || line.level == .fail {
-            return Color(hex: 0xFF8077)
+            return Theme.Colors.dangerSoft
         }
         if lower.contains("warn") || line.level == .warn {
-            return Color(hex: 0xFFB340)
+            return Theme.Colors.warnSoft
         }
         if line.text.contains("✓") || lower.contains("success") || lower.contains("done") || line.level == .ok {
             return Theme.Colors.ok
@@ -755,6 +805,9 @@ private struct NewScheduleSheet: View {
     let onSave: (ScheduleFormState) -> Void
     let onCancel: () -> Void
 
+    @FocusState private var nameFieldFocused: Bool
+    @State private var nameWasTouched = false
+
     private let weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
     var body: some View {
@@ -762,7 +815,7 @@ private struct NewScheduleSheet: View {
             // Title bar
             HStack {
                 Text("New Schedule")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.headline)
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
                 Button(action: onCancel) {
@@ -779,7 +832,18 @@ private struct NewScheduleSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     formRow(label: "Name") {
-                        PNPTextField(value: $form.name, placeholder: "e.g. Daily Snapshot Collection")
+                        VStack(alignment: .leading, spacing: 4) {
+                            PNPTextField(value: $form.name, placeholder: "e.g. Daily Snapshot Collection")
+                                .focused($nameFieldFocused)
+                                .onChange(of: nameFieldFocused) { _, focused in
+                                    if !focused { nameWasTouched = true }
+                                }
+                            if nameWasTouched && form.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                                Text("Schedule name is required")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Colors.warn)
+                            }
+                        }
                     }
 
                     formRow(label: "Profile target") {
@@ -816,7 +880,7 @@ private struct NewScheduleSheet: View {
                             Toggle("Run profiles one at a time", isOn: $form.multiSequential)
                                 .labelsHidden()
                             Text("Run profiles one at a time")
-                                .font(.system(size: 11.5))
+                                .font(.caption)
                                 .foregroundStyle(Theme.Colors.fgMuted)
                         }
                     }

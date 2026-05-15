@@ -4,6 +4,13 @@ Operator-facing documentation for the JamfReports macOS app and its companion Py
 CLI. Start with Getting Started, then jump to whichever section matches the task at
 hand.
 
+## Reference
+
+- [GLOSSARY.md](GLOSSARY.md) — canonical terms for the Apple, Jamf, and
+  jamf-reports-community vocabulary. Disambiguates overlapping terms
+  (smart vs static group, scope vs target, blueprint vs config profile,
+  MDM command vs declaration, ADE vs DEP).
+
 ## Onboarding
 
 - [GETTING_STARTED.md](onboarding/GETTING_STARTED.md) — install, first profile, first

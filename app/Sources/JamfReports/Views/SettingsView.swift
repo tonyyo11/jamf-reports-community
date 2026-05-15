@@ -1,11 +1,20 @@
 import SwiftUI
 import AppKit
 
+private final class TextLineBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _lines: [String] = []
+    func append(_ text: String) { lock.withLock { _lines.append(text) } }
+    var lines: [String] { lock.withLock { _lines } }
+}
+
 struct SettingsView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
     @State private var testingProfile: String? = nil
     @State private var testResults: [String: Bool] = [:]
+    @State private var testErrors: [String: String] = [:]
+    @State private var testingTooLong = false
     @State private var addConnectionMessage: String? = nil
     @State private var tokenStatuses: [String: TokenStatus] = [:]
     @State private var loadingTokenProfiles: Set<String> = []
@@ -25,6 +34,8 @@ struct SettingsView: View {
                     cliCard
                     connectionsCard
                 }
+                dataAndChartsCard
+                sidebarVisibilityCard
                 aboutCard
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -120,7 +131,7 @@ struct SettingsView: View {
     private func settingsRow(label: String, sub: String, trailing: AnyView) -> some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(.system(size: 13, weight: .medium))
+                Text(label).font(.callout.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 Text(sub).font(Theme.Fonts.mono(11)).foregroundStyle(Theme.Text.tertiary)
             }
@@ -142,7 +153,7 @@ struct SettingsView: View {
                                 .fill(dotColor(for: c))
                                 .frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(c.name).font(.system(size: 12.5, weight: .medium))
+                                Text(c.name).font(.footnote.weight(.medium))
                                     .foregroundStyle(isUnsupported ? Theme.Text.disabled : Theme.Text.primary)
                                 Mono(text: "\(c.url) · \(profileType(c))", size: 10.5)
                                 tokenStatusLabel(for: c.name)
@@ -161,7 +172,7 @@ struct SettingsView: View {
                     }
                     if workspace.profiles.isEmpty {
                         Text("No local jamf-cli profiles found.")
-                            .font(.system(size: 12.5))
+                            .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 10)
@@ -184,6 +195,10 @@ struct SettingsView: View {
                         }
                     }
                     .help("Opens a Terminal window and copies `jamf-cli config add-profile` to your clipboard.")
+                    Text("Opens Terminal and copies the auth command. Paste it in the Terminal window and follow the prompts.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let msg = addConnectionMessage {
                         Text(msg)
                             .font(Theme.Fonts.mono(10.5))
@@ -198,23 +213,63 @@ struct SettingsView: View {
 
     @ViewBuilder
     private func testControlView(for profileName: String) -> some View {
-        if testingProfile == profileName {
-            ProgressView().controlSize(.small)
-        } else if let passed = testResults[profileName] {
-            Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(passed ? Theme.Colors.ok : Theme.Colors.warn)
-                .font(.system(size: 14))
-        } else {
-            PNPButton(title: "Test", size: .sm) {
-                testingProfile = profileName
-                Task {
-                    let bridge = CLIBridge()
-                    let exit = await bridge.validateConnection(profile: profileName) { _ in }
-                    testResults[profileName] = exit == 0
-                    testingProfile = nil
+        VStack(alignment: .trailing, spacing: 4) {
+            if testingProfile == profileName {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    if testingTooLong {
+                        Text("Taking longer than usual…")
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary)
+                    }
                 }
+            } else if let passed = testResults[profileName] {
+                HStack(spacing: 6) {
+                    Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(passed ? Theme.Colors.ok : Theme.Colors.warn)
+                        .font(.system(size: 14))
+                    PNPButton(title: "Retest", size: .sm) {
+                        runConnectionTest(for: profileName)
+                    }
+                }
+                if let err = testErrors[profileName] {
+                    Text(err)
+                        .font(Theme.Fonts.mono(10.5))
+                        .foregroundStyle(Theme.Colors.warn)
+                        .lineLimit(4)
+                        .onTapGesture { testErrors[profileName] = nil }
+                }
+            } else {
+                PNPButton(title: "Test", size: .sm) {
+                    runConnectionTest(for: profileName)
+                }
+                .help("Run `jamf-cli pro auth-status` against this profile to verify the API token is valid.")
             }
-            .help("Run `jamf-cli pro auth-status` against this profile to verify the API token is valid.")
+        }
+    }
+
+    private func runConnectionTest(for profileName: String) {
+        testingProfile = profileName
+        testErrors[profileName] = nil
+        testingTooLong = false
+        Task {
+            let bridge = CLIBridge()
+            let buf = TextLineBuffer()
+            let timeoutTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(10))
+                if !Task.isCancelled { testingTooLong = true }
+            }
+            let exit = await bridge.validateConnection(profile: profileName) { line in
+                buf.append(line.text)
+            }
+            timeoutTask.cancel()
+            testResults[profileName] = exit == 0
+            if exit != 0 {
+                let msg = buf.lines.filter { !$0.isEmpty }.joined(separator: "\n")
+                testErrors[profileName] = msg.isEmpty ? "Connection failed (exit \(exit))" : msg
+            }
+            testingProfile = nil
+            testingTooLong = false
         }
     }
 
@@ -275,12 +330,12 @@ struct SettingsView: View {
                             .font(Theme.Fonts.mono(13))
                         Text("project — every flow in this app maps to a CLI command.")
                     }
-                    .font(.system(size: 13))
+                    .font(.callout)
                     .foregroundStyle(Theme.Text.secondary)
                     .frame(maxWidth: 620, alignment: .leading)
 
                     Text("The CLI ships independently and stays the source of truth; this app reads and writes its config and orchestrates runs.")
-                        .font(.system(size: 13))
+                        .font(.callout)
                         .foregroundStyle(Theme.Text.secondary)
                         .frame(maxWidth: 620, alignment: .leading)
 
@@ -342,5 +397,139 @@ struct SettingsView: View {
             Text(value).foregroundStyle(Theme.Text.primary)
         }
         .font(Theme.Fonts.mono(11.5))
+    }
+
+    // MARK: - Sidebar visibility
+
+    /// Lets the user hide tabs they don't use. Backed by `@AppStorage`
+    /// (parsed/serialized via `TabVisibility`). Grouped by the same sidebar
+    /// sections so the layout mirrors what the user sees on the left.
+    @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
+
+    /// Defaults that fan out across every trend-aware screen. Stored as raw
+    /// strings so adding new `TrendRange` cases later doesn't shift saved prefs.
+    @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
+
+    /// When ON, `ReportEngine.collect()` skips the four per-device commands
+    /// (ea-results, patch-device-failures, update-device-failures,
+    /// device-compliance). Off by default — the cold tier already paces them
+    /// at 24h, so most users want them.
+    @AppStorage("skipExpensiveCollections") private var skipExpensiveCollections: Bool = false
+
+    private var dataAndChartsCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Data & Charts")
+                settingsRow(
+                    label: "Default trend range",
+                    sub: "Applies to Overview and Trends until you change the picker in-view.",
+                    trailing: AnyView(trendRangePicker)
+                )
+                Divider().background(Theme.Hairline.standard)
+                settingsRow(
+                    label: "Skip expensive collections",
+                    sub: skipExpensiveCollectionsSubtitle,
+                    trailing: AnyView(PNPToggle(isOn: $skipExpensiveCollections))
+                )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Data and charts settings")
+    }
+
+    private var trendRangePicker: some View {
+        Picker("Default trend range", selection: $defaultTrendRangeRaw) {
+            Text("4 weeks").tag(TrendRange.w4.rawValue)
+            Text("12 weeks").tag(TrendRange.w12.rawValue)
+            Text("26 weeks").tag(TrendRange.w26.rawValue)
+            Text("52 weeks").tag(TrendRange.w52.rawValue)
+            Text("All").tag(TrendRange.all.rawValue)
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .frame(width: 130)
+    }
+
+    private var skipExpensiveCollectionsSubtitle: String {
+        if skipExpensiveCollections {
+            return "Per-device commands paused. Posture, Patch, Updates, and Extension Attributes dashboards will show last cached values until refreshed."
+        }
+        return "Run the four per-device commands (ea-results, patch-device-failures, update-device-failures, device-compliance) on every collect."
+    }
+
+    private var sidebarVisibilityCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SectionHeader(title: "Sidebar Visibility")
+                    Spacer()
+                    PNPButton(title: "Show all", size: .sm) {
+                        var v = TabVisibility.parse(hiddenTabsRaw)
+                        v.showAll()
+                        hiddenTabsRaw = v.serialize()
+                    }
+                    .help("Restore every hidden tab to the sidebar.")
+                }
+                Text("Hide dashboards you don't use. Core tabs (Overview, Devices, Sources, Settings) cannot be hidden.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                ForEach(SettingsView.toggleableGroups, id: \.label) { group in
+                    visibilityGroupRow(label: group.label, tabs: group.tabs)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Sidebar visibility settings")
+    }
+
+    private static let toggleableGroups: [(label: String, tabs: [Tab])] = [
+        ("Reports",       [.fleet, .deviceLookup, .trends, .audit, .reports]),
+        ("Posture",       [.securityPosture, .compliancePosture, .outreach]),
+        ("Operations",    [.patch, .updates, .policyProfile, .extensionAttributes]),
+        ("Fleet",         [.mobileFleet, .protectDashboard]),
+        ("Automation",    [.schedules, .runs]),
+        ("Configuration", [.config, .customize, .backups])
+    ]
+
+    private func visibilityGroupRow(label: String, tabs: [Tab]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label.uppercased())
+                .font(Theme.Fonts.mono(10, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(Theme.Colors.fgMuted)
+            ForEach(tabs, id: \.self) { tab in
+                visibilityRow(for: tab)
+            }
+        }
+    }
+
+    private func visibilityRow(for tab: Tab) -> some View {
+        let visibility = TabVisibility.parse(hiddenTabsRaw)
+        let isVisible = visibility.isVisible(tab)
+        return HStack(spacing: 10) {
+            Image(systemName: tab.sfSymbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.Colors.fgMuted)
+                .frame(width: 16, alignment: .center)
+            Text(tab.label)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.fg)
+            Spacer()
+            PNPToggle(
+                isOn: Binding(
+                    get: { isVisible },
+                    set: { newValue in
+                        var v = TabVisibility.parse(hiddenTabsRaw)
+                        // The toggle binds to "isVisible". A true→false flip
+                        // means the user wants the tab hidden, so we call
+                        // toggle() when the current state and new state differ.
+                        if v.isVisible(tab) != newValue { v.toggle(tab) }
+                        hiddenTabsRaw = v.serialize()
+                    }
+                ),
+                label: "\(tab.label) visibility"
+            )
+        }
+        .padding(.vertical, 2)
     }
 }

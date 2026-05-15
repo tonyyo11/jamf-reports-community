@@ -79,6 +79,22 @@ enum WorkspacePaths {
         try historicalDir(for: profile).appendingPathComponent("summaries", isDirectory: true)
     }
 
+    /// `<workspace>/automation/logs` — the run-history log directory written
+    /// by LaunchAgent stdout/stderr redirection.
+    ///
+    /// This path is fixed by convention (not a config knob), so no YAML
+    /// parsing is performed. The helper throws only when `profile` fails
+    /// `ProfileService.isValid`, enforcing the profile-name regex at one
+    /// canonical site.
+    static func runHistoryDir(for profile: String) throws -> URL {
+        guard let workspace = workspaceRoot(for: profile) else {
+            throw PathError.invalidProfile(profile)
+        }
+        return workspace
+            .appendingPathComponent("automation", isDirectory: true)
+            .appendingPathComponent("logs", isDirectory: true)
+    }
+
     // MARK: - Internals
 
     enum PathError: Error, LocalizedError {
