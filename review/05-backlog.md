@@ -104,7 +104,7 @@ conflict.
 
 ## PR-3 — Profile-slug regex tighten (S-03)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #58, commit 0d8b3f4, 2026-05-15)
 - **finding ids:** [S-03]
 - **files it touches:**
   - `app/Sources/JamfReports/Services/ProfileService.swift` (`isValid` regex)
@@ -136,7 +136,7 @@ conflict.
 
 ## PR-4 — SmartGroup integration safety (S-09)
 
-- **status:** `pending`
+- **status:** `in_progress`
 - **finding ids:** [S-09]
 - **files it touches:**
   - `app/Sources/JamfReports/Services/SmartGroupApplyService.swift` (line 189 default)

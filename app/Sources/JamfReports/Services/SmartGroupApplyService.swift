@@ -186,7 +186,26 @@ final class SmartGroupApplyService {
             ?? json["memberCount"] as? Int
             ?? json["matched_count"] as? Int
             ?? json["matchedCount"] as? Int
-        let created = json["created"] as? Bool ?? true
+        // S-09 (PR-4): default to `false` when the upstream `created`
+        // flag is absent. In audited admin environments a false
+        // "created" is more harmful than a false "updated" (the former
+        // sends the operator hunting for a phantom new group, the
+        // latter at worst nudges them to verify an existing one). The
+        // field is always present in jamf-cli output as of today's
+        // test fixtures; this default reaches production only if a
+        // future schema drift drops it. The warning below makes that
+        // drift observable in logs.
+        let createdField = json["created"] as? Bool
+        if createdField == nil {
+            // Fires for both true absence (key not present) and type
+            // mismatch (e.g. string "true", numeric 1). Either way the
+            // upstream contract has drifted from what today's fixtures
+            // document, which is what the operator needs to know.
+            AppLogger.cli.warning(
+                "SmartGroupApplyService.decodeResult: `created` flag missing or non-boolean for smartGroupID=\(id, privacy: .public); defaulting to false. Indicates upstream contract drift (jamf-cli PR #205)."
+            )
+        }
+        let created = createdField ?? false
         return SmartGroupApplyResult(
             smartGroupID: id,
             name: name,

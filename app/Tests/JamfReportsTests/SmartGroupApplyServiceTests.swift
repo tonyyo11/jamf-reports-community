@@ -66,6 +66,58 @@ final class SmartGroupApplyServiceTests: XCTestCase {
         XCTAssertNil(result.memberCount)
     }
 
+    /// S-09 (PR-4): when the upstream `created` flag is absent the
+    /// decoder previously defaulted to `true`, causing the UI to render
+    /// "Smart group created" for what might be an update. In audited
+    /// admin environments a false "created" is actively misleading; a
+    /// false "updated" is the safer wrong answer. Flip the default to
+    /// `false` so the absent-field case at least doesn't claim a state
+    /// that may not have happened.
+    ///
+    /// jamf-cli PR #205's contract is unstable (commit f80753b in this
+    /// repo documents drift discovered live); the default reaches
+    /// production only if a future schema change drops the field.
+    func testDecodeResultAbsentCreatedDefaultsFalse() throws {
+        let json = Data(#"{"id": 7, "name": "X", "member_count": 3}"#.utf8)
+        let result = try SmartGroupApplyService.decodeResult(json)
+        XCTAssertFalse(result.created,
+                       "Absent `created` field must default to false (safer wrong answer per S-09)")
+    }
+
+    func testDecodeResultExplicitFalseStillFalse() throws {
+        // Regression guard: don't conflate "absent" and "false".
+        let json = Data(#"{"id": 8, "name": "X", "member_count": 3, "created": false}"#.utf8)
+        let result = try SmartGroupApplyService.decodeResult(json)
+        XCTAssertFalse(result.created)
+    }
+
+    func testDecodeResultExplicitTrueStillTrue() throws {
+        // Regression guard: the default flip must not change behavior
+        // when the producer emits `created: true` (the common case).
+        let json = Data(#"{"id": 9, "name": "X", "member_count": 3, "created": true}"#.utf8)
+        let result = try SmartGroupApplyService.decodeResult(json)
+        XCTAssertTrue(result.created)
+    }
+
+    func testDecodeResultStringCreatedDefaultsFalse() throws {
+        // silent-failure-hunter PR-4 review: the warning fires for both
+        // "key absent" and "wrong type". Lock in the wrong-type
+        // behavior so a future change can't accidentally accept a
+        // string `"true"` as truthy and silently revert the S-09
+        // guarantee.
+        //
+        // Note: Foundation's `as? Bool` accepts numeric 0/1 via
+        // NSNumber bridging — that's an acceptable type coercion (1 is
+        // truthy in JSON), so this test pins only the genuinely
+        // non-coercible cases.
+        for badValue in [#""true""#, #""false""#, "null"] {
+            let json = Data(#"{"id": 10, "name": "X", "member_count": 3, "created": \#(badValue)}"#.utf8)
+            let result = try SmartGroupApplyService.decodeResult(json)
+            XCTAssertFalse(result.created,
+                           "Non-coercible `created` value \(badValue) must default to false (warning fires; behavior matches S-09)")
+        }
+    }
+
     func testDecodeResultMissingIDThrows() {
         XCTAssertThrowsError(
             try SmartGroupApplyService.decodeResult(Data(#"{"name": "X"}"#.utf8))
