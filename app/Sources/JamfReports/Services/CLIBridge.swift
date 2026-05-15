@@ -135,21 +135,31 @@ final class CLIBridge {
 
     /// Run an arbitrary command, streaming each line through `onLine`. Returns the
     /// process exit code. Marked `nonisolated` so it can be awaited off the main actor.
+    ///
+    /// - Parameter environment: Process environment. Defaults to
+    ///   `environmentForJamfCLI()` (S-02) so callers that omit the
+    ///   argument do not inherit the parent's `DYLD_INSERT_LIBRARIES`,
+    ///   `SSL_CERT_FILE`, or other dyld-relevant variables.
     nonisolated func run(
         executable: URL,
         arguments: [String],
         cwd: URL? = nil,
-        environment: [String: String]? = nil,
+        environment: [String: String] = CLIBridge.environmentForJamfCLI(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Int32 {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Int32, Never>) in
+        // M-01: re-verify jamf-cli signature before each spawn so a
+        // post-onboarding binary swap on a user-writable path
+        // (/opt/homebrew/bin) cannot receive credentials.
+        if let blocked = Self.codesignGate(executable: executable, onLine: onLine) {
+            return blocked
+        }
+
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Int32, Never>) in
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
             if let cwd { process.currentDirectoryURL = cwd }
-            if let environment {
-                process.environment = environment
-            }
+            process.environment = environment
 
             let stdout = Pipe()
             let stderr = Pipe()
@@ -193,11 +203,13 @@ final class CLIBridge {
 
     /// Run an arbitrary command, streaming each line through `onLine` and returning
     /// the collected stdout + the process exit code.
+    ///
+    /// - Parameter environment: see ``run(executable:arguments:cwd:environment:onLine:)``.
     nonisolated func runAndCapture(
         executable: URL,
         arguments: [String],
         cwd: URL? = nil,
-        environment: [String: String]? = nil,
+        environment: [String: String] = CLIBridge.environmentForJamfCLI(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> (Int32, Data) {
         final class DataBox: @unchecked Sendable {
@@ -211,14 +223,17 @@ final class CLIBridge {
         }
         let box = DataBox()
 
+        // M-01: same gate as `run` — verify before spawn.
+        if let blocked = Self.codesignGate(executable: executable, onLine: onLine) {
+            return (blocked, Data())
+        }
+
         let code = await withCheckedContinuation { (continuation: CheckedContinuation<Int32, Never>) in
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
             if let cwd { process.currentDirectoryURL = cwd }
-            if let environment {
-                process.environment = environment
-            }
+            process.environment = environment
 
             let stdout = Pipe()
             let stderr = Pipe()
@@ -1337,6 +1352,43 @@ final class CLIBridge {
         "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
         "http_proxy", "https_proxy", "no_proxy",
     ]
+
+    /// M-01: codesign verification gate invoked by `run` and
+    /// `runAndCapture` before spawning a process. Returns `nil` when
+    /// the spawn should proceed, or a sentinel exit code (-1) when the
+    /// gate rejected the binary — in which case the caller MUST NOT
+    /// invoke `process.run()`.
+    ///
+    /// Scoped on basename: only binaries named `jamf-cli` are gated.
+    /// Non-jamf-cli executables (`/bin/sh`, `/bin/echo`, etc.) pass
+    /// through unconditionally. This keeps the helper safe for any
+    /// future caller that flows a non-Jamf binary through CLIBridge.
+    ///
+    /// On rejection: emits a fatal log line via `onLine` so the user
+    /// sees a clear "signature verification failed" message in the
+    /// Runs feed, and mirrors to AppLogger for post-mortem forensics.
+    nonisolated static func codesignGate(
+        executable: URL,
+        onLine: (LogLine) -> Void
+    ) -> Int32? {
+        guard executable.lastPathComponent == "jamf-cli" else {
+            return nil
+        }
+        switch JamfCLIIdentity.ensureVerifiedJamfCLI(executable: executable) {
+        case .success:
+            return nil
+        case .failure(let error):
+            AppLogger.cli.error(
+                "CLIBridge: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
+            )
+            onLine(.init(
+                timestamp: Date(),
+                level: .fail,
+                text: "[fatal] jamf-cli signature verification failed — refusing to launch \(executable.path)"
+            ))
+            return -1
+        }
+    }
 
     nonisolated static func environmentForJamfCLI() -> [String: String] {
         let parent = ProcessInfo.processInfo.environment

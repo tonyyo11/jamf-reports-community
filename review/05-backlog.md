@@ -26,7 +26,7 @@ conflict.
 
 ## PR-1 — Correctness fixes (M-02 + S-01)
 
-- **status:** `in_progress`
+- **status:** `done` (merged via PR #56, commit cd9eae3, 2026-05-15)
 - **finding ids:** [M-02, S-01]
 - **files it touches:**
   - `app/Sources/JamfReports/Views/OverviewView.swift` (lines 365, 716, 973, 983, 1025, 1028)
@@ -70,7 +70,7 @@ conflict.
 
 ## PR-2 — Codesign on routine paths (M-01 + S-02)
 
-- **status:** `pending`
+- **status:** `in_progress`
 - **finding ids:** [M-01, S-02]
 - **files it touches:**
   - `app/Sources/JamfReports/Services/CLIBridge.swift` (lines 123 `run`, 127 env default, 181 `runAndCapture`, 181 env default)
