@@ -57,15 +57,11 @@ enum WorkspaceMigration {
         return true
     }
 
-    /// Per-profile migration outcome — `true` only when marker drop, Spotlight
-    /// disable, and the permission sweep all reported success for the profile.
+    /// Per-profile migration outcome — `succeeded` is the AND of marker drop,
+    /// Spotlight disable, and the permission sweep for the profile.
     struct ProfileResult: Sendable, Equatable {
         let profile: String
-        let markerDropped: Bool
-        let spotlightDisabled: Bool
-        let sweepSucceeded: Bool
-
-        var succeeded: Bool { markerDropped && spotlightDisabled && sweepSucceeded }
+        let succeeded: Bool
     }
 
     /// Aggregate of every profile processed in a `run`. Callers (notably
@@ -95,23 +91,14 @@ enum WorkspaceMigration {
         var results: [ProfileResult] = []
         for profile in profiles {
             guard let workspace = ProfileService.workspaceURL(for: profile) else {
-                results.append(ProfileResult(
-                    profile: profile,
-                    markerDropped: false,
-                    spotlightDisabled: false,
-                    sweepSucceeded: false
-                ))
+                results.append(ProfileResult(profile: profile, succeeded: false))
                 continue
             }
             let marker = dropNeverIndexMarker(at: workspace)
             let spotlight = disableSpotlight(at: workspace)
             let sweep = WorkspacePermissionHardener.tighten(profile: profile)
-            results.append(ProfileResult(
-                profile: profile,
-                markerDropped: marker,
-                spotlightDisabled: spotlight,
-                sweepSucceeded: sweep.enumerated && sweep.failed == 0
-            ))
+            let succeeded = marker && spotlight && (sweep.enumerated && sweep.failed == 0)
+            results.append(ProfileResult(profile: profile, succeeded: succeeded))
         }
         return RunResult(profiles: results)
     }

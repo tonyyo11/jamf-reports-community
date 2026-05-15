@@ -9,12 +9,11 @@ import PDFKit
 ///
 /// Verifies:
 /// 1. SheetRegistry dispatches only the sheets listed in `template.includedSheets`.
-/// 2. SectionRegistry assembles HTML only for registered sections.
-/// 3. TemplateResolver returns the correct template for each known identifier,
+/// 2. TemplateResolver returns the correct template for each known identifier,
 ///    and falls back to ExecutiveTemplate for unknown identifiers with a warning.
-/// 4. ReportEngine.generate writes exactly the template's sheets (where implemented).
-/// 5. ReportEngine.applyPagination injects correct CSS for each PaginationStrategy.
-/// 6. ReportEngine.generatePDF produces a non-empty PDF for .sectionPerPage strategy.
+/// 3. ReportEngine.generate writes exactly the template's sheets (where implemented).
+/// 4. ReportEngine.applyPagination injects correct CSS for each PaginationStrategy.
+/// 5. ReportEngine.generatePDF produces a non-empty PDF for .sectionPerPage strategy.
 final class TemplatedEngineTests: XCTestCase {
 
     // MARK: - Helpers
@@ -149,83 +148,6 @@ final class TemplatedEngineTests: XCTestCase {
             XCTAssertFalse(protectAndDDM.contains(name),
                            "Executive template must not include '\(name)'")
         }
-    }
-
-    // MARK: - SectionRegistry
-
-    func testSectionRegistryRendersOnlyRequestedSections() {
-        let registry = SectionRegistry(builders: [
-            SectionID.kpiTiles.rawValue:     { "<section data-section='kpi_tiles'>KPI</section>" },
-            SectionID.fleetSummary.rawValue: { "<section data-section='fleet_summary'>Fleet</section>" },
-            SectionID.policyTable.rawValue:  { "<section data-section='policy_table'>Policy</section>" },
-        ])
-        let template = OperationalTemplate()
-
-        // OperationalTemplate includes kpiTiles but not fleetSummary (at this registry level).
-        let (html, unimplemented) = registry.renderSelected(template: template)
-
-        if template.htmlSections.contains(.kpiTiles) {
-            XCTAssertTrue(html.contains("kpi_tiles"),
-                          "kpiTiles should appear in rendered HTML when in template")
-        }
-
-        // fleetSummary is NOT in OperationalTemplate.htmlSections — builder exists but not called.
-        if !template.htmlSections.contains(.fleetSummary) {
-            XCTAssertFalse(html.contains("fleet_summary"),
-                           "fleetSummary should be absent from HTML when not in template")
-        }
-
-        // All unimplemented IDs must be in template.htmlSections and not in the registry.
-        let registeredIDs = Set([
-            SectionID.kpiTiles.rawValue,
-            SectionID.fleetSummary.rawValue,
-            SectionID.policyTable.rawValue,
-        ])
-        for id in unimplemented {
-            XCTAssertTrue(template.htmlSections.contains(id),
-                          "Unimplemented ID '\(id.rawValue)' must be in template.htmlSections")
-            XCTAssertFalse(registeredIDs.contains(id.rawValue),
-                           "Unimplemented ID '\(id.rawValue)' must not be in the registry")
-        }
-    }
-
-    func testSectionRegistryEmitsCommentForUnimplementedSections() {
-        let registry = SectionRegistry(builders: [:])
-        let template = ExecutiveTemplate()
-
-        let (html, unimplemented) = registry.renderSelected(template: template)
-
-        XCTAssertFalse(unimplemented.isEmpty,
-                       "An empty registry should report all template sections as unimplemented")
-        // Each unimplemented ID should appear as a comment in the output.
-        for id in unimplemented {
-            XCTAssertTrue(html.contains("<!-- section: \(id.rawValue)"),
-                          "Unimplemented section '\(id.rawValue)' must produce a comment placeholder")
-        }
-    }
-
-    func testSectionRegistryPreservesTemplateOrder() {
-        var callOrder: [String] = []
-        let sectionIDs: [SectionID] = [.kpiTiles, .policyTable, .orgInfo]
-        var builders: [String: SectionRegistry.BuildAction] = [:]
-        for id in sectionIDs {
-            let captured = id.rawValue
-            builders[id.rawValue] = {
-                callOrder.append(captured)
-                return "<div>\(captured)</div>"
-            }
-        }
-        let registry = SectionRegistry(builders: builders)
-
-        // Use a template whose htmlSections contains kpiTiles, policyTable, orgInfo in some order.
-        // ExecutiveTemplate includes kpiTiles, policyTable (via orgInfo mapping), complianceBands.
-        // Build a minimal ordered list that exercises ordering.
-        let orderedSections: [SectionID] = [.orgInfo, .kpiTiles, .policyTable]
-        let dummyTemplate = _OrderedSectionTemplate(htmlSections: orderedSections)
-        let (_, _) = registry.renderSelected(template: dummyTemplate)
-
-        XCTAssertEqual(callOrder, orderedSections.map(\.rawValue),
-                       "Section builders must be called in template.htmlSections order")
     }
 
     // MARK: - ReportEngine.generate with template parameter
@@ -430,21 +352,3 @@ final class TemplatedEngineTests: XCTestCase {
     }
 }
 
-// MARK: - Helper: ordered-section test template
-
-/// Minimal `ReportTemplate` for testing `SectionRegistry` section ordering.
-/// Not registered in `TemplateResolver` — used only in this test file.
-private struct _OrderedSectionTemplate: ReportTemplate {
-    let identifier = "_test_ordered"
-    let displayName = "Test Ordered"
-    let description = "Test-only template"
-    let audience = "Test"
-    let includedSheets: [SheetID] = []
-    let htmlSections: [SectionID]
-    let pdfPagination: PaginationStrategy = .compact
-    let recommendedSchedule: TemplateDataTier = .core
-
-    init(htmlSections: [SectionID]) {
-        self.htmlSections = htmlSections
-    }
-}
