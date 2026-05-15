@@ -197,8 +197,12 @@ final class SmartGroupApplyService {
         // drift observable in logs.
         let createdField = json["created"] as? Bool
         if createdField == nil {
+            // Fires for both true absence (key not present) and type
+            // mismatch (e.g. string "true", numeric 1). Either way the
+            // upstream contract has drifted from what today's fixtures
+            // document, which is what the operator needs to know.
             AppLogger.cli.warning(
-                "SmartGroupApplyService.decodeResult: upstream payload omitted `created` flag for smartGroupID=\(id, privacy: .public); defaulting to false. This indicates upstream contract drift (jamf-cli PR #205)."
+                "SmartGroupApplyService.decodeResult: `created` flag missing or non-boolean for smartGroupID=\(id, privacy: .public); defaulting to false. Indicates upstream contract drift (jamf-cli PR #205)."
             )
         }
         let created = createdField ?? false

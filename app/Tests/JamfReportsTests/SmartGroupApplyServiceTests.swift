@@ -99,6 +99,25 @@ final class SmartGroupApplyServiceTests: XCTestCase {
         XCTAssertTrue(result.created)
     }
 
+    func testDecodeResultStringCreatedDefaultsFalse() throws {
+        // silent-failure-hunter PR-4 review: the warning fires for both
+        // "key absent" and "wrong type". Lock in the wrong-type
+        // behavior so a future change can't accidentally accept a
+        // string `"true"` as truthy and silently revert the S-09
+        // guarantee.
+        //
+        // Note: Foundation's `as? Bool` accepts numeric 0/1 via
+        // NSNumber bridging — that's an acceptable type coercion (1 is
+        // truthy in JSON), so this test pins only the genuinely
+        // non-coercible cases.
+        for badValue in [#""true""#, #""false""#, "null"] {
+            let json = Data(#"{"id": 10, "name": "X", "member_count": 3, "created": \#(badValue)}"#.utf8)
+            let result = try SmartGroupApplyService.decodeResult(json)
+            XCTAssertFalse(result.created,
+                           "Non-coercible `created` value \(badValue) must default to false (warning fires; behavior matches S-09)")
+        }
+    }
+
     func testDecodeResultMissingIDThrows() {
         XCTAssertThrowsError(
             try SmartGroupApplyService.decodeResult(Data(#"{"name": "X"}"#.utf8))
