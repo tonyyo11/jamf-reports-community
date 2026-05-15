@@ -134,6 +134,63 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
         XCTAssertNoThrow(try second.get())
         XCTAssertEqual(counter.value, 0, "Cache hit must short-circuit the verifier closure")
     }
+
+    // MARK: - runDeviceDetailProcess (high-throughput per-device fetch)
+    //
+    // singleDeviceDetail builds its own Process for performance rather
+    // than routing through CLIBridge.run/runAndCapture, so it needs an
+    // independent codesign-gate check. silent-failure-hunter caught
+    // this gap in the initial PR-2 diff; this test pins it.
+
+    func testRunDeviceDetailProcessGatesUnverifiedJamfCLI() async throws {
+        let fake = tempDir.appendingPathComponent("jamf-cli")
+        try Data("fake-cli-bytes".utf8).write(to: fake)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: fake.path
+        )
+
+        // Cache empty + real CodeSignVerifier will reject this unsigned
+        // file. The path must short-circuit with -1 without spawning.
+        let exit = await runDeviceDetailProcess(
+            executable: fake,
+            arguments: ["pro", "device", "1", "--output", "json"],
+            outputDirectory: tempDir.appendingPathComponent("out", isDirectory: true)
+        )
+        XCTAssertEqual(exit, -1, "runDeviceDetailProcess must invoke the codesign gate before spawning jamf-cli")
+    }
+
+    func testRunDeviceDetailProcessAllowsCachedVerifiedJamfCLI() async throws {
+        // Pre-populate the cache with a fingerprint matching a fake
+        // "jamf-cli" file. The gate hits the cache and proceeds; the
+        // actual process.run on the fake binary will fail (it's not a
+        // valid executable), but the failure is a launch error (exit
+        // != -1 from the gate; non-zero from process.run). The test
+        // asserts the gate did NOT block: any exit code other than the
+        // gate's -1 is acceptable.
+        let fake = tempDir.appendingPathComponent("jamf-cli")
+        // A minimal valid Mach-O isn't worth synthesizing — instead,
+        // use /bin/sh as the executable but rename the URL's last path
+        // component to "jamf-cli" via a symlink so the basename check
+        // fires and the cache primer can register the fake's
+        // fingerprint while process.run actually exec's /bin/sh.
+        let realSh = URL(fileURLWithPath: "/bin/sh")
+        try FileManager.default.createSymbolicLink(at: fake, withDestinationURL: realSh)
+
+        // Prime the cache via the seam.
+        let primed = JamfCLIIdentity.ensureVerifiedJamfCLI(
+            executable: fake,
+            verify: { _, _ in true }
+        )
+        XCTAssertNoThrow(try primed.get(), "Cache priming must succeed for the test setup")
+
+        let exit = await runDeviceDetailProcess(
+            executable: fake,
+            arguments: ["-c", "exit 0"],
+            outputDirectory: tempDir.appendingPathComponent("out", isDirectory: true)
+        )
+        XCTAssertNotEqual(exit, -1, "Cached-verified binary must pass the gate; got \(exit) which would indicate gate rejection")
+    }
 }
 
 /// Thread-safe collector that satisfies `@Sendable` for the onLine

@@ -122,10 +122,10 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Likelihood:** Low. Three stacked defenses now (install + onboarding + per-command Team-ID + pinned env).
 - **Impact:** Critical (full tenant secret + data integrity).
 - **Priority: LOW** (was MEDIUM) — the M-01 closure removed the routine-command exposure window. Residual risk is upstream tap compromise (A4) producing a binary that *is* signed by the expected Team-ID but otherwise malicious; codesign defends against shims, not against a compromised official binary.
+- **Residual risk — stat/exec TOCTOU:** The fingerprint check (`stat` for path/size/mtime) and the subsequent `process.run()` are not atomic on POSIX. An attacker with same-user write access to the binary path can swap the file in the window between the fingerprint check and exec. This is an inherent limitation of stat-based file verification — the only true fix is to open an `O_EXEC` file descriptor and verify the open handle, which requires a private API not appropriate here. Mitigated in practice by: (a) the user-writable Homebrew path being protected by the codesign gate at install time, so the swap would have to be after install; (b) the gate firing immediately before exec, narrowing the window to microseconds.
 - **Recommended mitigations:**
   - Document and review the Team-ID embedded in `JamfCLIIdentity.expectedTeamID` for changes in PRs.
   - When `jamf-cli` is auto-updated via `JamfCLIInstaller`, log the post-update signing certificate fingerprint to `automation/logs/` so a silent identity flip is auditable.
-  - Consider a periodic verifier re-run (e.g. every N hours) that drops the in-memory cache so even a long-running app session re-verifies binaries from scratch.
 
 ### T-2. Tampered cached JSON leads to misleading reports / charts shared with management
 - **Goal:** Cause incorrect compliance/inventory data to be reported.

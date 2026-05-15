@@ -1501,12 +1501,30 @@ final class CLIBridge {
     }
 }
 
-private func runDeviceDetailProcess(
+// Internal (file-scope dropped) so JamfCLIIdentity-gate tests can
+// exercise this path directly — singleDeviceDetail is the only
+// production caller.
+func runDeviceDetailProcess(
     executable: URL,
     arguments: [String],
     outputDirectory: URL
 ) async -> Int32 {
     await Task.detached(priority: .userInitiated) {
+        // M-01: this path bypasses CLIBridge.run / runAndCapture (it
+        // builds its own Process for high-throughput per-device detail
+        // fetches), so it has to invoke the codesign gate directly. No
+        // onLine consumer here — log via AppLogger only.
+        if executable.lastPathComponent == "jamf-cli" {
+            switch JamfCLIIdentity.ensureVerifiedJamfCLI(executable: executable) {
+            case .success:
+                break
+            case .failure(let error):
+                AppLogger.cli.error(
+                    "runDeviceDetailProcess: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
+                )
+                return -1
+            }
+        }
         do {
             try FileManager.default.createDirectory(
                 at: outputDirectory,
