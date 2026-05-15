@@ -189,7 +189,7 @@ conflict.
 
 ## PR-6 — Decoder + dashboard test coverage (S-10, S-11)
 
-- **status:** `pending`
+- **status:** `in_progress`
 - **finding ids:** [S-10, S-11]
 - **files it touches:**
   - `app/Tests/JamfReportsTests/Engine/JamfCLIDecoderTests.swift` (extend with ~18 inline-JSON smoke tests)

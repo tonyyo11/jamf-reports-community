@@ -227,6 +227,471 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows.first?.title, "Chrome")
     }
 
+    // MARK: - SecurityDevice (`.device` envelope case)
+
+    func testSecurityDeviceFlattenedFieldsDecoding() throws {
+        // v1.7+ flattened per-device control fields onto the section row.
+        let json = """
+        [{"section":"device","name":"MacBook-001","serial":"ABC123",
+          "os_version":"15.4.1","filevault":"Enabled","sip":"Enabled",
+          "firewall":true,"gatekeeper":"Enabled"}]
+        """
+        let items = try JSONDecoder().decode([SecurityReportItem].self, from: Data(json.utf8))
+        guard case .device(let d) = items[0] else {
+            XCTFail("Expected .device case"); return
+        }
+        XCTAssertEqual(d.name, "MacBook-001")
+        XCTAssertEqual(d.serial, "ABC123")
+        XCTAssertEqual(d.osVersion, "15.4.1")
+        XCTAssertEqual(d.fileVault, "Enabled")
+        XCTAssertEqual(d.firewall, true)
+        XCTAssertEqual(d.gatekeeper, "Enabled")
+    }
+
+    func testSecurityDeviceLegacyNestedDataDecoding() throws {
+        // v1.6 emitted control fields nested under `data: {}` — must still decode.
+        let json = """
+        [{"section":"device","name":"MacBook-002","serial":"DEF456",
+          "data":{"filevault":"Enabled","sip":"Enabled"}}]
+        """
+        let items = try JSONDecoder().decode([SecurityReportItem].self, from: Data(json.utf8))
+        guard case .device(let d) = items[0] else {
+            XCTFail("Expected .device case"); return
+        }
+        XCTAssertEqual(d.name, "MacBook-002")
+        XCTAssertNil(d.osVersion)
+        XCTAssertNotNil(d.data)
+        XCTAssertEqual(d.data?["filevault"]?.stringValue, "Enabled")
+    }
+
+    // MARK: - PolicyStatusReport / Summary / Finding
+
+    func testPolicyStatusReportDecoding() throws {
+        let json = """
+        [{"summary":{"total_policies":42,"enabled":40,"disabled":2,
+          "config_findings":3,"warnings":1,"info":2},
+          "config_findings":[
+            {"severity":"warning","policy":"Onboarding","policy_id":"10",
+             "check":"no_scope","detail":"No targets in scope"}]}]
+        """
+        let reports = try JSONDecoder().decode([PolicyStatusReport].self, from: Data(json.utf8))
+        XCTAssertEqual(reports.count, 1)
+        let r = reports[0]
+        XCTAssertEqual(r.summary.totalPolicies, 42)
+        XCTAssertEqual(r.summary.enabled, 40)
+        XCTAssertEqual(r.summary.configFindings, 3)
+        XCTAssertEqual(r.configFindings.count, 1)
+        XCTAssertEqual(r.configFindings[0].severity, "warning")
+        XCTAssertEqual(r.configFindings[0].policyId, "10")
+        XCTAssertEqual(r.configFindings[0].check, "no_scope")
+    }
+
+    func testPolicyStatusFixtureDecodesWithoutError() throws {
+        let fixtureURL = fixturesDir
+            .appendingPathComponent("jamf-cli-data/policy-status/policy-status.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
+            throw XCTSkip("Fixture not available")
+        }
+        let data = try Data(contentsOf: fixtureURL)
+        XCTAssertNoThrow(
+            try JSONDecoder().decode([PolicyStatusReport].self, from: data)
+        )
+    }
+
+    // MARK: - PatchFailureRow
+
+    func testPatchFailureRowDecoding() throws {
+        let json = """
+        [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
+          "device_id":"123","status_date":"2026-04-01","attempt":3,
+          "last_action":"Retrying","serial":"ABC123",
+          "os_version":"15.7.3","username":"jdoe"}]
+        """
+        let rows = try JSONDecoder().decode([PatchFailureRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].policy, "Firefox 130.0")
+        XCTAssertEqual(rows[0].policyId, "42")
+        XCTAssertEqual(rows[0].deviceId, "123")
+        XCTAssertEqual(rows[0].statusDate, "2026-04-01")
+        XCTAssertEqual(rows[0].attempt, 3)
+        XCTAssertEqual(rows[0].lastAction, "Retrying")
+        XCTAssertEqual(rows[0].osVersion, "15.7.3")
+        XCTAssertEqual(rows[0].id, "123-42-3")
+    }
+
+    // NOTE: a fixture-decode test for PatchFailureRow is intentionally absent —
+    // `tests/fixtures/jamf-cli-data/patch-device-failures/patch-device-failures.json`
+    // currently contains PatchStatusRow-shaped data, not patch-failure rows.
+    // Logged to BACKLOG.md.
+
+    // MARK: - UpdateFailuresReport / ErrorDevice / FailedPlan
+
+    func testUpdateFailuresReportDecoding() throws {
+        let json = """
+        [{"total":2,
+          "status_summary":[{"status":"FAILED","count":2}],
+          "error_devices":[{"name":"MacBook-001","serial":"ABC123",
+            "device_type":"COMPUTER","os_version":"15.7","username":"jdoe",
+            "status":"DOWNLOAD_FAILED","product_key":"MACOS_15_7",
+            "updated":"2026-04-01T12:00:00Z"}],
+          "plan_total":1,
+          "plan_state_summary":[{"state":"Failed","count":1}],
+          "failed_plans":[{"name":"MacBook-001","serial":"ABC123",
+            "device_type":"COMPUTER","os_version":"15.7","username":"jdoe",
+            "state":"Failed","action":"DOWNLOAD","version":"15.7",
+            "error":"NetworkError","last_event":"2026-04-01T12:05:00Z"}]}]
+        """
+        let reports = try JSONDecoder().decode([UpdateFailuresReport].self, from: Data(json.utf8))
+        XCTAssertEqual(reports.count, 1)
+        let r = reports[0]
+        XCTAssertEqual(r.total, 2)
+        XCTAssertEqual(r.errorDevices.count, 1)
+        XCTAssertEqual(r.errorDevices[0].name, "MacBook-001")
+        XCTAssertEqual(r.errorDevices[0].deviceType, "COMPUTER")
+        XCTAssertEqual(r.errorDevices[0].productKey, "MACOS_15_7")
+        XCTAssertEqual(r.failedPlans.count, 1)
+        XCTAssertEqual(r.failedPlans[0].state, "Failed")
+        XCTAssertEqual(r.failedPlans[0].error, "NetworkError")
+        XCTAssertEqual(r.failedPlans[0].lastEvent, "2026-04-01T12:05:00Z")
+    }
+
+    // MARK: - InventorySummaryRow
+
+    func testInventorySummaryRowDecoding() throws {
+        let json = """
+        [{"os_version":"macOS 15.4.1","count":42},
+         {"os_version":"macOS 14.7","count":7}]
+        """
+        let rows = try JSONDecoder().decode([InventorySummaryRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].osVersion, "macOS 15.4.1")
+        XCTAssertEqual(rows[0].count, 42)
+    }
+
+    // MARK: - DeviceComplianceRow
+
+    func testDeviceComplianceRowDecoding() throws {
+        let json = """
+        [{"name":"MacBook-001","serial":"ABC123","managed":true,
+          "stale":false,"days_since_checkin":3}]
+        """
+        let rows = try JSONDecoder().decode([DeviceComplianceRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].name, "MacBook-001")
+        XCTAssertEqual(rows[0].serial, "ABC123")
+        XCTAssertEqual(rows[0].managed, true)
+        XCTAssertEqual(rows[0].stale, false)
+        XCTAssertEqual(rows[0].daysSinceCheckin, 3)
+    }
+
+    func testDeviceComplianceRowOptionalFields() throws {
+        // All fields are optional — empty object must still decode.
+        let json = "[{}]"
+        let rows = try JSONDecoder().decode([DeviceComplianceRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertNil(rows[0].name)
+        XCTAssertNil(rows[0].daysSinceCheckin)
+    }
+
+    // MARK: - EAResultRow
+
+    func testEAResultRowDecoding() throws {
+        // value is AnyCodable — both strings and booleans must coalesce.
+        let json = """
+        [{"computer_id":"101","computer_name":"MacBook-001","serial":"ABC123",
+          "ea_id":"5","ea_name":"FileVault Status","value":"Encrypted"},
+         {"computer_id":"102","ea_id":"5","value":true}]
+        """
+        let rows = try JSONDecoder().decode([EAResultRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].computerName, "MacBook-001")
+        XCTAssertEqual(rows[0].eaId, "5")
+        XCTAssertEqual(rows[0].value?.stringValue, "Encrypted")
+        XCTAssertEqual(rows[1].value?.boolValue, true)
+    }
+
+    // MARK: - SoftwareInstallRow
+
+    func testSoftwareInstallRowDecoding() throws {
+        let json = """
+        [{"name":"Microsoft Word","version":"16.84","count":42},
+         {"name":"Chrome","count":15}]
+        """
+        let rows = try JSONDecoder().decode([SoftwareInstallRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].name, "Microsoft Word")
+        XCTAssertEqual(rows[0].version, "16.84")
+        XCTAssertEqual(rows[0].count, 42)
+        XCTAssertNil(rows[1].version)
+    }
+
+    // MARK: - AppStatusRow
+
+    func testAppStatusRowDecoding() throws {
+        let json = """
+        [{"name":"Slack","version":"4.36.0","installed":50,"managed":48,
+          "total":50,"errors":2}]
+        """
+        let rows = try JSONDecoder().decode([AppStatusRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].name, "Slack")
+        XCTAssertEqual(rows[0].installed, 50)
+        XCTAssertEqual(rows[0].managed, 48)
+        XCTAssertEqual(rows[0].errors, 2)
+    }
+
+    // MARK: - SmartGroupRow
+
+    func testSmartGroupRowDecodesIntAndStringIds() throws {
+        // id can be Int or String depending on endpoint — AnyCodable accepts both.
+        let json = """
+        [{"id":42,"name":"All Encrypted","membershipCount":100,"smart":true},
+         {"id":"abc-7","name":"Stale Devices","membershipCount":"5","smart":false}]
+        """
+        let rows = try JSONDecoder().decode([SmartGroupRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].id?.intValue, 42)
+        XCTAssertEqual(rows[0].name, "All Encrypted")
+        XCTAssertEqual(rows[0].membershipCount?.intValue, 100)
+        XCTAssertEqual(rows[0].smart, true)
+        XCTAssertEqual(rows[1].id?.stringValue, "abc-7")
+        XCTAssertEqual(rows[1].membershipCount?.stringValue, "5")
+    }
+
+    // MARK: - ProfileStatusRow
+
+    func testProfileStatusRowDecoding() throws {
+        let json = """
+        [{"id":7,"name":"WiFi Profile","category":"Network","site":"Main",
+          "management_status":"Installed","error_count":0}]
+        """
+        let rows = try JSONDecoder().decode([ProfileStatusRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].name, "WiFi Profile")
+        XCTAssertEqual(rows[0].category, "Network")
+        XCTAssertEqual(rows[0].managementStatus, "Installed")
+        XCTAssertEqual(rows[0].errorCount?.intValue, 0)
+    }
+
+    // MARK: - CheckinStatusRow
+
+    func testCheckinStatusRowDecoding() throws {
+        let json = """
+        [{"name":"MacBook-001","serial":"ABC123",
+          "days_since_checkin":12,"status":"warning"}]
+        """
+        let rows = try JSONDecoder().decode([CheckinStatusRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].name, "MacBook-001")
+        XCTAssertEqual(rows[0].daysSinceCheckin, 12)
+        XCTAssertEqual(rows[0].status, "warning")
+    }
+
+    // MARK: - HardwareModelRow
+
+    func testHardwareModelRowDecoding() throws {
+        let json = """
+        [{"model":"MacBookPro18,3","count":42,"pct":"60%"},
+         {"model":"Mac15,12","count":28}]
+        """
+        let rows = try JSONDecoder().decode([HardwareModelRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].model, "MacBookPro18,3")
+        XCTAssertEqual(rows[0].count, 42)
+        XCTAssertEqual(rows[0].pct, "60%")
+        XCTAssertNil(rows[1].pct)
+    }
+
+    // MARK: - AuditItem
+
+    func testAuditItemDecoding() throws {
+        let json = """
+        [{"section":"Inventory","check":"Stale Devices","severity":"warning",
+          "status":"fail","detail":"5 stale devices found",
+          "recommendation":"Review and retire","resource":"computers","value":5}]
+        """
+        let rows = try JSONDecoder().decode([AuditItem].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].section, "Inventory")
+        XCTAssertEqual(rows[0].check, "Stale Devices")
+        XCTAssertEqual(rows[0].severity, "warning")
+        XCTAssertEqual(rows[0].recommendation, "Review and retire")
+        XCTAssertEqual(rows[0].value?.intValue, 5)
+    }
+
+    // MARK: - GroupAnalysisRow
+
+    func testGroupAnalysisRowDecoding() throws {
+        let json = """
+        [{"groupName":"All Macs","groupType":"COMPUTER",
+          "membershipCount":42,"smart":true,"unused":false}]
+        """
+        let rows = try JSONDecoder().decode([GroupAnalysisRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].groupName?.stringValue, "All Macs")
+        XCTAssertEqual(rows[0].groupType?.stringValue, "COMPUTER")
+        XCTAssertEqual(rows[0].membershipCount?.intValue, 42)
+        XCTAssertEqual(rows[0].smart, true)
+        XCTAssertEqual(rows[0].unused, false)
+    }
+
+    // MARK: - MobileDeviceListRow
+
+    func testMobileDeviceListRowDecoding() throws {
+        let json = """
+        [{"id":"1","name":"iPad-001","model":"iPad Pro",
+          "serialNumber":"SN12345","username":"jdoe","type":"iPadOS"}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceListRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].id, "1")
+        XCTAssertEqual(rows[0].name, "iPad-001")
+        XCTAssertEqual(rows[0].model, "iPad Pro")
+        XCTAssertEqual(rows[0].serialNumber, "SN12345")
+        XCTAssertEqual(rows[0].type, "iPadOS")
+    }
+
+    // MARK: - ComplianceDeviceRow
+
+    func testComplianceDeviceRowDecoding() throws {
+        let json = """
+        [{"device":"MacBook-001","deviceId":"101","rulesFailed":0,
+          "rulesPassed":12,"compliance":"100%"}]
+        """
+        let rows = try JSONDecoder().decode([ComplianceDeviceRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].device, "MacBook-001")
+        XCTAssertEqual(rows[0].deviceId, "101")
+        XCTAssertEqual(rows[0].rulesFailed, 0)
+        XCTAssertEqual(rows[0].rulesPassed, 12)
+        XCTAssertEqual(rows[0].compliance, "100%")
+    }
+
+    // MARK: - ComplianceRuleRow
+
+    func testComplianceRuleRowDecoding() throws {
+        let json = """
+        [{"rule":"Require FileVault","passed":48,"failed":2,
+          "unknown":0,"devices":50,"passRate":"96%"}]
+        """
+        let rows = try JSONDecoder().decode([ComplianceRuleRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].rule, "Require FileVault")
+        XCTAssertEqual(rows[0].passed, 48)
+        XCTAssertEqual(rows[0].failed, 2)
+        XCTAssertEqual(rows[0].devices, 50)
+        XCTAssertEqual(rows[0].passRate, "96%")
+    }
+
+    // MARK: - DDMStatusRow
+
+    func testDDMStatusRowDecoding() throws {
+        let json = """
+        [{"source":"Identity","type":"declaration","declarations":3,
+          "devices":50,"successful":48,"unsuccessful":2}]
+        """
+        let rows = try JSONDecoder().decode([DDMStatusRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].source, "Identity")
+        XCTAssertEqual(rows[0].type, "declaration")
+        XCTAssertEqual(rows[0].declarations, 3)
+        XCTAssertEqual(rows[0].successful, 48)
+        XCTAssertEqual(rows[0].unsuccessful, 2)
+    }
+
+    // MARK: - BlueprintStatusRow
+
+    func testBlueprintStatusRowDecoding() throws {
+        let json = """
+        [{"name":"Core Mac Blueprint","state":"Active","scope":50,
+          "steps":4,"failed":0,"pending":2,"succeeded":48}]
+        """
+        let rows = try JSONDecoder().decode([BlueprintStatusRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].name, "Core Mac Blueprint")
+        XCTAssertEqual(rows[0].state, "Active")
+        XCTAssertEqual(rows[0].scope, 50)
+        XCTAssertEqual(rows[0].failed, 0)
+        XCTAssertEqual(rows[0].succeeded, 48)
+    }
+
+    // MARK: - ProtectOverviewItem
+
+    func testProtectOverviewItemDynamicFieldsDecoding() throws {
+        // ProtectOverviewItem reads arbitrary keys via DynamicCodingKey.
+        let json = """
+        [{"resource":"Devices Enrolled","value":42,"trend":"up"}]
+        """
+        let items = try JSONDecoder().decode([ProtectOverviewItem].self, from: Data(json.utf8))
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].value?.intValue, 42)
+        XCTAssertEqual(items[0].extraFields["resource"]?.stringValue, "Devices Enrolled")
+        XCTAssertEqual(items[0].extraFields["trend"]?.stringValue, "up")
+    }
+
+    // MARK: - ProtectAlertRow
+
+    func testProtectAlertRowDecoding() throws {
+        let json = """
+        [{"uuid":"alert-1","created":"2026-05-01T08:00:00Z",
+          "severity":"high","status":"New","eventType":"ProcessExecution",
+          "hostName":"lab-mac-01","serial":"ABC123"}]
+        """
+        let rows = try JSONDecoder().decode([ProtectAlertRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].uuid, "alert-1")
+        XCTAssertEqual(rows[0].created, "2026-05-01T08:00:00Z")
+        XCTAssertEqual(rows[0].severity, "high")
+        XCTAssertEqual(rows[0].eventType, "ProcessExecution")
+        XCTAssertEqual(rows[0].hostName, "lab-mac-01")
+        XCTAssertEqual(rows[0].serial, "ABC123")
+    }
+
+    func testProtectAlertFixtureDecodesWithoutError() throws {
+        let fixtureURL = fixturesDir
+            .appendingPathComponent("jamf-cli-data/protect-alerts/alerts_happy.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
+            throw XCTSkip("Fixture not available")
+        }
+        let data = try Data(contentsOf: fixtureURL)
+        XCTAssertNoThrow(
+            try JSONDecoder().decode([ProtectAlertRow].self, from: data)
+        )
+    }
+
+    // MARK: - ProtectComputerRow
+
+    func testProtectComputerRowExtractsNestedPlanName() throws {
+        // `plan` is a nested object {id, name}; decoder pulls name into planName.
+        let json = """
+        [{"uuid":"comp-1","hostName":"lab-mac-01","serial":"ABC123",
+          "modelName":"MacBookPro18,3","osString":"15.4.1",
+          "plan":{"id":"p1","name":"Engineering Plan"},
+          "webProtectionActive":true,"fullDiskAccess":false,
+          "connectionStatus":"Connected","lastConnection":"2026-05-01T08:00:00Z",
+          "insightsStatsPass":18,"insightsStatsFail":2}]
+        """
+        let rows = try JSONDecoder().decode([ProtectComputerRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].uuid, "comp-1")
+        XCTAssertEqual(rows[0].hostName, "lab-mac-01")
+        XCTAssertEqual(rows[0].planName, "Engineering Plan")
+        XCTAssertEqual(rows[0].webProtectionActive, true)
+        XCTAssertEqual(rows[0].fullDiskAccess, false)
+        XCTAssertEqual(rows[0].insightsStatsPass, 18)
+    }
+
+    func testProtectComputerRowNilPlanWhenMissing() throws {
+        // No `plan` key — planName must be nil rather than crashing.
+        let json = """
+        [{"uuid":"comp-2","hostName":"lab-mac-02","serial":"DEF456"}]
+        """
+        let rows = try JSONDecoder().decode([ProtectComputerRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].uuid, "comp-2")
+        XCTAssertNil(rows[0].planName)
+    }
+
+    // MARK: - ProtectInsightRow
+
+    func testProtectInsightRowDecoding() throws {
+        let json = """
+        [{"uuid":"ins-1","label":"FileVault Coverage",
+          "section":"Encryption","description":"Devices with FV enabled",
+          "totalPass":48,"totalFail":2,"enabled":true}]
+        """
+        let rows = try JSONDecoder().decode([ProtectInsightRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].uuid, "ins-1")
+        XCTAssertEqual(rows[0].label, "FileVault Coverage")
+        XCTAssertEqual(rows[0].section, "Encryption")
+        XCTAssertEqual(rows[0].totalPass, 48)
+        XCTAssertEqual(rows[0].totalFail, 2)
+        XCTAssertEqual(rows[0].enabled, true)
+    }
+
     // MARK: - Helper
 
     private var fixturesDir: URL {

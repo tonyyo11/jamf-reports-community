@@ -37,6 +37,47 @@ final class CoreDashboardTests: XCTestCase {
         return tmp
     }
 
+    /// Copy fixture dirs but rename them to match the writer's expected subdir name.
+    /// Used when the fixture corpus name differs from the jamf-cli command name —
+    /// e.g. `compliance-devices-nist-800-53r5-moderate` → `compliance-devices`.
+    private func tempDataDir(copyingRenamed map: [(src: String, dst: String)]) throws -> URL {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let src = fixturesDir.appendingPathComponent("jamf-cli-data")
+        for pair in map {
+            let from = src.appendingPathComponent(pair.src, isDirectory: true)
+            let to = tmp.appendingPathComponent(pair.dst, isDirectory: true)
+            if FileManager.default.fileExists(atPath: from.path) {
+                try FileManager.default.copyItem(at: from, to: to)
+            }
+        }
+        return tmp
+    }
+
+    /// Seed a single fixture file into a fresh temp dataDir under the writer's
+    /// expected subdir name. Use this when a fixture corpus directory contains
+    /// both `*_empty.json` and `*_happy.json` so the test deterministically
+    /// pins to the happy-path file rather than relying on alphabetical /
+    /// mtime ordering of `loadLatestJSON`. `subdir` is the writer-expected
+    /// jamf-cli command name; `fixtureRelPath` is path relative to
+    /// `tests/fixtures/jamf-cli-data/`.
+    private func tempDataDir(seeding subdir: String,
+                             fromFixture fixtureRelPath: String) throws -> URL {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        let subdirURL = tmp.appendingPathComponent(subdir, isDirectory: true)
+        try FileManager.default.createDirectory(at: subdirURL, withIntermediateDirectories: true)
+        let src = fixturesDir.appendingPathComponent("jamf-cli-data/\(fixtureRelPath)")
+        if FileManager.default.fileExists(atPath: src.path) {
+            try FileManager.default.copyItem(
+                at: src,
+                to: subdirURL.appendingPathComponent(src.lastPathComponent)
+            )
+        }
+        return tmp
+    }
+
     private func makeDashboard(dataDir: URL) -> CoreDashboard {
         CoreDashboard(
             config: ReportConfig(),
@@ -360,5 +401,153 @@ final class CoreDashboardTests: XCTestCase {
         let rows = try JSONDecoder().decode([PackageRow].self, from: data)
         XCTAssertFalse(rows.isEmpty)
         XCTAssertNotNil(rows[0].packageName)
+    }
+
+    // MARK: - Platform compliance + DDM/Blueprint writers
+    //
+    // S-11 acceptance: each writer that touches raw `[String: Any]` access has a
+    // fixture-backed test that exercises the happy path. The fixture corpus uses
+    // baseline-suffixed dir names (e.g. `compliance-devices-nist-800-53r5-moderate`)
+    // while writers read from the unsuffixed jamf-cli command name — so these tests
+    // copy-with-rename to bridge the two.
+
+    func testWriteComplianceDevices() throws {
+        let baseline = "compliance-devices-nist-800-53r5-moderate"
+        let dataDir = try tempDataDir(
+            seeding: "compliance-devices",
+            fromFixture: "\(baseline)/platform_compliance_devices_happy.json"
+        )
+        guard FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("compliance-devices").path
+        ) else { throw XCTSkip("compliance-devices fixture not available") }
+
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertNoThrow(try dash.writeComplianceDevices())
+    }
+
+    func testWriteComplianceRules() throws {
+        let baseline = "compliance-rules-nist-800-53r5-moderate"
+        let dataDir = try tempDataDir(
+            seeding: "compliance-rules",
+            fromFixture: "\(baseline)/platform_compliance_rules_happy.json"
+        )
+        guard FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("compliance-rules").path
+        ) else { throw XCTSkip("compliance-rules fixture not available") }
+
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertNoThrow(try dash.writeComplianceRules())
+    }
+
+    func testWriteDDMStatus() throws {
+        let dataDir = try tempDataDir(
+            seeding: "ddm-status",
+            fromFixture: "ddm-status/platform_ddm_status_happy.json"
+        )
+        guard FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("ddm-status").path
+        ) else { throw XCTSkip("ddm-status fixture not available") }
+
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertNoThrow(try dash.writeDDMStatus())
+    }
+
+    func testWriteBlueprintStatus() throws {
+        let dataDir = try tempDataDir(
+            seeding: "blueprint-status",
+            fromFixture: "blueprint-status/platform_blueprint_status_happy.json"
+        )
+        guard FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("blueprint-status").path
+        ) else { throw XCTSkip("blueprint-status fixture not available") }
+
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertNoThrow(try dash.writeBlueprintStatus())
+    }
+
+    // MARK: - Protect writers
+
+    /// No `protect-overview` fixture exists in the corpus, so write a small inline
+    /// fixture into the temp dataDir for this test only. ProtectOverview is a
+    /// loose [{ key: value }] shape — the writer iterates whatever keys are present.
+    func testWriteProtectOverview() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let subdir = tmp.appendingPathComponent("protect-overview", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        let json = """
+        [{"Devices Enrolled":42,"Plans Active":3,"Alerts (Open)":5}]
+        """
+        try Data(json.utf8).write(to: subdir.appendingPathComponent("protect-overview.json"))
+
+        let dash = makeDashboard(dataDir: tmp)
+        XCTAssertNoThrow(try dash.writeProtectOverview())
+    }
+
+    /// Protect writer fixture dirs contain both `*_empty.json` and `*_happy.json`.
+    /// `loadLatestJSON` picks by mtime, which on freshly-checked-out trees is
+    /// effectively alphabetical — so the empty file wins and the writer hits its
+    /// guard-empty early-return rather than the loop body. Seeding only the
+    /// happy file pins the test to the path it claims to cover.
+
+    func testWriteProtectAlerts() throws {
+        let dataDir = try tempDataDir(
+            seeding: "protect-alerts",
+            fromFixture: "protect-alerts/alerts_happy.json"
+        )
+        guard FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("protect-alerts").path
+        ) else { throw XCTSkip("protect-alerts fixture not available") }
+
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertNoThrow(try dash.writeProtectAlerts())
+    }
+
+    func testWriteProtectComputers() throws {
+        let dataDir = try tempDataDir(
+            seeding: "protect-computers",
+            fromFixture: "protect-computers/computers_happy.json"
+        )
+        guard FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("protect-computers").path
+        ) else { throw XCTSkip("protect-computers fixture not available") }
+
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertNoThrow(try dash.writeProtectComputers())
+    }
+
+    func testWriteProtectInsights() throws {
+        let dataDir = try tempDataDir(
+            seeding: "protect-insights",
+            fromFixture: "protect-insights/insights_happy.json"
+        )
+        guard FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("protect-insights").path
+        ) else { throw XCTSkip("protect-insights fixture not available") }
+
+        let dash = makeDashboard(dataDir: dataDir)
+        XCTAssertNoThrow(try dash.writeProtectInsights())
+    }
+
+    // Negative case: when no fixture dir exists at all, `loadLatestJSON` throws
+    // `.noCachedData` and the error propagates out of the writer. (The other
+    // empty-path — fixture present, decodes to `[]`, writer silently returns —
+    // has no test here; routed to BACKLOG.)
+
+    func testProtectComputersThrowsWhenNoCachedData() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-empty-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let dash = makeDashboard(dataDir: tmp)
+        XCTAssertThrowsError(try dash.writeProtectComputers()) { error in
+            guard case CoreDashboardError.noCachedData = error else {
+                XCTFail("Expected CoreDashboardError.noCachedData, got \(error)")
+                return
+            }
+        }
     }
 }

@@ -13,6 +13,63 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-6 review (2026-05-15)
+
+Two follow-up items from the silent-failure-hunter / pr-review-toolkit
+review gates that PR-6 deferred per the per-PR scope rules.
+
+- **CONSIDER — Silent-return-on-empty-array branch of the eight Protect/Platform writers has no positive test.**
+  PR-6 covers `loadLatestJSON` throwing on absent directories
+  (`testProtectComputersThrowsWhenNoCachedData`). The other empty-path —
+  fixture file exists, decodes to `[]`, writer hits `guard !items.isEmpty
+  else { return }` and silently returns — is not exercised. Pattern is
+  identical across `writeComplianceDevices`, `writeComplianceRules`,
+  `writeDDMStatus`, `writeBlueprintStatus`, and the four Protect writers.
+  One representative test (`testProtectComputersSilentReturnOnEmptyArray`)
+  that writes `protect-computers/empty.json` containing `[]` and asserts
+  `XCTAssertNoThrow` + no sheet added would cover the spirit. Hunter
+  finding 2 sibling.
+- **CONSIDER — Helper-created temp dirs across `CoreDashboardTests` are never cleaned up.**
+  `tempDataDir(copying:)`, `tempDataDir(copyingRenamed:)`, and the new
+  `tempDataDir(seeding:fromFixture:)` all create per-test directories
+  under `FileManager.default.temporaryDirectory` and don't `defer`
+  removal. Pre-existing pattern (~32 callsites); macOS cleans
+  `temporaryDirectory` on logout, so this is hygiene rather than
+  correctness. Either add `defer` to each helper's return value (would
+  require an API change) or switch to `XCTestCase.setUp`/`tearDown`
+  with a per-test dir stored in an ivar. Reviewer CONSIDER #2.
+- **CONSIDER — Decoder tests assert via field values rather than negative key-mapping cases.**
+  Each decoder test asserts on the decoded struct's field values. PR-6
+  verified failing-test-first by perturbing
+  `PolicyFinding.policyId = "policy_id"` and observing `keyNotFound`,
+  then reverting. Future tests could lift the keyNotFound case into an
+  explicit `XCTAssertThrowsError` negative assertion alongside the
+  positive case. Pre-existing pattern across the decoder test file;
+  low priority. Reviewer CONSIDER #3.
+
+### From PR-6 test-coverage work (2026-05-15)
+
+While adding inline-JSON decode smoke tests for `JamfCLIDecoder.swift`, two
+fixtures were found to contain data of the wrong shape for their directory.
+Both directories are loaded by their writers and would crash or silently
+discard rows on a real run with this data — but currently the writers gate
+on `loadLatestJSON` returning `[[String: Any]]`, so the bad fixtures
+manifest only as decoder-side `keyNotFound` when consumed by typed code.
+
+- **SHOULD-FIX — `tests/fixtures/jamf-cli-data/patch-device-failures/patch-device-failures.json` contains PatchStatusRow rows, not PatchFailureRow rows.**
+  Real `pro report patch-status --scan-failures --output json` emits
+  rows with `policy`, `policy_id`, `device`, `device_id`, `status_date`,
+  `attempt`, `last_action`, `serial`, `os_version`, `username`. The
+  committed fixture has `compliance_pct`, `id`, `latest`, `on_latest`,
+  `on_other`, `title`, `total` — that's the patch-status shape, not the
+  patch-failure shape. Capture from a tenant with active patch policies
+  and replace.
+- **SHOULD-FIX — `tests/fixtures/jamf-cli-data/update-device-failures/update-device-failures.json` is a 503 error envelope, not an UpdateFailuresReport.**
+  Content is `{"httpStatus": 503, "errors": [...]}` rather than
+  `[{"total": ..., "status_summary": [...], "error_devices": [...]}]`.
+  Likely captured from a tenant that had Managed Software Update Plans
+  toggled off. Recapture from a tenant with the feature enabled.
+
 ### From PR-5 review (2026-05-15)
 
 Three scope-adjacent items surfaced during the zero-warnings +
