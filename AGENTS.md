@@ -142,7 +142,7 @@ prevents false positives (e.g., "Name" must not match "LocationName" for `device
 ### CLI commands
 
 ```
-# Jamf Pro
+# Jamf Pro — report generation
 python3 jamf-reports-community.py generate [--config config.yaml] [--csv export.csv]
                                            [--out-file report.xlsx]
                                            [--historical-csv-dir snapshots/]
@@ -152,8 +152,41 @@ python3 jamf-reports-community.py collect  [--config config.yaml] [--csv export.
                                            [--historical-csv-dir snapshots/]
 python3 jamf-reports-community.py inventory-csv [--config config.yaml]
                                                 [--out-file inventory.csv]
+python3 jamf-reports-community.py export-reports [--config config.yaml] [--csv inventory.csv]
+python3 jamf-reports-community.py backup   [--config config.yaml] [--label LABEL]
+
+# Jamf Pro — config + diagnostics
 python3 jamf-reports-community.py scaffold [--csv export.csv] [--out config.yaml]
+                                           [--interactive]
 python3 jamf-reports-community.py check    [--csv export.csv]
+python3 jamf-reports-community.py device   --id <id-or-serial> [--config config.yaml]
+python3 jamf-reports-community.py patch-managed --managed {true,false}
+                                                [--serials-file PATH] [--dry-run]
+python3 jamf-reports-community.py capabilities [--output {json,text}]
+
+# Jamf Pro — automation / scheduling
+python3 jamf-reports-community.py workspace-init [--profile PROFILE]
+                                                 [--workspace-root DIR]
+                                                 [--workspace-name NAME]
+                                                 [--seed-config PATH] [--overwrite-config]
+python3 jamf-reports-community.py launchagent-setup --mode MODE --schedule SCHED
+                                                    [--label LABEL] [--time-of-day HH:MM]
+                                                    [--weekday WEEKDAY] [--day-of-month N]
+                                                    [--workspace-dir DIR]
+                                                    [--launchagents-dir DIR]
+                                                    [--csv-inbox-dir DIR]
+                                                    [--csv-freshness-days N]
+                                                    [--historical-csv-dir DIR]
+                                                    [--notify WEBHOOK_URL]
+                                                    [--skip-load] [--run-now] [--disabled]
+python3 jamf-reports-community.py launchagent-run   --mode MODE [--csv-inbox-dir DIR]
+                                                    [--csv-freshness-days N]
+                                                    [--historical-csv-dir DIR]
+                                                    [--status-file PATH]
+                                                    [--notify WEBHOOK_URL]
+python3 jamf-reports-community.py multi-launchagent-run --multi-profiles PROFILES
+                                                        [--multi-filter FILTER]
+                                                        [--multi-sequential]
 
 # Jamf School (jamf-cli 1.7+)
 python3 jamf-reports-community.py school-generate [--config config.yaml]
@@ -178,6 +211,37 @@ archives a CSV snapshot if `--csv` and `--historical-csv-dir` are both provided.
 
 **`inventory-csv`** — export a wide CSV from jamf-cli `computers list` + EA results,
 suitable for use as a `--csv` source on systems without a Jamf Pro CSV export.
+
+**`export-reports`** — generate filtered CSV slices of the wide inventory CSV per
+the `export_reports:` config section. Each entry defines a named filter that
+becomes a CSV file in the workspace's output dir; entries skip when not scheduled
+today or already written today. `--csv` pins the input inventory CSV; omit to
+auto-locate the most recent `automation_inventory_*.csv` in `output_dir`.
+
+**`backup`** — export Jamf Pro configuration objects (policies, profiles, scripts,
+smart groups, etc.) via `jamf-cli pro backup` into the workspace's `backups/` dir.
+`--label` adds an explicit suffix to the timestamped backup folder.
+
+**`device`** — print a structured device-detail view from `jamf-cli pro device`.
+Useful for ad-hoc lookups by computer ID or serial number.
+
+**`patch-managed`** — bulk set managed/unmanaged state on computers via the
+Jamf Pro v2 API. Requires `jamf-cli` v1.14.0+. Use `--dry-run` first to preview.
+
+**`capabilities`** — print a machine-readable summary of the app's current
+capabilities (data sources, supported reports, status surfaces). Used by the
+GUI's Sources screen and by integration tooling.
+
+**`workspace-init`** — create a per-profile reporting workspace skeleton
+(jamf-cli-data, snapshots, Generated Reports, csv-inbox, automation/logs) under
+the seed config's directory, or under `--workspace-root` if supplied. Seeds a
+`config.yaml` from `--seed-config` when provided.
+
+**`launchagent-setup`** / **`launchagent-run`** / **`multi-launchagent-run`** —
+generate, run, and run-multi-profile macOS user `LaunchAgent` jobs for scheduled
+reporting. `setup` creates plists under `~/Library/LaunchAgents/` using the
+label prefix `com.github.tonyyo11.jamf-reports-community.<slug>`; `run` and
+`multi-launchagent-run` are the runner entry points that the agents invoke.
 
 ### `--historical-csv-dir` usage
 

@@ -12,7 +12,7 @@ struct Provenance: Codable, Sendable {
     let runID: String
     /// Timestamp when the report was generated.
     let generatedAt: Date
-    /// Workspace profile slug (e.g. `"cbp-prod"`).
+    /// Workspace profile slug (e.g. `"prod"` or `"acme-prod"`).
     let profile: String
     /// Version string captured from `jamf-cli --version` (first non-empty line).
     /// `nil` when jamf-cli is absent or `--version` fails.

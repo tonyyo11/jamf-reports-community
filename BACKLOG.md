@@ -13,6 +13,23 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-7 review (2026-05-15)
+
+- **CONSIDER — `patch-managed` doc says "Jamf Pro v2 API" — the actual endpoint is v1.**
+  `CLAUDE.md` / `AGENTS.md` per-command paragraph for `patch-managed`
+  describes the operation as using the "Jamf Pro v2 API." The
+  underlying jamf-cli command is `pro computers-inventory patch`
+  (`jamf-reports-community.py:4161`), which maps to the
+  `/v1/computers-inventory-detail/{id}` REST v1 endpoint. Low impact
+  — the operation still works as described — but the version label
+  is wrong. Reviewer CONSIDER #5.
+- **CONSIDER — Dead argparse flag `--base-profile` is unused outside metadata.**
+  `jamf-reports-community.py:18005` defines `--base-profile` with
+  help text "UI base profile for generated multi LaunchAgents
+  (metadata only)" but no dispatch site reads `args.base_profile`.
+  Either wire it into `multi-launchagent-run`'s metadata as
+  intended or drop the flag.
+
 ### From PR-6 review (2026-05-15)
 
 Two follow-up items from the silent-failure-hunter / pr-review-toolkit
@@ -228,7 +245,7 @@ load) protected by the install-time + onboarding-time gates.
 
 - **CONSIDER — Force unwraps in production-safe contexts.**
   `app/Sources/JamfReports/Services/DeviceInventoryService.swift:195`,
-  `app/Sources/JamfReports/Services/LaunchAgentWriter.swift:500`. Replace
+  `app/Sources/JamfReports/Services/LaunchAgentWriter.swift:528`. Replace
   with `guard let` / `if let` to match the repo convention.
 
 ### From Google Gemini 3 security-review (2026-05-12)

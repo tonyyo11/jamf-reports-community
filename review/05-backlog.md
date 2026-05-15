@@ -217,7 +217,7 @@ conflict.
 
 ## PR-7 — Documentation drift (S-08, C-02, C-04)
 
-- **status:** `pending`
+- **status:** `in_progress`
 - **finding ids:** [S-08, C-02, C-04]
 - **files it touches:**
   - `CLAUDE.md` (CLI commands section — currently lists 10, actual is 19. Adds: `export-reports`, `backup`, `workspace-init`, `launchagent-setup`, `launchagent-run`, `multi-launchagent-run`, `capabilities`, `device`, `patch-managed`)
