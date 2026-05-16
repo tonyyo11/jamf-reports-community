@@ -60,22 +60,6 @@ username/device-name flag coupling). These are out-of-scope.
   it would leak. Lower the floor to 8 chars OR add a comment
   explaining the deliberate tradeoff.
 
-### From PR-A diagnostic-bundle session (2026-05-16)
-
-- **SHOULD-FIX — `test_generate_from_committed_cached_jamf_cli_data` date-rollover failure.**
-  Discovered while running the full Python suite during PR-A. The test
-  asserts that the Update Status sheet contains a `"No Data"` row, but
-  on 2026-05-16 (~30 days after the committed jamf-cli fixtures were
-  captured on 2026-04-13) the row no longer renders. Pre-existing
-  failure — not introduced by PR-A. Root cause is likely a staleness
-  threshold inside `CoreDashboard.writeUpdateStatus()` that uses
-  `datetime.now()` rather than a frozen fixture clock. Fix: either
-  freeze `datetime.now()` in the test via `monkeypatch`, regenerate
-  the fixture set with newer timestamps, or change the assertion to
-  match the current rendered shape. Affects only
-  `tests/test_generate_cached_jamf_cli.py::test_generate_from_committed_cached_jamf_cli_data`;
-  all 28 new PR-A tests + 291 other tests pass.
-
 ### From PR-8 council (2026-05-15)
 
 `/council` ran on the S-06 Templates refactor (the budgeted judgment-call
