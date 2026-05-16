@@ -123,6 +123,7 @@ struct BackupsView: View {
                 .textFieldStyle(.plain)
                 .font(.callout)
                 .foregroundStyle(Theme.Text.primary)
+                .accessibilityLabel("Backup label")
         }
         .padding(.horizontal, 10)
         .frame(width: 160, height: 30)

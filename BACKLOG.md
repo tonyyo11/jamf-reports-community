@@ -365,17 +365,6 @@ ARIA, and contrast/focus-visible.)_
 **SwiftUI — SHOULD-FIX**
 
 
-- **TextField placeholders aren't labels for VoiceOver.**
-  `Views/SmartGroupApplySheet.swift:297-298,308`,
-  `Views/BackupsView.swift:122-126`, `Views/AuditView.swift:141`.
-  Add explicit `.accessibilityLabel(...)`. Also set `.defaultFocus`
-  on the SmartGroupApplySheet name field.
-
-- **SecureSecretField missing hint.**
-  `Views/SecureSecretField.swift:35-36`. Has AppKit
-  `setAccessibilityLabel("Client Secret")` but no
-  `setAccessibilityHelp(...)`. Add hint noting credential is stored in
-  the keychain and not displayed.
 
 - **Composite candidate row not flattened.**
   `Views/DeviceLookupView.swift:168-203`. The Button wraps Pill + Text

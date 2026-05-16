@@ -183,9 +183,14 @@ final class SmartGroupApplySheetViewModel {
 // MARK: - SwiftUI view
 
 struct SmartGroupApplySheet: View {
+    enum FocusedField {
+        case name
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(WorkspaceStore.self) private var workspace
     @Bindable var viewModel: SmartGroupApplySheetViewModel
+    @FocusState private var focus: FocusedField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -199,6 +204,7 @@ struct SmartGroupApplySheet: View {
         }
         .frame(width: 560, height: 520)
         .task { await viewModel.loadPreview() }
+        .onAppear { focus = .name }
     }
 
     // MARK: - Header
@@ -296,6 +302,8 @@ struct SmartGroupApplySheet: View {
                 Text("Smart group name").font(.caption.weight(.medium)).foregroundStyle(Theme.Colors.fgMuted)
                 TextField("Smart group name", text: $viewModel.smartGroupName)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Smart group name")
+                    .focused($focus, equals: .name)
             }
             ForEach(viewModel.template.params, id: \.name) { param in
                 VStack(alignment: .leading, spacing: 4) {
@@ -307,6 +315,7 @@ struct SmartGroupApplySheet: View {
                     }
                     TextField(param.description, text: paramBinding(for: param.name))
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(param.name)
                     if !param.description.isEmpty {
                         Text(param.description).font(.caption2).foregroundStyle(Theme.Colors.fgMuted)
                     }

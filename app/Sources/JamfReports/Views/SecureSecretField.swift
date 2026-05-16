@@ -33,6 +33,7 @@ struct SecureSecretField: NSViewRepresentable {
         field.target = context.coordinator
         field.action = #selector(Coordinator.fieldAction(_:))
         field.setAccessibilityLabel("Client Secret")
+        field.setAccessibilityHelp("Client secret is stored securely in the keychain and will not be displayed")
         field.setAccessibilityPlaceholderValue(placeholder)
         return field
     }
