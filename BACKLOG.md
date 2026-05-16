@@ -185,11 +185,6 @@ than the routine `collect`/`audit`/`backup` paths: each is a single
 spawn at a well-defined moment (startup, install/upgrade, sidebar
 load) protected by the install-time + onboarding-time gates.
 
-- **SHOULD-FIX — `JamfCLIInstaller.installedVersion(at:)` spawns `jamf-cli --version` without codesign gate.**
-  `app/Sources/JamfReports/Services/JamfCLIInstaller.swift:263`.
-  Called during install/upgrade flow to determine whether the
-  current binary is current. Lower exposure (single spawn during
-  an admin operation) but the gate is cheap to add.
 - **SHOULD-FIX — `ProfileService.discoverJamfCLIProfiles` spawns `jamf-cli config list` without codesign gate.**
   `app/Sources/JamfReports/Services/ProfileService.swift:143`.
   Single spawn at sidebar-profile-load time. Same fix pattern.
