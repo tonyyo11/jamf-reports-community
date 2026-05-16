@@ -44,8 +44,13 @@ def test_generate_from_committed_cached_jamf_cli_data(
         for row in workbook["Update Status"].iter_rows(min_row=1, max_row=8, max_col=2)
         for cell in row
     ]
-    assert "No Data" in update_status_values
-    assert "No managed software update data found." in update_status_values
+    # fixture update-status.json is the happy-path shape (plan_state_summary with
+    # PlanFailed=104, total=0, plan_total=108): the no-data path is NOT taken.
+    # Changed from "No Data" assertions in fa940d9 (S-07 fixture swap) which replaced
+    # the 503-error fixture with this happy-path shape but did not update this test.
+    assert "Update Statuses (0 total)" in update_status_values
+    assert "Update Plan States (108 total)" in update_status_values
+    assert "PlanFailed" in update_status_values
 
     update_failure_values = [
         cell.value
