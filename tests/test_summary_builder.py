@@ -1,0 +1,206 @@
+"""Failure-branch tests for `_build_summary_from_bridge`.
+
+The summary builder emits `[warn]` log lines when individual bridge calls raise
+and falls back to documented defaults (0 or 0.0) for the affected metric. These
+tests guard the visibility fix documented in CHANGELOG: silent zero-fill on
+decode failure used to mask data-quality issues; the warn lines make the
+problem observable. A regression that silenced a warn line, swallowed the
+exception entirely, or changed the default would slip past the existing
+positive tests in `test_command_summaries.py`.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+
+# Helper: a baseline stub bridge where every method returns reasonable data.
+# Individual tests subclass to make one call raise.
+class _BaselineBridge:
+    """Always-succeeds bridge. Tests subclass and override one method to raise."""
+
+    def is_available(self) -> bool:
+        return True
+
+    def security_report(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "section": "summary",
+                "data": {
+                    "total_devices": 100,
+                    "filevault_encrypted_pct": "92.0%",
+                },
+            }
+        ]
+
+    def inventory_summary(self) -> list[dict[str, Any]]:
+        return [{"os_version": "15.7.3", "count": 100}]
+
+    def device_compliance(self) -> list[dict[str, Any]]:
+        return [{"stale": True}, {"stale": False}, {"stale": True}]
+
+    def patch_status(self) -> list[dict[str, Any]]:
+        return [{"compliance_pct": "80%"}, {"compliance_pct": "70%"}]
+
+
+def _config_with_macos_ea(jrc, fixtures_root):
+    """Build a config that has a macOS-version EA so the OS-adoption branch fires."""
+    config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
+    config._data["custom_eas"] = [
+        {
+            "name": "macOS version",
+            "type": "version",
+            "current_versions": ["15.7"],
+        }
+    ]
+    return config
+
+
+# -------------------------------------------------------------------
+# security_report failure → fv_pct defaults to 0.0, [warn] emitted.
+# -------------------------------------------------------------------
+
+
+def test_security_report_failure_defaults_fv_pct_and_warns(jrc, fixtures_root, capsys) -> None:
+    config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
+
+    class BoomBridge(_BaselineBridge):
+        def security_report(self) -> list[dict[str, Any]]:
+            raise RuntimeError("simulated security_report failure")
+
+    summary = jrc._build_summary_from_bridge(config, BoomBridge(), "2026-04-27")
+    captured = capsys.readouterr()
+
+    assert summary is not None, "totalDevices fallback via inventory_summary should keep summary non-None"
+    assert summary["fileVaultPct"] == 0.0, "fv_pct must default to 0.0 when security_report raises"
+    assert "[warn]" in captured.out
+    assert "security_report failed" in captured.out
+    assert "fv_pct defaulting to 0.0" in captured.out
+
+
+# -------------------------------------------------------------------
+# inventory_summary failure (totalDevices fallback) → returns None, warn emitted.
+# -------------------------------------------------------------------
+
+
+def test_inventory_summary_failure_defaults_total_devices_and_warns(jrc, fixtures_root, capsys) -> None:
+    config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
+
+    class BoomBridge(_BaselineBridge):
+        # security_report returns no summary section so total_devices stays 0,
+        # forcing the inventory_summary fallback path.
+        def security_report(self) -> list[dict[str, Any]]:
+            return []
+
+        def inventory_summary(self) -> list[dict[str, Any]]:
+            raise RuntimeError("simulated inventory_summary failure")
+
+    summary = jrc._build_summary_from_bridge(config, BoomBridge(), "2026-04-27")
+    captured = capsys.readouterr()
+
+    # When total_devices is 0 after both paths, the builder returns None per
+    # design — the upstream caller skips the summary write rather than
+    # emit a misleading totalDevices=0 trend point.
+    assert summary is None
+    assert "[warn]" in captured.out
+    assert "inventory_summary failed" in captured.out
+    assert "totalDevices defaulting to 0" in captured.out
+
+
+# -------------------------------------------------------------------
+# device_compliance failure → staleCount stays 0, warn emitted.
+# -------------------------------------------------------------------
+
+
+def test_device_compliance_failure_defaults_stale_count_and_warns(jrc, fixtures_root, capsys) -> None:
+    config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
+
+    class BoomBridge(_BaselineBridge):
+        def device_compliance(self) -> list[dict[str, Any]]:
+            raise RuntimeError("simulated device_compliance failure")
+
+    summary = jrc._build_summary_from_bridge(config, BoomBridge(), "2026-04-27")
+    captured = capsys.readouterr()
+
+    assert summary is not None
+    assert summary["staleCount"] == 0, "staleCount must default to 0 when device_compliance raises"
+    assert "[warn]" in captured.out
+    assert "device_compliance failed" in captured.out
+    assert "staleCount defaulting to 0" in captured.out
+
+
+# -------------------------------------------------------------------
+# inventory_summary failure during OS adoption → osCurrentPct stays 0.0, warn emitted.
+# -------------------------------------------------------------------
+
+
+def test_os_adoption_inventory_summary_failure_defaults_pct_and_warns(jrc, fixtures_root, capsys) -> None:
+    config = _config_with_macos_ea(jrc, fixtures_root)
+
+    # We need security_report to succeed (so total_devices > 0 and we proceed
+    # past the early return), and inventory_summary to succeed once (in the
+    # security fallback path it's never called because total_devices already
+    # came from security), then RAISE on the OS-adoption call.
+    # The function calls bridge.inventory_summary() twice on different paths.
+    # When security_report succeeds with total_devices, the only call to
+    # inventory_summary is in the OS-adoption block.
+    class BoomBridge(_BaselineBridge):
+        def inventory_summary(self) -> list[dict[str, Any]]:
+            raise RuntimeError("simulated inventory_summary failure (os adoption)")
+
+    summary = jrc._build_summary_from_bridge(config, BoomBridge(), "2026-04-27")
+    captured = capsys.readouterr()
+
+    assert summary is not None
+    assert summary["osCurrentPct"] == 0.0, "osCurrentPct must default to 0.0 when inventory_summary raises"
+    assert "[warn]" in captured.out
+    assert "inventory_summary (os adoption) failed" in captured.out
+    assert "osCurrentPct defaulting to 0.0" in captured.out
+
+
+# -------------------------------------------------------------------
+# patch_status failure → patchPct stays 0.0, warn emitted.
+# -------------------------------------------------------------------
+
+
+def test_patch_status_failure_defaults_patch_pct_and_warns(jrc, fixtures_root, capsys) -> None:
+    config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
+
+    class BoomBridge(_BaselineBridge):
+        def patch_status(self) -> list[dict[str, Any]]:
+            raise RuntimeError("simulated patch_status failure")
+
+    summary = jrc._build_summary_from_bridge(config, BoomBridge(), "2026-04-27")
+    captured = capsys.readouterr()
+
+    assert summary is not None
+    assert summary["patchPct"] == 0.0, "patchPct must default to 0.0 when patch_status raises"
+    assert "[warn]" in captured.out
+    assert "patch_status failed" in captured.out
+    assert "patchPct defaulting to 0.0" in captured.out
+
+
+# -------------------------------------------------------------------
+# Sanity: all-succeed baseline keeps every metric populated and emits no warns.
+# Acts as a negative control for the failure-branch tests.
+# -------------------------------------------------------------------
+
+
+def test_all_bridge_calls_succeed_emits_no_warn_lines(jrc, fixtures_root, capsys) -> None:
+    config = _config_with_macos_ea(jrc, fixtures_root)
+    summary = jrc._build_summary_from_bridge(config, _BaselineBridge(), "2026-04-27")
+    captured = capsys.readouterr()
+
+    assert summary is not None
+    assert summary["totalDevices"] == 100
+    assert summary["fileVaultPct"] == 92.0
+    assert summary["staleCount"] == 2
+    assert summary["osCurrentPct"] == 100.0
+    assert summary["patchPct"] == 75.0
+    # The negative-control assertion: no warn line in the all-succeed path.
+    assert "[warn]" not in captured.out, (
+        "Baseline (all bridge calls succeed) must not emit any [warn] line; "
+        f"got: {captured.out!r}"
+    )
