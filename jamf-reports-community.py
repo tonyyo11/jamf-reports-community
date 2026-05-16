@@ -14426,29 +14426,53 @@ document.querySelectorAll('.cat-toggle').forEach((toggle) => {
   });
 });
 
+function activateTreeTab(tab, opts) {
+  const targetId = tab.getAttribute('data-target');
+  if (!targetId) return;
+  const tablist = tab.closest('.tree-tabs');
+  const peers = tablist
+    ? tablist.querySelectorAll('.tree-tab')
+    : document.querySelectorAll('.tree-tab');
+  peers.forEach((el) => {
+    el.classList.remove('active');
+    el.setAttribute('aria-selected', 'false');
+    el.setAttribute('tabindex', '-1');
+    const peerTarget = el.getAttribute('data-target');
+    if (peerTarget) {
+      const peerPane = document.getElementById(peerTarget);
+      if (peerPane) peerPane.classList.remove('active');
+    }
+  });
+  tab.classList.add('active');
+  tab.setAttribute('aria-selected', 'true');
+  tab.setAttribute('tabindex', '0');
+  const pane = document.getElementById(targetId);
+  if (pane) pane.classList.add('active');
+  if (opts && opts.focus) tab.focus();
+}
+
 document.querySelectorAll('.tree-tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    const targetId = tab.getAttribute('data-target');
-    if (!targetId) return;
+  tab.addEventListener('click', () => activateTreeTab(tab));
+  tab.addEventListener('keydown', (event) => {
     const tablist = tab.closest('.tree-tabs');
-    const peers = tablist
-      ? tablist.querySelectorAll('.tree-tab')
-      : document.querySelectorAll('.tree-tab');
-    peers.forEach((el) => {
-      el.classList.remove('active');
-      el.setAttribute('aria-selected', 'false');
-      el.setAttribute('tabindex', '-1');
-      const peerTarget = el.getAttribute('data-target');
-      if (peerTarget) {
-        const peerPane = document.getElementById(peerTarget);
-        if (peerPane) peerPane.classList.remove('active');
-      }
-    });
-    tab.classList.add('active');
-    tab.setAttribute('aria-selected', 'true');
-    tab.setAttribute('tabindex', '0');
-    const pane = document.getElementById(targetId);
-    if (pane) pane.classList.add('active');
+    if (!tablist) return;
+    const tabs = Array.from(tablist.querySelectorAll('.tree-tab'));
+    if (tabs.length === 0) return;
+    const idx = tabs.indexOf(tab);
+    let next = null;
+    if (event.key === 'ArrowLeft') {
+      next = tabs[(idx - 1 + tabs.length) % tabs.length];
+    } else if (event.key === 'ArrowRight') {
+      next = tabs[(idx + 1) % tabs.length];
+    } else if (event.key === 'Home') {
+      next = tabs[0];
+    } else if (event.key === 'End') {
+      next = tabs[tabs.length - 1];
+    }
+    if (next) {
+      event.preventDefault();
+      activateTreeTab(next, { focus: true });
+    }
   });
 });
 
