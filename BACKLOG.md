@@ -13,6 +13,23 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-1 cleanup (2026-05-16)
+
+- **CONSIDER — `LaunchAgentService.parse()` reads CLI flags the current writer no longer emits.**
+  PR-1 closed the `--base-profile` orphan (writer stopped emitting it
+  in commit 9aa5124, May 9; parser + tests removed in PR-1's `a2296ed`).
+  Discovered during that cleanup: the parser at
+  `app/Sources/JamfReports/Services/LaunchAgentService.swift` still
+  reads `--mode`, `--multi-filter`, `--multi-profiles`,
+  `--multi-sequential`, and the `multi-launchagent-run` subcommand
+  keyword from existing plists, but the current `nativeMultiWrite`
+  (in `LaunchAgentWriter.swift`) only emits `--scheduled-run`,
+  `--profile`, `--all-profiles`. Same shape as the closed orphan:
+  writer stopped, parser still reads. Won't break anything today
+  (no current plist contains those flags), but the inconsistency is
+  the same class of bug. Audit each orphan parser arm and either
+  remove or document why it's load-bearing for pre-9aa5124 plists.
+
 ### From PR-A review gates (2026-05-16)
 
 Three deferred items from the security-reviewer + silent-failure-hunter
