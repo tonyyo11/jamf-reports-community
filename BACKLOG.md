@@ -264,10 +264,6 @@ load) protected by the install-time + onboarding-time gates.
   `app/Sources/JamfReports/Views/CustomizationWizard.swift:356` and
   `app/Sources/JamfReports/Views/WorkspaceView.swift:64`.
 
-- **SHOULD-FIX — `generateAll` lacks failure-branch test coverage.**
-  `app/Sources/JamfReports/Services/CLIBridge+Generation.swift:39`. Cover
-  collect failure branching, unauthorized short-circuit, partial success,
-  permission/rate-limit fallback.
 
 ### From Google Gemini 3 security-review (2026-05-12)
 
@@ -406,6 +402,20 @@ _(All items resolved in PR-4.)_
 
 - **CONSIDER — RunsView dynamic status live-region trait — PR-4 closed the SchedulesView and StatusBar bullets but RunsView was not actually edited; needs a follow-up locate of the live status text site.** RunsView contains only static status pills (`.ok`, `.fail`) that don't update frequently, not live updating text like "Running…" or "Collecting…" that would warrant `.updatesFrequently` trait.
 - **CONSIDER — `swift test` fails 21 `CoreDashboardTests` / `SchoolDashboardTests` only inside `.claude/worktrees/` paths.** Reproduces at the merge-base SHA (`56bfbe7`) inside the agent worktree path, but the same SHA passes 1349/1349 in `/Users/alyoung/emdash/worktrees/...` and `/tmp/pr4-validate`. Fixtures are byte-identical (md5 verified); no sparse checkout, no LFS, no symlinks. Likely culprit area: SwiftPM `#filePath`/sandbox interaction with `.claude/` parent path, or `FileManager.copyItem` silently truncating under that prefix. All 21 failures are `XCTAssertNoThrow failed: threw error "noCachedData(names: [...])"` from `loadLatestJSONData`. Not blocking — `swift test` from any non-`.claude/` worktree works fine, so CI is unaffected. Worth investigating before the next time subagents work in `.claude/worktrees/` to avoid silent false-negative test reports.
+
+### From PR-5 in-flight discovery (2026-05-16)
+
+- **CONSIDER — `generateAll` exit-5/exit-6 fallback and partial-success branches lack test coverage.** PR-5 covers the
+  unauthorized short-circuit (exit 3) and the `GenerateAllResult` struct
+  semantics via real-CLIBridge tests gated on `ExecutableLocator.locate("jamf-cli")`.
+  The exit-5 (permission denied) and exit-6 (rate-limited) collect-fallback
+  branches, and the partial-success path (one type succeeds, another fails
+  with a non-3 exit code), need synthetic exit codes from `collect` /
+  `generate` / `generateHTML` to exercise. Closing this gap requires a
+  `CLIExecutor`-style protocol seam over those four `CLIBridge` methods —
+  `CLIBridge` is currently `final` and routes them directly. The seam is
+  real architectural scope (not a test-only change) and was deferred from
+  PR-5 to keep that PR purely test-infrastructure.
 
 ---
 
