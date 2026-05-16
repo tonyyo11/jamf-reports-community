@@ -252,10 +252,6 @@ load) protected by the install-time + onboarding-time gates.
 
 ### From Google Gemini 3 security-review (2026-05-12)
 
-- **MEDIUM — SHA-256 digest JSON snapshots at collection, verify at
-  generation.** Detect tampering of cached `jamf-cli-data/*.json` between
-  collection and report generation. Threat-model T-2.
-
 ### From WCAG 2.2 AA accessibility audit (2026-05-15)
 
 Two-surface audit covering the SwiftUI app and the HTML report

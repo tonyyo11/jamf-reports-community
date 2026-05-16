@@ -617,6 +617,91 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+SNAPSHOT_MANIFEST_FILENAME = "manifest.json"
+
+
+def _snapshot_manifest_path(snapshot_dir: Path) -> Path:
+    """Return the manifest path that lives alongside cached JSON snapshots."""
+    return snapshot_dir / SNAPSHOT_MANIFEST_FILENAME
+
+
+def _rewrite_snapshot_manifest(snapshot_dir: Path) -> None:
+    """Recompute and atomically rewrite the SHA-256 manifest for a snapshot dir.
+
+    The manifest lists every `*.json` file in the directory (excluding the
+    manifest itself and any `.partial` write-in-progress files) keyed by
+    filename, value = lowercase hex digest. Rewritten in full on each call so
+    older files purged by ``keep_latest_runs`` are not left in the manifest.
+
+    Failures are surfaced as a `[warn]` print and otherwise swallowed —
+    snapshot writes must not be blocked by manifest hygiene.
+    """
+    try:
+        if not snapshot_dir.is_dir():
+            return
+        manifest_path = _snapshot_manifest_path(snapshot_dir)
+        entries: dict[str, str] = {}
+        for child in sorted(snapshot_dir.iterdir()):
+            if not child.is_file():
+                continue
+            if child.name == SNAPSHOT_MANIFEST_FILENAME:
+                continue
+            if child.suffix == ".partial" or ".partial" in child.name:
+                continue
+            if child.suffix != ".json":
+                continue
+            entries[child.name] = _sha256_file(child)
+        partial = manifest_path.with_suffix(".json.partial")
+        with open(partial, "w", encoding="utf-8") as fh:
+            json.dump({"algorithm": "sha256", "files": entries}, fh, indent=2, sort_keys=True)
+        partial.rename(manifest_path)
+    except OSError as exc:
+        print(f"  [warn] Could not write snapshot manifest for '{snapshot_dir}': {exc}")
+
+
+def _verify_snapshot_against_manifest(
+    snapshot_path: Path, strict: bool = False
+) -> None:
+    """Verify ``snapshot_path``'s SHA-256 matches its sibling manifest entry.
+
+    On mismatch:
+      - When ``strict`` is True, raises ``RuntimeError`` (used by --strict-manifest).
+      - Otherwise prints a ``[warn]`` line and returns (tampering vs staleness
+        is hard to distinguish — a partial-collect leaves manifest out of sync
+        but the snapshot itself is fine).
+
+    No-op when the sibling manifest is absent (legacy snapshots) or when the
+    manifest decodes but does not include this filename (e.g. cross-tool
+    workflows where the manifest writer hasn't caught up).
+    """
+    manifest_path = _snapshot_manifest_path(snapshot_path.parent)
+    if not manifest_path.is_file():
+        return
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"  [warn] Could not read snapshot manifest {manifest_path}: {exc}")
+        return
+    files = manifest.get("files", {}) if isinstance(manifest, dict) else {}
+    expected = files.get(snapshot_path.name)
+    if not expected:
+        return
+    try:
+        actual = _sha256_file(snapshot_path)
+    except OSError as exc:
+        print(f"  [warn] Could not hash snapshot {snapshot_path} for verification: {exc}")
+        return
+    if actual.lower() != str(expected).lower():
+        message = (
+            f"snapshot SHA-256 mismatch for {snapshot_path}: "
+            f"expected {expected[:12]}…, got {actual[:12]}…"
+        )
+        if strict:
+            raise RuntimeError(message)
+        print(f"  [warn] {message}")
+
+
 def _path_has_timestamp(path: Path) -> bool:
     """Return True when the path stem already contains a date/time stamp."""
     return bool(re.search(r"\d{4}-\d{2}-\d{2}(?:[_T]\d{4,6})?", path.stem))
@@ -3497,6 +3582,7 @@ class JamfCLIBridge:
         ea_results_timeout: int = 600,
         max_cache_age_hours: int = 0,
         multi_config: Optional[dict[str, Any]] = None,
+        strict_manifest: bool = False,
     ) -> None:
         self._binary = self._find_binary()
         self._save = save_output
@@ -3509,6 +3595,8 @@ class JamfCLIBridge:
         self._multi = multi_config or {}
         self._report_commands_cache: Optional[set[str]] = None
         self._last_source_info: dict[str, dict[str, Any]] = {}
+        # When True, manifest mismatches raise rather than warn on cached reads.
+        self._strict_manifest = bool(strict_manifest)
 
     def _find_binary(self) -> Optional[str]:
         return _find_jamf_cli_binary()
@@ -3805,7 +3893,9 @@ class JamfCLIBridge:
 
         Uses non-recursive glob so that per-ID detail subdirectories (e.g.
         classic-policies/14/) are not mistaken for list-level cache files when
-        querying the parent directory (e.g. classic-policies/).
+        querying the parent directory (e.g. classic-policies/). Excludes the
+        sibling SHA-256 manifest file (`manifest.json`) — it is metadata about
+        snapshots, never itself a snapshot.
         """
         candidates: list[Path] = []
         for report_name in report_names:
@@ -3813,7 +3903,9 @@ class JamfCLIBridge:
             if report_dir.is_dir():
                 candidates.extend(
                     path for path in report_dir.glob("*.json")
-                    if path.is_file() and not path.is_symlink() and ".partial" not in path.name
+                    if path.is_file() and not path.is_symlink()
+                    and ".partial" not in path.name
+                    and path.name != SNAPSHOT_MANIFEST_FILENAME
                 )
             elif self._data_dir.is_dir():
                 pattern = f"{report_name}_*.json"
@@ -3836,6 +3928,9 @@ class JamfCLIBridge:
         cached_path = self._latest_cached_json(report_names)
         if cached_path is None:
             raise RuntimeError("no cached jamf-cli snapshot is available")
+        # T-2 mitigation: verify SHA-256 against sibling manifest. Absent
+        # manifest is treated as "no check" (legacy snapshots, partial collects).
+        _verify_snapshot_against_manifest(cached_path, strict=self._strict_manifest)
         try:
             with open(cached_path, encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -3958,6 +4053,11 @@ class JamfCLIBridge:
                 with open(tmp_path, "w", encoding="utf-8") as fh:
                     json.dump(data, fh, indent=2)
                 tmp_path.rename(final_path)
+                # T-2 mitigation (Google Gemini security-review 2026-05-12):
+                # rewrite the SHA-256 manifest so loaders can detect tampering
+                # between collect and generate. Full rewrite (not append) so
+                # files purged by keep_latest_runs leave no stale entries.
+                _rewrite_snapshot_manifest(out_dir)
             except OSError as exc:
                 print(f"  [warn] Could not save snapshot for '{report_type}': {exc}")
         return data
@@ -4654,6 +4754,7 @@ def _build_jamf_cli_bridge(
     *,
     save_output: bool,
     use_cached_data: Optional[bool] = None,
+    strict_manifest: bool = False,
 ) -> JamfCLIBridge:
     """Construct a JamfCLIBridge from config with consistent defaults."""
     jamf_cli_cfg = config.jamf_cli
@@ -4674,6 +4775,7 @@ def _build_jamf_cli_bridge(
         ea_results_timeout=ea_timeout,
         max_cache_age_hours=max_cache_age,
         multi_config=jamf_cli_cfg.get("multi"),
+        strict_manifest=strict_manifest,
     )
 
 
@@ -12442,6 +12544,7 @@ def cmd_generate(
     summary_json: Optional[str] = None,
     *,
     force_summary: bool = False,
+    strict_manifest: bool = False,
 ) -> Path:
     """Run all report generation and write the Excel file.
 
@@ -12515,7 +12618,9 @@ def cmd_generate(
     bridge: Optional[JamfCLIBridge] = None
     jamf_cli_ready = False
     if jamf_cli_enabled:
-        bridge = _build_jamf_cli_bridge(config, save_output=True)
+        bridge = _build_jamf_cli_bridge(
+            config, save_output=True, strict_manifest=strict_manifest
+        )
         jamf_cli_ready = bridge.is_available() or bridge.has_cached_data(
             include_protect=protect_enabled,
             include_platform=platform_enabled,
@@ -18763,6 +18868,14 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--strict-manifest",
+        action="store_true",
+        help=(
+            "Abort when a cached jamf-cli JSON snapshot fails SHA-256 verification"
+            " against the sibling manifest.json. Default: warn and continue."
+        ),
+    )
+    parser.add_argument(
         "--days",
         type=int,
         default=7,
@@ -18935,6 +19048,7 @@ def main() -> None:
                 config, args.csv, args.out_file, args.historical_csv_dir,
                 args.notify, args.csv_extra, args.summary_json,
                 force_summary=args.force_summary,
+                strict_manifest=args.strict_manifest,
             )
         elif args.command == "patch-managed":
             if not args.managed:
