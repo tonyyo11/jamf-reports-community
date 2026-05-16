@@ -198,6 +198,7 @@ struct BackupsView: View {
                             }
                             .disabled(workspace.demoMode || isRunningBackup)
                             .help(workspace.demoMode ? "Available in live mode only" : "Delete this backup")
+                            .accessibilityHint("Shows a confirmation dialog to delete this backup")
                         }
                         .contextMenu {
                             Button("Reveal in Finder") { SystemActions.reveal(backup.url) }

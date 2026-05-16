@@ -364,45 +364,7 @@ ARIA, and contrast/focus-visible.)_
 
 **SwiftUI — SHOULD-FIX**
 
-- **Reduce-motion not honored on Titlebar pulsing dot.**
-  `Views/Titlebar.swift:67-72`. Pulsing breath animation on the "CLI
-  missing" indicator doesn't gate on `accessibilityReduceMotion`.
-  `Views/SecurityPostureView.swift:423-436` is the right pattern to
-  copy.
-
-- **Destructive write buttons missing hints.**
-  `Views/SmartGroupApplySheet.swift:391-397` ("Create in Jamf Pro"),
-  `Views/BackupsView.swift:195-200` (Delete backup),
-  `Views/SourcesView.swift:390-399` (Full Admin scope elevation). Add
-  `.accessibilityHint("...")` describing the side effect.
-
-- **TextField placeholders aren't labels for VoiceOver.**
-  `Views/SmartGroupApplySheet.swift:297-298,308`,
-  `Views/BackupsView.swift:122-126`, `Views/AuditView.swift:141`.
-  Add explicit `.accessibilityLabel(...)`. Also set `.defaultFocus`
-  on the SmartGroupApplySheet name field.
-
-- **SecureSecretField missing hint.**
-  `Views/SecureSecretField.swift:35-36`. Has AppKit
-  `setAccessibilityLabel("Client Secret")` but no
-  `setAccessibilityHelp(...)`. Add hint noting credential is stored in
-  the keychain and not displayed.
-
-- **Composite candidate row not flattened.**
-  `Views/DeviceLookupView.swift:168-203`. The Button wraps Pill + Text
-  + Mono + chevron without `.accessibilityElement(children: .combine)`
-  — VO reads each child separately.
-
-- **Dynamic status text has no live-region trait.**
-  `Views/RunsView.swift`, `Views/SchedulesView.swift`,
-  `Theme/Components.swift:633` (`StatusBar`). "Running…" /
-  "Collecting…" updates won't be announced. Add
-  `.accessibilityAddTraits(.updatesFrequently)`.
-
-- **Hit target below WCAG 2.5.8 floor.**
-  `Theme/Components.swift:286` (`PNPButton.size = .sm` at 22pt high),
-  `:328` (`PNPToggle` 36×22pt). Raise minimum to 24pt or expand
-  `.contentShape(...)` hit area.
+_(All items resolved in PR-4.)_
 
 **HTML report — SHOULD-FIX**
 
@@ -496,6 +458,18 @@ ARIA, and contrast/focus-visible.)_
 - **CONSIDER — WHAT-comments in build scripts.** A handful of restate-the-code
   comments (e.g. `# Notarize when: ...` immediately above the conditional that
   expresses the same thing). Drop on next pass through the scripts.
+
+### From PR-4 review gates (2026-05-16)
+
+- **CONSIDER — DeviceLookupView chevron not `.accessibilityHidden(true)` after `.combine`.** `app/Sources/JamfReports/Views/DeviceLookupView.swift:~201`. After `.accessibilityElement(children: .combine)`, the `Image(systemName: "chevron.right")` and the Pill's internal icon may be appended to the combined label depending on SwiftUI version. Hide both with `.accessibilityHidden(true)`.
+- **CONSIDER — SourcesView "Full Admin scope" hint is misleading.** `app/Sources/JamfReports/Views/SourcesView.swift:~402`. Current hint "Elevates API privileges to full admin access in Jamf Pro" reads as a server-side privilege grant; actual implementation writes a local UserDefaults key. Consider rephrasing to "Unlocks destructive app operations for this profile" or similar.
+- **CONSIDER — HTML category slug collision within a tab pane.** `jamf-reports-community.py:14675`. Slug derivation via `re.sub(r'[^\w\-_]', '_', category.lower().strip())` collides for `"Mac Setup"` vs `"Mac/Setup"` etc. Append an enumerate counter when a slug has been seen in the same pane to satisfy HTML id-uniqueness.
+- **CONSIDER — PNPToggle 24pt hit-area expands 2pt beyond 22pt visible capsule.** `app/Sources/JamfReports/Theme/Components.swift:~351`. Per CLAUDE.md anti-churn discipline, SwiftUI layout primitive changes need visual verification at `PageScaffold.minSupportedWidth`. Verify in a follow-up session that adjacent UI elements don't overlap the expanded hit zone.
+
+### From PR-4 in-flight discovery (2026-05-16)
+
+- **CONSIDER — RunsView dynamic status live-region trait — PR-4 closed the SchedulesView and StatusBar bullets but RunsView was not actually edited; needs a follow-up locate of the live status text site.** RunsView contains only static status pills (`.ok`, `.fail`) that don't update frequently, not live updating text like "Running…" or "Collecting…" that would warrant `.updatesFrequently` trait.
+- **CONSIDER — `swift test` fails 21 `CoreDashboardTests` / `SchoolDashboardTests` only inside `.claude/worktrees/` paths.** Reproduces at the merge-base SHA (`56bfbe7`) inside the agent worktree path, but the same SHA passes 1349/1349 in `/Users/alyoung/emdash/worktrees/...` and `/tmp/pr4-validate`. Fixtures are byte-identical (md5 verified); no sparse checkout, no LFS, no symlinks. Likely culprit area: SwiftPM `#filePath`/sandbox interaction with `.claude/` parent path, or `FileManager.copyItem` silently truncating under that prefix. All 21 failures are `XCTAssertNoThrow failed: threw error "noCachedData(names: [...])"` from `loadLatestJSONData`. Not blocking — `swift test` from any non-`.claude/` worktree works fine, so CI is unaffected. Worth investigating before the next time subagents work in `.claude/worktrees/` to avoid silent false-negative test reports.
 
 ---
 
