@@ -649,6 +649,7 @@ struct StatusBar: View {
                 Text(status)
                     .font(Theme.Fonts.mono(10.5))
                     .foregroundStyle(Theme.Colors.fg2)
+                    .accessibilityAddTraits(.updatesFrequently)
             } else {
                 Text("Ready")
                     .font(Theme.Fonts.mono(10.5))

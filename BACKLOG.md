@@ -366,16 +366,6 @@ ARIA, and contrast/focus-visible.)_
 
 
 
-- **Composite candidate row not flattened.**
-  `Views/DeviceLookupView.swift:168-203`. The Button wraps Pill + Text
-  + Mono + chevron without `.accessibilityElement(children: .combine)`
-  — VO reads each child separately.
-
-- **Dynamic status text has no live-region trait.**
-  `Views/RunsView.swift`, `Views/SchedulesView.swift`,
-  `Theme/Components.swift:633` (`StatusBar`). "Running…" /
-  "Collecting…" updates won't be announced. Add
-  `.accessibilityAddTraits(.updatesFrequently)`.
 
 - **Hit target below WCAG 2.5.8 floor.**
   `Theme/Components.swift:286` (`PNPButton.size = .sm` at 22pt high),

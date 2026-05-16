@@ -179,6 +179,7 @@ struct HealthCheckView: View {
                             }
                             .disabled(isRunningAudit || workspace.demoMode)
                             .help("Run a fresh audit against this workspace. Findings persist between runs so you can track drift.")
+                            .accessibilityAddTraits(isRunningAudit ? .updatesFrequently : [])
                         } else {
                             PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
                                 copyGroupIDs()
@@ -194,6 +195,7 @@ struct HealthCheckView: View {
                             }
                             .disabled(isRunningHygiene || workspace.demoMode)
                             .help("Find computer groups not referenced by any policy or profile.")
+                            .accessibilityAddTraits(isRunningHygiene ? .updatesFrequently : [])
                         }
                     }
                 }
