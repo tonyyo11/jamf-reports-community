@@ -242,6 +242,7 @@ struct SourcesView: View {
                                 }
                                 .menuStyle(.button)
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Actions for \(f.name)")
                             }
                             .padding(.vertical, 8)
                             if idx < csvFiles.count - 1 {

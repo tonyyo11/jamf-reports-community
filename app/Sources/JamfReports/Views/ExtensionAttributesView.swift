@@ -356,6 +356,18 @@ struct ExtensionAttributesView: View {
                     }
                     .frame(height: min(220, max(120, CGFloat(distribution.top.count * 24))))
                     .accessibilityLabel("Value distribution for \(eaName) extension attribute")
+                    .accessibilityChartDescriptor(
+                        BarDistributionChartDescriptor(
+                            title: "Value distribution for \(eaName) extension attribute",
+                            unit: " devices",
+                            bars: distribution.top.map { item in
+                                BarDistributionChartDescriptor.Bar(
+                                    label: item.value,
+                                    value: Double(item.count)
+                                )
+                            }
+                        )
+                    )
                     .chartXAxis {
                         AxisMarks(position: .bottom) { _ in
                             AxisValueLabel()
@@ -589,6 +601,7 @@ private struct BarChartExportView: View {
                     )
             }
             .frame(height: 278)
+            .accessibilityHidden(true)
 
             HStack(spacing: 14) {
                 exportStat("Distinct values", "\(distribution.distinctValueCount)")

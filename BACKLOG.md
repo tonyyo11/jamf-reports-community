@@ -339,35 +339,6 @@ Two-surface audit covering the SwiftUI app and the HTML report
 severity; SwiftUI items reference Apple HIG accessibility APIs, HTML items
 cite WCAG 2.2 Success Criteria.
 
-**SwiftUI — MUST-FIX**
-
-- **Chart descriptors defined but not applied.**
-  `app/Sources/JamfReports/Theme/AccessibilityDescriptors.swift` defines
-  five `AXChartDescriptor` types (Trend / MultiLine / Sector / Bar /
-  Stacked) but only ~6 of 16 `Chart {}` blocks attach one via
-  `.accessibilityChartDescriptor(...)`. Unattached sites:
-  `Views/UpdatesView.swift:326,615`,
-  `Views/CompliancePostureView.swift:254,449`,
-  `Views/SecurityPostureView.swift:397,478`,
-  `Views/ExtensionAttributesView.swift:346,548`,
-  `Views/TrendsView.swift:1037`. VoiceOver Audio Graph is silent on
-  those charts. PNG-export-only renderers can use
-  `.accessibilityHidden(true)` instead.
-
-- **Icon-only buttons rely on `.help(...)` only.** `.help` is a hover
-  tooltip; VoiceOver does not read it. Add `.accessibilityLabel(...)`
-  (state-aware where relevant): `Views/Titlebar.swift:16-23` (sidebar
-  toggle), `Views/AppToolbar.swift:187-195` (demo-mode toggle),
-  `Views/CustomizeView.swift:42-49` (dismiss banner),
-  `Views/SourcesView.swift:230-244` (per-row ellipsis menu).
-
-- **Severity icon distinguishable by color only.**
-  `Views/AuditView.swift:457-464` returns the same
-  `exclamationmark.triangle.fill` glyph in three colors for
-  Critical/Warning/OK. Adjacent `Pill` text mitigates, but the icon
-  viewed alone fails SC 1.4.1. Vary the SF Symbol per severity
-  (`octagon.fill` / `triangle.fill` / `checkmark.circle.fill`) or set
-  `.accessibilityLabel(severity)` on the `Image`.
 
 **HTML report — MUST-FIX**
 

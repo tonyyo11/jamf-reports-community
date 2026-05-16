@@ -335,6 +335,18 @@ struct UpdatesView: View {
         }
         .chartLegend(.hidden)
         .accessibilityLabel("Update plan state distribution")
+        .accessibilityChartDescriptor(
+            SectorChartDescriptor(
+                title: "Update Plan State Distribution",
+                unit: " plans",
+                slices: snapshot.planStateBreakdown.filter { $0.count > 0 }.map { slice in
+                    SectorChartDescriptor.Slice(
+                        label: slice.label,
+                        value: Double(slice.count)
+                    )
+                }
+            )
+        )
     }
 
     private var planStateLegend: some View {
@@ -622,6 +634,7 @@ private struct UpdatesPlanStateDonutExport: View {
             }
             .chartLegend(.hidden)
             .frame(width: 260, height: 260)
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(slices) { slice in

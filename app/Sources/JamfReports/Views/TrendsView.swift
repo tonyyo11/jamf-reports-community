@@ -1127,6 +1127,7 @@ private struct ChartExportView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: 0xE2E8F0), lineWidth: 1))
         }
+        .accessibilityHidden(true)
     }
 
     private func formatValue(_ value: Double) -> String {

@@ -263,6 +263,18 @@ struct CompliancePostureView: View {
         }
         .chartLegend(.hidden)
         .accessibilityLabel("Fleet compliance bands")
+        .accessibilityChartDescriptor(
+            SectorChartDescriptor(
+                title: "Fleet Compliance Bands",
+                unit: " devices",
+                slices: snapshot.bands.filter { $0.count > 0 }.map { band in
+                    SectorChartDescriptor.Slice(
+                        label: band.label,
+                        value: Double(band.count)
+                    )
+                }
+            )
+        )
     }
 
     private var bandsLegend: some View {
@@ -456,6 +468,7 @@ private struct CompliancePostureBandsDonutExport: View {
             }
             .chartLegend(.hidden)
             .frame(width: 260, height: 260)
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(bands) { band in
