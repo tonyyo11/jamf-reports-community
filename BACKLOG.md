@@ -367,10 +367,6 @@ ARIA, and contrast/focus-visible.)_
 
 
 
-- **Hit target below WCAG 2.5.8 floor.**
-  `Theme/Components.swift:286` (`PNPButton.size = .sm` at 22pt high),
-  `:328` (`PNPToggle` 36×22pt). Raise minimum to 24pt or expand
-  `.contentShape(...)` hit area.
 
 **HTML report — SHOULD-FIX**
 

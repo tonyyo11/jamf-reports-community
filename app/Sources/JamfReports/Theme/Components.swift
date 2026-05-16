@@ -281,9 +281,12 @@ struct PNPButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
+        .contentShape(Rectangle())
+        .frame(minHeight: max(height, minHitTarget))
     }
 
     private var height: CGFloat { switch size { case .sm: 22; case .md: 28; case .lg: 36 } }
+    private var minHitTarget: CGFloat { 24 }
     private var hPad: CGFloat   { switch size { case .sm: 8;  case .md: 14; case .lg: 18 } }
     private var fontSize: CGFloat { switch size { case .sm: 11.5; case .md: 13; case .lg: 13.5 } }
     private var iconSize: CGFloat { switch size { case .sm: 10; case .md: 12; case .lg: 13 } }
@@ -344,6 +347,8 @@ struct PNPToggle: View {
         .accessibilityLabel(label.isEmpty ? "Toggle" : label)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(.isButton)
+        .contentShape(Rectangle())
+        .frame(minWidth: 36, minHeight: 24)
     }
 }
 
