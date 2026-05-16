@@ -342,47 +342,9 @@ cite WCAG 2.2 Success Criteria.
 
 **HTML report — MUST-FIX**
 
-- **No headings or landmarks.** `jamf-reports-community.py:15102-15278`.
-  Zero `<h1>`–`<h6>` elements; zero `<header>`/`<main>`/`<nav>`/
-  `<footer>`. SR users can't navigate by structure (SC 1.3.1). Wrap
-  topbar, page, and footer in landmarks; promote `.topbar-brand` →
-  `<h1>`, `.section-block-title` → `<h2>`, `.section-title` → `<h3>`.
-
-- **Tables missing `scope` and `<caption>`.**
-  `jamf-reports-community.py:13595,13645,14400,14475,14517,14563-14564`.
-  All `<th>` lack `scope="col"`; no `<caption>` on any data table.
-  Cells aren't programmatically associated with column headers
-  (SC 1.3.1).
-
-- **Security status cells color-coded with no text differentiator.**
-  `jamf-reports-community.py:14454-14457,14544-14548`. FileVault / SIP
-  / Firewall cells convey pass/fail via `val-ok` (green) vs `val-err`
-  (red) CSS classes — cell text is identical. Fails SC 1.4.1.
-  Prepend ✓ / ✗ glyph or `[OK]`/`[FAIL]` text.
-
-- **Trend SVG has no text alternative.**
-  `jamf-reports-community.py:13473` (`_render_line_chart_svg`). Only a
-  generic `aria-label="Trend chart"`; data exists solely as SVG
-  geometry. OS distribution chart at `:13594-13597` already does this
-  correctly (paired visually-hidden `<table>`) — mirror the pattern
-  (SC 1.1.1).
-
-- **Click-bound `<div>`s and untyped tablists.**
-  `jamf-reports-community.py:14286-14289` `.cat-toggle` is a `<div>`
-  with onclick — no `role`, `tabindex`, `aria-expanded`, no keyboard
-  handler (SC 2.1.1). `.tree-tab` at `:14345` is a real `<button>` but
-  missing `role="tab"`/`aria-selected`/`aria-controls`; `.tree-tabs`
-  missing `role="tablist"`. Update JS handlers at `:14075-14083` and
-  `:14085-14095`.
-
-- **Contrast and focus-visible gaps.**
-  `jamf-reports-community.py:13884-13888`. `--muted #64748b` on
-  `--surface-2 #f8fafc` at 0.68rem ≈ 4.4:1 — fails 4.5:1 (SC 1.4.3).
-  No `:focus-visible` rule anywhere — dark-mode toggle's default focus
-  ring is invisible on `#004165` topbar. Darken `--muted` to slate-600
-  / `#475569`; add `:focus-visible { outline: 2px solid var(--blue);
-  outline-offset: 2px; }` plus a high-contrast topbar variant. Needs
-  Stark/axe pass to confirm all dark-mode badge pairs.
+_(All six MUST-FIX items resolved in PR-3 — landmarks/headings, table
+scope/caption, security-cell glyphs, trend SVG data table, tablist
+ARIA, and contrast/focus-visible.)_
 
 **SwiftUI — SHOULD-FIX**
 

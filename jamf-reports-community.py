@@ -13818,10 +13818,35 @@ class HtmlReport:
                 f'{self._html_text(item.get("label", "Series"))}</span>'
             )
         legend = "".join(legend_parts)
+        unit = "%" if percent_scale else ""
+        series_labels = [str(item.get("label", "Series")) for item in series]
+        header_cells = "".join(
+            f'<th scope="col">{self._html_text(label)}</th>' for label in series_labels
+        )
+        body_rows = []
+        for col_idx, label in enumerate(labels):
+            cells = [f'<th scope="row">{self._html_text(label)}</th>']
+            for item in series:
+                values = item.get("data") or []
+                cell_value = (
+                    f"{values[col_idx]}{unit}"
+                    if col_idx < len(values)
+                    else ""
+                )
+                cells.append(f"<td>{self._html_text(cell_value)}</td>")
+            body_rows.append("<tr>" + "".join(cells) + "</tr>")
+        data_table = (
+            '<table class="sr-only">'
+            '<caption>Trend chart data values.</caption>'
+            f'<thead><tr><th scope="col">Period</th>{header_cells}</tr></thead>'
+            f'<tbody>{"".join(body_rows)}</tbody>'
+            '</table>'
+        )
         return (
             f'<svg class="trend-svg" viewBox="0 0 {int(width)} {int(height)}" '
             'role="img" aria-label="Trend chart">'
             f"{''.join(grid)}{axis}{''.join(ticks)}{''.join(x_labels)}{''.join(paths)}</svg>"
+            f"{data_table}"
             f'<div class="chart-legend">{legend}</div>'
         )
 
@@ -13861,7 +13886,12 @@ class HtmlReport:
   <div class="chart-title">macOS Version Distribution</div>
   <svg class="trend-svg" viewBox="0 0 {int(width)} {int(height)}" role="img" aria-label="macOS version distribution">{''.join(bars)}</svg>
   <table class="os-table">
-    <thead><tr><th>Version</th><th>Devices</th><th>%</th></tr></thead>
+    <caption class="sr-only">macOS version distribution across managed computers.</caption>
+    <thead><tr>
+      <th scope="col">Version</th>
+      <th scope="col">Devices</th>
+      <th scope="col">%</th>
+    </tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
 </div>"""
@@ -13905,13 +13935,19 @@ class HtmlReport:
                 f"<td>{self._html_text(detail)}</td>"
                 "</tr>"
             )
-        return f"""<div class="section-title">Report Sources</div>
+        return f"""<h3 class="section-title">Report Sources</h3>
 <div class="card card-sm">
   <div class="table-note" style="margin-bottom:10px">
     Live and cached source state is shown here so partial-data runs are visible in the report itself.
   </div>
   <table class="data-table">
-    <thead><tr><th>Dataset</th><th>Source</th><th>Detail</th></tr></thead>
+    <caption class="sr-only">Provenance for each dataset in this report
+      (live vs cached source).</caption>
+    <thead><tr>
+      <th scope="col">Dataset</th>
+      <th scope="col">Source</th>
+      <th scope="col">Detail</th>
+    </tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
 </div>"""
@@ -13947,7 +13983,7 @@ class HtmlReport:
     --surface-2: #f8fafc;
     --border:    #e2e8f0;
     --text:      #1e293b;
-    --muted:     #64748b;
+    --muted:     #475569;
     --radius:    10px;
     --shadow:    0 1px 4px rgba(0,0,0,.08);
 }
@@ -13999,6 +14035,40 @@ body {
     color: var(--text);
     font-size: 14px;
     line-height: 1.5;
+}
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+.org-caption {
+    text-align: left;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    margin-bottom: 8px;
+    caption-side: top;
+}
+.org-table-card th[scope="row"] {
+    font-weight: normal;
+    text-align: left;
+}
+:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+.topbar :focus-visible,
+.dark-toggle:focus-visible {
+    outline-color: #fff;
 }
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -14247,6 +14317,10 @@ a:hover { text-decoration: underline; }
     font-weight: 600;
     font-size: .82rem;
     user-select: none;
+    width: 100%;
+    text-align: left;
+    color: inherit;
+    font-family: inherit;
 }
 .cat-toggle:hover { border-color: var(--blue); }
 .cat-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -14348,6 +14422,7 @@ document.querySelectorAll('.cat-toggle').forEach((toggle) => {
     if (!items) return;
     const open = items.classList.toggle('open');
     if (caret) caret.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
 });
 
@@ -14355,9 +14430,23 @@ document.querySelectorAll('.tree-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     const targetId = tab.getAttribute('data-target');
     if (!targetId) return;
-    document.querySelectorAll('.tree-tab').forEach((el) => el.classList.remove('active'));
-    document.querySelectorAll('.tree-pane').forEach((el) => el.classList.remove('active'));
+    const tablist = tab.closest('.tree-tabs');
+    const peers = tablist
+      ? tablist.querySelectorAll('.tree-tab')
+      : document.querySelectorAll('.tree-tab');
+    peers.forEach((el) => {
+      el.classList.remove('active');
+      el.setAttribute('aria-selected', 'false');
+      el.setAttribute('tabindex', '-1');
+      const peerTarget = el.getAttribute('data-target');
+      if (peerTarget) {
+        const peerPane = document.getElementById(peerTarget);
+        if (peerPane) peerPane.classList.remove('active');
+      }
+    });
     tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
+    tab.setAttribute('tabindex', '0');
     const pane = document.getElementById(targetId);
     if (pane) pane.classList.add('active');
   });
@@ -14375,9 +14464,16 @@ const filterTreePane = (container, query) => {
     node.classList.toggle('item-hidden', !visible);
     const children = node.querySelector('.cat-items');
     const caret = node.querySelector('.cat-caret');
+    const toggle = node.querySelector('.cat-toggle');
     if (children && caret) {
       children.classList.toggle('open', query ? visible : children.classList.contains('open'));
       caret.classList.toggle('open', children.classList.contains('open'));
+    }
+    if (toggle && children) {
+      toggle.setAttribute(
+        'aria-expanded',
+        children.classList.contains('open') ? 'true' : 'false'
+      );
     }
   });
 };
@@ -14552,19 +14648,23 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                     for name in group["items"]
                 )
                 chunks.append(
-                    '<div class="cat-node"><div class="cat-toggle"><span class="cat-label">'
-                    '<span class="cat-caret">▶</span>'
+                    '<div class="cat-node">'
+                    '<button type="button" class="cat-toggle" aria-expanded="false">'
+                    '<span class="cat-label">'
+                    '<span class="cat-caret" aria-hidden="true">▶</span>'
                     f'<span>{self._html_text(group["category"])}</span>'
-                    f'</span><span class="cat-count">{group["count"]}</span></div>'
+                    f'</span><span class="cat-count">{group["count"]}</span></button>'
                     f'<div class="cat-items">{items}</div></div>'
                 )
             body = "".join(chunks)
-        return f"""<div class="tree-pane" id="{self._html_text(pane_id)}">
+        safe_pane = self._html_text(pane_id)
+        return f"""<div class="tree-pane" id="{safe_pane}" role="tabpanel"
+  aria-labelledby="tab-{safe_pane}" tabindex="0">
   <input class="tree-search" type="search"
     placeholder="{self._html_text(search_placeholder)}"
-    data-filter-target="{self._html_text(pane_id)}-list" data-filter-kind="tree">
+    data-filter-target="{safe_pane}-list" data-filter-kind="tree">
   <div class="tree-summary">{self._html_text(summary)}</div>
-  <div id="{self._html_text(pane_id)}-list">{body}</div>
+  <div id="{safe_pane}-list">{body}</div>
 </div>"""
 
     def _render_hierarchy_flat_panel(
@@ -14584,12 +14684,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 f'{self._html_text(item.lower())}">{self._html_text(item)}</div>'
                 for item in items
             )
-        return f"""<div class="tree-pane" id="{self._html_text(pane_id)}">
+        safe_pane = self._html_text(pane_id)
+        return f"""<div class="tree-pane" id="{safe_pane}" role="tabpanel"
+  aria-labelledby="tab-{safe_pane}" tabindex="0">
   <input class="tree-search" type="search"
     placeholder="{self._html_text(search_placeholder)}"
-    data-filter-target="{self._html_text(pane_id)}-list" data-filter-kind="flat">
+    data-filter-target="{safe_pane}-list" data-filter-kind="flat">
   <div class="tree-summary">{self._html_text(summary)}</div>
-  <div id="{self._html_text(pane_id)}-list">{body}</div>
+  <div id="{safe_pane}-list">{body}</div>
 </div>"""
 
     def _render_hierarchy_tabs(
@@ -14612,7 +14714,13 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         ]
         tab_html = "".join(
             '<button type="button" class="tree-tab'
-            f'{" active" if idx == 0 else ""}" data-target="{self._html_text(tab_id)}">'
+            f'{" active" if idx == 0 else ""}"'
+            f' id="tab-{self._html_text(tab_id)}"'
+            f' role="tab"'
+            f' aria-controls="{self._html_text(tab_id)}"'
+            f' aria-selected="{"true" if idx == 0 else "false"}"'
+            f' tabindex="{"0" if idx == 0 else "-1"}"'
+            f' data-target="{self._html_text(tab_id)}">'
             f'{self._html_text(label)} ({count})</button>'
             for idx, (tab_id, label, count) in enumerate(tabs)
         )
@@ -14630,9 +14738,10 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             ),
         ]
         panes[0] = panes[0].replace('class="tree-pane"', 'class="tree-pane active"', 1)
-        return f"""<div class="section-title">Deployment Hierarchy</div>
+        return f"""<h3 class="section-title">Deployment Hierarchy</h3>
 <div class="card">
-  <div class="tree-tabs">{tab_html}</div>
+  <div class="tree-tabs" role="tablist"
+    aria-label="Deployment hierarchy categories">{tab_html}</div>
   {''.join(panes)}
 </div>"""
 
@@ -14662,11 +14771,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                     f"<td class='val'>{self._html_text(item['value'])}</td>"
                     f"<td>{badge}</td></tr>"
                 )
-        return f"""<div class="section-title">Full Overview</div>
+        return f"""<h3 class="section-title">Full Overview</h3>
 <div class="card">
   <table class="data-table">
+    <caption class="sr-only">Full Jamf Pro resource inventory grouped by section.</caption>
     <thead><tr>
-      <th>Resource</th><th style="text-align:right">Value</th><th>Status</th>
+      <th scope="col">Resource</th>
+      <th scope="col" style="text-align:right">Value</th>
+      <th scope="col">Status</th>
     </tr></thead>
     <tbody>{rows_html}</tbody>
   </table>
@@ -14682,13 +14794,13 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             f'target="_blank" rel="noopener noreferrer">{self._html_text(label)}</a>'
             for label, url in links
         )
-        return f"""<div class="section-title">Quick Links</div>
+        return f"""<h3 class="section-title">Quick Links</h3>
 <div class="links-grid">{cards}</div>"""
 
     def _render_flagged_table(self, flagged: list[dict[str, Any]], console_url: str) -> str:
         """Render the searchable and sortable flagged-devices table."""
         if not flagged:
-            return """<div class="section-title">Devices with Security Issues</div>
+            return """<h3 class="section-title">Devices with Security Issues</h3>
 <div class="card"><p class="empty-note">No devices with security issues found.</p></div>"""
 
         rows = []
@@ -14701,6 +14813,10 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             gk_cls = "val-ok" if gk.upper() not in ("DISABLED",) else "val-err"
             sip_cls = "val-ok" if sip.upper() in ("ENABLED",) else "val-err"
             fw_cls = "val-err" if fw.casefold() in {"no", "false", "off", "disabled"} else "val-ok"
+            fv_label = f"[OK] {fv}" if fv_cls == "val-ok" else f"[FAIL] {fv}"
+            gk_label = f"[OK] {gk}" if gk_cls == "val-ok" else f"[FAIL] {gk}"
+            sip_label = f"[OK] {sip}" if sip_cls == "val-ok" else f"[FAIL] {sip}"
+            fw_label = f"[OK] {fw}" if fw_cls == "val-ok" else f"[FAIL] {fw}"
             query_value = str(dev.get("serial") or dev.get("name") or "")
             open_link = ""
             if console_url and query_value:
@@ -14720,14 +14836,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 f"<td>{self._html_text(dev['name'])}</td>"
                 f"<td>{self._html_text(dev['serial'])}</td>"
                 f"<td>{self._html_text(dev['os'])}</td>"
-                f"<td class='{fv_cls}'>{fv}</td>"
-                f"<td class='{gk_cls}'>{gk}</td>"
-                f"<td class='{sip_cls}'>{sip}</td>"
-                f"<td class='{fw_cls}'>{fw}</td>"
+                f"<td class='{fv_cls}'>{fv_label}</td>"
+                f"<td class='{gk_cls}'>{gk_label}</td>"
+                f"<td class='{sip_cls}'>{sip_label}</td>"
+                f"<td class='{fw_cls}'>{fw_label}</td>"
                 f"<td>{link_html}</td></tr>"
             )
 
-        return f"""<div class="section-title">Devices with Security Issues ({len(flagged)})</div>
+        return f"""<h3 class="section-title">Devices with Security Issues ({len(flagged)})</h3>
 <div class="card" style="padding:0">
   <div class="table-tools">
     <input class="tree-search" id="flaggedSearch" type="search"
@@ -14737,11 +14853,25 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
   <div class="table-wrap">
     <table class="data-table" id="flaggedTable">
+      <caption class="sr-only">Devices flagged with one or more security control failures.</caption>
       <thead><tr>
-        <th><button type="button" class="table-sort" data-flagged-sort="name">Device ↕</button></th>
-        <th><button type="button" class="table-sort" data-flagged-sort="serial">Serial ↕</button></th>
-        <th><button type="button" class="table-sort" data-flagged-sort="os">macOS ↕</button></th>
-        <th>FileVault</th><th>Gatekeeper</th><th>SIP</th><th>Firewall</th><th>Link</th>
+        <th scope="col">
+          <button type="button" class="table-sort"
+            data-flagged-sort="name">Device ↕</button>
+        </th>
+        <th scope="col">
+          <button type="button" class="table-sort"
+            data-flagged-sort="serial">Serial ↕</button>
+        </th>
+        <th scope="col">
+          <button type="button" class="table-sort"
+            data-flagged-sort="os">macOS ↕</button>
+        </th>
+        <th scope="col">FileVault</th>
+        <th scope="col">Gatekeeper</th>
+        <th scope="col">SIP</th>
+        <th scope="col">Firewall</th>
+        <th scope="col">Link</th>
       </tr></thead>
       <tbody id="flaggedBody">
         {''.join(rows)}
@@ -14755,11 +14885,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         """Render a small org-item name list as a card."""
         if not items:
             return ""
-        rows = "".join(f"<tr><td>{self._html_text(name)}</td></tr>" for name in items)
+        safe_label = self._html_text(label)
+        row_cells = "".join(
+            f'<tr><th scope="row">{self._html_text(name)}</th></tr>' for name in items
+        )
         return f"""<div class="card card-sm" style="margin-bottom:10px">
-  <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;
-      letter-spacing:.05em;color:var(--muted);margin-bottom:8px">{self._html_text(label)}</div>
-  <table class="data-table"><tbody>{rows}</tbody></table>
+  <table class="data-table org-table-card">
+    <caption class="org-caption">{safe_label}</caption>
+    <tbody>{row_cells}</tbody>
+  </table>
 </div>"""
 
     def _render_counter_table(
@@ -14780,10 +14914,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             f"<tr><td>{self._html_text(str(label))}</td><td class='val'>{count}</td></tr>"
             for label, count in counter.most_common(max_rows)
         )
+        safe_title = self._html_text(title)
         return f"""<div class="card card-sm">
-  <div class="chart-title">{self._html_text(title)}</div>
+  <div class="chart-title">{safe_title}</div>
   <table class="data-table">
-    <thead><tr><th>{self._html_text(left_header)}</th><th style="text-align:right">Count</th></tr></thead>
+    <caption class="sr-only">{safe_title} frequency table.</caption>
+    <thead><tr>
+      <th scope="col">{self._html_text(left_header)}</th>
+      <th scope="col" style="text-align:right">Count</th>
+    </tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </div>"""
@@ -14795,7 +14934,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     ) -> str:
         """Render a table of the mobile devices needing the most review."""
         if not rows:
-            return """<div class="section-title">Mobile Inventory Review</div>
+            return """<h3 class="section-title">Mobile Inventory Review</h3>
 <div class="card"><p class="empty-note">No mobile inventory rows were available.</p></div>"""
 
         ranked = sorted(
@@ -14825,12 +14964,18 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 f"<td>{self._html_text(str(row.get('Managed', '')))}</td>"
                 f"<td>{self._html_text(str(row.get('Supervised', '')))}</td></tr>"
             )
-        return f"""<div class="section-title">Mobile Inventory Review</div>
+        return f"""<h3 class="section-title">Mobile Inventory Review</h3>
 <div class="card">
   <table class="data-table">
+    <caption class="sr-only">Mobile devices ranked by days since last inventory update.</caption>
     <thead><tr>
-      <th>Device</th><th>Family</th><th>OS</th><th>User</th>
-      <th>Days Since Inventory</th><th>Managed</th><th>Supervised</th>
+      <th scope="col">Device</th>
+      <th scope="col">Family</th>
+      <th scope="col">OS</th>
+      <th scope="col">User</th>
+      <th scope="col">Days Since Inventory</th>
+      <th scope="col">Managed</th>
+      <th scope="col">Supervised</th>
     </tr></thead>
     <tbody>{body}</tbody>
   </table>
@@ -14859,7 +15004,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             )
         if not cards:
             return ""
-        return f"""<div class="section-title">Trends</div>
+        return f"""<h3 class="section-title">Trends</h3>
 <div class="grid grid-2">{''.join(cards)}</div>"""
 
     @staticmethod
@@ -15005,7 +15150,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         }
         chart_svg = self._render_line_chart_svg(svg_payload)
 
-        return f"""<div class="section-title">macOS Adoption Timeline</div>
+        return f"""<h3 class="section-title">macOS Adoption Timeline</h3>
 <div class="card card-sm">
   <div class="chart-title">macOS Adoption Timeline
     <span class="badge badge-dim" style="margin-left:6px">{entry_count} snapshots</span>
@@ -15202,9 +15347,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         def _tab_btn(idx: int, tab_id: str, label: str, items: list[str]) -> str:
             active = " active" if idx == 0 else ""
             badge_cls = "badge-warn" if items else "badge-ok"
+            safe_tab = self._html_text(tab_id)
             return (
                 f'<button type="button" class="tree-tab{active}"'
-                f' data-target="{self._html_text(tab_id)}">'
+                f' id="tab-{safe_tab}"'
+                f' role="tab"'
+                f' aria-controls="{safe_tab}"'
+                f' aria-selected="{"true" if idx == 0 else "false"}"'
+                f' tabindex="{"0" if idx == 0 else "-1"}"'
+                f' data-target="{safe_tab}">'
                 f'{self._html_text(label)}'
                 f' <span class="badge {badge_cls}">{len(items)}</span>'
                 f'</button>'
@@ -15218,19 +15369,21 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         panes = []
         for idx, (pane_id, _label, items) in enumerate(categories):
             active_cls = " active" if idx == 0 else ""
+            safe_pane = self._html_text(pane_id)
             if items:
                 rows = "".join(
                     f'<div class="sg-node">{self._html_text(name)}</div>'
                     for name in items
                 )
-                body = f'<div id="{self._html_text(pane_id)}-list">{rows}</div>'
+                body = f'<div id="{safe_pane}-list">{rows}</div>'
             else:
                 body = (
-                    f'<div id="{self._html_text(pane_id)}-list">'
+                    f'<div id="{safe_pane}-list">'
                     '<p class="empty-note">None found — good!</p></div>'
                 )
             panes.append(
-                f'<div class="tree-pane{active_cls}" id="{self._html_text(pane_id)}">'
+                f'<div class="tree-pane{active_cls}" id="{safe_pane}"'
+                f' role="tabpanel" aria-labelledby="tab-{safe_pane}" tabindex="0">'
                 f'{body}</div>'
             )
 
@@ -15238,10 +15391,10 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             f"Based on {cleanup['policies_with_detail']} policies and "
             f"{cleanup['profiles_with_detail']} profiles with cached detail."
         )
-        return f"""<div class="section-title">Cleanup Analysis</div>
+        return f"""<h3 class="section-title">Cleanup Analysis</h3>
 <div class="card">
   <div class="chart-sub" style="margin-bottom:10px">{self._html_text(detail_note)}</div>
-  <div class="tree-tabs">{tab_html}</div>
+  <div class="tree-tabs" role="tablist" aria-label="Cleanup categories">{tab_html}</div>
   {''.join(panes)}
 </div>"""
 
@@ -15378,8 +15531,8 @@ document.querySelectorAll('.tree-search').forEach((input) => {
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-brand">{logo_html}{safe_brand_label}</div>
+<header class="topbar">
+  <h1 class="topbar-brand">{logo_html}{safe_brand_label}</h1>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <div class="topbar-meta">
       <strong>{self._html_text(instance_url, "N/A")}</strong><br>
@@ -15389,12 +15542,12 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     </div>
     <button class="dark-toggle" id="darkToggle">Dark mode</button>
   </div>
-</div>
+</header>
 
-<div class="page">
+<main class="page">
 
   <div class="section-block">
-    <div class="section-block-title">Overall Server Health</div>
+    <h2 class="section-block-title">Overall Server Health</h2>
     <div class="section-block-subtitle">
       Instance status, enrollment posture, organization footprint, and high-level services.
     </div>
@@ -15422,7 +15575,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       </div>
     </div>
 
-    <div class="section-title">Instance Summary</div>
+    <h3 class="section-title">Instance Summary</h3>
     <div class="grid grid-4">
       {self._render_stat_card("Jamf Pro Version", jamf_version)}
       {self._render_stat_card("Health Status", health_status)}
@@ -15430,7 +15583,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_stat_card("Check-In Frequency", checkin_freq)}
     </div>
 
-    <div class="section-title">Enrollment &amp; Configuration</div>
+    <h3 class="section-title">Enrollment &amp; Configuration</h3>
     <div class="grid grid-5">
       {self._render_stat_card("ADE Instances", ade_instances, ade_preview)}
       {self._render_stat_card("VPP Locations", vpp_locations)}
@@ -15445,7 +15598,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_stat_card("App Installers", app_installers)}
     </div>
 
-    <div class="section-title">Organisation</div>
+    <h3 class="section-title">Organisation</h3>
     <div class="grid grid-4">
       {self._render_org_table("Sites", site_names)}
       {self._render_org_table("Buildings", bldg_names)}
@@ -15453,7 +15606,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_org_table("Categories", cat_names)}
     </div>
 
-    <div class="section-title">Enabled Features</div>
+    <h3 class="section-title">Enabled Features</h3>
     <div class="card card-sm">{feature_pills}</div>
 
     {self._render_source_status(fetch_status)}
@@ -15462,12 +15615,12 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
 
   <div class="section-block">
-    <div class="section-block-title">macOS Fleet</div>
+    <h2 class="section-block-title">macOS Fleet</h2>
     <div class="section-block-subtitle">
       Computer inventory, security posture, and deployment coverage for macOS endpoints.
     </div>
 
-    <div class="section-title">Computer Inventory</div>
+    <h3 class="section-title">Computer Inventory</h3>
     <div class="grid grid-6">
       {self._render_stat_card("Managed Computers", managed_computers, "", f"{console_url}/computers.html" if console_url else "", "Open in Jamf")}
       {self._render_stat_card("Unmanaged Computers", unmanaged_computers)}
@@ -15482,7 +15635,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_stat_card("Security Rows Scanned", total_scanned, f"{len(flagged)} flagged devices")}
     </div>
 
-    <div class="section-title">Security Posture &amp; OS Distribution</div>
+    <h3 class="section-title">Security Posture &amp; OS Distribution</h3>
     <div class="grid grid-2">
       <div class="chart-card">
         <div class="chart-title">Security Feature Compliance
@@ -15505,12 +15658,12 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
 
   <div class="section-block">
-    <div class="section-block-title">Mobile Devices</div>
+    <h2 class="section-block-title">Mobile Devices</h2>
     <div class="section-block-subtitle">
       Mobile inventory, supervision posture, and iOS configuration profile coverage.
     </div>
 
-    <div class="section-title">Mobile Inventory</div>
+    <h3 class="section-title">Mobile Inventory</h3>
     <div class="grid grid-6">
       {self._render_stat_card("Total Mobile Devices", str(mobile_summary["total"]))}
       {self._render_stat_card("Managed", str(mobile_summary["managed"]))}
@@ -15526,7 +15679,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_stat_card(f"Older Than {stale_days} Days", str(mobile_stale))}
     </div>
 
-    <div class="section-title">Mobile Distribution</div>
+    <h3 class="section-title">Mobile Distribution</h3>
     <div class="grid grid-3">
       {self._render_counter_table("Device Families", "Device Family", mobile_summary["families"])}
       {self._render_counter_table("OS Versions", "OS Version", mobile_summary["os_versions"])}
@@ -15536,11 +15689,11 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     {self._render_mobile_inventory_table(mobile_rows, stale_days)}
   </div>
 
-  <div class="footer">
-    Generated by jamf-reports-community &mdash; Cloud Lake Technology
-  </div>
+</main>
 
-</div>
+<footer class="footer">
+  Generated by jamf-reports-community &mdash; Cloud Lake Technology
+</footer>
 
 <script>{js}</script>
 </body>
