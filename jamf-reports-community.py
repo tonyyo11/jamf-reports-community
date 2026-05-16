@@ -15902,6 +15902,8 @@ def cmd_html(
     out_file: Optional[str],
     no_open: bool = False,
     summary_json: Optional[str] = None,
+    *,
+    strict_manifest: bool = False,
 ) -> Path:
     """Generate a self-contained HTML status report from jamf-cli data.
 
@@ -15913,6 +15915,7 @@ def cmd_html(
         out_file: Destination file path. Defaults to the output_dir from config.
         no_open: When True, do not auto-open the file after writing.
         summary_json: Optional path for an app-facing run summary JSON file.
+        strict_manifest: When True, abort on cached-snapshot SHA-256 mismatch.
 
     Returns:
         Path to the generated HTML report.
@@ -15920,7 +15923,7 @@ def cmd_html(
     summary = _command_summary_base("html", config)
     if not _jamf_cli_enabled(config):
         raise SystemExit("Error: html requires jamf_cli.enabled: true in config.yaml.")
-    bridge = _build_jamf_cli_bridge(config, save_output=True)
+    bridge = _build_jamf_cli_bridge(config, save_output=True, strict_manifest=strict_manifest)
     if not bridge.is_available():
         print(
             "  [warn] jamf-cli not found — will attempt to use cached data only.\n"
@@ -18940,7 +18943,9 @@ def main() -> None:
         action="store_true",
         help=(
             "Abort when a cached jamf-cli JSON snapshot fails SHA-256 verification"
-            " against the sibling manifest.json. Default: warn and continue."
+            " against the sibling manifest.json; only applies to 'generate' and 'html'"
+            " commands. Default: warn and continue. Trend chart reads"
+            " (compliance/security/OS-adoption history) always warn-only."
         ),
     )
     parser.add_argument(
@@ -19110,7 +19115,12 @@ def main() -> None:
                 args.notify,
             )
         elif args.command == "html":
-            cmd_html(config, args.out_file, no_open=args.no_open, summary_json=args.summary_json)
+            cmd_html(
+                config, args.out_file,
+                no_open=args.no_open,
+                summary_json=args.summary_json,
+                strict_manifest=args.strict_manifest,
+            )
         elif args.command == "generate":
             cmd_generate(
                 config, args.csv, args.out_file, args.historical_csv_dir,
