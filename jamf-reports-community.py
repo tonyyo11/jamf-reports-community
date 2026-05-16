@@ -14417,7 +14417,7 @@ a:hover { text-decoration: underline; }
 
 document.querySelectorAll('.cat-toggle').forEach((toggle) => {
   toggle.addEventListener('click', () => {
-    const items = toggle.nextElementSibling;
+    const items = document.getElementById(toggle.getAttribute('aria-controls'));
     const caret = toggle.querySelector('.cat-caret');
     if (!items) return;
     const open = items.classList.toggle('open');
