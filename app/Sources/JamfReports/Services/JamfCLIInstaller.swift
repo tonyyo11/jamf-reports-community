@@ -260,6 +260,15 @@ final class JamfCLIInstaller {
     }
 
     static func installedVersion(at binary: URL) -> String? {
+        // M-01: refuse to spawn a tampered jamf-cli even for `--version`.
+        // Returning nil drops the discovered version to "unknown", which
+        // the upgrade path (`updateGitHubRelease`) already treats as a
+        // signal to perform a fresh install via `installFromGitHub` —
+        // so a rejected binary is replaced rather than re-executed.
+        if CLIBridge.codesignGate(executable: binary, onLine: { _ in }) != nil {
+            return nil
+        }
+
         let process = Process()
         process.executableURL = binary
         process.arguments = ["--version"]
