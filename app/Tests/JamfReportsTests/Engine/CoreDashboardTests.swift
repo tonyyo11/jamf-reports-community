@@ -531,10 +531,10 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertNoThrow(try dash.writeProtectInsights())
     }
 
-    // Negative case: when no fixture dir exists at all, `loadLatestJSON` throws
-    // `.noCachedData` and the error propagates out of the writer. (The other
-    // empty-path — fixture present, decodes to `[]`, writer silently returns —
-    // has no test here; routed to BACKLOG.)
+    // Negative cases: (1) no fixture dir at all → loadLatestJSON throws
+    // .noCachedData and the error propagates out of the writer. (2) fixture
+    // present, decodes to [] → writer silently returns and no sheet is
+    // appended to the workbook. Both branches are exercised here.
 
     func testProtectComputersThrowsWhenNoCachedData() throws {
         let tmp = FileManager.default.temporaryDirectory
@@ -549,5 +549,29 @@ final class CoreDashboardTests: XCTestCase {
                 return
             }
         }
+    }
+
+    /// One representative test for the empty-array silent-return pattern that
+    /// repeats across the eight Protect/Platform writers (PR-6 review CONSIDER).
+    /// When the JSON file exists and decodes to `[]`, `writeProtectComputers`
+    /// must NOT throw and must NOT add a sheet — the workbook stays empty.
+    func testProtectComputersSilentReturnOnEmptyArray() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-empty-array-\(UUID().uuidString)")
+        let subdir = tmp.appendingPathComponent("protect-computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        try Data("[]".utf8).write(to: subdir.appendingPathComponent("empty.json"))
+
+        let workbook = Workbook()
+        let dash = CoreDashboard(
+            config: ReportConfig(),
+            dataDir: tmp,
+            workbook: workbook
+        )
+        XCTAssertNoThrow(try dash.writeProtectComputers(),
+                         "Empty array must not raise — silent return is the contract")
+        XCTAssertNil(workbook.sheet(named: "Protect Computers"),
+                     "Empty array must not produce a sheet; got a stray sheet in the workbook")
     }
 }

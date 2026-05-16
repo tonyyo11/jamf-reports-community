@@ -104,17 +104,6 @@ engineering). Items routed here:
 Two follow-up items from the silent-failure-hunter / pr-review-toolkit
 review gates that PR-6 deferred per the per-PR scope rules.
 
-- **CONSIDER — Silent-return-on-empty-array branch of the eight Protect/Platform writers has no positive test.**
-  PR-6 covers `loadLatestJSON` throwing on absent directories
-  (`testProtectComputersThrowsWhenNoCachedData`). The other empty-path —
-  fixture file exists, decodes to `[]`, writer hits `guard !items.isEmpty
-  else { return }` and silently returns — is not exercised. Pattern is
-  identical across `writeComplianceDevices`, `writeComplianceRules`,
-  `writeDDMStatus`, `writeBlueprintStatus`, and the four Protect writers.
-  One representative test (`testProtectComputersSilentReturnOnEmptyArray`)
-  that writes `protect-computers/empty.json` containing `[]` and asserts
-  `XCTAssertNoThrow` + no sheet added would cover the spirit. Hunter
-  finding 2 sibling.
 - **CONSIDER — Helper-created temp dirs across `CoreDashboardTests` are never cleaned up.**
   `tempDataDir(copying:)`, `tempDataDir(copyingRenamed:)`, and the new
   `tempDataDir(seeding:fromFixture:)` all create per-test directories
