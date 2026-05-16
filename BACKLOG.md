@@ -258,11 +258,6 @@ load) protected by the install-time + onboarding-time gates.
 
 ### From Google Gemini 3 security-review (2026-05-12)
 
-- **MEDIUM — Pin Python dependency hashes.** `requirements.txt` currently
-  has version pins but no hashes. Add `--require-hashes` workflow (generated
-  via `pip-compile --generate-hashes` or equivalent) to mitigate supply-chain
-  tampering.
-
 - **MEDIUM — SHA-256 digest JSON snapshots at collection, verify at
   generation.** Detect tampering of cached `jamf-cli-data/*.json` between
   collection and report generation. Threat-model T-2.
