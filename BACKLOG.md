@@ -218,16 +218,6 @@ migration is *surfaced* to the user, not whether the bug is closed.
 Review gates on the keyboard-navigation fix for PR-3's roving
 tabindex flagged one CONSIDER item adjacent to the HTML tab markup.
 
-- **CONSIDER — `.cat-toggle` disclosure buttons lack `aria-controls`.**
-  `jamf-reports-community.py:14652`. The category disclosure buttons
-  in the deployment-hierarchy tree panes set `aria-expanded` but the
-  `.cat-items` panel they toggle has no `id` and no `aria-controls`
-  pointer from the button. Widely tolerated for disclosure widgets so
-  not a WCAG failure, but the ARIA APG recommends the association.
-  Fix: give each `.cat-items` div a stable `id` (derive from the
-  category label slug, scope-prefixed to avoid cross-tab collisions)
-  and add `aria-controls="<panel-id>"` to the matching `.cat-toggle`.
-  Touch in PR-4 polish.
 
 ### From PR-2 review (2026-05-15)
 
