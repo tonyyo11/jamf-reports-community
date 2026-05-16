@@ -318,10 +318,24 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].id, "123-42-3")
     }
 
-    // NOTE: a fixture-decode test for PatchFailureRow is intentionally absent —
-    // `tests/fixtures/jamf-cli-data/patch-device-failures/patch-device-failures.json`
-    // currently contains PatchStatusRow-shaped data, not patch-failure rows.
-    // Logged to BACKLOG.md.
+    func testPatchFailureFixtureDecodesWithoutError() throws {
+        // Locked in via PR-5 fixture synthesis: the file holds PatchFailureRow
+        // entries with policy/policy_id/device/device_id/etc. Replaced the
+        // earlier wrong-shape (PatchStatusRow) fixture.
+        let fixtureURL = fixturesDir
+            .appendingPathComponent("jamf-cli-data/patch-device-failures/patch-device-failures.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
+            throw XCTSkip("Fixture not available")
+        }
+        let data = try Data(contentsOf: fixtureURL)
+        let rows = try JSONDecoder().decode([PatchFailureRow].self, from: data)
+        XCTAssertGreaterThan(rows.count, 0,
+                             "Synthesised patch-device-failures fixture must contain at least one row")
+        // Spot-check that synthetic markers are present (guards against an
+        // accidental swap with real-tenant data).
+        XCTAssertTrue(rows.allSatisfy { $0.serial.hasPrefix("TEST-") },
+                      "Every failure row must carry a TEST- serial marker")
+    }
 
     // MARK: - UpdateFailuresReport / ErrorDevice / FailedPlan
 
@@ -352,6 +366,30 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(r.failedPlans[0].state, "Failed")
         XCTAssertEqual(r.failedPlans[0].error, "NetworkError")
         XCTAssertEqual(r.failedPlans[0].lastEvent, "2026-04-01T12:05:00Z")
+    }
+
+    func testUpdateFailuresFixtureDecodesWithoutError() throws {
+        // Locked in via PR-5 fixture synthesis: replaces the earlier 503
+        // error-envelope fixture with a valid UpdateFailuresReport array
+        // containing populated error_devices and failed_plans.
+        let fixtureURL = fixturesDir
+            .appendingPathComponent("jamf-cli-data/update-device-failures/update-device-failures.json")
+        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
+            throw XCTSkip("Fixture not available")
+        }
+        let data = try Data(contentsOf: fixtureURL)
+        let reports = try JSONDecoder().decode([UpdateFailuresReport].self, from: data)
+        XCTAssertEqual(reports.count, 1,
+                       "update-device-failures fixture must be an array with a single report element")
+        let report = reports[0]
+        XCTAssertGreaterThan(report.errorDevices.count, 0,
+                             "Fixture must include populated error_devices to exercise the writer")
+        XCTAssertGreaterThan(report.failedPlans.count, 0,
+                             "Fixture must include populated failed_plans to exercise the writer")
+        XCTAssertTrue(report.errorDevices.allSatisfy { $0.serial.hasPrefix("TEST-") },
+                      "Every error device must carry a TEST- serial marker")
+        XCTAssertTrue(report.failedPlans.allSatisfy { $0.serial.hasPrefix("TEST-") },
+                      "Every failed plan must carry a TEST- serial marker")
     }
 
     // MARK: - InventorySummaryRow
