@@ -52,13 +52,24 @@ def test_generate_from_committed_cached_jamf_cli_data(
     assert "Update Plan States (108 total)" in update_status_values
     assert "PlanFailed" in update_status_values
 
+    # fixture update-device-failures.json (synthesised in PR-5 fixture cleanup)
+    # now carries a populated UpdateFailuresReport array: 3 error_devices and
+    # 3 failed_plans. The writer renders both tables — the no-data path is NOT
+    # taken. Assert the section headers + at least one synthetic TEST- serial.
     update_failure_values = [
         cell.value
-        for row in workbook["Update Failures"].iter_rows(min_row=1, max_row=8, max_col=2)
+        for row in workbook["Update Failures"].iter_rows(min_row=1, max_row=20, max_col=8)
         for cell in row
     ]
-    assert "No Data" in update_failure_values
-    assert "No managed software update data found." in update_failure_values
+    assert "Update Error Devices (3)" in update_failure_values, (
+        "fixture supplies 3 error_devices; writer must render the section header"
+    )
+    assert "Failed Update Plans (3)" in update_failure_values, (
+        "fixture supplies 3 failed_plans; writer must render the section header"
+    )
+    assert "TEST-ABC0001" in update_failure_values, (
+        "synthetic test marker serial must appear in the rendered failure rows"
+    )
 
     active_sheet = workbook["Active Devices"]
     col_a = [active_sheet[f"A{r}"].value for r in range(1, 10)]

@@ -79,17 +79,6 @@ engineering). Items routed here:
   vs operational vs auditor) and could collapse to a single default +
   override map for outliers. If true, the right move is **deletion** of
   1-2 switches, not relocation. Spike before any future refactor.
-- **CONSIDER — Tripwire test gap: case-deletion not caught.**
-  `testEveryShippingTemplateIsExplicitlyCovered` in
-  `TemplateApplierTests.swift` catches "added a template, forgot to
-  update TemplateApplier" but NOT "deleted a `case "x":` arm while
-  `"x"` still ships in `TemplateResolver.allTemplates`." Closing this
-  gap requires per-template behavioral assertions (extend
-  `testApplyExecutiveTemplate` / `testRecommendedStaleDays` /
-  `testEAKeywords` to be exhaustive across all 6 templates). PR-8
-  hunter SHOULD-FIX, deferred because reviewer noted the asymmetry
-  is consistent with the `default:` arm's documented load-bearing
-  safety design.
 - **CONSIDER — C-13 (`SummaryJSONParser` wrapper struct) is disputed.**
   REPORT.md flagged the 30-line struct as over-engineered. Investigation
   during PR-8 found it provides a useful namespace for `dateFormatter`
@@ -104,26 +93,6 @@ engineering). Items routed here:
 Two follow-up items from the silent-failure-hunter / pr-review-toolkit
 review gates that PR-6 deferred per the per-PR scope rules.
 
-- **CONSIDER — Silent-return-on-empty-array branch of the eight Protect/Platform writers has no positive test.**
-  PR-6 covers `loadLatestJSON` throwing on absent directories
-  (`testProtectComputersThrowsWhenNoCachedData`). The other empty-path —
-  fixture file exists, decodes to `[]`, writer hits `guard !items.isEmpty
-  else { return }` and silently returns — is not exercised. Pattern is
-  identical across `writeComplianceDevices`, `writeComplianceRules`,
-  `writeDDMStatus`, `writeBlueprintStatus`, and the four Protect writers.
-  One representative test (`testProtectComputersSilentReturnOnEmptyArray`)
-  that writes `protect-computers/empty.json` containing `[]` and asserts
-  `XCTAssertNoThrow` + no sheet added would cover the spirit. Hunter
-  finding 2 sibling.
-- **CONSIDER — Helper-created temp dirs across `CoreDashboardTests` are never cleaned up.**
-  `tempDataDir(copying:)`, `tempDataDir(copyingRenamed:)`, and the new
-  `tempDataDir(seeding:fromFixture:)` all create per-test directories
-  under `FileManager.default.temporaryDirectory` and don't `defer`
-  removal. Pre-existing pattern (~32 callsites); macOS cleans
-  `temporaryDirectory` on logout, so this is hygiene rather than
-  correctness. Either add `defer` to each helper's return value (would
-  require an API change) or switch to `XCTestCase.setUp`/`tearDown`
-  with a per-test dir stored in an ivar. Reviewer CONSIDER #2.
 - **CONSIDER — Decoder tests assert via field values rather than negative key-mapping cases.**
   Each decoder test asserts on the decoded struct's field values. PR-6
   verified failing-test-first by perturbing
@@ -132,29 +101,6 @@ review gates that PR-6 deferred per the per-PR scope rules.
   explicit `XCTAssertThrowsError` negative assertion alongside the
   positive case. Pre-existing pattern across the decoder test file;
   low priority. Reviewer CONSIDER #3.
-
-### From PR-6 test-coverage work (2026-05-15)
-
-While adding inline-JSON decode smoke tests for `JamfCLIDecoder.swift`, two
-fixtures were found to contain data of the wrong shape for their directory.
-Both directories are loaded by their writers and would crash or silently
-discard rows on a real run with this data — but currently the writers gate
-on `loadLatestJSON` returning `[[String: Any]]`, so the bad fixtures
-manifest only as decoder-side `keyNotFound` when consumed by typed code.
-
-- **SHOULD-FIX — `tests/fixtures/jamf-cli-data/patch-device-failures/patch-device-failures.json` contains PatchStatusRow rows, not PatchFailureRow rows.**
-  Real `pro report patch-status --scan-failures --output json` emits
-  rows with `policy`, `policy_id`, `device`, `device_id`, `status_date`,
-  `attempt`, `last_action`, `serial`, `os_version`, `username`. The
-  committed fixture has `compliance_pct`, `id`, `latest`, `on_latest`,
-  `on_other`, `title`, `total` — that's the patch-status shape, not the
-  patch-failure shape. Capture from a tenant with active patch policies
-  and replace.
-- **SHOULD-FIX — `tests/fixtures/jamf-cli-data/update-device-failures/update-device-failures.json` is a 503 error envelope, not an UpdateFailuresReport.**
-  Content is `{"httpStatus": 503, "errors": [...]}` rather than
-  `[{"total": ..., "status_summary": [...], "error_devices": [...]}]`.
-  Likely captured from a tenant that had Managed Software Update Plans
-  toggled off. Recapture from a tenant with the feature enabled.
 
 ### From PR-5 review (2026-05-15)
 
@@ -318,15 +264,6 @@ load) protected by the install-time + onboarding-time gates.
   `app/Sources/JamfReports/Views/CustomizationWizard.swift:356` and
   `app/Sources/JamfReports/Views/WorkspaceView.swift:64`.
 
-- **SHOULD-FIX — `DeviceLookupIndex` has no direct test coverage.**
-  `app/Sources/JamfReports/Services/DeviceLookupIndex.swift:62,123,185`.
-  Add tests for newest-JSON selection, `.partial` filtering, envelope vs
-  bare-array decoding, ordering, kind filtering.
-
-- **SHOULD-FIX — `generateAll` lacks failure-branch test coverage.**
-  `app/Sources/JamfReports/Services/CLIBridge+Generation.swift:39`. Cover
-  collect failure branching, unauthorized short-circuit, partial success,
-  permission/rate-limit fallback.
 
 ### From Google Gemini 3 security-review (2026-05-12)
 
@@ -338,11 +275,6 @@ load) protected by the install-time + onboarding-time gates.
 - **MEDIUM — SHA-256 digest JSON snapshots at collection, verify at
   generation.** Detect tampering of cached `jamf-cli-data/*.json` between
   collection and report generation. Threat-model T-2.
-
-- **LOW — Add automated tests with malicious payloads for sanitization
-  invariants.** XSS strings and formula-injection strings must round-trip
-  through `_safe_write` and `HtmlSectionFormatters.escapeHTML` unchanged in
-  meaning. Threat-model T-3 / T-4.
 
 - **LOW — UI banner when last successful live collection is significantly
   older than the expected interval.** Currently the staleness threshold is
@@ -470,6 +402,39 @@ _(All items resolved in PR-4.)_
 
 - **CONSIDER — RunsView dynamic status live-region trait — PR-4 closed the SchedulesView and StatusBar bullets but RunsView was not actually edited; needs a follow-up locate of the live status text site.** RunsView contains only static status pills (`.ok`, `.fail`) that don't update frequently, not live updating text like "Running…" or "Collecting…" that would warrant `.updatesFrequently` trait.
 - **CONSIDER — `swift test` fails 21 `CoreDashboardTests` / `SchoolDashboardTests` only inside `.claude/worktrees/` paths.** Reproduces at the merge-base SHA (`56bfbe7`) inside the agent worktree path, but the same SHA passes 1349/1349 in `/Users/alyoung/emdash/worktrees/...` and `/tmp/pr4-validate`. Fixtures are byte-identical (md5 verified); no sparse checkout, no LFS, no symlinks. Likely culprit area: SwiftPM `#filePath`/sandbox interaction with `.claude/` parent path, or `FileManager.copyItem` silently truncating under that prefix. All 21 failures are `XCTAssertNoThrow failed: threw error "noCachedData(names: [...])"` from `loadLatestJSONData`. Not blocking — `swift test` from any non-`.claude/` worktree works fine, so CI is unaffected. Worth investigating before the next time subagents work in `.claude/worktrees/` to avoid silent false-negative test reports.
+
+### From PR-5 in-flight discovery (2026-05-16)
+
+- **CONSIDER — Mobile parser's `name` fall-back chain doesn't include top-level `name`.**
+  `app/Sources/JamfReports/Services/DeviceLookupIndex.swift:172-176`.
+  The mobile-device parser resolves `name` via `general.displayName →
+  general.name → dict["displayName"] → rawID` — it does NOT read
+  top-level `name`. The committed mobile-devices-list fixtures at
+  `tests/fixtures/jamf-cli-data/mobile-devices-list/*.json` use top-level
+  `name` exclusively (no `general` wrapper), so under those fixtures
+  every mobile candidate gets `name == id`. Either (a) the fixtures
+  reflect real jamf-cli output and the parser misses every mobile name,
+  or (b) the fixtures are stale / over-sanitized and the parser is
+  correct. Verify which shape `jamf-cli mobile-devices-list --output
+  json` actually emits and fix whichever side is wrong. Surfaced during
+  PR-5 Item 1 (DeviceLookupIndex tests).
+- **CONSIDER — `generateAll` exit-5/exit-6 fallback and partial-success branches lack test coverage.** PR-5 covers the
+  unauthorized short-circuit (exit 3) and the `GenerateAllResult` struct
+  semantics via real-CLIBridge tests gated on `ExecutableLocator.locate("jamf-cli")`.
+  The exit-5 (permission denied) and exit-6 (rate-limited) collect-fallback
+  branches, and the partial-success path (one type succeeds, another fails
+  with a non-3 exit code), need synthetic exit codes from `collect` /
+  `generate` / `generateHTML` to exercise. Closing this gap requires a
+  `CLIExecutor`-style protocol seam over those four `CLIBridge` methods —
+  `CLIBridge` is currently `final` and routes them directly. The seam is
+  real architectural scope (not a test-only change) and was deferred from
+  PR-5 to keep that PR purely test-infrastructure.
+
+### From PR-5 review gates (2026-05-16)
+
+- **CONSIDER — `TemplateApplier` tripwire cannot discriminate cases that return the default value.** `app/Sources/JamfReports/Services/TemplateApplier.swift`. `recommendedThresholds.case "operational"` returns `(80, 90)` which equals the `default:` arm; `recommendedStaleDays.case "compliance"` and `case "executive"` both return 30 which equals the `default:` arm. Behavioral tests in `TemplateApplierTests.swift` cannot detect deletion of these named cases — the dispatched value is the same whether the case fires or fall-through hits default. The tripwire is sound for cases with distinguishing values; the limit is fundamental to behavioral testing and documented in the test method comments. Address via either (a) refactor switches to a tagged-return that always carries the source-case identifier, (b) source-level AST inspection in tests, or (c) accept the limit and rely on PR review for these specific cases. Tracking alongside the broader S-06 templates refactor the council deferred (see "From PR-8 council (2026-05-15)").
+- **CONSIDER — Dead inline `defer` in `CompliancePostureTests.swift:86`.** `testCompliancePostureRendersWithFixtureData` does `let dataDir = try tempDataDir(copying: ...)` (helper that appends to `createdTempDirs`) and then `defer { try? FileManager.default.removeItem(at: dataDir) }`. The new `tearDown` already removes it; the inline `defer` is redundant. Six other `defer` sites in the same file ARE legitimate (direct-callsite `tmp`). Drop the line; no behavior change.
+- **CONSIDER — `testNewestJSONWinsWhenMultipleSnapshotsExist` doesn't verify `name` parsing.** `app/Tests/JamfReportsTests/DeviceLookupIndexTests.swift:78-109`. Asserts the set of `id`s but never checks `name` — leaves the parser's `name` fall-back chain unverified for the bare-array computers path. The dedicated `testBareArrayDecodes` does pin name resolution for a single record, so the gap is narrow. Cheap to strengthen later by asserting both `id` and `name` in the multi-snapshot test.
 
 ---
 
