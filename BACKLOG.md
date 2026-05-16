@@ -256,12 +256,6 @@ load) protected by the install-time + onboarding-time gates.
   `app/Sources/JamfReports/Views/DeviceLookupView.swift:356`. Surface
   "cached/stale" in the view.
 
-- **SHOULD-FIX — Config saves swallowed in user paths.** `try?` instead of
-  user-visible errors at
-  `app/Sources/JamfReports/Views/CustomizationWizard.swift:356` and
-  `app/Sources/JamfReports/Views/WorkspaceView.swift:64`.
-
-
 ### From Google Gemini 3 security-review (2026-05-12)
 
 - **MEDIUM — Pin Python dependency hashes.** `requirements.txt` currently

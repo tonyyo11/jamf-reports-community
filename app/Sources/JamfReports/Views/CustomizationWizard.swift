@@ -207,6 +207,7 @@ struct CustomizationWizard: View {
     @State private var state = WizardState()
     @State private var bridge = CLIBridge()
     @State private var showCancelConfirm = false
+    @State private var saveError: String?
     var onDismiss: () -> Void
 
     var body: some View {
@@ -221,6 +222,17 @@ struct CustomizationWizard: View {
                 Button("Keep Editing", role: .cancel) {}
             } message: {
                 Text("Your selections have not been saved to config.yaml.")
+            }
+            .alert(
+                "Save failed",
+                isPresented: Binding(
+                    get: { saveError != nil },
+                    set: { if !$0 { saveError = nil } }
+                )
+            ) {
+                Button("OK") { saveError = nil }
+            } message: {
+                Text(saveError ?? "")
             }
     }
 
@@ -357,9 +369,13 @@ struct CustomizationWizard: View {
         state.isComplete = true
         state.applyTo(&workspace.configState)
         Task {
-            try? await workspace.saveConfig()
+            do {
+                try await workspace.saveConfig()
+                onDismiss()
+            } catch {
+                saveError = "Could not save config.yaml: \(error.localizedDescription)"
+            }
         }
-        onDismiss()
     }
 }
 
