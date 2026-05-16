@@ -27,11 +27,14 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import hmac
 import json
 import math
 import os
+import platform
 import plistlib
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -41,6 +44,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from datetime import datetime, timedelta, timezone
@@ -2973,6 +2977,235 @@ def _enrich_inventory_rows_with_security_details(
             if any(detail_fields.values()):
                 enriched += 1
     return enriched, failures, unresolved
+
+
+# ---------------------------------------------------------------------------
+# LogRedactor — shared by diagnostic-bundle and RunHistoryService callers
+# ---------------------------------------------------------------------------
+
+
+class LogRedactor:
+    """Redacts credentials and (optionally) PII from text and JSON payloads.
+
+    Two redaction tiers:
+
+    * **Secrets** (always on, not toggleable): OAuth `client_secret`,
+      `client_id`, bearer tokens, JWTs, `access_token` / `refresh_token`
+      JSON shapes, generic `password` fields. False-negative tolerance is
+      low; false-positive tolerance is high (over-redact rather than miss).
+    * **PII** (per-category toggle, default on): Jamf hostnames in URLs,
+      Apple serial numbers, email addresses. Device names are too generic
+      to regex without unbounded false positives and are handled only via
+      `redact_json` when a known schema key is matched.
+
+    PII redactions use HMAC-SHA256(per-instance random salt, value)[:8] for
+    stable placeholders within a single redactor instance — so a device
+    referenced ten times in one bundle gets the same placeholder ten times
+    (preserving cross-references for diagnosis) but cannot be correlated to
+    the same device in a different bundle.
+
+    Designed for one-pass redaction over text streams; not a streaming
+    parser. Single-threaded; reset the cache via `forget()` between
+    unrelated bundles if reused.
+    """
+
+    # Always-on credential patterns. Each tuple is (compiled_regex, replacement).
+    # Replacements use raw \1..\3 backrefs so the surrounding quotes/markers
+    # are preserved and the redacted output remains valid JSON / YAML.
+    _SECRET_PATTERNS: list[tuple[re.Pattern, str]] = [
+        # OAuth client_secret in YAML or JSON form.
+        (
+            re.compile(
+                r'(client_secret\s*[:=]\s*["\']?)([^"\'\s,\}]{8,})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_CLIENT_SECRET\3",
+        ),
+        # OAuth client_id — UUID or short opaque token, only redact long-ish values.
+        (
+            re.compile(
+                r'(client_id\s*[:=]\s*["\']?)([A-Fa-f0-9\-]{20,}|[A-Za-z0-9_\-]{16,64})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_CLIENT_ID\3",
+        ),
+        # Bearer tokens in HTTP-like contexts (Authorization headers, log echoes).
+        (
+            re.compile(r"(Bearer\s+)[A-Za-z0-9._\-+/=]{20,}", re.IGNORECASE),
+            r"\1REDACTED_BEARER",
+        ),
+        # JWTs — three base64url segments separated by dots, starting with `eyJ`.
+        (
+            re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),
+            "REDACTED_JWT",
+        ),
+        # OAuth token-response JSON shapes.
+        (
+            re.compile(r'("access_token"\s*:\s*")[^"]+(")'),
+            r"\1REDACTED_ACCESS_TOKEN\2",
+        ),
+        (
+            re.compile(r'("refresh_token"\s*:\s*")[^"]+(")'),
+            r"\1REDACTED_REFRESH_TOKEN\2",
+        ),
+        # Password fields (generic; redact the value, keep the key).
+        (
+            re.compile(
+                r'(password\s*[:=]\s*["\']?)([^"\'\s,\}]{1,})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_PASSWORD\3",
+        ),
+    ]
+
+    # JSON keys that always have their value replaced regardless of the value's
+    # shape. Used by `redact_json` walks. Lowercased for case-insensitive match.
+    _SENSITIVE_JSON_KEYS: set[str] = {
+        "client_secret",
+        "client_id",
+        "access_token",
+        "refresh_token",
+        "password",
+        "secret",
+        "api_key",
+        "apikey",
+        "authorization",
+    }
+
+    # JSON keys whose value should be hash-placeholder'd when the corresponding
+    # PII category is enabled. The set value names the category.
+    _PII_JSON_KEYS: dict[str, str] = {
+        "serial": "serial",
+        "serialnumber": "serial",
+        "serial_number": "serial",
+        "computername": "device",
+        "computer_name": "device",
+        "devicename": "device",
+        "device_name": "device",
+        "displayname": "device",
+        "hostname": "host",
+        "host_name": "host",
+        "host": "host",
+        "username": "user",
+        "user_name": "user",
+        "user": "user",
+        "email": "email",
+        "emailaddress": "email",
+        "email_address": "email",
+    }
+
+    # Apple serial numbers: 10-12 alphanumeric, no vowels (Apple convention skips
+    # I/O to avoid confusion with 1/0). Conservative — won't match the full
+    # historical serial space but covers ~2010+ devices.
+    _SERIAL_RE = re.compile(r"\b[B-DF-HJ-NP-TV-Z0-9]{10,12}\b")
+    # Common Jamf hostname patterns (cloud + on-prem). Captures the host portion.
+    _HOSTNAME_RE = re.compile(
+        r"\b([a-z0-9][a-z0-9\-]{0,62})\.(jamfcloud\.com|jamfcloud\.io)\b",
+        re.IGNORECASE,
+    )
+    _EMAIL_RE = re.compile(
+        r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
+    )
+
+    def __init__(
+        self,
+        *,
+        redact_hostnames: bool = True,
+        redact_serials: bool = True,
+        redact_emails: bool = True,
+        redact_device_names: bool = True,
+    ) -> None:
+        self._redact_hostnames = redact_hostnames
+        self._redact_serials = redact_serials
+        self._redact_emails = redact_emails
+        self._redact_device_names = redact_device_names
+        # Per-instance random salt → stable within bundle, opaque across bundles.
+        self._salt = secrets.token_bytes(16)
+        self._cache: dict[tuple[str, str], str] = {}
+
+    def policy(self) -> dict[str, bool]:
+        """Return the active redaction policy as a plain dict (for manifests)."""
+        return {
+            "secrets": True,
+            "hostnames": self._redact_hostnames,
+            "serials": self._redact_serials,
+            "emails": self._redact_emails,
+            "device_names": self._redact_device_names,
+        }
+
+    def forget(self) -> None:
+        """Clear the placeholder cache. Use between unrelated bundles."""
+        self._cache.clear()
+
+    def redact_text(self, text: str) -> str:
+        """Apply secret + PII redactions to a free-text blob (log lines, YAML)."""
+        out = text
+        for pattern, replacement in self._SECRET_PATTERNS:
+            out = pattern.sub(replacement, out)
+        if self._redact_hostnames:
+            out = self._HOSTNAME_RE.sub(
+                lambda m: f"{self._placeholder('host', m.group(0))}",
+                out,
+            )
+        if self._redact_emails:
+            out = self._EMAIL_RE.sub(
+                lambda m: self._placeholder("email", m.group(0)),
+                out,
+            )
+        if self._redact_serials:
+            out = self._SERIAL_RE.sub(
+                lambda m: self._placeholder("serial", m.group(0)),
+                out,
+            )
+        return out
+
+    def redact_json(self, obj: Any) -> Any:
+        """Recursively redact a JSON-decodable object.
+
+        Dict values whose key matches `_SENSITIVE_JSON_KEYS` (case-insensitive)
+        get the value replaced with `REDACTED_<KIND>`. Keys matching
+        `_PII_JSON_KEYS` get the value replaced with a stable hash placeholder
+        when the corresponding category is enabled. String values are
+        additionally run through `redact_text` to catch embedded secrets.
+        """
+        if isinstance(obj, dict):
+            out: dict[str, Any] = {}
+            for key, value in obj.items():
+                key_lower = str(key).lower()
+                if key_lower in self._SENSITIVE_JSON_KEYS:
+                    out[key] = f"REDACTED_{key_lower.upper()}"
+                    continue
+                if key_lower in self._PII_JSON_KEYS:
+                    category = self._PII_JSON_KEYS[key_lower]
+                    if self._pii_enabled(category) and isinstance(value, str) and value:
+                        out[key] = self._placeholder(category, value)
+                        continue
+                out[key] = self.redact_json(value)
+            return out
+        if isinstance(obj, list):
+            return [self.redact_json(item) for item in obj]
+        if isinstance(obj, str):
+            return self.redact_text(obj)
+        return obj
+
+    def _pii_enabled(self, category: str) -> bool:
+        return {
+            "host": self._redact_hostnames,
+            "serial": self._redact_serials,
+            "email": self._redact_emails,
+            "device": self._redact_device_names,
+            "user": self._redact_device_names,
+        }.get(category, False)
+
+    def _placeholder(self, kind: str, value: str) -> str:
+        cache_key = (kind, value)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+        digest = hmac.new(self._salt, value.encode("utf-8"), hashlib.sha256).hexdigest()[:8]
+        placeholder = f"{kind}-{digest}"
+        self._cache[cache_key] = placeholder
+        return placeholder
 
 
 # ---------------------------------------------------------------------------
@@ -17257,6 +17490,268 @@ def cmd_patch_managed(
 
 
 # ---------------------------------------------------------------------------
+# Diagnostic bundle
+# ---------------------------------------------------------------------------
+
+
+# Sensitive YAML keys whose values should be stripped from the workspace
+# config snapshot. Surfaced via the manifest's `redaction_policy` block.
+_CONFIG_REDACT_KEYS: set[str] = {
+    "client_secret",
+    "client_id",
+    "password",
+    "api_key",
+    "secret",
+    "webhook_url",  # contains tenant identifier in path
+}
+
+_BUNDLE_SCHEMA_VERSION = 1
+
+
+def _bundle_redact_yaml_text(text: str, redactor: Optional[LogRedactor]) -> str:
+    """Apply the redactor to a YAML/config text blob."""
+    if redactor is None:
+        return text
+    return redactor.redact_text(text)
+
+
+def _bundle_collect_logs(
+    workspace: Path,
+    days: int,
+    redactor: Optional[LogRedactor],
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Walk `workspace/automation/logs/` and add files newer than `days` to the zip."""
+    logs_dir = workspace / "automation" / "logs"
+    if not logs_dir.exists():
+        return
+    cutoff = datetime.now().timestamp() - (days * 86400)
+    for log_path in sorted(logs_dir.rglob("*")):
+        if not log_path.is_file() or log_path.stat().st_mtime < cutoff:
+            continue
+        rel = log_path.relative_to(logs_dir)
+        arcname = f"logs/{rel.as_posix()}"
+        try:
+            content = log_path.read_text(errors="replace")
+        except OSError as exc:
+            manifest_files.append({"path": arcname, "skipped": True, "reason": str(exc)})
+            continue
+        if redactor is not None:
+            content = redactor.redact_text(content)
+        zip_file.writestr(arcname, content)
+        manifest_files.append({
+            "path": arcname,
+            "size": len(content),
+            "redacted": redactor is not None,
+        })
+
+
+def _bundle_collect_summaries(
+    workspace: Path,
+    limit: int,
+    redactor: Optional[LogRedactor],
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Add the N most recent summary_*.json files to the zip."""
+    summaries_dir = workspace / "snapshots" / "computers" / "summaries"
+    if not summaries_dir.exists():
+        return
+    summaries = sorted(
+        summaries_dir.glob("summary_*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )[:limit]
+    for summary in summaries:
+        arcname = f"summaries/{summary.name}"
+        try:
+            raw = summary.read_text()
+            obj = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            manifest_files.append({"path": arcname, "skipped": True, "reason": str(exc)})
+            continue
+        if redactor is not None:
+            obj = redactor.redact_json(obj)
+        zip_file.writestr(arcname, json.dumps(obj, indent=2, sort_keys=True))
+        manifest_files.append({
+            "path": arcname,
+            "redacted": redactor is not None,
+        })
+
+
+def _bundle_collect_config(
+    config: Config,
+    redactor: Optional[LogRedactor],
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Add the workspace's config.yaml to the zip with secrets redacted."""
+    config_path = Path(config.path) if hasattr(config, "path") else None
+    if config_path is None or not config_path.exists():
+        return
+    try:
+        content = config_path.read_text()
+    except OSError as exc:
+        manifest_files.append({
+            "path": "config.yaml",
+            "skipped": True,
+            "reason": str(exc),
+        })
+        return
+    content = _bundle_redact_yaml_text(content, redactor)
+    zip_file.writestr("config.yaml", content)
+    manifest_files.append({
+        "path": "config.yaml",
+        "size": len(content),
+        "redacted": redactor is not None,
+    })
+
+
+def _bundle_collect_workspace_tree(
+    workspace: Path,
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+    max_depth: int = 3,
+) -> None:
+    """Emit a `workspace_tree.txt` listing of the workspace structure."""
+    lines: list[str] = [f"{workspace}/"]
+    workspace_resolved = workspace.resolve()
+    for root, dirs, files in os.walk(workspace):
+        root_path = Path(root).resolve()
+        rel = root_path.relative_to(workspace_resolved)
+        depth = len(rel.parts)
+        if depth > max_depth:
+            dirs[:] = []
+            continue
+        if depth > 0:
+            lines.append(f"{'  ' * depth}{rel.name}/")
+        for name in sorted(files):
+            lines.append(f"{'  ' * (depth + 1)}{name}")
+    content = "\n".join(lines)
+    zip_file.writestr("workspace_tree.txt", content)
+    manifest_files.append({"path": "workspace_tree.txt", "size": len(content)})
+
+
+def _bundle_collect_versions(
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Capture jamf-cli version, Python version, OS platform."""
+    jamf_version = "not installed"
+    try:
+        result = subprocess.run(
+            ["jamf-cli", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode == 0:
+            jamf_version = (result.stdout or result.stderr or "").strip().splitlines()[0]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    versions = {
+        "jamf_cli_version": jamf_version,
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "bundle_schema_version": _BUNDLE_SCHEMA_VERSION,
+    }
+    content = json.dumps(versions, indent=2, sort_keys=True)
+    zip_file.writestr("versions.json", content)
+    manifest_files.append({"path": "versions.json", "size": len(content)})
+
+
+def cmd_diagnostic_bundle(
+    config: Config,
+    *,
+    days: int = 7,
+    summary_limit: int = 10,
+    output_path: Optional[Path] = None,
+    no_redact: bool = False,
+    keep_hostnames: bool = False,
+    keep_serials: bool = False,
+    keep_emails: bool = False,
+    keep_device_names: bool = False,
+) -> Path:
+    """Bundle local diagnostic data into a redacted zip for sharing.
+
+    Gathers recent automation logs, last N summary snapshots, redacted
+    config.yaml, workspace directory listing, and version metadata into a
+    single zip on the desktop (or `output_path` if specified). Default
+    redaction strips credentials always and PII (hostnames, serials,
+    emails, device names in known JSON fields) unless overridden.
+
+    Args:
+        config: Loaded Config instance.
+        days: Log lookback window in days. Default 7.
+        summary_limit: Number of most-recent summary JSON files to include.
+        output_path: Override default `~/Desktop/jamf-reports-diagnostic-*.zip`.
+        no_redact: Disable all redaction (credentials + PII). Use only for
+            local debugging; never for shared bundles.
+        keep_hostnames: Preserve raw Jamf hostnames in URLs.
+        keep_serials: Preserve raw device serial numbers.
+        keep_emails: Preserve raw email addresses.
+        keep_device_names: Preserve raw device names from known JSON fields.
+
+    Returns:
+        Path to the written zip file.
+    """
+    workspace = Path(config.base_dir).resolve() if hasattr(config, "base_dir") else Path.cwd()
+
+    if no_redact:
+        redactor: Optional[LogRedactor] = None
+    else:
+        redactor = LogRedactor(
+            redact_hostnames=not keep_hostnames,
+            redact_serials=not keep_serials,
+            redact_emails=not keep_emails,
+            redact_device_names=not keep_device_names,
+        )
+
+    if output_path is None:
+        ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+        profile = ""
+        try:
+            jamf_cfg = config.get("jamf_cli") or {}
+            profile = (jamf_cfg.get("profile") or "").strip()
+        except (AttributeError, KeyError):
+            pass
+        profile_slug = re.sub(r"[^a-z0-9._-]+", "-", profile.lower()) if profile else "default"
+        output_path = Path.home() / "Desktop" / f"jamf-reports-diagnostic-{profile_slug}-{ts}.zip"
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    manifest_files: list[dict[str, Any]] = []
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        _bundle_collect_logs(workspace, days, redactor, zf, manifest_files)
+        _bundle_collect_summaries(workspace, summary_limit, redactor, zf, manifest_files)
+        _bundle_collect_config(config, redactor, zf, manifest_files)
+        _bundle_collect_workspace_tree(workspace, zf, manifest_files)
+        _bundle_collect_versions(zf, manifest_files)
+
+        manifest = {
+            "schema_version": _BUNDLE_SCHEMA_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "workspace": str(workspace),
+            "log_lookback_days": days,
+            "summary_limit": summary_limit,
+            "redaction_policy": (
+                {"enabled": False} if redactor is None
+                else {"enabled": True, **redactor.policy()}
+            ),
+            "files": manifest_files,
+        }
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+
+    print(f"Wrote diagnostic bundle: {output_path}")
+    print(f"  {len(manifest_files)} files bundled.")
+    if redactor is None:
+        print("  WARNING: --no-redact in effect. Bundle contains raw credentials and PII.")
+    return output_path
+
+
+# ---------------------------------------------------------------------------
 # School commands
 # ---------------------------------------------------------------------------
 
@@ -17616,6 +18111,7 @@ def _capability_commands() -> dict[str, list[str]]:
             "launchagent-setup",
             "launchagent-run",
             "multi-launchagent-run",
+            "diagnostic-bundle",
         ],
     }
 
@@ -17839,6 +18335,7 @@ def main() -> None:
             "  check         Verify jamf-cli auth and config\n"
             "  device        Print a device detail view from jamf-cli pro device\n"
             "  patch-managed Set managed state on computers (requires jamf-cli v1.14.0+)\n"
+            "  diagnostic-bundle Bundle redacted logs/config/versions into a zip for sharing\n"
             "\n"
             "Jamf School commands:\n"
             "  school-generate  Build the Jamf School Excel report\n"
@@ -17865,6 +18362,7 @@ def main() -> None:
             "check",
             "device",
             "patch-managed",
+            "diagnostic-bundle",
             "school-generate",
             "school-collect",
             "school-scaffold",
@@ -18053,6 +18551,54 @@ def main() -> None:
             " (generate command only)"
         ),
     )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Log lookback window in days (diagnostic-bundle only). Default 7.",
+    )
+    parser.add_argument(
+        "--summary-limit",
+        type=int,
+        default=10,
+        help="Number of most-recent summary snapshots to include (diagnostic-bundle only). Default 10.",
+    )
+    parser.add_argument(
+        "--bundle-output",
+        metavar="PATH",
+        help=(
+            "Override the diagnostic bundle output path. Default is"
+            " ~/Desktop/jamf-reports-diagnostic-<profile>-<ts>.zip"
+        ),
+    )
+    parser.add_argument(
+        "--no-redact",
+        action="store_true",
+        help=(
+            "Disable ALL redaction (credentials + PII) in the diagnostic bundle."
+            " Local debugging only — never use for shared bundles."
+        ),
+    )
+    parser.add_argument(
+        "--keep-hostnames",
+        action="store_true",
+        help="Preserve raw Jamf hostnames in the diagnostic bundle (default redacts).",
+    )
+    parser.add_argument(
+        "--keep-serials",
+        action="store_true",
+        help="Preserve raw device serial numbers in the diagnostic bundle (default redacts).",
+    )
+    parser.add_argument(
+        "--keep-emails",
+        action="store_true",
+        help="Preserve raw email addresses in the diagnostic bundle (default redacts).",
+    )
+    parser.add_argument(
+        "--keep-device-names",
+        action="store_true",
+        help="Preserve raw device/host names in the diagnostic bundle (default redacts).",
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
@@ -18178,6 +18724,18 @@ def main() -> None:
                 managed_value=args.managed == "true",
                 dry_run=args.dry_run,
                 serials_file=args.serials_file,
+            )
+        elif args.command == "diagnostic-bundle":
+            cmd_diagnostic_bundle(
+                config,
+                days=args.days,
+                summary_limit=args.summary_limit,
+                output_path=Path(args.bundle_output) if args.bundle_output else None,
+                no_redact=args.no_redact,
+                keep_hostnames=args.keep_hostnames,
+                keep_serials=args.keep_serials,
+                keep_emails=args.keep_emails,
+                keep_device_names=args.keep_device_names,
             )
         elif args.command == "school-check":
             cmd_school_check(config, args.csv)

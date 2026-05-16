@@ -163,6 +163,11 @@ python3 jamf-reports-community.py device   --id <id-or-serial> [--config config.
 python3 jamf-reports-community.py patch-managed --managed {true,false}
                                                 [--serials-file PATH] [--dry-run]
 python3 jamf-reports-community.py capabilities [--output {json,text}]
+python3 jamf-reports-community.py diagnostic-bundle [--days N] [--summary-limit N]
+                                                    [--bundle-output PATH]
+                                                    [--no-redact]
+                                                    [--keep-hostnames] [--keep-serials]
+                                                    [--keep-emails] [--keep-device-names]
 
 # Jamf Pro — automation / scheduling
 python3 jamf-reports-community.py workspace-init [--profile PROFILE]
@@ -231,6 +236,19 @@ Jamf Pro v2 API. Requires `jamf-cli` v1.14.0+. Use `--dry-run` first to preview.
 **`capabilities`** — print a machine-readable summary of the app's current
 capabilities (data sources, supported reports, status surfaces). Used by the
 GUI's Sources screen and by integration tooling.
+
+**`diagnostic-bundle`** — bundle local diagnostic data into a redacted zip for
+sharing. Includes recent `automation/logs/`, last N `summary_*.json` snapshots,
+config.yaml (secrets redacted), workspace tree listing, and version metadata.
+Default output: `~/Desktop/jamf-reports-diagnostic-<profile>-<ts>.zip`.
+Credentials (`client_secret`, `client_id`, bearer tokens, JWTs, OAuth tokens,
+passwords) are always redacted. PII (Jamf hostnames, serials, emails, device
+names in known JSON fields) is redacted by default with stable hash placeholders
+(`device-<8hex>`, `serial-<8hex>`) so cross-references survive within a single
+bundle but cannot be correlated across bundles. Use `--no-redact` for local
+debugging only (never share the resulting zip externally); use individual
+`--keep-*` flags to preserve specific categories. Same Settings → Diagnostics
+button in the app copies this command to your clipboard and opens Terminal.
 
 **`workspace-init`** — create a per-profile reporting workspace skeleton
 (jamf-cli-data, snapshots, Generated Reports, csv-inbox, automation/logs) under
