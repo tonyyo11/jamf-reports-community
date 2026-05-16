@@ -179,15 +179,12 @@ tabindex flagged one CONSIDER item adjacent to the HTML tab markup.
 
 Code-reviewer flagged three additional `jamf-cli` spawn sites that
 bypass the M-01 codesign gate. None are in REPORT.md M-01's named
-list (which scoped to `CLIBridge.swift`), so PR-2 ships narrow and
-these are tracked here for a follow-up PR. Risk profile is lower
+list (which scoped to `CLIBridge.swift`), so PR-2 shipped narrow and
+PR-6 closed the three SHOULD-FIX items below. Risk profile is lower
 than the routine `collect`/`audit`/`backup` paths: each is a single
 spawn at a well-defined moment (startup, install/upgrade, sidebar
 load) protected by the install-time + onboarding-time gates.
 
-- **SHOULD-FIX — `ProfileService.discoverJamfCLIProfiles` spawns `jamf-cli config list` without codesign gate.**
-  `app/Sources/JamfReports/Services/ProfileService.swift:143`.
-  Single spawn at sidebar-profile-load time. Same fix pattern.
 - **CONSIDER — `runDeviceDetailProcess` codesign-gate rejection is `AppLogger`-only.**
   `app/Sources/JamfReports/Services/CLIBridge.swift:1515-1525`.
   No `onLine` consumer at this layer so the Runs feed doesn't
@@ -196,13 +193,23 @@ load) protected by the install-time + onboarding-time gates.
   failed lookup. Thread an optional `onLine` parameter through
   `singleDeviceDetail` → `runDeviceDetailProcess` so the rejection
   reaches the same diagnostic feed as `run`/`runAndCapture`.
+  Deferred from PR-6: callsite count is 6 across 3 non-CLI view
+  files (`CustomizationWizard.swift`, `DeviceLookupView.swift`,
+  `DevicesView.swift`), tripping the per-PR rule on parameter
+  threading scope. Needs separate PR.
 - **CONSIDER — Exit code `-1` is overloaded between codesign-gate rejection and process-launch failure.**
   `app/Sources/JamfReports/Services/CLIBridge.swift` (run, runAndCapture, runDeviceDetailProcess).
   User-facing `LogLine` text already distinguishes the two, but
   programmatic callers (tests, `runMulti` aggregation, future
   retry logic) can't differentiate gate rejection from a crash at
   launch. Consider a distinct sentinel (e.g. `-2`) or a typed
-  error return.
+  error return. Deferred from PR-6: architectural change touches
+  every spawn-site call path and downstream aggregator (runMulti,
+  RunHistoryService classifier). Recommendation: introduce a typed
+  `CLIBridgeError.codesignRejected(executable: URL)` thrown by a
+  new `runOrThrow`/`runAndCaptureOrThrow` surface; keep the
+  Int32-returning surface backward-compatible. Needs separate PR
+  with an ADR.
 
 ### From python-reviewer audit of wave 1+2 (2026-05-14)
 

@@ -194,8 +194,23 @@ enum ProfileService {
         return true
     }
 
-    private static func discoverJamfCLIProfiles(scheduleCounts: [String: Int]) -> [JamfCLIProfile] {
-        guard let binary = ExecutableLocator.locate("jamf-cli") else {
+    /// Lists profiles from `jamf-cli config list`. The `binary` parameter is
+    /// a test seam: pass nil (default) in production to use
+    /// `ExecutableLocator.locate("jamf-cli")`; tests pass a known URL so the
+    /// codesign-gate path is reachable without a real jamf-cli on disk.
+    static func discoverJamfCLIProfiles(
+        scheduleCounts: [String: Int],
+        binary: URL? = nil
+    ) -> [JamfCLIProfile] {
+        guard let binary = binary ?? ExecutableLocator.locate("jamf-cli") else {
+            return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
+        }
+
+        // M-01: refuse to spawn a tampered jamf-cli even for `config list`.
+        // Fall back to reading `~/.config/jamf-cli/config.yaml` directly —
+        // the same recovery path used when the binary is absent or launch
+        // fails. The user still sees their profiles; nothing un-trusted runs.
+        if CLIBridge.codesignGate(executable: binary, onLine: { _ in }) != nil {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
 
