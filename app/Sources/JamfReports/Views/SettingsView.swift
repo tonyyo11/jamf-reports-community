@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var addConnectionMessage: String? = nil
     @State private var tokenStatuses: [String: TokenStatus] = [:]
     @State private var loadingTokenProfiles: Set<String> = []
+    @State private var diagnosticBundleMessage: String? = nil
 
     var body: some View {
         ScrollView {
@@ -35,6 +36,7 @@ struct SettingsView: View {
                     connectionsCard
                 }
                 dataAndChartsCard
+                diagnosticsCard
                 sidebarVisibilityCard
                 aboutCard
             }
@@ -455,6 +457,91 @@ struct SettingsView: View {
             return "Per-device commands paused. Posture, Patch, Updates, and Extension Attributes dashboards will show last cached values until refreshed."
         }
         return "Run the four per-device commands (ea-results, patch-device-failures, update-device-failures, device-compliance) on every collect."
+    }
+
+    // MARK: - Diagnostics
+
+    private var diagnosticsCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Diagnostics")
+                Text(
+                    "Generate a redacted zip of recent logs, summaries, config, and " +
+                    "versions to share when reporting issues. Credentials are always " +
+                    "redacted; hostnames, serials, emails, and device names are " +
+                    "replaced with stable hash placeholders by default."
+                )
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    PNPButton(title: "Generate Diagnostic Bundle", icon: "shippingbox", size: .sm) {
+                        runDiagnosticBundle()
+                    }
+                    .help(
+                        "Copies the command to your clipboard and opens Terminal. " +
+                        "The bundle lands on your Desktop."
+                    )
+                    .accessibilityHint("Opens Terminal and copies a diagnostic-bundle command to the clipboard.")
+
+                    PNPButton(title: "Reveal Workspace", size: .sm) {
+                        if let url = currentWorkspaceURL {
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        }
+                    }
+                    .disabled(currentWorkspaceURL == nil)
+                    .help("Open the active workspace directory in Finder.")
+                }
+
+                if let msg = diagnosticBundleMessage {
+                    Text(msg)
+                        .font(Theme.Fonts.mono(10.5))
+                        .foregroundStyle(Theme.Text.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Diagnostics")
+    }
+
+    /// Active workspace root, or nil if no profile is selected.
+    private var currentWorkspaceURL: URL? {
+        let profile = workspace.profile
+        guard !profile.isEmpty, let url = ProfileService.workspaceURL(for: profile) else {
+            return nil
+        }
+        return url
+    }
+
+    /// Build the diagnostic-bundle CLI command for the active workspace and
+    /// hand it off to Terminal via the clipboard, matching the "Add connection"
+    /// pattern. The Python CLI is the source of truth; the app is a launcher.
+    private func runDiagnosticBundle() {
+        guard let workspaceURL = currentWorkspaceURL else {
+            diagnosticBundleMessage = "Select a workspace profile first."
+            return
+        }
+        let configPath = workspaceURL.appendingPathComponent("config.yaml").path
+        // Escape spaces in the workspace path for safe shell quoting.
+        let command = "python3 jamf-reports-community.py diagnostic-bundle --config '\(configPath)'"
+        SystemActions.copyToClipboard(command)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "Terminal", "-n"]
+        do {
+            try process.run()
+            diagnosticBundleMessage =
+                "Command copied. Paste it in the Terminal window that just opened. " +
+                "cd to your jamf-reports-community checkout first. The zip will land " +
+                "on your Desktop."
+        } catch {
+            diagnosticBundleMessage =
+                "Command copied — could not open Terminal automatically. " +
+                "Paste it into a Terminal window manually."
+        }
     }
 
     private var sidebarVisibilityCard: some View {

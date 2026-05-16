@@ -13,6 +13,52 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-A review gates (2026-05-16)
+
+Three deferred items from the security-reviewer + silent-failure-hunter
+gates on PR-A. The four MUST-FIX findings landed in the same PR
+(workspace path leak, on-prem hostname coverage, dead config-keys set,
+username/device-name flag coupling). These are out-of-scope.
+
+- **CONSIDER — `_PII_JSON_KEYS` missing extra device/identity keys.**
+  Security-reviewer B-1. Current set covers `serial`, `serialNumber`,
+  `computerName`, `hostname`, `email`, `username`, etc. Misses `device`,
+  `name`, `realName`, `ipAddress`, `udid`, `managementId`, `position`,
+  `room`, `building`, `department`. Not a live leak in the current
+  bundle scope (only `summaries/` and `automation/logs/` are collected;
+  raw jamf-cli-data is excluded). Becomes a live leak if (a) the bundle
+  scope expands to include jamf-cli-data, OR (b) `LogRedactor` gets
+  reused for `RunHistoryService` log redaction (the deferred Gemini
+  finding). Close before either change.
+- **CONSIDER — `workspace_tree.txt` does not run through the redactor.**
+  Security-reviewer B-1. Tree entries currently use timestamp-based
+  filenames (low PII risk), but if users add custom CSV files with
+  device names or serials in the filename, those leak. Wire the
+  redactor through `_bundle_collect_workspace_tree` so filenames go
+  through `redact_text`.
+- **CONSIDER — `client_id` shorter than 16 chars bypasses the alphanumeric branch.**
+  Security-reviewer S-3. Jamf Pro generates UUID client_ids (36 chars
+  with dashes — always matched by the first branch), so this is a
+  narrow gap. If a user has a manually-configured shorter client_id,
+  it would leak. Lower the floor to 8 chars OR add a comment
+  explaining the deliberate tradeoff.
+
+### From PR-A diagnostic-bundle session (2026-05-16)
+
+- **SHOULD-FIX — `test_generate_from_committed_cached_jamf_cli_data` date-rollover failure.**
+  Discovered while running the full Python suite during PR-A. The test
+  asserts that the Update Status sheet contains a `"No Data"` row, but
+  on 2026-05-16 (~30 days after the committed jamf-cli fixtures were
+  captured on 2026-04-13) the row no longer renders. Pre-existing
+  failure — not introduced by PR-A. Root cause is likely a staleness
+  threshold inside `CoreDashboard.writeUpdateStatus()` that uses
+  `datetime.now()` rather than a frozen fixture clock. Fix: either
+  freeze `datetime.now()` in the test via `monkeypatch`, regenerate
+  the fixture set with newer timestamps, or change the assertion to
+  match the current rendered shape. Affects only
+  `tests/test_generate_cached_jamf_cli.py::test_generate_from_committed_cached_jamf_cli_data`;
+  all 28 new PR-A tests + 291 other tests pass.
+
 ### From PR-8 council (2026-05-15)
 
 `/council` ran on the S-06 Templates refactor (the budgeted judgment-call
