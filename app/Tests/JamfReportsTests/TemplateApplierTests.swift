@@ -96,27 +96,38 @@ final class TemplateApplierTests: XCTestCase {
     }
 
     func testRecommendedStaleDays() {
-        // Exhaustive across all 6 shipping templates so a `case "x":` deletion
-        // surfaces as a per-template failure (PR-8 council CONSIDER).
+        // Exhaustive across all 6 shipping templates. `operational` (14),
+        // `asset` (60), and `security-posture` (7) return values distinct
+        // from the default 30 — deleting any of those cases surfaces here
+        // as a value change. LIMIT: `compliance` and `executive` both
+        // return 30 which equals the default, so deleting either case is
+        // undetectable via behavioral testing alone (the value is the
+        // same whether the named arm or `default:` is taken). Tracked in
+        // BACKLOG under "From PR-5 review gates (2026-05-16)".
         XCTAssertEqual(TemplateApplier.recommendedStaleDays(for: ExecutiveTemplate()), 30,
-                       "executive: monthly view → 30")
+                       "executive: monthly view → 30 (matches default — case-deletion undetectable)")
         XCTAssertEqual(TemplateApplier.recommendedStaleDays(for: OperationalTemplate()), 14,
-                       "operational: daily ops → 14")
+                       "operational: daily ops → 14 (distinct from default — case-deletion would fail)")
         XCTAssertEqual(TemplateApplier.recommendedStaleDays(for: ComplianceTemplate()), 30,
-                       "compliance: audit tolerance → 30")
+                       "compliance: audit tolerance → 30 (matches default — case-deletion undetectable)")
         XCTAssertEqual(TemplateApplier.recommendedStaleDays(for: AssetTemplate()), 60,
-                       "asset: lifecycle view → 60")
+                       "asset: lifecycle view → 60 (distinct from default — case-deletion would fail)")
         XCTAssertEqual(TemplateApplier.recommendedStaleDays(for: SecurityPostureTemplate()), 7,
-                       "security-posture: fresh data → 7")
+                       "security-posture: fresh data → 7 (distinct from default — case-deletion would fail)")
         XCTAssertEqual(TemplateApplier.recommendedStaleDays(for: SchoolTemplate()), 30,
                        "school: documented default arm (30); change here if a school-specific arm is added")
     }
 
     func testRecommendedThresholds() {
-        // Exhaustive across all 6 shipping templates. Executive, asset, and
-        // school all fall through `default:` to (80, 90); test those explicitly
-        // so a `case` deletion (e.g. removing `"operational"`) surfaces as a
-        // value change rather than silent fall-through.
+        // Exhaustive across all 6 shipping templates. Only `compliance` (85,95)
+        // and `security-posture` (70,85) return values distinct from the
+        // default (80,90). LIMIT: `operational`, `executive`, `asset`, and
+        // `school` all return (80,90) which equals the default — case-deletion
+        // for those four is undetectable via behavioral testing alone (the
+        // value is the same whether the named arm or `default:` is taken).
+        // `operational` explicitly ships a `case` arm that returns the same
+        // value as default; the tripwire here cannot discriminate. Tracked
+        // in BACKLOG under "From PR-5 review gates (2026-05-16)".
         let compliance = TemplateApplier.recommendedThresholds(for: ComplianceTemplate())
         XCTAssertEqual(compliance.warning, 85, "compliance: audit-tight warning")
         XCTAssertEqual(compliance.critical, 95, "compliance: audit-tight critical")

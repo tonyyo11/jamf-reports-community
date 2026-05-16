@@ -430,6 +430,12 @@ _(All items resolved in PR-4.)_
   real architectural scope (not a test-only change) and was deferred from
   PR-5 to keep that PR purely test-infrastructure.
 
+### From PR-5 review gates (2026-05-16)
+
+- **CONSIDER — `TemplateApplier` tripwire cannot discriminate cases that return the default value.** `app/Sources/JamfReports/Services/TemplateApplier.swift`. `recommendedThresholds.case "operational"` returns `(80, 90)` which equals the `default:` arm; `recommendedStaleDays.case "compliance"` and `case "executive"` both return 30 which equals the `default:` arm. Behavioral tests in `TemplateApplierTests.swift` cannot detect deletion of these named cases — the dispatched value is the same whether the case fires or fall-through hits default. The tripwire is sound for cases with distinguishing values; the limit is fundamental to behavioral testing and documented in the test method comments. Address via either (a) refactor switches to a tagged-return that always carries the source-case identifier, (b) source-level AST inspection in tests, or (c) accept the limit and rely on PR review for these specific cases. Tracking alongside the broader S-06 templates refactor the council deferred (see "From PR-8 council (2026-05-15)").
+- **CONSIDER — Dead inline `defer` in `CompliancePostureTests.swift:86`.** `testCompliancePostureRendersWithFixtureData` does `let dataDir = try tempDataDir(copying: ...)` (helper that appends to `createdTempDirs`) and then `defer { try? FileManager.default.removeItem(at: dataDir) }`. The new `tearDown` already removes it; the inline `defer` is redundant. Six other `defer` sites in the same file ARE legitimate (direct-callsite `tmp`). Drop the line; no behavior change.
+- **CONSIDER — `testNewestJSONWinsWhenMultipleSnapshotsExist` doesn't verify `name` parsing.** `app/Tests/JamfReportsTests/DeviceLookupIndexTests.swift:78-109`. Asserts the set of `id`s but never checks `name` — leaves the parser's `name` fall-back chain unverified for the bare-array computers path. The dedicated `testBareArrayDecodes` does pin name resolution for a single record, so the gap is narrow. Cheap to strengthen later by asserting both `id` and `name` in the multi-snapshot test.
+
 ---
 
 ## Process

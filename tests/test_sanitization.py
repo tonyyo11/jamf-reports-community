@@ -67,7 +67,7 @@ def test_safe_write_neutralizes_formula_payload(payload: str, tmp_path: Path, jr
     # value should be "\t" + stripped (where stripped already has any pre-existing tabs).
     # The lstrip() decision inside _safe_write keys on the FIRST non-whitespace
     # char, so the prefix is always added when the payload triggers.
-    assert cell.value.endswith(stripped) or cell.value.startswith("\t"), (
+    assert cell.value.endswith(stripped), (
         f"Payload {payload!r} expected to retain text {stripped!r}; got {cell.value!r}"
     )
     # The cell value must start with a tab — the marker that signals neutralization.
