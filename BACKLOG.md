@@ -348,22 +348,6 @@ _(All items resolved in PR-4.)_
 
 ### From Google Gemini cross-review of design-review-3 (2026-05-14)
 
-- **SHOULD-FIX — Log redaction layer for `RunHistoryService`.**
-  Run logs surfaced by `RunsView` are read through
-  `RunHistoryService.loadLog(_:)` and fed to clipboard exports and
-  on-disk file exports without any sanitization pass. jamf-cli output
-  is supposed to redact tokens, but a misbehaving subprocess or a
-  future debug-mode flag could echo secrets to stderr. In a CBP /
-  government context this is a real exfiltration path via accidental
-  paste or shared log file. Design: add a redaction filter to
-  `RunHistoryService.loadLog` (or a sibling `loadRedactedLog`) that
-  scrubs known sensitive patterns (Bearer tokens, OAuth client
-  secrets, Basic auth headers, anything that looks like a JWT). Apply
-  the redacted form to both clipboard and file exports. Keep the raw
-  file on disk untouched — admins still need to investigate runs.
-  Need a policy doc on which patterns to match (false-positive cost
-  matters) before implementing.
-
 - **CONSIDER — Dynamic Type 300% audit on `OverviewView`.** Wave 1's
   Dynamic Type pass (commits `08148c1`, `17bfb63`, etc.) covered the
   font-token swaps but didn't verify the visual layout at 300% scale.
