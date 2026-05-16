@@ -231,7 +231,7 @@ smart groups, etc.) via `jamf-cli pro backup` into the workspace's `backups/` di
 Useful for ad-hoc lookups by computer ID or serial number.
 
 **`patch-managed`** — bulk set managed/unmanaged state on computers via the
-Jamf Pro v2 API. Requires `jamf-cli` v1.14.0+. Use `--dry-run` first to preview.
+Jamf Pro REST API. Requires `jamf-cli` v1.14.0+. Use `--dry-run` first to preview.
 
 **`capabilities`** — print a machine-readable summary of the app's current
 capabilities (data sources, supported reports, status surfaces). Used by the

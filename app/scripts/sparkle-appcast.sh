@@ -41,7 +41,7 @@ if [[ -n "$CHANNEL" && ! "$CHANNEL" =~ ^[a-z][a-z0-9-]*$ ]]; then
   echo "✗ invalid CHANNEL: '$CHANNEL' (want lowercase alphanumeric + dash, e.g. 'beta')" >&2
   exit 1
 fi
-WORK_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+WORK_DIR="$(cd -- "$(dirname -- "${(%):-%x}")/.." && pwd -P)"
 readonly WORK_DIR
 if [[ "$BUILD" != "$VERSION" ]]; then
   readonly DMG_PATH="${WORK_DIR}/build/JamfReports-${VERSION}-beta${BUILD}.dmg"

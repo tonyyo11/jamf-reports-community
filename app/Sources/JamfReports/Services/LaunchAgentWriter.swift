@@ -523,9 +523,11 @@ enum LaunchAgentWriter {
             .replacingOccurrences(of: "\u{00B7}", with: " ")
             .trimmingCharacters(in: .whitespaces)
         let tokens = normalized.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
-        guard tokens.count >= 2 else { throw WriterError.cadenceParseError(raw) }
+        guard tokens.count >= 2, let lastToken = tokens.last else {
+            throw WriterError.cadenceParseError(raw)
+        }
 
-        let timeOfDay = try parseHHMM(tokens.last!, raw: raw)
+        let timeOfDay = try parseHHMM(lastToken, raw: raw)
         let key = tokens[0].lowercased()
 
         if key == "daily" {

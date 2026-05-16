@@ -192,7 +192,7 @@ fileprivate extension DeviceInventoryService {
     }
 
     static func resolvedDirectory(_ raw: String?, fallback: String, root: URL) -> URL {
-        let value = (raw?.isEmpty == false ? raw! : fallback)
+        let value = (raw.flatMap { $0.isEmpty ? nil : $0 } ?? fallback)
             .replacingOccurrences(of: "~", with: FileManager.default.homeDirectoryForCurrentUser.path)
         let candidate = value.hasPrefix("/")
             ? URL(fileURLWithPath: value, isDirectory: true)
