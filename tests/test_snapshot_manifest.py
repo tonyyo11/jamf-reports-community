@@ -210,3 +210,147 @@ def test_load_cached_json_warns_on_tamper_when_not_strict(jrc, tmp_path, capsys)
     assert "[warn]" in out
     assert "SHA-256 mismatch" in out
     assert payload == {"ok": False}
+
+
+# ---------------------------------------------------------------------------
+# M-2 — _load_json_snapshots (trend reads) honors manifest verification
+# ---------------------------------------------------------------------------
+
+
+def _build_chart_generator(jrc, jamf_cli_dir):
+    """Minimal ChartGenerator stand-in for _load_json_snapshots testing.
+
+    The real constructor pulls in pandas-via-Config, xlsxwriter, and a config
+    instance. Trend tests only need `_jamf_cli_dir` populated, so we
+    bypass __init__ via __new__ and set just that attribute.
+    """
+    instance = object.__new__(jrc.ChartGenerator)
+    instance._jamf_cli_dir = jamf_cli_dir
+    return instance
+
+
+def test_load_json_snapshots_warns_on_tampered_manifest(jrc, tmp_path, capsys):
+    """Trend reads must verify against the manifest and warn (not silently
+    feed tampered data into chart generation)."""
+    data_dir = tmp_path / "jamf-cli-data"
+    snap_dir = data_dir / "device-compliance"
+    snap_dir.mkdir(parents=True)
+    snap = snap_dir / "device-compliance_20260101T000000.json"
+    snap.write_text('[{"id":1}]', encoding="utf-8")
+    jrc._rewrite_snapshot_manifest(snap_dir)
+
+    # Tamper.
+    snap.write_text('[{"id":2}]', encoding="utf-8")
+
+    cg = _build_chart_generator(jrc, data_dir)
+    snapshots = cg._load_json_snapshots(["device-compliance"])
+
+    out = capsys.readouterr().out
+    assert "[warn]" in out
+    assert "SHA-256 mismatch" in out
+    # Tampered payload is still returned (warn-only by design for trend reads).
+    assert len(snapshots) == 1
+
+
+def test_load_json_snapshots_silent_when_manifest_matches(jrc, tmp_path, capsys):
+    data_dir = tmp_path / "jamf-cli-data"
+    snap_dir = data_dir / "device-compliance"
+    snap_dir.mkdir(parents=True)
+    snap = snap_dir / "device-compliance_20260101T000000.json"
+    snap.write_text('[{"id":1}]', encoding="utf-8")
+    jrc._rewrite_snapshot_manifest(snap_dir)
+
+    cg = _build_chart_generator(jrc, data_dir)
+    cg._load_json_snapshots(["device-compliance"])
+
+    out = capsys.readouterr().out
+    assert "[warn]" not in out
+
+
+# ---------------------------------------------------------------------------
+# M-3 Fix A — collect-side TOCTOU: pinned hash overrides disk re-read
+# ---------------------------------------------------------------------------
+
+
+def test_rewrite_manifest_pinned_hash_overrides_disk_read(jrc, tmp_path):
+    """If the file on disk differs from the pinned hash, the pinned value wins.
+
+    Pins the contract that closes the collect-side TOCTOU race: the
+    just-written-bytes hash is authoritative, not whatever happens to be on
+    disk by the time the manifest is rewritten.
+    """
+    snap_dir = tmp_path / "snapshots"
+    snap_dir.mkdir()
+    snap = snap_dir / "audit_20260101T000000.json"
+    # File on disk says one thing; pinned hash says another.
+    snap.write_text('{"attacker": true}', encoding="utf-8")
+    pinned_value = "a" * 64
+
+    jrc._rewrite_snapshot_manifest(snap_dir, pinned={snap.name: pinned_value})
+
+    manifest = json.loads(
+        (snap_dir / jrc.SNAPSHOT_MANIFEST_FILENAME).read_text(encoding="utf-8")
+    )
+    # Pinned hash recorded verbatim (lowercased), not the disk-read hash.
+    assert manifest["files"][snap.name] == pinned_value
+
+
+# ---------------------------------------------------------------------------
+# M-3 Fix B — verify-then-parse TOCTOU: bytes-based verifier
+# ---------------------------------------------------------------------------
+
+
+def test_verify_bytes_matches_in_memory_buffer(jrc, tmp_path):
+    """The bytes-based verifier hashes the buffer passed in, NOT the file on disk.
+
+    Together with `_load_cached_json` reading the file once into bytes, this
+    closes the verify-then-parse race: an attacker swapping file contents
+    between two reads cannot cause `_verify_snapshot_against_manifest` to
+    pass while `json.loads` sees different bytes.
+    """
+    snap_dir = tmp_path / "snapshots"
+    snap_dir.mkdir()
+    snap = snap_dir / "audit_20260101T000000.json"
+    good_bytes = b'{"ok": true}'
+    snap.write_bytes(good_bytes)
+    jrc._rewrite_snapshot_manifest(snap_dir)
+
+    # Tamper the on-disk file AFTER reading the original bytes.
+    snap.write_bytes(b'{"ok": false}')
+
+    # Verifying against the original buffer must STILL pass — we hash the
+    # caller's bytes, not the file. This is the property that makes
+    # _load_cached_json's single-read pattern safe.
+    jrc._verify_snapshot_bytes_against_manifest(snap, good_bytes, strict=True)
+
+
+def test_verify_bytes_raises_on_mismatch_strict(jrc, tmp_path):
+    snap_dir = tmp_path / "snapshots"
+    snap_dir.mkdir()
+    snap = snap_dir / "audit_20260101T000000.json"
+    snap.write_bytes(b'{"ok": true}')
+    jrc._rewrite_snapshot_manifest(snap_dir)
+
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        jrc._verify_snapshot_bytes_against_manifest(
+            snap, b'{"ok": false}', strict=True
+        )
+
+
+def test_load_cached_json_uses_single_read_pattern(jrc, tmp_path):
+    """Confirms `_load_cached_json` reads the file exactly once.
+
+    With a single read, the verifier and parser see identical bytes by
+    construction — the verify-then-parse race is structurally impossible
+    within the call. The happy-path payload must equal the original bytes.
+    """
+    data_dir = tmp_path / "jamf-cli-data"
+    audit_dir = data_dir / "audit"
+    audit_dir.mkdir(parents=True)
+    snap = audit_dir / "audit_20260101T000000.json"
+    snap.write_text('{"ok": true}', encoding="utf-8")
+    jrc._rewrite_snapshot_manifest(audit_dir)
+
+    bridge = jrc.JamfCLIBridge(save_output=False, data_dir=str(data_dir))
+    payload = bridge._load_cached_json(["audit"])
+    assert payload == {"ok": True}

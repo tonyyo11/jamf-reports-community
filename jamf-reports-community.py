@@ -625,13 +625,24 @@ def _snapshot_manifest_path(snapshot_dir: Path) -> Path:
     return snapshot_dir / SNAPSHOT_MANIFEST_FILENAME
 
 
-def _rewrite_snapshot_manifest(snapshot_dir: Path) -> None:
+def _rewrite_snapshot_manifest(
+    snapshot_dir: Path,
+    *,
+    pinned: Optional[dict[str, str]] = None,
+) -> None:
     """Recompute and atomically rewrite the SHA-256 manifest for a snapshot dir.
 
     The manifest lists every `*.json` file in the directory (excluding the
     manifest itself and any `.partial` write-in-progress files) keyed by
     filename, value = lowercase hex digest. Rewritten in full on each call so
     older files purged by ``keep_latest_runs`` are not left in the manifest.
+
+    ``pinned`` lets the caller supply pre-computed hashes for files it just
+    wrote — those entries are used verbatim instead of re-hashing from disk.
+    Pinning closes the collect-side TOCTOU race: an attacker who tampers with
+    a freshly-written file between rename and manifest rewrite would otherwise
+    poison the manifest with the attacker's hash. The just-written buffer's
+    hash is the source of truth for files it covers.
 
     Failures are surfaced as a `[warn]` print and otherwise swallowed —
     snapshot writes must not be blocked by manifest hygiene.
@@ -641,6 +652,7 @@ def _rewrite_snapshot_manifest(snapshot_dir: Path) -> None:
             return
         manifest_path = _snapshot_manifest_path(snapshot_dir)
         entries: dict[str, str] = {}
+        pinned_map = dict(pinned or {})
         for child in sorted(snapshot_dir.iterdir()):
             if not child.is_file():
                 continue
@@ -650,7 +662,10 @@ def _rewrite_snapshot_manifest(snapshot_dir: Path) -> None:
                 continue
             if child.suffix != ".json":
                 continue
-            entries[child.name] = _sha256_file(child)
+            if child.name in pinned_map:
+                entries[child.name] = pinned_map[child.name].lower()
+            else:
+                entries[child.name] = _sha256_file(child)
         partial = manifest_path.with_suffix(".json.partial")
         with open(partial, "w", encoding="utf-8") as fh:
             json.dump({"algorithm": "sha256", "files": entries}, fh, indent=2, sort_keys=True)
@@ -659,40 +674,49 @@ def _rewrite_snapshot_manifest(snapshot_dir: Path) -> None:
         print(f"  [warn] Could not write snapshot manifest for '{snapshot_dir}': {exc}")
 
 
-def _verify_snapshot_against_manifest(
-    snapshot_path: Path, strict: bool = False
-) -> None:
-    """Verify ``snapshot_path``'s SHA-256 matches its sibling manifest entry.
+def _expected_manifest_hash(snapshot_path: Path) -> Optional[str]:
+    """Return the expected SHA-256 hex for ``snapshot_path`` from the sibling manifest.
 
-    On mismatch:
-      - When ``strict`` is True, raises ``RuntimeError`` (used by --strict-manifest).
-      - Otherwise prints a ``[warn]`` line and returns (tampering vs staleness
-        is hard to distinguish — a partial-collect leaves manifest out of sync
-        but the snapshot itself is fine).
-
-    No-op when the sibling manifest is absent (legacy snapshots) or when the
-    manifest decodes but does not include this filename (e.g. cross-tool
-    workflows where the manifest writer hasn't caught up).
+    Returns None when the manifest is absent, malformed, or omits this filename
+    (legacy snapshots, partial collects, cross-tool workflows). Callers MUST
+    treat None as "no check" rather than failure.
     """
     manifest_path = _snapshot_manifest_path(snapshot_path.parent)
     if not manifest_path.is_file():
-        return
+        return None
     try:
         with open(manifest_path, encoding="utf-8") as fh:
             manifest = json.load(fh)
     except (OSError, json.JSONDecodeError) as exc:
         print(f"  [warn] Could not read snapshot manifest {manifest_path}: {exc}")
-        return
+        return None
     files = manifest.get("files", {}) if isinstance(manifest, dict) else {}
     expected = files.get(snapshot_path.name)
-    if not expected:
+    return str(expected) if expected else None
+
+
+def _verify_snapshot_bytes_against_manifest(
+    snapshot_path: Path, raw: bytes, strict: bool = False
+) -> None:
+    """Verify ``raw`` (bytes already read from ``snapshot_path``) matches the
+    sibling manifest entry.
+
+    Operating on caller-supplied bytes — not re-reading the file — closes the
+    verify-then-parse TOCTOU race: callers must `path.read_bytes()` once, pass
+    that buffer here AND to `json.loads()`. An attacker swapping file contents
+    between two `open()` calls is no longer exploitable.
+
+    On mismatch:
+      - When ``strict`` is True, raises ``RuntimeError`` (used by --strict-manifest).
+      - Otherwise prints a ``[warn]`` line and returns.
+
+    No-op when the manifest is absent or omits this filename.
+    """
+    expected = _expected_manifest_hash(snapshot_path)
+    if expected is None:
         return
-    try:
-        actual = _sha256_file(snapshot_path)
-    except OSError as exc:
-        print(f"  [warn] Could not hash snapshot {snapshot_path} for verification: {exc}")
-        return
-    if actual.lower() != str(expected).lower():
+    actual = hashlib.sha256(raw).hexdigest()
+    if actual.lower() != expected.lower():
         message = (
             f"snapshot SHA-256 mismatch for {snapshot_path}: "
             f"expected {expected[:12]}…, got {actual[:12]}…"
@@ -700,6 +724,26 @@ def _verify_snapshot_against_manifest(
         if strict:
             raise RuntimeError(message)
         print(f"  [warn] {message}")
+
+
+def _verify_snapshot_against_manifest(
+    snapshot_path: Path, strict: bool = False
+) -> None:
+    """Verify ``snapshot_path``'s SHA-256 matches its sibling manifest entry.
+
+    Convenience wrapper around `_verify_snapshot_bytes_against_manifest` that
+    reads the file from disk. Prefer the bytes-based form when you also need
+    to parse the contents — calling both functions opens a TOCTOU race.
+
+    Kept for callers (e.g. Swift-side parity test fixtures) that only need
+    verification without parsing.
+    """
+    try:
+        raw = snapshot_path.read_bytes()
+    except OSError as exc:
+        print(f"  [warn] Could not hash snapshot {snapshot_path} for verification: {exc}")
+        return
+    _verify_snapshot_bytes_against_manifest(snapshot_path, raw, strict=strict)
 
 
 def _path_has_timestamp(path: Path) -> bool:
@@ -3928,19 +3972,23 @@ class JamfCLIBridge:
         cached_path = self._latest_cached_json(report_names)
         if cached_path is None:
             raise RuntimeError("no cached jamf-cli snapshot is available")
-        # T-2 mitigation: verify SHA-256 against sibling manifest. Absent
-        # manifest is treated as "no check" (legacy snapshots, partial collects).
-        _verify_snapshot_against_manifest(cached_path, strict=self._strict_manifest)
+        # T-2 mitigation with TOCTOU fix: read the file ONCE into bytes, then
+        # hash and parse from the same buffer. Verifying via a second open()
+        # would let an attacker swap the contents between the two reads.
         try:
-            with open(cached_path, encoding="utf-8") as fh:
-                data = json.load(fh)
+            raw = cached_path.read_bytes()
+        except OSError as exc:
+            raise RuntimeError(f"Could not read cached snapshot {cached_path}: {exc}") from exc
+        _verify_snapshot_bytes_against_manifest(
+            cached_path, raw, strict=self._strict_manifest
+        )
+        try:
+            data = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise RuntimeError(
                 f"Cached snapshot is malformed and cannot be parsed: {cached_path}\n"
                 f"  Delete it and re-run 'collect' to refresh. Detail: {exc}"
             ) from exc
-        except OSError as exc:
-            raise RuntimeError(f"Could not read cached snapshot {cached_path}: {exc}") from exc
         print(f"  [cache] {cached_path}")
         self._set_source_info(report_type, source_mode, cached_path)
         return data
@@ -4050,14 +4098,25 @@ class JamfCLIBridge:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 final_path = out_dir / f"{report_type}_{_now_ts()}.json"
                 tmp_path = final_path.with_suffix(".partial")
-                with open(tmp_path, "w", encoding="utf-8") as fh:
-                    json.dump(data, fh, indent=2)
+                # Serialize into memory FIRST so the manifest hash is computed
+                # against the exact bytes we wrote (TOCTOU fix). Re-reading
+                # from disk in _rewrite_snapshot_manifest would let an attacker
+                # tamper with the file between rename and rehash, then have
+                # their hash recorded as authoritative.
+                payload = json.dumps(data, indent=2).encode("utf-8")
+                with open(tmp_path, "wb") as fh:
+                    fh.write(payload)
                 tmp_path.rename(final_path)
                 # T-2 mitigation (Google Gemini security-review 2026-05-12):
                 # rewrite the SHA-256 manifest so loaders can detect tampering
                 # between collect and generate. Full rewrite (not append) so
                 # files purged by keep_latest_runs leave no stale entries.
-                _rewrite_snapshot_manifest(out_dir)
+                # The just-written file's hash is pinned from `payload` rather
+                # than re-read from disk.
+                _rewrite_snapshot_manifest(
+                    out_dir,
+                    pinned={final_path.name: hashlib.sha256(payload).hexdigest()},
+                )
             except OSError as exc:
                 print(f"  [warn] Could not save snapshot for '{report_type}': {exc}")
         return data
@@ -10997,20 +11056,29 @@ class ChartGenerator:
             report_dir = self._jamf_cli_dir / report_name
             if report_dir.is_dir():
                 for path in report_dir.rglob("*.json"):
-                    if ".partial" not in path.name:
+                    if ".partial" not in path.name and path.name != SNAPSHOT_MANIFEST_FILENAME:
                         candidates[str(path)] = path
                 continue
             pattern = f"{report_name}_*.json"
             for path in self._jamf_cli_dir.rglob(pattern):
-                if ".partial" not in path.name:
+                if ".partial" not in path.name and path.name != SNAPSHOT_MANIFEST_FILENAME:
                     candidates[str(path)] = path
 
         snapshots: list[tuple[datetime, Any]] = []
         for path in sorted(candidates.values()):
             try:
-                with open(path, encoding="utf-8") as fh:
-                    data = json.load(fh)
-            except (json.JSONDecodeError, OSError) as exc:
+                # Single read into bytes, then hash + parse from the same
+                # buffer to close the verify-then-parse TOCTOU race. Trend
+                # reads are warn-only (no strict mode) by design — a bad
+                # historical snapshot shouldn't break the chart, just log.
+                raw = path.read_bytes()
+            except OSError as exc:
+                print(f"  [warn] Skipping unreadable JSON snapshot {path.name}: {exc}")
+                continue
+            _verify_snapshot_bytes_against_manifest(path, raw, strict=False)
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as exc:
                 print(f"  [warn] Skipping unreadable JSON snapshot {path.name}: {exc}")
                 continue
             snapshots.append((self._parse_date_from_path(path), data))
