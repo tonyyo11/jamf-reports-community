@@ -395,6 +395,7 @@ struct SmartGroupApplySheet: View {
                 .help(viewModel.canApply
                       ? "Submit the smart group to Jamf Pro"
                       : "Fill required fields before submitting")
+                .accessibilityHint("Creates a new smart group in your Jamf Pro instance")
             }
         }
         .padding(.horizontal, 20)

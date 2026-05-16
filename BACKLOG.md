@@ -364,11 +364,6 @@ ARIA, and contrast/focus-visible.)_
 
 **SwiftUI — SHOULD-FIX**
 
-- **Destructive write buttons missing hints.**
-  `Views/SmartGroupApplySheet.swift:391-397` ("Create in Jamf Pro"),
-  `Views/BackupsView.swift:195-200` (Delete backup),
-  `Views/SourcesView.swift:390-399` (Full Admin scope elevation). Add
-  `.accessibilityHint("...")` describing the side effect.
 
 - **TextField placeholders aren't labels for VoiceOver.**
   `Views/SmartGroupApplySheet.swift:297-298,308`,

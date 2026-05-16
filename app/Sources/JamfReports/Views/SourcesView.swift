@@ -399,6 +399,7 @@ struct SourcesView: View {
                     systemImage: scope == .fullAdmin ? "checkmark" : ""
                 )
             }
+            .accessibilityHint("Elevates API privileges to full admin access in Jamf Pro")
         } label: {
             Pill(
                 text: scope.displayName,
