@@ -47,6 +47,7 @@ struct CustomizeView: View {
                                 .foregroundStyle(Theme.Text.tertiary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss error banner")
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)

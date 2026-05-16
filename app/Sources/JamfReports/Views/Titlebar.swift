@@ -22,6 +22,7 @@ struct Titlebar: View {
             }
             .buttonStyle(.plain)
             .help("Toggle sidebar")
+            .accessibilityLabel("Toggle sidebar")
 
             Button(action: popToRoot) {
                 Text(title)

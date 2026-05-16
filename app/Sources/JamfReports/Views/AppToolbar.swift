@@ -192,6 +192,7 @@ struct AppToolbar: ToolbarContent {
         }
         .buttonStyle(.plain)
         .help(workspace.demoMode ? "Switch to live data" : "Switch to demo mode")
+        .accessibilityLabel(workspace.demoMode ? "Switch to live data" : "Switch to demo mode")
     }
 
     private var cliStatusText: String {

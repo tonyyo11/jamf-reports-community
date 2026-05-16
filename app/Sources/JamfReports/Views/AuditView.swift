@@ -456,11 +456,20 @@ struct AuditView: View {
 
     private func severityIcon(_ severity: String) -> some View {
         let s = severity.uppercased()
-        let color = s == "CRITICAL" ? Theme.Colors.danger :
-                    s == "WARNING" ? Theme.Colors.warn : Theme.Colors.ok
-        return Image(systemName: "exclamationmark.triangle.fill")
+        let (symbolName, color, label) = {
+            switch s {
+            case "CRITICAL":
+                return ("octagon.fill", Theme.Colors.danger, "Critical severity")
+            case "WARNING":
+                return ("exclamationmark.triangle.fill", Theme.Colors.warn, "Warning severity")
+            default:
+                return ("checkmark.circle.fill", Theme.Colors.ok, "OK severity")
+            }
+        }()
+        return Image(systemName: symbolName)
             .foregroundStyle(color)
             .font(.system(size: 12))
+            .accessibilityLabel(label)
     }
 
     private func pillTone(_ severity: String) -> Pill.Tone {
