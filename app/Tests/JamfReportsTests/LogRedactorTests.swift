@@ -147,6 +147,51 @@ final class LogRedactorTests: XCTestCase {
         XCTAssertEqual(input, redacted)
     }
 
+    // MARK: - HTTP Basic auth
+
+    func testRedactsBasicAuth() {
+        let input = "Authorization: Basic dXNlcjpwYXNzd29yZA=="
+        let redacted = LogRedactor.redact(input)
+        XCTAssertTrue(redacted.contains("REDACTED_BASIC"))
+        XCTAssertFalse(redacted.contains("dXNlcjpwYXNzd29yZA=="))
+    }
+
+    func testRedactsBasicAuthCaseInsensitive() {
+        let input = "authorization: basic YWJjZGVmZ2hpamtsbW5vcA=="
+        let redacted = LogRedactor.redact(input)
+        XCTAssertTrue(redacted.contains("REDACTED_BASIC"))
+    }
+
+    func testShortBasicAuthIsNotRedacted() {
+        // 8-char base64 — below the 16-char floor.
+        let input = "Authorization: Basic dXNlcjEy"
+        let redacted = LogRedactor.redact(input)
+        XCTAssertEqual(input, redacted)
+    }
+
+    // MARK: - webhook_url
+
+    func testRedactsTeamsWebhookURL() {
+        let input = #"webhook_url: "https://outlook.office.com/webhook/abc-def-123""#
+        let redacted = LogRedactor.redact(input)
+        XCTAssertTrue(redacted.contains("REDACTED_WEBHOOK_URL"))
+        XCTAssertFalse(redacted.contains("abc-def-123"))
+    }
+
+    func testRedactsSlackWebhookURLYAML() {
+        let input = "webhook_url: https://hooks.slack.com/services/T00/B00/XXXXXX"
+        let redacted = LogRedactor.redact(input)
+        XCTAssertTrue(redacted.contains("REDACTED_WEBHOOK_URL"))
+        XCTAssertFalse(redacted.contains("hooks.slack.com"))
+    }
+
+    func testNonWebhookURLIsNotRedacted() {
+        // URL elsewhere in the line (not in webhook_url key) passes through.
+        let input = "Connecting to https://jamf.example.com/api/v1/policies"
+        let redacted = LogRedactor.redact(input)
+        XCTAssertEqual(input, redacted)
+    }
+
     // MARK: - Passthrough
 
     func testNoMatchReturnsInputUnchanged() {

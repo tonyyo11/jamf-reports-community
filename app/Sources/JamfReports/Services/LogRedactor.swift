@@ -15,6 +15,8 @@ import Foundation
 /// - JWTs (three base64url segments separated by dots, starting with `eyJ`)
 /// - `access_token` / `refresh_token` JSON shapes
 /// - Generic `password` field values
+/// - HTTP Basic auth headers (`Authorization: Basic <base64>`)
+/// - Webhook URLs in `webhook_url` config keys (Teams / Slack / generic)
 ///
 /// Replacement templates preserve surrounding quotes/markers so the redacted
 /// output stays valid YAML/JSON for downstream tooling.
@@ -73,6 +75,8 @@ enum LogRedactor {
         ))
 
         // OAuth token-response JSON shapes.
+        // YAML form intentionally excluded — jamf-cli emits tokens only in JSON
+        // API responses, not in YAML config echoes.
         built.append(Pattern(
             regex: try! NSRegularExpression(
                 pattern: #"("access_token"\s*:\s*")[^"]+(")"#,
@@ -86,6 +90,27 @@ enum LogRedactor {
                 options: []
             ),
             template: "$1REDACTED_REFRESH_TOKEN$2"
+        ))
+
+        // HTTP Basic auth headers (mirrors Python LogRedactor S-1 pattern).
+        // 16-char floor on the base64 payload guards against eating
+        // example values like `Authorization: Basic short`.
+        built.append(Pattern(
+            regex: try! NSRegularExpression(
+                pattern: #"(Authorization:\s+Basic\s+)[A-Za-z0-9+/=]{16,}"#,
+                options: [.caseInsensitive]
+            ),
+            template: "$1REDACTED_BASIC"
+        ))
+
+        // Webhook URLs in YAML/JSON — Microsoft Teams / Slack / generic
+        // webhook_url config keys. Tenant identifiers travel in the path.
+        built.append(Pattern(
+            regex: try! NSRegularExpression(
+                pattern: #"(webhook_url\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#,
+                options: [.caseInsensitive]
+            ),
+            template: "$1REDACTED_WEBHOOK_URL$3"
         ))
 
         // Password fields (generic; redact the value, keep the key). The optional
