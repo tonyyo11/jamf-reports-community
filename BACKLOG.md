@@ -185,11 +185,6 @@ than the routine `collect`/`audit`/`backup` paths: each is a single
 spawn at a well-defined moment (startup, install/upgrade, sidebar
 load) protected by the install-time + onboarding-time gates.
 
-- **SHOULD-FIX — `Provenance.captureJamfCLIVersion` spawns `jamf-cli --version` without codesign gate.**
-  `app/Sources/JamfReports/Engine/Provenance.swift:78`.
-  Reads the version string once per report-generation provenance
-  block. Apply the same `JamfCLIIdentity.ensureVerifiedJamfCLI`
-  gate pattern used by `CLIBridge.run`.
 - **SHOULD-FIX — `JamfCLIInstaller.installedVersion(at:)` spawns `jamf-cli --version` without codesign gate.**
   `app/Sources/JamfReports/Services/JamfCLIInstaller.swift:263`.
   Called during install/upgrade flow to determine whether the

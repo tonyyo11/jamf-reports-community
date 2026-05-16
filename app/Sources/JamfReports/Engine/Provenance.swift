@@ -71,9 +71,20 @@ extension Provenance {
     }
 
     /// Runs `jamf-cli --version` and returns the first non-empty line of output.
-    /// Returns `nil` on any failure (missing binary, non-zero exit, no output).
-    private static func captureJamfCLIVersion(jamfCLIURL: URL?) async -> String? {
+    /// Returns `nil` on any failure (missing binary, non-zero exit, no output,
+    /// or codesign-gate rejection).
+    ///
+    /// M-01: routes through `CLIBridge.codesignGate` before spawning so a
+    /// tampered `jamf-cli` cannot execute even for an apparently-innocuous
+    /// `--version` probe. The gate logs to `AppLogger.cli` on rejection;
+    /// there is no streaming `LogLine` consumer at this layer (Provenance is
+    /// async metadata capture, not a Runs-feed run), so the `onLine` closure
+    /// is a no-op.
+    static func captureJamfCLIVersion(jamfCLIURL: URL?) async -> String? {
         guard let url = jamfCLIURL else { return nil }
+        if CLIBridge.codesignGate(executable: url, onLine: { _ in }) != nil {
+            return nil
+        }
         return await withCheckedContinuation { continuation in
             let proc = Process()
             proc.executableURL = url
