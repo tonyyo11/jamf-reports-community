@@ -462,8 +462,10 @@ struct AuditView: View {
                 return ("octagon.fill", Theme.Colors.danger, "Critical severity")
             case "WARNING":
                 return ("exclamationmark.triangle.fill", Theme.Colors.warn, "Warning severity")
+            case "INFO":
+                return ("info.circle.fill", Theme.Colors.info, "Info severity")
             default:
-                return ("checkmark.circle.fill", Theme.Colors.ok, "OK severity")
+                return ("questionmark.circle.fill", Theme.Colors.fgMuted, "Unknown severity")
             }
         }()
         return Image(systemName: symbolName)

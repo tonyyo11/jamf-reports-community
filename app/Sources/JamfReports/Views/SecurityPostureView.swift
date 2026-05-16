@@ -497,18 +497,7 @@ private struct SecurityPostureOSDonutExport: View {
             }
             .chartLegend(.hidden)
             .frame(width: 260, height: 260)
-            .accessibilityChartDescriptor(
-                SectorChartDescriptor(
-                    title: "macOS Version Distribution",
-                    unit: " devices",
-                    slices: rows.map { row in
-                        SectorChartDescriptor.Slice(
-                            label: row.osVersion,
-                            value: Double(row.count)
-                        )
-                    }
-                )
-            )
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { offset, row in

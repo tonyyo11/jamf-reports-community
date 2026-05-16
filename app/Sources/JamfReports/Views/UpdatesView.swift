@@ -634,18 +634,7 @@ private struct UpdatesPlanStateDonutExport: View {
             }
             .chartLegend(.hidden)
             .frame(width: 260, height: 260)
-            .accessibilityChartDescriptor(
-                SectorChartDescriptor(
-                    title: "Update Plan State Distribution",
-                    unit: " plans",
-                    slices: slices.map { slice in
-                        SectorChartDescriptor.Slice(
-                            label: slice.label,
-                            value: Double(slice.count)
-                        )
-                    }
-                )
-            )
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(slices) { slice in

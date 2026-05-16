@@ -468,18 +468,7 @@ private struct CompliancePostureBandsDonutExport: View {
             }
             .chartLegend(.hidden)
             .frame(width: 260, height: 260)
-            .accessibilityChartDescriptor(
-                SectorChartDescriptor(
-                    title: "Compliance Bands",
-                    unit: " devices",
-                    slices: bands.map { band in
-                        SectorChartDescriptor.Slice(
-                            label: band.label,
-                            value: Double(band.count)
-                        )
-                    }
-                )
-            )
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(bands) { band in

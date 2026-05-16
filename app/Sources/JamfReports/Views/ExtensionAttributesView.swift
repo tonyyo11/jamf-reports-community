@@ -601,18 +601,7 @@ private struct BarChartExportView: View {
                     )
             }
             .frame(height: 278)
-            .accessibilityChartDescriptor(
-                BarDistributionChartDescriptor(
-                    title: "Extension Attribute value distribution",
-                    unit: " devices",
-                    bars: bars.map { bar in
-                        BarDistributionChartDescriptor.Bar(
-                            label: bar.value,
-                            value: Double(bar.count)
-                        )
-                    }
-                )
-            )
+            .accessibilityHidden(true)
 
             HStack(spacing: 14) {
                 exportStat("Distinct values", "\(distribution.distinctValueCount)")
