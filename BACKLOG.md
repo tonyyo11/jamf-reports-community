@@ -318,11 +318,6 @@ load) protected by the install-time + onboarding-time gates.
   `app/Sources/JamfReports/Views/CustomizationWizard.swift:356` and
   `app/Sources/JamfReports/Views/WorkspaceView.swift:64`.
 
-- **SHOULD-FIX — `DeviceLookupIndex` has no direct test coverage.**
-  `app/Sources/JamfReports/Services/DeviceLookupIndex.swift:62,123,185`.
-  Add tests for newest-JSON selection, `.partial` filtering, envelope vs
-  bare-array decoding, ordering, kind filtering.
-
 - **SHOULD-FIX — `generateAll` lacks failure-branch test coverage.**
   `app/Sources/JamfReports/Services/CLIBridge+Generation.swift:39`. Cover
   collect failure branching, unauthorized short-circuit, partial success,
