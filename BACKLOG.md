@@ -280,11 +280,6 @@ load) protected by the install-time + onboarding-time gates.
   generation.** Detect tampering of cached `jamf-cli-data/*.json` between
   collection and report generation. Threat-model T-2.
 
-- **LOW — Add automated tests with malicious payloads for sanitization
-  invariants.** XSS strings and formula-injection strings must round-trip
-  through `_safe_write` and `HtmlSectionFormatters.escapeHTML` unchanged in
-  meaning. Threat-model T-3 / T-4.
-
 - **LOW — UI banner when last successful live collection is significantly
   older than the expected interval.** Currently the staleness threshold is
   in code but not surfaced in the UI. Threat-model T-8.
