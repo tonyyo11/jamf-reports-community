@@ -130,9 +130,10 @@ extension SchedulesView {
     /// This mirrors the accessibilityLabel applied to status pills in schedulesTable.
     static func statusDescription(for status: Schedule.LastStatus) -> String {
         switch status {
-        case .ok:   return "Last run status: OK"
-        case .warn: return "Last run status: Warning"
-        case .fail: return "Last run status: Failed"
+        case .ok:      return "Last run status: OK"
+        case .warn:    return "Last run status: Warning"
+        case .fail:    return "Last run status: Failed"
+        case .partial: return "Last run status: Partial"
         }
     }
 }

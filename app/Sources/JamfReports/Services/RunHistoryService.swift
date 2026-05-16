@@ -44,10 +44,14 @@ enum RunHistoryService {
                 let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
                     .contentModificationDate) ?? .distantPast
                 let label = url.deletingPathExtension().lastPathComponent
-                let (exitCode, duration) = parseLogTail(from: url)
+                let (exitCode, duration, logText) = parseLogTail(from: url)
                 let status: Schedule.LastStatus
                 if let code = exitCode {
-                    status = code == 0 ? .ok : .fail
+                    if code == 0 && isPartialRun(logURL: url, logTailText: logText) {
+                        status = .partial
+                    } else {
+                        status = code == 0 ? .ok : .fail
+                    }
                 } else {
                     status = .ok
                 }
@@ -146,16 +150,17 @@ enum RunHistoryService {
         return slug.replacingOccurrences(of: "-", with: " ").capitalized
     }
 
-    /// Read the last 1 KB of a log to infer exit code and duration.
-    static func parseLogTail(from url: URL) -> (Int32?, String?) {
-        guard let fh = FileHandle(forReadingAtPath: url.path) else { return (nil, nil) }
+    /// Read the last 1 KB of a log to infer exit code, duration, and tail text
+    /// (returned for `isPartialRun` log-marker fallback).
+    static func parseLogTail(from url: URL) -> (Int32?, String?, String) {
+        guard let fh = FileHandle(forReadingAtPath: url.path) else { return (nil, nil, "") }
         defer { fh.closeFile() }
 
         let fileSize = fh.seekToEndOfFile()
         let readSize = min(fileSize, 1024)
         fh.seek(toFileOffset: fileSize - readSize)
         let data = fh.readDataToEndOfFile()
-        guard let text = String(data: data, encoding: .utf8) else { return (nil, nil) }
+        guard let text = String(data: data, encoding: .utf8) else { return (nil, nil, "") }
 
         var hasFatal = false
         var duration: String? = nil
@@ -174,7 +179,30 @@ enum RunHistoryService {
                 if duration != nil { break }
             }
         }
-        return (parsedExitCode ?? (hasFatal ? 1 : 0), duration)
+        return (parsedExitCode ?? (hasFatal ? 1 : 0), duration, text)
+    }
+
+    /// Authoritative source: sibling `summary.json` (`{"status": "partial"}`).
+    /// Fallback: `[partial]` marker in the log tail.
+    /// Path: log at `<workspace>/automation/logs/<ts>.log`, summary at
+    /// `<workspace>/snapshots/computers/summaries/summary_<ts>.json`.
+    static func isPartialRun(logURL: URL, logTailText: String) -> Bool {
+        let logFilename = logURL.deletingPathExtension().lastPathComponent
+        let workspace = logURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let summaryURL = workspace
+            .appendingPathComponent("snapshots")
+            .appendingPathComponent("computers")
+            .appendingPathComponent("summaries")
+            .appendingPathComponent("summary_\(logFilename).json")
+
+        if FileManager.default.fileExists(atPath: summaryURL.path),
+           let data = try? Data(contentsOf: summaryURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let status = json["status"] as? String {
+            return status == "partial"
+        }
+
+        return logTailText.contains("[partial]")
     }
 
     static func exitCode(from line: String) -> Int32? {

@@ -114,7 +114,7 @@ struct Schedule: Identifiable, Sendable {
             }
         }
     }
-    enum LastStatus: String, Sendable, CaseIterable { case ok, warn, fail }
+    enum LastStatus: String, Sendable, CaseIterable { case ok, warn, fail, partial }
 
     var id: String { launchAgentLabel ?? "\(profile)/\(name)" }
     var name: String

@@ -178,12 +178,14 @@ struct RunsView: View {
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
         switch s {
-        case .ok:   Pill(text: "OK",   tone: .teal,   icon: "checkmark")
+        case .ok:      Pill(text: "OK",      tone: .teal,   icon: "checkmark")
             .accessibilityLabel("Status: OK")
-        case .warn: Pill(text: "WARN", tone: .warn,   icon: "exclamationmark")
+        case .warn:    Pill(text: "WARN",    tone: .warn,   icon: "exclamationmark")
             .accessibilityLabel("Status: Warning")
-        case .fail: Pill(text: "FAIL", tone: .danger, icon: "xmark")
+        case .fail:    Pill(text: "FAIL",    tone: .danger, icon: "xmark")
             .accessibilityLabel("Status: Failed")
+        case .partial: Pill(text: "PARTIAL", tone: .warn,   icon: "exclamationmark.triangle.fill")
+            .accessibilityLabel("Status: Partial")
         }
     }
 
