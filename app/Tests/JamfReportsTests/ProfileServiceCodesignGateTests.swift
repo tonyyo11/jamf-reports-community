@@ -53,13 +53,9 @@ final class ProfileServiceCodesignGateTests: XCTestCase {
         case .failure:
             break
         }
-        // Re-clear since the failed verify above does NOT cache, but
-        // any prior test in this suite might have left state.
-        JamfCLIIdentity.clearVerificationCacheForTesting()
-
         let rejected = ProfileService.discoverJamfCLIProfiles(
             scheduleCounts: [:],
-            binary: fake
+            _testBinaryOverride: fake
         )
         // The gate fell through to fallbackConfigProfiles. That helper
         // is private; the cleanest equivalence we can prove is that
@@ -70,7 +66,7 @@ final class ProfileServiceCodesignGateTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: nonexistent.path))
         let absent = ProfileService.discoverJamfCLIProfiles(
             scheduleCounts: [:],
-            binary: nonexistent
+            _testBinaryOverride: nonexistent
         )
         XCTAssertEqual(
             rejected.map(\.name).sorted(), absent.map(\.name).sorted(),
@@ -90,7 +86,7 @@ final class ProfileServiceCodesignGateTests: XCTestCase {
         }
         _ = ProfileService.discoverJamfCLIProfiles(
             scheduleCounts: [:],
-            binary: echoBin
+            _testBinaryOverride: echoBin
         )
         // Implicit assertion: non-jamf-cli basename must bypass the
         // gate and execute (no crash, no hang).

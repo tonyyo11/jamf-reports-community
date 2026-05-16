@@ -194,15 +194,18 @@ enum ProfileService {
         return true
     }
 
-    /// Lists profiles from `jamf-cli config list`. The `binary` parameter is
-    /// a test seam: pass nil (default) in production to use
-    /// `ExecutableLocator.locate("jamf-cli")`; tests pass a known URL so the
-    /// codesign-gate path is reachable without a real jamf-cli on disk.
+    /// Lists profiles from `jamf-cli config list`. The
+    /// `_testBinaryOverride` parameter is a test seam, NOT a production
+    /// API: pass nil (default) in production code; tests pass a known URL
+    /// so the codesign-gate path is reachable without a real jamf-cli on
+    /// disk. The leading underscore signals "do not pass from production
+    /// callers." Production callers must omit this argument so the binary
+    /// always resolves via `ExecutableLocator.locate("jamf-cli")`.
     static func discoverJamfCLIProfiles(
         scheduleCounts: [String: Int],
-        binary: URL? = nil
+        _testBinaryOverride: URL? = nil
     ) -> [JamfCLIProfile] {
-        guard let binary = binary ?? ExecutableLocator.locate("jamf-cli") else {
+        guard let binary = _testBinaryOverride ?? ExecutableLocator.locate("jamf-cli") else {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
 
