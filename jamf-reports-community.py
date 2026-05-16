@@ -18538,10 +18538,6 @@ def main() -> None:
         help="Run multi-launchagent-run profiles one at a time",
     )
     parser.add_argument(
-        "--base-profile",
-        help="UI base profile for generated multi LaunchAgents (metadata only)",
-    )
-    parser.add_argument(
         "--disabled",
         action="store_true",
         help="Write the LaunchAgent disabled and unload any existing instance",

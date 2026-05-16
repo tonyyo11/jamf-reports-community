@@ -175,6 +175,12 @@ fi
 if [[ "$SIGNING_IDENTITY" != "-" ]]; then
   echo "→ signing DMG: $SIGNING_IDENTITY"
   codesign --sign "$SIGNING_IDENTITY" --timestamp "$DMG_OUT"
+  # Verify the signature took. codesign exits 0 on success, but verifying
+  # closes the silent-failure gap (mirrors build-pkg.sh post-sign check).
+  if ! codesign --verify --strict "$DMG_OUT" 2>/dev/null; then
+    echo "✗ DMG signature verification failed for $DMG_OUT" >&2
+    exit 1
+  fi
 else
   echo "⚠ DMG is unsigned (ad-hoc identity)" >&2
 fi

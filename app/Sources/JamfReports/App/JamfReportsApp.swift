@@ -13,7 +13,7 @@ struct JamfReportsApp: App {
 
     /// Sparkle updater — single shared instance for the app's lifetime.
     /// Configuration (SUFeedURL + SUPublicEDKey) lives in Info.plist set by
-    /// `build-app.sh`. See ADR-W23-sparkle-integration.md.
+    /// `build-app.sh`.
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,

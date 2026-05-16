@@ -4,8 +4,7 @@ import Sparkle
 /// Sparkle "Check for Updates…" menu item. Tracks SPUUpdater.canCheckForUpdates
 /// so the menu item is greyed out while a check is already in flight.
 ///
-/// Pattern is the canonical one from the Sparkle SwiftUI docs — see
-/// ADR-W23-sparkle-integration.md.
+/// Pattern is the canonical one from the Sparkle SwiftUI docs.
 struct CheckForUpdatesView: View {
     @ObservedObject private var viewModel: CheckForUpdatesViewModel
     private let updater: SPUUpdater

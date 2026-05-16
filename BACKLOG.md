@@ -13,6 +13,23 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From PR-1 cleanup (2026-05-16)
+
+- **CONSIDER — `LaunchAgentService.parse()` reads CLI flags the current writer no longer emits.**
+  PR-1 closed the `--base-profile` orphan (writer stopped emitting it
+  in commit 9aa5124, May 9; parser + tests removed in PR-1's `a2296ed`).
+  Discovered during that cleanup: the parser at
+  `app/Sources/JamfReports/Services/LaunchAgentService.swift` still
+  reads `--mode`, `--multi-filter`, `--multi-profiles`,
+  `--multi-sequential`, and the `multi-launchagent-run` subcommand
+  keyword from existing plists, but the current `nativeMultiWrite`
+  (in `LaunchAgentWriter.swift`) only emits `--scheduled-run`,
+  `--profile`, `--all-profiles`. Same shape as the closed orphan:
+  writer stopped, parser still reads. Won't break anything today
+  (no current plist contains those flags), but the inconsistency is
+  the same class of bug. Audit each orphan parser arm and either
+  remove or document why it's load-bearing for pre-9aa5124 plists.
+
 ### From PR-A review gates (2026-05-16)
 
 Three deferred items from the security-reviewer + silent-failure-hunter
@@ -97,23 +114,6 @@ engineering). Items routed here:
   `FleetOverviewView` and `Sidebar`. Inlining would either pollute the
   global namespace or require verbose renames at every callsite. Leave
   alone unless a stronger reason surfaces.
-
-### From PR-7 review (2026-05-15)
-
-- **CONSIDER — `patch-managed` doc says "Jamf Pro v2 API" — the actual endpoint is v1.**
-  `CLAUDE.md` / `AGENTS.md` per-command paragraph for `patch-managed`
-  describes the operation as using the "Jamf Pro v2 API." The
-  underlying jamf-cli command is `pro computers-inventory patch`
-  (`jamf-reports-community.py:4161`), which maps to the
-  `/v1/computers-inventory-detail/{id}` REST v1 endpoint. Low impact
-  — the operation still works as described — but the version label
-  is wrong. Reviewer CONSIDER #5.
-- **CONSIDER — Dead argparse flag `--base-profile` is unused outside metadata.**
-  `jamf-reports-community.py:18005` defines `--base-profile` with
-  help text "UI base profile for generated multi LaunchAgents
-  (metadata only)" but no dispatch site reads `args.base_profile`.
-  Either wire it into `multi-launchagent-run`'s metadata as
-  intended or drop the flag.
 
 ### From PR-6 review (2026-05-15)
 
@@ -327,11 +327,6 @@ load) protected by the install-time + onboarding-time gates.
   `app/Sources/JamfReports/Services/CLIBridge+Generation.swift:39`. Cover
   collect failure branching, unauthorized short-circuit, partial success,
   permission/rate-limit fallback.
-
-- **CONSIDER — Force unwraps in production-safe contexts.**
-  `app/Sources/JamfReports/Services/DeviceInventoryService.swift:195`,
-  `app/Sources/JamfReports/Services/LaunchAgentWriter.swift:528`. Replace
-  with `guard let` / `if let` to match the repo convention.
 
 ### From Google Gemini 3 security-review (2026-05-12)
 
@@ -565,25 +560,9 @@ cite WCAG 2.2 Success Criteria.
 
 ## Code hygiene (from in-session reviews — deferred)
 
-- **CONSIDER — Stale ADR reference.**
-  `app/Sources/JamfReports/App/JamfReportsApp.swift:16` and
-  `app/Sources/JamfReports/App/CheckForUpdatesView.swift` both cite
-  `ADR-W23-sparkle-integration.md`, which does not exist in the worktree.
-  Either commit the ADR or remove the reference.
-
-- **CONSIDER — `${BASH_SOURCE[0]}` in a `#!/bin/zsh` script.**
-  `app/scripts/sparkle-appcast.sh:27`. zsh's bash-compat handles it today but
-  it's not idiomatic. Switch to `${(%):-%x}` or document the dependency.
-
 - **CONSIDER — WHAT-comments in build scripts.** A handful of restate-the-code
   comments (e.g. `# Notarize when: ...` immediately above the conditional that
   expresses the same thing). Drop on next pass through the scripts.
-
-- **CONSIDER — Symmetric `codesign --verify --strict` step in `build-dmg.sh`.**
-  `app/build-pkg.sh` verifies the signature post-signing via
-  `pkgutil --check-signature`. `build-dmg.sh` does not have an equivalent
-  `codesign --verify` step after `codesign --sign`. Add for consistency and
-  to close the same silent-failure shape.
 
 ---
 
