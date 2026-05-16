@@ -389,11 +389,6 @@ ARIA, and contrast/focus-visible.)_
 
 **CONSIDER**
 
-- **Dynamic Type:** ~14 fixed `.font(.system(size: N))` calls in
-  `Views/PatchView.swift`, `Views/OnboardingView.swift`,
-  `Views/FleetOverviewView.swift`, `Views/ExtensionAttributesView.swift`,
-  `Views/ConfigView.swift`. Migrate body/label content to semantic
-  styles. Keep chart axis ticks fixed.
 
 
 - **HTML `prefers-reduced-motion`:** `.sec-bar-fill` transition at

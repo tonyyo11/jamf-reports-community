@@ -628,10 +628,10 @@ private struct ThresholdsTab: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Generate compliance sheet")
-                                    .font(.system(size: 12.5, weight: .medium))
+                                    .font(.footnote.weight(.medium))
                                     .foregroundStyle(Theme.Text.primary)
                                 Text("Failed-rule counts per device")
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(Theme.Text.tertiary)
                             }
                             Spacer()

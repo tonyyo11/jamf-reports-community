@@ -548,7 +548,7 @@ private struct BarChartExportView: View {
                 AnyView(
                     VStack(alignment: .trailing, spacing: 5) {
                         Text("\(distribution.top.count)")
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
+                            .font(.title.weight(.bold).monospacedDigit())
                             .foregroundStyle(Color(hex: 0xC9970A))
                         Text("distinct values shown")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))

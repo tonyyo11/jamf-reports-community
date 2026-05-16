@@ -320,7 +320,7 @@ struct PatchTitlesTableExport: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Patch Titles")
-                .font(.system(size: 24, weight: .bold))
+                .font(.title2.weight(.bold))
                 .foregroundStyle(.black)
 
             VStack(alignment: .leading, spacing: 2) {

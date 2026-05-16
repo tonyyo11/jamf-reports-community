@@ -172,7 +172,7 @@ struct FleetOverviewView: View {
                             .font(.system(size: 32, weight: .light))
                             .foregroundStyle(Theme.Colors.teal)
                         Text("No profiles with issues — fleet looks healthy")
-                            .font(.system(size: 14))
+                            .font(.callout)
                             .foregroundStyle(Theme.Colors.fgMuted)
                         PNPButton(title: "Show all profiles", icon: "list.bullet", size: .sm) {
                             issuesOnly = false
