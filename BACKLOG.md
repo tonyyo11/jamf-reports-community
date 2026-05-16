@@ -364,12 +364,6 @@ ARIA, and contrast/focus-visible.)_
 
 **SwiftUI — SHOULD-FIX**
 
-- **Reduce-motion not honored on Titlebar pulsing dot.**
-  `Views/Titlebar.swift:67-72`. Pulsing breath animation on the "CLI
-  missing" indicator doesn't gate on `accessibilityReduceMotion`.
-  `Views/SecurityPostureView.swift:423-436` is the right pattern to
-  copy.
-
 - **Destructive write buttons missing hints.**
   `Views/SmartGroupApplySheet.swift:391-397` ("Create in Jamf Pro"),
   `Views/BackupsView.swift:195-200` (Delete backup),
@@ -431,8 +425,6 @@ ARIA, and contrast/focus-visible.)_
   `Views/ConfigView.swift`. Migrate body/label content to semantic
   styles. Keep chart axis ticks fixed.
 
-- **Reduce Motion gaps:** `Theme/Components.swift:323` (`PNPToggle`
-  `withAnimation(.snappy(...))` unconditional).
 
 - **HTML `prefers-reduced-motion`:** `.sec-bar-fill` transition at
   `jamf-reports-community.py:13873` and `.dark-toggle` at `:13761`

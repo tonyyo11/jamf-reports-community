@@ -317,10 +317,11 @@ struct PNPButton: View {
 
 struct PNPToggle: View {
     @Binding var isOn: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var label: String = ""
     var body: some View {
         Button {
-            withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { isOn.toggle() }
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()
