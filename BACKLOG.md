@@ -250,21 +250,11 @@ load) protected by the install-time + onboarding-time gates.
   initializes to `nil`, and consumers (`SecurityScoreCalculator`,
   `FleetOverviewView`) `guard`-unwrap. Python side still pending.
 
-- **SHOULD-FIX — Device detail silently falls back to cached after live
-  fetch failure with no stale indicator.**
-  `app/Sources/JamfReports/Services/CLIBridge.swift:646`,
-  `app/Sources/JamfReports/Views/DeviceLookupView.swift:356`. Surface
-  "cached/stale" in the view.
-
 ### From Google Gemini 3 security-review (2026-05-12)
 
 - **MEDIUM — SHA-256 digest JSON snapshots at collection, verify at
   generation.** Detect tampering of cached `jamf-cli-data/*.json` between
   collection and report generation. Threat-model T-2.
-
-- **LOW — UI banner when last successful live collection is significantly
-  older than the expected interval.** Currently the staleness threshold is
-  in code but not surfaced in the UI. Threat-model T-8.
 
 ### From WCAG 2.2 AA accessibility audit (2026-05-15)
 
