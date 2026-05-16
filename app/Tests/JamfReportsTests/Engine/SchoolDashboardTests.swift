@@ -8,7 +8,19 @@ import XCTest
 
 final class SchoolDashboardTests: XCTestCase {
 
-    // MARK: - Fixtures path
+    // MARK: - Helpers
+
+    /// Tracks helper-created temp dirs for sweep in `tearDown`. Direct-callsite
+    /// temp dirs still use local `defer` cleanup.
+    private var createdTempDirs: [URL] = []
+
+    override func tearDown() {
+        for url in createdTempDirs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        createdTempDirs = []
+        super.tearDown()
+    }
 
     private var fixturesDir: URL {
         URL(fileURLWithPath: #filePath)
@@ -24,6 +36,7 @@ final class SchoolDashboardTests: XCTestCase {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-school-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        createdTempDirs.append(tmp)
         let src = fixturesDir.appendingPathComponent("jamf-cli-data")
         for name in names {
             let from = src.appendingPathComponent(name, isDirectory: true)

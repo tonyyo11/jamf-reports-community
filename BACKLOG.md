@@ -93,15 +93,6 @@ engineering). Items routed here:
 Two follow-up items from the silent-failure-hunter / pr-review-toolkit
 review gates that PR-6 deferred per the per-PR scope rules.
 
-- **CONSIDER — Helper-created temp dirs across `CoreDashboardTests` are never cleaned up.**
-  `tempDataDir(copying:)`, `tempDataDir(copyingRenamed:)`, and the new
-  `tempDataDir(seeding:fromFixture:)` all create per-test directories
-  under `FileManager.default.temporaryDirectory` and don't `defer`
-  removal. Pre-existing pattern (~32 callsites); macOS cleans
-  `temporaryDirectory` on logout, so this is hygiene rather than
-  correctness. Either add `defer` to each helper's return value (would
-  require an API change) or switch to `XCTestCase.setUp`/`tearDown`
-  with a per-test dir stored in an ivar. Reviewer CONSIDER #2.
 - **CONSIDER — Decoder tests assert via field values rather than negative key-mapping cases.**
   Each decoder test asserts on the decoded struct's field values. PR-6
   verified failing-test-first by perturbing

@@ -11,6 +11,19 @@ final class CoreDashboardTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Tracks helper-created temp dirs for sweep in `tearDown`. Direct-callsite
+    /// temp dirs (those built inline in test bodies) still use local `defer`
+    /// cleanup.
+    private var createdTempDirs: [URL] = []
+
+    override func tearDown() {
+        for url in createdTempDirs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        createdTempDirs = []
+        super.tearDown()
+    }
+
     private var fixturesDir: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // Engine/
@@ -22,10 +35,12 @@ final class CoreDashboardTests: XCTestCase {
     }
 
     /// Copy a fixture directory into a temp dataDir and return the temp URL.
+    /// Tracked for cleanup in `tearDown`.
     private func tempDataDir(copying names: [String]) throws -> URL {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        createdTempDirs.append(tmp)
         let src = fixturesDir.appendingPathComponent("jamf-cli-data")
         for name in names {
             let from = src.appendingPathComponent(name, isDirectory: true)
@@ -40,10 +55,12 @@ final class CoreDashboardTests: XCTestCase {
     /// Copy fixture dirs but rename them to match the writer's expected subdir name.
     /// Used when the fixture corpus name differs from the jamf-cli command name —
     /// e.g. `compliance-devices-nist-800-53r5-moderate` → `compliance-devices`.
+    /// Tracked for cleanup in `tearDown`.
     private func tempDataDir(copyingRenamed map: [(src: String, dst: String)]) throws -> URL {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        createdTempDirs.append(tmp)
         let src = fixturesDir.appendingPathComponent("jamf-cli-data")
         for pair in map {
             let from = src.appendingPathComponent(pair.src, isDirectory: true)
@@ -61,13 +78,14 @@ final class CoreDashboardTests: XCTestCase {
     /// pins to the happy-path file rather than relying on alphabetical /
     /// mtime ordering of `loadLatestJSON`. `subdir` is the writer-expected
     /// jamf-cli command name; `fixtureRelPath` is path relative to
-    /// `tests/fixtures/jamf-cli-data/`.
+    /// `tests/fixtures/jamf-cli-data/`. Tracked for cleanup in `tearDown`.
     private func tempDataDir(seeding subdir: String,
                              fromFixture fixtureRelPath: String) throws -> URL {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-test-\(UUID().uuidString)")
         let subdirURL = tmp.appendingPathComponent(subdir, isDirectory: true)
         try FileManager.default.createDirectory(at: subdirURL, withIntermediateDirectories: true)
+        createdTempDirs.append(tmp)
         let src = fixturesDir.appendingPathComponent("jamf-cli-data/\(fixtureRelPath)")
         if FileManager.default.fileExists(atPath: src.path) {
             try FileManager.default.copyItem(
