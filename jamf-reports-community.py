@@ -3056,6 +3056,21 @@ class LogRedactor:
             ),
             r"\1REDACTED_PASSWORD\3",
         ),
+        # HTTP Basic auth headers (security-reviewer S-1).
+        (
+            re.compile(r"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]{8,}", re.IGNORECASE),
+            r"\1REDACTED_BASIC_CREDENTIAL",
+        ),
+        # Webhook URLs in YAML/JSON — tenant identifiers travel in the path.
+        # Covers Microsoft Teams (outlook.office.com / *.webhook.office.com),
+        # Slack (hooks.slack.com), generic webhook_url config keys.
+        (
+            re.compile(
+                r'(webhook_url\s*[:=]\s*["\']?)(https?://[^\s"\',}]+)(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_WEBHOOK_URL\3",
+        ),
     ]
 
     # JSON keys that always have their value replaced regardless of the value's
@@ -3098,9 +3113,21 @@ class LogRedactor:
     # I/O to avoid confusion with 1/0). Conservative — won't match the full
     # historical serial space but covers ~2010+ devices.
     _SERIAL_RE = re.compile(r"\b[B-DF-HJ-NP-TV-Z0-9]{10,12}\b")
-    # Common Jamf hostname patterns (cloud + on-prem). Captures the host portion.
-    _HOSTNAME_RE = re.compile(
-        r"\b([a-z0-9][a-z0-9\-]{0,62})\.(jamfcloud\.com|jamfcloud\.io)\b",
+    # Two hostname patterns:
+    #   (a) URL-anchored — matches any FQDN that follows an `https?://` scheme.
+    #       Catches both cloud (`*.jamfcloud.com|.io`) and on-prem (`jamf.acme
+    #       .corp`, `mdm.internal.agency.gov`) instances. Over-redaction
+    #       tradeoff: any URL in a log will have its host portion replaced.
+    #   (b) Bare cloud-Jamf — matches `*.jamfcloud.com` / `*.jamfcloud.io`
+    #       without a URL prefix (covers log lines like "connection to
+    #       acme-prod.jamfcloud.com failed"). Narrow to well-known TLDs to
+    #       avoid false-positives on every dotted path.
+    _HOSTNAME_URL_RE = re.compile(
+        r"(https?://)([a-z0-9][a-z0-9\-\.]{1,253}\.[a-z]{2,63})\b",
+        re.IGNORECASE,
+    )
+    _HOSTNAME_BARE_RE = re.compile(
+        r"\b([a-z0-9][a-z0-9\-]{0,62}\.(?:jamfcloud\.com|jamfcloud\.io))\b",
         re.IGNORECASE,
     )
     _EMAIL_RE = re.compile(
@@ -3114,11 +3141,13 @@ class LogRedactor:
         redact_serials: bool = True,
         redact_emails: bool = True,
         redact_device_names: bool = True,
+        redact_usernames: bool = True,
     ) -> None:
         self._redact_hostnames = redact_hostnames
         self._redact_serials = redact_serials
         self._redact_emails = redact_emails
         self._redact_device_names = redact_device_names
+        self._redact_usernames = redact_usernames
         # Per-instance random salt → stable within bundle, opaque across bundles.
         self._salt = secrets.token_bytes(16)
         self._cache: dict[tuple[str, str], str] = {}
@@ -3130,7 +3159,8 @@ class LogRedactor:
             "hostnames": self._redact_hostnames,
             "serials": self._redact_serials,
             "emails": self._redact_emails,
-            "device_names": self._redact_device_names,
+            "device_names_in_json": self._redact_device_names,
+            "usernames": self._redact_usernames,
         }
 
     def forget(self) -> None:
@@ -3143,8 +3173,14 @@ class LogRedactor:
         for pattern, replacement in self._SECRET_PATTERNS:
             out = pattern.sub(replacement, out)
         if self._redact_hostnames:
-            out = self._HOSTNAME_RE.sub(
-                lambda m: f"{self._placeholder('host', m.group(0))}",
+            # URL-anchored: preserve the scheme, hash-placeholder the host.
+            out = self._HOSTNAME_URL_RE.sub(
+                lambda m: f"{m.group(1)}{self._placeholder('host', m.group(2))}",
+                out,
+            )
+            # Bare cloud-Jamf hosts: replace entire match.
+            out = self._HOSTNAME_BARE_RE.sub(
+                lambda m: self._placeholder("host", m.group(1)),
                 out,
             )
         if self._redact_emails:
@@ -3194,7 +3230,7 @@ class LogRedactor:
             "serial": self._redact_serials,
             "email": self._redact_emails,
             "device": self._redact_device_names,
-            "user": self._redact_device_names,
+            "user": self._redact_usernames,
         }.get(category, False)
 
     def _placeholder(self, kind: str, value: str) -> str:
@@ -17494,17 +17530,6 @@ def cmd_patch_managed(
 # ---------------------------------------------------------------------------
 
 
-# Sensitive YAML keys whose values should be stripped from the workspace
-# config snapshot. Surfaced via the manifest's `redaction_policy` block.
-_CONFIG_REDACT_KEYS: set[str] = {
-    "client_secret",
-    "client_id",
-    "password",
-    "api_key",
-    "secret",
-    "webhook_url",  # contains tenant identifier in path
-}
-
 _BUNDLE_SCHEMA_VERSION = 1
 
 
@@ -17614,8 +17639,13 @@ def _bundle_collect_workspace_tree(
     manifest_files: list[dict[str, Any]],
     max_depth: int = 3,
 ) -> None:
-    """Emit a `workspace_tree.txt` listing of the workspace structure."""
-    lines: list[str] = [f"{workspace}/"]
+    """Emit a `workspace_tree.txt` listing rooted at the workspace's basename.
+
+    The full absolute path (`/Users/<user>/Jamf-Reports/<profile>/`) is
+    deliberately NOT emitted — it would leak the local macOS username.
+    Use only the workspace's basename as the root label.
+    """
+    lines: list[str] = [f"{workspace.name}/"]
     workspace_resolved = workspace.resolve()
     for root, dirs, files in os.walk(workspace):
         root_path = Path(root).resolve()
@@ -17673,6 +17703,7 @@ def cmd_diagnostic_bundle(
     keep_serials: bool = False,
     keep_emails: bool = False,
     keep_device_names: bool = False,
+    keep_usernames: bool = False,
 ) -> Path:
     """Bundle local diagnostic data into a redacted zip for sharing.
 
@@ -17680,7 +17711,7 @@ def cmd_diagnostic_bundle(
     config.yaml, workspace directory listing, and version metadata into a
     single zip on the desktop (or `output_path` if specified). Default
     redaction strips credentials always and PII (hostnames, serials,
-    emails, device names in known JSON fields) unless overridden.
+    emails, device names in known JSON fields, usernames) unless overridden.
 
     Args:
         config: Loaded Config instance.
@@ -17689,10 +17720,14 @@ def cmd_diagnostic_bundle(
         output_path: Override default `~/Desktop/jamf-reports-diagnostic-*.zip`.
         no_redact: Disable all redaction (credentials + PII). Use only for
             local debugging; never for shared bundles.
-        keep_hostnames: Preserve raw Jamf hostnames in URLs.
+        keep_hostnames: Preserve raw hostnames in URLs.
         keep_serials: Preserve raw device serial numbers.
         keep_emails: Preserve raw email addresses.
         keep_device_names: Preserve raw device names from known JSON fields.
+            Note: free-text device-name mentions in log lines are never
+            redacted regardless of this flag — the redactor only walks
+            structured JSON fields.
+        keep_usernames: Preserve raw usernames from known JSON fields.
 
     Returns:
         Path to the written zip file.
@@ -17707,6 +17742,7 @@ def cmd_diagnostic_bundle(
             redact_serials=not keep_serials,
             redact_emails=not keep_emails,
             redact_device_names=not keep_device_names,
+            redact_usernames=not keep_usernames,
         )
 
     if output_path is None:
@@ -17733,7 +17769,9 @@ def cmd_diagnostic_bundle(
         manifest = {
             "schema_version": _BUNDLE_SCHEMA_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "workspace": str(workspace),
+            # `workspace` is intentionally the basename only — the absolute
+            # path under /Users/<username>/ would leak the local account name.
+            "workspace": workspace.name,
             "log_lookback_days": days,
             "summary_limit": summary_limit,
             "redaction_policy": (
@@ -18597,7 +18635,16 @@ def main() -> None:
     parser.add_argument(
         "--keep-device-names",
         action="store_true",
-        help="Preserve raw device/host names in the diagnostic bundle (default redacts).",
+        help=(
+            "Preserve raw device names from known JSON fields in the diagnostic"
+            " bundle (default redacts). Does not affect device names appearing"
+            " in free-text log lines — those are never automatically redacted."
+        ),
+    )
+    parser.add_argument(
+        "--keep-usernames",
+        action="store_true",
+        help="Preserve raw usernames from known JSON fields (default redacts).",
     )
     args = parser.parse_args()
 
@@ -18736,6 +18783,7 @@ def main() -> None:
                 keep_serials=args.keep_serials,
                 keep_emails=args.keep_emails,
                 keep_device_names=args.keep_device_names,
+                keep_usernames=args.keep_usernames,
             )
         elif args.command == "school-check":
             cmd_school_check(config, args.csv)

@@ -327,6 +327,99 @@ def test_bundle_log_lookback_filters_old_files(jrc, mock_workspace, tmp_path):
     assert "logs/old.log" not in names
 
 
+# ---------------------------------------------------------------------------
+# Review-gate regressions (PR-A second pass)
+# ---------------------------------------------------------------------------
+
+
+def test_redactor_strips_on_prem_jamf_hostname(jrc):
+    """M-2: on-prem hosts like jamf.acme.corp must be matched, not just *.jamfcloud.com."""
+    redactor = jrc.LogRedactor()
+    text = "GET https://jamfpro.internal.agency.gov/api/v1/computers"
+    out = redactor.redact_text(text)
+    assert "jamfpro.internal.agency.gov" not in out
+    assert "https://host-" in out
+    # Path must be preserved.
+    assert "/api/v1/computers" in out
+
+
+def test_redactor_strips_webhook_url(jrc):
+    """M-1 security-reviewer: webhook URLs with tenant paths must be redacted."""
+    redactor = jrc.LogRedactor()
+    text = (
+        'webhook_url: "https://acme.webhook.office.com/webhookb2/abc-def-ghi@xyz/'
+        'IncomingWebhook/longtenantidentifier/123"'
+    )
+    out = redactor.redact_text(text)
+    assert "longtenantidentifier" not in out
+    assert "REDACTED_WEBHOOK_URL" in out
+
+
+def test_redactor_strips_basic_auth_header(jrc):
+    """S-1: HTTP Basic Authorization headers must be redacted."""
+    redactor = jrc.LogRedactor()
+    text = "Authorization: Basic dXNlcjpwYXNzd29yZA=="
+    out = redactor.redact_text(text)
+    assert "dXNlcjpwYXNzd29yZA==" not in out
+    assert "REDACTED_BASIC_CREDENTIAL" in out
+
+
+def test_keep_device_names_does_not_disable_username_redaction(jrc):
+    """M-2 hunter: --keep-device-names previously coupled to usernames; must be separate."""
+    redactor = jrc.LogRedactor(redact_device_names=False)  # device names preserved
+    obj = {"computerName": "MacBook-001", "username": "jdoe"}
+    out = redactor.redact_json(obj)
+    # Device name preserved as requested.
+    assert out["computerName"] == "MacBook-001"
+    # Username MUST still be redacted — default redact_usernames=True applies.
+    assert out["username"].startswith("user-")
+
+
+def test_keep_usernames_independently_disables_username_redaction(jrc):
+    redactor = jrc.LogRedactor(redact_usernames=False)
+    obj = {"username": "jdoe", "serialNumber": "C02XL3FRJHD2"}
+    out = redactor.redact_json(obj)
+    assert out["username"] == "jdoe"
+    # Other PII still redacted.
+    assert out["serialNumber"].startswith("serial-")
+
+
+def test_redactor_policy_dict_has_separate_usernames_key(jrc):
+    """Manifest must surface the usernames flag independently of device_names."""
+    redactor = jrc.LogRedactor(redact_device_names=False, redact_usernames=True)
+    policy = redactor.policy()
+    assert "usernames" in policy
+    assert "device_names_in_json" in policy
+    assert policy["usernames"] is True
+    assert policy["device_names_in_json"] is False
+
+
+def test_bundle_manifest_does_not_leak_absolute_workspace_path(jrc, mock_workspace, tmp_path):
+    """M-1: manifest.json must not contain the full /Users/<username>/ path."""
+    config = _make_config(jrc, mock_workspace)
+    output = tmp_path / "bundle.zip"
+    jrc.cmd_diagnostic_bundle(config, output_path=output)
+    with zipfile.ZipFile(output) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+    # Workspace field should be the basename only, not the absolute path.
+    assert manifest["workspace"] == mock_workspace.name
+    assert "/" not in manifest["workspace"]
+    assert "Users" not in manifest["workspace"]
+
+
+def test_bundle_workspace_tree_does_not_leak_absolute_path(jrc, mock_workspace, tmp_path):
+    """M-1: workspace_tree.txt first line must not be the absolute path."""
+    config = _make_config(jrc, mock_workspace)
+    output = tmp_path / "bundle.zip"
+    jrc.cmd_diagnostic_bundle(config, output_path=output)
+    with zipfile.ZipFile(output) as zf:
+        tree = zf.read("workspace_tree.txt").decode("utf-8")
+    first_line = tree.split("\n", 1)[0]
+    # First line should be `<basename>/`, NOT `/Users/<username>/<rest>/`.
+    assert first_line == f"{mock_workspace.name}/"
+    assert "/Users/" not in tree
+
+
 def test_bundle_default_output_path_lands_on_desktop(jrc, mock_workspace, tmp_path, monkeypatch):
     config = _make_config(jrc, mock_workspace)
     # Redirect Path.home() to tmp_path so the test doesn't actually write to Desktop.
