@@ -57,7 +57,7 @@ final class LaunchAgentServiceTests: XCTestCase {
         XCTAssertEqual(schedule?.next, "—")
     }
 
-    func testParseJRCMultiLaunchAgentPreservesModeAndBaseProfile() throws {
+    func testParseJRCMultiLaunchAgentPreservesModeAndTarget() throws {
         let label = "\(prefix).multi.full-automation"
         let plistURL = try writePlist([
             "Label": label,
@@ -69,8 +69,6 @@ final class LaunchAgentServiceTests: XCTestCase {
                 "jamf-cli-full",
                 "--workspace-root",
                 "/Users/example/Jamf-Reports",
-                "--base-profile",
-                "alpha",
                 "--multi-profiles",
                 "alpha,beta",
                 "--multi-sequential",
@@ -82,7 +80,7 @@ final class LaunchAgentServiceTests: XCTestCase {
         let schedule = try XCTUnwrap(LaunchAgentService.parse(plistURL))
 
         XCTAssertEqual(schedule.launchAgentLabel, label)
-        XCTAssertEqual(schedule.profile, "alpha")
+        XCTAssertEqual(schedule.profile, "")
         XCTAssertEqual(schedule.mode, .jamfCLIFull)
         XCTAssertEqual(schedule.multiTarget, MultiTarget(scope: .list(["alpha", "beta"]), sequential: true))
         XCTAssertEqual(schedule.profileDisplayLabel, "2 profiles")
@@ -153,8 +151,6 @@ final class LaunchAgentServiceTests: XCTestCase {
                 "jamf-cli-full",
                 "--workspace-root",
                 "/Users/example/Jamf-Reports",
-                "--base-profile",
-                "alpha",
                 "--status-file",
                 statusURL.path,
             ],
@@ -167,7 +163,7 @@ final class LaunchAgentServiceTests: XCTestCase {
         let schedule = try XCTUnwrap(LaunchAgentService.parse(plistURL))
 
         XCTAssertEqual(schedule.lastStatus, .fail)
-        XCTAssertEqual(schedule.profile, "alpha")
+        XCTAssertEqual(schedule.profile, "")
     }
 
     private func writePlist(_ plist: [String: Any]) throws -> URL {

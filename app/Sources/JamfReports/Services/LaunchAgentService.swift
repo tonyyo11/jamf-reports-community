@@ -159,7 +159,7 @@ enum LaunchAgentService {
 
         return Schedule(
             name: humanName(from: labelParts.slug, mode: mode),
-            profile: labelParts.isMulti ? (multiBaseProfile(from: args) ?? "") : labelParts.profile,
+            profile: labelParts.isMulti ? "" : labelParts.profile,
             schedule: cadence,
             cadence: "custom",
             mode: mode,
@@ -253,14 +253,6 @@ enum LaunchAgentService {
             i += 1
         }
         return MultiTarget(scope: scope, sequential: sequential)
-    }
-
-    private static func multiBaseProfile(from args: [String]) -> String? {
-        guard let idx = args.firstIndex(of: "--base-profile"), idx + 1 < args.count else {
-            return nil
-        }
-        let profile = args[idx + 1].trimmingCharacters(in: .whitespacesAndNewlines)
-        return ProfileService.isValid(profile) ? profile : nil
     }
 
     private static func runMode(from args: [String]) -> Schedule.RunMode? {
