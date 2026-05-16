@@ -95,8 +95,17 @@ enum RunHistoryService {
         if truncated {
             lines.append(.init(timestamp: Date(), level: .warn, text: "[truncated — showing tail]"))
         }
+        // Redact credential patterns before surfacing log lines to clipboard/file
+        // exports or the Runs UI. jamf-cli should not echo secrets, but a future
+        // debug-mode flag or upstream regression could; the on-disk file is left
+        // untouched so admins still have the raw record for investigation.
         for raw in text.components(separatedBy: "\n") where !raw.isEmpty {
-            lines.append(.init(timestamp: Date(), level: CLIBridge.LogLevel.from(line: raw), text: raw))
+            let redacted = LogRedactor.redact(raw)
+            lines.append(.init(
+                timestamp: Date(),
+                level: CLIBridge.LogLevel.from(line: redacted),
+                text: redacted
+            ))
         }
         return lines
     }

@@ -37,6 +37,7 @@ struct WorkspaceView: View {
     // MARK: - State
 
     @State private var subtab: Subtab = .data
+    @State private var saveError: String?
     @Environment(WorkspaceStore.self) private var workspace
 
     // MARK: - Body
@@ -47,6 +48,17 @@ struct WorkspaceView: View {
             subtabPicker
             Divider().background(Theme.Hairline.standard)
             subtabContent
+        }
+        .alert(
+            "Save failed",
+            isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )
+        ) {
+            Button("OK") { saveError = nil }
+        } message: {
+            Text(saveError ?? "")
         }
     }
 
@@ -65,7 +77,13 @@ struct WorkspaceView: View {
                 ForEach(knownFrameworks, id: \.self) { fw in
                     Button {
                         ws.configState.baselineLabel = fw
-                        Task { try? await workspace.saveConfig() }
+                        Task {
+                            do {
+                                try await workspace.saveConfig()
+                            } catch {
+                                saveError = "Could not save config.yaml: \(error.localizedDescription)"
+                            }
+                        }
                     } label: {
                         HStack {
                             Text(fw)

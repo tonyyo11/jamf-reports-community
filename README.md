@@ -109,6 +109,21 @@ Or using `uv` (faster):
 uv pip install xlsxwriter pandas pyyaml
 ```
 
+**Hash-pinned install (production)**
+
+For supply-chain integrity in production or CI environments, install from the
+generated lock file with hash verification:
+
+```
+pip install -r requirements.lock.txt --require-hashes
+```
+
+The `requirements.lock.txt` file is regenerated from `requirements.txt` via
+`uv pip compile requirements.txt -o requirements.lock.txt --generate-hashes --universal`.
+It is universal across CPython 3.9+ (Linux/macOS/Windows). Use the unpinned
+`requirements.txt` for casual local installs; use the lock file when supply-chain
+tampering is in scope.
+
 **matplotlib** (optional — required only for chart generation)
 
 ```
@@ -309,6 +324,7 @@ downloads, build a smaller release bundle that contains just the runtime files:
 
 - `jamf-reports-community.py`
 - `requirements.txt`
+- `requirements.lock.txt`
 - `config.example.yaml`
 - `CHANGELOG.md`
 - `README.md`

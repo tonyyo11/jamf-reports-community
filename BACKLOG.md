@@ -250,32 +250,7 @@ load) protected by the install-time + onboarding-time gates.
   initializes to `nil`, and consumers (`SecurityScoreCalculator`,
   `FleetOverviewView`) `guard`-unwrap. Python side still pending.
 
-- **SHOULD-FIX — Device detail silently falls back to cached after live
-  fetch failure with no stale indicator.**
-  `app/Sources/JamfReports/Services/CLIBridge.swift:646`,
-  `app/Sources/JamfReports/Views/DeviceLookupView.swift:356`. Surface
-  "cached/stale" in the view.
-
-- **SHOULD-FIX — Config saves swallowed in user paths.** `try?` instead of
-  user-visible errors at
-  `app/Sources/JamfReports/Views/CustomizationWizard.swift:356` and
-  `app/Sources/JamfReports/Views/WorkspaceView.swift:64`.
-
-
 ### From Google Gemini 3 security-review (2026-05-12)
-
-- **MEDIUM — Pin Python dependency hashes.** `requirements.txt` currently
-  has version pins but no hashes. Add `--require-hashes` workflow (generated
-  via `pip-compile --generate-hashes` or equivalent) to mitigate supply-chain
-  tampering.
-
-- **MEDIUM — SHA-256 digest JSON snapshots at collection, verify at
-  generation.** Detect tampering of cached `jamf-cli-data/*.json` between
-  collection and report generation. Threat-model T-2.
-
-- **LOW — UI banner when last successful live collection is significantly
-  older than the expected interval.** Currently the staleness threshold is
-  in code but not surfaced in the UI. Threat-model T-8.
 
 ### From WCAG 2.2 AA accessibility audit (2026-05-15)
 
@@ -347,22 +322,6 @@ _(All items resolved in PR-4.)_
   snapshot-tests VoiceOver labels for key components.
 
 ### From Google Gemini cross-review of design-review-3 (2026-05-14)
-
-- **SHOULD-FIX — Log redaction layer for `RunHistoryService`.**
-  Run logs surfaced by `RunsView` are read through
-  `RunHistoryService.loadLog(_:)` and fed to clipboard exports and
-  on-disk file exports without any sanitization pass. jamf-cli output
-  is supposed to redact tokens, but a misbehaving subprocess or a
-  future debug-mode flag could echo secrets to stderr. In a CBP /
-  government context this is a real exfiltration path via accidental
-  paste or shared log file. Design: add a redaction filter to
-  `RunHistoryService.loadLog` (or a sibling `loadRedactedLog`) that
-  scrubs known sensitive patterns (Bearer tokens, OAuth client
-  secrets, Basic auth headers, anything that looks like a JWT). Apply
-  the redacted form to both clipboard and file exports. Keep the raw
-  file on disk untouched — admins still need to investigate runs.
-  Need a policy doc on which patterns to match (false-positive cost
-  matters) before implementing.
 
 - **CONSIDER — Dynamic Type 300% audit on `OverviewView`.** Wave 1's
   Dynamic Type pass (commits `08148c1`, `17bfb63`, etc.) covered the
@@ -438,6 +397,20 @@ _(All items resolved in PR-4.)_
 - **CONSIDER — PR-6 gate-rejection tests do not assert `AppLogger.cli.error` emission on rejection.** `app/Tests/JamfReportsTests/ProvenanceCodesignGateTests.swift`, `JamfCLIInstallerCodesignGateTests.swift`, `ProfileServiceCodesignGateTests.swift`. Each test only asserts the nil/fallback return. `CLIBridge.codesignGate` emits `AppLogger.cli.error(...)` on rejection (`CLIBridge.swift:1381`), and that log is the only forensic signal available post-incident on a security boundary. A regression that silences the log without breaking the return path would pass all three tests. Closing this gap needs a log-capture seam in the test target (more than 3 lines, touches test infra). Address alongside future security-test hardening.
 - **CONSIDER — `onLine: { _ in }` no-op closure repeated at 3 new spawn sites.** `app/Sources/JamfReports/Engine/Provenance.swift`, `JamfCLIInstaller.swift`, `ProfileService.swift`. Mirrors the existing CONSIDER from "From PR-2 review (2026-05-15)" for `runDeviceDetailProcess` — non-Runs-feed spawn sites have nowhere to thread `LogLine`. Worth folding into the same future `onLine`-threading PR (or a typed-error PR per BACKLOG item 5) rather than three more separate fixes.
 - **CONSIDER — Gate-rejected `jamf-cli` binary shows no UI version warning.** `app/Sources/JamfReports/Services/JamfCLIInstaller.swift:169-173`. When `installedVersion(at:)` returns nil due to a gate rejection, `isBelowMinimumSupported(nil)` returns false (guard returns early). Any UI surface that fires the "below minimum version" warning (Settings, onboarding) produces no warning. Existing design choice ("don't nag users when version detection itself failed") is reasonable, but the gate is now an additional reason version detection can fail and the user sees nothing. The only signal is `AppLogger.cli.error`. Consider a dedicated "verification failed" state in `currentInstallation()` that surfaces a Settings notice distinct from "version unknown".
+
+### From PR-7 review gates (2026-05-16)
+
+Six deferred items from the silent-failure-hunter, pr-review-toolkit, and
+security-reviewer gates on PR-7. The critical (CR-1), must-fix (M-1, M-2,
+M-3), and should-fix (S-1) items landed in-PR as separate commits; the
+items below are valid but out of scope.
+
+- **CONSIDER — Config-save error message includes raw `error.localizedDescription` which may expose filesystem paths.** `app/Sources/JamfReports/Views/CustomizationWizard.swift:376`, `app/Sources/JamfReports/Views/WorkspaceView.swift:84`. `NSError` from FileManager write failures typically includes the full destination path (e.g., `/Users/jdoe/Jamf-Reports/corp-prod/config.yaml`). On government workstations where screenshots are shared for troubleshooting, this leaks home directory + profile name. Map to a sanitized user message ("Could not save config.yaml in profile '<profile>'.") and log the full error via `AppLogger` at debug level only.
+- **CONSIDER — Stale banner uses attacker-controllable file mtime.** `app/Sources/JamfReports/Views/DeviceLookupView.swift:464-468`. `snapshotMTime` reads `contentModificationDate` from the cache file, which `touch -t` can falsify. If T-2 (cache tampering) is in scope, the banner could be suppressed by an attacker. Mitigation: extend the manifest schema to include a `generated_at` timestamp; banner reads from the manifest, not mtime. Schema change deferred to a future PR.
+- **CONSIDER — Stale banner always fires on first install before any successful live run.** `app/Sources/JamfReports/Views/DeviceLookupView.swift:421`. `fromCache=true` on a fresh workspace produces "Stale data — last fetched X ago" even though the data isn't user-perceivably stale. Add a "Never fetched live" first-run state distinct from "stale".
+- **CONSIDER — `_load_json_snapshots` (and `RunHistoryService.loadLog`) redact line-by-line; multi-line secrets evade the filter.** A token split across newlines would survive both Python trend redaction and Swift run-log redaction. Extremely low probability for jamf-cli structured output (single-line JSON lines) but technically present.
+- **CONSIDER — Manifest absent = no check exploitable.** Both Python and Swift verifiers treat an absent `manifest.json` as "no check" (rationale: legacy snapshots from pre-PR-7 collectors). An attacker who deletes the manifest after tampering bypasses verification. Address via either (a) once a manifest has been seen for a directory, require it exists (track "manifest seen at" state per data_dir), or (b) accept the limit (current).
+- **CONSIDER — `CLIBridge.deviceDetail` / `mobileDeviceDetail` wrappers preserved alongside `*WithProvenance` variants.** `app/Sources/JamfReports/Services/CLIBridge.swift:651,683`. Wrappers are real callers (`DevicesView.swift:891`, `CustomizationWizard.swift:1283`), not orphans. Per CLAUDE.md "Replace, don't deprecate" — migrate those 2 callsites to the provenance-aware methods in a future PR and delete the wrappers.
 
 ---
 

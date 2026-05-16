@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 // MARK: - CoreDashboard
 
@@ -2117,6 +2118,10 @@ struct CoreDashboard: Sendable {
 
     /// Returns the raw `Data` of the newest JSON snapshot matching any of the given names.
     /// Throws `CoreDashboardError.noCachedData` when no matching file exists.
+    /// When a sibling `manifest.json` lists this filename, verifies the file's
+    /// SHA-256 matches the manifest entry. On mismatch, logs a warning via
+    /// `AppLogger` and continues (matches the Python "warn, don't abort" stance —
+    /// tampering vs staleness from a partial collect is hard to distinguish).
     private func loadLatestJSONData(names: [String]) throws -> Data {
         var candidates: [URL] = []
         let fm = FileManager.default
@@ -2128,7 +2133,10 @@ struct CoreDashboard: Sendable {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
                ) {
-                candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
+                candidates.append(contentsOf: files.filter {
+                    $0.pathExtension == "json"
+                    && $0.lastPathComponent != SnapshotManifest.fileName
+                })
             }
             if fm.fileExists(atPath: dataDir.path),
                let files = try? fm.contentsOfDirectory(
@@ -2153,7 +2161,9 @@ struct CoreDashboard: Sendable {
                 forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             return lMod < rMod
         })!
-        return try Data(contentsOf: newest)
+        let data = try Data(contentsOf: newest)
+        SnapshotManifest.verify(snapshot: newest, data: data)
+        return data
     }
 
     private func loadLatestJSON(names: [String]) throws -> Any {

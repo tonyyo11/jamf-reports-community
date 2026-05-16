@@ -639,7 +639,24 @@ final class CLIBridge {
         )
     }
 
+    /// Payload + provenance for a single-device detail fetch. `fromCache==true`
+    /// signals the live API call failed and we returned the last-known-good cache;
+    /// `cacheURL.contentModificationDate` is the snapshot's mtime (rendered as
+    /// "last fetched <relative time>" in the UI staleness banner).
+    struct DeviceDetailResult: Sendable {
+        let data: Data
+        let fromCache: Bool
+        let cacheURL: URL?
+    }
+
     nonisolated func deviceDetail(profile: String, deviceID: String) async -> Data? {
+        await deviceDetailWithProvenance(profile: profile, deviceID: deviceID)?.data
+    }
+
+    nonisolated func deviceDetailWithProvenance(
+        profile: String,
+        deviceID: String
+    ) async -> DeviceDetailResult? {
         guard await authGuard(profile: profile, onLine: { line in
             AppLogger.cli.warning("deviceDetail auth: \(line.text, privacy: .private)")
         }) else { return nil }
@@ -655,6 +672,13 @@ final class CLIBridge {
     /// `jamf-cli pro mobile-devices get <id>` and caches under
     /// `jamf-cli-data/mobile-devices/`. Same fall-back-to-cache semantics.
     nonisolated func mobileDeviceDetail(profile: String, deviceID: String) async -> Data? {
+        await mobileDeviceDetailWithProvenance(profile: profile, deviceID: deviceID)?.data
+    }
+
+    nonisolated func mobileDeviceDetailWithProvenance(
+        profile: String,
+        deviceID: String
+    ) async -> DeviceDetailResult? {
         guard await authGuard(profile: profile, onLine: { line in
             AppLogger.cli.warning("mobileDeviceDetail auth: \(line.text, privacy: .private)")
         }) else { return nil }
@@ -669,13 +693,15 @@ final class CLIBridge {
     /// Shared backbone for single-device fetches. The two device kinds differ
     /// only in jamf-cli subcommand and cache directory — everything else
     /// (profile validation, atomic move, fall-back to last-known-good cache)
-    /// is identical and must stay in lock-step.
+    /// is identical and must stay in lock-step. Returns a `DeviceDetailResult`
+    /// so callers can render a staleness banner when the live API call fails
+    /// and we silently returned the previous snapshot.
     nonisolated private func singleDeviceDetail(
         profile: String,
         deviceID: String,
         cacheSubdir: String,
         jamfCLIArgs: (String) -> [String]
-    ) async -> Data? {
+    ) async -> DeviceDetailResult? {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard ProfileService.isValid(profile),
               !trimmedID.isEmpty,
@@ -704,10 +730,16 @@ final class CLIBridge {
                         try? FileManager.default.removeItem(at: cache)
                         do {
                             try FileManager.default.moveItem(at: partial, to: cache)
-                            return try? Data(contentsOf: cache)
+                            if let cached = try? Data(contentsOf: cache) {
+                                return DeviceDetailResult(
+                                    data: cached, fromCache: false, cacheURL: cache
+                                )
+                            }
                         } catch {
                             try? data.write(to: cache, options: .atomic)
-                            return data
+                            return DeviceDetailResult(
+                                data: data, fromCache: false, cacheURL: cache
+                            )
                         }
                     }
                 } catch {
@@ -718,7 +750,8 @@ final class CLIBridge {
             }
             try? FileManager.default.removeItem(at: partial)
         }
-        return try? Data(contentsOf: cache)
+        guard let data = try? Data(contentsOf: cache) else { return nil }
+        return DeviceDetailResult(data: data, fromCache: true, cacheURL: cache)
     }
 
     nonisolated func diffBackups(

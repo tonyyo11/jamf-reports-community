@@ -271,7 +271,14 @@ struct RunsView: View {
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
             do {
-                try FileManager.default.copyItem(at: url, to: dest)
+                // Redact secrets before writing the export. The raw .log file
+                // at `url` is intentionally left untouched on disk — that's
+                // the audit trail. Only the exported copy is sanitized so a
+                // misbehaving subprocess or future debug-mode flag cannot
+                // exfiltrate Bearer tokens / OAuth secrets via accidental
+                // shared file. Matches the clipboard path (copyLog).
+                let text = RunsView.renderExport(from: url)
+                try text.write(to: dest, atomically: true, encoding: .utf8)
             } catch {
                 Task { @MainActor in
                     exportError = "Could not export \(url.lastPathComponent): \(error.localizedDescription)"
@@ -279,6 +286,14 @@ struct RunsView: View {
                 }
             }
         }
+    }
+
+    /// Render a log file URL as the redacted plain-text payload an export
+    /// should produce. Same shape as `copyLog` (one line per text). Extracted
+    /// to a static helper so tests can drive the redaction path without
+    /// having to instantiate a SwiftUI view or call the NSSavePanel.
+    static func renderExport(from url: URL) -> String {
+        RunHistoryService.loadLog(url).map(\.text).joined(separator: "\n")
     }
 
     // MARK: - Helpers

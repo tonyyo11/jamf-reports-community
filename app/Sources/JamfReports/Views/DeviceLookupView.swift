@@ -26,6 +26,10 @@ struct DeviceLookupView: View {
     @State private var index = DeviceLookupIndex()
     @State private var candidates: [DeviceLookupIndex.Candidate] = []
     @State private var refreshing = false
+    /// Set to the snapshot's mtime when the most recent fetch silently fell back
+    /// to cached data (`CLIBridge.DeviceDetailResult.fromCache == true`); nil when
+    /// the live API call succeeded. Drives the staleness banner above the result.
+    @State private var staleSince: Date?
     @FocusState private var searchFocused: Bool
 
     enum LookupState: Equatable {
@@ -268,6 +272,9 @@ struct DeviceLookupView: View {
     private func detailCard(_ detail: DeviceDetail) -> some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
+                if let since = staleSince {
+                    staleBanner(since: since)
+                }
                 HStack {
                     SectionHeader(title: detailTitle(detail))
                     Spacer()
@@ -322,6 +329,40 @@ struct DeviceLookupView: View {
         }
     }
 
+    /// Inline banner shown above the result panel when the most recent fetch
+    /// silently fell back to cached data (live API failed). Surfaces the
+    /// snapshot mtime as a relative timestamp so the user knows the data is
+    /// older than the freshness they implicitly expect from a "Lookup" press.
+    /// No animation — staleness is a steady-state signal, not an event, so we
+    /// don't need `accessibilityReduceMotion` handling.
+    private func staleBanner(since: Date) -> some View {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        let relative = formatter.localizedString(for: since, relativeTo: Date())
+        let message = "Stale data — last fetched \(relative)"
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "clock.badge.exclamationmark")
+                .foregroundStyle(Theme.Colors.warn)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.warn)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Theme.Colors.warn.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
+                )
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+    }
+
     // MARK: - Lookup
 
     private func performLookup() {
@@ -352,24 +393,26 @@ struct DeviceLookupView: View {
         state = .loading
         detail = nil
         resolvedKind = kind
+        staleSince = nil
 
         Task {
-            let data: Data?
+            let result: CLIBridge.DeviceDetailResult?
             switch kind {
             case .computer:
-                data = await CLIBridge().deviceDetail(profile: profile, deviceID: id)
+                result = await CLIBridge().deviceDetailWithProvenance(profile: profile, deviceID: id)
             case .mobile:
-                data = await CLIBridge().mobileDeviceDetail(profile: profile, deviceID: id)
+                result = await CLIBridge().mobileDeviceDetailWithProvenance(profile: profile, deviceID: id)
             }
             guard requestKey == key else { return }
-            guard let data else {
+            guard let result else {
                 state = .unavailable(
                     "jamf-cli could not load the \(kind.displayLabel.lowercased()) detail for ID `\(id)` on profile `\(profile)`. Run `\(cliCommand(kind: kind, profile: profile, id: id))` in a terminal for the underlying error."
                 )
                 return
             }
+            staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
             do {
-                let decoded = try DeviceDetail.decode(from: data, lookupID: id)
+                let decoded = try DeviceDetail.decode(from: result.data, lookupID: id)
                 detail = decoded
                 state = .loaded
             } catch {
@@ -387,23 +430,26 @@ struct DeviceLookupView: View {
         state = .loading
         detail = nil
         resolvedKind = nil
+        staleSince = nil
 
         Task {
             let bridge = CLIBridge()
-            if let data = await bridge.deviceDetail(profile: profile, deviceID: term) {
+            if let result = await bridge.deviceDetailWithProvenance(profile: profile, deviceID: term) {
                 guard requestKey == key else { return }
-                if let decoded = try? DeviceDetail.decode(from: data, lookupID: term) {
+                if let decoded = try? DeviceDetail.decode(from: result.data, lookupID: term) {
                     resolvedKind = .computer
                     detail = decoded
+                    staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
                     state = .loaded
                     return
                 }
             }
-            if let data = await bridge.mobileDeviceDetail(profile: profile, deviceID: term) {
+            if let result = await bridge.mobileDeviceDetailWithProvenance(profile: profile, deviceID: term) {
                 guard requestKey == key else { return }
-                if let decoded = try? DeviceDetail.decode(from: data, lookupID: term) {
+                if let decoded = try? DeviceDetail.decode(from: result.data, lookupID: term) {
                     resolvedKind = .mobile
                     detail = decoded
+                    staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
                     state = .loaded
                     return
                 }
@@ -413,6 +459,13 @@ struct DeviceLookupView: View {
                 "No cached match for `\(term)` on profile `\(profile)`, and direct ID lookups for computer and mobile both failed. The cache may be stale."
             )
         }
+    }
+
+    /// Read the contentModificationDate of a cache file; returns nil on stat failure.
+    private func snapshotMTime(_ url: URL?) -> Date? {
+        guard let url else { return nil }
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+        return values?.contentModificationDate
     }
 
     private func refreshIndex() {
