@@ -405,6 +405,19 @@ _(All items resolved in PR-4.)_
 
 ### From PR-5 in-flight discovery (2026-05-16)
 
+- **CONSIDER — Mobile parser's `name` fall-back chain doesn't include top-level `name`.**
+  `app/Sources/JamfReports/Services/DeviceLookupIndex.swift:172-176`.
+  The mobile-device parser resolves `name` via `general.displayName →
+  general.name → dict["displayName"] → rawID` — it does NOT read
+  top-level `name`. The committed mobile-devices-list fixtures at
+  `tests/fixtures/jamf-cli-data/mobile-devices-list/*.json` use top-level
+  `name` exclusively (no `general` wrapper), so under those fixtures
+  every mobile candidate gets `name == id`. Either (a) the fixtures
+  reflect real jamf-cli output and the parser misses every mobile name,
+  or (b) the fixtures are stale / over-sanitized and the parser is
+  correct. Verify which shape `jamf-cli mobile-devices-list --output
+  json` actually emits and fix whichever side is wrong. Surfaced during
+  PR-5 Item 1 (DeviceLookupIndex tests).
 - **CONSIDER — `generateAll` exit-5/exit-6 fallback and partial-success branches lack test coverage.** PR-5 covers the
   unauthorized short-circuit (exit 3) and the `GenerateAllResult` struct
   semantics via real-CLIBridge tests gated on `ExecutableLocator.locate("jamf-cli")`.
