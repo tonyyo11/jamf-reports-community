@@ -2,7 +2,6 @@ import SwiftUI
 
 struct Titlebar: View {
     @Environment(WorkspaceStore.self) private var workspace
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let title: String
     var sub: String?
@@ -65,19 +64,19 @@ struct Titlebar: View {
                 .fill(dotColor)
                 .frame(width: 6, height: 6)
                 .shadow(color: dotColor.opacity(0.6), radius: 3)
-                .scaleEffect(isWarn && breathing && !reduceMotion ? 1.0 : (isWarn ? 0.85 : 1.0))
-                .opacity(isWarn && breathing && !reduceMotion ? 1.0 : (isWarn ? 0.7 : 1.0))
+                .scaleEffect(isWarn && breathing ? 1.0 : (isWarn ? 0.85 : 1.0))
+                .opacity(isWarn && breathing ? 1.0 : (isWarn ? 0.7 : 1.0))
                 .animation(
-                    isWarn && !reduceMotion
+                    isWarn
                         ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true)
                         : .default,
                     value: breathing
                 )
                 .onAppear {
-                    if isWarn && !reduceMotion { breathing = true }
+                    if isWarn { breathing = true }
                 }
                 .onChange(of: isWarn) { _, newValue in
-                    breathing = newValue && !reduceMotion
+                    breathing = newValue
                 }
             Text(cliStatusText)
                 .font(Theme.Fonts.mono(11))

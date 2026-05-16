@@ -104,6 +104,7 @@ enum DashboardChartExport {
         let framed = content()
             .frame(width: 848, height: 448)
             .environment(\.colorScheme, .light)
+            .environment(\.dynamicTypeSize, .large) // pin DynamicTypeSize so PNG exports stay deterministic regardless of OS accessibility settings
         let renderer = ImageRenderer(content: framed)
         renderer.scale = 2.0
 
@@ -203,6 +204,7 @@ private struct DashboardExportCanvas<Content: View>: View {
         .frame(width: 848, height: 448)
         .background(Color(hex: 0xF8FAFC))
         .environment(\.colorScheme, .light)
+        .environment(\.dynamicTypeSize, .large) // pin DynamicTypeSize so PNG exports stay deterministic regardless of OS accessibility settings
     }
 
     private static func timestamp() -> String {

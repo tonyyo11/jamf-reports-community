@@ -229,7 +229,6 @@ struct SchedulesView: View {
                         Task { await runNextScheduledNow() }
                     }
                     .disabled(workspace.demoMode || isRunning)
-                    .accessibilityAddTraits(isRunning ? .updatesFrequently : [])
                     .help(workspace.demoMode ? "Available in live mode only" : "")
                     if let msg = lastRunMessage {
                         Mono(text: msg, size: 10, color: Theme.Colors.fgMuted)

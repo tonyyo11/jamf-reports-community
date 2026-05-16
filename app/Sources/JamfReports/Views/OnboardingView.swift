@@ -107,7 +107,7 @@ struct OnboardingView: View {
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
             Text(headerSubtitle)
-                .font(.callout)
+                .font(.system(size: 14))
                 .foregroundStyle(Theme.Colors.fgMuted)
                 .frame(maxWidth: 650, alignment: .leading)
         }
@@ -173,7 +173,7 @@ struct OnboardingView: View {
                         .foregroundStyle(flow.connectionValidated ? Theme.Colors.ok : Theme.Colors.goldBright)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Validate profile \(flow.profileName.trimmedForView)")
-                            .font(.callout.weight(.semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.Colors.fg)
                         Mono(text: "jamf-cli -p \(flow.profileName.trimmedForView) config validate", size: 11.5)
                     }

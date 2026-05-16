@@ -200,7 +200,6 @@ struct DeviceLookupView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
     }
 
     private func unavailableCard(_ message: String) -> some View {

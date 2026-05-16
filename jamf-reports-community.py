@@ -14671,18 +14671,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                     f'{self._html_text(name.lower())}">{self._html_text(name)}</div>'
                     for name in group["items"]
                 )
-                # Generate stable ID for ARIA controls relationship
-                category_slug = re.sub(r'[^\w\-_]', '_', group["category"].lower().strip())
-                panel_id = f"{pane_id}_{category_slug}_items"
-
                 chunks.append(
                     '<div class="cat-node">'
-                    f'<button type="button" class="cat-toggle" aria-expanded="false" aria-controls="{panel_id}">'
+                    '<button type="button" class="cat-toggle" aria-expanded="false">'
                     '<span class="cat-label">'
                     '<span class="cat-caret" aria-hidden="true">▶</span>'
                     f'<span>{self._html_text(group["category"])}</span>'
                     f'</span><span class="cat-count">{group["count"]}</span></button>'
-                    f'<div class="cat-items" id="{panel_id}">{items}</div></div>'
+                    f'<div class="cat-items">{items}</div></div>'
                 )
             body = "".join(chunks)
         safe_pane = self._html_text(pane_id)

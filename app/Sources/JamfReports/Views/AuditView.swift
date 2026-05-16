@@ -143,7 +143,6 @@ struct AuditView: View {
                                 .font(.callout)
                                 .foregroundStyle(Theme.Colors.fg)
                                 .focused($isSearchFocused)
-                                .accessibilityLabel("Search audit findings")
                         }
                         .padding(.horizontal, 10)
                         .frame(width: 240, height: 28)

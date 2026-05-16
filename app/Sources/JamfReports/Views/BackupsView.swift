@@ -123,7 +123,6 @@ struct BackupsView: View {
                 .textFieldStyle(.plain)
                 .font(.callout)
                 .foregroundStyle(Theme.Text.primary)
-                .accessibilityLabel("Backup label")
         }
         .padding(.horizontal, 10)
         .frame(width: 160, height: 30)
@@ -199,7 +198,7 @@ struct BackupsView: View {
                             }
                             .disabled(workspace.demoMode || isRunningBackup)
                             .help(workspace.demoMode ? "Available in live mode only" : "Delete this backup")
-                            .accessibilityHint("Permanently removes this backup from disk")
+                            .accessibilityHint("Shows a confirmation dialog to delete this backup")
                         }
                         .contextMenu {
                             Button("Reveal in Finder") { SystemActions.reveal(backup.url) }

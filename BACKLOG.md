@@ -218,6 +218,16 @@ migration is *surfaced* to the user, not whether the bug is closed.
 Review gates on the keyboard-navigation fix for PR-3's roving
 tabindex flagged one CONSIDER item adjacent to the HTML tab markup.
 
+- **CONSIDER — `.cat-toggle` disclosure buttons lack `aria-controls`.**
+  `jamf-reports-community.py:14652`. The category disclosure buttons
+  in the deployment-hierarchy tree panes set `aria-expanded` but the
+  `.cat-items` panel they toggle has no `id` and no `aria-controls`
+  pointer from the button. Widely tolerated for disclosure widgets so
+  not a WCAG failure, but the ARIA APG recommends the association.
+  Fix: give each `.cat-items` div a stable `id` (derive from the
+  category label slug, scope-prefixed to avoid cross-tab collisions)
+  and add `aria-controls="<panel-id>"` to the matching `.cat-toggle`.
+  Touch in PR-4 polish.
 
 ### From PR-2 review (2026-05-15)
 
@@ -354,9 +364,45 @@ ARIA, and contrast/focus-visible.)_
 
 **SwiftUI — SHOULD-FIX**
 
+- **Reduce-motion not honored on Titlebar pulsing dot.**
+  `Views/Titlebar.swift:67-72`. Pulsing breath animation on the "CLI
+  missing" indicator doesn't gate on `accessibilityReduceMotion`.
+  `Views/SecurityPostureView.swift:423-436` is the right pattern to
+  copy.
 
+- **Destructive write buttons missing hints.**
+  `Views/SmartGroupApplySheet.swift:391-397` ("Create in Jamf Pro"),
+  `Views/BackupsView.swift:195-200` (Delete backup),
+  `Views/SourcesView.swift:390-399` (Full Admin scope elevation). Add
+  `.accessibilityHint("...")` describing the side effect.
 
+- **TextField placeholders aren't labels for VoiceOver.**
+  `Views/SmartGroupApplySheet.swift:297-298,308`,
+  `Views/BackupsView.swift:122-126`, `Views/AuditView.swift:141`.
+  Add explicit `.accessibilityLabel(...)`. Also set `.defaultFocus`
+  on the SmartGroupApplySheet name field.
 
+- **SecureSecretField missing hint.**
+  `Views/SecureSecretField.swift:35-36`. Has AppKit
+  `setAccessibilityLabel("Client Secret")` but no
+  `setAccessibilityHelp(...)`. Add hint noting credential is stored in
+  the keychain and not displayed.
+
+- **Composite candidate row not flattened.**
+  `Views/DeviceLookupView.swift:168-203`. The Button wraps Pill + Text
+  + Mono + chevron without `.accessibilityElement(children: .combine)`
+  — VO reads each child separately.
+
+- **Dynamic status text has no live-region trait.**
+  `Views/RunsView.swift`, `Views/SchedulesView.swift`,
+  `Theme/Components.swift:633` (`StatusBar`). "Running…" /
+  "Collecting…" updates won't be announced. Add
+  `.accessibilityAddTraits(.updatesFrequently)`.
+
+- **Hit target below WCAG 2.5.8 floor.**
+  `Theme/Components.swift:286` (`PNPButton.size = .sm` at 22pt high),
+  `:328` (`PNPToggle` 36×22pt). Raise minimum to 24pt or expand
+  `.contentShape(...)` hit area.
 
 **HTML report — SHOULD-FIX**
 
@@ -379,7 +425,14 @@ ARIA, and contrast/focus-visible.)_
 
 **CONSIDER**
 
+- **Dynamic Type:** ~14 fixed `.font(.system(size: N))` calls in
+  `Views/PatchView.swift`, `Views/OnboardingView.swift`,
+  `Views/FleetOverviewView.swift`, `Views/ExtensionAttributesView.swift`,
+  `Views/ConfigView.swift`. Migrate body/label content to semantic
+  styles. Keep chart axis ticks fixed.
 
+- **Reduce Motion gaps:** `Theme/Components.swift:323` (`PNPToggle`
+  `withAnimation(.snappy(...))` unconditional).
 
 - **HTML `prefers-reduced-motion`:** `.sec-bar-fill` transition at
   `jamf-reports-community.py:13873` and `.dark-toggle` at `:13761`
