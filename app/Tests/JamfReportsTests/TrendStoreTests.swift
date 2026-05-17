@@ -163,4 +163,54 @@ final class TrendStoreTests: XCTestCase {
         XCTAssertEqual(startDateStr, "2026-04-03")
         XCTAssertEqual(endDateStr, "2026-05-01")
     }
+
+    // MARK: - PR-13: CacheSource plumbing
+
+    func testCacheSourceIsNeverFetchedLiveWithDemoOnlySummaries() {
+        // Default `summary(...)` helper uses `source = "demo"` — no live runs
+        // exist in the corpus, so cacheSource must report .neverFetchedLive
+        // even though summaries are present.
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-04-01"),
+                summary(date: "2026-05-01"),
+            ],
+            range: .all
+        )
+        XCTAssertEqual(store.cacheSource, .neverFetchedLive,
+                       "Demo-only summaries must not register as live data — closes PR-7 first-install false-stale")
+    }
+
+    func testCacheSourceIsNeverFetchedLiveWhenEmpty() {
+        let store = TrendStore(summaries: [], range: .all)
+        XCTAssertEqual(store.cacheSource, .neverFetchedLive)
+    }
+
+    func testCacheSourceTreatsJamfCliSourceAsLive() {
+        // A summary with `source == "jamf-cli"` flips hasEverFetchedLive=true.
+        // Without an mtime (no on-disk file in this constructor path), the
+        // freshness helper returns .neverFetchedLive — but only because the
+        // date is nil. The hasEverFetchedLive guard short-circuits to the
+        // same state. Verify by constructing a live summary and confirming
+        // the guard isn't tripped by source detection alone.
+        let liveSummary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 500,
+            fileVaultPct: 98,
+            compliancePct: 90,
+            staleCount: 12,
+            osCurrentPct: 80,
+            crowdstrikePct: 95,
+            patchPct: 88,
+            source: "jamf-cli"
+        )
+        let store = TrendStore(summaries: [liveSummary], range: .all)
+        XCTAssertTrue(store.hasEverFetchedLive,
+                      "TrendStore must detect jamf-cli-sourced summaries as live")
+        // latestSnapshotDate is nil for the in-memory init path (no filesystem
+        // scan happens), so cacheSource folds back to .neverFetchedLive via
+        // the date-nil branch of CacheSource.from. That's the right behavior:
+        // we treat "no mtime evidence" as "never live", not "stale forever".
+        XCTAssertEqual(store.cacheSource, .neverFetchedLive)
+    }
 }

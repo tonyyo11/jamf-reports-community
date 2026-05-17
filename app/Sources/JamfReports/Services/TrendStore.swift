@@ -8,21 +8,33 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     var id: Date { date }
 }
 
-@Observable final class TrendStore {
+@Observable final class TrendStore: CacheSourceProviding {
     private var allSummaries: [DailySummary] = []
     private(set) var filteredSummaries: [DailySummary] = []
     private(set) var currentProfile: String?
     private(set) var currentRange: TrendRange = .w4
+    /// Most-recent summary file mtime for the active profile, captured at
+    /// load/reload time. Drives `cacheSource` so `StaleDataBanner` can
+    /// surface freshness without re-reading the filesystem on every render.
+    /// Nil when no summary files exist on disk.
+    private(set) var latestSnapshotDate: Date?
+    /// True when at least one summary file with `source == "jamf-cli"`
+    /// (i.e., produced by a real live run, not a demo/legacy import) exists
+    /// for the active profile. Distinguishes `.stale` from `.neverFetchedLive`.
+    private(set) var hasEverFetchedLive: Bool = false
 
     init(summaries: [DailySummary] = [], range: TrendRange = .w4) {
         allSummaries = summaries
         currentRange = range
+        hasEverFetchedLive = summaries.contains(where: { $0.source == "jamf-cli" })
         filterSummaries(range: range)
     }
 
     func load(profile: String, range: TrendRange) {
         if profile != currentProfile {
             allSummaries = readSummaries(profile: profile)
+            latestSnapshotDate = readLatestSnapshotMTime(profile: profile)
+            hasEverFetchedLive = allSummaries.contains(where: { $0.source == "jamf-cli" })
             currentProfile = profile
         }
 
@@ -37,7 +49,22 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     func reload() {
         guard let profile = currentProfile else { return }
         allSummaries = readSummaries(profile: profile)
+        latestSnapshotDate = readLatestSnapshotMTime(profile: profile)
+        hasEverFetchedLive = allSummaries.contains(where: { $0.source == "jamf-cli" })
         filterSummaries(range: currentRange)
+    }
+
+    /// Freshness signal for `StaleDataBanner` consumers. `.neverFetchedLive`
+    /// when no jamf-cli-sourced summary file exists; `.fresh` when the newest
+    /// summary mtime is within the 36-hour window (daily-schedule cadence
+    /// plus a half-day slack); `.stale(at:)` otherwise.
+    ///
+    /// 36h was picked over 24h so a once-daily LaunchAgent that drifts a
+    /// few hours late (or runs at an odd hour on Sunday after weekend
+    /// shutdown) does not trip the banner on the next weekday morning.
+    var cacheSource: CacheSource {
+        guard hasEverFetchedLive else { return .neverFetchedLive }
+        return CacheSource.from(snapshotDate: latestSnapshotDate, withinHours: 36)
     }
 
     /// Read summaries from the configured `charts.historical_csv_dir/summaries`
@@ -55,6 +82,30 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     private func fallbackSummariesDir(for profile: String) -> URL? {
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
         return workspace.appendingPathComponent("snapshots/summaries", isDirectory: true)
+    }
+
+    /// Scan the summaries directory for the newest `summary_*.json` mtime.
+    /// We read the filesystem timestamp rather than parsing each file's
+    /// embedded date because the user-visible "stale" signal is when the
+    /// last *run* happened, which `contentModificationDate` captures
+    /// directly (even if the summary's logical date string lags).
+    private func readLatestSnapshotMTime(profile: String) -> Date? {
+        guard let summariesDir = (try? WorkspacePaths.summariesDir(for: profile))
+            ?? fallbackSummariesDir(for: profile) else {
+            return nil
+        }
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: summariesDir,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else {
+            return nil
+        }
+        return files
+            .filter { $0.lastPathComponent.hasPrefix("summary_") && $0.pathExtension == "json" }
+            .compactMap { url -> Date? in
+                (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            }
+            .max()
     }
 
     private func filterSummaries(range: TrendRange) {

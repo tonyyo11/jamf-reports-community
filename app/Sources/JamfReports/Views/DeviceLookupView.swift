@@ -273,7 +273,12 @@ struct DeviceLookupView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 if let since = staleSince {
-                    staleBanner(since: since)
+                    // PR-13: migrated to shared StaleDataBanner component.
+                    // Visually identical to the prior inline banner — the
+                    // `.stale(at:)` case carries the same icon, copy
+                    // template ("Stale data — last fetched X ago"), and
+                    // warn-toned chrome.
+                    StaleDataBanner(source: .stale(at: since))
                 }
                 HStack {
                     SectionHeader(title: detailTitle(detail))
@@ -327,40 +332,6 @@ struct DeviceLookupView: View {
                 }
             }
         }
-    }
-
-    /// Inline banner shown above the result panel when the most recent fetch
-    /// silently fell back to cached data (live API failed). Surfaces the
-    /// snapshot mtime as a relative timestamp so the user knows the data is
-    /// older than the freshness they implicitly expect from a "Lookup" press.
-    /// No animation — staleness is a steady-state signal, not an event, so we
-    /// don't need `accessibilityReduceMotion` handling.
-    private func staleBanner(since: Date) -> some View {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
-        let relative = formatter.localizedString(for: since, relativeTo: Date())
-        let message = "Stale data — last fetched \(relative)"
-        return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "clock.badge.exclamationmark")
-                .foregroundStyle(Theme.Colors.warn)
-                .accessibilityHidden(true)
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(Theme.Colors.warn)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Theme.Colors.warn.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-                )
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(message)
     }
 
     // MARK: - Lookup
