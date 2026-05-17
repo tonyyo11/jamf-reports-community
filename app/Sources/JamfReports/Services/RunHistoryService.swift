@@ -182,10 +182,18 @@ enum RunHistoryService {
         return (parsedExitCode ?? (hasFatal ? 1 : 0), duration, text)
     }
 
-    /// Authoritative source: sibling `summary.json` (`{"status": "partial"}`).
-    /// Fallback: `[partial]` marker in the log tail.
+    /// Authoritative source: sibling `summary_<logFilename>.json` matching the
+    /// log filename. Fallback: `[partial]` marker in the log tail.
     /// Path: log at `<workspace>/automation/logs/<ts>.log`, summary at
     /// `<workspace>/snapshots/computers/summaries/summary_<ts>.json`.
+    ///
+    /// NOTE: as of 2026-05-16 no production code path writes
+    /// `summary_<logFilename>.json` — current emitters write daily
+    /// `summary_YYYY-MM-DD.json`. The summary-based branch is in place for a
+    /// future per-run-summary feature; today, only the `[partial]` log marker
+    /// fallback activates. Tests fake the file themselves to validate the API
+    /// surface.
+    /// Tracked in BACKLOG.md under "### From post-PR-8 review batch (2026-05-16)".
     static func isPartialRun(logURL: URL, logTailText: String) -> Bool {
         let logFilename = logURL.deletingPathExtension().lastPathComponent
         let workspace = logURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

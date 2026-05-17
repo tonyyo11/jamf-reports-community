@@ -100,6 +100,50 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertFalse(LaunchAgentWriter.isTrustedJamfCLIExecutable(fakeJamfCLI.path))
     }
 
+    /// M-01 fourth-site closure: even when a candidate `jamf-cli` matches the
+    /// located path (via test seam), `isTrustedJamfCLIExecutable` must refuse
+    /// it when the codesign gate rejects the binary. This is the rejection the
+    /// legacy multi runMultiNow path now enforces (via
+    /// `multiProgramArgumentsAreTrusted` → `isTrustedJamfCLIExecutable`),
+    /// closing the 4th spawn site identified in the M-01 review.
+    func testIsTrustedJamfCLIExecutableEnforcesCodesignGate() throws {
+        JamfCLIIdentity.clearVerificationCacheForTesting()
+        addTeardownBlock { JamfCLIIdentity.clearVerificationCacheForTesting() }
+
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        // Unsigned fake binary basenamed `jamf-cli`. With the
+        // _testLocatedOverride seam pinning the located URL to the same fake,
+        // the path-identity guard passes, and the codesign gate must reject
+        // the unsigned binary — returning false.
+        let fakeJamfCLI = tempRoot.appendingPathComponent("jamf-cli")
+        try Data("not-a-real-binary".utf8).write(to: fakeJamfCLI)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: fakeJamfCLI.path
+        )
+
+        // Sanity-check the test fixture itself: the gate must refuse it.
+        let direct = JamfCLIIdentity.ensureVerifiedJamfCLI(executable: fakeJamfCLI)
+        switch direct {
+        case .success:
+            XCTFail("Test setup invalid: unsigned fake jamf-cli passed verification")
+        case .failure:
+            break
+        }
+
+        XCTAssertFalse(
+            LaunchAgentWriter.isTrustedJamfCLIExecutable(
+                fakeJamfCLI.path,
+                _testLocatedOverride: fakeJamfCLI
+            ),
+            "Path-identity match must not bypass the codesign gate"
+        )
+    }
+
     func testLaunchEnvironmentIgnoresPlistControlledPathAndJamfCLIPath() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let safeXDGConfigHome = FileManager.default.homeDirectoryForCurrentUser

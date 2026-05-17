@@ -192,6 +192,24 @@ final class LogRedactorTests: XCTestCase {
         XCTAssertEqual(input, redacted)
     }
 
+    // MARK: - api_key / apikey
+
+    func testRedactsApiKeyYAML() {
+        // 16-char value above the 8-char floor.
+        let input = "api_key: abcd1234efgh5678"
+        let redacted = LogRedactor.redact(input)
+        XCTAssertTrue(redacted.contains("REDACTED_API_KEY"))
+        XCTAssertFalse(redacted.contains("abcd1234efgh5678"))
+    }
+
+    func testRedactsApikeyEqualsForm() {
+        // `apikey` (no underscore) in equals/URL form — 24-char value.
+        let input = #"apikey="abcdef0123456789abcdef01""#
+        let redacted = LogRedactor.redact(input)
+        XCTAssertTrue(redacted.contains("REDACTED_API_KEY"))
+        XCTAssertFalse(redacted.contains("abcdef0123456789abcdef01"))
+    }
+
     // MARK: - Passthrough
 
     func testNoMatchReturnsInputUnchanged() {

@@ -162,8 +162,9 @@ def test_emit_summary_csv_branch_computes_all_metrics(tmp_path, monkeypatch, jrc
     assert payload["osCurrentPct"] == 75.0
     # One blank check-in is treated as stale; 2026-04-28 is fresh; 2025-01-01 is stale.
     assert payload["staleCount"] == 2
-    # No bridge supplied -> no patch data.
-    assert payload["patchPct"] == 0.0
+    # No bridge supplied -> patchPct omitted (mirrors Swift `Double?` shape so
+    # trend charts treat the metric as missing, not as a real 0% floor).
+    assert "patchPct" not in payload
 
 
 def test_emit_summary_csv_branch_idempotent_unless_forced(tmp_path, monkeypatch, jrc, capsys) -> None:
