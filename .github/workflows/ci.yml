@@ -38,6 +38,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      # Pin the Swift toolchain so the runner-image rotation doesn't silently
+      # shift it between PRs. 6.0.3 matches CLAUDE.md's "Swift 6 strict
+      # concurrency" floor. Local devs should match (via `swiftly` or by
+      # selecting an Xcode that bundles 6.0.x) — Swift 6.3+ relaxes
+      # @MainActor enforcement and will pass things that fail here.
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0.3"
+
+      - name: Print Swift version
+        run: swift --version
+
       - name: Build Swift app
         working-directory: app
         run: swift build

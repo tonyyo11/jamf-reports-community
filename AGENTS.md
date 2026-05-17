@@ -707,6 +707,22 @@ Verify the app compiles before committing any Swift change:
 cd app && swift build 2>&1 | tail -20
 ```
 
+**Pre-push CI parity (PR-9.5):** CI pins Swift to `6.0.3` via
+`swift-actions/setup-swift@v2` in `.github/workflows/ci.yml`. Local Swift
+6.3+ relaxes `@MainActor` enforcement and will silently compile code
+that fails on CI. Before pushing, run:
+
+```bash
+cd app && swift build --build-tests 2>&1 | grep "error:" || echo "OK"
+```
+
+If `swift --version` locally reports > 6.0.x, install matching toolchain
+via [swiftly](https://swiftlang.github.io/swiftly/) (`swiftly install 6.0.3 && swiftly use 6.0.3`)
+or select an Xcode 16.0–16.2 to catch isolation errors locally. SwiftUI
+`View`-conforming types are MainActor-isolated; their tests must use
+class-level `@MainActor` (not just method-level) for Swift 6.0/6.1
+compatibility.
+
 ### Python CLI
 
 An automated pytest suite now exists under `tests/`, backed by committed fixtures in
