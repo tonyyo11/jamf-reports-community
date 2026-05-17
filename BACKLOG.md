@@ -473,6 +473,10 @@ includes "Highest-Value Next Actions" recommending T-11 / T-12 / T-13
 closure as the top three. Items below are the BACKLOG-tracked code
 work to back those recommendations:
 
+### From PR-12 CI run (2026-05-17)
+
+- **CONSIDER — `CLISubcommandTests.testCheckMissingWorkspaceExits1` flaked on PR-12 CI run id `25995830106` (push event), passed in the parallel `pull_request` run on the same SHA `3779fa60`.** Test generates `no-such-workspace-<UUID8>` and asserts exit-1 from `checkConfigForProfile`. Re-run cleared on second attempt. Same SHA producing both PASS and FAIL points at an environmental race (runner home-dir state from a prior run, parallel test interleaving, or a global `~/Jamf-Reports/<profile>` artifact). Worth a defensive guard in `checkConfigForProfile` test harness OR an explicit setUp that nukes any pre-existing workspace dir matching the generated slug.
+
 ### From PR-11 security review (2026-05-17)
 
 - **CONSIDER — Cross-run manifest re-hash from disk inherits PR-7 attack window.** `jamf-reports-community.py:670-671`. `_rewrite_snapshot_manifest` re-hashes unpinned existing files from disk when rewriting the manifest. Each `_emit_summary_json` (daily) or `_emit_per_log_summary_json` call rewrites the summaries manifest, causing OTHER existing per-log summaries to be re-hashed from disk at that point. An attacker who tampers a per-log summary between two legitimate writes (e.g., between hot-tier runs ≥15 min apart) gets their tampered content blessed into the manifest on the next sibling run — converting a `.mismatch` into `.verified` for that file. Same residual attack pattern as PR-7's `_save_snapshot` and accepted there. Address with a "pin all known files from a per-run-context cache" approach OR document as accepted residual in the threat model. Inherited from PR-7.
