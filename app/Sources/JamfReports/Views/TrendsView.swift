@@ -105,6 +105,13 @@ struct TrendsView: View {
                     emptyState
                 } else {
                     heroHeader
+                    // PR-13: shared StaleDataBanner surfaces freshness above
+                    // the hero chart. Suppressed in demo mode (the demo
+                    // dataset is intentionally static and not user-perceivably
+                    // "stale"). Renders nothing when source is .fresh.
+                    if !workspaceStore.demoMode {
+                        StaleDataBanner(source: trendStore.cacheSource)
+                    }
                     metricPicker
                     heroChart
                     comparisonRow

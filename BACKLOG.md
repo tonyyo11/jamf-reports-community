@@ -269,22 +269,26 @@ load) protected by the install-time + onboarding-time gates.
 
 ### From PR-8 (2026-05-16)
 
-- **CONSIDER — Stale-data banner broader application.** The stale-data
-  banner pattern landed in PR-7's `DeviceLookupView` (warn-colored card
-  with `RelativeDateTimeFormatter` "last fetched X ago") is currently
-  view-specific. Other cached-data surfaces — `TrendsView`,
-  `DevicesView`, posture dashboards, the Overview screen — silently
-  render the most recent snapshot with no in-view indicator that the
-  data is stale. Broader application requires extracting a shared
-  `StaleDataBanner` component and threading cache-source metadata
-  through ~7 services (`PatchStatusService`, `UpdateStatusService`,
-  `PolicyHealthService`, `CompliancePostureService`,
-  `SecurityPostureService`, `MobileFleetService`,
-  `ProtectDashboardService`) into their `Snapshot` structs.
-  Per anti-churn rule "no scaffolding without wiring" the broader
-  rollout was deferred: PR-8 wired one surface; a follow-up PR should
-  ship the reusable component alongside ≥2 additional consumers and a
-  protocol seam for the source flag. Gemini threat-model T-8.
+- **CONSIDER — Stale-data banner rollout to remaining 5 services.**
+  PR-13 closed the caller-first half: shared `StaleDataBanner` component
+  shipped at `app/Sources/JamfReports/Theme/StaleDataBanner.swift` with
+  the `CacheSource` enum + `CacheSourceProviding` protocol seam at
+  `app/Sources/JamfReports/Services/CacheSource.swift`, wired into
+  `TrendsView` and `OverviewView` via `TrendStore.cacheSource`, and
+  migrated `DeviceLookupView` to the shared component. The five
+  remaining cached-data surfaces still render the most recent snapshot
+  with no freshness indicator: `PolicyHealthService` →
+  `PolicyProfileView`, `CompliancePostureService` →
+  `CompliancePostureView`, `SecurityPostureService` →
+  `SecurityPostureView`, `MobileFleetService` → `MobileFleetView`,
+  `ProtectDashboardService` → `ProtectView`. Each service needs its
+  Snapshot/Result struct to gain a `cacheSource: CacheSource` field
+  (sourced from the underlying snapshot file's mtime), then a one-line
+  `StaleDataBanner(source: snapshot.cacheSource)` insertion above the
+  primary card on each view. ~15 lines per service. `PatchStatusService`
+  and `UpdateStatusService` from the original PR-8 list dropped because
+  they surface a "snapshot date" in their hero header already — verify
+  before adding. Gemini threat-model T-8.
 
 ### From in-session bug fixes
 
@@ -465,7 +469,6 @@ items below are valid but out of scope.
 
 - **CONSIDER — Config-save error message includes raw `error.localizedDescription` which may expose filesystem paths.** `app/Sources/JamfReports/Views/CustomizationWizard.swift:376`, `app/Sources/JamfReports/Views/WorkspaceView.swift:84`. `NSError` from FileManager write failures typically includes the full destination path (e.g., `/Users/jdoe/Jamf-Reports/corp-prod/config.yaml`). On government workstations where screenshots are shared for troubleshooting, this leaks home directory + profile name. Map to a sanitized user message ("Could not save config.yaml in profile '<profile>'.") and log the full error via `AppLogger` at debug level only.
 - **CONSIDER — Stale banner uses attacker-controllable file mtime.** `app/Sources/JamfReports/Views/DeviceLookupView.swift:464-468`. `snapshotMTime` reads `contentModificationDate` from the cache file, which `touch -t` can falsify. If T-2 (cache tampering) is in scope, the banner could be suppressed by an attacker. Mitigation: extend the manifest schema to include a `generated_at` timestamp; banner reads from the manifest, not mtime. Schema change deferred to a future PR.
-- **CONSIDER — Stale banner always fires on first install before any successful live run.** `app/Sources/JamfReports/Views/DeviceLookupView.swift:421`. `fromCache=true` on a fresh workspace produces "Stale data — last fetched X ago" even though the data isn't user-perceivably stale. Add a "Never fetched live" first-run state distinct from "stale".
 - **CONSIDER — `_load_json_snapshots` (and `RunHistoryService.loadLog`) redact line-by-line; multi-line secrets evade the filter.** A token split across newlines would survive both Python trend redaction and Swift run-log redaction. Extremely low probability for jamf-cli structured output (single-line JSON lines) but technically present.
 - **CONSIDER — `CLIBridge.deviceDetail` / `mobileDeviceDetail` wrappers preserved alongside `*WithProvenance` variants.** `app/Sources/JamfReports/Services/CLIBridge.swift:651,683`. Wrappers are real callers (`DevicesView.swift:891`, `CustomizationWizard.swift:1283`), not orphans. Per CLAUDE.md "Replace, don't deprecate" — migrate those 2 callsites to the provenance-aware methods in a future PR and delete the wrappers.
 

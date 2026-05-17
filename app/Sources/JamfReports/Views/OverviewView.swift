@@ -46,6 +46,13 @@ struct OverviewView: View {
                         workspaceInitBanner
                     }
                     migrationBanner
+                    // PR-13: shared StaleDataBanner surfaces freshness above
+                    // the KPI grid. Suppressed in demo mode (canonical demo
+                    // dataset is intentionally static). Renders nothing when
+                    // source is .fresh.
+                    if !workspace.demoMode {
+                        StaleDataBanner(source: trendStore.cacheSource)
+                    }
                     statRow
                     if workspace.demoMode {
                         osAndRules
