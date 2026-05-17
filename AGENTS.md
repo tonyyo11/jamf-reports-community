@@ -39,19 +39,16 @@ Neither component should contain any org-specific values in the code.
 
 ## Anti-churn discipline
 
-This branch absorbed substantial AI-assisted churn during its initial build.
-The `review/REPORT.md` audit documents four within-branch waste patterns
-(F1–F4) including 2,171 lines of scaffolded dashboards deleted as "dead
-code" three days after landing and a same-day SwiftUI layout self-revert
-75 minutes after merge. The rules below exist to keep that from recurring.
-Read them before the first edit of every session.
+This branch absorbed substantial AI-assisted churn during its initial build,
+including 2,171 lines of scaffolded dashboards deleted as "dead code" three
+days after landing and a same-day SwiftUI layout self-revert 75 minutes
+after merge. The rules below exist to keep that from recurring. Read them
+before the first edit of every session.
 
-**`review/REPORT.md` is the authoritative inventory of known issues.** Read
-it before any change adjacent to a flagged finding. Fix only items in the
-current PR's scope; log all others to `BACKLOG.md` per protocol. Do not
-edit `review/REPORT.md` — track execution status in `review/05-backlog.md`
-(or in the PR description). New findings go to `BACKLOG.md`, not into the
-current PR.
+**`BACKLOG.md` is the authoritative live inventory of valid-but-out-of-scope
+findings.** Read it before any change adjacent to a flagged area. Fix only
+items in the current PR's scope; log all others to `BACKLOG.md` per protocol.
+When you fix a backlog item, remove it from `BACKLOG.md` in the same commit.
 
 **Branch-history check before edit.** Before editing any file, run
 `git log --oneline origin/main..HEAD -- <path>` and state the count in
