@@ -208,6 +208,7 @@ final class ConfigServiceTests: XCTestCase {
             keepLatestRuns: "42",
             exportPptx: true,
             jamfCLIUseCachedData: false,
+            jamfCLIRequireManifest: true,
             orgName: "Example Org",
             logoPath: "/tmp/example-logo.png",
             accentColor: "#112233",

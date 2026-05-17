@@ -23,11 +23,6 @@ false-zero, `LaunchAgentService.checkSummaryFileForPartialStatus` test
 coverage, and dead-code docstring on the summary.json branch). The items
 below are valid follow-ups.
 
-- **T-11 (HIGH) — Snapshot manifest absence treated as silent pass.**
-  `SnapshotManifest.verify` returns silently when the manifest is absent
-  or unparseable. Surface unverified-snapshot warnings in `AuditView`
-  and add a `jamf_cli.require_manifest: true` config gate that feeds
-  `--strict-manifest` by default. ~30 lines.
 - **T-12 (MEDIUM) — `summary.json` outside manifest coverage.** Extend
   `_rewrite_snapshot_manifest` to cover
   `snapshots/computers/summaries/`; verify in `isPartialRun`. ~40 lines.
@@ -78,10 +73,6 @@ below are valid follow-ups.
   exercise the rejection path. None confirm the gate accepts a properly
   signed binary. Add a happy-path test pinned to a known signed system
   binary (e.g., `/usr/bin/codesign` itself) under a stub `expectedTeamID`.
-- **CONSIDER — `SnapshotManifest` corrupt-JSON path (Swift) is
-  untested.** Python side has tests for malformed manifest.json; the
-  Swift `SnapshotManifest.verify` corrupt-JSON branch needs an
-  equivalent test.
 - **CONSIDER — `DeviceLookupView` `staleSince` wiring assumes a
   non-nil snapshot timestamp.** Audit the `snapshotMTime` path for the
   "no manifest, no cache" first-launch state; the view should not crash
@@ -476,7 +467,6 @@ items below are valid but out of scope.
 - **CONSIDER — Stale banner uses attacker-controllable file mtime.** `app/Sources/JamfReports/Views/DeviceLookupView.swift:464-468`. `snapshotMTime` reads `contentModificationDate` from the cache file, which `touch -t` can falsify. If T-2 (cache tampering) is in scope, the banner could be suppressed by an attacker. Mitigation: extend the manifest schema to include a `generated_at` timestamp; banner reads from the manifest, not mtime. Schema change deferred to a future PR.
 - **CONSIDER — Stale banner always fires on first install before any successful live run.** `app/Sources/JamfReports/Views/DeviceLookupView.swift:421`. `fromCache=true` on a fresh workspace produces "Stale data — last fetched X ago" even though the data isn't user-perceivably stale. Add a "Never fetched live" first-run state distinct from "stale".
 - **CONSIDER — `_load_json_snapshots` (and `RunHistoryService.loadLog`) redact line-by-line; multi-line secrets evade the filter.** A token split across newlines would survive both Python trend redaction and Swift run-log redaction. Extremely low probability for jamf-cli structured output (single-line JSON lines) but technically present.
-- **CONSIDER — Manifest absent = no check exploitable.** Both Python and Swift verifiers treat an absent `manifest.json` as "no check" (rationale: legacy snapshots from pre-PR-7 collectors). An attacker who deletes the manifest after tampering bypasses verification. Address via either (a) once a manifest has been seen for a directory, require it exists (track "manifest seen at" state per data_dir), or (b) accept the limit (current).
 - **CONSIDER — `CLIBridge.deviceDetail` / `mobileDeviceDetail` wrappers preserved alongside `*WithProvenance` variants.** `app/Sources/JamfReports/Services/CLIBridge.swift:651,683`. Wrappers are real callers (`DevicesView.swift:891`, `CustomizationWizard.swift:1283`), not orphans. Per CLAUDE.md "Replace, don't deprecate" — migrate those 2 callsites to the provenance-aware methods in a future PR and delete the wrappers.
 
 ### From design-review-fixes-2.md triage (2026-05-17)
@@ -501,7 +491,6 @@ includes "Highest-Value Next Actions" recommending T-11 / T-12 / T-13
 closure as the top three. Items below are the BACKLOG-tracked code
 work to back those recommendations:
 
-- **MUST-FIX — Close T-11 (manifest absence silent pass).** `app/Sources/JamfReports/Engine/SnapshotManifest.swift:11-31`. `verify` returns silently on absent/unparseable manifest. Surface "Unverified snapshot" pill on affected dashboards' data-source line + add `jamf_cli.require_manifest: true` config gate feeding `--strict-manifest` by default for new workspaces. ~30 lines + 1 view change. Largest residual security gap; directly evades PR-7's headline integrity control.
 - **SHOULD-FIX — Close T-12 (summary.json under manifest coverage).** Extend `_rewrite_snapshot_manifest` to cover `snapshots/computers/summaries/` AND add Swift `SnapshotManifest.verify(...)` call inside `RunHistoryService.isPartialRun` + `LaunchAgentService.checkSummaryFileForPartialStatus`. ~40 lines + 1 test. Also closes the existing MEDIUM-3 BACKLOG entry (PR-8 dormant-branch documentation) by giving the dormant Swift code path a real producer.
 - **SHOULD-FIX — Ship T-13 integrity hints for Generated Reports.** Embed `<meta name="report-sha256" content="...">` in HTML report `<head>` plus a visible "Verify this report: shasum -a 256 <file>" footer. Write `.sha256` side-car alongside each generated XLSX. Surface hash in the UI "Report ready" toast. ~25 lines. The single highest-impact change for the cross-trust-boundary recipient surface — addresses the only data path the manifest discipline explicitly skipped.
 

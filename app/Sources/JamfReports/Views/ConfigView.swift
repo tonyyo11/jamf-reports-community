@@ -875,6 +875,12 @@ private struct OutputTab: View {
                             detail: "jamf_cli.use_cached_data",
                             isOn: $ws.configState.jamfCLIUseCachedData
                         )
+                        Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
+                        outputToggleRow(
+                            title: "Require snapshot manifest",
+                            detail: "jamf_cli.require_manifest — hard-fail on tampered or missing-entry snapshots",
+                            isOn: $ws.configState.jamfCLIRequireManifest
+                        )
                     }
                 }
 

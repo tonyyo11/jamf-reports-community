@@ -240,6 +240,7 @@ struct JamfCLIConfig: Decodable, Sendable {
     var profile: String?             // key is `profile`, NOT `jamf_profile`
     var useCachedData: Bool?
     var allowLiveOverview: Bool?
+    var requireManifest: Bool?       // PR-10 / threat-model T-11
 
     private enum CodingKeys: String, CodingKey {
         case enabled
@@ -247,6 +248,7 @@ struct JamfCLIConfig: Decodable, Sendable {
         case profile
         case useCachedData = "use_cached_data"
         case allowLiveOverview = "allow_live_overview"
+        case requireManifest = "require_manifest"
     }
 
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
@@ -254,6 +256,13 @@ struct JamfCLIConfig: Decodable, Sendable {
     var isCachedDataEnabled: Bool { useCachedData ?? true }
     var isLiveOverviewAllowed: Bool { allowLiveOverview ?? true }
     var isEnabled: Bool { enabled ?? true }
+
+    /// PR-10 / threat-model T-11: when true, the Swift engine aborts on
+    /// snapshot integrity violations (`.mismatch` / `.corrupt`) rather than
+    /// warn-and-continue. Default false preserves PR-7's behavior for
+    /// users who upgrade without re-scaffolding their config.yaml; new
+    /// workspaces seeded by `workspace-init` get `true`.
+    var isManifestRequired: Bool { requireManifest ?? false }
 }
 
 // MARK: - ComplianceFramework

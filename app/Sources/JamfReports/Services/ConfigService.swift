@@ -43,6 +43,7 @@ struct ConfigState: Equatable, Sendable {
     var keepLatestRuns: String
     var exportPptx: Bool
     var jamfCLIUseCachedData: Bool
+    var jamfCLIRequireManifest: Bool
     var orgName: String
     var logoPath: String
     var accentColor: String
@@ -98,6 +99,7 @@ struct ConfigState: Equatable, Sendable {
         keepLatestRuns: "10",
         exportPptx: false,
         jamfCLIUseCachedData: true,
+        jamfCLIRequireManifest: false,
         orgName: "",
         logoPath: "",
         accentColor: "#2D5EA2",
@@ -314,6 +316,8 @@ enum ConfigService {
         if let jamfCLI = root.value(for: "jamf_cli")?.mapping {
             state.jamfCLIUseCachedData =
                 jamfCLI.value(for: "use_cached_data")?.boolValue ?? state.jamfCLIUseCachedData
+            state.jamfCLIRequireManifest =
+                jamfCLI.value(for: "require_manifest")?.boolValue ?? state.jamfCLIRequireManifest
         }
 
         if let branding = root.value(for: "branding")?.mapping {
@@ -378,6 +382,7 @@ enum ConfigService {
 
         var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? .init(entries: [])
         jamfCLI.set("use_cached_data", value: .scalar(.bool(state.jamfCLIUseCachedData)))
+        jamfCLI.set("require_manifest", value: .scalar(.bool(state.jamfCLIRequireManifest)))
         root.set("jamf_cli", value: .mapping(jamfCLI))
 
         var branding = root.value(for: "branding")?.mapping ?? .init(entries: [])
