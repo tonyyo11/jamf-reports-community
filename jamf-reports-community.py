@@ -2545,25 +2545,90 @@ def _emit_summary_json(
     _atomic_write_summary(summary_file, summaries_dir, summary_data)
 
 
+def _emit_per_log_summary_json(
+    historical_dir: str,
+    log_filename: str,
+    run_status: str,
+    *,
+    started_at: Optional[str] = None,
+    finished_at: Optional[str] = None,
+    profile: Optional[str] = None,
+) -> None:
+    """Emit a per-LaunchAgent-run status JSON for Swift partial-status checks.
+
+    Writes ``snapshots/computers/summaries/summary_<log_filename>.json``
+    with a minimal payload containing the run's ``status`` field. The Swift
+    ``RunHistoryService.isPartialRun`` and
+    ``LaunchAgentService.checkSummaryFileForPartialStatus`` use this file as
+    the authoritative source for the PARTIAL pill (PR-8 + PR-11). Before
+    this writer existed (PR-11 / threat-model T-12), those paths were
+    dormant — emitters wrote only daily ``summary_YYYY-MM-DD.json`` files
+    and Swift fell back to scanning logs for ``[partial]`` markers.
+
+    Manifest discipline: ``_atomic_write_summary`` rewrites the sibling
+    ``manifest.json`` so the Swift verifier can detect tampering against
+    the cross-trust-boundary status signal.
+
+    Args:
+        historical_dir: Charts ``historical_csv_dir`` (``snapshots/`` under
+            the workspace). Required — without it the summary directory
+            tree doesn't exist.
+        log_filename: Log filename stem matching Swift's
+            ``logURL.deletingPathExtension().lastPathComponent``
+            (e.g. ``<job_slug>.out`` for ``<job_slug>.out.log``).
+        run_status: One of ``"ok"``, ``"partial"``, or ``"fail"``.
+        started_at / finished_at: ISO-8601 timestamps (UTC).
+        profile: Owning jamf-cli profile slug (informational).
+    """
+    if not historical_dir or not log_filename:
+        return
+    summaries_dir = Path(historical_dir) / "summaries"
+    summaries_dir.mkdir(parents=True, exist_ok=True)
+    summary_file = summaries_dir / f"summary_{log_filename}.json"
+    payload: dict[str, Any] = {
+        "status": run_status,
+        "log_filename": log_filename,
+    }
+    if started_at is not None:
+        payload["started_at"] = started_at
+    if finished_at is not None:
+        payload["finished_at"] = finished_at
+    if profile:
+        payload["profile"] = profile
+    _atomic_write_summary(summary_file, summaries_dir, payload)
+
+
 def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: dict[str, Any]) -> None:
     """Atomically write a summary.json under summaries_dir.
 
     Uses a `.tmp` suffix so an interrupted write doesn't leave a stray `.json`
     sibling that downstream readers might mistake for a real summary.
+
+    PR-11 / threat-model T-12: after the write succeeds, rewrite the sibling
+    `manifest.json` with the SHA-256 of the just-written payload pinned. This
+    extends PR-7's manifest discipline to the `snapshots/computers/summaries/`
+    tree so the Swift app can verify summary integrity (e.g.
+    `RunHistoryService.isPartialRun`'s `status` field).
     """
     temp_path: Optional[Path] = None
     try:
+        payload = json.dumps(data, indent=2).encode("utf-8")
         with tempfile.NamedTemporaryFile(
-            "w",
             delete=False,
             dir=str(summaries_dir),
             prefix=f".{summary_file.stem}.",
             suffix=".tmp",
-            encoding="utf-8",
         ) as tf:
-            json.dump(data, tf, indent=2)
+            tf.write(payload)
             temp_path = Path(tf.name)
         temp_path.replace(summary_file)
+        # Pin the hash from the in-memory payload (TOCTOU fix — matches
+        # _save_snapshot's pattern). Rewrite manifest in full so files purged
+        # by retention sweeps don't leave stale entries.
+        _rewrite_snapshot_manifest(
+            summaries_dir,
+            pinned={summary_file.name: hashlib.sha256(payload).hexdigest()},
+        )
     except Exception as exc:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
@@ -12640,6 +12705,7 @@ def cmd_generate(
     *,
     force_summary: bool = False,
     strict_manifest: bool = False,
+    per_log_summary_filename: Optional[str] = None,
 ) -> Path:
     """Run all report generation and write the Excel file.
 
@@ -13032,6 +13098,18 @@ def cmd_generate(
             print(f"  failed sheet: {failure['sheet']}: {failure['error']}")
     else:
         print(f"\nReport written: {out_path}")
+    # PR-11 / threat-model T-12: emit per-LaunchAgent-run status summary so the
+    # Swift app's PARTIAL-pill check (RunHistoryService.isPartialRun and
+    # LaunchAgentService.checkSummaryFileForPartialStatus) has an authoritative,
+    # manifest-protected source instead of scanning logs for `[partial]` markers.
+    if per_log_summary_filename and hist_dir:
+        _emit_per_log_summary_json(
+            historical_dir=hist_dir,
+            log_filename=per_log_summary_filename,
+            run_status=run_status,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+            profile=str(config.jamf_cli.get("profile", "") or "").strip() or None,
+        )
     if notify_url:
         print("  Sending Teams notification...")
         _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
@@ -17263,6 +17341,19 @@ def cmd_launchagent_run(
 ) -> None:
     """Run a scheduled automation workflow from a generated LaunchAgent."""
     started_at = datetime.now(timezone.utc).isoformat()
+    # PR-11 / threat-model T-12: derive the per-log summary filename from
+    # status_file so cmd_generate can write a manifest-protected status
+    # snapshot for Swift's PARTIAL-pill check. status_file convention is
+    # `<workspace>/automation/<job_slug>_status.json`; logs land in
+    # `<workspace>/automation/logs/<job_slug>.out.log` and Swift derives
+    # `logFilename = "<job_slug>.out"` via `deletingPathExtension`.
+    per_log_summary_filename: Optional[str] = None
+    if status_file:
+        status_name = Path(status_file).name
+        if status_name.endswith("_status.json"):
+            job_slug = status_name[: -len("_status.json")]
+            if job_slug:
+                per_log_summary_filename = f"{job_slug}.out"
     status: dict[str, Any] = {
         "config_path": str(config.path),
         "finished_at": None,
@@ -17332,6 +17423,7 @@ def cmd_launchagent_run(
                     None,
                     historical_csv_dir,
                     notify_url,
+                    per_log_summary_filename=per_log_summary_filename,
                 )
                 status["report_path"] = str(report_path)
                 status["xlsx_report_path"] = str(report_path)
@@ -17343,7 +17435,10 @@ def cmd_launchagent_run(
                 inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
                 status["inventory_csv_path"] = str(inventory_path)
             if generate_xlsx:
-                report_path = cmd_generate(config, None, None, historical_csv_dir, notify_url)
+                report_path = cmd_generate(
+                    config, None, None, historical_csv_dir, notify_url,
+                    per_log_summary_filename=per_log_summary_filename,
+                )
                 status["report_path"] = str(report_path)
                 status["xlsx_report_path"] = str(report_path)
             if generate_html:
@@ -17365,6 +17460,7 @@ def cmd_launchagent_run(
                     None,
                     historical_csv_dir,
                     notify_url,
+                    per_log_summary_filename=per_log_summary_filename,
                 )
                 status["report_path"] = str(report_path)
                 status["xlsx_report_path"] = str(report_path)
@@ -17391,6 +17487,7 @@ def cmd_launchagent_run(
                     None,
                     historical_csv_dir,
                     notify_url,
+                    per_log_summary_filename=per_log_summary_filename,
                 )
                 status["report_path"] = str(report_path)
                 status["xlsx_report_path"] = str(report_path)

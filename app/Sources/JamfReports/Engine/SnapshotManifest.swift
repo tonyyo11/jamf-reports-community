@@ -68,9 +68,9 @@ enum SnapshotManifest {
 
     // MARK: - Workspace scan (PR-10, T-11)
 
-    /// Aggregate counts produced by ``scanWorkspace(dataDir:)``. Each
-    /// snapshot directory under `jamf-cli-data/` contributes the result
-    /// of verifying its newest snapshot.
+    /// Aggregate counts produced by ``scanWorkspace(dataDir:)`` and
+    /// ``scanFlatDir(_:)``. Each snapshot directory contributes the
+    /// result of verifying its files.
     struct WorkspaceVerificationSummary: Equatable, Sendable {
         var verified: Int = 0
         var absent: Int = 0
@@ -81,6 +81,17 @@ enum SnapshotManifest {
         /// Snapshots that did not cleanly verify. AuditView surfaces an
         /// "Unverified snapshot" card when this is > 0.
         var unverified: Int { absent + corrupt + omitted + mismatch }
+
+        /// Combine two summary regions (e.g. `jamf-cli-data/` + `summaries/`).
+        static func + (lhs: Self, rhs: Self) -> Self {
+            Self(
+                verified: lhs.verified + rhs.verified,
+                absent: lhs.absent + rhs.absent,
+                corrupt: lhs.corrupt + rhs.corrupt,
+                omitted: lhs.omitted + rhs.omitted,
+                mismatch: lhs.mismatch + rhs.mismatch
+            )
+        }
     }
 
     /// Walks `<dataDir>/<type>/`, verifies the newest JSON in each, and
@@ -104,6 +115,39 @@ enum SnapshotManifest {
             guard let newest = newestSnapshot(in: typeDir, fm: fm) else { continue }
             guard let data = try? Data(contentsOf: newest) else { continue }
             switch verify(snapshot: newest, data: data) {
+            case .verified: summary.verified += 1
+            case .absent:   summary.absent += 1
+            case .corrupt:  summary.corrupt += 1
+            case .omitted:  summary.omitted += 1
+            case .mismatch: summary.mismatch += 1
+            }
+        }
+        return summary
+    }
+
+    /// Verify EVERY `.json` file directly inside `dir` (no recursion, no
+    /// "newest-only" filtering). Used for `snapshots/computers/summaries/`
+    /// where each per-LaunchAgent summary is independently meaningful.
+    /// Returns a zeroed summary when `dir` does not exist.
+    ///
+    /// PR-11 / threat-model T-12 / security-reviewer 2nd pass S-01: closes
+    /// the AuditView coverage gap where `scanWorkspace(dataDir:)` only
+    /// walked `jamf-cli-data/` and missed tampered per-log summaries.
+    static func scanFlatDir(_ dir: URL) -> WorkspaceVerificationSummary {
+        var summary = WorkspaceVerificationSummary()
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return summary }
+        let candidates = entries.filter {
+            $0.pathExtension.lowercased() == "json"
+            && !$0.lastPathComponent.hasSuffix(fileName)
+        }
+        for snapshot in candidates {
+            guard let data = try? Data(contentsOf: snapshot) else { continue }
+            switch verify(snapshot: snapshot, data: data) {
             case .verified: summary.verified += 1
             case .absent:   summary.absent += 1
             case .corrupt:  summary.corrupt += 1

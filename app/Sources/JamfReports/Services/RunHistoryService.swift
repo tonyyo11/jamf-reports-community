@@ -187,13 +187,20 @@ enum RunHistoryService {
     /// Path: log at `<workspace>/automation/logs/<ts>.log`, summary at
     /// `<workspace>/snapshots/computers/summaries/summary_<ts>.json`.
     ///
-    /// NOTE: as of 2026-05-16 no production code path writes
-    /// `summary_<logFilename>.json` — current emitters write daily
-    /// `summary_YYYY-MM-DD.json`. The summary-based branch is in place for a
-    /// future per-run-summary feature; today, only the `[partial]` log marker
-    /// fallback activates. Tests fake the file themselves to validate the API
-    /// surface.
-    /// Tracked in BACKLOG.md under "### From post-PR-8 review batch (2026-05-16)".
+    /// PR-11 / threat-model T-12: per-LaunchAgent-run summary files
+    /// (`summary_<logFilename>.json`) are now produced by the Python
+    /// `_emit_per_log_summary_json` helper, called from `cmd_generate` when
+    /// `per_log_summary_filename` is passed. `cmd_launchagent_run` derives
+    /// that filename from the `status_file` argument.
+    ///
+    /// **Manifest discipline:** before trusting the `status` field, verify
+    /// the file's SHA-256 against its sibling `manifest.json` (the same
+    /// `_atomic_write_summary` writer pins the hash). On `.mismatch` or
+    /// `.corrupt`, fall through to the `[partial]` log-marker scan rather
+    /// than trusting an attacker-modifiable file — the file would have
+    /// flipped an actual partial state to "ok" otherwise (T-12 attack
+    /// scenario). On `.absent` (legacy snapshots or summaries that
+    /// pre-date PR-11), trust the file content as before.
     static func isPartialRun(logURL: URL, logTailText: String) -> Bool {
         let logFilename = logURL.deletingPathExtension().lastPathComponent
         let workspace = logURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -204,10 +211,22 @@ enum RunHistoryService {
             .appendingPathComponent("summary_\(logFilename).json")
 
         if FileManager.default.fileExists(atPath: summaryURL.path),
-           let data = try? Data(contentsOf: summaryURL),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let status = json["status"] as? String {
-            return status == "partial"
+           let data = try? Data(contentsOf: summaryURL) {
+            let verification = SnapshotManifest.verify(snapshot: summaryURL, data: data)
+            // Trust only `.verified` (manifest hash matches) or `.absent`
+            // (legacy pre-PR-11 — no manifest discipline to enforce). On
+            // `.mismatch` (tampered after manifest write), `.corrupt`
+            // (manifest unparseable), or `.omitted` (file not registered
+            // in an existing manifest — security-reviewer 2nd pass M-01:
+            // injection bypass since every legitimate PR-11 write
+            // registers the file), fall back to the `[partial]` log
+            // marker rather than trusting an attacker-modifiable signal.
+            if verification == .verified || verification == .absent {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let status = json["status"] as? String {
+                    return status == "partial"
+                }
+            }
         }
 
         return logTailText.contains("[partial]")

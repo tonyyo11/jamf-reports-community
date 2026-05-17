@@ -23,9 +23,6 @@ false-zero, `LaunchAgentService.checkSummaryFileForPartialStatus` test
 coverage, and dead-code docstring on the summary.json branch). The items
 below are valid follow-ups.
 
-- **T-12 (MEDIUM) — `summary.json` outside manifest coverage.** Extend
-  `_rewrite_snapshot_manifest` to cover
-  `snapshots/computers/summaries/`; verify in `isPartialRun`. ~40 lines.
 - **T-13 (MEDIUM) — Generated Reports (`*.xlsx`, `*.html`) have no
   integrity envelope.** Embed `<meta name="report-sha256">` in HTML;
   write a `.sha256` side-car for XLSX. ~25 lines.
@@ -35,15 +32,6 @@ below are valid follow-ups.
 - **MEDIUM-2 — `HtmlReport+Sections.swift:1001` Protect-insights JSON
   parse silently returns `[]`.** Add an explicit guard + warning. Family:
   N-07.
-- **MEDIUM-3 — Implement per-run `summary_<logFilename>.json` writer
-  OR drop the dead branch.** PR-9 documented (`LaunchAgentService.swift`,
-  `RunHistoryService.swift`) that the summary-based partial-status branch
-  is dead code in production: emitters write daily
-  `summary_YYYY-MM-DD.json`, not `summary_<logFilename>.json`. Implement
-  EITHER (a) a per-run `summary_<logFilename>.json` writer in the Python
-  + Swift emitters with a `status` field, OR (b) match the lookup to the
-  existing `summary_YYYY-MM-DD.json` naming. Option (a) is preferred
-  since it preserves per-run granularity. ~50 lines.
 - **CONSIDER-1 — `MigrationBanner.onDismiss: {}` no-op leaves
   `legacyWorkspaces`/`legacySchedules` populated in `@State`.** Pass a
   closure that clears both arrays.
@@ -60,12 +48,6 @@ below are valid follow-ups.
   per-device-detail path produces a silent failure with no Runs-feed
   diagnostic, and the upgrade reflects that the silent-failure cost is
   higher than originally assessed.
-- **CONSIDER — `isPartialRun` malformed summary.json fall-through to
-  `[partial]` marker is untested.** Today, a malformed
-  `summary_<ts>.json` (invalid JSON, missing `status` key, non-string
-  `status` value) silently falls through to the log-tail
-  `[partial]`-marker fallback. Add a test confirming the fallback fires
-  when summary.json exists but is malformed. RunHistoryServiceTests.
 - **CONSIDER — Codesign-gate happy-path test missing.** All three PR-6
   gate tests (`ProvenanceCodesignGateTests`,
   `JamfCLIInstallerCodesignGateTests`, `ProfileServiceCodesignGateTests`)
@@ -491,8 +473,11 @@ includes "Highest-Value Next Actions" recommending T-11 / T-12 / T-13
 closure as the top three. Items below are the BACKLOG-tracked code
 work to back those recommendations:
 
-- **SHOULD-FIX — Close T-12 (summary.json under manifest coverage).** Extend `_rewrite_snapshot_manifest` to cover `snapshots/computers/summaries/` AND add Swift `SnapshotManifest.verify(...)` call inside `RunHistoryService.isPartialRun` + `LaunchAgentService.checkSummaryFileForPartialStatus`. ~40 lines + 1 test. Also closes the existing MEDIUM-3 BACKLOG entry (PR-8 dormant-branch documentation) by giving the dormant Swift code path a real producer.
 - **SHOULD-FIX — Ship T-13 integrity hints for Generated Reports.** Embed `<meta name="report-sha256" content="...">` in HTML report `<head>` plus a visible "Verify this report: shasum -a 256 <file>" footer. Write `.sha256` side-car alongside each generated XLSX. Surface hash in the UI "Report ready" toast. ~25 lines. The single highest-impact change for the cross-trust-boundary recipient surface — addresses the only data path the manifest discipline explicitly skipped.
+
+### From PR-11 security review (2026-05-17)
+
+- **CONSIDER — Cross-run manifest re-hash from disk inherits PR-7 attack window.** `jamf-reports-community.py:670-671`. `_rewrite_snapshot_manifest` re-hashes unpinned existing files from disk when rewriting the manifest. Each `_emit_summary_json` (daily) or `_emit_per_log_summary_json` call rewrites the summaries manifest, causing OTHER existing per-log summaries to be re-hashed from disk at that point. An attacker who tampers a per-log summary between two legitimate writes (e.g., between hot-tier runs ≥15 min apart) gets their tampered content blessed into the manifest on the next sibling run — converting a `.mismatch` into `.verified` for that file. Same residual attack pattern as PR-7's `_save_snapshot` and accepted there. Address with a "pin all known files from a per-run-context cache" approach OR document as accepted residual in the threat model. Inherited from PR-7.
 
 ---
 

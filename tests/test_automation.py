@@ -42,8 +42,11 @@ def test_launchagent_snapshot_only_generates_configured_outputs(
         inventory_path.write_text("serial\nABC123\n", encoding="utf-8")
         return inventory_path
 
-    def fake_generate(_config, csv_path, out_file, historical_csv_dir, notify_url, csv_extra=None):
-        del out_file, historical_csv_dir, notify_url, csv_extra
+    def fake_generate(_config, csv_path, out_file, historical_csv_dir, notify_url,
+                      csv_extra=None, **kwargs):
+        # **kwargs absorbs per_log_summary_filename (PR-11) and any future
+        # forward-compatible cmd_generate kwargs.
+        del out_file, historical_csv_dir, notify_url, csv_extra, kwargs
         calls.append(("generate", str(csv_path)))
         report_path.write_text("xlsx", encoding="utf-8")
         return report_path

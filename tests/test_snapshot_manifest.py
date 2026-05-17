@@ -415,6 +415,103 @@ def test_workspace_init_seeds_require_manifest_true(jrc, config_factory):
     assert seeded["jamf_cli"]["require_manifest"] is True
 
 
+def test_emit_per_log_summary_writes_status_with_manifest(jrc, tmp_path):
+    """PR-11 / threat-model T-12: per-LaunchAgent-run summary writer must
+    produce both the summary file (with status field) AND a sibling
+    manifest.json so the Swift verifier can detect tampering."""
+    historical_dir = tmp_path / "snapshots"
+    historical_dir.mkdir()
+
+    jrc._emit_per_log_summary_json(
+        historical_dir=str(historical_dir),
+        log_filename="example-profile-hot.out",
+        run_status="partial",
+        started_at="2026-05-17T13:00:00+00:00",
+        finished_at="2026-05-17T13:05:00+00:00",
+        profile="example-profile",
+    )
+
+    summary = historical_dir / "summaries" / "summary_example-profile-hot.out.json"
+    manifest = historical_dir / "summaries" / "manifest.json"
+
+    assert summary.is_file(), "per-log summary file must be created"
+    assert manifest.is_file(), "sibling manifest.json must be written (T-12 manifest coverage)"
+
+    payload = json.loads(summary.read_text(encoding="utf-8"))
+    assert payload["status"] == "partial"
+    assert payload["log_filename"] == "example-profile-hot.out"
+    assert payload["profile"] == "example-profile"
+
+    manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert manifest_data["algorithm"] == "sha256"
+    assert summary.name in manifest_data["files"]
+
+
+def test_emit_per_log_summary_overwrites_existing(jrc, tmp_path):
+    """Each LaunchAgent run overwrites its own per-log summary so the
+    Swift PARTIAL pill reflects the latest run, not a cached older one."""
+    historical_dir = tmp_path / "snapshots"
+    historical_dir.mkdir()
+
+    jrc._emit_per_log_summary_json(
+        historical_dir=str(historical_dir),
+        log_filename="job.out",
+        run_status="ok",
+    )
+    jrc._emit_per_log_summary_json(
+        historical_dir=str(historical_dir),
+        log_filename="job.out",
+        run_status="partial",
+    )
+
+    summary = historical_dir / "summaries" / "summary_job.out.json"
+    payload = json.loads(summary.read_text(encoding="utf-8"))
+    assert payload["status"] == "partial", "second write must replace the first"
+
+
+def test_emit_per_log_summary_noops_without_inputs(jrc, tmp_path):
+    """Defensive: missing historical_dir or log_filename must NOT create
+    stray summary files."""
+    # No historical_dir
+    jrc._emit_per_log_summary_json(
+        historical_dir="",
+        log_filename="job.out",
+        run_status="ok",
+    )
+    # No log_filename
+    jrc._emit_per_log_summary_json(
+        historical_dir=str(tmp_path),
+        log_filename="",
+        run_status="ok",
+    )
+    summaries_dir = tmp_path / "summaries"
+    if summaries_dir.exists():
+        assert not list(summaries_dir.iterdir()), \
+            "no summary file should be created with missing inputs"
+
+
+def test_daily_summary_writer_also_writes_manifest(jrc, config_factory, tmp_path):
+    """PR-11 / threat-model T-12: the daily summary writer (used by
+    cmd_generate's _emit_summary_json) must ALSO produce a manifest.json
+    so existing daily summaries are integrity-protected, not just the
+    new per-log ones."""
+    historical_dir = tmp_path / "snapshots"
+    summaries_dir = historical_dir / "summaries"
+    summaries_dir.mkdir(parents=True)
+    summary_file = summaries_dir / "summary_2026-05-17.json"
+
+    jrc._atomic_write_summary(
+        summary_file,
+        summaries_dir,
+        {"date": "2026-05-17", "totalDevices": 100, "source": "test"},
+    )
+
+    manifest = summaries_dir / "manifest.json"
+    assert manifest.is_file(), "daily summary writer must produce manifest.json"
+    manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert summary_file.name in manifest_data["files"]
+
+
 def test_require_manifest_config_trips_hard_fail_end_to_end(jrc, config_factory, tmp_path):
     """End-to-end: config gate → bridge → `_load_cached_json` → RuntimeError
     on tamper. Closes the integration gap that the bridge-construction
