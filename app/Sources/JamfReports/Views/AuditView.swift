@@ -706,14 +706,24 @@ struct AuditView: View {
     /// PR-10 / threat-model T-11: scan the workspace's jamf-cli-data/<type>
     /// dirs and aggregate per-snapshot verification results so the
     /// integrity card can warn when any are unverified.
+    ///
+    /// PR-11 / threat-model T-12 / security-reviewer 2nd-pass S-01:
+    /// ALSO scan `snapshots/computers/summaries/` so tampered per-log
+    /// summaries appear in the integrity card alongside data-snapshot
+    /// integrity issues.
     private func loadIntegritySummary() async {
         let profile = workspace.profile
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             integritySummary = nil
             return
         }
+        let summariesDir = try? WorkspacePaths.summariesDir(for: profile)
         let summary = await Task.detached(priority: .userInitiated) {
-            SnapshotManifest.scanWorkspace(dataDir: dataDir)
+            var s = SnapshotManifest.scanWorkspace(dataDir: dataDir)
+            if let summariesDir {
+                s = s + SnapshotManifest.scanFlatDir(summariesDir)
+            }
+            return s
         }.value
         // Profile may have switched while the detached scan ran — gate.
         guard workspace.profile == profile else { return }

@@ -508,15 +508,18 @@ enum LaunchAgentService {
         return logSummary.hasFailureMarker ? .fail : .ok
     }
 
-    /// Authoritative source: sibling `summary_<logFilename>.json` matching the
-    /// log filename. NOTE: as of 2026-05-16 no production code path writes
-    /// `summary_<logFilename>.json` — current emitters write daily
-    /// `summary_YYYY-MM-DD.json`. The summary-based branch is in place for a
-    /// future per-run-summary feature; today, only the `[partial]` log marker
-    /// fallback (in `lastStatus`) activates. Tests fake the file themselves to
-    /// validate the API surface. Returns false for multi-profile logs (no
-    /// per-run summary in that layout).
-    /// Tracked in BACKLOG.md under "### From post-PR-8 review batch (2026-05-16)".
+    /// PR-11 / threat-model T-12: per-LaunchAgent-run summary files
+    /// (`summary_<logFilename>.json`) are now produced by the Python
+    /// `_emit_per_log_summary_json` helper, called from `cmd_generate` when
+    /// `per_log_summary_filename` is passed. Returns false for multi-profile
+    /// logs (no per-run summary in that layout).
+    ///
+    /// **Manifest discipline:** before trusting the `status` field, verify
+    /// the file's SHA-256 against its sibling `manifest.json`. On
+    /// `.mismatch` or `.corrupt`, return false (defer to caller's
+    /// log-marker fallback in `lastStatus`) rather than trusting an
+    /// attacker-modifiable file. On `.absent` / `.omitted` / `.verified`,
+    /// trust the file content as before.
     private static func checkSummaryFileForPartialStatus(
         logURL: URL,
         profile: String,
@@ -531,10 +534,20 @@ enum LaunchAgentService {
             .appendingPathComponent("summaries")
             .appendingPathComponent("summary_\(logFilename).json")
         if FileManager.default.fileExists(atPath: summaryURL.path),
-           let data = try? Data(contentsOf: summaryURL),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let status = json["status"] as? String {
-            return status == "partial"
+           let data = try? Data(contentsOf: summaryURL) {
+            let verification = SnapshotManifest.verify(snapshot: summaryURL, data: data)
+            // Trust only `.verified` or `.absent` (legacy pre-PR-11).
+            // `.mismatch`, `.corrupt`, and `.omitted` all signal an
+            // attacker-modifiable summary (security-reviewer 2nd pass
+            // M-01: `.omitted` is an injection bypass — every legitimate
+            // PR-11 write registers the file in the manifest). Caller's
+            // `lastStatus` performs the log-marker fallback.
+            if verification == .verified || verification == .absent {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let status = json["status"] as? String {
+                    return status == "partial"
+                }
+            }
         }
         return false
     }
