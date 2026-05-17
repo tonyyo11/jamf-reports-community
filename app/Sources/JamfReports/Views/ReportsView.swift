@@ -255,8 +255,14 @@ struct ReportsView: View {
             workspace.globalStatus = "generate · profile=\(profile)"
             reportError = nil
             Task {
+                // T-13 integrity envelope: scrape the engine's sentinel sha256 log line
+                // so we can surface the truncated fingerprint in the toast.
+                let hashBox = HashBox()
                 // Status-bar race guard — see comment in HealthCheckView.runAudit.
                 let code = await bridge.generateHTML(profile: profile, outFile: outPath) { [weak workspace] line in
+                    if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                        Task { @MainActor in hashBox.value = parsed.hash }
+                    }
                     Task { @MainActor in
                         guard let workspace, self.isGeneratingHTML else { return }
                         workspace.globalStatus = line.text
@@ -265,7 +271,14 @@ struct ReportsView: View {
                 isGeneratingHTML = false
                 workspace.globalStatus = nil
                 if code == 0 {
-                    workspace.toast = Toast(message: "HTML report generated", style: .success)
+                    let message: String
+                    if let hash = hashBox.value {
+                        let truncated = hash.count > 12 ? String(hash.prefix(12)) + "\u{2026}" : hash
+                        message = "HTML report generated · sha256: \(truncated)"
+                    } else {
+                        message = "HTML report generated"
+                    }
+                    workspace.toast = Toast(message: message, style: .success)
                     SystemActions.open(dest)
                     reload()
                 } else {
@@ -314,4 +327,13 @@ struct ReportsView: View {
 
 extension Notification.Name {
     static let requestOverviewTab = Notification.Name("JamfReports.requestOverviewTab")
+}
+
+/// Mutable single-value reference for capturing the SHA-256 fingerprint from
+/// the engine's log stream so it can be displayed in the report-ready toast.
+/// Boxed so the closure can mutate it across actor hops without needing
+/// `@MainActor`-isolated state on the call site.
+@MainActor
+private final class HashBox {
+    var value: String?
 }

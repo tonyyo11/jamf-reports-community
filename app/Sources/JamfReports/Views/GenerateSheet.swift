@@ -43,6 +43,12 @@ final class GenerateSheetState {
     var completedFiles: [URL] = []
     var errorMessage: String? = nil
 
+    /// T-13 integrity envelope: hashes captured from the run log, keyed by
+    /// artifact basename. Populated by `appendLine` when it sees a sentinel
+    /// `[ok] sha256: <64hex> <basename>` line emitted by the engine.
+    /// Surfaced in the completion banner and exposed to copy-to-clipboard.
+    var generatedHashes: [String: String] = [:]
+
     /// Identifier of the currently selected report template.
     /// Persisted for the sheet's lifetime; falls back to Executive on next open.
     var selectedTemplateID: String = ExecutiveTemplate().identifier
@@ -68,6 +74,31 @@ final class GenerateSheetState {
 
     func appendLine(_ line: CLIBridge.LogLine) {
         logLines.append(line)
+        // Match `[ok] sha256: <64hex> <basename>` exactly — Engine emits this
+        // for every artifact wrapped in a T-13 integrity envelope.
+        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+            generatedHashes[parsed.filename] = parsed.hash
+        }
+    }
+
+    /// Parse a sentinel SHA-256 log line into `(hash, basename)`.
+    /// Returns `nil` if the line doesn't match the expected shape so unrelated
+    /// log lines (other `[ok]` lines, free-form messages) flow through untouched.
+    /// `nonisolated` because the implementation is a pure function over the
+    /// input string — callers from any actor context can invoke it.
+    nonisolated static func parseSHA256LogLine(_ text: String) -> (hash: String, filename: String)? {
+        let prefix = "[ok] sha256: "
+        guard text.hasPrefix(prefix) else { return nil }
+        let tail = String(text.dropFirst(prefix.count))
+        // Expected: <64 hex chars><space><filename>
+        guard let spaceIdx = tail.firstIndex(of: " ") else { return nil }
+        let hashCandidate = String(tail[..<spaceIdx])
+        guard hashCandidate.count == 64,
+              hashCandidate.allSatisfy({ $0.isHexDigit }) else { return nil }
+        let filename = String(tail[tail.index(after: spaceIdx)...])
+            .trimmingCharacters(in: .whitespaces)
+        guard !filename.isEmpty else { return nil }
+        return (hashCandidate, filename)
     }
 
     func reset() {
@@ -76,6 +107,7 @@ final class GenerateSheetState {
         completedCount = 0
         completedFiles = []
         errorMessage = nil
+        generatedHashes = [:]
     }
 }
 
@@ -423,16 +455,27 @@ struct GenerateSheet: View {
     }
 
     private var completionBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Theme.Colors.ok)
-            Text("Done — \(state.completedCount) file\(state.completedCount == 1 ? "" : "s") generated")
-                .font(Theme.Fonts.bodyText.weight(.medium))
-                .foregroundStyle(Theme.Text.primary)
-            Spacer()
-            PNPButton(title: "Reveal in Finder", icon: "folder", size: .sm) {
-                let dir = state.resolvedOutputDir(for: profile)
-                SystemActions.openFolder(dir)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Theme.Colors.ok)
+                Text("Done — \(state.completedCount) file\(state.completedCount == 1 ? "" : "s") generated")
+                    .font(Theme.Fonts.bodyText.weight(.medium))
+                    .foregroundStyle(Theme.Text.primary)
+                Spacer()
+                PNPButton(title: "Reveal in Finder", icon: "folder", size: .sm) {
+                    let dir = state.resolvedOutputDir(for: profile)
+                    SystemActions.openFolder(dir)
+                }
+            }
+
+            // T-13 integrity envelope: list the per-artifact SHA-256 fingerprint
+            // with a click-to-copy affordance. Truncated to 12 chars for the row;
+            // copying yields the full 64-char hex digest.
+            if !state.generatedHashes.isEmpty {
+                ForEach(state.generatedHashes.sorted(by: { $0.key < $1.key }), id: \.key) { filename, hash in
+                    integrityHashRow(filename: filename, hash: hash)
+                }
             }
         }
         .padding(12)
@@ -441,6 +484,37 @@ struct GenerateSheet: View {
             RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius)
                 .strokeBorder(Theme.Colors.ok.opacity(0.3), lineWidth: 0.5)
         )
+    }
+
+    private func integrityHashRow(filename: String, hash: String) -> some View {
+        let truncated = hash.count > 12 ? String(hash.prefix(12)) + "\u{2026}" : hash
+        return HStack(spacing: 8) {
+            Image(systemName: "lock.shield")
+                .foregroundStyle(Theme.Text.secondary)
+                .font(.caption)
+            Text(filename)
+                .font(Theme.Fonts.label)
+                .foregroundStyle(Theme.Text.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            Text("sha256: \(truncated)")
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Text.tertiary)
+                .help("Full hash: \(hash)")
+            Button {
+                #if canImport(AppKit)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(hash, forType: .string)
+                #endif
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("Copy full SHA-256 to clipboard")
+            .accessibilityLabel("Copy SHA-256 for \(filename)")
+        }
     }
 
     private var footer: some View {

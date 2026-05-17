@@ -23,9 +23,6 @@ false-zero, `LaunchAgentService.checkSummaryFileForPartialStatus` test
 coverage, and dead-code docstring on the summary.json branch). The items
 below are valid follow-ups.
 
-- **T-13 (MEDIUM) — Generated Reports (`*.xlsx`, `*.html`) have no
-  integrity envelope.** Embed `<meta name="report-sha256">` in HTML;
-  write a `.sha256` side-car for XLSX. ~25 lines.
 - **MEDIUM-1 — `AuditView` drift diff silently treats previous-snapshot
   decode failure as "no previous".** `AuditView.swift:565`. Use explicit
   `try/catch` with `AppLogger.app.warning`.
@@ -475,8 +472,6 @@ horizons (notarized DMG + PKG installer) per §11 annex. The doc
 includes "Highest-Value Next Actions" recommending T-11 / T-12 / T-13
 closure as the top three. Items below are the BACKLOG-tracked code
 work to back those recommendations:
-
-- **SHOULD-FIX — Ship T-13 integrity hints for Generated Reports.** Embed `<meta name="report-sha256" content="...">` in HTML report `<head>` plus a visible "Verify this report: shasum -a 256 <file>" footer. Write `.sha256` side-car alongside each generated XLSX. Surface hash in the UI "Report ready" toast. ~25 lines. The single highest-impact change for the cross-trust-boundary recipient surface — addresses the only data path the manifest discipline explicitly skipped.
 
 ### From PR-11 security review (2026-05-17)
 
