@@ -135,7 +135,6 @@ final class IntegrityEnvelopeTests: XCTestCase {
 
     // MARK: - GenerateSheetState.parseSHA256LogLine
 
-    @MainActor
     func testParseSHA256LogLineHappyPath() {
         let hash = String(repeating: "a", count: 64)
         let text = "[ok] sha256: \(hash) report.xlsx"
@@ -144,13 +143,11 @@ final class IntegrityEnvelopeTests: XCTestCase {
         XCTAssertEqual(parsed?.filename, "report.xlsx")
     }
 
-    @MainActor
     func testParseSHA256LogLineRejectsShortHash() {
         let text = "[ok] sha256: deadbeef report.xlsx"
         XCTAssertNil(GenerateSheetState.parseSHA256LogLine(text))
     }
 
-    @MainActor
     func testParseSHA256LogLineRejectsNonMatchingPrefix() {
         XCTAssertNil(GenerateSheetState.parseSHA256LogLine("[ok] report written"))
     }

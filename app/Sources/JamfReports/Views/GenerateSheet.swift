@@ -84,7 +84,9 @@ final class GenerateSheetState {
     /// Parse a sentinel SHA-256 log line into `(hash, basename)`.
     /// Returns `nil` if the line doesn't match the expected shape so unrelated
     /// log lines (other `[ok]` lines, free-form messages) flow through untouched.
-    static func parseSHA256LogLine(_ text: String) -> (hash: String, filename: String)? {
+    /// `nonisolated` because the implementation is a pure function over the
+    /// input string — callers from any actor context can invoke it.
+    nonisolated static func parseSHA256LogLine(_ text: String) -> (hash: String, filename: String)? {
         let prefix = "[ok] sha256: "
         guard text.hasPrefix(prefix) else { return nil }
         let tail = String(text.dropFirst(prefix.count))
