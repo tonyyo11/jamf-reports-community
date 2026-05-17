@@ -834,6 +834,57 @@ Sheets appear only when the required config and data are present. Use
 | Platform DDM Status | jamf-cli platform preview | Declaration success vs unsuccessful counts by source |
 | Report Sources | always when data exists | Declares whether each sheet came from jamf-cli, CSV, or charts |
 
+### Integrity envelope for shareable reports
+
+Every generated report ships with a self-attesting fingerprint so a recipient
+can confirm the file has not been tampered with after generation. This addresses
+the cross-trust-boundary tampering vector (threat-model T-13): no code execution
+is required to edit an HTML or XLSX after it leaves your workstation, so
+recipients benefit from a baseline integrity hint.
+
+**XLSX (`.sha256` sidecar).** Every `.xlsx` written by `generate` or
+`school-generate` is accompanied by `<basename>.xlsx.sha256` in standard
+`shasum -a 256` output format:
+
+```
+8f4c2a...64hex...e9b7  jamf_report_prod_2026-05-17_103045.xlsx
+```
+
+Verify from the directory containing both files:
+
+```sh
+shasum -a 256 -c jamf_report_prod_2026-05-17_103045.xlsx.sha256
+# → jamf_report_prod_2026-05-17_103045.xlsx: OK
+```
+
+A non-zero exit (or `FAILED` in the output) means the workbook bytes do not
+match the recorded hash — the file was modified, truncated, or corrupted.
+
+**HTML (`<meta>` tag + visible footer).** Reports written by `html` /
+`generateHTML` embed `<meta name="report-sha256" content="HASH">` in
+`<head>` and a `class="verify-footer"` block near the document footer that
+lists the same hash plus the verification procedure. The embedded hash is
+a **source fingerprint**: it covers a *placeholder version* of the file
+where the hash field is replaced with 64 zeros. To reproduce it:
+
+```sh
+# Replace the embedded 64-hex hash with 64 zeros in two sites (meta tag
+# + footer), then hash the result. The output must equal the embedded hash.
+HASH=$(sed -nE 's/.*name="report-sha256" content="([0-9a-f]{64})".*/\1/p' report.html | head -1)
+sed "s/${HASH}/0000000000000000000000000000000000000000000000000000000000000000/g" report.html \
+    | shasum -a 256
+# → <HASH>  -
+```
+
+If the recomputed digest matches the embedded `HASH`, the report content
+has not been altered. (Direct `shasum -a 256 report.html` does **not**
+match the embedded value because the embedded hash itself is part of the
+final bytes — this is unavoidable for self-attesting documents.)
+
+In the macOS app, the per-artifact fingerprint appears truncated in the
+Reports screen's "Report ready" toast and in full (with a copy-to-clipboard
+button) in the Generate sheet's completion banner.
+
 ---
 
 ## Configuration Guide

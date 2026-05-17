@@ -827,7 +827,13 @@ final class CLIBridge {
             }
         }
         do {
-            try await ReportEngine.generateHTML(config: config, dataDir: dataDir, outputURL: outputURL, template: template)
+            try await ReportEngine.generateHTML(
+                config: config,
+                dataDir: dataDir,
+                outputURL: outputURL,
+                template: template,
+                onLine: onLine
+            )
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] HTML report written: \(outputURL.lastPathComponent)"))
             tightenOnSuccess(0, profile: profile)

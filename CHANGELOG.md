@@ -10,6 +10,17 @@ versions in this repository map to git tags.
 ### Added
 
 - **Per-LaunchAgent-run partial-status summaries + manifest coverage for `snapshots/computers/summaries/`** (PR-11, threat-model T-12): `cmd_generate` invoked from `cmd_launchagent_run` now emits a per-log `summary_<log_filename>.json` carrying the run's `status` field. The Swift `RunHistoryService.isPartialRun` and `LaunchAgentService.checkSummaryFileForPartialStatus` previously read a file that no producer wrote (BACKLOG MEDIUM-3); they now have a real producer AND verify the file's SHA-256 against a sibling `manifest.json` before trusting `status`. Tampered or corrupt summaries fall back to the existing `[partial]` log-marker scan rather than silently misreporting the PARTIAL pill. Daily `summary_YYYY-MM-DD.json` writes ALSO produce a manifest now — closes the integrity gap PR-7 left open for trend summaries.
+- **T-13 integrity envelope for Generated Reports** (PR-12, threat-model T-13):
+  Every generated `.xlsx` now ships with a `<basename>.xlsx.sha256` sidecar
+  in `shasum -a 256` output format, so recipients can verify the file with
+  `shasum -a 256 -c <basename>.xlsx.sha256` from the report directory.
+  Generated HTML reports embed a `<meta name="report-sha256" content="...">`
+  tag in `<head>` and a visible source-fingerprint footer with the
+  verification procedure. The macOS app's "Report ready" toast surfaces the
+  first 12 hex chars of the hash; the Generate sheet's completion banner
+  shows the per-artifact fingerprint with a click-to-copy button for the
+  full 64-character digest. Python and Swift emitters produce identical
+  envelope structure.
 - **`jamf_cli.require_manifest` config option + AuditView "Unverified snapshot" warning card** (PR-10, threat-model T-11): Set `jamf_cli.require_manifest: true` in `config.yaml` (or toggle "Require snapshot manifest" in Configuration → jamf-cli Cache) to hard-fail on snapshot integrity violations — missing manifest entries, SHA-256 mismatches, or absent `manifest.json` files. Equivalent to passing `--strict-manifest` on every invocation. The macOS app's AuditView now surfaces a warning card listing the count and breakdown of unverified snapshot directories regardless of the config setting, closing the "manifest absence = silent pass" gap from PR-7.
 - **`LICENSE`** (MIT), **`NOTICE.md`** (Jamf/Apple trademark and non-affiliation notice), **`THIRD_PARTY_NOTICES.md`** (Sparkle, ZIPFoundation, jamf-cli, Chart.js, Python deps): canonical files at the repo root; mirrored copies in `app/Sources/JamfReports/Resources/` for in-app loading.
 - **`BACKLOG.md`**: project-visible backlog of deferred review findings. Items are added when valid but out of scope for the current change, removed in the same commit that fixes them. Pointer notes added to `CLAUDE.md` and `AGENTS.md`.

@@ -114,6 +114,17 @@ struct ReportEngine: Sendable {
         // Write a SHA-256 manifest alongside the artifact for federal compliance.
         writeManifest(for: outputURL, profile: profile, template: template.identifier)
 
+        // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar in
+        // `shasum -a 256` output format. The hash is also surfaced to the UI
+        // via the log stream so GenerateSheet can show it in the toast.
+        if let hash = Self.writeSHA256Sidecar(for: outputURL) {
+            onLine?(.init(
+                timestamp: Date(),
+                level: .ok,
+                text: "[ok] sha256: \(hash) \(outputURL.lastPathComponent)"
+            ))
+        }
+
         // Archive CSV snapshot only after a successful write — avoids archiving when generate fails.
         if let csvURL,
            config.charts?.archiveCurrentCsv == true,
@@ -930,21 +941,33 @@ struct ReportEngine: Sendable {
     ///   - outputURL: Destination `.html` file path.
     ///   - template: The `ReportTemplate` controlling which HTML sections are included.
     ///               Defaults to `ExecutiveTemplate()` for backward compatibility.
+    @discardableResult
     static func generateHTML(
         config: ReportConfig,
         dataDir: URL,
         outputURL: URL,
-        template: any ReportTemplate = ExecutiveTemplate()
-    ) async throws {
+        template: any ReportTemplate = ExecutiveTemplate(),
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) async throws -> String {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to HTML
         // generation too — otherwise the GUI's "Require snapshot manifest"
         // toggle would be a false promise for users who generate HTML reports.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
         let report = HtmlReport(config: config, dataDir: dataDir)
-        try await report.generate(outputURL: outputURL, sections: template.htmlSections)
+        let digest = try await report.generate(
+            outputURL: outputURL, sections: template.htmlSections
+        )
         // Write SHA-256 manifest alongside the HTML artifact.
         let profile = config.jamfCli?.resolvedProfile ?? ""
         writeManifestStatic(for: outputURL, profile: profile, template: template.identifier)
+        // T-13 integrity envelope: surface the embedded fingerprint via the log
+        // stream so the GUI can show it in the "Report ready" toast.
+        onLine?(.init(
+            timestamp: Date(),
+            level: .ok,
+            text: "[ok] sha256: \(digest) \(outputURL.lastPathComponent)"
+        ))
+        return digest
     }
 
     // MARK: - Public API: generatePDF
@@ -1174,6 +1197,8 @@ struct ReportEngine: Sendable {
         }
 
         try workbook.write(to: outputURL)
+        // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
+        _ = writeSHA256Sidecar(for: outputURL)
         return schoolFailures
     }
 
@@ -1493,6 +1518,37 @@ struct ReportEngine: Sendable {
     /// Instance-method shim that forwards to the static implementation.
     private func writeManifest(for artifactURL: URL, profile: String, template: String = "") {
         Self.writeManifestStatic(for: artifactURL, profile: profile, template: template)
+    }
+
+    /// T-13 integrity envelope: write a `<file>.sha256` sidecar in
+    /// `shasum -a 256` output format so recipients can verify the artifact
+    /// with `shasum -a 256 -c <basename>.sha256` from the file's directory.
+    ///
+    /// Format: ``<64hex><two-spaces><basename><LF>`` — two spaces and the
+    /// basename only are required for `shasum -c` to succeed.
+    ///
+    /// Returns the hex digest on success or `nil` if the artifact could not
+    /// be read or the sidecar could not be written. Errors are logged and
+    /// swallowed — a sidecar write must never abort artifact delivery.
+    @discardableResult
+    static func writeSHA256Sidecar(for artifactURL: URL) -> String? {
+        guard let data = try? Data(contentsOf: artifactURL) else {
+            fputs("[warn] sha256 sidecar: could not read \(artifactURL.lastPathComponent)\n",
+                  stderr)
+            return nil
+        }
+        let digest = SHA256.hash(data: data)
+        let hex = digest.compactMap { String(format: "%02x", $0) }.joined()
+        let sidecarURL = artifactURL.appendingPathExtension("sha256")
+        let line = "\(hex)  \(artifactURL.lastPathComponent)\n"
+        do {
+            try line.write(to: sidecarURL, atomically: true, encoding: .utf8)
+            return hex
+        } catch {
+            fputs("[warn] sha256 sidecar: could not write \(sidecarURL.lastPathComponent): \(error)\n",
+                  stderr)
+            return nil
+        }
     }
 
     /// Compute SHA-256 of `artifactURL` and write a `.manifest.txt` sibling file.

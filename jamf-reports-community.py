@@ -785,6 +785,32 @@ def _run_group_prefix(stem: str, family_base: str) -> str:
     return stem
 
 
+def _write_sha256_sidecar(artifact_path: Path) -> Optional[Path]:
+    """Write a `<file>.sha256` sidecar in `shasum -a 256` output format.
+
+    Format: ``<64hex><two-spaces><basename><LF>`` so users can verify with
+    ``shasum -a 256 -c <basename>.sha256`` from the artifact's directory.
+    Returns the sidecar path on success or ``None`` if the artifact could
+    not be read. Failures are logged as warnings and never raise — a
+    sidecar write must not block report delivery (T-13 integrity envelope).
+    """
+    try:
+        data = artifact_path.read_bytes()
+    except OSError as exc:
+        print(f"  [warn] sha256 sidecar: could not read {artifact_path}: {exc}")
+        return None
+    digest = hashlib.sha256(data).hexdigest()
+    sidecar_path = artifact_path.with_suffix(artifact_path.suffix + ".sha256")
+    try:
+        sidecar_path.write_text(
+            f"{digest}  {artifact_path.name}\n", encoding="utf-8"
+        )
+    except OSError as exc:
+        print(f"  [warn] sha256 sidecar: could not write {sidecar_path}: {exc}")
+        return None
+    return sidecar_path
+
+
 def _archive_old_output_runs(
     directory: Path,
     family_base: str,
@@ -13071,6 +13097,11 @@ def cmd_generate(
             pass
         tmp_path.unlink(missing_ok=True)
         raise
+    # T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar so
+    # recipients can verify with `shasum -a 256 -c <basename>.xlsx.sha256`.
+    sidecar_path = _write_sha256_sidecar(out_path)
+    if sidecar_path is not None:
+        print(f"  Wrote sha256 sidecar: {sidecar_path.name}")
     # Emit trend summary JSON only after xlsxwriter has finalized the workbook.
     _emit_summary_json(config, csv_dash, bridge, hist_dir, force=force_summary)
     if archive_enabled:
@@ -13324,6 +13355,13 @@ class ReportExporter:
 # ---------------------------------------------------------------------------
 
 
+# T-13 integrity envelope: placeholder for the self-attesting SHA-256 hash.
+# Same shape as a real hex digest so HTML structure / attribute parsing is
+# identical pre- and post-substitution. The string itself is recognisable
+# so a verifier knows what to replace when reproducing the digest.
+HTML_REPORT_SHA256_PLACEHOLDER = "0" * 64
+
+
 class HtmlReport:
     """Generates a self-contained, management-facing HTML status report."""
     _TREND_PALETTE = [
@@ -13427,14 +13465,40 @@ class HtmlReport:
             print(f"  [warn] html history: could not update {history_path}: {exc}")
 
     def generate(self) -> Path:
-        """Fetch data and write the HTML report to disk."""
+        """Fetch data and write the HTML report to disk.
+
+        T-13 integrity envelope: the rendered HTML contains a placeholder hash
+        in the `<meta name="report-sha256">` tag and the visible footer.
+        After rendering, compute SHA-256 over the UTF-8 bytes of the
+        placeholder-version HTML, then substitute the real hash for the
+        placeholder so the embedded fingerprint covers the final document.
+
+        Verification procedure (documented in README): replace the meta
+        hash in the file with `HASH_PLACEHOLDER` and the same value in the
+        footer, then `shasum -a 256` the modified bytes — the digest must
+        match the embedded hash. This proves the report has not been
+        tampered with after generation.
+        """
         print("\n--- HTML Report ---")
         data = self._fetch_all()
         self._append_history_snapshot(data)
         html = self._render(data)
+        placeholder = HTML_REPORT_SHA256_PLACEHOLDER
+        # The placeholder appears in two places (meta tag + footer); both
+        # must remain unmodified before we compute the placeholder-version
+        # hash, otherwise the verifier procedure won't reproduce it.
+        if html.count(placeholder) != 2:
+            print(
+                "  [warn] report-sha256 envelope: expected 2 placeholders, "
+                f"found {html.count(placeholder)} — verification may fail."
+            )
+        placeholder_bytes = html.encode("utf-8")
+        digest = hashlib.sha256(placeholder_bytes).hexdigest()
+        final_html = html.replace(placeholder, digest)
         self._out_file.parent.mkdir(parents=True, exist_ok=True)
-        self._out_file.write_text(html, encoding="utf-8")
+        self._out_file.write_text(final_html, encoding="utf-8")
         print(f"  Written: {self._out_file}")
+        print(f"  Source fingerprint (sha256): {digest}")
         if not self._no_open and sys.platform == "darwin":
             subprocess.run(["open", str(self._out_file)], check=False)
         return self._out_file
@@ -15823,11 +15887,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         safe_page_title = self._html_text(page_title)
         logo_html = self._logo_html()
 
+        verify_filename = self._html_text(self._out_file.name)
+        report_sha256_placeholder = HTML_REPORT_SHA256_PLACEHOLDER
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="report-sha256" content="{report_sha256_placeholder}">
 <title>{safe_page_title}</title>
 <style>{css}</style>
 </head>
@@ -15995,6 +16062,11 @@ document.querySelectorAll('.tree-search').forEach((input) => {
 
 <footer class="footer">
   Generated by jamf-reports-community &mdash; Cloud Lake Technology
+  <p class="verify-footer" style="margin-top:8px;font-size:11px;opacity:0.7">
+    Source fingerprint: <code>{report_sha256_placeholder}</code>
+    &mdash; verify with <code>shasum -a 256 {verify_filename}</code>
+    (see report-sha256 meta tag; replace the hash field with 64 zeros to reproduce)
+  </p>
 </footer>
 
 <script>{js}</script>
@@ -18541,6 +18613,11 @@ def cmd_school_generate(
             raise SystemExit("Error: sheets filter removed every school workbook tab for this run.")
     finally:
         workbook.close()
+
+    # T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
+    sidecar_path = _write_sha256_sidecar(out_path)
+    if sidecar_path is not None:
+        print(f"  Wrote sha256 sidecar: {sidecar_path.name}")
 
     run_status = "partial" if sheet_failures else "ok"
     if sheet_failures:
