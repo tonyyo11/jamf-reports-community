@@ -505,16 +505,36 @@ enum LaunchAgentWriter {
         }
     }
 
-    /// True when ``path`` is the same `jamf-cli` executable the app would resolve.
-    static func isTrustedJamfCLIExecutable(_ path: String) -> Bool {
+    /// True when ``path`` is the same `jamf-cli` executable the app would
+    /// resolve AND that executable passes the M-01 codesign gate.
+    ///
+    /// Path-identity alone is insufficient: a tampered binary placed at the
+    /// expected location would satisfy ``sameResolvedPath`` but must still be
+    /// refused. The codesign gate (mirrored from ``CLIBridge.run``) closes the
+    /// 4th spawn-site identified in the M-01 review (legacy multi
+    /// ``jamf-cli`` launchctl path via ``runMultiNow``).
+    ///
+    /// The ``_testLocatedOverride`` parameter is a test seam, NOT a production
+    /// API: pass nil (default) in production code. Tests pass a fake binary
+    /// URL so the codesign gate is reachable even when the located
+    /// ``jamf-cli`` is absent or signed. The leading underscore signals "do
+    /// not pass from production callers."
+    static func isTrustedJamfCLIExecutable(
+        _ path: String,
+        _testLocatedOverride: URL? = nil
+    ) -> Bool {
         let expanded = (path as NSString).expandingTildeInPath
         let candidate = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL
         guard candidate.lastPathComponent == "jamf-cli",
               FileManager.default.isExecutableFile(atPath: candidate.path),
-              let located = ExecutableLocator.locate("jamf-cli") else {
+              let located = _testLocatedOverride ?? ExecutableLocator.locate("jamf-cli"),
+              sameResolvedPath(candidate, located) else {
             return false
         }
-        return sameResolvedPath(candidate, located)
+        // M-01 fourth-site closure: refuse to launch even a path-identity-
+        // matching jamf-cli that fails signature verification. Returns nil
+        // when the gate accepts; non-nil (sentinel -1) on rejection.
+        return CLIBridge.codesignGate(executable: candidate, onLine: { _ in }) == nil
     }
 
     private static func setupCadence(from raw: String) throws -> CadenceOptions {

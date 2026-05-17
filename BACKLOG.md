@@ -13,6 +13,80 @@ When fixing an item, remove it from this file in the same commit.
 
 ## Security & correctness (cross-review)
 
+### From post-PR-8 review batch (2026-05-16)
+
+Findings deferred from the multi-agent review batch that ran after PR-8
+landed. PR-9 closed five MUST-FIX items (api_key/apikey free-text
+redaction in both LogRedactors, M-01 4th codesign-gate site at
+`isTrustedJamfCLIExecutable`, `_emit_summary_json` CSV-path `patchPct`
+false-zero, `LaunchAgentService.checkSummaryFileForPartialStatus` test
+coverage, and dead-code docstring on the summary.json branch). The items
+below are valid follow-ups.
+
+- **T-11 (HIGH) — Snapshot manifest absence treated as silent pass.**
+  `SnapshotManifest.verify` returns silently when the manifest is absent
+  or unparseable. Surface unverified-snapshot warnings in `AuditView`
+  and add a `jamf_cli.require_manifest: true` config gate that feeds
+  `--strict-manifest` by default. ~30 lines.
+- **T-12 (MEDIUM) — `summary.json` outside manifest coverage.** Extend
+  `_rewrite_snapshot_manifest` to cover
+  `snapshots/computers/summaries/`; verify in `isPartialRun`. ~40 lines.
+- **T-13 (MEDIUM) — Generated Reports (`*.xlsx`, `*.html`) have no
+  integrity envelope.** Embed `<meta name="report-sha256">` in HTML;
+  write a `.sha256` side-car for XLSX. ~25 lines.
+- **MEDIUM-1 — `AuditView` drift diff silently treats previous-snapshot
+  decode failure as "no previous".** `AuditView.swift:565`. Use explicit
+  `try/catch` with `AppLogger.app.warning`.
+- **MEDIUM-2 — `HtmlReport+Sections.swift:1001` Protect-insights JSON
+  parse silently returns `[]`.** Add an explicit guard + warning. Family:
+  N-07.
+- **MEDIUM-3 — Implement per-run `summary_<logFilename>.json` writer
+  OR drop the dead branch.** PR-9 documented (`LaunchAgentService.swift`,
+  `RunHistoryService.swift`) that the summary-based partial-status branch
+  is dead code in production: emitters write daily
+  `summary_YYYY-MM-DD.json`, not `summary_<logFilename>.json`. Implement
+  EITHER (a) a per-run `summary_<logFilename>.json` writer in the Python
+  + Swift emitters with a `status` field, OR (b) match the lookup to the
+  existing `summary_YYYY-MM-DD.json` naming. Option (a) is preferred
+  since it preserves per-run granularity. ~50 lines.
+- **CONSIDER-1 — `MigrationBanner.onDismiss: {}` no-op leaves
+  `legacyWorkspaces`/`legacySchedules` populated in `@State`.** Pass a
+  closure that clears both arrays.
+- **CONSIDER-2 — `main.swift:95` diagnostic prints `0` for unreadable
+  directory, same as empty.** Split try/catch so an unreadable dir is
+  not silently equivalent to an empty one.
+- **CONSIDER-3 — `_emit_summary_json:2420-2430` swallows both
+  `JSONDecodeError` and `ValueError` in a single catch.** Split so the
+  parse-failure path can emit a distinct warn line.
+- **SHOULD-FIX (upgrade) — `runDeviceDetailProcess` codesign-gate
+  rejection is `AppLogger`-only.** The existing entry from "From PR-2
+  review (2026-05-15)" (the first CONSIDER) is now upgraded to
+  **SHOULD-FIX** based on the post-PR-8 review's HIGH-1 finding. The
+  per-device-detail path produces a silent failure with no Runs-feed
+  diagnostic, and the upgrade reflects that the silent-failure cost is
+  higher than originally assessed.
+- **CONSIDER — `isPartialRun` malformed summary.json fall-through to
+  `[partial]` marker is untested.** Today, a malformed
+  `summary_<ts>.json` (invalid JSON, missing `status` key, non-string
+  `status` value) silently falls through to the log-tail
+  `[partial]`-marker fallback. Add a test confirming the fallback fires
+  when summary.json exists but is malformed. RunHistoryServiceTests.
+- **CONSIDER — Codesign-gate happy-path test missing.** All three PR-6
+  gate tests (`ProvenanceCodesignGateTests`,
+  `JamfCLIInstallerCodesignGateTests`, `ProfileServiceCodesignGateTests`)
+  and PR-9's `testIsTrustedJamfCLIExecutableEnforcesCodesignGate`
+  exercise the rejection path. None confirm the gate accepts a properly
+  signed binary. Add a happy-path test pinned to a known signed system
+  binary (e.g., `/usr/bin/codesign` itself) under a stub `expectedTeamID`.
+- **CONSIDER — `SnapshotManifest` corrupt-JSON path (Swift) is
+  untested.** Python side has tests for malformed manifest.json; the
+  Swift `SnapshotManifest.verify` corrupt-JSON branch needs an
+  equivalent test.
+- **CONSIDER — `DeviceLookupView` `staleSince` wiring assumes a
+  non-nil snapshot timestamp.** Audit the `snapshotMTime` path for the
+  "no manifest, no cache" first-launch state; the view should not crash
+  or render a NaN relative-time when both inputs are absent.
+
 ### From PR-1 cleanup (2026-05-16)
 
 - **CONSIDER — `LaunchAgentService.parse()` reads CLI flags the current writer no longer emits.**

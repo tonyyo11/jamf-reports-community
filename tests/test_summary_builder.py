@@ -1,4 +1,4 @@
-"""Failure-branch tests for `_build_summary_from_bridge`.
+"""Failure-branch tests for `_build_summary_from_bridge` and `_emit_summary_json`.
 
 The summary builder emits `[warn]` log lines when individual bridge calls raise
 and falls back to documented defaults (0 or 0.0) for the affected metric. These
@@ -7,13 +7,16 @@ decode failure used to mask data-quality issues; the warn lines make the
 problem observable. A regression that silenced a warn line, swallowed the
 exception entirely, or changed the default would slip past the existing
 positive tests in `test_command_summaries.py`.
+
+`_emit_summary_json` (CSV path) tests close the parallel branch: when the
+bridge throws on `patch_status`, the CSV path must OMIT the `patchPct` key
+(matching the Swift `Double?` shape) rather than write a false-zero floor.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
-
-import pytest
 
 
 # Helper: a baseline stub bridge where every method returns reasonable data.
@@ -204,3 +207,89 @@ def test_all_bridge_calls_succeed_emits_no_warn_lines(jrc, fixtures_root, capsys
         "Baseline (all bridge calls succeed) must not emit any [warn] line; "
         f"got: {captured.out!r}"
     )
+
+
+# -------------------------------------------------------------------
+# _emit_summary_json (CSV path) — patch_status failure must OMIT patchPct.
+# -------------------------------------------------------------------
+
+
+class _StubCSVDashboard:
+    """Minimal CSVDashboard stand-in exposing only what _emit_summary_json reads."""
+
+    def __init__(self, df, columns: dict[str, str]) -> None:
+        self._df = df
+        self._columns = columns
+
+    def _col(self, logical: str) -> str | None:
+        return self._columns.get(logical)
+
+
+def _build_minimal_csv_config(jrc) -> Any:
+    """Build a Config that activates the CSV summary path without any custom EAs."""
+    config = jrc.Config(jrc.Config._WORKSPACE_INIT_DEFAULTS_NAME)
+    config._data["columns"]["filevault"] = "FileVault Status"
+    config._data["columns"]["last_checkin"] = "Last Check-in"
+    config._data["columns"]["operating_system"] = "OS Version"
+    return config
+
+
+def test_emit_summary_json_omits_patchpct_when_patch_status_fails(
+    tmp_path, monkeypatch, jrc, capsys
+) -> None:
+    """CSV-path regression: bridge.patch_status() raises → patchPct OMITTED.
+
+    Previously the CSV branch initialized patch_pct = 0.0 and unconditionally
+    wrote `patchPct: 0.0` into the JSON. The Swift `DailySummary.patchPct` is
+    `Double?`, so 0.0 was treated as a real data point and plotted as a 0%
+    trend floor. Omitting the key keeps the Swift consumer's "missing metric"
+    semantics intact.
+    """
+    pd = jrc.pd
+    df = pd.DataFrame({
+        "Computer Name": ["A", "B"],
+        "FileVault Status": ["Encrypted", "Encrypted"],
+        "Last Check-in": ["2026-04-28", "2026-04-28"],
+        "OS Version": ["15.7.3", "15.7.3"],
+    })
+    config = _build_minimal_csv_config(jrc)
+    csv_dash = _StubCSVDashboard(df, {
+        "filevault": "FileVault Status",
+        "last_checkin": "Last Check-in",
+        "operating_system": "OS Version",
+    })
+
+    class BoomBridge(_BaselineBridge):
+        def patch_status(self) -> list[dict[str, Any]]:
+            raise RuntimeError("simulated patch_status failure")
+
+    historical = tmp_path / "snapshots"
+    fixed_now = jrc.datetime(2026, 5, 16, 12, 0, 0)
+
+    class _FixedDateTime(jrc.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.replace(tzinfo=tz)
+
+    monkeypatch.setattr(jrc, "datetime", _FixedDateTime)
+
+    jrc._emit_summary_json(config, csv_dash, BoomBridge(), str(historical))
+
+    summary_path = historical / "summaries" / "summary_2026-05-16.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    captured = capsys.readouterr()
+
+    # patchPct MUST be omitted, not written as 0.0.
+    assert "patchPct" not in payload, (
+        "patchPct must be omitted when patch_status raises; "
+        f"writing 0.0 would plot a false zero-floor in trends. payload={payload!r}"
+    )
+    # Warn is required for visibility.
+    assert "[warn]" in captured.out
+    assert "patch_status failed" in captured.out
+    assert "patchPct omitted" in captured.out
+    # The other CSV-path metrics must still be present (regression guard for the
+    # rewrite — we only changed the patchPct treatment).
+    assert payload["totalDevices"] == 2
+    assert payload["fileVaultPct"] == 100.0
+    assert payload["source"] == "csv"

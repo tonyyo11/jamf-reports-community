@@ -508,8 +508,15 @@ enum LaunchAgentService {
         return logSummary.hasFailureMarker ? .fail : .ok
     }
 
-    /// Authoritative source: sibling `summary.json` (`{"status": "partial"}`).
-    /// Returns false for multi-profile logs (no per-run summary in that layout).
+    /// Authoritative source: sibling `summary_<logFilename>.json` matching the
+    /// log filename. NOTE: as of 2026-05-16 no production code path writes
+    /// `summary_<logFilename>.json` — current emitters write daily
+    /// `summary_YYYY-MM-DD.json`. The summary-based branch is in place for a
+    /// future per-run-summary feature; today, only the `[partial]` log marker
+    /// fallback (in `lastStatus`) activates. Tests fake the file themselves to
+    /// validate the API surface. Returns false for multi-profile logs (no
+    /// per-run summary in that layout).
+    /// Tracked in BACKLOG.md under "### From post-PR-8 review batch (2026-05-16)".
     private static func checkSummaryFileForPartialStatus(
         logURL: URL,
         profile: String,

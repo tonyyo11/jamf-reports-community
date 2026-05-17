@@ -2503,8 +2503,11 @@ def _emit_summary_json(
                 cs_pct = (connected_mask.sum() / total_devices * 100.0)
             break
 
-    # 6. Patch Compliance
-    patch_pct = 0.0
+    # 6. Patch Compliance — None when no data is available so the Swift side
+    # treats it as "missing metric" rather than a real 0% floor on trend
+    # charts. Mirrors the Swift `patchPct: Double?` shape in
+    # `ReportEngine.emitSummaryJSON` and `DailySummary`.
+    patch_pct: Optional[float] = None
     if bridge and bridge.is_available():
         try:
             patches = bridge.patch_status()
@@ -2520,7 +2523,7 @@ def _emit_summary_json(
                 if valid_pcts:
                     patch_pct = sum(valid_pcts) / len(valid_pcts)
         except Exception as exc:
-            print(f"  [warn] _emit_summary_json: patch_status failed — patchPct defaulting to 0.0: {exc}")
+            print(f"  [warn] _emit_summary_json: patch_status failed — patchPct omitted (no data): {exc}")
 
     summary_data: dict[str, Any] = {
         "date": date_str,
@@ -2529,9 +2532,10 @@ def _emit_summary_json(
         "staleCount": int(stale_count),
         "osCurrentPct": round(os_pct, 1),
         "crowdstrikePct": round(cs_pct, 1),
-        "patchPct": round(patch_pct, 1),
         "source": "csv",
     }
+    if patch_pct is not None:
+        summary_data["patchPct"] = round(patch_pct, 1)
     if comp_pct is not None:
         summary_data["compliancePct"] = round(comp_pct, 1)
 
@@ -3184,6 +3188,17 @@ class LogRedactor:
                 re.IGNORECASE,
             ),
             r"\1REDACTED_PASSWORD\3",
+        ),
+        # Generic API keys — covers both `api_key` and `apikey` spellings.
+        # The `_SENSITIVE_JSON_KEYS` set already redacts these in JSON walks;
+        # this pattern catches free-text occurrences (log lines that echo a
+        # YAML config or HTTP header). 8-char floor mirrors `client_secret`.
+        (
+            re.compile(
+                r'(api_?key\s*[:=]\s*["\']?)([^"\'\s,\}]{8,})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_API_KEY\3",
         ),
         # HTTP Basic auth headers (security-reviewer S-1).
         (

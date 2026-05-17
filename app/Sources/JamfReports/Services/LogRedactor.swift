@@ -17,6 +17,7 @@ import Foundation
 /// - Generic `password` field values
 /// - HTTP Basic auth headers (`Authorization: Basic <base64>`)
 /// - Webhook URLs in `webhook_url` config keys (Teams / Slack / generic)
+/// - Generic `api_key` / `apikey` field values
 ///
 /// Replacement templates preserve surrounding quotes/markers so the redacted
 /// output stays valid YAML/JSON for downstream tooling.
@@ -122,6 +123,18 @@ enum LogRedactor {
                 options: [.caseInsensitive]
             ),
             template: "$1REDACTED_PASSWORD$3"
+        ))
+
+        // Generic API keys — covers both `api_key` and `apikey` spellings.
+        // The Python `_SENSITIVE_JSON_KEYS` set already redacts these in JSON
+        // walks; this pattern catches free-text occurrences in log lines that
+        // echo a YAML config or HTTP header. 8-char floor mirrors client_secret.
+        built.append(Pattern(
+            regex: try! NSRegularExpression(
+                pattern: #"(api_?key["']?\s*[:=]\s*["']?)([^"'\s,\}]{8,})(["']?)"#,
+                options: [.caseInsensitive]
+            ),
+            template: "$1REDACTED_API_KEY$3"
         ))
 
         return built

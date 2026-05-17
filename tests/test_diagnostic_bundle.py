@@ -95,6 +95,24 @@ def test_redactor_does_not_redact_password_in_unrelated_text(jrc):
     assert "REDACTED" not in out
 
 
+def test_redactor_strips_api_key_yaml(jrc):
+    """api_key in free-text log lines must be redacted (matches `_SENSITIVE_JSON_KEYS` floor)."""
+    redactor = jrc.LogRedactor()
+    text = "api_key: abcd1234efgh5678"  # 16 chars, above 8-char floor
+    out = redactor.redact_text(text)
+    assert "abcd1234efgh5678" not in out
+    assert "REDACTED_API_KEY" in out
+
+
+def test_redactor_strips_apikey_equals_form(jrc):
+    """apikey (no underscore) in equals/URL form must also be redacted."""
+    redactor = jrc.LogRedactor()
+    text = 'apikey="abcdef0123456789abcdef01234567"'  # 32 chars
+    out = redactor.redact_text(text)
+    assert "abcdef0123456789abcdef01234567" not in out
+    assert "REDACTED_API_KEY" in out
+
+
 # ---------------------------------------------------------------------------
 # LogRedactor — PII categories
 # ---------------------------------------------------------------------------
