@@ -2119,9 +2119,22 @@ struct CoreDashboard: Sendable {
     /// Returns the raw `Data` of the newest JSON snapshot matching any of the given names.
     /// Throws `CoreDashboardError.noCachedData` when no matching file exists.
     /// When a sibling `manifest.json` lists this filename, verifies the file's
-    /// SHA-256 matches the manifest entry. On mismatch, logs a warning via
-    /// `AppLogger` and continues (matches the Python "warn, don't abort" stance —
-    /// tampering vs staleness from a partial collect is hard to distinguish).
+    /// SHA-256 matches the manifest entry. On mismatch, the verifier logs an
+    /// `AppLogger` warning and this method returns the (possibly tampered)
+    /// bytes — matches the Python "warn, don't abort" stance because per-sheet
+    /// aborts here would bubble into `SheetSkippable` handling and just skip
+    /// the sheet, not abort the run.
+    ///
+    /// **Strict-mode enforcement** (`jamf_cli.require_manifest: true`,
+    /// PR-10 / threat-model T-11) happens upstream in
+    /// `ReportEngine.preflightStrictManifestCheck` via
+    /// `SnapshotManifest.scanWorkspace(dataDir:)`. If any snapshot is
+    /// `.mismatch` or `.corrupt` at run start, the engine throws
+    /// `ReportEngineError.snapshotIntegrityViolation` before any sheet
+    /// writes begin. Closes the gap where the GUI's "Require snapshot
+    /// manifest" toggle was a false promise (the original PR-10 only
+    /// enforced strict mode through the Python CLI's `--strict-manifest`
+    /// flag).
     private func loadLatestJSONData(names: [String]) throws -> Data {
         var candidates: [URL] = []
         let fm = FileManager.default

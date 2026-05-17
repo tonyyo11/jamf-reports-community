@@ -86,6 +86,9 @@ struct AuditView: View {
     @State private var exportError: String? = nil
     @FocusState private var isSearchFocused: Bool
 
+    // PR-10 / threat-model T-11: surface unverified-snapshot state.
+    @State private var integritySummary: SnapshotManifest.WorkspaceVerificationSummary?
+
     private var filteredFindings: [AuditFinding] {
         findings.filter { finding in
             query.isEmpty || finding.name.lowercased().contains(query.lowercased()) || finding.category.lowercased().contains(query.lowercased())
@@ -254,6 +257,7 @@ struct AuditView: View {
 
     private var auditSection: some View {
         VStack(alignment: .leading, spacing: 16) {
+            integrityCard
             if findings.isEmpty {
                 emptyState(
                     icon: "shield.checkered",
@@ -368,6 +372,117 @@ struct AuditView: View {
             CompactMetricTile(label: "Affected", value: "\(affectedTotal)", tone: .gold)
             CompactMetricTile(label: "Categories", value: "\(categoryCount)", tone: .teal)
         }
+    }
+
+    /// PR-10 / threat-model T-11: surface snapshot directories whose newest
+    /// JSON could not be verified against its sibling `manifest.json`. Renders
+    /// nothing when the workspace is clean — additive, no layout cost.
+    ///
+    /// Card copy distinguishes legacy snapshots (`.absent` / `.omitted` —
+    /// expected for snapshots collected before PR-7 introduced manifests;
+    /// fix is "re-run Collect") from security-sensitive failures
+    /// (`.mismatch` / `.corrupt` — possible tampering or bit-rot; fix
+    /// requires investigation). Prevents first-launch support questions
+    /// from users seeing "Unverified" on legitimately-old workspaces.
+    @ViewBuilder
+    private var integrityCard: some View {
+        if let summary = integritySummary, summary.unverified > 0 {
+            Card(padding: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: integrityIcon(summary))
+                        .font(.title3)
+                        .foregroundStyle(integrityTint(summary))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(integrityTitle(summary))
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.fg)
+                        Text(integrityDetail(summary))
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                    Spacer()
+                    Pill(text: "\(summary.unverified)", tone: integrityTone(summary),
+                         icon: "shield.lefthalf.filled")
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(integrityTitle(summary)): \(summary.unverified) snapshot directories")
+            .accessibilityHint(integrityHint(summary))
+        }
+    }
+
+    /// True when at least one snapshot failed in a way that suggests
+    /// tampering rather than pre-PR-7 legacy state.
+    private func hasSecuritySensitiveFailure(
+        _ summary: SnapshotManifest.WorkspaceVerificationSummary
+    ) -> Bool {
+        summary.mismatch > 0 || summary.corrupt > 0
+    }
+
+    private func integrityIcon(
+        _ summary: SnapshotManifest.WorkspaceVerificationSummary
+    ) -> String {
+        hasSecuritySensitiveFailure(summary)
+            ? "exclamationmark.shield.fill"
+            : "clock.arrow.circlepath"
+    }
+
+    private func integrityTint(
+        _ summary: SnapshotManifest.WorkspaceVerificationSummary
+    ) -> Color {
+        hasSecuritySensitiveFailure(summary) ? Theme.Colors.danger : Theme.Colors.warn
+    }
+
+    private func integrityTone(
+        _ summary: SnapshotManifest.WorkspaceVerificationSummary
+    ) -> Pill.Tone {
+        hasSecuritySensitiveFailure(summary) ? .danger : .warn
+    }
+
+    private func integrityTitle(
+        _ summary: SnapshotManifest.WorkspaceVerificationSummary
+    ) -> String {
+        hasSecuritySensitiveFailure(summary)
+            ? "Snapshot integrity violation"
+            : "Snapshots from before SHA-256 manifests"
+    }
+
+    private func integrityDetail(
+        _ summary: SnapshotManifest.WorkspaceVerificationSummary
+    ) -> String {
+        var parts: [String] = []
+        if summary.absent > 0 { parts.append("\(summary.absent) missing manifest") }
+        if summary.corrupt > 0 { parts.append("\(summary.corrupt) corrupt manifest") }
+        if summary.omitted > 0 { parts.append("\(summary.omitted) partial collect") }
+        if summary.mismatch > 0 { parts.append("\(summary.mismatch) hash mismatch") }
+        let breakdown = parts.joined(separator: " · ")
+        if hasSecuritySensitiveFailure(summary) {
+            return "\(breakdown). Possible tampering or bit-rot — investigate before " +
+                "trusting this data. Enable jamf_cli.require_manifest to abort future " +
+                "generate runs when this occurs."
+        }
+        // Only-`.absent`/`.omitted` case. When strict mode is OFF this is
+        // almost always pre-PR-7 legacy snapshots (re-run Collect fixes it).
+        // When strict mode is ON, `.absent` is also the documented T-11
+        // attack signal (attacker deleted manifest.json after tampering) so
+        // we can't claim it's "not a security concern." (security-reviewer S-01)
+        if workspace.configState.jamfCLIRequireManifest {
+            return "\(breakdown). May indicate pre-PR-7 snapshots or " +
+                "manifest deletion — re-run Collect to confirm. If the " +
+                "warning persists after a fresh Collect, investigate as " +
+                "possible tampering."
+        }
+        return "\(breakdown). Pre-PR-7 snapshots without manifests. Re-run " +
+            "Collect to attach SHA-256 manifests; not a security concern " +
+            "while jamf_cli.require_manifest is disabled."
+    }
+
+    private func integrityHint(
+        _ summary: SnapshotManifest.WorkspaceVerificationSummary
+    ) -> String {
+        hasSecuritySensitiveFailure(summary)
+            ? "Investigate before trusting this data."
+            : "Re-run Collect to attach manifests."
     }
 
     private var hygieneSection: some View {
@@ -544,6 +659,7 @@ struct AuditView: View {
             unusedGroups = []
             newFindingKeys = []
             resolvedFindings = []
+            integritySummary = nil
             return
         }
 
@@ -553,6 +669,7 @@ struct AuditView: View {
         lastHygieneDate = nil
         newFindingKeys = []
         resolvedFindings = []
+        await loadIntegritySummary()
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
@@ -584,6 +701,23 @@ struct AuditView: View {
             unusedGroups = UnusedGroup.merging(decoded, withGroupCounts: groupsSnapshots.first?.data)
             lastHygieneDate = latestHygiene.modified
         }
+    }
+
+    /// PR-10 / threat-model T-11: scan the workspace's jamf-cli-data/<type>
+    /// dirs and aggregate per-snapshot verification results so the
+    /// integrity card can warn when any are unverified.
+    private func loadIntegritySummary() async {
+        let profile = workspace.profile
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            integritySummary = nil
+            return
+        }
+        let summary = await Task.detached(priority: .userInitiated) {
+            SnapshotManifest.scanWorkspace(dataDir: dataDir)
+        }.value
+        // Profile may have switched while the detached scan ran — gate.
+        guard workspace.profile == profile else { return }
+        integritySummary = summary
     }
 
     private func runAudit() {

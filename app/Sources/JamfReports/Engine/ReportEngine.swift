@@ -46,6 +46,12 @@ struct ReportEngine: Sendable {
         template: any ReportTemplate = ExecutiveTemplate(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
+        // PR-10 / threat-model T-11: strict-mode pre-flight. Abort before any
+        // sheet writes if the workspace has tampered or corrupt-manifest
+        // snapshots. Catching per-sheet inside writeSelected wouldn't abort
+        // the run — SheetSkippable would just skip the offending sheet.
+        try Self.preflightStrictManifestCheck(config: config, dataDir: dataDir)
+
         let workbook = Workbook(accentColor: config.branding?.resolvedAccentColor ?? "#2D5EA2")
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
@@ -930,6 +936,10 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         template: any ReportTemplate = ExecutiveTemplate()
     ) async throws {
+        // PR-10 / threat-model T-11: strict-mode pre-flight applies to HTML
+        // generation too — otherwise the GUI's "Require snapshot manifest"
+        // toggle would be a false promise for users who generate HTML reports.
+        try preflightStrictManifestCheck(config: config, dataDir: dataDir)
         let report = HtmlReport(config: config, dataDir: dataDir)
         try await report.generate(outputURL: outputURL, sections: template.htmlSections)
         // Write SHA-256 manifest alongside the HTML artifact.
@@ -965,6 +975,10 @@ struct ReportEngine: Sendable {
         profileName: String = "",
         template: any ReportTemplate = ExecutiveTemplate()
     ) async throws {
+        // PR-10 / threat-model T-11: strict-mode pre-flight applies to PDF
+        // generation too. PDF is built on top of HTML; the underlying snapshot
+        // data must be verified before either artifact is produced.
+        try preflightStrictManifestCheck(config: config, dataDir: dataDir)
         // Write HTML to a temp file so that WKWebView can resolve relative resource
         // URLs (Chart.js CDN is network-fetched; baseURL gives it the right origin).
         let tmpDir = FileManager.default.temporaryDirectory
@@ -1143,6 +1157,11 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         outputURL: URL
     ) async throws -> [SheetFailure] {
+        // PR-10 / threat-model T-11: strict-mode pre-flight applies to School
+        // generation too. School snapshots live under the same workspace data
+        // dir and share the manifest discipline; integrity violations here
+        // should abort the run, not silently render against tampered data.
+        try preflightStrictManifestCheck(config: config, dataDir: dataDir)
         let workbook = Workbook(accentColor: config.branding?.resolvedAccentColor ?? "#2D5EA2")
         let core = SchoolDashboard(config: config, dataDir: dataDir, workbook: workbook)
         let (_, schoolFailures) = core.writeAll()
@@ -1578,6 +1597,38 @@ struct ReportEngine: Sendable {
                   stderr)
         }
     }
+
+    // MARK: - PR-10 / threat-model T-11: strict-manifest pre-flight
+
+    /// When `jamf_cli.require_manifest: true`, scan the workspace's snapshot
+    /// directories and abort the whole report run if any newest snapshot
+    /// fails SHA-256 verification (`.mismatch` or `.corrupt`). `.absent` and
+    /// `.omitted` results don't trigger — legacy snapshots without a
+    /// manifest and partial collects cannot be retroactively verified.
+    ///
+    /// **Static helper** so every report-generation entry point (the
+    /// instance `generate()`, plus static `generateHTML`, `generatePDF`,
+    /// `schoolGenerate`) can enforce the gate without duplicating logic.
+    /// Each entry point must call this before reading any snapshot data —
+    /// per-sheet checks would land in `SheetSkippable` handling and just
+    /// skip the offending sheet, not abort the run.
+    ///
+    /// Closes the gap (security-reviewer 2nd review) where only XLSX
+    /// generation enforced strict mode — HTML, PDF, and School paths were
+    /// silently exempt, defeating the "GUI false-promise" fix.
+    static func preflightStrictManifestCheck(
+        config: ReportConfig,
+        dataDir: URL
+    ) throws {
+        guard config.jamfCli?.isManifestRequired == true else { return }
+        let summary = SnapshotManifest.scanWorkspace(dataDir: dataDir)
+        if summary.mismatch > 0 || summary.corrupt > 0 {
+            throw ReportEngineError.snapshotIntegrityViolation(
+                summary: summary,
+                dataDir: dataDir
+            )
+        }
+    }
 }
 
 // MARK: - Errors
@@ -1590,6 +1641,17 @@ enum ReportEngineError: Error, LocalizedError {
     case snapshotParseError(String)
     /// Raised during collect when `use_cached_data=false` and a live call fails.
     case collectFailed(kind: String, exitCode: Int32)
+    /// PR-10 / threat-model T-11: raised at run start when
+    /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
+    /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
+    /// Aborts the whole generate run before any sheet writes start — matches
+    /// the Python `--strict-manifest` `RuntimeError` semantics. `.absent` and
+    /// `.omitted` results don't trigger this (legacy snapshots and partial
+    /// collects can't be retroactively verified).
+    case snapshotIntegrityViolation(
+        summary: SnapshotManifest.WorkspaceVerificationSummary,
+        dataDir: URL
+    )
 
     var errorDescription: String? {
         switch self {
@@ -1605,6 +1667,14 @@ enum ReportEngineError: Error, LocalizedError {
             return "No cached snapshot found for '\(kind)'. Run collect first."
         case .collectFailed(let kind, let code):
             return "Collect failed for '\(kind)' (exit \(code)). Set use_cached_data: true to allow fallback."
+        case .snapshotIntegrityViolation(let summary, let dataDir):
+            var parts: [String] = []
+            if summary.mismatch > 0 { parts.append("\(summary.mismatch) hash mismatch") }
+            if summary.corrupt > 0 { parts.append("\(summary.corrupt) corrupt manifest") }
+            let breakdown = parts.joined(separator: ", ")
+            return "Snapshot integrity violation in \(dataDir.path): \(breakdown). " +
+                "jamf_cli.require_manifest is enabled; re-run 'collect' to refresh the " +
+                "snapshot+manifest, or set require_manifest: false to bypass."
         }
     }
 }

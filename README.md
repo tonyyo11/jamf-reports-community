@@ -919,6 +919,7 @@ jamf_cli:
   allow_live_overview: true
   command_timeout_seconds: 300
   ea_results_timeout_seconds: 600
+  require_manifest: false
 ```
 
 The community default is a plain `jamf-cli-data/` folder next to the script. If you prefer
@@ -936,6 +937,12 @@ default. `ea_results_timeout_seconds` overrides that ceiling specifically for
 `pro report ea-results --all`, which queries every EA value across the fleet and is
 consistently the slowest jamf-cli call — the 600s default has headroom for fleets with
 hundreds of EAs and thousands of devices.
+
+Set `require_manifest: true` to hard-fail on snapshot integrity violations (missing
+manifest entry, SHA-256 mismatch, or absent `manifest.json`). Equivalent to passing
+`--strict-manifest` on every invocation. Recommended for production / shared workspaces;
+leave `false` for ad-hoc exploration. The Swift app also surfaces an "Unverified
+snapshot" warning card in AuditView regardless of this setting.
 
 ### `inventory_csv`
 

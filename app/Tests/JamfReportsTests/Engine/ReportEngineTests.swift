@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import CryptoKit
 @testable import JamfReports
 
 final class ReportEngineTests: XCTestCase {
@@ -38,6 +39,201 @@ final class ReportEngineTests: XCTestCase {
 
         // Without explicit output_dir, path should contain "Generated Reports".
         XCTAssertTrue(url.path.contains("Generated Reports"))
+    }
+
+    // MARK: - PR-10 / threat-model T-11: strict-manifest pre-flight
+
+    /// `jamf_cli.require_manifest: true` + a tampered snapshot must abort
+    /// the whole generate run with `snapshotIntegrityViolation`, not just
+    /// skip the affected sheet. Closes the GUI false-promise gap where the
+    /// "Require snapshot manifest" toggle previously had no effect on the
+    /// Swift engine path.
+    func testGenerateAbortsOnSnapshotMismatchWhenRequireManifestEnabled() async throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("preflight-mismatch-\(UUID().uuidString)")
+        let auditDir = dataDir.appendingPathComponent("audit", isDirectory: true)
+        try FileManager.default.createDirectory(at: auditDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let snapshot = auditDir.appendingPathComponent("audit_20260101T000000.json")
+        let originalData = Data(#"{"ok":true}"#.utf8)
+        try originalData.write(to: snapshot)
+
+        // Manifest pinned to original hash; we then overwrite the snapshot
+        // to simulate tampering between collect (manifest write) and generate.
+        let originalHash = SHA256.hash(data: originalData)
+            .map { String(format: "%02x", $0) }.joined()
+        let manifest = auditDir.appendingPathComponent(SnapshotManifest.fileName)
+        let manifestPayload: [String: Any] = [
+            "algorithm": "sha256",
+            "files": [snapshot.lastPathComponent: originalHash],
+        ]
+        let manifestData = try JSONSerialization.data(
+            withJSONObject: manifestPayload, options: [.sortedKeys]
+        )
+        try manifestData.write(to: manifest)
+        try Data(#"{"ok":false}"#.utf8).write(to: snapshot)
+
+        var config = ReportConfig()
+        var jamfCLI = JamfCLIConfig()
+        jamfCLI.requireManifest = true
+        config.jamfCli = jamfCLI
+
+        let engine = ReportEngine(config: config, dataDir: dataDir)
+        let outURL = dataDir.appendingPathComponent("out.xlsx")
+
+        do {
+            try await engine.generate(csvURL: nil, outputURL: outURL)
+            XCTFail("Expected snapshotIntegrityViolation, generate returned cleanly")
+        } catch let ReportEngineError.snapshotIntegrityViolation(summary, _) {
+            XCTAssertEqual(summary.mismatch, 1)
+            XCTAssertEqual(summary.corrupt, 0)
+        }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outURL.path),
+                       "Workbook must not be written when pre-flight aborts")
+    }
+
+    /// `.absent` and `.omitted` results must NOT trip strict mode — they
+    /// represent legacy snapshots and partial collects that can't be
+    /// retroactively verified. Only `.mismatch` and `.corrupt` should abort.
+    func testGeneratePermitsAbsentManifestEvenWhenRequireManifestEnabled() async throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("preflight-absent-\(UUID().uuidString)")
+        let auditDir = dataDir.appendingPathComponent("audit", isDirectory: true)
+        try FileManager.default.createDirectory(at: auditDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        // Snapshot with no sibling manifest — `.absent`, the legacy case.
+        let snapshot = auditDir.appendingPathComponent("audit_20260101T000000.json")
+        try Data(#"{"ok":true}"#.utf8).write(to: snapshot)
+
+        var config = ReportConfig()
+        var jamfCLI = JamfCLIConfig()
+        jamfCLI.requireManifest = true
+        config.jamfCli = jamfCLI
+
+        let engine = ReportEngine(config: config, dataDir: dataDir)
+        let outURL = dataDir.appendingPathComponent("out.xlsx")
+
+        // Should NOT throw snapshotIntegrityViolation. May skip sheets due
+        // to schema mismatch — the test goal is "didn't pre-flight-abort."
+        try await engine.generate(csvURL: nil, outputURL: outURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
+                      "Workbook should be written when only .absent results exist")
+    }
+
+    /// HTML generation (a primary GUI entry point) must also enforce the
+    /// pre-flight. Catches the security-reviewer 2nd-review M-01 finding
+    /// where `generateHTML` was originally exempt from strict-mode checks.
+    func testGenerateHTMLAbortsOnSnapshotMismatchWhenRequireManifestEnabled() async throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("preflight-html-\(UUID().uuidString)")
+        let auditDir = dataDir.appendingPathComponent("audit", isDirectory: true)
+        try FileManager.default.createDirectory(at: auditDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let snapshot = auditDir.appendingPathComponent("audit_20260101T000000.json")
+        let originalData = Data(#"{"ok":true}"#.utf8)
+        try originalData.write(to: snapshot)
+        let originalHash = SHA256.hash(data: originalData)
+            .map { String(format: "%02x", $0) }.joined()
+        let manifest = auditDir.appendingPathComponent(SnapshotManifest.fileName)
+        try JSONSerialization.data(withJSONObject: [
+            "algorithm": "sha256",
+            "files": [snapshot.lastPathComponent: originalHash],
+        ], options: [.sortedKeys]).write(to: manifest)
+        try Data(#"{"ok":false}"#.utf8).write(to: snapshot)
+
+        var config = ReportConfig()
+        var jamfCLI = JamfCLIConfig()
+        jamfCLI.requireManifest = true
+        config.jamfCli = jamfCLI
+
+        let outURL = dataDir.appendingPathComponent("out.html")
+
+        do {
+            try await ReportEngine.generateHTML(
+                config: config, dataDir: dataDir, outputURL: outURL
+            )
+            XCTFail("Expected snapshotIntegrityViolation, generateHTML returned cleanly")
+        } catch ReportEngineError.snapshotIntegrityViolation { /* expected */ }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outURL.path),
+                       "HTML must not be written when pre-flight aborts")
+    }
+
+    /// schoolGenerate must enforce strict-mode pre-flight too — school
+    /// snapshots share the same workspace data dir and manifest discipline.
+    func testGenerateSchoolAbortsOnSnapshotMismatchWhenRequireManifestEnabled() async throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("preflight-school-\(UUID().uuidString)")
+        let auditDir = dataDir.appendingPathComponent("audit", isDirectory: true)
+        try FileManager.default.createDirectory(at: auditDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let snapshot = auditDir.appendingPathComponent("audit_20260101T000000.json")
+        let originalData = Data(#"{"ok":true}"#.utf8)
+        try originalData.write(to: snapshot)
+        let originalHash = SHA256.hash(data: originalData)
+            .map { String(format: "%02x", $0) }.joined()
+        let manifest = auditDir.appendingPathComponent(SnapshotManifest.fileName)
+        try JSONSerialization.data(withJSONObject: [
+            "algorithm": "sha256",
+            "files": [snapshot.lastPathComponent: originalHash],
+        ], options: [.sortedKeys]).write(to: manifest)
+        try Data(#"{"ok":false}"#.utf8).write(to: snapshot)
+
+        var config = ReportConfig()
+        var jamfCLI = JamfCLIConfig()
+        jamfCLI.requireManifest = true
+        config.jamfCli = jamfCLI
+
+        let outURL = dataDir.appendingPathComponent("out.xlsx")
+
+        do {
+            _ = try await ReportEngine.schoolGenerate(
+                config: config, csvURL: nil, dataDir: dataDir, outputURL: outURL
+            )
+            XCTFail("Expected snapshotIntegrityViolation, schoolGenerate returned cleanly")
+        } catch ReportEngineError.snapshotIntegrityViolation { /* expected */ }
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outURL.path),
+                       "School workbook must not be written when pre-flight aborts")
+    }
+
+    /// Pre-flight must be a no-op when `require_manifest: false` (the
+    /// default). Same tampered setup as the strict-mode test, but
+    /// permissive config — generate must complete and write the workbook.
+    func testGeneratePermitsMismatchWhenRequireManifestDisabled() async throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("preflight-permissive-\(UUID().uuidString)")
+        let auditDir = dataDir.appendingPathComponent("audit", isDirectory: true)
+        try FileManager.default.createDirectory(at: auditDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let snapshot = auditDir.appendingPathComponent("audit_20260101T000000.json")
+        let originalData = Data(#"{"ok":true}"#.utf8)
+        try originalData.write(to: snapshot)
+        let originalHash = SHA256.hash(data: originalData)
+            .map { String(format: "%02x", $0) }.joined()
+        let manifest = auditDir.appendingPathComponent(SnapshotManifest.fileName)
+        let manifestPayload: [String: Any] = [
+            "algorithm": "sha256",
+            "files": [snapshot.lastPathComponent: originalHash],
+        ]
+        try JSONSerialization.data(withJSONObject: manifestPayload, options: [.sortedKeys])
+            .write(to: manifest)
+        try Data(#"{"ok":false}"#.utf8).write(to: snapshot)
+
+        // Default config — require_manifest is false / unset.
+        let config = ReportConfig()
+        let engine = ReportEngine(config: config, dataDir: dataDir)
+        let outURL = dataDir.appendingPathComponent("out.xlsx")
+
+        try await engine.generate(csvURL: nil, outputURL: outURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
+                      "Permissive mode must not abort on mismatch")
     }
 
     // MARK: - generate() — no cached data, no CSV → throws

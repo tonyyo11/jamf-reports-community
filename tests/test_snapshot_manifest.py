@@ -354,3 +354,90 @@ def test_load_cached_json_uses_single_read_pattern(jrc, tmp_path):
     bridge = jrc.JamfCLIBridge(save_output=False, data_dir=str(data_dir))
     payload = bridge._load_cached_json(["audit"])
     assert payload == {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# PR-10 / threat-model T-11: require_manifest config gate
+# ---------------------------------------------------------------------------
+
+
+def test_require_manifest_config_forces_strict_manifest(jrc, config_factory):
+    """`jamf_cli.require_manifest: true` raises the floor — bridge is strict
+    even when the caller passes `strict_manifest=False`. Closes the T-11
+    gap where a workspace operator cannot make manifest checks mandatory
+    without remembering to pass --strict-manifest on every invocation."""
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["require_manifest"] = True
+
+    bridge = jrc._build_jamf_cli_bridge(
+        config, save_output=False, strict_manifest=False
+    )
+    assert bridge._strict_manifest is True
+
+
+def test_require_manifest_false_preserves_caller_choice(jrc, config_factory):
+    """When the config opts out, the bridge honors the explicit CLI flag."""
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["require_manifest"] = False
+
+    permissive = jrc._build_jamf_cli_bridge(
+        config, save_output=False, strict_manifest=False
+    )
+    assert permissive._strict_manifest is False
+
+    strict = jrc._build_jamf_cli_bridge(
+        config, save_output=False, strict_manifest=True
+    )
+    assert strict._strict_manifest is True
+
+
+def test_require_manifest_default_is_false(jrc, config_factory):
+    """DEFAULT_CONFIG must keep require_manifest off — opt-in only, to
+    preserve PR-7's warn-and-continue behavior for users who upgrade
+    without re-scaffolding their config.yaml."""
+    config = config_factory("dummy.yaml")
+    # Don't touch require_manifest — let it inherit from DEFAULT_CONFIG.
+    assert config._data["jamf_cli"].get("require_manifest", False) is False
+
+    bridge = jrc._build_jamf_cli_bridge(
+        config, save_output=False, strict_manifest=False
+    )
+    assert bridge._strict_manifest is False
+
+
+def test_workspace_init_seeds_require_manifest_true(jrc, config_factory):
+    """PR-10 / threat-model T-11: new workspaces are deployment-safe by default.
+    DEFAULT_CONFIG keeps require_manifest=False for upgrade-in-place safety,
+    but fresh workspaces seeded by workspace-init opt INTO strict mode so
+    new deployments are not silently vulnerable to manifest absence."""
+    seed = config_factory("dummy.yaml")
+    seeded = jrc._workspace_seed_config_data(seed, "test-profile")
+    assert seeded["jamf_cli"]["require_manifest"] is True
+
+
+def test_require_manifest_config_trips_hard_fail_end_to_end(jrc, config_factory, tmp_path):
+    """End-to-end: config gate → bridge → `_load_cached_json` → RuntimeError
+    on tamper. Closes the integration gap that the bridge-construction
+    tests alone leave open — proves `effective_strict` actually plumbs
+    through to the verifier, not just into the constructor field."""
+    data_dir = tmp_path / "jamf-cli-data"
+    audit_dir = data_dir / "audit"
+    audit_dir.mkdir(parents=True)
+    snap = audit_dir / "audit_20260101T000000.json"
+    snap.write_text('{"ok": true}', encoding="utf-8")
+    jrc._rewrite_snapshot_manifest(audit_dir)
+
+    # Tamper after manifest write.
+    snap.write_text('{"ok": false}', encoding="utf-8")
+
+    config = config_factory("dummy.yaml")
+    config._data["jamf_cli"]["data_dir"] = str(data_dir)
+    config._data["jamf_cli"]["require_manifest"] = True
+
+    bridge = jrc._build_jamf_cli_bridge(
+        config, save_output=False, strict_manifest=False
+    )
+    # The whole point: caller did NOT pass strict_manifest=True; the
+    # config gate raised the floor and the verifier hard-fails.
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        bridge._load_cached_json(["audit"])

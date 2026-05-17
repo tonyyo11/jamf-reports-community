@@ -247,6 +247,12 @@ jamf_cli:
   # Maximum age of a cached snapshot used on live-call fallback, in hours.
   # 0 disables the check (any cached file is accepted).
   max_cache_age_hours: 0    # 0 = no limit; raise an error if cached fallback is older than N hours
+  # Hard-fail on snapshot integrity violations (missing manifest entry, SHA-256
+  # mismatch). Equivalent to passing --strict-manifest on every invocation.
+  # Recommended for production / shared workspaces; leave false for ad-hoc
+  # exploration. Threat-model T-11. The Swift app surfaces an "Unverified
+  # snapshot" pill in AuditView regardless of this setting.
+  require_manifest: false
 
 
 # ---------------------------------------------------------------------------

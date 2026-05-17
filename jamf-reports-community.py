@@ -253,6 +253,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "command_timeout_seconds": 300,
         "ea_results_timeout_seconds": 600,
         "max_cache_age_hours": 0,   # 0 = no limit; set to enforce freshness on cache fallback
+        # When True, manifest mismatches and missing manifest entries are hard errors
+        # (equivalent to passing --strict-manifest on every invocation). Threat-model T-11.
+        "require_manifest": False,
     },
     "school_cli": {
         "enabled": False,
@@ -4840,6 +4843,11 @@ def _build_jamf_cli_bridge(
     command_timeout = _to_int(jamf_cli_cfg.get("command_timeout_seconds", 300), 300)
     ea_timeout = _to_int(jamf_cli_cfg.get("ea_results_timeout_seconds", 600), 600)
     max_cache_age = _to_int(jamf_cli_cfg.get("max_cache_age_hours", 0), 0)
+    # PR-10 / threat-model T-11: jamf_cli.require_manifest config gate forces
+    # --strict-manifest semantics on by default. Explicit --strict-manifest flag
+    # still wins; config gate raises the floor.
+    require_manifest_cfg = bool(jamf_cli_cfg.get("require_manifest", False))
+    effective_strict = strict_manifest or require_manifest_cfg
     return JamfCLIBridge(
         save_output=save_output,
         data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
@@ -4849,7 +4857,7 @@ def _build_jamf_cli_bridge(
         ea_results_timeout=ea_timeout,
         max_cache_age_hours=max_cache_age,
         multi_config=jamf_cli_cfg.get("multi"),
-        strict_manifest=strict_manifest,
+        strict_manifest=effective_strict,
     )
 
 
@@ -11901,6 +11909,10 @@ def _workspace_seed_config_data(seed_config: Config, profile_name: str) -> dict[
     config_data.setdefault("charts", {})
     config_data["jamf_cli"]["profile"] = profile_name
     config_data["jamf_cli"]["data_dir"] = "jamf-cli-data"
+    # PR-10 / threat-model T-11: new workspaces are deployment-safe by default.
+    # DEFAULT_CONFIG keeps require_manifest=False to preserve PR-7 behavior on
+    # upgrade-in-place, but freshly-seeded workspaces opt INTO strict mode.
+    config_data["jamf_cli"]["require_manifest"] = True
     config_data["output"]["output_dir"] = "Generated Reports"
     config_data["output"]["archive_dir"] = ""
     config_data["charts"]["historical_csv_dir"] = "snapshots"
