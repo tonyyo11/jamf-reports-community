@@ -138,17 +138,6 @@ S-03 (dotted-profile rejection) review. PR-3 closed the structural
 bug at both the writer and parser; these items are about how the
 migration is *surfaced* to the user, not whether the bug is closed.
 
-- **SHOULD-FIX — Migration warning for dotted legacy workspaces / agents is log-only.**
-  `app/Sources/JamfReports/Services/ProfileService.swift` (discoverLocal) +
-  `app/Sources/JamfReports/Services/LaunchAgentService.swift` (dottedLegacyAgents).
-  Both helpers emit `AppLogger.engine.warning` listing the affected
-  names. A user who upgrades to PR-3 and finds a profile or schedule
-  missing has no in-app indication of why or what to do. Route the
-  flagged names through a `WhatsNewBanner`-style first-launch
-  surface, or a `Settings → Diagnostics` panel that lists "legacy
-  workspaces needing rename" and "legacy schedules needing manual
-  removal", with an "open in Finder" affordance for the workspace
-  case.
 - **CONSIDER — `LaunchAgentService.removeAgents(profile:)` silently returns `[]` for dotted legacy profile names.**
   `app/Sources/JamfReports/Services/LaunchAgentService.swift:55-56`.
   The guard `ProfileService.isValid(profile)` is correct for new
@@ -213,19 +202,24 @@ load) protected by the install-time + onboarding-time gates.
 
 ### From python-reviewer audit of wave 1+2 (2026-05-14)
 
-- **SHOULD-FIX — Partial runs render as `.ok` in the Runs screen.**
-  `app/Sources/JamfReports/Services/RunHistoryService.swift:49–52`.
-  `parseLogTail` classifies a run by exit code: 0 → `.ok`, non-zero →
-  `.fail`. Wave 2 introduced partial-success runs that exit 0 but write
-  `status: "partial"` to `summary.json` and emit a `[partial]` log line.
-  The Runs screen shows a green OK pill on a partial run, so an operator
-  scanning the history won't see the data-quality issue. Surface the
-  partial state by either (a) parsing the `[partial] Report written…`
-  marker out of the log tail and adding a `.partial` case to
-  `Schedule.LastStatus`, or (b) reading `summary.json` next to the log
-  to determine the status. The first option matches the design-review
-  pill-icon work for color-blind safety. (Discovered: python-reviewer
-  audit, 2026-05-14.)
+### From PR-8 (2026-05-16)
+
+- **CONSIDER — Stale-data banner broader application.** The stale-data
+  banner pattern landed in PR-7's `DeviceLookupView` (warn-colored card
+  with `RelativeDateTimeFormatter` "last fetched X ago") is currently
+  view-specific. Other cached-data surfaces — `TrendsView`,
+  `DevicesView`, posture dashboards, the Overview screen — silently
+  render the most recent snapshot with no in-view indicator that the
+  data is stale. Broader application requires extracting a shared
+  `StaleDataBanner` component and threading cache-source metadata
+  through ~7 services (`PatchStatusService`, `UpdateStatusService`,
+  `PolicyHealthService`, `CompliancePostureService`,
+  `SecurityPostureService`, `MobileFleetService`,
+  `ProtectDashboardService`) into their `Snapshot` structs.
+  Per anti-churn rule "no scaffolding without wiring" the broader
+  rollout was deferred: PR-8 wired one surface; a follow-up PR should
+  ship the reusable component alongside ≥2 additional consumers and a
+  protocol seam for the source flag. Gemini threat-model T-8.
 
 ### From in-session bug fixes
 

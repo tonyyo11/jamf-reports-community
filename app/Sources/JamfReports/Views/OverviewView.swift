@@ -9,6 +9,8 @@ struct OverviewView: View {
     @State private var isRunning = false
     @State private var activitySelection: DeviceInventoryRecord.ID? = nil
     @State private var navigationPath = NavigationPath()
+    @State private var legacyWorkspaces: [String] = []
+    @State private var legacySchedules: [String] = []
 
     private var defaultTrendRange: TrendRange {
         TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
@@ -43,6 +45,7 @@ struct OverviewView: View {
                     if !workspace.demoMode, !workspace.isWorkspaceInitialized {
                         workspaceInitBanner
                     }
+                    migrationBanner
                     statRow
                     if workspace.demoMode {
                         osAndRules
@@ -137,6 +140,22 @@ struct OverviewView: View {
             return "\(config.path) is missing. Initialize it to seed config.yaml and helper folders."
         }
         return "\(url.path) does not exist yet. Initialize it to seed config.yaml and helper folders."
+    }
+
+    private var migrationBanner: some View {
+        MigrationBanner(
+            legacyWorkspaces: legacyWorkspaces,
+            legacySchedules: legacySchedules,
+            onDismiss: {}
+        )
+        .onAppear(perform: loadLegacyItems)
+    }
+
+    private func loadLegacyItems() {
+        legacyWorkspaces = ProfileService.dottedLegacyWorkspaces()
+        legacySchedules = LaunchAgentService.dottedLegacyAgents().map {
+            URL(fileURLWithPath: $0).lastPathComponent
+        }
     }
 
     private var liveWorkspaceState: some View {

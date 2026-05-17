@@ -560,14 +560,17 @@ struct SchedulesView: View {
     private func statusPill(for s: Schedule.LastStatus) -> some View {
         switch s {
         case .ok:
-            Pill(text: "OK",   tone: .teal,   icon: "checkmark")
+            Pill(text: "OK",      tone: .teal,   icon: "checkmark")
                 .accessibilityLabel("Last run status: OK")
         case .warn:
-            Pill(text: "WARN", tone: .warn,   icon: "exclamationmark")
+            Pill(text: "WARN",    tone: .warn,   icon: "exclamationmark")
                 .accessibilityLabel("Last run status: Warning")
         case .fail:
-            Pill(text: "FAIL", tone: .danger, icon: "xmark")
+            Pill(text: "FAIL",    tone: .danger, icon: "xmark")
                 .accessibilityLabel("Last run status: Failed")
+        case .partial:
+            Pill(text: "PARTIAL", tone: .warn,   icon: "exclamationmark.triangle.fill")
+                .accessibilityLabel("Last run status: Partial")
         }
     }
 

@@ -384,6 +384,7 @@ enum LaunchAgentService {
         let date: Date?
         let exitCode: Int32?
         let hasFailureMarker: Bool
+        let hasPartialMarker: Bool
     }
 
     private static func statusFileURL(
@@ -469,17 +470,25 @@ enum LaunchAgentService {
 
         var exitCode: Int32?
         var hasFailureMarker = false
+        var hasPartialMarker = false
+
+        let summaryBasedPartial = urls.first
+            .map { checkSummaryFileForPartialStatus(logURL: $0, profile: profile, isMulti: isMulti) }
+            ?? false
+
         for url in urls {
             let tail = parseLogTail(from: url)
             if exitCode == nil {
                 exitCode = tail.exitCode
             }
             hasFailureMarker = hasFailureMarker || tail.hasFailureMarker
+            hasPartialMarker = hasPartialMarker || tail.hasPartialMarker
         }
         return ParsedLogSummary(
             date: newestDate,
             exitCode: exitCode,
-            hasFailureMarker: hasFailureMarker
+            hasFailureMarker: hasFailureMarker,
+            hasPartialMarker: summaryBasedPartial || hasPartialMarker
         )
     }
 
@@ -491,9 +500,36 @@ enum LaunchAgentService {
             return success ? .ok : .fail
         }
         if let exitCode = logSummary.exitCode {
+            if exitCode == 0 && logSummary.hasPartialMarker {
+                return .partial
+            }
             return exitCode == 0 ? .ok : .fail
         }
         return logSummary.hasFailureMarker ? .fail : .ok
+    }
+
+    /// Authoritative source: sibling `summary.json` (`{"status": "partial"}`).
+    /// Returns false for multi-profile logs (no per-run summary in that layout).
+    private static func checkSummaryFileForPartialStatus(
+        logURL: URL,
+        profile: String,
+        isMulti: Bool
+    ) -> Bool {
+        guard !isMulti else { return false }
+        guard let root = WorkspacePathGuard.root(for: profile) else { return false }
+        let logFilename = logURL.deletingPathExtension().lastPathComponent
+        let summaryURL = root
+            .appendingPathComponent("snapshots")
+            .appendingPathComponent("computers")
+            .appendingPathComponent("summaries")
+            .appendingPathComponent("summary_\(logFilename).json")
+        if FileManager.default.fileExists(atPath: summaryURL.path),
+           let data = try? Data(contentsOf: summaryURL),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let status = json["status"] as? String {
+            return status == "partial"
+        }
+        return false
     }
 
     private static func artifactLabels(
@@ -570,17 +606,20 @@ enum LaunchAgentService {
         return standard.date(from: text)
     }
 
-    static func parseLogTail(from url: URL) -> (exitCode: Int32?, hasFailureMarker: Bool) {
-        guard let fh = FileHandle(forReadingAtPath: url.path) else { return (nil, false) }
+    static func parseLogTail(
+        from url: URL
+    ) -> (exitCode: Int32?, hasFailureMarker: Bool, hasPartialMarker: Bool) {
+        guard let fh = FileHandle(forReadingAtPath: url.path) else { return (nil, false, false) }
         defer { fh.closeFile() }
 
         let fileSize = fh.seekToEndOfFile()
         let readSize = min(fileSize, 2_048)
         fh.seek(toFileOffset: fileSize - readSize)
         let data = fh.readDataToEndOfFile()
-        guard let text = String(data: data, encoding: .utf8) else { return (nil, false) }
+        guard let text = String(data: data, encoding: .utf8) else { return (nil, false, false) }
 
         var hasFailureMarker = false
+        var hasPartialMarker = false
         var parsedExitCode: Int32? = nil
         for line in text.components(separatedBy: "\n").reversed() {
             let lower = line.lowercased()
@@ -590,11 +629,12 @@ enum LaunchAgentService {
                 || lower.contains("[fail]")
                 || lower.contains("error:")
                 || lower.contains("traceback")
+            hasPartialMarker = hasPartialMarker || lower.contains("[partial]")
             if parsedExitCode == nil {
                 parsedExitCode = exitCode(from: line)
             }
         }
-        return (parsedExitCode, hasFailureMarker)
+        return (parsedExitCode, hasFailureMarker, hasPartialMarker)
     }
 
     static func exitCode(from line: String) -> Int32? {

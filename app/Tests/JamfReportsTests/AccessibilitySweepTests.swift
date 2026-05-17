@@ -153,6 +153,8 @@ extension Schedule {
             return "Schedule completed with warnings"
         case .fail:
             return "Schedule failed"
+        case .partial:
+            return "Schedule completed with partial success"
         }
     }
 }
