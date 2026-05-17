@@ -38,15 +38,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Pin the Swift toolchain so the runner-image rotation doesn't silently
-      # shift it between PRs. 6.0.3 matches CLAUDE.md's "Swift 6 strict
-      # concurrency" floor. Local devs should match (via `swiftly` or by
-      # selecting an Xcode that bundles 6.0.x) — Swift 6.3+ relaxes
-      # @MainActor enforcement and will pass things that fail here.
-      - name: Set up Swift
-        uses: swift-actions/setup-swift@v2
+      # Pin Xcode so the runner-image rotation doesn't silently shift the
+      # bundled Swift between PRs. Xcode 16.4 ships Swift 6.1.x. Pinning
+      # the Xcode bundle (rather than installing a standalone Swift via
+      # swift-actions/setup-swift) keeps the toolchain and the SDK in sync
+      # — mixing them produces frontend crashes like the SIGABRT we hit on
+      # ZIPFoundation during the first PR-9.5 attempt.
+      - name: Pin Xcode 16.4
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          swift-version: "6.0.3"
+          xcode-version: "16.4"
 
       - name: Print Swift version
         run: swift --version
