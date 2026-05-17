@@ -28,6 +28,46 @@ enum LaunchAgentService {
             .sorted { $0.name < $1.name }
     }
 
+    /// LaunchAgent labels whose `ProgramArguments[0]` (executable) no longer
+    /// exists on disk — typically because the .app bundle was rebuilt at a
+    /// different path (different worktree, different release archive).
+    /// macOS will queue these for execution at the next trigger and they will
+    /// fail at launch with `posix_spawn` ENOENT, polluting the
+    /// `~/Library/Logs/JamfReports/<label>/stderr.log` file with a
+    /// confusing path-not-found error.
+    ///
+    /// - Parameter dir: Directory to scan. Defaults to the user's
+    ///   `~/Library/LaunchAgents`. Tests pass a temp dir.
+    /// - Returns: Sorted list of plist labels whose recorded executable is
+    ///   missing on disk. Empty when every JRC plist's executable still
+    ///   exists or when there are no JRC plists at all.
+    static func staleExecutableLabels(in dir: URL = agentsDir) -> [String] {
+        let prefix = "\(LaunchAgentWriter.labelPrefix)."
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        let fm = FileManager.default
+        return entries
+            .filter { $0.pathExtension == "plist" }
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+            .compactMap { url -> String? in
+                guard let data = try? Data(contentsOf: url),
+                      let plist = try? PropertyListSerialization
+                          .propertyList(from: data, format: nil) as? [String: Any],
+                      let label = plist["Label"] as? String,
+                      LaunchAgentWriter.isValidLabel(label),
+                      let args = plist["ProgramArguments"] as? [String],
+                      let executable = args.first,
+                      !executable.isEmpty else {
+                    return nil
+                }
+                return fm.fileExists(atPath: executable) ? nil : label
+            }
+            .sorted()
+    }
+
     /// LaunchAgent plist labels that look like JRC schedules but cannot be
     /// unambiguously attributed to a current profile slug — typically
     /// because they were written before S-03 tightened

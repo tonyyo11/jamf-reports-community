@@ -458,8 +458,9 @@ struct AuditView: View {
         let breakdown = parts.joined(separator: " · ")
         if hasSecuritySensitiveFailure(summary) {
             return "\(breakdown). Possible tampering or bit-rot — investigate before " +
-                "trusting this data. Enable jamf_cli.require_manifest to abort future " +
-                "generate runs when this occurs."
+                "trusting this data. Enable jamf_cli.require_manifest " +
+                "(Configuration → jamf-cli Cache → \"Require snapshot manifest\") " +
+                "to abort future generate runs when this occurs."
         }
         // Only-`.absent`/`.omitted` case. When strict mode is OFF this is
         // almost always pre-PR-7 legacy snapshots (re-run Collect fixes it).
