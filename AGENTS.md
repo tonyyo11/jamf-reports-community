@@ -707,6 +707,23 @@ Verify the app compiles before committing any Swift change:
 cd app && swift build 2>&1 | tail -20
 ```
 
+**Pre-push CI parity (PR-9.5):** CI pins Xcode to `16.4` via
+`maxim-lobanov/setup-xcode@v1` in `.github/workflows/ci.yml` — that
+gives a bundled Swift 6.1.x. Local Swift 6.3+ (Xcode 17+) relaxes
+`@MainActor` enforcement and will silently compile code that fails on
+CI. Before pushing, run:
+
+```bash
+cd app && swift build --build-tests 2>&1 | grep "error:" || echo "OK"
+```
+
+To catch isolation errors locally, install Xcode 16.4 alongside your
+current Xcode (Apple's older-releases page) and `sudo xcode-select -s
+/Applications/Xcode_16.4.app` before running `swift build`. SwiftUI
+`View`-conforming types are MainActor-isolated; their tests must use
+class-level `@MainActor` (not just method-level) for Swift 6.1
+compatibility.
+
 ### Python CLI
 
 An automated pytest suite now exists under `tests/`, backed by committed fixtures in

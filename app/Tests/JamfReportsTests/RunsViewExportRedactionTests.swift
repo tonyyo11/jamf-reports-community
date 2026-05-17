@@ -10,6 +10,11 @@ import XCTest
 /// `RunHistoryService.loadLog` rejects paths outside
 /// `~/Jamf-Reports/<profile>/automation/logs/`, so the test pins a real (unique)
 /// directory under the running user's home and cleans up via `addTeardownBlock`.
+///
+/// `@MainActor` is required (PR-9.5): `RunsView.renderExport(from:)` is
+/// MainActor-isolated via `View` conformance. Swift 6.0/6.1 (CI macos-latest)
+/// enforces the isolation check synchronously; Swift 6.3 (local) relaxes it.
+@MainActor
 final class RunsViewExportRedactionTests: XCTestCase {
 
     func testRenderExportRedactsBearerToken() throws {

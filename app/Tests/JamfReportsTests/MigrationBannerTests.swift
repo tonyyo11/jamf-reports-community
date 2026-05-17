@@ -2,6 +2,11 @@ import Foundation
 import XCTest
 @testable import JamfReports
 
+/// `@MainActor` is required (PR-9.5): `MigrationBanner: View` is
+/// MainActor-isolated. Swift 6.0/6.1 (CI macos-latest) enforces the
+/// isolation check on synchronous test methods; Swift 6.3 (local) relaxes
+/// it. The class-level annotation satisfies both compilers.
+@MainActor
 final class MigrationBannerTests: XCTestCase {
     func testMigrationBannerDetectionWithLegacyWorkspaces() {
         let banner = MigrationBanner(
