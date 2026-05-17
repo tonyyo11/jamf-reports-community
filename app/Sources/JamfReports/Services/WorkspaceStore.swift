@@ -24,6 +24,12 @@ final class WorkspaceStore {
     var isInitializingWorkspace: Bool = false
     var workspaceInitMessage: String?
     var launchAgentCleanupMessage: String?
+    /// Labels of JRC LaunchAgent plists whose recorded executable no longer
+    /// exists on disk. Populated by `LaunchAgentService.staleExecutableLabels`
+    /// during workspace refresh and on init. Drives the
+    /// SchedulesView "stale executable" warning banner (PR-15). Empty when
+    /// every plist's executable resolves cleanly.
+    var launchAgentStaleLabels: [String] = []
     var globalStatus: String? = nil
     var toast: Toast? = nil
     /// Last known auth probe result for the active profile. `nil` while not yet
@@ -125,6 +131,7 @@ final class WorkspaceStore {
         self.jamfCLIVersion = jamfCLI?.version
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.launchAgentCleanupMessage = cleanup.message
+        self.launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
     }
 
     // MARK: Profile switching
@@ -170,6 +177,7 @@ final class WorkspaceStore {
             demoMode = false
             profiles = real
             schedules = LaunchAgentService.list()
+            launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
             if !real.contains(where: { $0.name == profile }) {
                 profile = real.first!.name
             }

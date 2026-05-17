@@ -7,6 +7,10 @@ struct OverviewView: View {
     @State private var bridge = CLIBridge()
     @State private var trendStore = TrendStore()
     @State private var isRunning = false
+    /// T-13 fingerprints captured from the live generate log so the success
+    /// toast can surface the first artifact's 12-char short hash. Cleared
+    /// after each run completes. PR-15.
+    @State private var generatedHashes: [String: String] = [:]
     @State private var activitySelection: DeviceInventoryRecord.ID? = nil
     @State private var navigationPath = NavigationPath()
     @State private var legacyWorkspaces: [String] = []
@@ -260,6 +264,14 @@ struct OverviewView: View {
         let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
             Task { @MainActor in
                 guard let workspace, self.isRunning else { return }
+                // PR-15: capture T-13 SHA-256 fingerprints from the live log
+                // so the success toast surfaces the same artifact-hash
+                // provenance the Generate sheet shows. Same `[ok] sha256:
+                // <64hex> <basename>` sentinel; parser reused from
+                // GenerateSheetState to avoid drift.
+                if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                    self.generatedHashes[parsed.filename] = parsed.hash
+                }
                 workspace.globalStatus = line.text
             }
         }
@@ -267,14 +279,29 @@ struct OverviewView: View {
         workspace.globalStatus = nil
 
         if exit == 0 {
-            workspace.toast = Toast(message: "Report generated successfully", style: .success)
+            let suffix = firstFingerprintSummary()
+            let message = suffix.isEmpty
+                ? "Report generated successfully"
+                : "Report generated · \(suffix)"
+            workspace.toast = Toast(message: message, style: .success)
             workspace.reloadFromDisk()
+            generatedHashes.removeAll()
             if !workspace.demoMode {
                 trendStore.reload()
             }
         } else {
             workspace.toast = Toast(message: "Generate failed · exit \(exit)", style: .danger)
+            generatedHashes.removeAll()
         }
+    }
+
+    /// Format the first artifact's 12-char short fingerprint for the toast.
+    /// Empty when no `[ok] sha256:` lines were captured (e.g., legacy engine
+    /// path or an engine that doesn't emit the T-13 sentinel).
+    private func firstFingerprintSummary() -> String {
+        guard let first = generatedHashes.first else { return "" }
+        let short = String(first.value.prefix(12))
+        return "sha256: \(short)…"
     }
 
     private var statRow: some View {

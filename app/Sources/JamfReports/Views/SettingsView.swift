@@ -476,14 +476,14 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 8) {
-                    PNPButton(title: "Generate Diagnostic Bundle", icon: "shippingbox", size: .sm) {
+                    PNPButton(title: "Copy Diagnostic Command", icon: "doc.on.clipboard", size: .sm) {
                         runDiagnosticBundle()
                     }
                     .help(
-                        "Copies the command to your clipboard and opens Terminal. " +
-                        "The bundle lands on your Desktop."
+                        "Copies the diagnostic-bundle command to your clipboard and opens Terminal. " +
+                        "Paste and run to generate the bundle on your Desktop."
                     )
-                    .accessibilityHint("Opens Terminal and copies a diagnostic-bundle command to the clipboard.")
+                    .accessibilityHint("Copies a diagnostic-bundle command to the clipboard and opens Terminal.")
 
                     PNPButton(title: "Reveal Workspace", size: .sm) {
                         if let url = currentWorkspaceURL {

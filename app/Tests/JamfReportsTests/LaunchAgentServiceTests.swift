@@ -323,6 +323,86 @@ final class LaunchAgentServiceTests: XCTestCase {
         return url
     }
 
+    // MARK: - staleExecutableLabels (PR-15)
+
+    func testStaleExecutableLabelsReturnsEmptyForFreshPlists() throws {
+        let dir = try makeAgentsDir()
+        let realExec = FileManager.default.homeDirectoryForCurrentUser
+        try writeLabeledPlist(
+            in: dir,
+            label: "\(prefix).demo.daily-fresh",
+            executable: realExec.path
+        )
+
+        XCTAssertEqual(LaunchAgentService.staleExecutableLabels(in: dir), [])
+    }
+
+    func testStaleExecutableLabelsFlagsMissingExecutable() throws {
+        let dir = try makeAgentsDir()
+        try writeLabeledPlist(
+            in: dir,
+            label: "\(prefix).demo.daily-stale",
+            executable: "/Users/nobody/JamfReports.app/Contents/MacOS/JamfReports"
+        )
+
+        XCTAssertEqual(
+            LaunchAgentService.staleExecutableLabels(in: dir),
+            ["\(prefix).demo.daily-stale"]
+        )
+    }
+
+    func testStaleExecutableLabelsSortsMultipleStaleEntriesAlphabetically() throws {
+        let dir = try makeAgentsDir()
+        let missing = "/tmp/nonexistent-binary-\(UUID().uuidString.prefix(8))"
+        try writeLabeledPlist(in: dir, label: "\(prefix).beta.weekly-z", executable: missing)
+        try writeLabeledPlist(in: dir, label: "\(prefix).alpha.daily-a", executable: missing)
+        // Add a fresh one to confirm it's filtered out
+        try writeLabeledPlist(
+            in: dir,
+            label: "\(prefix).gamma.hourly-fresh",
+            executable: FileManager.default.homeDirectoryForCurrentUser.path
+        )
+
+        XCTAssertEqual(
+            LaunchAgentService.staleExecutableLabels(in: dir),
+            ["\(prefix).alpha.daily-a", "\(prefix).beta.weekly-z"]
+        )
+    }
+
+    func testStaleExecutableLabelsIgnoresNonJRCPlists() throws {
+        let dir = try makeAgentsDir()
+        let missing = "/tmp/nope-\(UUID().uuidString.prefix(8))"
+        // A plist with our prefix but missing binary → flagged
+        try writeLabeledPlist(in: dir, label: "\(prefix).demo.daily", executable: missing)
+        // A plist with a different prefix → ignored even though executable missing
+        try writeLabeledPlist(in: dir, label: "com.apple.someone.else.daily", executable: missing)
+
+        XCTAssertEqual(
+            LaunchAgentService.staleExecutableLabels(in: dir),
+            ["\(prefix).demo.daily"]
+        )
+    }
+
+    private func makeAgentsDir() throws -> URL {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("staleAgents-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return root
+    }
+
+    private func writeLabeledPlist(in dir: URL, label: String, executable: String) throws {
+        let plist: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": [executable, "--scheduled-run"],
+            "RunAtLoad": false,
+            "Disabled": true,
+        ]
+        let url = dir.appendingPathComponent("\(label).plist")
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: url)
+    }
+
     private func writeLog(_ text: String) throws -> URL {
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
