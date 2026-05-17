@@ -404,8 +404,7 @@ _(All items resolved in PR-4.)_
   also used on the log-console surface (`Theme.Colors.codeBG`).
   Re-check contrast on the new background — if `dangerSoft` falls
   below AA Normal (4.5:1) against `codeBG`, choose a slightly
-  brighter coral or bump `codeBG` toward fully black. Update
-  `accessibility-audit.md` either way.
+  brighter coral or bump `codeBG` toward fully black.
 
 ---
 
@@ -479,6 +478,32 @@ items below are valid but out of scope.
 - **CONSIDER — `_load_json_snapshots` (and `RunHistoryService.loadLog`) redact line-by-line; multi-line secrets evade the filter.** A token split across newlines would survive both Python trend redaction and Swift run-log redaction. Extremely low probability for jamf-cli structured output (single-line JSON lines) but technically present.
 - **CONSIDER — Manifest absent = no check exploitable.** Both Python and Swift verifiers treat an absent `manifest.json` as "no check" (rationale: legacy snapshots from pre-PR-7 collectors). An attacker who deletes the manifest after tampering bypasses verification. Address via either (a) once a manifest has been seen for a directory, require it exists (track "manifest seen at" state per data_dir), or (b) accept the limit (current).
 - **CONSIDER — `CLIBridge.deviceDetail` / `mobileDeviceDetail` wrappers preserved alongside `*WithProvenance` variants.** `app/Sources/JamfReports/Services/CLIBridge.swift:651,683`. Wrappers are real callers (`DevicesView.swift:891`, `CustomizationWizard.swift:1283`), not orphans. Per CLAUDE.md "Replace, don't deprecate" — migrate those 2 callsites to the provenance-aware methods in a future PR and delete the wrappers.
+
+### From design-review-fixes-2.md triage (2026-05-17)
+
+Captured before the source doc was deleted. Phases 1–3 of the original
+design-review plan were substantially completed by the dev-app/2.0
+work; the items below are the open residual from Phases 2, 3, and 5.
+
+- **SHOULD-FIX — Systematize hardcoded `Color(hex:)` literals in non-Theme files (Phase 2.2).** 30+ inline hex color literals remain across `OnboardingView.swift`, `ProtectView.swift`, `GenerateSheet.swift`, `TrendsView.swift`, `ExtensionAttributesView.swift`. The Phase 2.1 severity ramp (`Theme/ThemeSemanticTokens.swift:145-184`) is wired and usable; the cleanup to route all remaining hardcoded hex through Theme tokens has not been systematic. Visual consistency risk across light/dark surfaces. Legitimate-remaining hex is in export-only views and data-driven `band.colorHex`/`tier.colorHex` paths; those are out of scope for this cleanup.
+- **SHOULD-FIX — Migrate hand-rolled tables to SwiftUI `Table` (Phase 3.5).** `PolicyProfileView.findingsCard`, `PolicyProfileView.profileStatusCard`, `UpdatesView.failedPlansCard`, `UpdatesView.errorDevicesCard` still use custom `DataTableHeader` / `DataTableRow` HStack rows. VoiceOver semantics are compromised — table columns not announced as table headers. `PatchView.patchTitlesCard` already uses native `Table` and is the reference. Migration also unifies the table look and removes ~200 lines of bespoke table code.
+- **CONSIDER — Generalize Increase Contrast support beyond Pill/Sidebar (Phase 5.1).** Only `Pill`, `StatTile`, `EmptyStateView`, and `Sidebar` read `colorSchemeContrast`. `Card`, `Button`, `SegmentedControl`, and 25+ Views do not. The Phase 5.1 proposal called for `Theme.Text.tertiary(contrast:)` accessor functions; those don't exist. Full rollout requires: (a) add Theme accessor functions, (b) thread contrast through ~20 consumer views, (c) audit actual contrast ratios post-bump. Substantial scope; worth a dedicated PR.
+- **CONSIDER — Complete Dynamic Type migration (Phase 5.5).** ~40–60% of non-display text still uses `.system(size: N)` pinned sizes instead of semantic fonts (`.callout` / `.footnote` / `.caption`). Remaining sites: most of `ConfigView`, `SettingsView`, `PolicyProfileView`, `ProtectView` data cells, `TrendsView` axis labels, chart numeric labels in multiple dashboards. Pinned serif/mono for display (H1, kicker, metrics) correctly preserved. Largest consumer is ProtectView (~12 instances). Current state is usable; full migration aids users with system Larger Text enabled. Batch into a single pass rather than piecemeal PRs.
+- **CONSIDER — `MobileFleetView` uses `"Showing \(N)"` instead of `"Showing N of M"` pattern (Phase 3.3).** Other paginated views (`ProtectView`, `PolicyProfileView`) standardized on "Showing 50 of N"; MobileFleetView is the last holdout. Trivial copy alignment for consistency.
+
+### From post-PR-8 review batch threat model refresh (2026-05-17)
+
+T-11..T-15 from the post-PR-8 review batch are now formally integrated
+into `docs/architecture/jamf-reports-community-threat-model.md`
+(§6, §7 priority summary). T-16..T-20 cover external-distribution
+horizons (notarized DMG + PKG installer) per §11 annex. The doc
+includes "Highest-Value Next Actions" recommending T-11 / T-12 / T-13
+closure as the top three. Items below are the BACKLOG-tracked code
+work to back those recommendations:
+
+- **MUST-FIX — Close T-11 (manifest absence silent pass).** `app/Sources/JamfReports/Engine/SnapshotManifest.swift:11-31`. `verify` returns silently on absent/unparseable manifest. Surface "Unverified snapshot" pill on affected dashboards' data-source line + add `jamf_cli.require_manifest: true` config gate feeding `--strict-manifest` by default for new workspaces. ~30 lines + 1 view change. Largest residual security gap; directly evades PR-7's headline integrity control.
+- **SHOULD-FIX — Close T-12 (summary.json under manifest coverage).** Extend `_rewrite_snapshot_manifest` to cover `snapshots/computers/summaries/` AND add Swift `SnapshotManifest.verify(...)` call inside `RunHistoryService.isPartialRun` + `LaunchAgentService.checkSummaryFileForPartialStatus`. ~40 lines + 1 test. Also closes the existing MEDIUM-3 BACKLOG entry (PR-8 dormant-branch documentation) by giving the dormant Swift code path a real producer.
+- **SHOULD-FIX — Ship T-13 integrity hints for Generated Reports.** Embed `<meta name="report-sha256" content="...">` in HTML report `<head>` plus a visible "Verify this report: shasum -a 256 <file>" footer. Write `.sha256` side-car alongside each generated XLSX. Surface hash in the UI "Report ready" toast. ~25 lines. The single highest-impact change for the cross-trust-boundary recipient surface — addresses the only data path the manifest discipline explicitly skipped.
 
 ---
 
