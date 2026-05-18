@@ -5,8 +5,15 @@ extension CLIBridge {
     /// Run collect/generate immediately for `profile` and `mode`, streaming each output line through `onLine`.
     ///
     /// Profile is validated with `ProfileService.isValid` before any subprocess is launched.
-    /// For `jamfCLIFull` and `csvAssisted`, the newest CSV in the profile workspace is used when
-    /// `csvPath` is nil; the search checks `csv-inbox/` first, then the workspace root.
+    ///
+    /// PR-21 mode contract (each branch is distinct, with no operational overlap):
+    /// - `.snapshotOnly`: collect only — emits a Trends summary, produces no workbook.
+    /// - `.jamfCLIOnly`: generate from cached data only — skips collect entirely, so a
+    ///   re-render after editing config or templates is fast and offline.
+    /// - `.jamfCLIFull`: collect + generate with no CSV input.
+    /// - `.csvAssisted`: collect + generate with a required CSV from `csv-inbox/`. Hard-fails
+    ///   when no CSV is found rather than silently degrading to a jamf-cli-only workbook —
+    ///   the mode's whole purpose is "I have CSV data I want included."
     func runNow(
         profile: String,
         mode: Schedule.RunMode,
@@ -21,23 +28,34 @@ extension CLIBridge {
         case .snapshotOnly:
             return await collect(profile: profile, onLine: onLine)
         case .jamfCLIOnly:
+            return await generate(profile: profile, csvPath: nil, onLine: onLine)
+        case .jamfCLIFull:
             return await collectThenGenerate(profile: profile, csvPath: nil, onLine: onLine)
-        case .jamfCLIFull, .csvAssisted:
-            return await collectThenGenerate(
-                profile: profile,
-                csvPath: (csvPath ?? newestCSV(in: profile))?.path,
-                onLine: onLine
-            )
+        case .csvAssisted:
+            guard let csv = csvPath ?? Self.newestCSV(in: profile) else {
+                onLine(.init(
+                    timestamp: Date(), level: .fail,
+                    text: "[error] csv-assisted requires a CSV in csv-inbox/ — none found. " +
+                          "Drop a Jamf Pro export there, or pick the Refresh + Generate mode instead."
+                ))
+                return -1
+            }
+            return await collectThenGenerate(profile: profile, csvPath: csv.path, onLine: onLine)
         }
     }
 
-    // MARK: - Private
+    // MARK: - Internal helpers
 
     /// Newest `.csv` in the profile workspace (`csv-inbox/` preferred; falls back to root).
-    private func newestCSV(in profile: String) -> URL? {
+    ///
+    /// Shared with `main.swift`'s `--scheduled-run` dispatch so the GUI "Run now" path and
+    /// the LaunchAgent path pick the same file. `nonisolated` because both call sites need
+    /// it (the headless `scheduled-run` is detached and not main-actor-bound), and the
+    /// implementation only touches `FileManager` + value types.
+    nonisolated static func newestCSV(in profile: String) -> URL? {
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
-        let inbox  = workspace.appendingPathComponent("csv-inbox")
-        let dir    = FileManager.default.fileExists(atPath: inbox.path) ? inbox : workspace
+        let inbox = workspace.appendingPathComponent("csv-inbox")
+        let dir = FileManager.default.fileExists(atPath: inbox.path) ? inbox : workspace
         return (try? FileManager.default.contentsOfDirectory(
             at: dir,
             includingPropertiesForKeys: [.contentModificationDateKey],

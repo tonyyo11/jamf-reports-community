@@ -11,28 +11,6 @@ import SwiftUI
 // When --all-profiles is also present, discover all local profiles via
 // ProfileService.discoverLocal() and run the cycle for each in sequence.
 
-/// Newest `.csv` in the profile workspace (`csv-inbox/` preferred; falls back to root).
-/// Mirrors the same lookup in `CLIBridge+Run.newestCSV` so scheduled runs and manual
-/// "Run now" pick the same CSV for csv-assisted / jamf-cli-full modes.
-private func newestCSV(in profile: String) -> URL? {
-    guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
-    let inbox = workspace.appendingPathComponent("csv-inbox")
-    let dir = FileManager.default.fileExists(atPath: inbox.path) ? inbox : workspace
-    return (try? FileManager.default.contentsOfDirectory(
-        at: dir,
-        includingPropertiesForKeys: [.contentModificationDateKey],
-        options: [.skipsHiddenFiles]
-    ))?
-    .filter { $0.pathExtension.lowercased() == "csv" }
-    .max {
-        let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                     .contentModificationDate) ?? .distantPast
-        let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey])
-                     .contentModificationDate) ?? .distantPast
-        return a < b
-    }
-}
-
 @Sendable
 private func scheduledRunSingle(
     profile: String,
@@ -54,13 +32,32 @@ private func scheduledRunSingle(
         }
     }
 
+    // PR-21: csv-assisted hard-fails when csv-inbox/ is empty. Resolve up
+    // front so we don't run an expensive collect just to fail at generate.
+    let resolvedCSV: URL?
+    if mode == .csvAssisted {
+        guard let csv = CLIBridge.newestCSV(in: profile) else {
+            fputs("[error] csv-assisted requires a CSV in csv-inbox/ — none found for '\(profile)'\n", stderr)
+            return 1
+        }
+        resolvedCSV = csv
+    } else if mode == .jamfCLIFull {
+        resolvedCSV = nil  // jamf-cli-full is the no-CSV path
+    } else {
+        resolvedCSV = nil
+    }
+
     do {
-        try await ReportEngine.collect(
-            profile: profile,
-            workspacePaths: WorkspacePaths.self,
-            onLine: onLine
-        )
-        // snapshot-only: collect already emitted summary.json — skip generate.
+        // jamf-cli-only generates from cache only — no collect, no fresh API calls.
+        // The other three modes all need fresh snapshots.
+        if mode != .jamfCLIOnly {
+            try await ReportEngine.collect(
+                profile: profile,
+                workspacePaths: WorkspacePaths.self,
+                onLine: onLine
+            )
+        }
+        // snapshot-only stops after collect; summary.json is already written.
         if mode == .snapshotOnly {
             print("[ok] scheduled snapshot complete for '\(profile)' — Trends updated")
             return 0
@@ -71,12 +68,7 @@ private func scheduledRunSingle(
         let dataDir = try WorkspacePaths.dataDir(for: profile)
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
-        // jamf-cli-only: cached/live jamf-cli data, no CSV.
-        // jamf-cli-full / csv-assisted: also pass newest CSV when one is present.
-        let csvURL: URL? = (mode == .jamfCLIFull || mode == .csvAssisted)
-            ? newestCSV(in: profile)
-            : nil
-        try await engine.generate(csvURL: csvURL, outputURL: outputURL)
+        try await engine.generate(csvURL: resolvedCSV, outputURL: outputURL)
         print("[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)")
         return 0
     } catch {
