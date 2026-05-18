@@ -524,24 +524,73 @@ struct SettingsView: View {
             return
         }
         let configPath = workspaceURL.appendingPathComponent("config.yaml").path
-        // Escape spaces in the workspace path for safe shell quoting.
-        let command = "python3 jamf-reports-community.py diagnostic-bundle --config '\(configPath)'"
-        SystemActions.copyToClipboard(command)
+        let result = SettingsView.buildDiagnosticBundleCommand(
+            configPath: configPath,
+            bundledScriptURL: SettingsView.bundledDiagnosticScriptURL()
+        )
+        SystemActions.copyToClipboard(result.command)
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = ["-a", "Terminal", "-n"]
         do {
             try process.run()
-            diagnosticBundleMessage =
-                "Command copied. Paste it in the Terminal window that just opened. " +
-                "cd to your jamf-reports-community checkout first. The zip will land " +
-                "on your Desktop."
+            diagnosticBundleMessage = result.successMessage
         } catch {
             diagnosticBundleMessage =
                 "Command copied — could not open Terminal automatically. " +
                 "Paste it into a Terminal window manually."
         }
+    }
+
+    /// Locate `jamf-reports-community.py` inside the bundled `.app` so the
+    /// emitted command uses an absolute path and works regardless of the
+    /// user's Terminal cwd. Returns `nil` for dev builds (`swift run`) and
+    /// for any bundle layout that doesn't include the script — the caller
+    /// then falls back to the relative-path command.
+    nonisolated static func bundledDiagnosticScriptURL() -> URL? {
+        Bundle.main.url(forResource: "jamf-reports-community", withExtension: "py")
+    }
+
+    /// Pure-function command + toast builder so PR-19's bundled-script
+    /// behavior is testable without launching Terminal. `bundledScriptURL`
+    /// is the absolute path to `jamf-reports-community.py` inside
+    /// `Contents/Resources` of the running `.app` bundle, or `nil` for dev
+    /// builds where bundling doesn't apply.
+    nonisolated static func buildDiagnosticBundleCommand(
+        configPath: String,
+        bundledScriptURL: URL?
+    ) -> (command: String, successMessage: String) {
+        if let scriptURL = bundledScriptURL {
+            // Shell-escape both paths with single quotes; embedded single
+            // quotes in either path become `'\''`. Workspace paths under
+            // `~/Jamf-Reports/<slug>/` never contain single quotes given the
+            // slug regex, but config paths supplied via custom seed could.
+            let command =
+                "python3 '\(shellEscape(scriptURL.path))' " +
+                "diagnostic-bundle --config '\(shellEscape(configPath))'"
+            let message =
+                "Command copied. Paste it in the Terminal window that just opened. " +
+                "It uses the script bundled inside the app, so any working directory " +
+                "is fine. The zip will land on your Desktop."
+            return (command, message)
+        }
+        // Dev-build fallback: relative path, with a hint to cd first.
+        let command =
+            "python3 jamf-reports-community.py diagnostic-bundle " +
+            "--config '\(shellEscape(configPath))'"
+        let message =
+            "Command copied. Paste it in the Terminal window that just opened. " +
+            "cd to your jamf-reports-community checkout first (this is a dev build " +
+            "without the script bundled). The zip will land on your Desktop."
+        return (command, message)
+    }
+
+    /// Escape single-quote characters for single-quoted shell strings:
+    /// `'` becomes `'\''`. Leaves everything else untouched — single-quoted
+    /// strings in POSIX shells are otherwise literal.
+    nonisolated private static func shellEscape(_ s: String) -> String {
+        s.replacingOccurrences(of: "'", with: "'\\''")
     }
 
     private var sidebarVisibilityCard: some View {

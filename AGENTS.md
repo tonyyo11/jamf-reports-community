@@ -29,7 +29,13 @@ are needed for normal use.
 **2. Native macOS app (`app/`)** — A SwiftUI GUI (macOS 14+, Swift 6) that wraps every CLI
 flow — config editing, scheduling via LaunchAgents, report generation, run history — and adds
 a Historical Trends screen built on archived `summary.json` snapshots. The app uses a native
-Swift engine (`ReportEngine`) for all report generation; Python is not bundled or required.
+Swift engine (`ReportEngine`) for all report generation; Python is not bundled or required
+for any report-generation path. **One narrow exception:** `jamf-reports-community.py` is
+copied into `Contents/Resources/` by `build-app.sh` solely so the Settings → "Copy
+Diagnostic Command" flow can emit an absolute-path command that works regardless of the
+user's Terminal cwd (PR-19). The app itself never executes the bundled script — it only
+puts an absolute path into the clipboard. Long-term plan: port `diagnostic-bundle` to
+native Swift and drop the bundled copy.
 It is a SwiftPM project (`app/Package.swift`), not a hand-rolled `.xcodeproj`.
 
 Target audience: Mac/iPad admins at any organization running Jamf Pro or Jamf School.
