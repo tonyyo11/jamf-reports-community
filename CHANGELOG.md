@@ -7,6 +7,10 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- **OS adoption charts no longer split same-version device counts across trailing-zero variants** (PR-17): Jamf MDM rows sometimes record OS version as `26.4` and sometimes as `26.4.0` for the same release; the adoption-chart timeseries builders treated them as distinct columns, splitting one population across two lines. `ChartGenerator` now normalizes versions at read time — trailing `.0` patch components are stripped while preserving at least `major.minor`, so `26.4.0 → 26.4` but `26.0.0 → 26.0` (and `26.4.1` is left alone). Applied to both the CSV-sourced (`_build_os_timeseries`) and jamf-cli JSON-sourced (`_build_inventory_summary_timeseries`) paths so the chart is consistent regardless of source. Historical archived snapshots benefit retroactively without re-export.
+
 ### Added
 
 - **`jamf_cli.collect_skip` config option for excluding expensive report types from `collect`** (PR-16): Set `jamf_cli.collect_skip: [update-status, update-device-failures]` (or any of `patch-device-failures`, `profile-status`, `update-status`, `update-device-failures`) in `config.yaml` to skip those per-device-heavy queries during live collection. Targets on-prem Jamf Pro instances where these reports stall the server. Skipped commands log `[skip] <label>: excluded by jamf_cli.collect_skip` so operators see exactly what was excluded. Underscores and hyphens are interchangeable in values. Core inventory commands (computers, security, EAs, etc.) always run because the primary report sheets depend on them.
