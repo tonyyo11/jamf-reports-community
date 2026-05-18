@@ -150,7 +150,10 @@ struct TrendsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             if !workspaceStore.demoMode {
                 withAnimation(.snappy) {
-                    trendStore.load(profile: workspaceStore.profile, range: range)
+                    // `load(profile:range:)` short-circuits on unchanged profile;
+                    // `reload()` forces a fresh filesystem scan so the
+                    // StaleDataBanner picks up any newly-written summaries.
+                    trendStore.reload()
                 }
             }
         }
@@ -859,7 +862,10 @@ struct TrendsView: View {
         if exit == 0 {
             workspaceStore.toast = Toast(message: "Archive generated successfully", style: .success)
             withAnimation(.snappy) {
-                trendStore.load(profile: profile, range: range)
+                // Archive just wrote new files on the same profile — `load`
+                // would short-circuit and leave the chart stale. `reload()`
+                // forces the re-scan.
+                trendStore.reload()
             }
         } else {
             workspaceStore.toast = Toast(message: "Archive failed · exit \(exit)", style: .danger)

@@ -186,6 +186,54 @@ final class TrendStoreTests: XCTestCase {
         XCTAssertEqual(store.cacheSource, .neverFetchedLive)
     }
 
+    // MARK: - PR-18: reload() vs load(profile:range:) cache invalidation
+
+    /// `load(profile:range:)` short-circuits the filesystem scan when the
+    /// profile hasn't changed (intentional optimization for range-only
+    /// re-filters). When a sibling write (Generate, Refresh) lands on the
+    /// same profile, callers must use `reload()` to pick up the new
+    /// `summary_*.json` mtime — otherwise `cacheSource` stays stuck on
+    /// the previous run's mtime and `StaleDataBanner` keeps showing the
+    /// old "last fetched" timestamp.
+    func testReloadPicksUpFreshSummaryAfterLoadCachedAnOlderMTime() throws {
+        let env = try TrendStoreTestEnv.make()
+        defer { env.tearDown() }
+
+        // First snapshot: oldish mtime — simulates the workspace state when
+        // the user opens Overview a week after the last Generate.
+        let weekAgo = Date(timeIntervalSinceNow: -7 * 86_400)
+        try env.writeSummary(date: "2026-05-11", mtime: weekAgo, source: "jamf-cli")
+        let store = TrendStore()
+        store.load(profile: env.profile, range: .w4)
+        XCTAssertEqual(
+            store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
+            weekAgo.timeIntervalSince1970.rounded()
+        )
+
+        // Sibling write: a fresh summary lands while the same TrendStore
+        // instance is alive (simulates Overview's Generate Report flow).
+        let now = Date()
+        try env.writeSummary(date: "2026-05-18", mtime: now, source: "jamf-cli")
+
+        // Bug-repro guard: `load()` with the same profile must NOT pick up
+        // the new mtime (this is the documented short-circuit behavior the
+        // Refresh-button bug relied on).
+        store.load(profile: env.profile, range: .w4)
+        XCTAssertEqual(
+            store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
+            weekAgo.timeIntervalSince1970.rounded(),
+            "load(profile:range:) must short-circuit on unchanged profile — this is the documented optimization Refresh used to misuse"
+        )
+
+        // Fix: `reload()` re-scans and picks up the fresh file's mtime.
+        store.reload()
+        XCTAssertEqual(
+            store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
+            now.timeIntervalSince1970.rounded(),
+            "reload() must re-scan the filesystem — this is what the Refresh button and Generate completion now call"
+        )
+    }
+
     func testCacheSourceTreatsJamfCliSourceAsLive() {
         // A summary with `source == "jamf-cli"` flips hasEverFetchedLive=true.
         // Without an mtime (no on-disk file in this constructor path), the
@@ -212,5 +260,62 @@ final class TrendStoreTests: XCTestCase {
         // the date-nil branch of CacheSource.from. That's the right behavior:
         // we treat "no mtime evidence" as "never live", not "stale forever".
         XCTAssertEqual(store.cacheSource, .neverFetchedLive)
+    }
+}
+
+// MARK: - PR-18 test scaffolding
+
+/// Temp workspace + profile setup for tests that need TrendStore to actually
+/// scan the filesystem. Uses `JRC_TEST_WORKSPACES_ROOT` env override.
+private struct TrendStoreTestEnv {
+    let workspacesRoot: URL
+    let profile: String
+
+    static func make() throws -> TrendStoreTestEnv {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("trendStore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+
+        // Profile slug must satisfy ProfileService.isValid: lowercase alnum
+        // starting with alnum, then [a-z0-9._-]. The UUID suffix is uppercase
+        // hex; lowercase it.
+        let profile = "test-\(UUID().uuidString.prefix(8).lowercased())"
+        let summariesDir = root
+            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("snapshots", isDirectory: true)
+            .appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        return TrendStoreTestEnv(workspacesRoot: root, profile: profile)
+    }
+
+    func tearDown() {
+        unsetenv("JRC_TEST_WORKSPACES_ROOT")
+        try? FileManager.default.removeItem(at: workspacesRoot)
+    }
+
+    func writeSummary(date: String, mtime: Date, source: String) throws {
+        let summariesDir = workspacesRoot
+            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("snapshots", isDirectory: true)
+            .appendingPathComponent("summaries", isDirectory: true)
+        let file = summariesDir.appendingPathComponent("summary_\(date).json")
+        let payload: [String: Any] = [
+            "date": date,
+            "totalDevices": 100,
+            "fileVaultPct": 95,
+            "compliancePct": 90,
+            "staleCount": 5,
+            "osCurrentPct": 80,
+            "crowdstrikePct": 92,
+            "patchPct": 85,
+            "source": source,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        try data.write(to: file)
+        try FileManager.default.setAttributes(
+            [.modificationDate: mtime],
+            ofItemAtPath: file.path
+        )
     }
 }

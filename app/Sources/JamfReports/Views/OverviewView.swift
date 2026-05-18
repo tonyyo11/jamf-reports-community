@@ -94,7 +94,9 @@ struct OverviewView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             workspace.reloadFromDisk()
             if !workspace.demoMode {
-                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
+                // Same as the Refresh button — `load(profile:range:)` would
+                // short-circuit on unchanged profile and leave staleness stale.
+                trendStore.reload()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
@@ -235,7 +237,11 @@ struct OverviewView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
                         if !workspace.demoMode {
-                            trendStore.load(profile: workspace.profile, range: defaultTrendRange)
+                            // `load(profile:range:)` short-circuits when the profile
+                            // hasn't changed (the common case for an explicit Refresh
+                            // click); `reload()` forces a fresh filesystem scan so
+                            // the StaleDataBanner picks up any newly-written summaries.
+                            trendStore.reload()
                         }
                     }
                     .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
