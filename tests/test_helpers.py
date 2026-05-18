@@ -289,3 +289,97 @@ def test_collect_command_plan_includes_cli_only_surfaces(jrc) -> None:
     assert "App Status" in labels
     assert "Update Failures" in labels
     assert "Package Lifecycle" in labels
+
+
+# ---------------------------------------------------------------------------
+# PR-16: jamf_cli.collect_skip
+# ---------------------------------------------------------------------------
+
+class _FakeBridge:
+    """Minimal stub for `_collect_jamf_cli_commands` — every attribute returns
+    a no-op lambda so the function can build its command list."""
+
+    def __getattr__(self, _name: str):
+        return lambda *args, **kwargs: None
+
+
+def _config_with_collect_skip(jrc, tmp_path, skip_values):
+    """Write a temp config.yaml with the given collect_skip list and load it."""
+    import yaml as _yaml
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(_yaml.safe_dump({"jamf_cli": {"collect_skip": skip_values}}))
+    return jrc.Config(str(cfg_path))
+
+
+def test_collect_skip_empty_includes_all_skippable_reports(jrc, tmp_path) -> None:
+    config = _config_with_collect_skip(jrc, tmp_path, [])
+    labels = [
+        label
+        for label, _command in jrc._collect_jamf_cli_commands(config, _FakeBridge(), True)
+    ]
+    assert "Update Status" in labels
+    assert "Update Failures" in labels
+    assert "Patch Failures" in labels
+    assert "Profile Status" in labels
+
+
+def test_collect_skip_excludes_named_report(jrc, tmp_path) -> None:
+    config = _config_with_collect_skip(jrc, tmp_path, ["update-status"])
+    labels = [
+        label
+        for label, _command in jrc._collect_jamf_cli_commands(config, _FakeBridge(), True)
+    ]
+    assert "Update Status" not in labels
+    # Sibling Update Failures has its own key — not collateral damage
+    assert "Update Failures" in labels
+    # Core inventory is unaffected
+    assert "Computer Inventory" in labels
+
+
+def test_collect_skip_normalizes_underscore_to_hyphen(jrc, tmp_path) -> None:
+    config = _config_with_collect_skip(jrc, tmp_path, ["update_status"])
+    labels = [
+        label
+        for label, _command in jrc._collect_jamf_cli_commands(config, _FakeBridge(), True)
+    ]
+    assert "Update Status" not in labels
+
+
+def test_collect_skip_excludes_multiple_reports(jrc, tmp_path) -> None:
+    config = _config_with_collect_skip(
+        jrc, tmp_path, ["update-status", "patch-device-failures"]
+    )
+    labels = [
+        label
+        for label, _command in jrc._collect_jamf_cli_commands(config, _FakeBridge(), True)
+    ]
+    assert "Update Status" not in labels
+    assert "Patch Failures" not in labels
+    # Sibling reports unaffected
+    assert "Update Failures" in labels
+    assert "Profile Status" in labels
+
+
+def test_collect_skip_ignores_unknown_report_type(jrc, tmp_path) -> None:
+    config = _config_with_collect_skip(jrc, tmp_path, ["does-not-exist"])
+    labels = [
+        label
+        for label, _command in jrc._collect_jamf_cli_commands(config, _FakeBridge(), True)
+    ]
+    # Nothing skipped, no error raised
+    assert "Update Status" in labels
+    assert "Update Failures" in labels
+    assert "Patch Failures" in labels
+    assert "Profile Status" in labels
+
+
+def test_collect_skip_cannot_exclude_core_inventory(jrc, tmp_path) -> None:
+    # Even if a user puts a core-command label in collect_skip, the empty
+    # report-type key in the candidates table guarantees the command runs.
+    config = _config_with_collect_skip(jrc, tmp_path, ["computer-inventory", "fleet-overview"])
+    labels = [
+        label
+        for label, _command in jrc._collect_jamf_cli_commands(config, _FakeBridge(), True)
+    ]
+    assert "Computer Inventory" in labels
+    assert "Fleet Overview" in labels

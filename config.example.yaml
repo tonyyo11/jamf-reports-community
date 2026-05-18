@@ -253,6 +253,23 @@ jamf_cli:
   # exploration. Threat-model T-11. The Swift app surfaces an "Unverified
   # snapshot" pill in AuditView regardless of this setting.
   require_manifest: false
+  # Report types to skip during live collection (`jamf-reports-community collect`).
+  # Use this on on-prem Jamf Pro instances where the expensive per-device queries
+  # below stall the server or consume excessive API time. Underscores and hyphens
+  # are interchangeable ("update_status" == "update-status"). Only the four
+  # report types below honor this list — core inventory commands always run.
+  #
+  # Supported values:
+  #   patch-device-failures   `pro report patch-status --scan-failures`
+  #   profile-status          `pro report profile-status`
+  #   update-status           `pro report update-status`
+  #   update-device-failures  `pro report update-status --scan-failures`
+  #
+  # Example: skip update-status and its scan-failures variant on a slow server.
+  collect_skip: []
+  # collect_skip:
+  #   - update-status
+  #   - update-device-failures
 
 
 # ---------------------------------------------------------------------------
