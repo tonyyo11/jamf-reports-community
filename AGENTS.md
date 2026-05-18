@@ -322,10 +322,16 @@ jamf_cli:
   profile: ""                 # jamf-cli -p/--profile name (for multi-tenant use)
   use_cached_data: true       # fall back to latest cached JSON on live failures
   allow_live_overview: true   # set false to force cached-only for Fleet Overview
+  collect_skip: []            # report types to skip during `collect` (on-prem stall guard)
 ```
 
 When using multiple Jamf Pro instances, set `data_dir` to a profile-specific path so
 snapshots from different tenants don't overwrite each other.
+
+`collect_skip` accepts any of: `patch-device-failures`, `profile-status`,
+`update-status`, `update-device-failures`. These are the four per-device-heavy
+queries known to stall on-prem Jamf Pro. Underscores and hyphens are
+interchangeable. Core inventory commands always run.
 
 ### output config
 

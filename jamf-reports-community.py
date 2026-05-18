@@ -256,6 +256,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # When True, manifest mismatches and missing manifest entries are hard errors
         # (equivalent to passing --strict-manifest on every invocation). Threat-model T-11.
         "require_manifest": False,
+        # Report types to skip during live collection (`jamf-reports-community collect`).
+        # Accepts jamf-cli report type identifiers, e.g. "update-status", "profile-status".
+        # Use this to exclude expensive per-device queries that can stall on-prem Jamf Pro.
+        # Underscores and hyphens are interchangeable ("update_status" == "update-status").
+        # Only the four skippable report types (Patch Failures, Profile Status,
+        # Update Status, Update Failures) honor this list — core inventory commands
+        # always run because the primary report sheets depend on them.
+        "collect_skip": [],
     },
     "school_cli": {
         "enabled": False,
@@ -16177,47 +16185,67 @@ def _collect_jamf_cli_commands(
     bridge: JamfCLIBridge,
     live_overview_allowed: bool,
 ) -> list[tuple[str, Any]]:
-    """Return Jamf Pro snapshot commands collected without CSV input."""
+    """Return Jamf Pro snapshot commands collected without CSV input.
+
+    Commands with a non-empty report type key are skippable via
+    ``jamf_cli.collect_skip`` in config (use jamf-cli report type identifiers,
+    e.g. "update-status", "profile-status"). Core inventory commands are not
+    skippable because they are required for the primary report sheets.
+    """
     stale_days = int(config.thresholds.get("stale_device_days", 30))
-    commands: list[tuple[str, Any]] = []
+    skip_types: set[str] = {
+        s.strip().lower().replace("_", "-")
+        for s in _list_of_strings(config.jamf_cli.get("collect_skip", []))
+    }
+
+    # Each entry: (human label, callable, report-type key).
+    # An empty report-type key means the command is not skippable via collect_skip.
+    candidates: list[tuple[str, Any, str]] = []
     if live_overview_allowed:
-        commands.append(("Fleet Overview", bridge.overview))
+        candidates.append(("Fleet Overview", bridge.overview, ""))
     else:
         print("  [skip] Fleet Overview: live overview disabled in config")
-    commands.extend(
+    candidates.extend(
         [
-            ("Computer Inventory", lambda: bridge.computers_list(_inventory_computer_sections())),
-            ("Inventory Summary", bridge.inventory_summary),
-            ("Hardware Models", bridge.hardware_models),
-            ("Mobile Inventory", bridge.mobile_device_inventory_details),
-            ("Mobile Device List", bridge.mobile_devices_list),
-            ("Mobile Config Profiles", bridge.ios_profiles_list),
-            ("Security Posture", bridge.security_report),
-            ("Device Compliance", lambda: bridge.device_compliance(stale_days)),
-            ("Check-in Health", bridge.checkin_status),
-            ("EA Coverage", lambda: bridge.ea_results_report(include_all=True)),
-            ("EA Definitions", bridge.computer_extension_attributes),
-            ("Software Installs", bridge.software_installs),
-            ("Patch Compliance", bridge.patch_status),
-            ("Patch Failures", bridge.patch_device_failures),
-            ("Policy Health", bridge.policy_status),
-            ("Profile Status", bridge.profile_status),
-            ("App Status", bridge.app_status),
-            ("Update Status", bridge.update_status),
-            ("Update Failures", bridge.update_device_failures),
-            ("Group Inventory", bridge.groups),
-            ("Smart Computer Groups", bridge.smart_groups_list),
-            ("Package Lifecycle", bridge.packages),
-            ("Classic Policies", bridge.classic_policies_list),
-            ("macOS Config Profiles", bridge.macos_profiles_list),
-            ("Scripts", bridge.scripts_list),
-            ("Categories", bridge.categories_list),
-            ("Device Enrollments", bridge.device_enrollments_list),
-            ("Sites", bridge.sites_list),
-            ("Buildings", bridge.buildings_list),
-            ("Departments", bridge.departments_list),
+            ("Computer Inventory", lambda: bridge.computers_list(_inventory_computer_sections()), ""),
+            ("Inventory Summary", bridge.inventory_summary, ""),
+            ("Hardware Models", bridge.hardware_models, ""),
+            ("Mobile Inventory", bridge.mobile_device_inventory_details, ""),
+            ("Mobile Device List", bridge.mobile_devices_list, ""),
+            ("Mobile Config Profiles", bridge.ios_profiles_list, ""),
+            ("Security Posture", bridge.security_report, ""),
+            ("Device Compliance", lambda: bridge.device_compliance(stale_days), ""),
+            ("Check-in Health", bridge.checkin_status, ""),
+            ("EA Coverage", lambda: bridge.ea_results_report(include_all=True), ""),
+            ("EA Definitions", bridge.computer_extension_attributes, ""),
+            ("Software Installs", bridge.software_installs, ""),
+            ("Patch Compliance", bridge.patch_status, ""),
+            ("Patch Failures", bridge.patch_device_failures, "patch-device-failures"),
+            ("Policy Health", bridge.policy_status, ""),
+            ("Profile Status", bridge.profile_status, "profile-status"),
+            ("App Status", bridge.app_status, ""),
+            ("Update Status", bridge.update_status, "update-status"),
+            ("Update Failures", bridge.update_device_failures, "update-device-failures"),
+            ("Group Inventory", bridge.groups, ""),
+            ("Smart Computer Groups", bridge.smart_groups_list, ""),
+            ("Package Lifecycle", bridge.packages, ""),
+            ("Classic Policies", bridge.classic_policies_list, ""),
+            ("macOS Config Profiles", bridge.macos_profiles_list, ""),
+            ("Scripts", bridge.scripts_list, ""),
+            ("Categories", bridge.categories_list, ""),
+            ("Device Enrollments", bridge.device_enrollments_list, ""),
+            ("Sites", bridge.sites_list, ""),
+            ("Buildings", bridge.buildings_list, ""),
+            ("Departments", bridge.departments_list, ""),
         ]
     )
+
+    commands: list[tuple[str, Any]] = []
+    for label, fn, rtype in candidates:
+        if rtype and rtype in skip_types:
+            print(f"  [skip] {label}: excluded by jamf_cli.collect_skip")
+            continue
+        commands.append((label, fn))
     return commands
 
 
