@@ -445,7 +445,7 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | Service | Purpose |
 |---------|---------|
 | `WorkspaceStore` | `@Observable` per-profile state. Sidebar chip switches the active profile; every screen re-routes to that workspace's data. |
-| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. |
+| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. `runNow(profile:mode:)` is the canonical Schedule-mode dispatcher — see Schedule mode contract below. |
 | `WorkspacePaths` | Typed, profile-validated path constants under `~/Jamf-Reports/<profile>/`. All path construction goes through here. |
 | `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
 | `LaunchAgentService` | Discovers and parses existing `~/Library/LaunchAgents/com.jamfreports.*.plist` jobs. |
@@ -477,6 +477,36 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 **Tab visibility model.** Every non-core sidebar tab is toggleable via SettingsView → Sidebar Visibility. Backed by `@AppStorage("hiddenTabs")` parsed/serialized through `TabVisibility`. Core tabs (`Tab.isCoreTab` — Overview, Devices, Sources, Settings, Onboarding) are filtered out at the toggle UI level and protected at the model level (toggling a core tab is a no-op). Sidebar groups with all-hidden contents auto-collapse so the layout never shows orphan headers. Visibility is a per-user UX preference, not workspace-bound.
 
 **Convention:** New jamf-cli command wrappers go through the `CLICommand` enum and `CLIExecutor` protocol (`Services/CLICommand.swift`), not bespoke `CLIBridge` methods. Existing helpers (`generate`, `collect`, `audit`, `deviceDetail`, …) stay as-is per `.claude/plans/ADR-W21-clicommand-enum.md` (Hybrid scope).
+
+#### Schedule mode contract (PR-20 / PR-21)
+
+`Schedule.RunMode` has four cases; each is strict and operationally distinct.
+Both the GUI "Run now" path (`CLIBridge.runNow(profile:mode:)`) and the
+LaunchAgent path (`main.swift --scheduled-run --mode <rawValue>`) honor the
+same contract — they share `CLIBridge.newestCSV(in:)` so CSV lookup is
+identical between the two.
+
+| Mode (`Schedule.RunMode`)         | Behavior                                                                    | Trends updated? |
+|------------------------------------|-----------------------------------------------------------------------------|------------------|
+| `.snapshotOnly` (`snapshot-only`)  | `ReportEngine.collect` only — emits `summary.json`; no workbook            | Yes              |
+| `.jamfCLIOnly` (`jamf-cli-only`)   | `ReportEngine.generate` only — uses cached snapshots; NO collect            | No (no collect)  |
+| `.jamfCLIFull` (`jamf-cli-full`)   | collect + generate; no CSV                                                  | Yes              |
+| `.csvAssisted` (`csv-assisted`)    | collect + generate; **requires** a CSV in `csv-inbox/` — hard-fails if none | Yes              |
+
+LaunchAgent plists written before PR-20 omit `--mode`; both the parser
+(`LaunchAgentService.parse` line 185) and `main.swift` (`scheduledRun`
+parser) default to `.jamfCLIOnly` so existing plists keep working
+verbatim — but the meaning of `.jamfCLIOnly` changed at PR-21, so a
+pre-PR-20 plist that previously collected before generating now only
+generates from cache. Re-save the schedule from the GUI to migrate.
+
+`ReportEngine.collect` (static) now emits `summary.json` at the end of the
+collection loop in addition to `ReportEngine.generate` — that's how
+`.snapshotOnly` updates Trends without producing a workbook. The
+first-run-of-day skip from PR-18 (ReportEngine.swift:287-299) still
+applies: if `summary_<today>.json` already exists with the three required
+keys, it's left in place and subsequent collects log
+`[info] summary_<today>.json already exists`.
 
 #### jamf-cli exit codes
 
