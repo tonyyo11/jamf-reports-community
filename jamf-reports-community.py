@@ -11220,6 +11220,7 @@ class ChartGenerator:
             if os_col not in df.columns:
                 continue
             series = df[os_col].astype(str).str.strip()
+            series = series.apply(self._normalize_os_version)
             counts = series[series != ""].value_counts()
             if counts.empty:
                 continue
@@ -11230,6 +11231,28 @@ class ChartGenerator:
             return pd.DataFrame()
         ts = pd.DataFrame(records).set_index("date").fillna(0).sort_index()
         return ts.astype(int)
+
+    def _normalize_os_version(self, ver: str) -> str:
+        """Strip trailing zero patch components from an OS version string.
+
+        Keeps at least major.minor so the version remains meaningful.
+        Preserves any non-numeric prefix (e.g. "macOS ").
+
+        Examples:
+            "26.4.0"       → "26.4"
+            "26.0.0"       → "26.0"
+            "26.4.1"       → "26.4.1"   (no trailing zero — unchanged)
+            "macOS 15.4.0" → "macOS 15.4"
+        """
+        ver = ver.strip()
+        m = re.search(r"(\d+(?:\.\d+)+)", ver)
+        if not m:
+            return ver
+        prefix = ver[: m.start()]
+        parts = m.group(1).split(".")
+        while len(parts) > 2 and parts[-1] == "0":
+            parts.pop()
+        return prefix + ".".join(parts)
 
     def _major_version(self, ver: str) -> str:
         """Extract the numeric major version from an OS version string.
@@ -11249,7 +11272,9 @@ class ChartGenerator:
             for item in rows:
                 if not isinstance(item, dict):
                     continue
-                version = str(item.get("os_version", "") or "").strip()
+                version = self._normalize_os_version(
+                    str(item.get("os_version", "") or "").strip()
+                )
                 if not version:
                     continue
                 row[version] = row.get(version, 0) + _to_int(item.get("count", 0))
