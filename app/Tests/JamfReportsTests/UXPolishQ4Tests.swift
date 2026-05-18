@@ -85,9 +85,15 @@ final class UXPolishQ4Tests: XCTestCase {
             mode.displayDescription.contains("jamf-cli pro collect"),
             "snapshot-only should mention jamf-cli pro collect"
         )
+        // PR-20: description updated to reflect that collect now emits
+        // summary.json so the Trends page advances without a workbook.
         XCTAssertTrue(
-            mode.displayDescription.contains("Does NOT generate a report"),
-            "snapshot-only should clarify no report"
+            mode.displayDescription.contains("Does NOT generate a workbook"),
+            "snapshot-only should clarify no workbook is produced"
+        )
+        XCTAssertTrue(
+            mode.displayDescription.contains("Trends"),
+            "snapshot-only should advertise that it updates the Trends summary"
         )
     }
 

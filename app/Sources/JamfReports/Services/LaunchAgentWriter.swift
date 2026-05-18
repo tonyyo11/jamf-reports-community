@@ -72,7 +72,11 @@ enum LaunchAgentWriter {
 
         let plistContent: [String: Any] = [
             "Label": agentLabel,
-            "ProgramArguments": [execPath, "--scheduled-run", "--profile", schedule.profile],
+            "ProgramArguments": [
+                execPath, "--scheduled-run",
+                "--profile", schedule.profile,
+                "--mode", schedule.mode.rawValue,
+            ],
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
             "StartCalendarInterval": cadence.startCalendarIntervals,
@@ -292,7 +296,9 @@ enum LaunchAgentWriter {
               FileManager.default.isExecutableFile(atPath: execPath) else {
             return false
         }
-        // Native format: [exec, "--scheduled-run", "--profile", slug, "--all-profiles"]
+        // Native format: [exec, "--scheduled-run", "--profile", slug, "--mode", rawValue, "--all-profiles"]
+        // Pre-PR-20 plists omit --mode; the trust check stays permissive about
+        // trailing flags so legacy multi plists still execute.
         if args.count >= 4, args[1] == "--scheduled-run", args[2] == "--profile" {
             guard ProfileService.isValid(args[3]) else { return false }
             return isTrustedNativeExecutable(URL(fileURLWithPath: execPath))
@@ -400,6 +406,7 @@ enum LaunchAgentWriter {
                 execPath,
                 "--scheduled-run",
                 "--profile", schedule.profile,
+                "--mode", schedule.mode.rawValue,
                 "--all-profiles",
             ],
             "WorkingDirectory": ProfileService.workspacesRoot().path,
@@ -611,8 +618,9 @@ enum LaunchAgentWriter {
             throw ManualRunError.malformedPlist("missing ProgramArguments")
         }
 
-        // Native format: [exec, "--scheduled-run", "--profile", slug]
-        // Produced by nativeSingleWrite / nativeMultiWrite.
+        // Native format: [exec, "--scheduled-run", "--profile", slug, "--mode", rawValue]
+        // Produced by nativeSingleWrite / nativeMultiWrite. Pre-PR-20 plists
+        // omit --mode; main.swift falls back to jamf-cli-only when absent.
         guard args.count >= 4, args[1] == "--scheduled-run", args[2] == "--profile" else {
             throw ManualRunError.unsupportedCommand(label)
         }

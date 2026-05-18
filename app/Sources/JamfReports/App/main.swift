@@ -11,8 +11,34 @@ import SwiftUI
 // When --all-profiles is also present, discover all local profiles via
 // ProfileService.discoverLocal() and run the cycle for each in sequence.
 
+/// Newest `.csv` in the profile workspace (`csv-inbox/` preferred; falls back to root).
+/// Mirrors the same lookup in `CLIBridge+Run.newestCSV` so scheduled runs and manual
+/// "Run now" pick the same CSV for csv-assisted / jamf-cli-full modes.
+private func newestCSV(in profile: String) -> URL? {
+    guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
+    let inbox = workspace.appendingPathComponent("csv-inbox")
+    let dir = FileManager.default.fileExists(atPath: inbox.path) ? inbox : workspace
+    return (try? FileManager.default.contentsOfDirectory(
+        at: dir,
+        includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles]
+    ))?
+    .filter { $0.pathExtension.lowercased() == "csv" }
+    .max {
+        let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey])
+                     .contentModificationDate) ?? .distantPast
+        let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey])
+                     .contentModificationDate) ?? .distantPast
+        return a < b
+    }
+}
+
 @Sendable
-private func scheduledRunSingle(profile: String, verbose: Bool) async -> Int32 {
+private func scheduledRunSingle(
+    profile: String,
+    mode: Schedule.RunMode,
+    verbose: Bool
+) async -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
         return 1
@@ -22,14 +48,22 @@ private func scheduledRunSingle(profile: String, verbose: Bool) async -> Int32 {
         return 1
     }
 
+    let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
+        if verbose || line.level != .info {
+            print(line.text)
+        }
+    }
+
     do {
         try await ReportEngine.collect(
             profile: profile,
-            workspacePaths: WorkspacePaths.self
-        ) { line in
-            if verbose || line.level != .info {
-                print(line.text)
-            }
+            workspacePaths: WorkspacePaths.self,
+            onLine: onLine
+        )
+        // snapshot-only: collect already emitted summary.json — skip generate.
+        if mode == .snapshotOnly {
+            print("[ok] scheduled snapshot complete for '\(profile)' — Trends updated")
+            return 0
         }
 
         let configURL = workspace.appendingPathComponent("config.yaml")
@@ -37,7 +71,12 @@ private func scheduledRunSingle(profile: String, verbose: Bool) async -> Int32 {
         let dataDir = try WorkspacePaths.dataDir(for: profile)
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
-        try await engine.generate(csvURL: nil, outputURL: outputURL)
+        // jamf-cli-only: cached/live jamf-cli data, no CSV.
+        // jamf-cli-full / csv-assisted: also pass newest CSV when one is present.
+        let csvURL: URL? = (mode == .jamfCLIFull || mode == .csvAssisted)
+            ? newestCSV(in: profile)
+            : nil
+        try await engine.generate(csvURL: csvURL, outputURL: outputURL)
         print("[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)")
         return 0
     } catch {
@@ -48,8 +87,17 @@ private func scheduledRunSingle(profile: String, verbose: Bool) async -> Int32 {
 
 @Sendable
 private func scheduledRun(profile: String) async -> Int32 {
-    let verbose = CommandLine.arguments.contains("--verbose")
-    let allProfiles = CommandLine.arguments.contains("--all-profiles")
+    let args = CommandLine.arguments
+    let verbose = args.contains("--verbose")
+    let allProfiles = args.contains("--all-profiles")
+    // Legacy plists (pre-PR-20) omit --mode; fall back to jamf-cli-only so the
+    // existing behavior (collect + generate, no CSV) is preserved verbatim.
+    let mode: Schedule.RunMode = {
+        guard let idx = args.firstIndex(of: "--mode"), idx + 1 < args.count else {
+            return .jamfCLIOnly
+        }
+        return Schedule.RunMode(rawValue: args[idx + 1]) ?? .jamfCLIOnly
+    }()
 
     if allProfiles {
         let profiles = ProfileService.discoverLocal()
@@ -59,13 +107,13 @@ private func scheduledRun(profile: String) async -> Int32 {
         }
         var anyFailed = false
         for p in profiles {
-            let code = await scheduledRunSingle(profile: p.name, verbose: verbose)
+            let code = await scheduledRunSingle(profile: p.name, mode: mode, verbose: verbose)
             if code != 0 { anyFailed = true }
         }
         return anyFailed ? 1 : 0
     }
 
-    return await scheduledRunSingle(profile: profile, verbose: verbose)
+    return await scheduledRunSingle(profile: profile, mode: mode, verbose: verbose)
 }
 
 // MARK: - check subcommand

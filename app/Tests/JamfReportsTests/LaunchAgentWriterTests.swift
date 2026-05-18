@@ -257,6 +257,17 @@ final class LaunchAgentWriterTests: XCTestCase {
             XCTAssertEqual(args[profileIdx + 1], "dummy")
         }
 
+        // PR-20: --mode must be persisted so the scheduled-run dispatcher
+        // honors the mode picked in the form (collect-only, generate, etc.).
+        // Pre-PR-20 plists omitted this and the parser silently flipped to
+        // jamf-cli-only on every read.
+        XCTAssertTrue(args?.contains("--mode") == true,
+                      "ProgramArguments must contain --mode")
+        if let args, let modeIdx = args.firstIndex(of: "--mode") {
+            XCTAssertTrue(modeIdx + 1 < args.count, "--mode must have a following value")
+            XCTAssertEqual(args[modeIdx + 1], Schedule.RunMode.jamfCLIOnly.rawValue)
+        }
+
         let runAtLoad = plist["RunAtLoad"] as? Bool
         XCTAssertEqual(runAtLoad, false, "RunAtLoad must be false")
 
@@ -264,6 +275,47 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertEqual(disabled, true, "Disabled must be true when load: false")
 
         XCTAssertEqual(plan.label, agentLabel)
+    }
+
+    /// PR-20: every mode the form lets the user pick must round-trip through
+    /// the plist → parser path. This is the regression test that would have
+    /// caught the original "snapshot-only silently flips to jamf-cli-only" bug.
+    func testNativeSingleWriteRoundTripsAllRunModes() throws {
+        for mode in Schedule.RunMode.allCases {
+            let sched = schedule(name: "Test-Roundtrip-\(mode.rawValue)", mode: mode)
+            guard let agentLabel = LaunchAgentWriter.label(for: sched) else {
+                XCTFail("Expected a valid label for \(mode.rawValue)")
+                continue
+            }
+
+            let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+            defer {
+                try? FileManager.default.removeItem(at: plan.plistURL)
+                let logDir = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+                try? FileManager.default.removeItem(at: logDir)
+            }
+
+            let parsed = LaunchAgentService.parse(plan.plistURL)
+            XCTAssertNotNil(parsed, "Parsed schedule for \(mode.rawValue) must not be nil")
+            XCTAssertEqual(parsed?.mode, mode,
+                           "Mode \(mode.rawValue) must round-trip through the plist")
+        }
+    }
+
+    private func schedule(name: String, mode: Schedule.RunMode) -> Schedule {
+        Schedule(
+            name: name,
+            profile: "dummy",
+            schedule: "Daily 07:00",
+            cadence: "daily",
+            mode: mode,
+            next: "-",
+            last: "-",
+            lastStatus: .ok,
+            artifacts: [],
+            enabled: true
+        )
     }
 
     private func schedule(name: String) -> Schedule {

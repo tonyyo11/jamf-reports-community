@@ -9,9 +9,38 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- **Schedule mode now round-trips through the LaunchAgent plist** (PR-20, macOS app):
+  The Swift `LaunchAgentWriter.nativeSingleWrite` / `nativeMultiWrite` now embed
+  `--mode <rawValue>` in `ProgramArguments` so the user's selected mode
+  (snapshot-only / jamf-cli-only / jamf-cli-full / csv-assisted) survives the
+  round-trip through `LaunchAgentService.parse`. Previously the writer omitted
+  mode entirely; the parser then defaulted to jamf-cli-only on every read,
+  silently overriding the user's choice. The Schedules form let you pick
+  snapshot-only, but the next refresh of the list showed it as jamf-cli-only —
+  and the scheduled run did the jamf-cli-only behavior because `main.swift`
+  unconditionally ran collect + generate. `main.swift`'s `--scheduled-run`
+  handler now parses `--mode` (falling back to jamf-cli-only for pre-PR-20
+  plists) and dispatches: snapshot-only runs collect only; jamf-cli-only runs
+  collect + generate without CSV; jamf-cli-full and csv-assisted run collect
+  + generate with the newest CSV from `csv-inbox/`. New
+  `testNativeSingleWriteRoundTripsAllRunModes` covers every case in
+  `Schedule.RunMode.allCases`.
+
 - **OS adoption charts no longer split same-version device counts across trailing-zero variants** (PR-17): Jamf MDM rows sometimes record OS version as `26.4` and sometimes as `26.4.0` for the same release; the adoption-chart timeseries builders treated them as distinct columns, splitting one population across two lines. `ChartGenerator` now normalizes versions at read time — trailing `.0` patch components are stripped while preserving at least `major.minor`, so `26.4.0 → 26.4` but `26.0.0 → 26.0` (and `26.4.1` is left alone). Applied to both the CSV-sourced (`_build_os_timeseries`) and jamf-cli JSON-sourced (`_build_inventory_summary_timeseries`) paths so the chart is consistent regardless of source. Historical archived snapshots benefit retroactively without re-export.
 
 ### Added
+
+- **`snapshot-only` schedule mode now updates the Trends summary** (PR-20, macOS app):
+  `ReportEngine.collect` emits `summary_<today>.json` after the collection
+  loop completes — previously this only happened inside `generate()`, so a
+  snapshot-only schedule collected fresh data but never advanced the Trends
+  page. The first-run-of-day skip from PR-18 still applies (a same-day
+  summary file is not overwritten); operators investigating "I ran twice and
+  Trends only moved once" see the `[info] summary_<today>.json already exists`
+  log line and know why. The Schedules form description
+  (`Schedule.RunMode.snapshotOnly.displayDescription`) updated accordingly:
+  "Runs jamf-cli pro collect, archives JSON snapshots, and updates the
+  Trends summary. Does NOT generate a workbook."
 
 - **`jamf_cli.collect_skip` config option for excluding expensive report types from `collect`** (PR-16): Set `jamf_cli.collect_skip: [update-status, update-device-failures]` (or any of `patch-device-failures`, `profile-status`, `update-status`, `update-device-failures`) in `config.yaml` to skip those per-device-heavy queries during live collection. Targets on-prem Jamf Pro instances where these reports stall the server. Skipped commands log `[skip] <label>: excluded by jamf_cli.collect_skip` so operators see exactly what was excluded. Underscores and hyphens are interchangeable in values. Core inventory commands (computers, security, EAs, etc.) always run because the primary report sheets depend on them.
 - **Per-LaunchAgent-run partial-status summaries + manifest coverage for `snapshots/computers/summaries/`** (PR-11, threat-model T-12): `cmd_generate` invoked from `cmd_launchagent_run` now emits a per-log `summary_<log_filename>.json` carrying the run's `status` field. The Swift `RunHistoryService.isPartialRun` and `LaunchAgentService.checkSummaryFileForPartialStatus` previously read a file that no producer wrote (BACKLOG MEDIUM-3); they now have a real producer AND verify the file's SHA-256 against a sibling `manifest.json` before trusting `status`. Tampered or corrupt summaries fall back to the existing `[partial]` log-marker scan rather than silently misreporting the PARTIAL pill. Daily `summary_YYYY-MM-DD.json` writes ALSO produce a manifest now — closes the integrity gap PR-7 left open for trend summaries.
