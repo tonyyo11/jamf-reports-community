@@ -104,7 +104,7 @@ struct Schedule: Identifiable, Sendable {
         var displayDescription: String {
             switch self {
             case .snapshotOnly:
-                "Runs jamf-cli pro collect and archives JSON snapshots. Does NOT generate a report. Use this when you want fresh data for trend tracking but don't need a workbook delivered."
+                "Runs jamf-cli pro collect, archives JSON snapshots, and updates the Trends summary. Does NOT generate a workbook. Use this when you want fresh data for trend tracking but don't need a report delivered."
             case .jamfCLIOnly:
                 "Produces an XLSX/HTML report from whatever data is currently cached. Use this for the most common case."
             case .jamfCLIFull:

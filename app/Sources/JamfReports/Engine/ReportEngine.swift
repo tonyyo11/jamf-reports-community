@@ -760,16 +760,20 @@ struct ReportEngine: Sendable {
         // File-exists-but-unparseable is fatal — throw so the caller surfaces the error
         // rather than silently proceeding with stale cache.
         let useCachedData: Bool
+        let loadedConfig: ReportConfig?
         if let workspace = ProfileService.workspaceURL(for: profile) {
             let configURL = workspace.appendingPathComponent("config.yaml")
             if FileManager.default.fileExists(atPath: configURL.path) {
                 let config = try ConfigLoader.load(from: configURL)
                 useCachedData = config.jamfCli?.isCachedDataEnabled ?? true
+                loadedConfig = config
             } else {
                 useCachedData = true
+                loadedConfig = nil
             }
         } else {
             useCachedData = false
+            loadedConfig = nil
         }
 
         // Commands to collect and their snapshot kind names.
@@ -859,6 +863,22 @@ struct ReportEngine: Sendable {
                              text: "[error] \(kind): exit \(exitCode) — failing (use_cached_data=false)"))
                 throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
             }
+        }
+
+        // PR-20: also emit summary.json from collect so the snapshot-only schedule
+        // mode populates Trends without requiring a workbook generation. Skipped
+        // when config is missing (fresh workspace pre-init) — generate() is the
+        // only other site that produces these files, so the trend chart will
+        // simply not advance until the next configured run.
+        if let config = loadedConfig,
+           let summariesDir = try? workspacePaths.summariesDir(for: profile) {
+            let prov = await Provenance.current(
+                profile: config.jamfCli?.resolvedProfile ?? profile,
+                jamfCLIURL: bin,
+                dataDir: dataDir
+            )
+            let engine = ReportEngine(config: config, dataDir: dataDir)
+            engine.emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
         }
     }
 
