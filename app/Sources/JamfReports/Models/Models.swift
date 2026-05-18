@@ -95,9 +95,9 @@ struct Schedule: Identifiable, Sendable {
         var displayTitle: String {
             switch self {
             case .snapshotOnly: "Refresh data only"
-            case .jamfCLIOnly: "Generate from cached/live jamf-cli data"
+            case .jamfCLIOnly: "Generate from cached data"
             case .jamfCLIFull: "Refresh + Generate"
-            case .csvAssisted: "CSV-augmented Generate"
+            case .csvAssisted: "Refresh + Generate (CSV required)"
             }
         }
 
@@ -106,11 +106,11 @@ struct Schedule: Identifiable, Sendable {
             case .snapshotOnly:
                 "Runs jamf-cli pro collect, archives JSON snapshots, and updates the Trends summary. Does NOT generate a workbook. Use this when you want fresh data for trend tracking but don't need a report delivered."
             case .jamfCLIOnly:
-                "Produces an XLSX/HTML report from whatever data is currently cached. Use this for the most common case."
+                "Generates a workbook from the latest cached jamf-cli data. Does NOT collect fresh data first. Use this for a fast re-render after a recent collect — for example, after editing config.yaml or templates."
             case .jamfCLIFull:
-                "Runs collect first, then generates a report. Use this for a self-contained scheduled run."
+                "Runs collect to refresh jamf-cli data, then generates a workbook. No CSV input. Use this for a self-contained scheduled run that does not depend on a CSV export."
             case .csvAssisted:
-                "Combines a Jamf Pro CSV export from the inbox with cached jamf-cli data. Use this when your CSV has columns jamf-cli can't reach (e.g. custom inventory fields)."
+                "Runs collect, then combines the newest CSV in csv-inbox/ with cached jamf-cli data. The run fails if no CSV is available — use this when CSV data is required (e.g. for custom inventory columns jamf-cli can't reach)."
             }
         }
     }

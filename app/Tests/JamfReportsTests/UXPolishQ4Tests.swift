@@ -99,10 +99,15 @@ final class UXPolishQ4Tests: XCTestCase {
 
     func testJamfCLIOnlyModeDescription() {
         let mode = Schedule.RunMode.jamfCLIOnly
-        XCTAssertEqual(mode.displayTitle, "Generate from cached/live jamf-cli data")
+        // PR-21: jamf-cli-only is now genuinely cache-only — no collect step.
+        XCTAssertEqual(mode.displayTitle, "Generate from cached data")
         XCTAssertTrue(
             mode.displayDescription.contains("cached"),
             "jamf-cli-only should mention caching"
+        )
+        XCTAssertTrue(
+            mode.displayDescription.contains("Does NOT collect"),
+            "jamf-cli-only must clarify that no collect happens"
         )
     }
 
@@ -110,21 +115,28 @@ final class UXPolishQ4Tests: XCTestCase {
         let mode = Schedule.RunMode.jamfCLIFull
         XCTAssertEqual(mode.displayTitle, "Refresh + Generate")
         XCTAssertTrue(
-            mode.displayDescription.contains("collect first"),
-            "jamf-cli-full should mention collect-then-generate"
+            mode.displayDescription.contains("collect"),
+            "jamf-cli-full should mention collect"
+        )
+        // PR-21: make the no-CSV invariant explicit so users don't conflate
+        // jamf-cli-full with csv-assisted.
+        XCTAssertTrue(
+            mode.displayDescription.contains("No CSV"),
+            "jamf-cli-full must clarify the no-CSV invariant"
         )
     }
 
     func testCSVAssistedModeDescription() {
         let mode = Schedule.RunMode.csvAssisted
-        XCTAssertEqual(mode.displayTitle, "CSV-augmented Generate")
+        // PR-21: csv-assisted is strict — fails without a CSV.
+        XCTAssertEqual(mode.displayTitle, "Refresh + Generate (CSV required)")
         XCTAssertTrue(
-            mode.displayDescription.contains("CSV export"),
-            "csv-assisted should mention CSV"
+            mode.displayDescription.contains("csv-inbox"),
+            "csv-assisted should mention csv-inbox"
         )
         XCTAssertTrue(
-            mode.displayDescription.contains("jamf-cli"),
-            "csv-assisted should mention jamf-cli"
+            mode.displayDescription.contains("fails if no CSV"),
+            "csv-assisted must clarify the hard-fail-on-missing-CSV contract"
         )
     }
 

@@ -7,6 +7,32 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- **Schedule mode semantics tightened — each mode now does exactly one thing** (PR-21, macOS app):
+  Before PR-21, three of the four `Schedule.RunMode` cases had descriptions
+  that disagreed with the code: `jamf-cli-only` said "from cached data" but
+  called collect first; `jamf-cli-full` and `csv-assisted` were operationally
+  identical (both passed the newest CSV when present, both no-op'd CSV when
+  absent). Modes are now strict and distinct:
+  - `snapshot-only` — collect only; updates Trends; no workbook (unchanged from PR-20).
+  - `jamf-cli-only` — generate only from the latest cached snapshots; **no collect step**.
+    Fast re-render path for editing config or templates without hitting the API.
+  - `jamf-cli-full` — collect + generate; no CSV. Renamed display label clarifies
+    "No CSV input."
+  - `csv-assisted` — collect + generate with a CSV from `csv-inbox/`. Now
+    **hard-fails when no CSV is present** instead of silently falling back to a
+    jamf-cli-only workbook. Earlier behavior masked broken CSV pipelines for
+    days at a time; use `jamf-cli-full` explicitly if you want the no-CSV path.
+  Existing pre-PR-20 LaunchAgent plists (which omit `--mode`) default to
+  `jamf-cli-only` — that means the silent collect they did before PR-21 stops
+  happening; resave the schedule from the GUI to migrate to the explicit mode
+  you want. `Schedule.RunMode.displayTitle` and `displayDescription` strings
+  updated to match the new semantics; `docs/wiki/07-LaunchAgent-Automation.md`
+  Workflow Modes section rewritten to describe both the strict Swift contract
+  and the legacy Python `launchagent-setup` divergence (notably csv-assisted's
+  silent fallback).
+
 ### Fixed
 
 - **Schedule mode now round-trips through the LaunchAgent plist** (PR-20, macOS app):
