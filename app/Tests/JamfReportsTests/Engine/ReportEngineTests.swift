@@ -315,7 +315,94 @@ final class ReportEngineTests: XCTestCase {
         }
     }
 
-    // MARK: - Helper
+    // MARK: - PR-18: emitSummaryJSON logging surfaces silent early-return paths
+
+    /// When a same-day `summary_*.json` already exists and is valid,
+    /// `emitSummaryJSON` correctly leaves it in place — but the prior silent
+    /// behavior left operators wondering why Refresh wasn't clearing the
+    /// StaleDataBanner. The fix emits a `[info]` line so the reason is visible
+    /// in Run logs.
+    func testEmitSummaryJSONLogsInfoWhenSameDaySummaryAlreadyExists() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("emit-summary-skip-\(UUID().uuidString)")
+        let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        // Seed today's summary so emit will short-circuit.
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let existing = summariesDir.appendingPathComponent("summary_\(today).json")
+        let payload: [String: Any] = [
+            "date": today, "totalDevices": 42, "source": "jamf-cli",
+        ]
+        try JSONSerialization.data(withJSONObject: payload).write(to: existing)
+
+        let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+        let captured = LogCapture()
+        engine.emitSummaryJSON(summariesDir: summariesDir) { line in
+            captured.append(line)
+        }
+
+        let lines = captured.snapshot()
+        XCTAssertTrue(
+            lines.contains { $0.level == .info && $0.text.contains("already exists") },
+            "Expected an [info] log line explaining the same-day skip; got: \(lines.map(\.text))"
+        )
+    }
+
+    /// When no cached jamf-cli snapshots exist, `buildSummaryFromCLI` returns
+    /// nil and no summary file is written. PR-18 surfaces a `[warn]` log line
+    /// so operators understand why Generate succeeded but didn't refresh
+    /// the trend chart or StaleDataBanner.
+    func testEmitSummaryJSONLogsWarnWhenNoSnapshotsAvailable() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("emit-summary-empty-\(UUID().uuidString)")
+        let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        // dataDir contains NO jamf-cli snapshot dirs — buildSummaryFromCLI
+        // will return nil because every kind comes back empty.
+        let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+        let captured = LogCapture()
+        engine.emitSummaryJSON(summariesDir: summariesDir) { line in
+            captured.append(line)
+        }
+
+        let lines = captured.snapshot()
+        XCTAssertTrue(
+            lines.contains { $0.level == .warn && $0.text.contains("no jamf-cli snapshots") },
+            "Expected a [warn] log line explaining no snapshots to summarize; got: \(lines.map(\.text))"
+        )
+
+        // No file should have been written.
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: summaryFile.path),
+            "No summary file should be written when there are no snapshots to summarize"
+        )
+    }
+
+    // MARK: - Helpers
+
+    /// Thread-safe collector for `@Sendable` log-line closures so Swift 6
+    /// strict concurrency lets us aggregate emitted lines under a single
+    /// captured reference.
+    private final class LogCapture: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lines: [CLIBridge.LogLine] = []
+
+        func append(_ line: CLIBridge.LogLine) {
+            lock.lock(); defer { lock.unlock() }
+            lines.append(line)
+        }
+
+        func snapshot() -> [CLIBridge.LogLine] {
+            lock.lock(); defer { lock.unlock() }
+            return lines
+        }
+    }
 
     private var fixturesDir: URL {
         URL(fileURLWithPath: #filePath)

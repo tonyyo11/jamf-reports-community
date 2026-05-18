@@ -288,16 +288,37 @@ struct ReportEngine: Sendable {
            let data = try? Data(contentsOf: summaryFile),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
-            return  // Valid same-day summary already exists.
+            // Same-day summary already valid — leave the existing file untouched
+            // so its mtime reflects the first run that produced it. Log an [info]
+            // line so operators investigating "Refresh didn't clear staleness"
+            // can see this is the reason a fresh file wasn't written.
+            let msg = "[info] summary_\(today).json already exists — leaving existing file in place"
+            AppLogger.engine.info("\(msg, privacy: .public)")
+            onLine?(.init(timestamp: Date(), level: .info, text: msg))
+            return
         }
 
-        guard let summary = buildSummaryFromCLI(date: today, provenance: provenance) else { return }
+        guard let summary = buildSummaryFromCLI(date: today, provenance: provenance) else {
+            // buildSummaryFromCLI returns nil when no cached jamf-cli snapshots
+            // are available to summarize (fresh workspace, failed/skipped collect,
+            // CSV-only generate run). Surface this so operators understand why
+            // the trend chart and StaleDataBanner won't refresh on this run.
+            let msg = "[warn] summary JSON not written: no jamf-cli snapshots available to summarize " +
+                      "(run `collect` first, or this is expected for CSV-only generation)"
+            AppLogger.engine.warning("\(msg, privacy: .public)")
+            print(msg)
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return
+        }
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             let data = try encoder.encode(summary)
             try data.write(to: summaryFile, options: .atomic)
+            let msg = "[ok] wrote \(summaryFile.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
+            AppLogger.engine.info("\(msg, privacy: .public)")
+            onLine?(.init(timestamp: Date(), level: .ok, text: msg))
         } catch {
             let msg = "[warn] could not write summary JSON: \(error.localizedDescription)"
             AppLogger.engine.warning("\(msg, privacy: .private)")
