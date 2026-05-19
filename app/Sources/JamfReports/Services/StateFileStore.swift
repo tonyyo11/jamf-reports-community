@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// PR-22 T-5: persistent record of "when did we last successfully fetch
 /// jamf-cli report `<kind>`."
@@ -80,6 +81,72 @@ struct StateFileStore: Sendable {
         }
         let url = fileURL(for: report)
         try atomicWrite(data: data, to: url)
+        // PR-22 T-14: keep the state manifest in sync after every write so
+        // an attacker who tampers a .last file can't quietly defer fetches
+        // — the next audit catches the SHA-256 mismatch. The rewrite is
+        // try? to avoid undoing the .last write we just succeeded at; a
+        // manifest desync is recoverable (audit re-runs catch it), a
+        // dropped state write is not.
+        try? rewriteManifest()
+    }
+
+    // MARK: - Manifest (T-14)
+
+    /// Rebuild `<state-dir>/manifest.json` from the current `.last`
+    /// contents. Called from `recordRun` after every successful state
+    /// write so the manifest always reflects the latest state.
+    ///
+    /// The file format matches `SnapshotManifest`'s decoder — algorithm
+    /// "sha256", `files` map of filename → hex digest — plus a
+    /// `version: 2` field that distinguishes state-aware manifests from
+    /// pre-PR-22 Python-written v1 manifests. Verification uses the same
+    /// `SnapshotManifest.verify(snapshot:data:)` API as JSON snapshots.
+    func rewriteManifest() throws {
+        let fm = FileManager.default
+        let manifestURL = directory.appendingPathComponent(
+            SnapshotManifest.fileName, isDirectory: false
+        )
+        guard fm.fileExists(atPath: directory.path) else {
+            // Nothing to manifest — clean up any stale file from before
+            // the directory was deleted by an operator clearing cache.
+            try? fm.removeItem(at: manifestURL)
+            return
+        }
+        let entries = (try? fm.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        let lastFiles = entries
+            .filter { $0.pathExtension == "last" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        var files: [String: String] = [:]
+        for url in lastFiles {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            files[url.lastPathComponent] = Self.sha256Hex(data)
+        }
+
+        let payload = StateManifestPayload(
+            version: SnapshotManifest.currentSchemaVersion,
+            algorithm: "sha256",
+            files: files
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        let data = try encoder.encode(payload)
+        try atomicWrite(data: data, to: manifestURL)
+    }
+
+    private struct StateManifestPayload: Encodable {
+        let version: Int
+        let algorithm: String
+        let files: [String: String]
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     // MARK: - Errors

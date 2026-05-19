@@ -183,7 +183,16 @@ enum SnapshotManifest {
 
     // MARK: - Manifest payload
 
+    /// Schema version. PR-22 T-14 bumps this from the implicit v1 (Python
+    /// PR-7 + threat-model T-2) to v2 to indicate state-aware manifests
+    /// (Swift-written, may include `<report>.last` entries). Old manifests
+    /// without a `version` field decode as v1.
+    static let currentSchemaVersion = 2
+
     private struct Manifest: Decodable {
+        /// Optional to preserve compat with v1 manifests written by the
+        /// Python collector pre-PR-22. Treat absent ⇒ 1.
+        let version: Int?
         let algorithm: String
         let files: [String: String]
     }
