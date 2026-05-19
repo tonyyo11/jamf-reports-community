@@ -107,4 +107,59 @@ enum CadenceResolver {
             return elapsed >= TimeInterval(interval)
         }
     }
+
+    /// Resolve the target `Cadence` for `report` from `config`.
+    ///
+    /// Precedence (highest → lowest):
+    ///
+    /// 1. On-prem hard exclusions (`update-status`,
+    ///    `update-device-failures`) → `.never`. Operators escape by
+    ///    switching to `preset: custom` + explicit `per_report` entry.
+    /// 2. `per_report[<kind>].cadence` if present → use it.
+    /// 3. `preset.defaultCadence(for: tier)` where tier comes from
+    ///    `per_report[<kind>].tier` if set, else
+    ///    `CollectionTier.tier(forReport:)`.
+    /// 4. Under `preset: custom` with no `per_report` entry → `.never`.
+    /// 5. Unknown report kind on `on-prem`/`cloud` → `.never`.
+    ///
+    /// `config: nil` (no `collect_cadence:` block at all) is treated as
+    /// on-prem defaults so a fresh workspace works without a GUI write.
+    /// PR-23's GUI writes a real preset on first save so this fallback
+    /// is only the first-run experience.
+    ///
+    /// PR-22 T-7.
+    static func resolve(
+        report: String,
+        config: CollectCadenceConfig?
+    ) -> Cadence {
+        let preset = config?.preset ?? .onPrem
+
+        // Rule 1: on-prem hard exclusions win over everything.
+        if preset.hardExcludedKinds.contains(report) {
+            return .never
+        }
+
+        let entry = config?.perReport?[report]
+
+        // Rule 2: per_report cadence wins over preset defaults.
+        if let cadence = entry?.cadence {
+            return cadence
+        }
+
+        // Rule 4: custom with no entry = .never.
+        if preset == .custom {
+            return .never
+        }
+
+        // Rule 3 + 5: tier lookup → preset default; nil tier (unknown
+        // kind) on a non-custom preset = .never.
+        let tier = entry?.tier ?? CollectionTier.tier(forReport: report)
+        guard let tier else {
+            return .never
+        }
+        if let defaultSeconds = preset.defaultCadence(for: tier) {
+            return .seconds(defaultSeconds)
+        }
+        return .never
+    }
 }
