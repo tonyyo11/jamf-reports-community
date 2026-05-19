@@ -19,6 +19,10 @@ struct SettingsView: View {
     @State private var tokenStatuses: [String: TokenStatus] = [:]
     @State private var loadingTokenProfiles: Set<String> = []
     @State private var diagnosticBundleMessage: String? = nil
+    // PR-23 T-21: collection cadence preset for the active profile.
+    @State private var cadencePreset: CadencePreset = .onPrem
+    @State private var pendingPreset: CadencePreset? = nil
+    @State private var presetWriteError: String? = nil
 
     var body: some View {
         ScrollView {
@@ -36,6 +40,7 @@ struct SettingsView: View {
                     connectionsCard
                 }
                 dataAndChartsCard
+                performanceCard
                 diagnosticsCard
                 sidebarVisibilityCard
                 aboutCard
@@ -49,6 +54,7 @@ struct SettingsView: View {
             workspace.refreshToolStatus()
             workspace.reloadFromDisk()
             testResults = [:]
+            loadCadencePreset()
             await loadTokenStatuses()
         }
     }
@@ -457,6 +463,111 @@ struct SettingsView: View {
             return "Per-device commands paused. Posture, Patch, Updates, and Extension Attributes dashboards will show last cached values until refreshed."
         }
         return "Run the four per-device commands (ea-results, patch-device-failures, update-device-failures, device-compliance) on every collect."
+    }
+
+    // MARK: - Performance (PR-23 T-21)
+
+    private var performanceCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Performance")
+                Text("Collection cadence preset for the active profile (\(workspace.profile)). "
+                     + "Controls how often scheduled runs fetch each tier of jamf-cli data.")
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Text.tertiary)
+
+                Picker("Cadence preset", selection: cadencePresetBinding) {
+                    ForEach(CadencePreset.allCases, id: \.self) { preset in
+                        Text(preset.displayName).tag(preset)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.radioGroup)
+
+                Text(cadencePreset.displaySubtitle)
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Text.tertiary)
+
+                Divider().background(Theme.Hairline.standard)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Resolved cadences")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Theme.Text.primary)
+                    Text(cadencePreset.cadenceSummary)
+                        .font(Theme.Fonts.mono(11))
+                        .foregroundStyle(Theme.Text.tertiary)
+                }
+
+                if let presetWriteError {
+                    Text(presetWriteError)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.warn)
+                }
+            }
+        }
+        .confirmationDialog(
+            "Change cadence preset?",
+            isPresented: presetDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Switch to \(pendingPreset?.displayName ?? "")") {
+                commitPendingPreset()
+            }
+            Button("Cancel", role: .cancel) { pendingPreset = nil }
+        } message: {
+            Text("Scheduled runs for '\(workspace.profile)' will adopt the new "
+                 + "cadence on their next fire. Snapshots already collected are "
+                 + "not affected.")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Performance settings")
+    }
+
+    /// Picker binding that defers the actual change to a confirmation
+    /// dialog: `set` stashes `pendingPreset` rather than committing, so the
+    /// radio visually stays put until the operator confirms.
+    private var cadencePresetBinding: Binding<CadencePreset> {
+        Binding(
+            get: { cadencePreset },
+            set: { newValue in
+                guard newValue != cadencePreset else { return }
+                pendingPreset = newValue
+            }
+        )
+    }
+
+    private var presetDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingPreset != nil },
+            set: { if !$0 { pendingPreset = nil } }
+        )
+    }
+
+    private func commitPendingPreset() {
+        guard let target = pendingPreset else { return }
+        do {
+            try ConfigService.setCadencePreset(profile: workspace.profile, preset: target)
+            cadencePreset = target
+            presetWriteError = nil
+        } catch {
+            presetWriteError = "Could not save preset: \(error.localizedDescription)"
+        }
+        pendingPreset = nil
+    }
+
+    /// Read the active profile's preset from config.yaml. Absent block or
+    /// unreadable config falls back to on-prem (the conservative default,
+    /// matching CadenceResolver's missing-config behavior).
+    private func loadCadencePreset() {
+        presetWriteError = nil
+        guard let url = try? ConfigService.configURL(for: workspace.profile),
+              FileManager.default.fileExists(atPath: url.path),
+              let config = try? ConfigLoader.load(from: url) else {
+            cadencePreset = .onPrem
+            return
+        }
+        cadencePreset = config.collectCadence?.preset ?? .onPrem
     }
 
     // MARK: - Diagnostics
