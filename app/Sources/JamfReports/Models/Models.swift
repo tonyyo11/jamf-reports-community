@@ -113,6 +113,24 @@ struct Schedule: Identifiable, Sendable {
                 "Runs collect, then combines the newest CSV in csv-inbox/ with cached jamf-cli data. The run fails if no CSV is available — use this when CSV data is required (e.g. for custom inventory columns jamf-cli can't reach)."
             }
         }
+
+        /// Default `CollectionTier` set for this mode (PR-23 T-17, ADR
+        /// mode → tier-set table). `snapshot-only` narrows to Refresh —
+        /// it's the cheap-KPI schedule. The two generate modes default to
+        /// all tiers because the workbook needs every data source. The
+        /// user can override per-schedule in the form.
+        ///
+        /// `jamf-cli-only` does not collect at all, so its tier set is
+        /// moot — it returns all tiers as a harmless default; the form
+        /// hides the tier picker for this mode.
+        var defaultTiers: Set<CollectionTier> {
+            switch self {
+            case .snapshotOnly:
+                return [.refresh]
+            case .jamfCLIOnly, .jamfCLIFull, .csvAssisted:
+                return Set(CollectionTier.allCases)
+            }
+        }
     }
     enum LastStatus: String, Sendable, CaseIterable { case ok, warn, fail, partial }
 
@@ -129,6 +147,11 @@ struct Schedule: Identifiable, Sendable {
     var enabled: Bool
     var launchAgentLabel: String? = nil
     var multiTarget: MultiTarget? = nil
+    /// Which `CollectionTier`s this schedule's collect step fetches (PR-23
+    /// T-17). `nil` means "not specified" — legacy plists written before
+    /// PR-23 omit the `--tiers` flag, and `main.swift` defaults a missing
+    /// value to all tiers so their behavior is unchanged.
+    var tiers: Set<CollectionTier>? = nil
 
     var isMulti: Bool { multiTarget != nil }
     var profileDisplayLabel: String { multiTarget?.displayLabel ?? profile }

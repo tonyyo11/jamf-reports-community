@@ -26,6 +26,17 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
     case inventory
     case scan
 
+    /// Capitalized label for the Schedules-form tier picker (PR-23 T-17)
+    /// and any other UI surface. The raw value stays lowercase for plist
+    /// `--tiers` CSV serialization.
+    var displayName: String {
+        switch self {
+        case .refresh:   return "Refresh"
+        case .inventory: return "Inventory"
+        case .scan:      return "Scan"
+        }
+    }
+
     /// Return the tier for a jamf-cli report kind, or nil for unknown names.
     ///
     /// Callers must treat nil as "this report isn't part of the new tier

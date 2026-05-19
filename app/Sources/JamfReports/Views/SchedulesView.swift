@@ -745,6 +745,23 @@ struct ScheduleFormState {
     var mode = Schedule.RunMode.snapshotOnly
     var enabled = true
 
+    /// Which `CollectionTier`s the collect step fetches (PR-23 T-17).
+    /// Initialized to the default mode's tier set; kept in sync with the
+    /// mode picker until the user manually edits it (`userTouchedTiers`).
+    var tiers: Set<CollectionTier> = Schedule.RunMode.snapshotOnly.defaultTiers
+
+    /// True once the user manually toggled a tier checkbox. Once set, a
+    /// mode change no longer overwrites `tiers` with the new mode's
+    /// default — the operator's explicit choice wins.
+    var userTouchedTiers = false
+
+    /// Re-sync `tiers` to `mode`'s default unless the user has overridden.
+    /// Called from the form's mode-picker `.onChange`.
+    mutating func syncTiersToMode() {
+        guard !userTouchedTiers else { return }
+        tiers = mode.defaultTiers
+    }
+
     // Multi-profile targeting
     enum ProfileMode: String, CaseIterable, Identifiable {
         case single = "Single profile"
@@ -824,7 +841,8 @@ struct ScheduleFormState {
             lastStatus: .ok,
             artifacts: [],
             enabled: enabled,
-            multiTarget: target
+            multiTarget: target,
+            tiers: tiers
         )
     }
 }
@@ -955,6 +973,29 @@ private struct NewScheduleSheet: View {
                             }
                         }
                         .labelsHidden()
+                        .onChange(of: form.mode) { _, _ in
+                            // Re-sync the tier default to the new mode unless
+                            // the operator has already picked tiers manually.
+                            form.syncTiersToMode()
+                        }
+                    }
+
+                    // jamf-cli-only never collects — the tier set is moot,
+                    // so the picker is hidden for that mode.
+                    if form.mode != .jamfCLIOnly {
+                        formRow(label: "Tiers") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 14) {
+                                    ForEach(CollectionTier.allCases, id: \.self) { tier in
+                                        Toggle(tier.displayName, isOn: tierBinding(tier))
+                                            .toggleStyle(.checkbox)
+                                    }
+                                }
+                                Text("Which collection tiers this schedule fetches.")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Colors.fgMuted)
+                            }
+                        }
                     }
 
                     formRow(label: "Enabled") {
@@ -987,5 +1028,21 @@ private struct NewScheduleSheet: View {
             FieldLabel(label: label)
             HStack(spacing: 8) { content() }
         }
+    }
+
+    /// Two-way binding for one tier's checkbox. Editing any tier marks
+    /// `userTouchedTiers` so a later mode change won't clobber the choice.
+    private func tierBinding(_ tier: CollectionTier) -> Binding<Bool> {
+        Binding(
+            get: { form.tiers.contains(tier) },
+            set: { isOn in
+                if isOn {
+                    form.tiers.insert(tier)
+                } else {
+                    form.tiers.remove(tier)
+                }
+                form.userTouchedTiers = true
+            }
+        )
     }
 }
