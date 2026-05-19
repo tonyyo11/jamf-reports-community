@@ -18,6 +18,18 @@ import Foundation
 enum Cadence: Sendable, Hashable {
     case seconds(Int)
     case never
+
+    /// Short human-readable label used in run-log "[skip] not due" lines.
+    /// `seconds(N)` renders as `"<N>s"` rather than a translated duration
+    /// because operators copying log lines into bug reports want byte-
+    /// stable strings, not "1 day" / "1d" / "24h" inconsistency across
+    /// locales.
+    var label: String {
+        switch self {
+        case .seconds(let n): return "\(n)s"
+        case .never:          return "never"
+        }
+    }
 }
 
 /// PR-22 T-3: YAML-friendly Codable for `Cadence`.
