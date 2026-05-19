@@ -8,6 +8,22 @@ private final class TextLineBuffer: @unchecked Sendable {
     var lines: [String] { lock.withLock { _lines } }
 }
 
+/// PR-23 T-23: per-row selection in the custom per-report cadence editor.
+/// The three real tiers plus a Never option (the kill switch — maps to
+/// `cadence: .never`, tier irrelevant).
+private enum CustomTierChoice: String, CaseIterable, Identifiable {
+    case refresh, inventory, scan, never
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .refresh:   return "Refresh"
+        case .inventory: return "Inventory"
+        case .scan:      return "Scan"
+        case .never:     return "Never"
+        }
+    }
+}
+
 struct SettingsView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
@@ -23,6 +39,9 @@ struct SettingsView: View {
     @State private var cadencePreset: CadencePreset = .onPrem
     @State private var pendingPreset: CadencePreset? = nil
     @State private var presetWriteError: String? = nil
+    // PR-23 T-23: per-report cadence table, shown when preset is .custom.
+    @State private var customCadence: [String: PerReportCadence] = [:]
+    @State private var customCadenceMessage: String? = nil
 
     var body: some View {
         ScrollView {
@@ -504,6 +523,11 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.warn)
                 }
+
+                if cadencePreset == .custom {
+                    Divider().background(Theme.Hairline.standard)
+                    customCadenceEditor
+                }
             }
         }
         .confirmationDialog(
@@ -559,15 +583,148 @@ struct SettingsView: View {
     /// Read the active profile's preset from config.yaml. Absent block or
     /// unreadable config falls back to on-prem (the conservative default,
     /// matching CadenceResolver's missing-config behavior).
+    ///
+    /// Also seeds the custom per-report table: existing `per_report`
+    /// overrides layered over the current preset's resolved defaults, so
+    /// every known kind has a row whether or not the operator has touched
+    /// the editor before.
     private func loadCadencePreset() {
         presetWriteError = nil
-        guard let url = try? ConfigService.configURL(for: workspace.profile),
-              FileManager.default.fileExists(atPath: url.path),
-              let config = try? ConfigLoader.load(from: url) else {
-            cadencePreset = .onPrem
-            return
+        customCadenceMessage = nil
+        let config: ReportConfig? = {
+            guard let url = try? ConfigService.configURL(for: workspace.profile),
+                  FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return try? ConfigLoader.load(from: url)
+        }()
+        cadencePreset = config?.collectCadence?.preset ?? .onPrem
+
+        var table = CollectCadenceConfig.customDefaults(basePreset: cadencePreset)
+        if let existing = config?.collectCadence?.perReport {
+            for (kind, entry) in existing { table[kind] = entry }
         }
-        cadencePreset = config.collectCadence?.preset ?? .onPrem
+        customCadence = table
+    }
+
+    // MARK: - Custom per-report editor (PR-23 T-23)
+
+    /// Common cadence values offered in the per-report editor. Covers every
+    /// preset cadence; an operator wanting an oddball interval can still
+    /// hand-edit config.yaml (the decoder accepts any non-negative integer).
+    private static let customCadenceChoices: [Int] = [43_200, 86_400, 172_800, 604_800]
+
+    private var customCadenceEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Per-report cadence")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(Theme.Text.primary)
+            Text("Each report's tier and how often it's fetched. "
+                 + "Set a report to Never to skip it entirely.")
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Text.tertiary)
+
+            ForEach(ReportEngine.knownCollectKinds.sorted(), id: \.self) { kind in
+                customCadenceRow(kind: kind)
+            }
+
+            HStack {
+                if let customCadenceMessage {
+                    Text(customCadenceMessage)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary)
+                }
+                Spacer()
+                PNPButton(title: "Save per-report cadence", size: .sm) {
+                    saveCustomCadence()
+                }
+            }
+        }
+    }
+
+    private func customCadenceRow(kind: String) -> some View {
+        HStack(spacing: 8) {
+            Text(kind)
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Text.primary)
+            Spacer()
+            Picker("", selection: tierChoiceBinding(kind)) {
+                ForEach(CustomTierChoice.allCases) { Text($0.label).tag($0) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 110)
+
+            Picker("", selection: cadenceSecondsBinding(kind)) {
+                ForEach(Self.customCadenceChoices, id: \.self) { secs in
+                    Text(CadencePreset.humanCadence(seconds: secs)).tag(secs)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 130)
+            .disabled(tierChoiceBinding(kind).wrappedValue == .never)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Tier-or-Never selection for one report row. `.never` maps to
+    /// `cadence: .never`; the three tiers set `tier` and keep (or default)
+    /// the seconds.
+    private func tierChoiceBinding(_ kind: String) -> Binding<CustomTierChoice> {
+        Binding(
+            get: {
+                let entry = customCadence[kind]
+                if case .never = entry?.cadence { return .never }
+                switch entry?.tier {
+                case .refresh:   return .refresh
+                case .inventory: return .inventory
+                case .scan:      return .scan
+                case nil:        return .never
+                }
+            },
+            set: { choice in
+                let current = customCadence[kind] ?? PerReportCadence(cadence: .never)
+                let seconds: Int = {
+                    if case .seconds(let n) = current.cadence { return n }
+                    return 604_800
+                }()
+                switch choice {
+                case .never:
+                    customCadence[kind] = PerReportCadence(tier: current.tier, cadence: .never)
+                case .refresh:
+                    customCadence[kind] = PerReportCadence(tier: .refresh, cadence: .seconds(seconds))
+                case .inventory:
+                    customCadence[kind] = PerReportCadence(tier: .inventory, cadence: .seconds(seconds))
+                case .scan:
+                    customCadence[kind] = PerReportCadence(tier: .scan, cadence: .seconds(seconds))
+                }
+            }
+        )
+    }
+
+    private func cadenceSecondsBinding(_ kind: String) -> Binding<Int> {
+        Binding(
+            get: {
+                if case .seconds(let n) = customCadence[kind]?.cadence { return n }
+                return 604_800
+            },
+            set: { seconds in
+                let current = customCadence[kind] ?? PerReportCadence(cadence: .never)
+                customCadence[kind] = PerReportCadence(
+                    tier: current.tier, cadence: .seconds(seconds)
+                )
+            }
+        )
+    }
+
+    private func saveCustomCadence() {
+        do {
+            try ConfigService.setCustomCadence(
+                profile: workspace.profile, perReport: customCadence
+            )
+            customCadenceMessage = "Saved."
+        } catch {
+            customCadenceMessage = "Save failed: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Diagnostics

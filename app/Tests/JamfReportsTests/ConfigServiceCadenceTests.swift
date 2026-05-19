@@ -133,6 +133,91 @@ final class ConfigServiceCadenceTests: XCTestCase {
         XCTAssertEqual(cfg.collectCadence?.preset, .custom)
     }
 
+    // MARK: - setCustomCadence (T-23)
+
+    func testSetCustomCadenceWritesScalarAndObjectForms() throws {
+        let root = try tempRoot()
+        let profile = "cad-custom-\(UUID().uuidString.lowercased())"
+        try ConfigService.setCustomCadence(
+            profile: profile,
+            perReport: [
+                "update-status": PerReportCadence(cadence: .never),
+                "overview": PerReportCadence(cadence: .seconds(86_400)),
+                "ea-results": PerReportCadence(tier: .scan, cadence: .seconds(604_800)),
+            ],
+            workspaceRoot: root
+        )
+
+        let cfg = try loadEngineConfig(profile: profile, root: root)
+        XCTAssertEqual(cfg.collectCadence?.perReport?["update-status"]?.cadence, .never)
+        XCTAssertNil(cfg.collectCadence?.perReport?["update-status"]?.tier)
+        XCTAssertEqual(cfg.collectCadence?.perReport?["overview"]?.cadence, .seconds(86_400))
+        XCTAssertEqual(cfg.collectCadence?.perReport?["ea-results"]?.tier, .scan)
+        XCTAssertEqual(cfg.collectCadence?.perReport?["ea-results"]?.cadence, .seconds(604_800))
+    }
+
+    func testSetCustomCadencePreservesPresetSibling() throws {
+        let root = try tempRoot()
+        let profile = "cad-custom-sib-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            collect_cadence:
+              preset: custom
+            """,
+            profile: profile, root: root
+        )
+
+        try ConfigService.setCustomCadence(
+            profile: profile,
+            perReport: ["overview": PerReportCadence(cadence: .seconds(3_600))],
+            workspaceRoot: root
+        )
+
+        let cfg = try loadEngineConfig(profile: profile, root: root)
+        XCTAssertEqual(cfg.collectCadence?.preset, .custom, "preset sibling preserved")
+        XCTAssertEqual(cfg.collectCadence?.perReport?["overview"]?.cadence, .seconds(3_600))
+    }
+
+    func testSetCustomCadenceRoundTripsEveryReportKind() throws {
+        // Mirror the realistic Custom-editor payload: one entry per known
+        // collect kind. The write → read round trip must preserve all.
+        let root = try tempRoot()
+        let profile = "cad-custom-all-\(UUID().uuidString.lowercased())"
+        var perReport: [String: PerReportCadence] = [:]
+        for kind in ReportEngine.knownCollectKinds {
+            perReport[kind] = PerReportCadence(cadence: .seconds(604_800))
+        }
+        try ConfigService.setCustomCadence(
+            profile: profile, perReport: perReport, workspaceRoot: root
+        )
+        let cfg = try loadEngineConfig(profile: profile, root: root)
+        XCTAssertEqual(cfg.collectCadence?.perReport?.count, ReportEngine.knownCollectKinds.count)
+        for kind in ReportEngine.knownCollectKinds {
+            XCTAssertEqual(cfg.collectCadence?.perReport?[kind]?.cadence, .seconds(604_800),
+                           "\(kind) must round-trip")
+        }
+    }
+
+    func testSetCustomCadenceReplacesPriorPerReport() throws {
+        let root = try tempRoot()
+        let profile = "cad-custom-rep-\(UUID().uuidString.lowercased())"
+        try ConfigService.setCustomCadence(
+            profile: profile,
+            perReport: ["overview": PerReportCadence(cadence: .seconds(60))],
+            workspaceRoot: root
+        )
+        // Second write with a different set — the prior entry must not linger.
+        try ConfigService.setCustomCadence(
+            profile: profile,
+            perReport: ["security": PerReportCadence(cadence: .never)],
+            workspaceRoot: root
+        )
+        let cfg = try loadEngineConfig(profile: profile, root: root)
+        XCTAssertNil(cfg.collectCadence?.perReport?["overview"],
+                     "per_report is replaced wholesale, not merged")
+        XCTAssertEqual(cfg.collectCadence?.perReport?["security"]?.cadence, .never)
+    }
+
     // MARK: - Helpers
 
     private func tempRoot() throws -> URL {

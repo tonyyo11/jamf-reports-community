@@ -104,4 +104,29 @@ struct CollectCadenceConfig: Sendable, Hashable, Equatable, Codable {
         self.paceSeconds = paceSeconds
         self.perReport = perReport
     }
+
+    /// PR-23 T-23: seed a full per-report table from a base preset.
+    ///
+    /// When an operator switches the Settings preset to `.custom`, the
+    /// per-report editor starts from the cadences the *previous* preset
+    /// resolved — so "switch to custom" is a non-destructive starting
+    /// point they can then tweak, not a blank slate.
+    ///
+    /// Every kind in `ReportEngine.knownCollectKinds` gets an entry: its
+    /// tier from `CollectionTier.tier(forReport:)` and its cadence from
+    /// `CadenceResolver.resolve` against `basePreset`. On-prem hard
+    /// exclusions therefore seed as `.never`, which is the correct
+    /// starting point — the operator can lift them deliberately.
+    static func customDefaults(basePreset: CadencePreset) -> [String: PerReportCadence] {
+        let base = CollectCadenceConfig(preset: basePreset)
+        var table: [String: PerReportCadence] = [:]
+        for kind in ReportEngine.knownCollectKinds {
+            let cadence = CadenceResolver.resolve(report: kind, config: base)
+            table[kind] = PerReportCadence(
+                tier: CollectionTier.tier(forReport: kind),
+                cadence: cadence
+            )
+        }
+        return table
+    }
 }

@@ -250,4 +250,44 @@ final class CollectCadenceConfigTests: XCTestCase {
         XCTAssertNil(cfg.collectCadence,
                      "Absent collect_cadence must remain nil — T-7 supplies preset defaults")
     }
+
+    // MARK: - customDefaults (PR-23 T-23)
+
+    func testCustomDefaultsCoversEveryKnownKind() {
+        let table = CollectCadenceConfig.customDefaults(basePreset: .onPrem)
+        XCTAssertEqual(table.count, ReportEngine.knownCollectKinds.count)
+        for kind in ReportEngine.knownCollectKinds {
+            XCTAssertNotNil(table[kind], "customDefaults must seed a row for \(kind)")
+        }
+    }
+
+    func testCustomDefaultsFromOnPremMatchesResolvedCadences() {
+        let table = CollectCadenceConfig.customDefaults(basePreset: .onPrem)
+        // overview is refresh-tier → daily on on-prem.
+        XCTAssertEqual(table["overview"]?.tier, .refresh)
+        XCTAssertEqual(table["overview"]?.cadence, .seconds(86_400))
+        // computers is inventory-tier → weekly on on-prem.
+        XCTAssertEqual(table["computers"]?.cadence, .seconds(604_800))
+        // update-status is on-prem hard-excluded → seeds as .never, so the
+        // operator must lift the kill switch deliberately in the editor.
+        XCTAssertEqual(table["update-status"]?.cadence, .never)
+    }
+
+    func testCustomDefaultsFromCloudMatchesResolvedCadences() {
+        let table = CollectCadenceConfig.customDefaults(basePreset: .cloud)
+        XCTAssertEqual(table["overview"]?.cadence, .seconds(43_200), "cloud refresh = twice daily")
+        XCTAssertEqual(table["computers"]?.cadence, .seconds(172_800), "cloud inventory = 2 days")
+        // Cloud has no hard exclusions — update-status seeds as a real cadence.
+        XCTAssertEqual(table["update-status"]?.cadence, .seconds(604_800))
+    }
+
+    func testCustomDefaultsEntriesCarryTheReportsTier() {
+        let table = CollectCadenceConfig.customDefaults(basePreset: .cloud)
+        for kind in ReportEngine.knownCollectKinds {
+            XCTAssertEqual(
+                table[kind]?.tier, CollectionTier.tier(forReport: kind),
+                "\(kind) row must carry its tier-map tier"
+            )
+        }
+    }
 }

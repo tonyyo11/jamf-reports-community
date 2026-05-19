@@ -252,6 +252,81 @@ enum ConfigService {
         _ = try manager.replaceItemAt(url, withItemAt: tempURL)
     }
 
+    /// PR-23 T-23: write `collect_cadence.per_report` for `profile`.
+    ///
+    /// Replaces the entire `per_report` mapping with `perReport`. Each
+    /// entry serializes in the dual shape `PerReportCadence` decodes
+    /// (T-3): a bare scalar (`never` / integer seconds) when there's no
+    /// tier override, or a `{tier, cadence}` mapping when there is.
+    ///
+    /// Sibling keys inside `collect_cadence` (`preset`, `pace_seconds`)
+    /// are preserved. Entries are emitted in sorted key order so the
+    /// plist— er, the YAML — is byte-stable across writes.
+    ///
+    /// The write is atomic (temp file + `replaceItemAt`).
+    static func setCustomCadence(
+        profile: String,
+        perReport: [String: PerReportCadence],
+        workspaceRoot: URL? = nil
+    ) throws {
+        let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
+        try rejectSymlinkDestination(url)
+
+        let manager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        var document: YAMLCodec.YAMLDocument
+        if manager.fileExists(atPath: url.path) {
+            document = try YAMLCodec.decode(String(contentsOf: url, encoding: .utf8))
+        } else {
+            document = YAMLCodec.emptyDocument()
+        }
+        try rejectCredentialKeys(in: document.root)
+
+        guard case .mapping(var root) = document.root else {
+            throw ConfigError.invalidTopLevel
+        }
+
+        var cadence = root.value(for: "collect_cadence")?.mapping
+            ?? YAMLCodec.YAMLMapping(entries: [])
+        var perReportMapping = YAMLCodec.YAMLMapping(entries: [])
+        for key in perReport.keys.sorted() {
+            guard let entry = perReport[key] else { continue }
+            perReportMapping.set(key, value: perReportYAMLValue(entry))
+        }
+        cadence.set("per_report", value: .mapping(perReportMapping))
+        root.set("collect_cadence", value: .mapping(cadence))
+
+        document.root = .mapping(root)
+        let encoded = try YAMLCodec.encode(
+            document, replacingTopLevelKeys: ["collect_cadence"]
+        )
+
+        let tempURL = directory.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
+        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
+        if !manager.fileExists(atPath: url.path) {
+            manager.createFile(atPath: url.path, contents: Data())
+        }
+        _ = try manager.replaceItemAt(url, withItemAt: tempURL)
+    }
+
+    /// Serialize one `PerReportCadence` to its YAML value, matching the
+    /// dual shape the T-3 decoder accepts.
+    private static func perReportYAMLValue(_ entry: PerReportCadence) -> YAMLCodec.YAMLValue {
+        let cadenceValue: YAMLCodec.YAMLValue = switch entry.cadence {
+        case .never:          .scalar(.string("never"))
+        case .seconds(let n): .scalar(.int(n))
+        }
+        guard let tier = entry.tier else {
+            return cadenceValue  // scalar shorthand — no tier override
+        }
+        var mapping = YAMLCodec.YAMLMapping(entries: [])
+        mapping.set("tier", value: .scalar(.string(tier.rawValue)))
+        mapping.set("cadence", value: cadenceValue)
+        return .mapping(mapping)
+    }
+
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
         guard ProfileService.isValid(profile) else {
             throw ConfigError.invalidProfile(profile)
