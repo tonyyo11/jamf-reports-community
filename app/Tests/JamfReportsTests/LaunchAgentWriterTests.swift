@@ -303,6 +303,78 @@ final class LaunchAgentWriterTests: XCTestCase {
         }
     }
 
+    // MARK: - PR-23 T-18: --tiers in ProgramArguments
+
+    /// A schedule with a pinned tier set writes `--tiers <csv>` into the
+    /// plist, with the CSV sorted-lowercase for byte-stable output.
+    func testNativeSingleWriteEmitsTiersFlag() throws {
+        var sched = schedule(name: "Test-Tiers-Flag", mode: .jamfCLIFull)
+        sched.tiers = [.scan, .refresh]  // deliberately unsorted
+        guard let agentLabel = LaunchAgentWriter.label(for: sched) else {
+            return XCTFail("Expected a valid label")
+        }
+        let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+        defer { cleanUp(plan: plan, label: agentLabel) }
+
+        let args = try programArguments(of: plan)
+        guard let tiersIdx = args.firstIndex(of: "--tiers") else {
+            return XCTFail("ProgramArguments must contain --tiers when schedule.tiers is set")
+        }
+        XCTAssertTrue(tiersIdx + 1 < args.count, "--tiers must have a following value")
+        XCTAssertEqual(args[tiersIdx + 1], "refresh,scan",
+                       "CSV must be sorted lowercase rawValues for byte-stable plists")
+    }
+
+    /// A schedule with no pinned tier set omits the flag — main.swift then
+    /// applies its all-tiers default, matching pre-PR-23 plist behavior.
+    func testNativeSingleWriteOmitsTiersFlagWhenNil() throws {
+        let sched = schedule(name: "Test-Tiers-Nil", mode: .jamfCLIFull)
+        XCTAssertNil(sched.tiers, "Precondition: helper schedule has nil tiers")
+        guard let agentLabel = LaunchAgentWriter.label(for: sched) else {
+            return XCTFail("Expected a valid label")
+        }
+        let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+        defer { cleanUp(plan: plan, label: agentLabel) }
+
+        let args = try programArguments(of: plan)
+        XCTAssertFalse(args.contains("--tiers"),
+                       "--tiers must be omitted when schedule.tiers is nil")
+    }
+
+    /// All three tiers selected — full CSV, still sorted.
+    func testNativeSingleWriteEmitsAllTiersCSV() throws {
+        var sched = schedule(name: "Test-Tiers-All", mode: .jamfCLIFull)
+        sched.tiers = Set(CollectionTier.allCases)
+        guard let agentLabel = LaunchAgentWriter.label(for: sched) else {
+            return XCTFail("Expected a valid label")
+        }
+        let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+        defer { cleanUp(plan: plan, label: agentLabel) }
+
+        let args = try programArguments(of: plan)
+        guard let tiersIdx = args.firstIndex(of: "--tiers") else {
+            return XCTFail("ProgramArguments must contain --tiers")
+        }
+        XCTAssertEqual(args[tiersIdx + 1], "inventory,refresh,scan")
+    }
+
+    private func programArguments(of plan: LaunchAgentWriter.SetupPlan) throws -> [String] {
+        let data = try Data(contentsOf: plan.plistURL)
+        let plist = try PropertyListSerialization
+            .propertyList(from: data, format: nil) as! [String: Any]
+        guard let args = plist["ProgramArguments"] as? [String] else {
+            throw XCTSkip("ProgramArguments missing")
+        }
+        return args
+    }
+
+    private func cleanUp(plan: LaunchAgentWriter.SetupPlan, label: String) {
+        try? FileManager.default.removeItem(at: plan.plistURL)
+        let logDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/JamfReports/\(label)", isDirectory: true)
+        try? FileManager.default.removeItem(at: logDir)
+    }
+
     private func schedule(name: String, mode: Schedule.RunMode) -> Schedule {
         Schedule(
             name: name,

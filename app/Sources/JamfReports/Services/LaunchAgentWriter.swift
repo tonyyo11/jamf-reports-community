@@ -35,6 +35,20 @@ enum LaunchAgentWriter {
 
     // MARK: - Native single-profile LaunchAgent (Swift engine path)
 
+    /// `--tiers <csv>` arguments for a schedule's plist, or `[]` when the
+    /// schedule pins no tier set (PR-23 T-18).
+    ///
+    /// A `nil` `schedule.tiers` means "not specified" — the flag is omitted
+    /// so `main.swift` applies its all-tiers default, preserving pre-PR-23
+    /// plist behavior verbatim. The CSV uses sorted lowercase rawValues so
+    /// the plist is byte-stable across writes (no spurious diffs, and a
+    /// predictable layout for the trust check + parser).
+    private static func tierArguments(for schedule: Schedule) -> [String] {
+        guard let tiers = schedule.tiers, !tiers.isEmpty else { return [] }
+        let csv = tiers.map(\.rawValue).sorted().joined(separator: ",")
+        return ["--tiers", csv]
+    }
+
     /// Write a LaunchAgent plist that invokes `JamfReports --scheduled-run --profile <slug>`
     /// directly.
     ///
@@ -76,7 +90,7 @@ enum LaunchAgentWriter {
                 execPath, "--scheduled-run",
                 "--profile", schedule.profile,
                 "--mode", schedule.mode.rawValue,
-            ],
+            ] + tierArguments(for: schedule),
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
             "StartCalendarInterval": cadence.startCalendarIntervals,
@@ -296,9 +310,12 @@ enum LaunchAgentWriter {
               FileManager.default.isExecutableFile(atPath: execPath) else {
             return false
         }
-        // Native format: [exec, "--scheduled-run", "--profile", slug, "--mode", rawValue, "--all-profiles"]
-        // Pre-PR-20 plists omit --mode; the trust check stays permissive about
-        // trailing flags so legacy multi plists still execute.
+        // Native format: [exec, "--scheduled-run", "--profile", slug,
+        //                 "--mode", rawValue, "--tiers", csv, "--all-profiles"]
+        // Pre-PR-20 plists omit --mode; pre-PR-23 plists omit --tiers. The
+        // trust check stays permissive about trailing flags so legacy multi
+        // plists still execute — it only pins the [1]/[2] prefix + a valid
+        // profile slug at [3].
         if args.count >= 4, args[1] == "--scheduled-run", args[2] == "--profile" {
             guard ProfileService.isValid(args[3]) else { return false }
             return isTrustedNativeExecutable(URL(fileURLWithPath: execPath))
@@ -407,6 +424,7 @@ enum LaunchAgentWriter {
                 "--scheduled-run",
                 "--profile", schedule.profile,
                 "--mode", schedule.mode.rawValue,
+            ] + tierArguments(for: schedule) + [
                 "--all-profiles",
             ],
             "WorkingDirectory": ProfileService.workspacesRoot().path,
@@ -618,9 +636,11 @@ enum LaunchAgentWriter {
             throw ManualRunError.malformedPlist("missing ProgramArguments")
         }
 
-        // Native format: [exec, "--scheduled-run", "--profile", slug, "--mode", rawValue]
+        // Native format: [exec, "--scheduled-run", "--profile", slug,
+        //                 "--mode", rawValue, "--tiers", csv]
         // Produced by nativeSingleWrite / nativeMultiWrite. Pre-PR-20 plists
-        // omit --mode; main.swift falls back to jamf-cli-only when absent.
+        // omit --mode; pre-PR-23 plists omit --tiers. main.swift falls back
+        // to jamf-cli-only / all-tiers respectively when absent.
         guard args.count >= 4, args[1] == "--scheduled-run", args[2] == "--profile" else {
             throw ManualRunError.unsupportedCommand(label)
         }
