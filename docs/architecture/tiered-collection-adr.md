@@ -99,7 +99,7 @@ Each report belongs to exactly one tier.
 | Tier | Purpose | Default cadence | Reports (initial set) |
 |------|---------|------------------|------------------------|
 | **Refresh** | Overview KPIs + Trends summary stay current | daily (on-prem) / twice daily (cloud) | `overview`, `security`, `inventory-summary`, `patch-status` (summary only), `policy-status` |
-| **Inventory** | Deep Dive screens (Policies, Profiles, Apps, Mobile) stay current | weekly (on-prem) / every 2-3 days (cloud) | `app-status`, `classic-macos-profiles`, `classic-ios-profiles`, `mobile-devices-list`, `computers`, `policies`, `scripts`, `packages`, `smart-computer-groups`, `categories`, `sites`, `buildings`, `departments`, `computer-extension-attributes`, `software-installs` |
+| **Inventory** | Deep Dive screens (Policies, Profiles, Apps, Mobile) stay current | weekly (on-prem) / every 2 days (cloud) | `app-status`, `classic-macos-profiles`, `classic-ios-profiles`, `mobile-devices-list`, `computers`, `policies`, `scripts`, `packages`, `smart-computer-groups`, `categories`, `sites`, `buildings`, `departments`, `computer-extension-attributes`, `software-installs` |
 | **Scan** | Full per-device accuracy: Risk Score, Compliance Bands, Patch Failures, Update Failures | weekly (both presets) | `ea-results --all`, `device-compliance`, `patch-status --scan-failures`, `update-status --scan-failures`, `profile-status`, `mobile-device-inventory-details` |
 
 **Cadence philosophy** — Snapshots are persistent, timestamped files on
@@ -168,7 +168,7 @@ In Settings → Performance (new pane), three presets:
 | Preset | Refresh cadence | Inventory | Scan | Pacing | Hard exclusions |
 |--------|------------------|-----------|------|--------|------------------|
 | **On-prem (conservative)** | daily | weekly | weekly | 15 s | `update-status`, `update-device-failures` |
-| **Cloud (default)** | twice daily | every 2-3 days | weekly | 0 s | none |
+| **Cloud (default)** | twice daily (12 h) | every 2 days | weekly | 0 s | none |
 | **Custom** | — | — | — | — | — (exposes raw per-report table) |
 
 Neither preset goes more frequent than twice daily for Refresh. Local-file

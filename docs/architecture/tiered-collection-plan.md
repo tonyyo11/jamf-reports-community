@@ -144,7 +144,7 @@ them in tests prevents accidental drift.
 
 **Acceptance criteria:**
 - [ ] `CadencePreset.onPrem` returns `86_400` (daily) for `.refresh`, `604_800` (weekly) for `.inventory` and `.scan`
-- [ ] `CadencePreset.cloud` returns `43_200` (12h) for `.refresh`, `216_000` (2.5 days) for `.inventory`, `604_800` for `.scan`
+- [ ] `CadencePreset.cloud` returns `43_200` (12h) for `.refresh`, `172_800` (2 days) for `.inventory`, `604_800` for `.scan`
 - [ ] `CadencePreset.custom` returns `nil` for every tier (no defaults — requires per-report config)
 - [ ] `paceSeconds` returns `15` for on-prem, `0` for cloud, `0` for custom
 
@@ -887,19 +887,36 @@ change. Click to dismiss; persists dismissal in `@AppStorage`.
 | `RefreshCoordinator` rewrite breaks profile-switch flow | Low | T-16 explicitly preserves behavior; tests cover the debounce + backfill path |
 | Custom-mode users get `.never` for unconfigured reports (silent skip) | Low | Document in tooltips on the Custom editor row — "unconfigured reports won't be fetched"; the `[skip]` log line is explicit |
 | Pacing test (T-11) is slow (deliberately ≥1s) | Low | Mark with `XCTSkipIf(ProcessInfo.processInfo.environment["FAST_TESTS"] != nil)` so dev runs skip but CI runs the slow check |
-| The 2.5-day Inventory cadence on Cloud is awkward (not a round number) | Low | Round to 2 days (172_800s) or 3 days (259_200s); ADR proposed 2-3 days as a band, T-2 needs a concrete value before code |
 | Tampered `<report>.last` could be used to extend skip window | Medium | T-14 puts state files in the manifest; strict-mode verification flags tampering |
 
 ---
 
-## Open Questions
+## Resolved decisions (2026-05-19)
 
-These need human resolution before T-1 starts:
+The four open questions blocking T-1 were resolved in the
+2026-05-19 review session. Locked answers below; any future revisit
+should be explicit.
 
-1. **Cloud Inventory cadence** — ADR says "every 2-3 days." T-2 needs a single number. Recommend **2 days (172_800s)** for predictable scheduling (every other day at the same time). Decision needed.
-2. **Schedule.tiers default for legacy plists** — when `--tiers` is absent from `ProgramArguments`, `main.swift` runs all tiers. Is that the right default, or should legacy plists be treated as "refresh-only" (safer)? Recommend **all tiers** to preserve current behavior verbatim.
-3. **Manifest schema bump** — does adding optional state-file entries to the snapshot manifest require a schema version bump per the existing manifest contract? Verify with the SnapshotManifest module before T-14.
-4. **Settings → Performance pane placement** — under existing Settings tabs, or as a new tab? Recommend a new tab to avoid crowding existing sections.
+1. **Cloud Inventory cadence: 2 days (172_800 s).** T-2 hardcodes
+   this value in the `.cloud` preset's Inventory cadence. Picked
+   over 3 days for predictable scheduling (runs on the same hour
+   every other day).
+2. **Legacy plist tier default: all tiers.** When `--tiers` is
+   absent from `ProgramArguments`, `main.swift` runs all tiers.
+   Preserves pre-PR-23 verbatim behavior so users on existing
+   schedules don't see a silent narrowing on first scheduled fire
+   after upgrade.
+3. **Manifest schema version: bump.** T-14 increments the manifest
+   schema version when adding optional state-file entries. Pinned in
+   tests so a future addition that forgets to bump fails CI. Bump
+   even though additive changes are backward-compatible — the
+   security-audit log line that names the schema version is more
+   useful when it accurately reflects "this run produced a v2
+   manifest, with state-file coverage."
+4. **Settings → Performance pane placement: new tab.** T-21 adds a
+   "Performance" tab to SettingsView rather than crowding existing
+   sections. Decision can be revisited during T-21 if the empty new
+   tab looks awkward with only the preset chooser + custom editor.
 
 ---
 
@@ -945,9 +962,10 @@ For a multi-session approach: each phase checkpoint is a natural session boundar
 
 ## Verification Before Starting
 
-- [ ] ADR cadence numbers confirmed by human (especially Cloud Inventory: 2 vs 3 days)
-- [ ] Open Q2 (legacy plist tier default) resolved
-- [ ] Open Q3 (manifest schema version) verified against `SnapshotManifest.swift`
+- [x] ADR cadence numbers confirmed by human — 2 days for Cloud Inventory (resolved 2026-05-19)
+- [x] Open Q2 (legacy plist tier default) resolved — all tiers
+- [x] Open Q3 (manifest schema version) resolved — bump
+- [x] Open Q4 (Settings pane placement) resolved — new tab
 - [ ] BACKLOG entries linked from this plan
 - [ ] CHANGELOG slot reserved for PR-22 and PR-23
 - [ ] Branch strategy confirmed: feature branch off `emdash/spotty-eels-shock-ngj6f` for each PR (per PR-15-19 pattern)
