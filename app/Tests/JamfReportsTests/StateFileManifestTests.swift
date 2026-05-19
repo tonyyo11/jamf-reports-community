@@ -147,6 +147,58 @@ final class StateFileManifestTests: XCTestCase {
                      "Rewrite must source files from disk, not merge with prior manifest contents")
     }
 
+    // MARK: - scanStateDir for the audit view
+
+    func testScanStateDirCountsCleanFilesAsVerified() throws {
+        let store = StateFileStore(directory: tempDir)
+        try store.recordRun(report: "overview", at: Date(timeIntervalSince1970: 1_700_000_000))
+        try store.recordRun(report: "security", at: Date(timeIntervalSince1970: 1_700_086_400))
+
+        let summary = SnapshotManifest.scanStateDir(tempDir)
+        XCTAssertEqual(summary.verified, 2)
+        XCTAssertEqual(summary.unverified, 0)
+    }
+
+    func testScanStateDirCountsTamperedFilesAsMismatch() throws {
+        let store = StateFileStore(directory: tempDir)
+        try store.recordRun(report: "overview", at: Date(timeIntervalSince1970: 1_700_000_000))
+        try store.recordRun(report: "security", at: Date(timeIntervalSince1970: 1_700_086_400))
+
+        // Tamper one of them.
+        try "2200-01-01T00:00:00Z".write(
+            to: tempDir.appendingPathComponent("overview.last"),
+            atomically: true, encoding: .utf8
+        )
+
+        let summary = SnapshotManifest.scanStateDir(tempDir)
+        XCTAssertEqual(summary.verified, 1, "Untampered file still verifies")
+        XCTAssertEqual(summary.mismatch, 1, "Tampered file flagged as mismatch")
+        XCTAssertEqual(summary.unverified, 1)
+    }
+
+    func testScanStateDirOnMissingDirReturnsZeros() {
+        let missing = tempDir.appendingPathComponent("nope", isDirectory: true)
+        let summary = SnapshotManifest.scanStateDir(missing)
+        XCTAssertEqual(summary.verified, 0)
+        XCTAssertEqual(summary.unverified, 0,
+                       "Missing state dir is not an audit failure — pre-PR-22 workspaces")
+    }
+
+    func testScanStateDirIgnoresNonLastFiles() throws {
+        // The state dir holds only .last files plus manifest.json. A
+        // stray file (e.g., an editor swap file) must not be counted.
+        let store = StateFileStore(directory: tempDir)
+        try store.recordRun(report: "overview", at: Date(timeIntervalSince1970: 1_700_000_000))
+        try "irrelevant".write(
+            to: tempDir.appendingPathComponent("overview.last.swp"),
+            atomically: true, encoding: .utf8
+        )
+
+        let summary = SnapshotManifest.scanStateDir(tempDir)
+        XCTAssertEqual(summary.verified, 1)
+        XCTAssertEqual(summary.unverified, 0)
+    }
+
     func testV1ManifestStillDecodes() throws {
         // Python writes v1 manifests with no `version` field. SnapshotManifest
         // must still verify them — operators on PR-7..PR-21 mid-upgrade should
