@@ -20,6 +20,56 @@ enum Cadence: Sendable, Hashable {
     case never
 }
 
+/// PR-22 T-3: YAML-friendly Codable for `Cadence`.
+///
+/// On disk:
+/// - `cadence: 43200` → `.seconds(43200)` (non-negative integer)
+/// - `cadence: never` (or `"Never"`, case-insensitive) → `.never`
+///
+/// Stored as a single value (scalar) — never a one-key object — so the
+/// surrounding `per_report` schema can also be a scalar in the bare-cadence
+/// shorthand (`overview: 43200`). Negative seconds and unknown strings throw
+/// `DecodingError.dataCorrupted` so a typo surfaces with the YAML line range
+/// `JSONDecoder` carries through from `ConfigLoader`'s conversion.
+extension Cadence: Codable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let int = try? container.decode(Int.self) {
+            guard int >= 0 else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Cadence seconds must be non-negative, got \(int)"
+                )
+            }
+            self = .seconds(int)
+            return
+        }
+        if let raw = try? container.decode(String.self) {
+            let normalized = raw.trimmingCharacters(in: .whitespaces).lowercased()
+            if normalized == "never" {
+                self = .never
+                return
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Cadence string must be 'never', got '\(raw)'"
+            )
+        }
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Cadence must be a non-negative integer or the string 'never'"
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .seconds(let n): try container.encode(n)
+        case .never:          try container.encode("never")
+        }
+    }
+}
+
 /// PR-22 T-4 + T-7: pure scheduling decisions.
 ///
 /// `isDue(lastRun:cadence:now:)` is the core gate that

@@ -17,7 +17,7 @@ import Foundation
 /// `CadencePresetTests`; changing them is a behavioral change worth a
 /// CHANGELOG entry. See `docs/architecture/tiered-collection-adr.md` →
 /// "Server-load presets" for the full rationale.
-enum CadencePreset: String, Sendable, Hashable, CaseIterable {
+enum CadencePreset: String, Sendable, Hashable, CaseIterable, Codable {
     case onPrem = "on-prem"
     case cloud  = "cloud"
     case custom = "custom"

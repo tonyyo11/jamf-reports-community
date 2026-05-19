@@ -99,7 +99,7 @@ enum ScheduleTier: String, Sendable, Hashable, CaseIterable {
 /// PR-23 transition. PR-23 deletes `ScheduleTier` and retargets
 /// `RefreshCoordinator` at this tier system. See
 /// `docs/architecture/tiered-collection-adr.md` for the full design.
-enum CollectionTier: String, Sendable, Hashable, CaseIterable {
+enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
     case refresh
     case inventory
     case scan

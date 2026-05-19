@@ -23,6 +23,12 @@ struct ReportConfig: Decodable, Sendable {
     var platform: PlatformConfig?
     var protect: ProtectConfig?
     var html: HTMLReportConfig?
+    /// PR-22 T-3: per-report cadence + preset overrides. Top-level (not
+    /// nested under `jamf_cli`) because the GUI's new Cadence tab edits it
+    /// directly and the preset choice (`on-prem` / `cloud` / `custom`)
+    /// reads more like its own concept than a `jamf_cli` knob.
+    /// Absent ⇒ resolver substitutes on-prem defaults (see `CadenceResolver`).
+    var collectCadence: CollectCadenceConfig?
 
     private enum CodingKeys: String, CodingKey {
         case columns
@@ -40,6 +46,7 @@ struct ReportConfig: Decodable, Sendable {
         case platform
         case protect
         case html
+        case collectCadence = "collect_cadence"
     }
 
     /// Produce a config with all optional fields filled in from hardcoded defaults,
