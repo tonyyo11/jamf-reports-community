@@ -742,6 +742,44 @@ struct ReportEngine: Sendable {
         "device-compliance"
     ]
 
+    /// Every snapshot kind `collect` produces, in the order the engine
+    /// fetches them. PR-22 T-1: used by `CollectionTier` tests to verify
+    /// every kind has a tier assignment, and (T-8) as the iteration
+    /// surface when filtering by tier + cadence. Must stay in sync with
+    /// the `commands` array inside `collect(profile:...)` —
+    /// `CollectionTierLookupTests.testEveryTieredKindIsKnownToReportEngine`
+    /// enforces this in CI.
+    static let knownCollectKinds: [String] = [
+        "overview",
+        "security",
+        "patch-status",
+        "patch-device-failures",
+        "update-status",
+        "update-device-failures",
+        "inventory-summary",
+        "device-compliance",
+        "policy-status",
+        "classic-macos-profiles",
+        "app-status",
+        "software-installs",
+        "computer-extension-attributes",
+        "ea-results",
+        "profile-status",
+        "mobile-devices-list",
+        "compliance-devices",
+        "compliance-rules",
+        "ddm-status",
+        "blueprint-status",
+        "computers",
+        "policies",
+        "scripts",
+        "packages",
+        "smart-computer-groups",
+        "sites",
+        "buildings",
+        "departments",
+    ]
+
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
