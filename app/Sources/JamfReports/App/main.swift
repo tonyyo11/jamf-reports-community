@@ -51,9 +51,21 @@ private func scheduledRunSingle(
         // jamf-cli-only generates from cache only — no collect, no fresh API calls.
         // The other three modes all need fresh snapshots.
         if mode != .jamfCLIOnly {
+            // PR-22 T-10: snapshot-only narrows to the refresh tier so the
+            // schedule remains cheap on on-prem servers. Refresh kinds are
+            // exactly what feeds Trends + Overview KPIs; inventory and
+            // scan tiers are deferred to the explicit reporting runs that
+            // operators schedule separately at a slower cadence.
+            //
+            // Other modes use the full default tier set — they're going
+            // to generate a workbook and need everything that feeds it.
+            let tiers: Set<CollectionTier> = (mode == .snapshotOnly)
+                ? [.refresh]
+                : Set(CollectionTier.allCases)
             try await ReportEngine.collect(
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
+                tiers: tiers,
                 onLine: onLine
             )
         }

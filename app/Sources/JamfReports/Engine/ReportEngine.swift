@@ -742,9 +742,70 @@ struct ReportEngine: Sendable {
         "device-compliance"
     ]
 
+    /// Every snapshot kind `collect` produces, in the order the engine
+    /// fetches them. PR-22 T-1: used by `CollectionTier` tests to verify
+    /// every kind has a tier assignment, and (T-8) as the iteration
+    /// surface when filtering by tier + cadence. Must stay in sync with
+    /// the `commands` array inside `collect(profile:...)` —
+    /// `CollectionTierLookupTests.testEveryTieredKindIsKnownToReportEngine`
+    /// enforces this in CI.
+    static let knownCollectKinds: [String] = [
+        "overview",
+        "security",
+        "patch-status",
+        "patch-device-failures",
+        "update-status",
+        "update-device-failures",
+        "inventory-summary",
+        "device-compliance",
+        "policy-status",
+        "classic-macos-profiles",
+        "app-status",
+        "software-installs",
+        "computer-extension-attributes",
+        "ea-results",
+        "profile-status",
+        "mobile-devices-list",
+        "compliance-devices",
+        "compliance-rules",
+        "ddm-status",
+        "blueprint-status",
+        "computers",
+        "policies",
+        "scripts",
+        "packages",
+        "smart-computer-groups",
+        "sites",
+        "buildings",
+        "departments",
+    ]
+
+    /// Fetch jamf-cli snapshots for `profile`, filtered by:
+    ///
+    /// - `tiers` (PR-22 T-9): which tier(s) to fetch. Default is all three
+    ///   (Refresh + Inventory + Scan). Snapshot-only schedule mode (T-10)
+    ///   narrows to `[.refresh]` so only cheap KPI commands run.
+    /// - `skipExpensive` (PR-16): when true, removes the four cold-tier
+    ///   per-device commands regardless of cadence. Settings toggle.
+    /// - Cadence (PR-22 T-8): per-report time-since-last-run check; uses
+    ///   `CadenceResolver.resolve` for policy and `StateFileStore` for the
+    ///   last-success timestamp. State is written on successful save so a
+    ///   crashed/skipped run does not advance the cadence boundary.
+    ///
+    /// Between successful fetches, `pace_seconds` (PR-22 T-11) inserts a
+    /// sleep so on-prem servers don't see a burst of requests. Skipped
+    /// reports don't incur pace — only the actual fetches do.
+    ///
+    /// Log-prefix conventions for skip lines (operators read these in the
+    /// Runs view to understand why a report didn't update):
+    ///
+    /// - `[skip] <kind>: tier <t> not selected` — T-9 tier filter
+    /// - `[skip] <kind>: not due (last: ..., cadence: ...)` — T-8 cadence
+    /// - `[info] skipping per-device commands (...)` — PR-16 skipExpensive
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
+        tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         skipExpensive: Bool = false,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
@@ -838,8 +899,50 @@ struct ReportEngine: Sendable {
             plannedCommands = commands
         }
 
+        // PR-22 T-8/T-9/T-11 setup: cadence config, state store, pace.
+        // All three reduce to no-ops when their config is absent — a fresh
+        // workspace with no collect_cadence: block runs everything daily
+        // (on-prem defaults) without per-report state, matching pre-PR-22.
+        let cadenceConfig = loadedConfig?.collectCadence
+        let presetForPace = cadenceConfig?.preset ?? .onPrem
+        let paceSeconds = cadenceConfig?.paceSeconds ?? presetForPace.paceSeconds
+        let stateStore: StateFileStore? = (try? workspacePaths.stateDir(for: profile))
+            .map(StateFileStore.init(directory:))
+        let collectStart = Date()
+
         let bridge = CLIBridge()
+        var didFetchPrior = false
         for (args, kind) in plannedCommands {
+            // T-9 tier filter: drop kinds outside the selected tier set.
+            // An unmapped kind has no tier and is always allowed — the
+            // tier map is a guidance layer, not a gate.
+            if let tier = CollectionTier.tier(forReport: kind), !tiers.contains(tier) {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[skip] \(kind): tier \(tier.rawValue) not selected"
+                ))
+                continue
+            }
+
+            // T-8 cadence filter: skip when last-run + cadence is in the future.
+            let cadence = CadenceResolver.resolve(report: kind, config: cadenceConfig)
+            let lastRun = stateStore?.lastRun(report: kind)
+            if !CadenceResolver.isDue(lastRun: lastRun, cadence: cadence, now: collectStart) {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[skip] \(kind): not due (last: \(lastRunLabel(lastRun)), cadence: \(cadence.label))"
+                ))
+                continue
+            }
+
+            // T-11 pace_seconds: sleep BETWEEN fetches, not before the first
+            // and not after a skip — skipped kinds don't burden the server,
+            // so a series of skips shouldn't introduce phantom latency.
+            if didFetchPrior && paceSeconds > 0 {
+                try await Task.sleep(for: .seconds(paceSeconds))
+            }
+            didFetchPrior = true
+
             onLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[info] collecting \(kind) for \(profile)"
@@ -851,6 +954,11 @@ struct ReportEngine: Sendable {
             )
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                // T-8: record success so the cadence boundary advances.
+                // Use try? rather than try — a state-write failure should
+                // not undo the snapshot we already wrote. The worst case
+                // is a redundant fetch next cycle, which is recoverable.
+                try? stateStore?.recordRun(report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
             } else if useCachedData {
@@ -1774,5 +1882,25 @@ enum ReportEngineError: Error, LocalizedError {
                 "snapshot+manifest, or set require_manifest: false to bypass."
         }
     }
+}
+
+/// PR-22 T-8: render a `lastRun` Date for the "not due" log line.
+/// `nil` becomes `"never"` so operators reading the run log immediately
+/// see "first fetch was skipped because cadence=never" without needing to
+/// cross-reference the state file. Byte-stable ISO-8601 UTC matches
+/// `StateFileStore`'s on-disk format so logs and files agree literally.
+///
+/// `nonisolated(unsafe)` for the same reason as `StateFileStore.formatter`
+/// — the post-init read methods are reentrant on macOS.
+nonisolated(unsafe) private let collectLogDateFormatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    f.timeZone = TimeZone(secondsFromGMT: 0)
+    return f
+}()
+
+private func lastRunLabel(_ date: Date?) -> String {
+    guard let date else { return "never" }
+    return collectLogDateFormatter.string(from: date)
 }
 

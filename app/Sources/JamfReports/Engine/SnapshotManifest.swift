@@ -158,6 +158,36 @@ enum SnapshotManifest {
         return summary
     }
 
+    /// PR-22 T-14: verify EVERY `.last` file directly inside `dir` against
+    /// its sibling `manifest.json`. Used by AuditView to detect tampering
+    /// of cadence state files — an attacker who rewrites `<report>.last`
+    /// with a future timestamp would otherwise quietly defer fetches.
+    ///
+    /// Returns a zeroed summary when `dir` does not exist (a pre-PR-22
+    /// workspace with no state files is not a failure). Mirrors
+    /// `scanFlatDir`'s structure but filters on `.last` instead of `.json`.
+    static func scanStateDir(_ dir: URL) -> WorkspaceVerificationSummary {
+        var summary = WorkspaceVerificationSummary()
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return summary }
+        let candidates = entries.filter { $0.pathExtension.lowercased() == "last" }
+        for snapshot in candidates {
+            guard let data = try? Data(contentsOf: snapshot) else { continue }
+            switch verify(snapshot: snapshot, data: data) {
+            case .verified: summary.verified += 1
+            case .absent:   summary.absent += 1
+            case .corrupt:  summary.corrupt += 1
+            case .omitted:  summary.omitted += 1
+            case .mismatch: summary.mismatch += 1
+            }
+        }
+        return summary
+    }
+
     private static func newestSnapshot(in typeDir: URL, fm: FileManager) -> URL? {
         guard let entries = try? fm.contentsOfDirectory(
             at: typeDir,
@@ -183,7 +213,16 @@ enum SnapshotManifest {
 
     // MARK: - Manifest payload
 
+    /// Schema version. PR-22 T-14 bumps this from the implicit v1 (Python
+    /// PR-7 + threat-model T-2) to v2 to indicate state-aware manifests
+    /// (Swift-written, may include `<report>.last` entries). Old manifests
+    /// without a `version` field decode as v1.
+    static let currentSchemaVersion = 2
+
     private struct Manifest: Decodable {
+        /// Optional to preserve compat with v1 manifests written by the
+        /// Python collector pre-PR-22. Treat absent ⇒ 1.
+        let version: Int?
         let algorithm: String
         let files: [String: String]
     }

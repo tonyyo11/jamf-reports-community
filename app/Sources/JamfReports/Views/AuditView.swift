@@ -719,10 +719,18 @@ struct AuditView: View {
             return
         }
         let summariesDir = try? WorkspacePaths.summariesDir(for: profile)
+        // PR-22 T-14: also scan <state-dir>/*.last files. The state manifest
+        // is rewritten by StateFileStore on every recordRun, so a tampered
+        // .last surfaces here as .mismatch the same way a tampered snapshot
+        // JSON does.
+        let stateDir = try? WorkspacePaths.stateDir(for: profile)
         let summary = await Task.detached(priority: .userInitiated) {
             var s = SnapshotManifest.scanWorkspace(dataDir: dataDir)
             if let summariesDir {
                 s = s + SnapshotManifest.scanFlatDir(summariesDir)
+            }
+            if let stateDir {
+                s = s + SnapshotManifest.scanStateDir(stateDir)
             }
             return s
         }.value

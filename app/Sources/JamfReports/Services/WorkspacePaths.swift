@@ -79,6 +79,19 @@ enum WorkspacePaths {
         try historicalDir(for: profile).appendingPathComponent("summaries", isDirectory: true)
     }
 
+    /// `<jamf_cli.data_dir>/state` — per-report cadence state files
+    /// (`<report>.last`) written by `StateFileStore` during `collect`.
+    ///
+    /// Co-located with the JSON snapshots on purpose: when an operator
+    /// clears `jamf-cli-data` to force a fresh refresh, the cadence state
+    /// goes with it. Profile-scoped via `data_dir` for multi-tenant use.
+    ///
+    /// PR-22 T-6.
+    static func stateDir(for profile: String) throws -> URL {
+        try dataDir(for: profile)
+            .appendingPathComponent("state", isDirectory: true)
+    }
+
     /// `<workspace>/automation/logs` — the run-history log directory written
     /// by LaunchAgent stdout/stderr redirection.
     ///
