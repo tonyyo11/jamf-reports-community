@@ -209,7 +209,8 @@ enum LaunchAgentService {
             artifacts: runStatus?.artifacts ?? [],
             enabled: enabled,
             launchAgentLabel: label,
-            multiTarget: labelParts.isMulti ? (multiTarget(from: args) ?? MultiTarget(scope: .all)) : nil
+            multiTarget: labelParts.isMulti ? (multiTarget(from: args) ?? MultiTarget(scope: .all)) : nil,
+            tiers: tiers(from: args)
         )
     }
 
@@ -298,6 +299,37 @@ enum LaunchAgentService {
     private static func runMode(from args: [String]) -> Schedule.RunMode? {
         guard let idx = args.firstIndex(of: "--mode"), idx + 1 < args.count else { return nil }
         return Schedule.RunMode(rawValue: args[idx + 1])
+    }
+
+    /// Parse `--tiers <csv>` into a `CollectionTier` set (PR-23 T-19).
+    ///
+    /// Returns `nil` when the flag is absent — pre-PR-23 plists omit it and
+    /// `main.swift` defaults a missing tier set to all tiers.
+    ///
+    /// Unknown tier tokens are dropped with a warning rather than failing
+    /// the parse, so a plist written by a newer build still loads on an
+    /// older one. If *every* token is unknown (corruption, or a cross-
+    /// version rename), the whole flag is treated as absent (`nil` → all
+    /// tiers) rather than yielding an empty set — an empty set would mean
+    /// "collect nothing", and silently halting all collection is the worse
+    /// failure mode.
+    private static func tiers(from args: [String]) -> Set<CollectionTier>? {
+        guard let idx = args.firstIndex(of: "--tiers"), idx + 1 < args.count else {
+            return nil
+        }
+        var result: Set<CollectionTier> = []
+        for token in args[idx + 1].split(separator: ",") {
+            let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if let tier = CollectionTier(rawValue: trimmed) {
+                result.insert(tier)
+            } else {
+                AppLogger.schedule.warning(
+                    "LaunchAgentService.parse: unknown tier '\(trimmed, privacy: .public)' in --tiers; dropped"
+                )
+            }
+        }
+        return result.isEmpty ? nil : result
     }
 
     // MARK: - Cadence / Next Run
