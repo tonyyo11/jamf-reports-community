@@ -7,6 +7,44 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- **Per-report collection cadence — engine layer** (PR-22, macOS app):
+  `ReportEngine.collect` now consults a per-report cadence policy before
+  launching each jamf-cli subprocess, so frequent KPI commands run on a
+  daily schedule while expensive per-device scans run weekly without
+  having to choose between "fetch everything" and "fetch nothing." YAML
+  schema added at top-level `collect_cadence:` with:
+  - `preset: on-prem | cloud | custom` — defaults pinned by
+    `CadencePresetTests`. On-prem defaults are conservative (daily
+    Refresh / weekly Inventory + Scan, 15 s between calls, hard-excludes
+    `update-status` and `update-device-failures` which crash memory-fragile
+    self-hosted Jamf Pro instances). Cloud defaults are twice-daily
+    Refresh / every-2-day Inventory / weekly Scan, no pacing, no hard
+    exclusions. Custom requires explicit per-report entries.
+  - `per_report:` overrides accept the bare-cadence shorthand
+    (`overview: 86400`), the kill-switch (`update-status: never`), or the
+    explicit object form `{tier: refresh, cadence: 43200}`.
+  - `pace_seconds:` overrides the preset's between-call sleep.
+  Scheduled `--mode snapshot-only` runs now narrow to the Refresh tier
+  only — Trends and the Overview KPIs stay fresh without re-fetching
+  every list endpoint each cycle. State files at
+  `<jamf_cli.data_dir>/state/<report>.last` track the last successful
+  fetch per report; tampering surfaces in the audit view via the
+  PR-7 snapshot-manifest scheme (T-14 extends the manifest to cover
+  `.last` files; schema bumped to v2). GUI controls for editing the
+  schema ship in PR-23. Operators with `jamf_cli.collect_skip` from
+  PR-16 see automatic in-memory migration to `per_report: <kind>: never`
+  on load — both keys are read during the transition window so no
+  re-scaffolding is required. The legacy key is still honored; PR-23
+  GUI saves stop emitting it. Full design in
+  `docs/architecture/tiered-collection-adr.md`. 1 589 tests pass with
+  58 new across `CollectionTierTests`, `CadencePresetTests`,
+  `IsDueTests`, `CadenceResolverTests`, `CollectCadenceConfigTests`,
+  `StateFileStoreTests`, `WorkspacePathsStateDirTests`,
+  `CollectFilterCompositionTests`, `CollectSkipMigrationTests`, and
+  `StateFileManifestTests`.
+
 ### Changed
 
 - **Schedule mode semantics tightened — each mode now does exactly one thing** (PR-21, macOS app):
