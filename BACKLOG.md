@@ -481,6 +481,16 @@ work to back those recommendations:
 
 - **CONSIDER — Cross-run manifest re-hash from disk inherits PR-7 attack window.** `jamf-reports-community.py:670-671`. `_rewrite_snapshot_manifest` re-hashes unpinned existing files from disk when rewriting the manifest. Each `_emit_summary_json` (daily) or `_emit_per_log_summary_json` call rewrites the summaries manifest, causing OTHER existing per-log summaries to be re-hashed from disk at that point. An attacker who tampers a per-log summary between two legitimate writes (e.g., between hot-tier runs ≥15 min apart) gets their tampered content blessed into the manifest on the next sibling run — converting a `.mismatch` into `.verified` for that file. Same residual attack pattern as PR-7's `_save_snapshot` and accepted there. Address with a "pin all known files from a per-run-context cache" approach OR document as accepted residual in the threat model. Inherited from PR-7.
 
+### From post-PR-21 architecture review (2026-05-18)
+
+Items surfaced while answering "does the Swift app replicate the tiered
+collection pattern from the Python/zsh reference deployment?" Design
+work captured in `docs/architecture/tiered-collection-adr.md`.
+
+- **FEATURE (PR-22 + PR-23) — Per-report collection cadence with screen-driven defaults.** `app/Sources/JamfReports/Engine/ReportEngine.swift:745+` runs the full jamf-cli command set on every `collect` invocation (20+ commands, no pacing, no per-report gating). The reference `collect.zsh` deployment uses per-report state files (`<report>.last`) to fetch `overview`/`policy-status` daily, `security`/`patch-status`/`app-status` weekly, and `policy-status --scan-failures` biweekly — with `update-status` and `profile-status` hard-excluded for on-prem load. No Swift equivalent exists. Today's only relevant knob is `jamf_cli.collect_skip` (PR-16, binary skip yes/no, global). See ADR for the three-tier design (Refresh / Inventory / Scan), preset model (on-prem / cloud / custom), `snapshot-only` narrowing to Refresh tier, and proposed phasing (engine in PR-22, GUI in PR-23).
+- **DECISION required (PR-23) — `TieredLaunchAgentWriter` is dead code.** `app/Sources/JamfReports/Services/TieredLaunchAgentWriter.swift`. Zero callers in any View. The `ScheduleTier.hot/warm/cold` model it encodes (per-cadence-tier, all commands per tier) is the wrong shape for the per-report cadence model proposed in ADR-PR-22. Recommended: delete in PR-23 alongside the new tier-name introduction, per CLAUDE.md "Replace, don't deprecate." Flagged here so it doesn't silently survive a fresh review pass.
+- **CONSIDER (closed by PR-22) — `snapshot-only` currently runs the full collect (20+ commands), making it expensive on on-prem fleets despite the mode's "Refresh data only" framing.** PR-20 emits the Trends summary at end of collect; PR-21 narrowed the mode contract but left the command set intact. PR-22 narrows `snapshot-only` to the Refresh tier (~5 commands) so it becomes safe to run hourly on on-prem profiles. Surfaced because users may already be feeling the pain post-PR-20 (snapshot-only now actually feeds Trends, but each run is still heavy on the per-report total).
+
 ---
 
 ## Process
