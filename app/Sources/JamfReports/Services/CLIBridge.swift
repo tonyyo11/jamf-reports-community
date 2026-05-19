@@ -463,7 +463,17 @@ final class CLIBridge {
         }
     }
 
-    func collect(profile: String, onLine: @Sendable @escaping (LogLine) -> Void) async -> Int32 {
+    /// Run a jamf-cli collect for `profile`.
+    ///
+    /// `tiers` (PR-23 T-16) narrows which `CollectionTier`s are fetched.
+    /// Defaults to all three — the GUI manual-refresh path wants everything
+    /// that's due. `RefreshCoordinator` passes `[.refresh]` for its
+    /// profile-switch backfill so it doesn't pull every list endpoint.
+    func collect(
+        profile: String,
+        tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
@@ -477,6 +487,7 @@ final class CLIBridge {
             try await ReportEngine.collect(
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
+                tiers: tiers,
                 skipExpensive: skipExpensive,
                 onLine: onLine
             )

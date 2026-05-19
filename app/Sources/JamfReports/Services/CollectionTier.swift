@@ -126,6 +126,33 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         Array(tierMap.keys)
     }
 
+    // MARK: - RefreshCoordinator support (PR-23 T-16)
+
+    /// On-prem default cadence in seconds — the canonical reference for
+    /// `RefreshPolicy`'s backoff math (`interval × 2^failures`).
+    ///
+    /// On-prem is chosen deliberately: it's the conservative preset, so a
+    /// backoff interval derived from it never under-waits on a struggling
+    /// self-hosted server. The actual staleness check is preset-aware
+    /// (`RefreshCoordinator.isDataStale` reads the live config) — this
+    /// value is only the fixed denominator for backoff exponentiation,
+    /// which must not shift under the operator mid-session.
+    var intervalSeconds: Int {
+        CadencePreset.onPrem.defaultCadence(for: self) ?? 86_400
+    }
+
+    /// Snapshot directory name `RefreshCoordinator` probes for staleness.
+    /// Must be a kind `ReportEngine.collect` actually writes so the mtime
+    /// probe finds real files. Each is the cheapest always-present
+    /// indicator for its tier.
+    var stalenessProbeKind: String {
+        switch self {
+        case .refresh:   return "overview"
+        case .inventory: return "computers"
+        case .scan:      return "ea-results"
+        }
+    }
+
     // MARK: - Tier assignments
 
     /// Frozen tier assignments. New jamf-cli commands added to

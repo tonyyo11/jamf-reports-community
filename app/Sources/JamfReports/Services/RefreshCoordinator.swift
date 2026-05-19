@@ -3,13 +3,20 @@ import Foundation
 /// Coordinates per-profile, per-tier snapshot refreshes.
 ///
 /// Checks snapshot staleness on the filesystem (mtime of the newest file in
-/// `jamf-cli-data/<tier-kind>/`) and triggers `CLIBridge.collect` when the
-/// data is older than `RefreshPolicy.stalenessThreshold`. Coalesces concurrent
-/// requests so a `.hot` refresh already in flight is never double-queued.
+/// `jamf-cli-data/<tier-probe-kind>/`) and triggers a `.refresh`-tier collect
+/// when the data is older than the active preset's cadence × 1.5 (ADR Q1).
+/// Coalesces concurrent requests so a `.refresh` already in flight is never
+/// double-queued.
+///
+/// PR-23 T-16 retargeted this from the legacy `ScheduleTier` (`hot`/`warm`/
+/// `cold`) to `CollectionTier` (`refresh`/`inventory`/`scan`). Only `.refresh`
+/// is wired today — it's the cheap, frequent tier that feeds the Overview
+/// KPIs. `.inventory`/`.scan` requests log and no-op; they'd slot into the
+/// same machinery if a future "catch up" affordance needs them.
 ///
 /// `observeProfileSwitch` is the entry point for the sidebar profile chip:
-/// switching profiles triggers a debounced `.hot` check so the Overview screen
-/// loads fresh data promptly without hammering the server.
+/// switching profiles triggers a debounced `.refresh` check so the Overview
+/// screen loads fresh data promptly without hammering the server.
 @MainActor
 @Observable
 final class RefreshCoordinator {
@@ -28,13 +35,13 @@ final class RefreshCoordinator {
     /// In-flight refresh tasks per profile+tier. Used for coalescing.
     private var activeTasks: [TierKey: Task<Void, Never>] = [:]
 
-    /// Debounce task for profile-switch hot refresh.
+    /// Debounce task for profile-switch refresh.
     private var profileSwitchDebounce: Task<Void, Never>?
 
-    /// Last successful snapshot-retention sweep per profile. The cold-tier
+    /// Last successful snapshot-retention sweep per profile. The `.refresh`
     /// completion path triggers a sweep only when 24 h have elapsed since the
-    /// previous one — without this guard, a noisy environment that runs
-    /// `.cold` more than once a day would re-sweep on every successful refresh.
+    /// previous one — without this guard, a noisy environment that refreshes
+    /// many times a day would re-sweep on every successful refresh.
     private var lastRetentionSweep: [String: Date] = [:]
 
     /// Minimum gap between automatic retention sweeps for a given profile.
@@ -56,11 +63,18 @@ final class RefreshCoordinator {
     ///
     /// No-ops when:
     /// - Profile is invalid.
+    /// - `tier` is not `.refresh` (only the refresh tier is wired — see type doc).
     /// - A refresh for this profile+tier is already in progress.
     /// - Backoff is active due to consecutive failures.
     /// - Data is fresh (newest snapshot mtime is within the staleness threshold).
-    func refreshIfStale(profile: String, tier: ScheduleTier) {
+    func refreshIfStale(profile: String, tier: CollectionTier) {
         guard ProfileService.isValid(profile) else { return }
+        guard tier == .refresh else {
+            AppLogger.engine.info(
+                "RefreshCoordinator: tier \(tier.rawValue, privacy: .public) not wired; only .refresh is handled"
+            )
+            return
+        }
         let key = TierKey(profile: profile, tier: tier)
 
         // Coalesce: don't queue the same tier twice.
@@ -83,8 +97,8 @@ final class RefreshCoordinator {
     /// Called by the sidebar chip when the active profile changes.
     ///
     /// Debounces 500 ms so rapid profile switches don't spawn many concurrent
-    /// `.hot` refreshes — a common pattern when the user cycles through profiles
-    /// while looking for the right one.
+    /// `.refresh` refreshes — a common pattern when the user cycles through
+    /// profiles while looking for the right one.
     func observeProfileSwitch(_ newProfile: String) {
         profileSwitchDebounce?.cancel()
         profileSwitchDebounce = Task { [weak self] in
@@ -94,19 +108,19 @@ final class RefreshCoordinator {
             } catch {
                 return
             }
-            self.refreshIfStale(profile: newProfile, tier: .hot)
+            self.refreshIfStale(profile: newProfile, tier: .refresh)
         }
     }
 
     // MARK: - Status accessors
 
     /// True when a refresh is currently running for `profile` and `tier`.
-    func isRefreshing(profile: String, tier: ScheduleTier) -> Bool {
+    func isRefreshing(profile: String, tier: CollectionTier) -> Bool {
         activeTasks[TierKey(profile: profile, tier: tier)] != nil
     }
 
     /// Current consecutive failure count for `profile` and `tier`.
-    func failureCount(profile: String, tier: ScheduleTier) -> Int {
+    func failureCount(profile: String, tier: CollectionTier) -> Int {
         failureCounts[TierKey(profile: profile, tier: tier), default: 0]
     }
 
@@ -114,7 +128,7 @@ final class RefreshCoordinator {
 
     private func performRefresh(
         profile: String,
-        tier: ScheduleTier,
+        tier: CollectionTier,
         key: TierKey
     ) async {
         defer { activeTasks.removeValue(forKey: key) }
@@ -125,12 +139,21 @@ final class RefreshCoordinator {
 
         lastAttempts[key] = Date()
 
-        let exitCode = await bridge.collect(profile: profile, onLine: { _ in })
+        // Backfill only the requested tier — a profile-switch refresh should
+        // not pull every list endpoint and per-device scan (PR-22 T-9 tier set).
+        let exitCode = await bridge.collect(
+            profile: profile, tiers: [tier], onLine: { _ in }
+        )
 
         if exitCode == 0 {
             failureCounts[key] = 0
             lastSuccessfulRefresh[profile] = Date()
-            if tier == .cold {
+            // Retention sweep was historically gated on the `.cold` tier,
+            // which `RefreshCoordinator` never actually drove — so it never
+            // ran. PR-23 T-16 moves it to the `.refresh` success path. The
+            // tier is just the trigger; the 24 h cooldown is the real rate
+            // limit, so firing on `.refresh` does not over-sweep.
+            if tier == .refresh {
                 runRetentionSweepIfDue(profile: profile)
             }
         } else {
@@ -143,7 +166,7 @@ final class RefreshCoordinator {
     }
 
     /// Sweep `<profile>/jamf-cli-data/*` if the per-profile cooldown has elapsed.
-    /// No-ops on the same day to keep the cold-tier hot-path cheap.
+    /// No-ops within 24 h of the previous sweep to keep the hot path cheap.
     private func runRetentionSweepIfDue(profile: String) {
         let now = Date()
         if let last = lastRetentionSweep[profile],
@@ -161,32 +184,80 @@ final class RefreshCoordinator {
     }
 
     /// Returns `true` when the newest snapshot for `tier` is older than the
-    /// policy's staleness threshold, or when no snapshot exists at all.
-    private func isDataStale(profile: String, tier: ScheduleTier) async -> Bool {
-        let threshold = policy.stalenessThreshold(for: tier)
+    /// staleness threshold, or when no snapshot exists at all.
+    ///
+    /// The threshold is preset-aware (ADR Q1): the active preset's resolved
+    /// cadence for the tier's probe kind × 1.5. A `.never` cadence means the
+    /// report is intentionally not collected — never "stale", so no backfill.
+    /// Falls back to `RefreshPolicy.stalenessThreshold` when `config.yaml`
+    /// can't be read.
+    private func isDataStale(profile: String, tier: CollectionTier) async -> Bool {
+        let fallback = policy.stalenessThreshold(for: tier)
         return await Task.detached(priority: .utility) {
             guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return true }
 
-            let dir = dataDir.appendingPathComponent(tier.stalenessProbeKind, isDirectory: true)
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ) else {
-                return true
-            }
-
-            let newest = entries
-                .filter { $0.pathExtension == "json" }
-                .compactMap {
-                    (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
-                        .contentModificationDate
+            switch Self.resolvedStalenessThreshold(profile: profile, tier: tier, fallback: fallback) {
+            case .none:
+                // Probe kind resolves to cadence .never — not collected, not stale.
+                return false
+            case .some(let threshold):
+                let dir = dataDir.appendingPathComponent(
+                    tier.stalenessProbeKind, isDirectory: true
+                )
+                guard let entries = try? FileManager.default.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: [.contentModificationDateKey],
+                    options: [.skipsHiddenFiles]
+                ) else {
+                    return true
                 }
-                .max()
 
-            guard let newest else { return true }
-            return Date().timeIntervalSince(newest) >= threshold
+                let newest = entries
+                    .filter { $0.pathExtension == "json" }
+                    .compactMap {
+                        (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
+                            .contentModificationDate
+                    }
+                    .max()
+
+                guard let newest else { return true }
+                return Date().timeIntervalSince(newest) >= threshold
+            }
         }.value
+    }
+
+    /// Resolve the preset-aware staleness threshold for `tier`.
+    ///
+    /// Returns `nil` when the tier's probe kind resolves to cadence `.never`
+    /// (intentionally not collected — never triggers a backfill). Otherwise
+    /// returns the resolved cadence × 1.5. Falls back to `fallback` when the
+    /// config can't be read.
+    ///
+    /// `nonisolated` so the `Task.detached` staleness probe can call it off
+    /// the main actor — it only touches the filesystem and pure resolvers,
+    /// no `RefreshCoordinator` state.
+    nonisolated private static func resolvedStalenessThreshold(
+        profile: String,
+        tier: CollectionTier,
+        fallback: TimeInterval
+    ) -> TimeInterval? {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            return fallback
+        }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: configURL.path),
+              let config = try? ConfigLoader.load(from: configURL) else {
+            return fallback
+        }
+        let cadence = CadenceResolver.resolve(
+            report: tier.stalenessProbeKind, config: config.collectCadence
+        )
+        switch cadence {
+        case .never:
+            return nil
+        case .seconds(let n):
+            return TimeInterval(n) * 1.5
+        }
     }
 }
 
@@ -195,5 +266,5 @@ final class RefreshCoordinator {
 /// Hashable key for profile + tier combinations used in dictionaries.
 private struct TierKey: Hashable {
     let profile: String
-    let tier: ScheduleTier
+    let tier: CollectionTier
 }
