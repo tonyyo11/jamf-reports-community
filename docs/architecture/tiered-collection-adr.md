@@ -98,14 +98,23 @@ Each report belongs to exactly one tier.
 
 | Tier | Purpose | Default cadence | Reports (initial set) |
 |------|---------|------------------|------------------------|
-| **Refresh** | Overview KPIs + Trends summary stay current | every 1 h (cloud) / 4 h (on-prem) | `overview`, `security`, `inventory-summary`, `patch-status` (summary only), `policy-status` |
-| **Inventory** | Deep Dive screens (Policies, Profiles, Apps, Mobile) stay current | daily | `app-status`, `classic-macos-profiles`, `classic-ios-profiles`, `mobile-devices-list`, `computers`, `policies`, `scripts`, `packages`, `smart-computer-groups`, `categories`, `sites`, `buildings`, `departments`, `computer-extension-attributes`, `software-installs` |
-| **Scan** | Full per-device accuracy: Risk Score, Compliance Bands, Patch Failures, Update Failures | weekly | `ea-results --all`, `device-compliance`, `patch-status --scan-failures`, `update-status --scan-failures`, `profile-status`, `mobile-device-inventory-details` |
+| **Refresh** | Overview KPIs + Trends summary stay current | daily (on-prem) / twice daily (cloud) | `overview`, `security`, `inventory-summary`, `patch-status` (summary only), `policy-status` |
+| **Inventory** | Deep Dive screens (Policies, Profiles, Apps, Mobile) stay current | weekly (on-prem) / every 2-3 days (cloud) | `app-status`, `classic-macos-profiles`, `classic-ios-profiles`, `mobile-devices-list`, `computers`, `policies`, `scripts`, `packages`, `smart-computer-groups`, `categories`, `sites`, `buildings`, `departments`, `computer-extension-attributes`, `software-installs` |
+| **Scan** | Full per-device accuracy: Risk Score, Compliance Bands, Patch Failures, Update Failures | weekly (both presets) | `ea-results --all`, `device-compliance`, `patch-status --scan-failures`, `update-status --scan-failures`, `profile-status`, `mobile-device-inventory-details` |
+
+**Cadence philosophy** — Snapshots are persistent, timestamped files on
+disk. Even with rotation (newest 30 per directory), hourly snapshots
+generate substantial file churn for limited information value. The
+Overview screen is a management/admin surface, not a real-time NOC
+display. Daily is sufficient for almost every administrative use case;
+twice-daily (e.g., 6 AM + 6 PM) is the most aggressive sensible default.
+Power users who want more frequent refreshes can configure Custom or use
+the in-app `RefreshCoordinator` to backfill on app open.
 
 Three tiers, not four, because:
-- Two is too few (everything is either "all the time" or "weekly" —
-  doesn't reflect that the Overview screen wants hourly summaries but
-  the Patch Failures table is fine weekly).
+- Two is too few (everything is either "Overview-fresh" or "weekly" —
+  doesn't reflect that Deep Dives benefit from updates between
+  expensive `--scan-failures` runs).
 - Four (the user's collect.zsh has overview-only / daily / weekly /
   biweekly) over-specifies for a GUI surface. Biweekly is a special
   case of weekly with extra gating; we collapse it into weekly and
@@ -117,8 +126,11 @@ Three tiers, not four, because:
 emits the summary. Slow on on-prem; overkill for the mode's intent.
 
 **PR-22:** `snapshot-only` runs ONLY the Refresh tier (5-6 commands)
-plus emits the summary. Fast, safe to run hourly, keeps the Overview
-and Trends current without touching expensive per-device endpoints.
+plus emits the summary. Fast, safe to run once or twice daily, keeps the
+Overview and Trends current without touching expensive per-device
+endpoints. Even with the narrowing, the local-file footprint is real
+(each run produces N timestamped JSONs); rotation keeps the newest 30
+per directory.
 
 This is the answer to "should snapshot-only get extended a little to
 keep Overview fresh?" — it already runs *too much*; the right move is
@@ -155,9 +167,16 @@ In Settings → Performance (new pane), three presets:
 
 | Preset | Refresh cadence | Inventory | Scan | Pacing | Hard exclusions |
 |--------|------------------|-----------|------|--------|------------------|
-| **On-prem (conservative)** | 4 h | daily | weekly | 15 s | `update-status`, `update-device-failures` |
-| **Cloud (aggressive)** | 1 h | every 12 h | every 3 days | 0 s | none |
+| **On-prem (conservative)** | daily | weekly | weekly | 15 s | `update-status`, `update-device-failures` |
+| **Cloud (default)** | twice daily | every 2-3 days | weekly | 0 s | none |
 | **Custom** | — | — | — | — | — (exposes raw per-report table) |
+
+Neither preset goes more frequent than twice daily for Refresh. Local-file
+churn and Jamf server load both favor conservative defaults; users who need
+fresher data have two cheap options: (1) trigger a manual snapshot-only run
+from the Schedules form's "Run now" button, or (2) switch the profile to
+Custom and lower the Refresh cadence explicitly. The defaults are picked so
+a user who never opens Settings still gets sensible behavior.
 
 The preset is per-profile (a single workspace may have one cloud and
 one on-prem profile). First-launch onboarding prompts the user to pick
@@ -199,9 +218,9 @@ collect_cadence:
   pace_seconds: 15           # honored regardless of preset
   per_report:                # only populated for custom + overrides
     update-status: never     # the "kill switch"
-    overview: { tier: refresh, cadence: 3600 }
-    security: { tier: refresh, cadence: 7200 }
-    patch-device-failures: { tier: scan, cadence: 604800 }
+    overview: { tier: refresh, cadence: 43200 }   # 12 h
+    security: { tier: refresh, cadence: 86400 }   # 24 h
+    patch-device-failures: { tier: scan, cadence: 604800 }  # 7 d
 ```
 
 For `preset: on-prem | cloud`, the engine resolves cadences from the
