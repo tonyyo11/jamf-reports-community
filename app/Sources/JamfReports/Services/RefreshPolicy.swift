@@ -3,12 +3,11 @@ import Foundation
 /// Per-tier staleness thresholds, failure backoff constants, and derived timing
 /// helpers for `RefreshCoordinator`.
 ///
-/// All time values are in seconds. PR-23 T-16 retargeted this from the legacy
-/// `ScheduleTier` to `CollectionTier`. `RefreshCoordinator` only ever drives
-/// the `.refresh` tier today (profile-switch + app-foreground backfill), so
-/// the maps are populated for `.refresh` only — `.inventory`/`.scan` fall
-/// through to the keyless defaults rather than carrying ghost entries nothing
-/// reads.
+/// All time values are in seconds. Keyed on `CollectionTier`.
+/// `RefreshCoordinator` only ever drives the `.refresh` tier today
+/// (profile-switch + app-foreground backfill), so the maps are populated for
+/// `.refresh` only — `.inventory`/`.scan` fall through to the keyless
+/// defaults rather than carrying ghost entries nothing reads.
 struct RefreshPolicy: Sendable {
 
     // MARK: - Per-tier thresholds

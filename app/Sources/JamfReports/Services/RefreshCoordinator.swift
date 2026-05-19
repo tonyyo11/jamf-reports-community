@@ -8,11 +8,10 @@ import Foundation
 /// Coalesces concurrent requests so a `.refresh` already in flight is never
 /// double-queued.
 ///
-/// PR-23 T-16 retargeted this from the legacy `ScheduleTier` (`hot`/`warm`/
-/// `cold`) to `CollectionTier` (`refresh`/`inventory`/`scan`). Only `.refresh`
-/// is wired today — it's the cheap, frequent tier that feeds the Overview
-/// KPIs. `.inventory`/`.scan` requests log and no-op; they'd slot into the
-/// same machinery if a future "catch up" affordance needs them.
+/// Keyed on `CollectionTier`. Only `.refresh` is wired today — it's the
+/// cheap, frequent tier that feeds the Overview KPIs. `.inventory`/`.scan`
+/// requests log and no-op; they'd slot into the same machinery if a future
+/// "catch up" affordance needs them.
 ///
 /// `observeProfileSwitch` is the entry point for the sidebar profile chip:
 /// switching profiles triggers a debounced `.refresh` check so the Overview

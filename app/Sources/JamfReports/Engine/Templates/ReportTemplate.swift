@@ -93,7 +93,8 @@ enum PaginationStrategy: String, Sendable {
 /// populate a template. The engine team can use this to warn users when required
 /// snapshots are stale or absent.
 ///
-/// Distinct from `ScheduleTier` (Services layer), which describes scheduling cadence.
+/// Distinct from `CollectionTier` (Services layer), which describes per-report
+/// collection cadence.
 enum TemplateDataTier: String, Sendable {
     /// Requires only the core jamf-cli pro collect set (security, patch, inventory).
     case core        = "core"

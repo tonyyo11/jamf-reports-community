@@ -2,8 +2,7 @@ import Foundation
 import XCTest
 @testable import JamfReports
 
-/// PR-23 T-16: `RefreshPolicy` + `RefreshCoordinator` retargeted from the
-/// legacy `ScheduleTier` (`hot`/`warm`/`cold`) to `CollectionTier`
+/// `RefreshPolicy` + `RefreshCoordinator` are keyed on `CollectionTier`
 /// (`refresh`/`inventory`/`scan`). Only `.refresh` is populated in the
 /// default policy — it's the sole tier the coordinator drives.
 final class RefreshCoordinatorTests: XCTestCase {
@@ -166,37 +165,6 @@ final class RefreshCoordinatorTests: XCTestCase {
             XCTAssertTrue(
                 ReportEngine.knownCollectKinds.contains(tier.stalenessProbeKind),
                 "\(tier.rawValue) probe kind '\(tier.stalenessProbeKind)' must be a real collect kind"
-            )
-        }
-    }
-
-    // MARK: - Label format for tiered agents
-    //
-    // PR-23 T-15 deletes `TieredLaunchAgentWriter` (no production caller).
-    // These tests retire with it. They use the legacy `ScheduleTier`, which
-    // still exists at T-16 and is removed in the same T-15 commit.
-
-    func testTieredLabelFormat() {
-        let label = TieredLaunchAgentWriter.label(for: "acme", tier: .hot)
-        XCTAssertEqual(label, "com.github.tonyyo11.jamf-reports-community.acme.hot")
-    }
-
-    func testTieredLabelWarmFormat() {
-        let label = TieredLaunchAgentWriter.label(for: "cbp-prod", tier: .warm)
-        XCTAssertEqual(label, "com.github.tonyyo11.jamf-reports-community.cbp-prod.warm")
-    }
-
-    func testTieredLabelColdFormat() {
-        let label = TieredLaunchAgentWriter.label(for: "test01", tier: .cold)
-        XCTAssertEqual(label, "com.github.tonyyo11.jamf-reports-community.test01.cold")
-    }
-
-    func testTieredLabelPrefixMatchesLaunchAgentWriter() {
-        for tier in ScheduleTier.allCases {
-            let label = TieredLaunchAgentWriter.label(for: "dummy", tier: tier)
-            XCTAssertTrue(
-                label.hasPrefix(LaunchAgentWriter.labelPrefix + "."),
-                "Tier label must share the same prefix: \(label)"
             )
         }
     }
