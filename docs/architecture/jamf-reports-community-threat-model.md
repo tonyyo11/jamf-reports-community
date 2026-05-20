@@ -4,6 +4,7 @@ Repository: `jamf-reports-community` (Python CLI + native macOS Swift app)
 Original model: 2026-05-12
 Refreshed: 2026-05-17 (post PR-1..PR-9 backlog-burndown sequence)
 Refreshed: 2026-05-20 (post PR-16..PR-26 — tiered collection, xlsx-corruption fix, Patch CSV export)
+Refreshed: 2026-05-20 (v2.0.0 release prep — §7/§9 reconciled: T-11/T-12/T-13 confirmed closed by PR-10/11/12; diagnostic-bundle PII redaction hardened)
 Scope basis: full repo (`app/`, `jamf-reports-community.py`, CI workflows, scripts)
 
 ---
@@ -294,38 +295,52 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 ### T-11. Snapshot manifest absence treated as silent pass (NEW, defense evasion)
 - **Goal:** Bypass PR-7's SHA-256 integrity control by deleting the manifest itself.
 - **Path:** A1 modifies a snapshot AND deletes the matching `manifest.json` entry (or the whole file). Swift `SnapshotManifest.verify` returns silently when manifest is absent/unparseable; Python `_verify_snapshot_against_manifest` warns to stderr only. The comment at `SnapshotManifest.swift:11-16` documents this as intentional ("partial-collect crashes look the same as tampering") — but the resolution should be a UI warning, not silence.
-- **Existing mitigations:** None UI-surfaced; warning only in logs.
-- **Likelihood:** Medium (assumes A1 plus 2 file operations vs 1).
+- **Existing mitigations:** **Closed by PR-10.** `jamf_cli.require_manifest: true`
+  (and the "Require snapshot manifest" toggle in Configuration → jamf-cli Cache)
+  hard-fails on missing or unparseable manifests — equivalent to passing
+  `--strict-manifest` on every invocation. AuditView surfaces an "Unverified
+  snapshot" warning card listing the count and breakdown of unverified snapshot
+  directories regardless of the config setting, so manifest absence is visible
+  rather than a silent pass.
+- **Likelihood:** Low (manifest absence is now surfaced, not silent).
 - **Impact:** Defeats T-2 control. Medium.
-- **Priority: HIGH** (largest residual security gap; direct evasion of a control just shipped).
-- **Recommended mitigations:**
-  - Surface "Unverified snapshot" pill on affected dashboards' data-source line.
-  - Add `jamf_cli.require_manifest: true` config gate that forces `--strict-manifest` by default for new workspaces.
-  - Cost: ~30 lines + 1 view change.
+- **Priority: LOW — CLOSED by PR-10** (was HIGH).
+- **Residual:** A workspace that never enables `require_manifest` still renders
+  tampered data, but the AuditView card makes the unverified state visible — the
+  silent-pass evasion is closed.
 
 ### T-12. `summary.json` outside manifest coverage; authoritative for PR-8 PARTIAL pill (NEW)
 - **Goal:** Flip a `.partial` run status to `.ok` in the UI by editing one untrusted file.
 - **Path:** PR-8's `RunHistoryService.isPartialRun` reads `<workspace>/snapshots/computers/summaries/summary_<ts>.json` and trusts `status` field verbatim. The summaries directory is structurally outside `_rewrite_snapshot_manifest`'s scope (manifest writer is only ever called inside `JamfCLIBridge._save_snapshot` against `jamf-cli-data/`). A1 edits `"status": "partial"` → `"status": "ok"`; UI silently downgrades from yellow pill to green checkmark.
-- **Existing mitigations:** None.
-- **Likelihood:** Medium (one-file edit).
-- **Impact:** Undermines a UI control PR-8 just added. Low–Medium.
-- **Priority: MEDIUM.**
-- **Recommended mitigations:**
-  - Extend `_rewrite_snapshot_manifest` to cover `snapshots/computers/summaries/`.
-  - Add Swift `SnapshotManifest.verify(...)` call inside `isPartialRun` + `checkSummaryFileForPartialStatus` before trusting `status`.
-  - Cost: ~40 lines + 1 test. Also closes BACKLOG MEDIUM-3 dead-code documentation by giving the dormant branch a real producer.
+- **Existing mitigations:** **Closed by PR-11.** `cmd_generate` invoked from
+  `cmd_launchagent_run` emits a per-log `summary_<log>.json` with a sibling
+  `manifest.json`; daily `summary_<date>.json` writes also produce a manifest.
+  `RunHistoryService.isPartialRun` and
+  `LaunchAgentService.checkSummaryFileForPartialStatus` verify the file's
+  SHA-256 against the manifest before trusting `status` — a tampered or corrupt
+  summary falls back to the `[partial]` log-marker scan rather than silently
+  misreporting the pill.
+- **Likelihood:** Low (a forged `status` fails manifest verification).
+- **Impact:** Undermines a UI control PR-8 added. Low–Medium.
+- **Priority: LOW — CLOSED by PR-11** (was MEDIUM). Also resolved BACKLOG
+  MEDIUM-3 by giving the dormant Swift branch a real producer.
 
 ### T-13. Generated Reports (XLSX/HTML) have no integrity envelope (NEW)
 - **Goal:** Tamper with a leadership-bound report between generation and recipient open.
 - **Path:** No code execution required — `open -e report.html`, change "FileVault: 100%" to "FileVault: 60%", save, send. Or modify a row in the XLSX. The generation pipeline produces no signature, no embedded hash, no sidecar.
-- **Existing mitigations:** Filesystem permissions only (0600 on writer mtime).
-- **Likelihood:** Medium (low skill required; insider attacker plausible).
+- **Existing mitigations:** **Closed by PR-12.** Every generated `.xlsx` ships a
+  `<basename>.xlsx.sha256` sidecar in `shasum -a 256 -c` format; generated HTML
+  embeds a `<meta name="report-sha256">` tag plus a visible source-fingerprint
+  footer with the verification procedure. The app's "Report ready" toast and the
+  Generate sheet's completion banner surface the digest. Python and Swift
+  emitters produce identical envelope structure.
+- **Likelihood:** Low (recipients can verify; tamper is detectable).
 - **Impact:** Medium (cross-trust-boundary: recipient acts on tampered data).
-- **Priority: MEDIUM.**
-- **Recommended mitigations:**
-  - Embed `<meta name="report-sha256" content="...">` in HTML head plus a visible "Verify: shasum -a 256 <file>" footer line. Recipient who cares can compare; raises tamper cost.
-  - Write a side-car `.sha256` file alongside each XLSX; surface the hash in the UI "Report ready" toast.
-  - Cost: ~25 lines.
+- **Priority: LOW — CLOSED by PR-12** (was MEDIUM).
+- **Residual:** The sidecar / meta tag is an integrity *hint*, not a signature —
+  an attacker who controls both the report and its sidecar can rewrite both. It
+  raises tamper cost and gives a careful recipient a check; it is not a
+  cryptographic guarantee.
 
 ### T-14. Codesign-gate stat/exec TOCTOU (NEW, accepted)
 - **Goal:** Swap a verified binary between codesign check and exec.
@@ -359,24 +374,26 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 
 ## 7. Priority Summary (current state)
 
+Open threats first, then those closed by PR-10..PR-12.
+
 | Threat | Priority | Notes |
 |---|---|---|
-| **T-11** Manifest absence silent pass | **HIGH** | Largest residual gap; defeats PR-7's headline control with one extra file op |
-| **T-12** summary.json outside manifest | **MEDIUM** | Undermines PR-8 PARTIAL pill; ~40 line fix |
-| **T-13** Generated Reports no integrity envelope | **MEDIUM** | Recipient-side tamper vector; ~25 line fix |
-| T-9 Supply-chain (Python runtime / deps) | LOW–MEDIUM | Hash-pinned in PR-7; CODEOWNERS + pip-audit gap |
-| T-2 Tampered cached JSON | LOW–MEDIUM | Manifest-covered post PR-7; T-11 is the residual |
-| T-3 HTML XSS in shared report | LOW–MEDIUM | Sanitization tests in PR-5; CSP still recommended |
+| T-9 Supply-chain (Python runtime / deps) | LOW–MEDIUM | Hash-pinned in PR-7; CODEOWNERS + pip-audit gap — top open item, see §9 |
+| T-3 HTML XSS in shared report | LOW–MEDIUM | Sanitization tests in PR-5; meta CSP still recommended |
 | T-4 XLSX formula injection | LOW–MEDIUM | Tested on Python side (PR-5); Swift side untested |
 | T-8 Exit-code silent fallback | LOW–MEDIUM | Stale banner + PARTIAL pill close UI surface; PR-9 closed bridge-path N-20 |
+| T-2 Tampered cached JSON | LOW–MEDIUM | Manifest-covered post PR-7; T-11 closure removed the silent-pass residual |
 | T-1 Secret exfil via shim/upstream | LOW | All 7 spawn sites codesign-gated (PR-2 + PR-6 + PR-9) |
 | T-5 Symlink/traversal | LOW | Trailing-`/` enforced; PR-8 MigrationBanner verified clean |
 | T-6 LaunchAgent takeover | LOW | T-6a still residual; T-6b structurally closed |
-| T-7 Secret leakage via logs | LOW | 10-pattern LogRedactor Python ↔ Swift parity (PR-A + PR-7 + PR-9) |
+| T-7 Secret + PII leakage via logs/bundle | LOW | 10-pattern LogRedactor Python ↔ Swift parity; diagnostic-bundle PII redaction hardened (username paths, seed-from-cache device names, extended PII keys) |
 | T-10 YAML parser abuse | LOW | `safe_load` only |
 | T-14 Codesign TOCTOU | LOW (ACCEPTED) | Foundation-API limited |
 | T-15 mtime-forged stale banner | LOW | BACKLOG |
-| T-21 Tiered-collection state-file skip | LOW | Manifest v2 covers `state/*.last`; residual = T-11 |
+| T-21 Tiered-collection state-file skip | LOW | Manifest v2 covers `state/*.last` |
+| **T-11** Manifest absence silent pass | **CLOSED (PR-10)** | `require_manifest` gate + AuditView "Unverified snapshot" card |
+| **T-12** summary.json outside manifest | **CLOSED (PR-11)** | Per-log + daily summary manifests; SHA-256 verified before trusting `status` |
+| **T-13** Generated Reports no integrity envelope | **CLOSED (PR-12)** | `.xlsx.sha256` sidecar + HTML `report-sha256` meta tag |
 
 ---
 
@@ -400,13 +417,30 @@ Material assumptions still in effect:
 
 ## 9. Highest-Value Next Actions (current state)
 
-If only three things are done from this report, do these:
+The 2026-05-17 top three — T-11, T-12, T-13 — are all **closed** (PR-10, PR-11,
+PR-12 respectively; see those sections). With the integrity-control gaps shut
+and a public release imminent, the highest-value remaining actions are:
 
-1. **Close T-11 (manifest absence silent pass).** Surface "Unverified snapshot" warning in the Sources / AuditView; add `jamf_cli.require_manifest: true` config gate feeding `--strict-manifest` by default. ~30 lines + 1 view change. The single highest-leverage gap remaining.
-2. **Close T-12 (summary.json under manifest coverage).** Extend `_rewrite_snapshot_manifest` to cover `snapshots/computers/summaries/`; verify in `isPartialRun` + `checkSummaryFileForPartialStatus`. ~40 lines + 1 test. Also resolves BACKLOG MEDIUM-3 dead-code by giving the dormant Swift branch a real producer.
-3. **Ship T-13 integrity hints for Generated Reports** (HTML `<meta name="report-sha256">` + XLSX sidecar `.sha256`). ~25 lines. The single highest-impact change for the cross-trust-boundary recipient surface.
+1. **Harden the supply-chain trust boundary for a public repo (T-9).** A public
+   repo accepts outside PRs. Add a CI `pip-audit` job over
+   `requirements*.lock.txt`, and branch protection on `main` requiring
+   CODEOWNERS review for any change to `python-runtime.lock`,
+   `requirements*.lock.txt`, `build-python-runtime.sh`, and
+   `JamfCLIIdentity.expectedTeamID`. Mirror the hash-pinning discipline to the
+   still-unpinned `requirements-runtime.txt`.
+2. **Act on the release-pipeline threats now that they are near-term (§11).**
+   T-16 (signing-key compromise) and T-18 (downgrade attack) are no longer
+   hypothetical — keep the Developer ID certificate off CI, store it in a
+   hardware token if possible, and publish a "verify build" doc carrying each
+   release artifact's SHA-256 and the signing certificate fingerprint.
+3. **Add a meta CSP to the HTML report (T-3)** (`default-src 'self'
+   'unsafe-inline'`; `script-src 'none'`) and mirror the Python
+   formula-injection sanitization tests to the Swift `OOXMLWriter` path (T-4) —
+   the two cheapest remaining recipient-facing hardening steps.
 
-Items 1 + 2 are pure follow-ups to PR-7 / PR-8 — close gaps in controls just shipped. Item 3 addresses the only cross-trust-boundary surface the manifest discipline explicitly skipped.
+The diagnostic-bundle PII redaction gaps surfaced during release prep are
+already closed — username path leak, free-text device names, and extended PII
+keys (see T-7).
 
 ---
 
@@ -421,6 +455,7 @@ Items 1 + 2 are pure follow-ups to PR-7 / PR-8 — close gaps in controls just s
 - [x] Both DMG and PKG installer scenarios covered in §11 per user request.
 - [x] PR-1..PR-9 mitigations reflected in T-1..T-10 existing mitigations.
 - [x] PR-16..PR-26 reflected: tiered-collection surface (T-21, `state/` + `collect_cadence` stores), xlsx-corruption fix + Patch CSV export (T-4), Python script role corrected (§1), single-admin + public-release prep re-confirmed with user 2026-05-20 (§8).
+- [x] PR-10/PR-11/PR-12 reflected: T-11/T-12/T-13 marked CLOSED in §6 and §7; §9 next-actions reconciled (v2.0.0 release prep, 2026-05-20).
 
 ---
 
