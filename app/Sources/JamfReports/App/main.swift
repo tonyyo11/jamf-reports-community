@@ -15,6 +15,7 @@ import SwiftUI
 private func scheduledRunSingle(
     profile: String,
     mode: Schedule.RunMode,
+    tiers: Set<CollectionTier>?,
     verbose: Bool
 ) async -> Int32 {
     guard ProfileService.isValid(profile) else {
@@ -51,21 +52,17 @@ private func scheduledRunSingle(
         // jamf-cli-only generates from cache only — no collect, no fresh API calls.
         // The other three modes all need fresh snapshots.
         if mode != .jamfCLIOnly {
-            // PR-22 T-10: snapshot-only narrows to the refresh tier so the
-            // schedule remains cheap on on-prem servers. Refresh kinds are
-            // exactly what feeds Trends + Overview KPIs; inventory and
-            // scan tiers are deferred to the explicit reporting runs that
-            // operators schedule separately at a slower cadence.
-            //
-            // Other modes use the full default tier set — they're going
-            // to generate a workbook and need everything that feeds it.
-            let tiers: Set<CollectionTier> = (mode == .snapshotOnly)
-                ? [.refresh]
-                : Set(CollectionTier.allCases)
+            // PR-23 T-20: the schedule's plist pins the tier set via
+            // --tiers. When present, it wins — it's the operator's choice
+            // (or the form's mode-derived default). When absent (pre-PR-23
+            // plists, or any caller that doesn't pass tiers), fall back to
+            // the mode default: snapshot-only → Refresh only (PR-22 T-10),
+            // the generate modes → all tiers.
+            let resolvedTiers = tiers ?? mode.defaultTiers
             try await ReportEngine.collect(
                 profile: profile,
                 workspacePaths: WorkspacePaths.self,
-                tiers: tiers,
+                tiers: resolvedTiers,
                 onLine: onLine
             )
         }
@@ -103,6 +100,21 @@ private func scheduledRun(profile: String) async -> Int32 {
         return Schedule.RunMode(rawValue: args[idx + 1]) ?? .jamfCLIOnly
     }()
 
+    // PR-23 T-20: --tiers <csv> pins the collect tier set. Absent (pre-PR-23
+    // plists) → nil, and scheduledRunSingle falls back to the mode default.
+    // Unknown tokens are dropped; an all-unknown CSV resolves to nil.
+    let tiers: Set<CollectionTier>? = {
+        guard let idx = args.firstIndex(of: "--tiers"), idx + 1 < args.count else {
+            return nil
+        }
+        var parsed: Set<CollectionTier> = []
+        for token in args[idx + 1].split(separator: ",") {
+            let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let tier = CollectionTier(rawValue: trimmed) { parsed.insert(tier) }
+        }
+        return parsed.isEmpty ? nil : parsed
+    }()
+
     if allProfiles {
         let profiles = ProfileService.discoverLocal()
         guard !profiles.isEmpty else {
@@ -111,13 +123,17 @@ private func scheduledRun(profile: String) async -> Int32 {
         }
         var anyFailed = false
         for p in profiles {
-            let code = await scheduledRunSingle(profile: p.name, mode: mode, verbose: verbose)
+            let code = await scheduledRunSingle(
+                profile: p.name, mode: mode, tiers: tiers, verbose: verbose
+            )
             if code != 0 { anyFailed = true }
         }
         return anyFailed ? 1 : 0
     }
 
-    return await scheduledRunSingle(profile: profile, mode: mode, verbose: verbose)
+    return await scheduledRunSingle(
+        profile: profile, mode: mode, tiers: tiers, verbose: verbose
+    )
 }
 
 // MARK: - check subcommand

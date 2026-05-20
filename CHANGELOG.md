@@ -9,6 +9,38 @@ versions in this repository map to git tags.
 
 ### Added
 
+- **Per-report collection cadence — GUI layer** (PR-23, macOS app):
+  Surfaces the PR-22 cadence engine in the app so operators never hand-edit
+  `config.yaml`.
+  - **Settings → Performance** — a new card with an On-prem / Cloud / Custom
+    preset picker. Each option shows its resolved per-tier cadences
+    ("Refresh: Daily · Inventory: Weekly · Scan: Weekly"); switching presets
+    prompts a confirmation noting scheduled runs adopt the new cadence on
+    their next fire.
+  - **Custom per-report editor** — when the preset is Custom, the card
+    expands to a per-report table: each jamf-cli report gets a tier (or
+    Never) selector and a cadence picker, seeded from the previous preset's
+    defaults so switching to Custom is a starting point, not a blank slate.
+  - **Schedules form tier picker** — the New Schedule sheet gains a Tiers
+    multi-select (Refresh / Inventory / Scan). The selection persists in the
+    LaunchAgent plist via a `--tiers` flag and round-trips back; legacy
+    plists without the flag keep their all-tiers behavior.
+  - **Onboarding preset prompt** — the Workspace step asks whether the Jamf
+    Pro instance is on-prem or cloud and stamps the choice into the new
+    profile's `config.yaml`.
+  - **Migration notice** — Settings shows a one-time banner when a profile
+    still carries the legacy `jamf_cli.collect_skip` key; saving a preset
+    finalizes the migration and clears it.
+
+### Removed
+
+- **`ScheduleTier` + `TieredLaunchAgentWriter`** (PR-23, macOS app): the
+  legacy hot/warm/cold per-cadence-tier model and its unused LaunchAgent
+  writer are deleted. `RefreshCoordinator` is retargeted onto the PR-22
+  `CollectionTier` (Refresh / Inventory / Scan) model, with preset-aware
+  staleness thresholds. No user-visible behavior change — the old writer
+  had no callers.
+
 - **Per-report collection cadence — engine layer** (PR-22, macOS app):
   `ReportEngine.collect` now consults a per-report cadence policy before
   launching each jamf-cli subprocess, so frequent KPI commands run on a

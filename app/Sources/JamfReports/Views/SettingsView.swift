@@ -8,6 +8,22 @@ private final class TextLineBuffer: @unchecked Sendable {
     var lines: [String] { lock.withLock { _lines } }
 }
 
+/// PR-23 T-23: per-row selection in the custom per-report cadence editor.
+/// The three real tiers plus a Never option (the kill switch — maps to
+/// `cadence: .never`, tier irrelevant).
+private enum CustomTierChoice: String, CaseIterable, Identifiable {
+    case refresh, inventory, scan, never
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .refresh:   return "Refresh"
+        case .inventory: return "Inventory"
+        case .scan:      return "Scan"
+        case .never:     return "Never"
+        }
+    }
+}
+
 struct SettingsView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
@@ -19,6 +35,17 @@ struct SettingsView: View {
     @State private var tokenStatuses: [String: TokenStatus] = [:]
     @State private var loadingTokenProfiles: Set<String> = []
     @State private var diagnosticBundleMessage: String? = nil
+    // PR-23 T-21: collection cadence preset for the active profile.
+    @State private var cadencePreset: CadencePreset = .onPrem
+    @State private var pendingPreset: CadencePreset? = nil
+    @State private var presetWriteError: String? = nil
+    // PR-23 T-23: per-report cadence table, shown when preset is .custom.
+    @State private var customCadence: [String: PerReportCadence] = [:]
+    @State private var customCadenceMessage: String? = nil
+    // PR-23 T-25: legacy collect_skip migration notice.
+    @State private var hasLegacyCollectSkip = false
+    @AppStorage("collectSkipMigrationBannerDismissed")
+    private var migrationBannerDismissed = false
 
     var body: some View {
         ScrollView {
@@ -31,11 +58,14 @@ struct SettingsView: View {
                 }
                 .padding(.bottom, 8)
 
+                migrationBanner
+
                 HStack(alignment: .top, spacing: 14) {
                     cliCard
                     connectionsCard
                 }
                 dataAndChartsCard
+                performanceCard
                 diagnosticsCard
                 sidebarVisibilityCard
                 aboutCard
@@ -45,10 +75,14 @@ struct SettingsView: View {
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
         }
-        .task {
+        // id: workspace.profile — re-run when the sidebar chip switches
+        // profiles, otherwise the Performance card + migration banner would
+        // keep showing the first profile's config (PR-23 advisor finding).
+        .task(id: workspace.profile) {
             workspace.refreshToolStatus()
             workspace.reloadFromDisk()
             testResults = [:]
+            loadCadencePreset()
             await loadTokenStatuses()
         }
     }
@@ -457,6 +491,308 @@ struct SettingsView: View {
             return "Per-device commands paused. Posture, Patch, Updates, and Extension Attributes dashboards will show last cached values until refreshed."
         }
         return "Run the four per-device commands (ea-results, patch-device-failures, update-device-failures, device-compliance) on every collect."
+    }
+
+    // MARK: - Migration banner (PR-23 T-25)
+
+    /// One-time notice that the active profile's config still carries the
+    /// legacy `jamf_cli.collect_skip` key. It is read transparently (PR-22
+    /// T-12 folds it into per-report cadence), but saving a preset under
+    /// Performance rewrites the file onto the new schema and removes it —
+    /// at which point this banner stops appearing on its own. The Dismiss
+    /// button is for operators who want to acknowledge without acting.
+    ///
+    /// Never shows on fresh installs: `hasLegacyCollectSkip` is only true
+    /// when the key is physically present in config.yaml.
+    @ViewBuilder
+    private var migrationBanner: some View {
+        if hasLegacyCollectSkip && !migrationBannerDismissed {
+            Card(padding: 14) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(Theme.Colors.goldBright)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Collection settings migrated")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(Theme.Text.primary)
+                        Text("This profile's jamf_cli.collect_skip is now read as "
+                             + "per-report cadence. Review it under Performance below; "
+                             + "saving a preset there finalizes the migration.")
+                            .font(Theme.Fonts.mono(11))
+                            .foregroundStyle(Theme.Text.tertiary)
+                    }
+                    Spacer()
+                    PNPButton(title: "Dismiss", size: .sm) {
+                        migrationBannerDismissed = true
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Collection settings migration notice")
+        }
+    }
+
+    // MARK: - Performance (PR-23 T-21)
+
+    private var performanceCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Performance")
+                Text("Collection cadence preset for the active profile (\(workspace.profile)). "
+                     + "Controls how often scheduled runs fetch each tier of jamf-cli data.")
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Text.tertiary)
+
+                Picker("Cadence preset", selection: cadencePresetBinding) {
+                    ForEach(CadencePreset.allCases, id: \.self) { preset in
+                        Text(preset.displayName).tag(preset)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.radioGroup)
+
+                Text(cadencePreset.displaySubtitle)
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Text.tertiary)
+
+                Divider().background(Theme.Hairline.standard)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Resolved cadences")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Theme.Text.primary)
+                    Text(cadencePreset.cadenceSummary)
+                        .font(Theme.Fonts.mono(11))
+                        .foregroundStyle(Theme.Text.tertiary)
+                }
+
+                if let presetWriteError {
+                    Text(presetWriteError)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.warn)
+                }
+
+                if cadencePreset == .custom {
+                    Divider().background(Theme.Hairline.standard)
+                    customCadenceEditor
+                }
+            }
+        }
+        .confirmationDialog(
+            "Change cadence preset?",
+            isPresented: presetDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Switch to \(pendingPreset?.displayName ?? "")") {
+                commitPendingPreset()
+            }
+            Button("Cancel", role: .cancel) { pendingPreset = nil }
+        } message: {
+            Text("Scheduled runs for '\(workspace.profile)' will adopt the new "
+                 + "cadence on their next fire. Snapshots already collected are "
+                 + "not affected.")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Performance settings")
+    }
+
+    /// Picker binding that defers the actual change to a confirmation
+    /// dialog: `set` stashes `pendingPreset` rather than committing, so the
+    /// radio visually stays put until the operator confirms.
+    private var cadencePresetBinding: Binding<CadencePreset> {
+        Binding(
+            get: { cadencePreset },
+            set: { newValue in
+                guard newValue != cadencePreset else { return }
+                pendingPreset = newValue
+            }
+        )
+    }
+
+    private var presetDialogBinding: Binding<Bool> {
+        Binding(
+            get: { pendingPreset != nil },
+            set: { if !$0 { pendingPreset = nil } }
+        )
+    }
+
+    private func commitPendingPreset() {
+        guard let target = pendingPreset else { return }
+        do {
+            try ConfigService.setCadencePreset(profile: workspace.profile, preset: target)
+            cadencePreset = target
+            presetWriteError = nil
+            // setCadencePreset rewrites the file without jamf_cli.collect_skip,
+            // so the migration notice no longer applies (T-25).
+            hasLegacyCollectSkip = false
+        } catch {
+            presetWriteError = "Could not save preset: \(error.localizedDescription)"
+        }
+        pendingPreset = nil
+    }
+
+    /// Read the active profile's preset from config.yaml. Absent block or
+    /// unreadable config falls back to on-prem (the conservative default,
+    /// matching CadenceResolver's missing-config behavior).
+    ///
+    /// Also seeds the custom per-report table: existing `per_report`
+    /// overrides layered over the current preset's resolved defaults, so
+    /// every known kind has a row whether or not the operator has touched
+    /// the editor before.
+    private func loadCadencePreset() {
+        presetWriteError = nil
+        customCadenceMessage = nil
+        let config: ReportConfig? = {
+            guard let url = try? ConfigService.configURL(for: workspace.profile),
+                  FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return try? ConfigLoader.load(from: url)
+        }()
+        cadencePreset = config?.collectCadence?.preset ?? .onPrem
+
+        var table = CollectCadenceConfig.customDefaults(basePreset: cadencePreset)
+        if let existing = config?.collectCadence?.perReport {
+            for (kind, entry) in existing { table[kind] = entry }
+        }
+        customCadence = table
+
+        // T-25: the banner shows while the legacy key is physically in the
+        // file. A preset save (which removes it) clears this on next load.
+        hasLegacyCollectSkip = config?.jamfCli?.collectSkip?.isEmpty == false
+    }
+
+    // MARK: - Custom per-report editor (PR-23 T-23)
+
+    /// The four standard preset cadences offered in the per-report editor.
+    private static let standardCadenceChoices: [Int] = [43_200, 86_400, 172_800, 604_800]
+
+    /// Cadence values the per-report picker offers: the standard four, plus
+    /// any non-standard `.seconds` value already present in the loaded
+    /// config. Including in-config values means a hand-edited interval
+    /// (e.g. `overview: 3600`) stays selectable rather than being silently
+    /// rounded to a standard value on first edit. Sorted ascending.
+    private var customCadenceChoices: [Int] {
+        var values = Set(Self.standardCadenceChoices)
+        for entry in customCadence.values {
+            if case .seconds(let seconds) = entry.cadence, seconds > 0 {
+                values.insert(seconds)
+            }
+        }
+        return values.sorted()
+    }
+
+    private var customCadenceEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Per-report cadence")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(Theme.Text.primary)
+            Text("Each report's tier and how often it's fetched. "
+                 + "Set a report to Never to skip it entirely.")
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Text.tertiary)
+
+            ForEach(ReportEngine.knownCollectKinds.sorted(), id: \.self) { kind in
+                customCadenceRow(kind: kind)
+            }
+
+            HStack {
+                if let customCadenceMessage {
+                    Text(customCadenceMessage)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary)
+                }
+                Spacer()
+                PNPButton(title: "Save per-report cadence", size: .sm) {
+                    saveCustomCadence()
+                }
+            }
+        }
+    }
+
+    private func customCadenceRow(kind: String) -> some View {
+        HStack(spacing: 8) {
+            Text(kind)
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Text.primary)
+            Spacer()
+            Picker("", selection: tierChoiceBinding(kind)) {
+                ForEach(CustomTierChoice.allCases) { Text($0.label).tag($0) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 110)
+
+            Picker("", selection: cadenceSecondsBinding(kind)) {
+                ForEach(customCadenceChoices, id: \.self) { secs in
+                    Text(CadencePreset.humanCadence(seconds: secs)).tag(secs)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(width: 130)
+            .disabled(tierChoiceBinding(kind).wrappedValue == .never)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Tier-or-Never selection for one report row. `.never` maps to
+    /// `cadence: .never`; the three tiers set `tier` and keep (or default)
+    /// the seconds.
+    private func tierChoiceBinding(_ kind: String) -> Binding<CustomTierChoice> {
+        Binding(
+            get: {
+                let entry = customCadence[kind]
+                if case .never = entry?.cadence { return .never }
+                switch entry?.tier {
+                case .refresh:   return .refresh
+                case .inventory: return .inventory
+                case .scan:      return .scan
+                case nil:        return .never
+                }
+            },
+            set: { choice in
+                let current = customCadence[kind] ?? PerReportCadence(cadence: .never)
+                let seconds: Int = {
+                    if case .seconds(let n) = current.cadence { return n }
+                    return 604_800
+                }()
+                switch choice {
+                case .never:
+                    customCadence[kind] = PerReportCadence(tier: current.tier, cadence: .never)
+                case .refresh:
+                    customCadence[kind] = PerReportCadence(tier: .refresh, cadence: .seconds(seconds))
+                case .inventory:
+                    customCadence[kind] = PerReportCadence(tier: .inventory, cadence: .seconds(seconds))
+                case .scan:
+                    customCadence[kind] = PerReportCadence(tier: .scan, cadence: .seconds(seconds))
+                }
+            }
+        )
+    }
+
+    private func cadenceSecondsBinding(_ kind: String) -> Binding<Int> {
+        Binding(
+            get: {
+                if case .seconds(let n) = customCadence[kind]?.cadence { return n }
+                return 604_800
+            },
+            set: { seconds in
+                let current = customCadence[kind] ?? PerReportCadence(cadence: .never)
+                customCadence[kind] = PerReportCadence(
+                    tier: current.tier, cadence: .seconds(seconds)
+                )
+            }
+        )
+    }
+
+    private func saveCustomCadence() {
+        do {
+            try ConfigService.setCustomCadence(
+                profile: workspace.profile, perReport: customCadence
+            )
+            customCadenceMessage = "Saved."
+        } catch {
+            customCadenceMessage = "Save failed: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Diagnostics

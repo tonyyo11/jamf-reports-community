@@ -65,4 +65,60 @@ enum CadencePreset: String, Sendable, Hashable, CaseIterable, Codable {
             return []
         }
     }
+
+    // MARK: - Display (PR-23 T-21)
+
+    /// Operator-facing name for the Settings → Performance radio picker.
+    var displayName: String {
+        switch self {
+        case .onPrem: return "On-prem"
+        case .cloud:  return "Cloud"
+        case .custom: return "Custom"
+        }
+    }
+
+    /// One-line rationale shown under each radio option.
+    var displaySubtitle: String {
+        switch self {
+        case .onPrem:
+            return "Conservative cadence for self-hosted Jamf Pro. Paces calls and skips the server-killer reports."
+        case .cloud:
+            return "Faster cadence for jamfcloud tenants that absorb API calls without pacing."
+        case .custom:
+            return "Set every report's tier and cadence by hand in the editor below."
+        }
+    }
+
+    /// Per-tier cadence summary for the preset-picker preview.
+    ///
+    /// `.custom` has no preset-wide cadences — each report is configured
+    /// individually — so it returns a pointer to the per-report editor
+    /// rather than a tier list.
+    var cadenceSummary: String {
+        switch self {
+        case .custom:
+            return "Per-report — configure each report individually."
+        case .onPrem, .cloud:
+            return CollectionTier.allCases.map { tier in
+                let seconds = defaultCadence(for: tier) ?? 0
+                return "\(tier.displayName): \(Self.humanCadence(seconds: seconds))"
+            }.joined(separator: " · ")
+        }
+    }
+
+    /// Render a cadence interval in seconds as an operator-friendly phrase.
+    /// The exact preset values get bespoke phrasing; anything else falls
+    /// back to a generic "Every N days/hours".
+    static func humanCadence(seconds: Int) -> String {
+        switch seconds {
+        case 43_200:  return "Twice daily"
+        case 86_400:  return "Daily"
+        case 172_800: return "Every 2 days"
+        case 604_800: return "Weekly"
+        default:
+            if seconds > 0, seconds % 86_400 == 0 { return "Every \(seconds / 86_400) days" }
+            if seconds > 0, seconds % 3_600 == 0 { return "Every \(seconds / 3_600) h" }
+            return "\(seconds) s"
+        }
+    }
 }

@@ -86,6 +86,114 @@ final class LaunchAgentServiceTests: XCTestCase {
         XCTAssertEqual(schedule.profileDisplayLabel, "2 profiles")
     }
 
+    // MARK: - PR-23 T-19: --tiers parsing
+
+    func testParseNativePlistReadsTiersFlag() throws {
+        let label = "\(prefix).dummy.tiered-collect"
+        let plistURL = try writePlist([
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run",
+                "--profile", "dummy",
+                "--mode", "jamf-cli-full",
+                "--tiers", "refresh,scan",
+            ],
+            "StartCalendarInterval": ["Hour": 6, "Minute": 0],
+            "Disabled": false,
+        ])
+
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
+        XCTAssertEqual(parsed.tiers, [.refresh, .scan])
+    }
+
+    func testParseNativePlistWithoutTiersFlagYieldsNil() throws {
+        // Pre-PR-23 plists omit --tiers; parse must yield nil so main.swift
+        // applies the all-tiers default.
+        let label = "\(prefix).dummy.legacy-collect"
+        let plistURL = try writePlist([
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run",
+                "--profile", "dummy",
+                "--mode", "jamf-cli-full",
+            ],
+            "StartCalendarInterval": ["Hour": 6, "Minute": 0],
+            "Disabled": false,
+        ])
+
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
+        XCTAssertNil(parsed.tiers, "Absent --tiers must parse to nil, not an empty set")
+    }
+
+    func testParseTiersDropsUnknownTokensKeepsValid() throws {
+        let label = "\(prefix).dummy.mixed-tiers"
+        let plistURL = try writePlist([
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run",
+                "--profile", "dummy",
+                "--mode", "jamf-cli-full",
+                "--tiers", "refresh,bogus,inventory",
+            ],
+            "StartCalendarInterval": ["Hour": 6, "Minute": 0],
+            "Disabled": false,
+        ])
+
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
+        XCTAssertEqual(parsed.tiers, [.refresh, .inventory],
+                       "Unknown 'bogus' token dropped; valid tiers kept")
+    }
+
+    func testParseTiersAllUnknownFallsBackToNil() throws {
+        // If every token is unrecognizable (corruption / cross-version
+        // rename), treat the flag as absent rather than yielding an empty
+        // set — an empty set would silently collect nothing.
+        let label = "\(prefix).dummy.garbage-tiers"
+        let plistURL = try writePlist([
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run",
+                "--profile", "dummy",
+                "--mode", "jamf-cli-full",
+                "--tiers", "xxx,yyy",
+            ],
+            "StartCalendarInterval": ["Hour": 6, "Minute": 0],
+            "Disabled": false,
+        ])
+
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
+        XCTAssertNil(parsed.tiers)
+    }
+
+    func testTiersRoundTripThroughWriteAndParse() throws {
+        var sched = Schedule(
+            name: "Tier Round Trip",
+            profile: "dummy",
+            schedule: "Daily 07:00",
+            cadence: "daily",
+            mode: .jamfCLIFull,
+            next: "-", last: "-", lastStatus: .ok,
+            artifacts: [], enabled: true
+        )
+        sched.tiers = [.refresh, .inventory]
+        let agentLabel = try XCTUnwrap(LaunchAgentWriter.label(for: sched))
+        let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+        defer {
+            try? FileManager.default.removeItem(at: plan.plistURL)
+            let logDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+            try? FileManager.default.removeItem(at: logDir)
+        }
+
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plan.plistURL))
+        XCTAssertEqual(parsed.tiers, [.refresh, .inventory],
+                       "Tier set must survive the write → parse round trip")
+    }
+
     func testScheduleFormKeepsBaseProfileForMultiTarget() {
         var form = ScheduleFormState(defaultProfile: "alpha")
         form.name = "Weekly Multi"

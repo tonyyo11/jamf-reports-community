@@ -2,31 +2,36 @@ import Foundation
 import XCTest
 @testable import JamfReports
 
+/// `RefreshPolicy` + `RefreshCoordinator` are keyed on `CollectionTier`
+/// (`refresh`/`inventory`/`scan`). Only `.refresh` is populated in the
+/// default policy — it's the sole tier the coordinator drives.
 final class RefreshCoordinatorTests: XCTestCase {
 
     // MARK: - RefreshPolicy staleness threshold
 
-    func testDefaultPolicyHotThreshold() {
+    func testDefaultPolicyRefreshThreshold() {
         let policy = RefreshPolicy.default
+        // Default fallback is the on-prem Refresh cadence × 1.5 — matches the
+        // preset-aware formula so a config-read failure degrades to the same
+        // number rather than a surprise.
         XCTAssertEqual(
-            policy.stalenessThreshold(for: .hot),
-            TimeInterval(ScheduleTier.hot.intervalSeconds)
+            policy.stalenessThreshold(for: .refresh),
+            TimeInterval(CollectionTier.refresh.intervalSeconds) * 1.5
         )
     }
 
-    func testDefaultPolicyWarmThreshold() {
+    func testUnpopulatedTierFallsBackToInterval() {
         let policy = RefreshPolicy.default
+        // .inventory/.scan are not in the default map — the coordinator never
+        // drives them. stalenessThreshold falls back to the tier's own
+        // intervalSeconds rather than carrying a ghost map entry.
         XCTAssertEqual(
-            policy.stalenessThreshold(for: .warm),
-            TimeInterval(ScheduleTier.warm.intervalSeconds)
+            policy.stalenessThreshold(for: .inventory),
+            TimeInterval(CollectionTier.inventory.intervalSeconds)
         )
-    }
-
-    func testDefaultPolicyColdThreshold() {
-        let policy = RefreshPolicy.default
         XCTAssertEqual(
-            policy.stalenessThreshold(for: .cold),
-            TimeInterval(ScheduleTier.cold.intervalSeconds)
+            policy.stalenessThreshold(for: .scan),
+            TimeInterval(CollectionTier.scan.intervalSeconds)
         )
     }
 
@@ -34,27 +39,27 @@ final class RefreshCoordinatorTests: XCTestCase {
 
     func testNoBackoffOnZeroFailures() {
         let policy = RefreshPolicy.default
-        let interval = policy.backoffInterval(tier: .hot, failureCount: 0)
-        XCTAssertEqual(interval, TimeInterval(ScheduleTier.hot.intervalSeconds))
+        let interval = policy.backoffInterval(tier: .refresh, failureCount: 0)
+        XCTAssertEqual(interval, TimeInterval(CollectionTier.refresh.intervalSeconds))
     }
 
     func testBackoffDoublesOnFirstFailure() {
         let policy = RefreshPolicy.default
-        let base = TimeInterval(ScheduleTier.hot.intervalSeconds)
-        XCTAssertEqual(policy.backoffInterval(tier: .hot, failureCount: 1), base * 2.0)
+        let base = TimeInterval(CollectionTier.refresh.intervalSeconds)
+        XCTAssertEqual(policy.backoffInterval(tier: .refresh, failureCount: 1), base * 2.0)
     }
 
     func testBackoffQuadruplesOnSecondFailure() {
         let policy = RefreshPolicy.default
-        let base = TimeInterval(ScheduleTier.hot.intervalSeconds)
-        XCTAssertEqual(policy.backoffInterval(tier: .hot, failureCount: 2), base * 4.0)
+        let base = TimeInterval(CollectionTier.refresh.intervalSeconds)
+        XCTAssertEqual(policy.backoffInterval(tier: .refresh, failureCount: 2), base * 4.0)
     }
 
     func testBackoffCappedAtMaxMultiplier() {
         let policy = RefreshPolicy.default
-        let base = TimeInterval(ScheduleTier.cold.intervalSeconds)
+        let base = TimeInterval(CollectionTier.scan.intervalSeconds)
         // 2^10 = 1024 >> maxBackoffMultiplier (8)
-        let capped = policy.backoffInterval(tier: .cold, failureCount: 10)
+        let capped = policy.backoffInterval(tier: .scan, failureCount: 10)
         XCTAssertEqual(capped, base * policy.maxBackoffMultiplier)
     }
 
@@ -66,9 +71,9 @@ final class RefreshCoordinatorTests: XCTestCase {
 
     func testNoBackoffBelowMaxFailures() {
         let policy = RefreshPolicy.default
-        // maxFailures for .hot is 3; with 2 failures no backoff yet.
+        // maxFailures for .refresh is 3; with 2 failures no backoff yet.
         let shouldSkip = policy.shouldBackOff(
-            tier: .hot,
+            tier: .refresh,
             failureCount: 2,
             lastAttempt: Date().addingTimeInterval(-1),
             now: Date()
@@ -78,10 +83,11 @@ final class RefreshCoordinatorTests: XCTestCase {
 
     func testBackoffActiveImmediatelyAfterMaxFailures() {
         let policy = RefreshPolicy.default
-        // maxFailures for .hot is 3; after exactly 3 failures the next attempt
-        // triggers backoff if the elapsed time is less than the backoff interval.
+        // maxFailures for .refresh is 3; after exactly 3 failures the next
+        // attempt triggers backoff if the elapsed time is less than the
+        // backoff interval.
         let shouldSkip = policy.shouldBackOff(
-            tier: .hot,
+            tier: .refresh,
             failureCount: 3,
             lastAttempt: Date().addingTimeInterval(-1),  // 1 second ago
             now: Date()
@@ -94,33 +100,35 @@ final class RefreshCoordinatorTests: XCTestCase {
 
     func testBackoffExpiredAllowsRetry() {
         let policy = RefreshPolicy.default
-        // After 3 failures, backoff interval = 900 * 2^3 = 7200 s.
-        // If last attempt was 7201 s ago, backoff has expired.
-        let lastAttempt = Date().addingTimeInterval(-7_201)
+        // After 3 failures, backoff interval = intervalSeconds × 2^3.
+        // With the Refresh tier's 86 400 s base that's 691 200 s; a last
+        // attempt older than that means backoff has expired.
+        let backoff = TimeInterval(CollectionTier.refresh.intervalSeconds) * 8.0
+        let lastAttempt = Date().addingTimeInterval(-(backoff + 1))
         let shouldSkip = policy.shouldBackOff(
-            tier: .hot,
+            tier: .refresh,
             failureCount: 3,
             lastAttempt: lastAttempt,
             now: Date()
         )
-        XCTAssertFalse(shouldSkip, "Backoff should have expired after 7201 s")
+        XCTAssertFalse(shouldSkip, "Backoff should have expired past the 8× interval")
     }
 
     // MARK: - RefreshPolicy custom init
 
     func testCustomPolicyRespectsThresholds() {
         let policy = RefreshPolicy(
-            stalenessThresholds: [.hot: 60],
-            maxConsecutiveFailures: [.hot: 1],
+            stalenessThresholds: [.refresh: 60],
+            maxConsecutiveFailures: [.refresh: 1],
             backoffBase: 3.0,
             maxBackoffMultiplier: 4.0
         )
-        XCTAssertEqual(policy.stalenessThreshold(for: .hot), 60)
-        XCTAssertEqual(policy.maxFailures(for: .hot), 1)
+        XCTAssertEqual(policy.stalenessThreshold(for: .refresh), 60)
+        XCTAssertEqual(policy.maxFailures(for: .refresh), 1)
         // Backoff multiplies the tier's natural cadence interval (not staleness threshold).
         XCTAssertEqual(
-            policy.backoffInterval(tier: .hot, failureCount: 1),
-            TimeInterval(ScheduleTier.hot.intervalSeconds) * 3.0
+            policy.backoffInterval(tier: .refresh, failureCount: 1),
+            TimeInterval(CollectionTier.refresh.intervalSeconds) * 3.0
         )
     }
 
@@ -131,37 +139,32 @@ final class RefreshCoordinatorTests: XCTestCase {
             backoffBase: 2.0,
             maxBackoffMultiplier: 8.0
         )
-        // Falls back to tier's own intervalSeconds.
+        // Falls back to the tier's own intervalSeconds.
         XCTAssertEqual(
-            policy.stalenessThreshold(for: .warm),
-            TimeInterval(ScheduleTier.warm.intervalSeconds)
+            policy.stalenessThreshold(for: .inventory),
+            TimeInterval(CollectionTier.inventory.intervalSeconds)
         )
-        XCTAssertEqual(policy.maxFailures(for: .warm), 2)
+        XCTAssertEqual(policy.maxFailures(for: .inventory), 2)
     }
 
-    // MARK: - Label format for tiered agents
+    // MARK: - CollectionTier interval reference
 
-    func testTieredLabelFormat() {
-        let label = TieredLaunchAgentWriter.label(for: "acme", tier: .hot)
-        XCTAssertEqual(label, "com.github.tonyyo11.jamf-reports-community.acme.hot")
+    func testRefreshIntervalIsOnPremDailyCadence() {
+        // intervalSeconds is the on-prem default cadence — the fixed
+        // denominator for backoff math. Pinned so a preset-table change
+        // doesn't silently shift backoff timing.
+        XCTAssertEqual(CollectionTier.refresh.intervalSeconds, 86_400)
+        XCTAssertEqual(CollectionTier.inventory.intervalSeconds, 604_800)
+        XCTAssertEqual(CollectionTier.scan.intervalSeconds, 604_800)
     }
 
-    func testTieredLabelWarmFormat() {
-        let label = TieredLaunchAgentWriter.label(for: "cbp-prod", tier: .warm)
-        XCTAssertEqual(label, "com.github.tonyyo11.jamf-reports-community.cbp-prod.warm")
-    }
-
-    func testTieredLabelColdFormat() {
-        let label = TieredLaunchAgentWriter.label(for: "test01", tier: .cold)
-        XCTAssertEqual(label, "com.github.tonyyo11.jamf-reports-community.test01.cold")
-    }
-
-    func testTieredLabelPrefixMatchesLaunchAgentWriter() {
-        for tier in ScheduleTier.allCases {
-            let label = TieredLaunchAgentWriter.label(for: "dummy", tier: tier)
+    func testStalenessProbeKindsAreRealCollectKinds() {
+        // The probe kind must be a directory ReportEngine.collect writes,
+        // or the mtime probe finds nothing and reports everything stale.
+        for tier in CollectionTier.allCases {
             XCTAssertTrue(
-                label.hasPrefix(LaunchAgentWriter.labelPrefix + "."),
-                "Tier label must share the same prefix: \(label)"
+                ReportEngine.knownCollectKinds.contains(tier.stalenessProbeKind),
+                "\(tier.rawValue) probe kind '\(tier.stalenessProbeKind)' must be a real collect kind"
             )
         }
     }

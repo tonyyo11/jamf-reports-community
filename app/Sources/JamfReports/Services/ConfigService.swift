@@ -187,6 +187,160 @@ enum ConfigService {
         return try YAMLCodec.decode(encoded)
     }
 
+    /// PR-23 T-22: write `collect_cadence.preset` for `profile`.
+    ///
+    /// Creates the `collect_cadence:` block if it doesn't exist, and
+    /// preserves any sibling keys already inside it (`pace_seconds`,
+    /// `per_report`) — only `preset` is touched.
+    ///
+    /// Also finalizes the PR-16 → PR-22 migration: if `jamf_cli.collect_skip`
+    /// is still present (PR-22 reads both keys during the transition), it's
+    /// removed on this same write so the file converges on the new schema.
+    /// `jamf_cli` is only re-emitted when the key was actually present, so
+    /// configs that never had `collect_skip` keep their `jamf_cli` block
+    /// verbatim.
+    ///
+    /// The write is atomic (temp file + `replaceItemAt`).
+    static func setCadencePreset(
+        profile: String,
+        preset: CadencePreset,
+        workspaceRoot: URL? = nil
+    ) throws {
+        let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
+        try rejectSymlinkDestination(url)
+
+        let manager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        var document: YAMLCodec.YAMLDocument
+        if manager.fileExists(atPath: url.path) {
+            document = try YAMLCodec.decode(String(contentsOf: url, encoding: .utf8))
+        } else {
+            document = YAMLCodec.emptyDocument()
+        }
+        try rejectCredentialKeys(in: document.root)
+
+        guard case .mapping(var root) = document.root else {
+            throw ConfigError.invalidTopLevel
+        }
+
+        // Set collect_cadence.preset, keeping pace_seconds / per_report intact.
+        var cadence = root.value(for: "collect_cadence")?.mapping
+            ?? YAMLCodec.YAMLMapping(entries: [])
+        cadence.set("preset", value: .scalar(.string(preset.rawValue)))
+        root.set("collect_cadence", value: .mapping(cadence))
+
+        // Finalize the legacy collect_skip migration — only re-emit jamf_cli
+        // when the key is actually there, so unaffected configs are untouched.
+        var keysToReplace: Set<String> = ["collect_cadence"]
+        if var jamfCli = root.value(for: "jamf_cli")?.mapping,
+           jamfCli.entries.contains(where: { $0.key == "collect_skip" }) {
+            jamfCli.entries.removeAll { $0.key == "collect_skip" }
+            root.set("jamf_cli", value: .mapping(jamfCli))
+            keysToReplace.insert("jamf_cli")
+        }
+
+        document.root = .mapping(root)
+        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: keysToReplace)
+
+        let tempURL = directory.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
+        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
+        if !manager.fileExists(atPath: url.path) {
+            manager.createFile(atPath: url.path, contents: Data())
+        }
+        _ = try manager.replaceItemAt(url, withItemAt: tempURL)
+    }
+
+    /// PR-23 T-23: write `collect_cadence.per_report` for `profile`.
+    ///
+    /// Replaces the entire `per_report` mapping with `perReport`. Each
+    /// entry serializes in the dual shape `PerReportCadence` decodes
+    /// (T-3): a bare scalar (`never` / integer seconds) when there's no
+    /// tier override, or a `{tier, cadence}` mapping when there is.
+    ///
+    /// Sibling keys inside `collect_cadence` (`preset`, `pace_seconds`)
+    /// are preserved. Entries are emitted in sorted key order so the
+    /// YAML is byte-stable across writes.
+    ///
+    /// Like `setCadencePreset`, this finalizes the legacy `collect_skip`
+    /// migration — any cadence-write removes the old key, so the
+    /// invariant is "saving cadence from the GUI converges the file onto
+    /// the new schema" regardless of which control the operator used.
+    ///
+    /// The write is atomic (temp file + `replaceItemAt`).
+    static func setCustomCadence(
+        profile: String,
+        perReport: [String: PerReportCadence],
+        workspaceRoot: URL? = nil
+    ) throws {
+        let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
+        try rejectSymlinkDestination(url)
+
+        let manager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        var document: YAMLCodec.YAMLDocument
+        if manager.fileExists(atPath: url.path) {
+            document = try YAMLCodec.decode(String(contentsOf: url, encoding: .utf8))
+        } else {
+            document = YAMLCodec.emptyDocument()
+        }
+        try rejectCredentialKeys(in: document.root)
+
+        guard case .mapping(var root) = document.root else {
+            throw ConfigError.invalidTopLevel
+        }
+
+        var cadence = root.value(for: "collect_cadence")?.mapping
+            ?? YAMLCodec.YAMLMapping(entries: [])
+        var perReportMapping = YAMLCodec.YAMLMapping(entries: [])
+        for key in perReport.keys.sorted() {
+            guard let entry = perReport[key] else { continue }
+            perReportMapping.set(key, value: perReportYAMLValue(entry))
+        }
+        cadence.set("per_report", value: .mapping(perReportMapping))
+        root.set("collect_cadence", value: .mapping(cadence))
+
+        // Finalize the legacy collect_skip migration, same as setCadencePreset.
+        var keysToReplace: Set<String> = ["collect_cadence"]
+        if var jamfCli = root.value(for: "jamf_cli")?.mapping,
+           jamfCli.entries.contains(where: { $0.key == "collect_skip" }) {
+            jamfCli.entries.removeAll { $0.key == "collect_skip" }
+            root.set("jamf_cli", value: .mapping(jamfCli))
+            keysToReplace.insert("jamf_cli")
+        }
+
+        document.root = .mapping(root)
+        let encoded = try YAMLCodec.encode(
+            document, replacingTopLevelKeys: keysToReplace
+        )
+
+        let tempURL = directory.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
+        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
+        if !manager.fileExists(atPath: url.path) {
+            manager.createFile(atPath: url.path, contents: Data())
+        }
+        _ = try manager.replaceItemAt(url, withItemAt: tempURL)
+    }
+
+    /// Serialize one `PerReportCadence` to its YAML value, matching the
+    /// dual shape the T-3 decoder accepts.
+    private static func perReportYAMLValue(_ entry: PerReportCadence) -> YAMLCodec.YAMLValue {
+        let cadenceValue: YAMLCodec.YAMLValue = switch entry.cadence {
+        case .never:          .scalar(.string("never"))
+        case .seconds(let n): .scalar(.int(n))
+        }
+        guard let tier = entry.tier else {
+            return cadenceValue  // scalar shorthand — no tier override
+        }
+        var mapping = YAMLCodec.YAMLMapping(entries: [])
+        mapping.set("tier", value: .scalar(.string(tier.rawValue)))
+        mapping.set("cadence", value: cadenceValue)
+        return .mapping(mapping)
+    }
+
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
         guard ProfileService.isValid(profile) else {
             throw ConfigError.invalidProfile(profile)

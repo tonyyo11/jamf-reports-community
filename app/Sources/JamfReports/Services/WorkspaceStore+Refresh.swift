@@ -6,7 +6,7 @@ import Foundation
 /// Owns the `RefreshCoordinator` singleton and all call sites that fire into it.
 ///
 /// Keeps `WorkspaceStore.swift` minimally edited: the store exposes `coordinator`
-/// for the sidebar UI and calls `triggerHotRefresh()` from its two mutation points
+/// for the sidebar UI and calls `triggerRefresh()` from its two mutation points
 /// (profile switch and app-foreground notification).
 extension WorkspaceStore {
 
@@ -37,13 +37,14 @@ extension WorkspaceStore {
 
     // MARK: Public trigger
 
-    /// Fire a `.hot` refresh for `profile`, subject to coordinator backoff/coalescing.
+    /// Fire a `.refresh`-tier refresh for `profile`, subject to coordinator
+    /// backoff/coalescing.
     ///
     /// No-ops when demo mode is active or the profile slug is invalid.
-    func triggerHotRefresh(for profileSlug: String) {
+    func triggerRefresh(for profileSlug: String) {
         guard !demoMode, profileSlug != "demo" else { return }
         guard ProfileService.isValid(profileSlug) else { return }
-        coordinator.refreshIfStale(profile: profileSlug, tier: .hot)
+        coordinator.refreshIfStale(profile: profileSlug, tier: .refresh)
     }
 
     // MARK: App-foreground registration
@@ -62,7 +63,7 @@ extension WorkspaceStore {
             guard let self else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.triggerHotRefresh(for: self.profile)
+                self.triggerRefresh(for: self.profile)
             }
         }
     }
@@ -71,7 +72,7 @@ extension WorkspaceStore {
 // MARK: - Data-driven tab set
 
 extension Tab {
-    /// True when switching to this tab should trigger a `.hot` data refresh.
+    /// True when switching to this tab should trigger a `.refresh`-tier data refresh.
     ///
     /// Configuration and log surfaces are excluded: refreshing when the user
     /// navigates to Schedules or Runs would be noisy and misleading.
