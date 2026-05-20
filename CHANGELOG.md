@@ -9,6 +9,17 @@ versions in this repository map to git tags.
 
 ### Added
 
+- **Patch Summary Dashboard** sheet (Python CLI): management-facing overview
+  combining fleet activity (active/inactive device counts and ratio) with patch
+  compliance metrics — title count, average adjusted completion, compliance
+  distribution tiers, and a Top 10 Critical Patches table sorted by lowest
+  adjusted completion %.
+- **Release Date column** in the Patch Compliance sheet (Python CLI): pulled from
+  `jamf-cli pro patch-software-title-configurations patch-summary` for each title.
+  Summaries are fetched in parallel (up to 10 concurrent subprocesses) and cached
+  to `jamf-cli-data/patch-summaries/`. The column is omitted gracefully if the
+  endpoint is unavailable; `collect` now includes patch-summaries in its run.
+
 - **Standalone Patch Compliance CSV export** (PR-25, macOS app): the Patch
   screen's Patch Titles card gains an "Export CSV" action beside the
   existing PNG export. It writes every tracked patch title in collected
@@ -116,6 +127,14 @@ versions in this repository map to git tags.
   silent fallback).
 
 ### Fixed
+
+- **OS version deduplication broadened beyond charts** (Python CLI): the
+  `_normalize_os_version` normalization that PR-17 applied to OS adoption chart
+  timeseries is now also applied to the Security Posture OS Version Distribution,
+  the Inventory Summary, and the HTML report, so a release that Jamf reports
+  under multiple strings (`macOS 14.6.0`, `14.6.0`, `14.6`) collapses to a single
+  row in those sheets too. Rows artificially split by this Jamf reporting quirk
+  are re-aggregated before writing.
 
 - **Generated workbooks were unreadable in Excel** (PR-25, macOS app):
   `OOXMLWriter`'s ZIP-entry provider returned the entire part on every

@@ -542,3 +542,20 @@ def test_audit_platform_checks_returns_none_on_failure(monkeypatch, jrc) -> None
 
     monkeypatch.setattr(bridge, "_run_and_save", fake_run_and_save)
     assert bridge.audit_platform_checks() is None
+
+
+def test_patch_summaries_fetches_configs_and_parses_release_dates(fixtures_root, jrc) -> None:
+    bridge = jrc.JamfCLIBridge(
+        save_output=False,
+        data_dir=str(fixtures_root / "jamf-cli-data"),
+        profile="dummy",
+        use_cached_data=True,
+    )
+
+    result = bridge.patch_summaries()
+
+    assert isinstance(result, dict)
+    assert "Jamf Self Service for macOS" in result
+    assert result["Jamf Self Service for macOS"].get("releaseDate") is not None
+    assert "Mozilla Firefox" in result
+    assert result["Mozilla Firefox"].get("releaseDate") is not None

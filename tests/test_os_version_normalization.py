@@ -1,4 +1,4 @@
-"""Tests for `ChartGenerator._normalize_os_version` (PR-17).
+"""Tests for `_normalize_os_version` and the ChartGenerator OS timeseries (PR-17).
 
 The chart generator was treating `"26.4"` and `"26.4.0"` as separate
 versions, splitting the same device count across two adoption lines.
@@ -52,7 +52,7 @@ def _chart(jrc):
     ],
 )
 def test_normalize_os_version_examples(jrc, ver_in, ver_out) -> None:
-    assert _chart(jrc)._normalize_os_version(ver_in) == ver_out
+    assert jrc._normalize_os_version(ver_in) == ver_out
 
 
 # ---------------------------------------------------------------------------
