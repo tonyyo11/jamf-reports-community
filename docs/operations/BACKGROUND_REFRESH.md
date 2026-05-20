@@ -1,92 +1,96 @@
 # Background Refresh
 
-JamfReports keeps its cached jamf-cli data fresh through a tiered set of macOS
-LaunchAgents. Tiers are opt-in, configured per profile from the Schedules tab, and
-run as the logged-in user — never as root.
+JamfReports keeps its cached jamf-cli data fresh via per-schedule LaunchAgents that
+run as the logged-in user — never as root. You create schedules from the Schedules
+tab; each schedule becomes one LaunchAgent plist that fires on your chosen cadence.
 
 ## What this is NOT
 
 These are not LaunchDaemons. The app does not request `sudo` and does not install
 anything outside `~/Library/LaunchAgents`. There is no system-wide service. If your
-Mac is logged out, the tiers do not run.
+Mac is logged out, schedules do not run.
 
-## Tiers
+## Schedules
 
-| Tier | Cadence       | Collects                                                                                | When to enable                                          |
-|------|---------------|-----------------------------------------------------------------------------------------|---------------------------------------------------------|
-| HOT  | every 15 min  | overview, security summary, patch-status summary, update-status summary                 | Always — cheap and keeps the UI responsive              |
-| WARM | every 4 hours | policies list, profiles list, scripts list, packages list, smart groups, ea-coverage    | Whenever you want the Data Sources + Generated tabs fresh |
-| COLD | every 24 hours| full computers list, full mobile devices list, EA results, patch failure detail        | Production tenants where overnight freshness matters    |
+Each schedule is one `~/Library/LaunchAgents/<label>.plist` that invokes the JamfReports
+app with `--scheduled-run`. You control:
 
-When enabled, each tier writes a plist into `~/Library/LaunchAgents/` named
-`com.jamfreports.<profile>.<tier>.plist` and runs `jamf-cli` against that profile.
+- **Name** — a human-readable identifier (e.g., "Daily Refresh")
+- **Profile** — which jamf-cli profile to use
+- **Cadence** — when to run (daily at 7 AM, weekly on Mondays, etc.)
+- **RunMode** — what the schedule should do: `snapshot-only` (Refresh tier only),
+  `jamf-cli-only` (generate from cache, no fresh data), `jamf-cli-full` (collect all
+  tiers + generate), or `csv-assisted` (collect + generate with a CSV)
+- **Collection tiers** — which data to fetch: Refresh (overview / security / policy-status),
+  Inventory (lists / profiles / apps / EA coverage), or Scan (full device inventory /
+  patch failures / update failures). Defaults to all three for `jamf-cli-full`/`csv-assisted`.
 
-## Enabling and disabling tiers
+Plist labels follow the pattern `com.github.tonyyo11.jamf-reports-community.<profile>.<slug>`
+for single-profile schedules. Multi-profile schedules use `com.github.tonyyo11.jamf-reports-community.multi.<slug>`.
 
-Schedules tab -> pick a profile -> toggle the tier. The toggle:
-
-1. Writes the plist atomically.
-2. Loads it into the per-user launchd domain.
-3. Triggers an immediate first run so the cache is populated.
-
-Disabling a tier unloads the agent and removes the plist. Cached JSON from prior runs
-is preserved so reports continue to render until you re-enable.
+The schedule writes its plist when you save it from the form, loads it into launchd,
+and optionally triggers an immediate first run.
 
 ## Where logs live
 
-Each tier writes to `~/Library/Logs/JamfReports/<label>/`:
+A scheduled run logs in two places:
 
-```
-~/Library/Logs/JamfReports/
-└── com.jamfreports.<profile>.<tier>/
-    ├── stdout.log
-    ├── stderr.log
-    └── runs/
-        └── 2026-05-07T031500.log     # one file per invocation
-```
+- **launchd stdout/stderr** — `~/Library/Logs/JamfReports/<label>/stdout.log`
+  and `stderr.log`. The plist points launchd's `StandardOutPath` /
+  `StandardErrorPath` here. The app size-rotates these (`LaunchAgentLogRotator`):
+  when a file passes 5 MiB it shifts `stdout.log` → `stdout.log.1` → `.2` → `.3`
+  and drops the oldest, so at most four generations (~20 MiB) per stream survive.
+- **Per-run logs** — `~/Jamf-Reports/<profile>/automation/logs/<timestamp>.log`,
+  one file per invocation holding the full streamed output (jamf-cli snapshots,
+  app-level operations, final status). This is the set the Runs tab reads via
+  `RunHistoryService` and lists newest-first. The app does not age- or
+  count-prune this directory — clear it manually if a high-frequency schedule
+  makes it grow large.
 
-Per-run files contain the full streamed jamf-cli output. The `stdout.log` and
-`stderr.log` files are rolling and truncated by the launchd `StandardOutPath` /
-`StandardErrorPath` directives. Per-run files are rotated by the app itself: oldest
-files are deleted when the directory exceeds `automation.log_retention_runs`
-(default 200) per tier.
-
-## Inspecting a tier
+## Inspecting a schedule
 
 ```bash
 # List loaded JamfReports agents for the current user
-launchctl list | grep com.jamfreports
+launchctl list | grep com.github.tonyyo11.jamf-reports-community
 
-# Print the plist for a specific tier
-launchctl print "gui/$(id -u)/com.jamfreports.prod.warm"
+# Print the plist for a specific schedule (inspect label first)
+launchctl list | grep jamf-reports
+# Example output: 0  -  com.github.tonyyo11.jamf-reports-community.prod.daily
 
-# Tail the live log
-tail -f ~/Library/Logs/JamfReports/com.jamfreports.prod.warm/stdout.log
+launchctl print "gui/$(id -u)/com.github.tonyyo11.jamf-reports-community.prod.daily"
+
+# Tail the most recent run log
+ls -t ~/Jamf-Reports/prod/automation/logs/*.log | head -1 | xargs tail -f
 
 # Force an immediate run
-launchctl kickstart -k "gui/$(id -u)/com.jamfreports.prod.warm"
+launchctl kickstart -k "gui/$(id -u)/com.github.tonyyo11.jamf-reports-community.prod.daily"
 ```
 
-A tier that loads but never fires usually has a malformed `StartCalendarInterval` or
-`StartInterval`. Inspect with `launchctl print` and look for warnings near the bottom.
+A schedule that loads but never fires usually has a malformed `StartCalendarInterval`.
+Inspect with `launchctl print` and look for warnings near the bottom.
 
-## Disabling a stuck tier
+## Disabling a stuck schedule
 
 ```bash
-launchctl bootout "gui/$(id -u)/com.jamfreports.prod.warm"
-rm ~/Library/LaunchAgents/com.jamfreports.prod.warm.plist
+# First identify the label from launchctl list
+LABEL="com.github.tonyyo11.jamf-reports-community.prod.daily"
+
+# Unload the agent and remove the plist
+launchctl bootout "gui/$(id -u)/$LABEL"
+rm ~/Library/LaunchAgents/$LABEL.plist
 ```
 
-Then re-enable from the Schedules tab to get a freshly written plist.
+Then re-create the schedule from the Schedules tab to get a freshly written plist.
 
 ## Cost considerations
 
-- HOT calls are summary endpoints and complete in seconds against most tenants.
-- WARM list endpoints are pageable and complete in tens of seconds.
-- COLD pulls full inventory and per-plan details. On a 5,000-device tenant this can
-  take several minutes per run. Schedule it overnight if your service account has a
-  rate limit.
+- **Refresh tier** (overview, security, policy-status) — summary endpoints, seconds per run.
+- **Inventory tier** (lists, profiles, apps, EA coverage) — pageable bulk queries, tens of seconds.
+- **Scan tier** (full inventory, device compliance, patch/update failures) — per-device
+  enumeration, minutes on large fleets. Schedule these overnight if your account has
+  rate limits or if your on-prem Jamf Pro is memory-constrained.
 
-The app does not throttle jamf-cli; it inherits whatever rate limits your tenant and
-service account enforce. If you see HTTP 429 in the per-run logs, lower the COLD
-cadence or split inventory collection into multiple profiles.
+The app does not throttle jamf-cli. It inherits whatever rate limits your tenant and
+service account enforce. If you see HTTP 429 in the run logs, lower the
+Scan schedule's cadence, drop the Scan tier from that schedule, or split
+inventory collection across multiple profiles with staggered cadences.
