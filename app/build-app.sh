@@ -114,7 +114,7 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
          even when the marketing version changes — the next 2.0.1 beta starts at
          build > 10. Re-using a build number makes Sparkle refuse the update. -->
     <key>CFBundleVersion</key>
-    <string>10</string>
+    <string>11</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>

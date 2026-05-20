@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-20
+
 ### Added
 
 - **Patch Summary Dashboard** sheet (Python CLI): management-facing overview
