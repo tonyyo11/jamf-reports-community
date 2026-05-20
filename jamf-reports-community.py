@@ -3289,7 +3289,12 @@ class LogRedactor:
             ),
             r"\1REDACTED_CLIENT_SECRET\3",
         ),
-        # OAuth client_id — UUID or short opaque token, only redact long-ish values.
+        # OAuth client_id — UUID (matched by the 20+ branch) or a 16+ char
+        # opaque token. The 16-char floor is deliberate: it avoids redacting
+        # short example values like `client_id: dev` in docs and log echoes,
+        # and keeps Python <-> Swift LogRedactor parity (LogRedactor.swift uses
+        # the same floor). A manually-set client_id under 16 chars is a narrow,
+        # accepted residual gap.
         (
             re.compile(
                 r'(client_id\s*[:=]\s*["\']?)([A-Fa-f0-9\-]{20,}|[A-Za-z0-9_\-]{16,64})(["\']?)',
@@ -3377,15 +3382,28 @@ class LogRedactor:
         "devicename": "device",
         "device_name": "device",
         "displayname": "device",
+        "assettag": "device",
+        "asset_tag": "device",
+        "managementid": "device",
+        "management_id": "device",
+        "udid": "udid",
         "hostname": "host",
         "host_name": "host",
         "host": "host",
+        "ipaddress": "ip",
+        "ip_address": "ip",
         "username": "user",
         "user_name": "user",
         "user": "user",
+        "realname": "user",
+        "real_name": "user",
         "email": "email",
         "emailaddress": "email",
         "email_address": "email",
+        "building": "org",
+        "department": "org",
+        "room": "org",
+        "position": "org",
     }
 
     # Apple serial numbers: 10-12 alphanumeric, no vowels (Apple convention skips
@@ -3412,6 +3430,16 @@ class LogRedactor:
     _EMAIL_RE = re.compile(
         r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
     )
+    # Absolute /Users/<name>/ paths in log free-text leak the local macOS
+    # username. Capture the home-directory owner for placeholdering.
+    _HOME_PATH_RE = re.compile(r"(/Users/)([A-Za-z0-9._-]+)")
+
+    # Seed-from-cache device-name redaction: device names are not regex-
+    # patternable, so redact_text redacts exact identifier literals harvested
+    # from cached jamf-cli JSON. Literals shorter than this are skipped to
+    # avoid over-matching common log words; per-category collection is capped.
+    _MIN_SEED_LEN = 4
+    _MAX_SEED_PER_CATEGORY = 5000
 
     def __init__(
         self,
@@ -3430,6 +3458,9 @@ class LogRedactor:
         # Per-instance random salt → stable within bundle, opaque across bundles.
         self._salt = secrets.token_bytes(16)
         self._cache: dict[tuple[str, str], str] = {}
+        # Compiled per-category regexes of known identifier literals, populated
+        # by seed_from_workspace(). Empty until seeded — redact_text no-ops it.
+        self._known_res: dict[str, re.Pattern] = {}
 
     def policy(self) -> dict[str, bool]:
         """Return the active redaction policy as a plain dict (for manifests)."""
@@ -3472,6 +3503,21 @@ class LogRedactor:
                 lambda m: self._placeholder("serial", m.group(0)),
                 out,
             )
+        if self._redact_usernames:
+            # Redact the local macOS username from absolute /Users/<name>/ paths.
+            out = self._HOME_PATH_RE.sub(
+                lambda m: f"{m.group(1)}{self._placeholder('user', m.group(2))}",
+                out,
+            )
+        # Seeded literal redaction — exact device/identity strings harvested
+        # from cached jamf-cli JSON, closing the free-text device-name gap the
+        # regex passes cannot cover.
+        for category, pattern in self._known_res.items():
+            if self._pii_enabled(category):
+                out = pattern.sub(
+                    lambda m, c=category: self._placeholder(c, m.group(0)),
+                    out,
+                )
         return out
 
     def redact_json(self, obj: Any) -> Any:
@@ -3504,13 +3550,16 @@ class LogRedactor:
         return obj
 
     def _pii_enabled(self, category: str) -> bool:
+        # The five user-toggleable categories each map to a --keep-* flag.
+        # Categories without a flag (udid, ip, org) have no opt-out and are
+        # always redacted.
         return {
             "host": self._redact_hostnames,
             "serial": self._redact_serials,
             "email": self._redact_emails,
             "device": self._redact_device_names,
             "user": self._redact_usernames,
-        }.get(category, False)
+        }.get(category, True)
 
     def _placeholder(self, kind: str, value: str) -> str:
         cache_key = (kind, value)
@@ -3521,6 +3570,58 @@ class LogRedactor:
         placeholder = f"{kind}-{digest}"
         self._cache[cache_key] = placeholder
         return placeholder
+
+    def seed_from_workspace(self, workspace: Path) -> int:
+        """Harvest device/identity literals from cached jamf-cli JSON.
+
+        Walks ``<workspace>/jamf-cli-data/`` for JSON snapshots and collects
+        string values under `_PII_JSON_KEYS` keys into per-category literal
+        sets, then compiles per-category alternation regexes. `redact_text`
+        uses these to redact exact device names, UDIDs, asset tags, etc. from
+        log free-text — the gap the regex passes cannot cover because device
+        names are not regex-patternable.
+
+        Args:
+            workspace: Profile workspace directory.
+
+        Returns:
+            Count of distinct literals collected across all categories.
+        """
+        data_dir = workspace / "jamf-cli-data"
+        if not data_dir.is_dir():
+            return 0
+        known: dict[str, set[str]] = {}
+        for json_path in sorted(data_dir.rglob("*.json")):
+            try:
+                payload = json.loads(json_path.read_text(errors="replace"))
+            except (OSError, ValueError):
+                continue
+            self._harvest(payload, known)
+        self._known_res = {}
+        for category, values in known.items():
+            literals = sorted(
+                (v for v in values if len(v) >= self._MIN_SEED_LEN),
+                key=len,
+                reverse=True,
+            )[: self._MAX_SEED_PER_CATEGORY]
+            if literals:
+                self._known_res[category] = re.compile(
+                    "|".join(re.escape(v) for v in literals)
+                )
+        return sum(len(v) for v in known.values())
+
+    def _harvest(self, obj: Any, known: dict[str, set[str]]) -> None:
+        """Recursively collect `_PII_JSON_KEYS` string values into `known`."""
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                category = self._PII_JSON_KEYS.get(str(key).lower())
+                if category and isinstance(value, str) and value.strip():
+                    known.setdefault(category, set()).add(value.strip())
+                else:
+                    self._harvest(value, known)
+        elif isinstance(obj, list):
+            for item in obj:
+                self._harvest(item, known)
 
 
 # ---------------------------------------------------------------------------
@@ -18514,6 +18615,7 @@ def _bundle_collect_config(
 
 def _bundle_collect_workspace_tree(
     workspace: Path,
+    redactor: Optional[LogRedactor],
     zip_file: zipfile.ZipFile,
     manifest_files: list[dict[str, Any]],
     max_depth: int = 3,
@@ -18522,7 +18624,9 @@ def _bundle_collect_workspace_tree(
 
     The full absolute path (`/Users/<user>/Jamf-Reports/<profile>/`) is
     deliberately NOT emitted — it would leak the local macOS username.
-    Use only the workspace's basename as the root label.
+    Use only the workspace's basename as the root label. Entries are run
+    through the redactor so a user-named CSV with a device name or serial in
+    its filename does not leak.
     """
     lines: list[str] = [f"{workspace.name}/"]
     workspace_resolved = workspace.resolve()
@@ -18538,8 +18642,14 @@ def _bundle_collect_workspace_tree(
         for name in sorted(files):
             lines.append(f"{'  ' * (depth + 1)}{name}")
     content = "\n".join(lines)
+    if redactor is not None:
+        content = redactor.redact_text(content)
     zip_file.writestr("workspace_tree.txt", content)
-    manifest_files.append({"path": "workspace_tree.txt", "size": len(content)})
+    manifest_files.append({
+        "path": "workspace_tree.txt",
+        "size": len(content),
+        "redacted": redactor is not None,
+    })
 
 
 def _bundle_collect_versions(
@@ -18623,6 +18733,12 @@ def cmd_diagnostic_bundle(
             redact_device_names=not keep_device_names,
             redact_usernames=not keep_usernames,
         )
+        # Harvest device/identity literals from cached jamf-cli JSON so log
+        # redaction strips device names, UDIDs, asset tags, etc. that appear
+        # in free-text — not just the regex-patternable serials and hosts.
+        seeded = redactor.seed_from_workspace(workspace)
+        if seeded:
+            print(f"  redaction seeded with {seeded} identifier(s) from jamf-cli-data/")
 
     if output_path is None:
         ts = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -18642,7 +18758,7 @@ def cmd_diagnostic_bundle(
         _bundle_collect_logs(workspace, days, redactor, zf, manifest_files)
         _bundle_collect_summaries(workspace, summary_limit, redactor, zf, manifest_files)
         _bundle_collect_config(config, redactor, zf, manifest_files)
-        _bundle_collect_workspace_tree(workspace, zf, manifest_files)
+        _bundle_collect_workspace_tree(workspace, redactor, zf, manifest_files)
         _bundle_collect_versions(zf, manifest_files)
 
         manifest = {

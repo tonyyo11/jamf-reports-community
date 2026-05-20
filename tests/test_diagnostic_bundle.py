@@ -447,3 +447,161 @@ def test_bundle_default_output_path_lands_on_desktop(jrc, mock_workspace, tmp_pa
     assert result.parent == tmp_path / "Desktop"
     assert result.name.startswith("jamf-reports-diagnostic-")
     assert result.suffix == ".zip"
+
+
+# ---------------------------------------------------------------------------
+# LogRedactor — home-path / username redaction (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def test_redactor_strips_username_from_users_path(jrc):
+    """Absolute /Users/<name>/ paths in free-text leak the local macOS username."""
+    redactor = jrc.LogRedactor()
+    text = "can't open file '/Users/jdoe/emdash/worktrees/app/script.py'"
+    out = redactor.redact_text(text)
+    assert "/Users/jdoe/" not in out
+    assert "/Users/user-" in out
+    # The rest of the path is preserved.
+    assert "/emdash/worktrees/app/script.py" in out
+
+
+def test_redactor_username_path_same_placeholder_each_time(jrc):
+    redactor = jrc.LogRedactor()
+    out = redactor.redact_text("/Users/jdoe/a and /Users/jdoe/b")
+    placeholders = {seg.split("/")[2] for seg in out.split() if seg.startswith("/Users/")}
+    assert len(placeholders) == 1  # both occurrences collapse to one placeholder
+
+
+def test_redactor_keep_usernames_preserves_users_path(jrc):
+    redactor = jrc.LogRedactor(redact_usernames=False)
+    out = redactor.redact_text("/Users/jdoe/Documents/report.xlsx")
+    assert "/Users/jdoe/" in out
+
+
+# ---------------------------------------------------------------------------
+# LogRedactor — extended PII JSON keys (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def test_redact_json_redacts_udid_ip_realname_assettag(jrc):
+    redactor = jrc.LogRedactor()
+    obj = {
+        "udid": "00008020-001A2B3C4D5E6F00",
+        "ipAddress": "10.1.2.3",
+        "realName": "Jane Doe",
+        "assetTag": "ASSET-4471",
+    }
+    out = redactor.redact_json(obj)
+    assert out["udid"].startswith("udid-")
+    assert out["ipAddress"].startswith("ip-")
+    assert out["realName"].startswith("user-")
+    assert out["assetTag"].startswith("device-")
+
+
+def test_redact_json_redacts_org_structure_keys(jrc):
+    redactor = jrc.LogRedactor()
+    obj = {"building": "HQ West", "department": "Field Ops", "room": "3-114"}
+    out = redactor.redact_json(obj)
+    assert out["building"].startswith("org-")
+    assert out["department"].startswith("org-")
+    assert out["room"].startswith("org-")
+
+
+def test_redact_json_udid_ip_org_have_no_keep_flag(jrc):
+    """udid/ip/org are always-on — no --keep-* flag turns them off."""
+    redactor = jrc.LogRedactor(
+        redact_hostnames=False,
+        redact_serials=False,
+        redact_emails=False,
+        redact_device_names=False,
+        redact_usernames=False,
+    )
+    obj = {"udid": "00008020-001A2B3C", "ipAddress": "10.0.0.9", "building": "HQ"}
+    out = redactor.redact_json(obj)
+    assert out["udid"].startswith("udid-")
+    assert out["ipAddress"].startswith("ip-")
+    assert out["building"].startswith("org-")
+
+
+# ---------------------------------------------------------------------------
+# LogRedactor — seed-from-workspace device-name redaction (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def seeded_workspace(tmp_path: Path) -> Path:
+    """A workspace with cached jamf-cli JSON carrying device identifiers."""
+    workspace = tmp_path / "ws-seed"
+    data_dir = workspace / "jamf-cli-data" / "computers"
+    data_dir.mkdir(parents=True)
+    (data_dir / "computers.json").write_text(json.dumps([
+        {"computerName": "Lab-MacBook-Reception", "serialNumber": "ZZ9XL3FRJHD2",
+         "udid": "00008020-AAAA1111BBBB2222", "username": "field-tech-amy"},
+        {"computerName": "Lab-MacBook-Loading", "serialNumber": "YY8XL3FRJHD3"},
+    ]))
+    return workspace
+
+
+def test_seed_from_workspace_collects_identifiers(jrc, seeded_workspace):
+    redactor = jrc.LogRedactor()
+    # 2 device names + 2 serials + 1 udid + 1 username = 6 distinct literals.
+    assert redactor.seed_from_workspace(seeded_workspace) == 6
+
+
+def test_seed_from_workspace_returns_zero_without_cache(jrc, tmp_path):
+    redactor = jrc.LogRedactor()
+    assert redactor.seed_from_workspace(tmp_path / "no-such-ws") == 0
+
+
+def test_seeded_redactor_strips_device_name_from_free_text(jrc, seeded_workspace):
+    """The free-text device-name gap: a device name in a log line — not a
+    regex-patternable token — must be redacted once the redactor is seeded."""
+    redactor = jrc.LogRedactor()
+    redactor.seed_from_workspace(seeded_workspace)
+    log = "[info] collecting inventory for Lab-MacBook-Reception (user field-tech-amy)"
+    out = redactor.redact_text(log)
+    assert "Lab-MacBook-Reception" not in out
+    assert "field-tech-amy" not in out
+    assert "device-" in out
+    assert "user-" in out
+
+
+def test_unseeded_redactor_leaves_device_name(jrc):
+    """Without seeding, a free-text device name has no pattern and survives —
+    the documented limitation that seed_from_workspace closes."""
+    redactor = jrc.LogRedactor()
+    out = redactor.redact_text("collecting inventory for Lab-MacBook-Reception")
+    assert "Lab-MacBook-Reception" in out
+
+
+def test_seed_min_length_floor_skips_short_values(jrc, tmp_path):
+    """Short identifiers are not seeded — avoids over-matching common words."""
+    workspace = tmp_path / "ws-short"
+    data_dir = workspace / "jamf-cli-data" / "computers"
+    data_dir.mkdir(parents=True)
+    (data_dir / "c.json").write_text(json.dumps([{"computerName": "Mac"}]))  # 3 chars
+    redactor = jrc.LogRedactor()
+    redactor.seed_from_workspace(workspace)
+    out = redactor.redact_text("the word Mac appears in this log")
+    assert "Mac" in out  # below the 4-char floor — not redacted
+
+
+def test_bundle_seeds_redactor_and_strips_device_names_from_logs(jrc, tmp_path):
+    """End-to-end canary: a device name written into a log is absent from the
+    generated bundle once the workspace has cached JSON to seed from."""
+    workspace = tmp_path / "ws-canary"
+    (workspace / "automation" / "logs").mkdir(parents=True)
+    cache = workspace / "jamf-cli-data" / "computers"
+    cache.mkdir(parents=True)
+    (cache / "c.json").write_text(json.dumps([{"computerName": "Canary-MacBook-X1"}]))
+    (workspace / "automation" / "logs" / "run.log").write_text(
+        "[info] generate finished for Canary-MacBook-X1\n"
+    )
+    (workspace / "config.yaml").write_text('jamf_cli:\n  profile: "canary"\n')
+    config = jrc.Config(str(workspace / "config.yaml"))
+    output = tmp_path / "bundle.zip"
+    jrc.cmd_diagnostic_bundle(config, output_path=output)
+    with zipfile.ZipFile(output) as zf:
+        log = zf.read("logs/run.log").decode("utf-8")
+    assert "Canary-MacBook-X1" not in log
+    assert "device-" in log

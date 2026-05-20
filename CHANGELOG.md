@@ -97,6 +97,17 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- **Diagnostic-bundle redaction hardened** (Python CLI): `diagnostic-bundle`
+  now redacts identifiers the regex passes could not reach. The local macOS
+  username is stripped from absolute `/Users/<name>/` paths in log free-text;
+  the redactor seeds itself from cached `jamf-cli-data/` JSON so device names,
+  UDIDs, and asset tags echoed into run logs are redacted by exact match;
+  `workspace_tree.txt` now runs through the redactor; and `_PII_JSON_KEYS`
+  gained `udid`, `ipAddress`, `realName`, `assetTag`, `managementId`, and the
+  `building` / `department` / `room` / `position` org-structure keys. Verified
+  against a real workspace: a username that previously appeared 164 times in a
+  bundle's logs now appears zero times.
+
 - **Sidebar workspace monogram widened to four characters** (PR-25, macOS
   app): the workspace-chip avatar shows the first four characters of the
   profile slug instead of two, so profiles that share a short prefix stay
