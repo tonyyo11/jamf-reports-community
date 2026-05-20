@@ -34,6 +34,7 @@ extension WorkspaceStore {
     }
 
     private static var coordinatorKey: UInt8 = 0
+    private static var foregroundObserverKey: UInt8 = 0
 
     // MARK: Public trigger
 
@@ -47,15 +48,33 @@ extension WorkspaceStore {
         coordinator.refreshIfStale(profile: profileSlug, tier: .refresh)
     }
 
+    /// Fire a debounced `.refresh`-tier check after a profile switch.
+    ///
+    /// Routed through `RefreshCoordinator.observeProfileSwitch` (500 ms
+    /// debounce) so cycling the sidebar chip through several profiles
+    /// doesn't spawn a refresh per intermediate selection. No-ops in demo
+    /// mode — `observeProfileSwitch` itself has no demo guard, so the
+    /// check lives here at the WorkspaceStore boundary.
+    func observeProfileSwitchRefresh(for profileSlug: String) {
+        guard !demoMode, profileSlug != "demo" else { return }
+        guard ProfileService.isValid(profileSlug) else { return }
+        coordinator.observeProfileSwitch(profileSlug)
+    }
+
     // MARK: App-foreground registration
 
-    /// Register for `NSApplication.willBecomeActiveNotification`.
+    /// Register for `NSApplication.willBecomeActiveNotification` so the
+    /// active profile's Refresh-tier data is re-checked when the app comes
+    /// back to the foreground.
     ///
-    /// Called once from `JamfReportsApp.init` / the app entry point via the
-    /// `.onAppear` modifier on the root view. Idempotent — subsequent calls are
-    /// no-ops because the coordinator uses task coalescing.
+    /// Called once from the root view's `.task`. Genuinely idempotent: the
+    /// observer token is stashed as an associated object and a second call
+    /// returns early, so a shell re-mount cannot stack duplicate observers.
     func registerForegroundRefresh() {
-        NotificationCenter.default.addObserver(
+        if objc_getAssociatedObject(self, &WorkspaceStore.foregroundObserverKey) != nil {
+            return
+        }
+        let token = NotificationCenter.default.addObserver(
             forName: NSApplication.willBecomeActiveNotification,
             object: nil,
             queue: .main
@@ -66,6 +85,12 @@ extension WorkspaceStore {
                 self.triggerRefresh(for: self.profile)
             }
         }
+        objc_setAssociatedObject(
+            self,
+            &WorkspaceStore.foregroundObserverKey,
+            token,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
     }
 }
 
