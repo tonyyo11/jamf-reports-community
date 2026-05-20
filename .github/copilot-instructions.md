@@ -75,7 +75,7 @@ python3 jamf_reports_community.py check [--csv path/to/export.csv]
 1. Add to `DEFAULT_CONFIG` with sensible default
 2. Read it in the relevant class/function
 3. Document in `config.example.yaml` with comment
-4. Update `COMMUNITY_README.md` if user-facing
+4. Update `README.md` if user-facing
 
 ### Key Names (Common Confusion Points)
 
@@ -155,7 +155,7 @@ To add a new type:
 1. Add method `_ea_<typename>(self, ws, row_i, col, ea)` to `CSVDashboard`
 2. Add key to `dispatch` dict
 3. Document in `config.example.yaml`
-4. Update type table in `COMMUNITY_README.md`
+4. Update type table in `README.md`
 
 ## Code Conventions
 
@@ -213,7 +213,7 @@ Note: Patch-status parser handles both `installed/total` and `on_latest/on_other
 ## Related Documentation
 
 - **CLAUDE.md / AGENTS.md** — Detailed architecture, config system reference, invariants, conventions
-- **COMMUNITY_README.md** — End-user setup and usage guide
+- **README.md** — End-user setup and usage guide
 - **PROJECT_CONTEXT.md** — Session context, known issues, enhancement backlog
 - **docs/wiki/** — Extended documentation (GitHub Wiki source)
 

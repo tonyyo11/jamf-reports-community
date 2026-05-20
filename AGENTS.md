@@ -297,7 +297,7 @@ When adding a new config key:
 1. Add it to `DEFAULT_CONFIG` with a sensible default.
 2. Read it from `config` in the relevant class/function.
 3. Document it in `config.example.yaml` with a comment.
-4. Update `COMMUNITY_README.md` if it's user-facing.
+4. Update `README.md` if it's user-facing.
 
 ### Actual key names (common source of confusion)
 
@@ -619,7 +619,7 @@ To add a new type:
 1. Add a method `_ea_<typename>(self, ws, row_i, col, ea)` to `CSVDashboard`.
 2. Add the key to the `dispatch` dict.
 3. Document the type and its config keys in `config.example.yaml`.
-4. Update the type table in `COMMUNITY_README.md`.
+4. Update the type table in `README.md`.
 
 ---
 
@@ -842,7 +842,7 @@ jamf-reports-community/
 ├── jamf-reports-community.py   # Entire Python CLI implementation — single file
 ├── config.example.yaml         # Annotated example config — must stay in sync with DEFAULT_CONFIG
 ├── CHANGELOG.md                # User-visible changes between commits and releases
-├── COMMUNITY_README.md         # End-user setup and usage guide
+├── README.md                   # End-user setup and usage guide
 ├── CLAUDE.md                   # This file
 ├── AGENTS.md                   # Mirror of CLAUDE.md for OpenAI-compatible agents
 ├── BACKLOG.md                  # Index of deferred-findings epic issues (GitHub)
