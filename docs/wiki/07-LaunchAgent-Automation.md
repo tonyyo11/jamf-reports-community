@@ -67,6 +67,10 @@ python3 jamf-reports-community.py workspace-init \
 
 Then point `launchagent-setup` at the generated workspace config.
 
+The app provides a Schedules screen for managing LaunchAgent automation:
+
+![Schedules Configuration](../images/schedules.png)
+
 ## What `launchagent-setup` Creates
 
 Run:

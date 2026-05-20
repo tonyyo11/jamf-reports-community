@@ -7,49 +7,43 @@ This tool is featured in the [jamf-cli Community Showcase](https://github.com/Ja
 
 ## macOS App
 
-A native SwiftUI macOS application (macOS 14+) ships alongside the Python CLI.
-It wraps every CLI flow — collect, generate, schedule, configure — and adds
-twenty-four dashboards covering the full posture/operations/fleet lifecycle:
-**Overview, Devices, Device Lookup, Fleet Overview, Trends, Reports, Audit,
-Schedules, Runs, Sources, Backups, Config, Customize, Settings, Onboarding,
-Security Posture, Compliance Posture, Outreach, Patch, Updates, Policy/Profile,
-Extension Attributes, Mobile Fleet, and Protect.** Every dashboard is
-toggleable in Settings → Sidebar Visibility, so unused screens disappear from
-the sidebar without losing data.
+A native SwiftUI macOS application (macOS 14+) is the **recommended way** to use this tool.
+It wraps every CLI flow — collect, generate, schedule, configure — and provides dashboards
+covering the full posture/operations/fleet lifecycle: **Overview, Devices, Device Lookup,
+Fleet Overview, Trends, Reports, Audit, Schedules, Runs, Sources, Backups, Config,
+Customize, Settings, Onboarding, Security Posture, Compliance Posture, Outreach, Patch,
+Updates, Policy/Profile, Extension Attributes, Mobile Fleet, and Protect.** Every dashboard
+is toggleable in Settings → Sidebar Visibility, so unused screens disappear from the sidebar
+without losing data.
 
 Key capabilities:
 
-- **Configurable Security Score** (Config → Scoring) with the same weighted
-  formula used by `jamf_reports_cli_v3.5.py` (FileVault, SIP, Firewall,
-  CrowdStrike, mSCP, XProtect, CVE, Secure Boot).
-- **Historical Trends** built on Swift Charts and `summary.json` snapshots. The
-  default trend range is 4 weeks and is configurable in Settings → Data &
-  Charts.
-- **Smart refresh**: the manual "Skip expensive collections" toggle pauses the
-  four per-device commands (`ea-results --all`, `patch-status --scan-failures`,
-  `update-status --scan-failures`, `device-compliance`) so on-prem Jamf
-  servers aren't hammered between full refreshes. Scheduled LaunchAgent
-  collects always run the full set.
+- **Configurable Security Score** (Config → Scoring) with the same weighted formula used
+  by `jamf_reports_cli_v3.5.py` (FileVault, SIP, Firewall, CrowdStrike, mSCP, XProtect,
+  CVE, Secure Boot).
+- **Historical Trends** built on Swift Charts and `summary.json` snapshots. The default
+  trend range is 4 weeks and is configurable in Settings → Data & Charts.
+- **Smart refresh**: the manual "Skip expensive collections" toggle pauses the four
+  per-device commands so on-prem Jamf servers aren't hammered between full refreshes.
+  Scheduled LaunchAgent collects always run the full set.
 - **Legacy history import** (Settings → Import legacy history) reads
-  `fleet_health_metrics_history.json` produced by `jamf_reports_cli_v3.5.py`
-  and seeds Trends with up to a year of back-data.
+  `fleet_health_metrics_history.json` produced by `jamf_reports_cli_v3.5.py` and seeds
+  Trends with up to a year of back-data.
 
-The Python CLI remains in the repository as a standalone tool for headless or
-non-Mac environments and continues to be the engine for `python3
-jamf-reports-community.py generate/collect/html/...`.
+The Python CLI remains in the repository as a standalone tool for headless, automation,
+or non-Mac environments.
 
-Start here: **[docs/onboarding/GETTING_STARTED.md](docs/onboarding/GETTING_STARTED.md)**.
-Build instructions and architecture in [app/README.md](app/README.md). The app
-requires Xcode 16+ to build from source and can be packaged via `cd app &&
-./build-app.sh release`. Local builds are ad-hoc signed; wider distribution
-requires a Developer ID signature and notarization (not yet integrated into
-the release workflow).
+![Security & Health Overview Screenshot](docs/wiki/images/security-health-fleet-overview.png)
 
-<!-- TODO: screenshot -->
+**Start here:** [docs/onboarding/GETTING_STARTED.md](docs/onboarding/GETTING_STARTED.md)
 
-Long-form setup and operations docs live in the [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki).
+**Build instructions:** [app/README.md](app/README.md). The app requires Xcode 16+ to
+build from source. Package via `cd app && ./build-app.sh release`. Local builds are ad-hoc
+signed; wider distribution requires Developer ID signature and notarization.
 
-Automated testing docs and fixture guidance live in [docs/testing.md](docs/testing.md).
+Long-form setup and operations docs: [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki)
+
+Testing and fixture docs: [docs/testing.md](docs/testing.md)
 
 ---
 
@@ -132,7 +126,7 @@ pip install matplotlib
 
 If matplotlib is not installed, the script runs normally and skips chart generation.
 
-**jamf-cli v1.2.0 or later** (optional — required only for live API, EA discovery, and software sheets)
+**jamf-cli v1.16.1 or later** (optional — required only for live API, snapshots, and jamf-cli-driven sheets)
 
 jamf-cli is a command-line interface for Jamf Pro. Documentation and setup guides are at
 the [jamf-cli wiki](https://github.com/Jamf-Concepts/jamf-cli/wiki). If you want the live
@@ -144,12 +138,8 @@ jamf-cli pro setup --url https://jamf.example.com
 
 Follow the prompts to enter your API client ID and client secret. If jamf-cli is not
 installed or not authenticated, those sheets are silently skipped and the rest of the
-report is unaffected. Older jamf-cli builds may also lack some report subcommands; those
-sheets are skipped automatically with a clear message. If you keep saved jamf-cli JSON
-snapshots, the script can also reuse those as an offline cache.
-
-jamf-cli v1.2.0 is the minimum version that supports `app-status` and `update-status`.
-Builds before 1.2.0 will skip those sheets with a clear skip message.
+report is unaffected. The app surfaces a settings notice when the detected jamf-cli is
+below v1.16.1; most code paths still work, the warning is to nudge updates.
 
 If you also want the experimental Jamf Protect sheet, use `jamf-cli 1.6.0+`, configure
 Protect separately, and then opt in from `config.yaml`:
