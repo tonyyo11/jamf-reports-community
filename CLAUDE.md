@@ -8,10 +8,12 @@ any changes.
 > **Note:** `AGENTS.md` is a mirror of this file for OpenAI-compatible agents. Keep them
 > in sync when making changes here.
 
-> **Note:** `BACKLOG.md` at the repo root captures valid review findings that are out of
-> scope for the current change. Check it before starting work — you may be picking up an
-> item already triaged. When you fix a backlog item, remove it from `BACKLOG.md` in the
-> same commit. When you defer a new finding, add it there rather than leaving a TODO.
+> **Note:** Deferred review findings out of scope for the current change are tracked as
+> category-epic issues on GitHub; `BACKLOG.md` at the repo root is the index. Check the
+> relevant epic before starting work — you may be picking up an item already triaged.
+> When you fix an item, check it off in its epic issue and reference the issue in the
+> commit. When you defer a new finding, add it to the matching epic rather than leaving
+> a TODO.
 
 ---
 
@@ -51,10 +53,11 @@ days after landing and a same-day SwiftUI layout self-revert 75 minutes
 after merge. The rules below exist to keep that from recurring. Read them
 before the first edit of every session.
 
-**`BACKLOG.md` is the authoritative live inventory of valid-but-out-of-scope
-findings.** Read it before any change adjacent to a flagged area. Fix only
-items in the current PR's scope; log all others to `BACKLOG.md` per protocol.
-When you fix a backlog item, remove it from `BACKLOG.md` in the same commit.
+**The GitHub epic issues (indexed in `BACKLOG.md`) are the authoritative live
+inventory of valid-but-out-of-scope findings.** Read the relevant epic before
+any change adjacent to a flagged area. Fix only items in the current PR's
+scope; log all others to the matching epic issue per protocol. When you fix an
+item, check it off in its epic issue and reference the issue in the commit.
 
 **Branch-history check before edit.** Before editing any file, run
 `git log --oneline origin/main..HEAD -- <path>` and state the count in
@@ -842,7 +845,7 @@ jamf-reports-community/
 ├── COMMUNITY_README.md         # End-user setup and usage guide
 ├── CLAUDE.md                   # This file
 ├── AGENTS.md                   # Mirror of CLAUDE.md for OpenAI-compatible agents
-├── BACKLOG.md                  # Deferred review findings — check before working, remove on fix
+├── BACKLOG.md                  # Index of deferred-findings epic issues (GitHub)
 ├── LICENSE                     # MIT — canonical; mirrored to app/Sources/JamfReports/Resources/
 ├── NOTICE.md                   # Trademark/affiliation notice — canonical; mirrored to Resources
 ├── THIRD_PARTY_NOTICES.md      # Third-party attribution — canonical; mirrored to Resources
