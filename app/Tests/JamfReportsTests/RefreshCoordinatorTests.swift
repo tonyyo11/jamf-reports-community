@@ -168,4 +168,45 @@ final class RefreshCoordinatorTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - Coordinator entry points (PR-24 — now wired)
+    //
+    // PR-24 connects observeProfileSwitch (profile switch) and
+    // refreshIfStale (foreground/launch) to real callers, so these public
+    // entry points are now load-bearing. The guard paths below resolve
+    // synchronously — no waiting on the 500 ms debounce.
+
+    @MainActor
+    func testRefreshIfStaleNoOpsForNonRefreshTier() {
+        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        coordinator.refreshIfStale(profile: "validprofile", tier: .inventory)
+        XCTAssertFalse(
+            coordinator.isRefreshing(profile: "validprofile", tier: .inventory),
+            "Only the .refresh tier is wired; .inventory must no-op"
+        )
+        coordinator.refreshIfStale(profile: "validprofile", tier: .scan)
+        XCTAssertFalse(coordinator.isRefreshing(profile: "validprofile", tier: .scan))
+    }
+
+    @MainActor
+    func testRefreshIfStaleNoOpsForInvalidProfile() {
+        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        // Spaces + punctuation fail ProfileService.isValid — the guard must
+        // catch it before any task is queued.
+        coordinator.refreshIfStale(profile: "Bad Profile!", tier: .refresh)
+        XCTAssertFalse(coordinator.isRefreshing(profile: "Bad Profile!", tier: .refresh))
+    }
+
+    @MainActor
+    func testObserveProfileSwitchCoalescesRapidCalls() {
+        // Cycling the sidebar chip fires observeProfileSwitch repeatedly.
+        // The debounce means none of them have started a refresh yet — the
+        // coordinator must stay quiet (and not crash) through the burst.
+        let coordinator = RefreshCoordinator(bridge: CLIBridge())
+        coordinator.observeProfileSwitch("alpha")
+        coordinator.observeProfileSwitch("beta")
+        coordinator.observeProfileSwitch("gamma")
+        XCTAssertEqual(coordinator.failureCount(profile: "gamma", tier: .refresh), 0)
+        XCTAssertFalse(coordinator.isRefreshing(profile: "gamma", tier: .refresh))
+    }
 }

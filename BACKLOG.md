@@ -481,14 +481,6 @@ work to back those recommendations:
 
 - **CONSIDER — Cross-run manifest re-hash from disk inherits PR-7 attack window.** `jamf-reports-community.py:670-671`. `_rewrite_snapshot_manifest` re-hashes unpinned existing files from disk when rewriting the manifest. Each `_emit_summary_json` (daily) or `_emit_per_log_summary_json` call rewrites the summaries manifest, causing OTHER existing per-log summaries to be re-hashed from disk at that point. An attacker who tampers a per-log summary between two legitimate writes (e.g., between hot-tier runs ≥15 min apart) gets their tampered content blessed into the manifest on the next sibling run — converting a `.mismatch` into `.verified` for that file. Same residual attack pattern as PR-7's `_save_snapshot` and accepted there. Address with a "pin all known files from a per-run-context cache" approach OR document as accepted residual in the threat model. Inherited from PR-7.
 
-### From post-PR-21 architecture review (2026-05-18)
-
-Items surfaced while answering "does the Swift app replicate the tiered
-collection pattern from the Python/zsh reference deployment?" Design
-work captured in `docs/architecture/tiered-collection-adr.md`.
-
-- **CONSIDER (PR-23 T-16 finding) — `RefreshCoordinator` has no production caller.** `app/Sources/JamfReports/Services/RefreshCoordinator.swift`. `observeProfileSwitch`, `registerForegroundRefresh`, and `WorkspaceStore.triggerRefresh` are not invoked from any View, the app entry point, or `WorkspaceStore`'s profile-switch path — the whole backfill subsystem is unwired. Pre-existing (predates PR-22). T-16 retargeted it to `CollectionTier` per the plan so `ScheduleTier` could be deleted, but did not wire it. ADR Q1 envisions `RefreshCoordinator` as the "backfill if overdue" mechanism — wiring `observeProfileSwitch` into the sidebar profile chip and `registerForegroundRefresh` into app launch is the natural follow-up. Until then, `RefreshCoordinator` + `RefreshPolicy` + `RefreshCoordinatorTests` exercise code nothing calls.
-
 ---
 
 ## Process

@@ -64,6 +64,13 @@ struct ContentView: View {
         }
         .task {
             await workspace.autoUpdateJamfCLIIfNeeded()
+            // PR-24: wire up the background refresh coordinator. The
+            // foreground observer re-checks staleness when the app
+            // reactivates; the initial trigger covers this launch, since
+            // willBecomeActive may have already fired before the observer
+            // registered. Both no-op in demo mode.
+            workspace.registerForegroundRefresh()
+            workspace.triggerRefresh(for: workspace.profile)
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
         .animation(.snappy, value: workspace.toast != nil)

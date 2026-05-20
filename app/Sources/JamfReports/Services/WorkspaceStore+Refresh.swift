@@ -34,28 +34,58 @@ extension WorkspaceStore {
     }
 
     private static var coordinatorKey: UInt8 = 0
+    private static var foregroundObserverKey: UInt8 = 0
+
+    // MARK: Refresh gate
+
+    /// Whether a background refresh may run for `profileSlug`.
+    ///
+    /// False in demo mode — the demo workspace has no real Jamf data to
+    /// fetch — and false for slugs that fail the profile-name validator.
+    /// `RefreshCoordinator` has no demo concept, so this gate lives at the
+    /// `WorkspaceStore` boundary and both refresh entry points consult it.
+    ///
+    /// (There is deliberately no `profileSlug != "demo"` check: the demo
+    /// profile is `DemoData.org.profile` ("meridian-prod"), not "demo", so
+    /// such a literal never matched. `demoMode` is the real gate.)
+    func canRefresh(profileSlug: String) -> Bool {
+        !demoMode && ProfileService.isValid(profileSlug)
+    }
 
     // MARK: Public trigger
 
     /// Fire a `.refresh`-tier refresh for `profile`, subject to coordinator
-    /// backoff/coalescing.
-    ///
-    /// No-ops when demo mode is active or the profile slug is invalid.
+    /// backoff/coalescing. No-ops when `canRefresh` is false.
     func triggerRefresh(for profileSlug: String) {
-        guard !demoMode, profileSlug != "demo" else { return }
-        guard ProfileService.isValid(profileSlug) else { return }
+        guard canRefresh(profileSlug: profileSlug) else { return }
         coordinator.refreshIfStale(profile: profileSlug, tier: .refresh)
+    }
+
+    /// Fire a debounced `.refresh`-tier check after a profile switch.
+    ///
+    /// Routed through `RefreshCoordinator.observeProfileSwitch` (500 ms
+    /// debounce) so cycling the sidebar chip through several profiles
+    /// doesn't spawn a refresh per intermediate selection. No-ops when
+    /// `canRefresh` is false.
+    func observeProfileSwitchRefresh(for profileSlug: String) {
+        guard canRefresh(profileSlug: profileSlug) else { return }
+        coordinator.observeProfileSwitch(profileSlug)
     }
 
     // MARK: App-foreground registration
 
-    /// Register for `NSApplication.willBecomeActiveNotification`.
+    /// Register for `NSApplication.willBecomeActiveNotification` so the
+    /// active profile's Refresh-tier data is re-checked when the app comes
+    /// back to the foreground.
     ///
-    /// Called once from `JamfReportsApp.init` / the app entry point via the
-    /// `.onAppear` modifier on the root view. Idempotent — subsequent calls are
-    /// no-ops because the coordinator uses task coalescing.
+    /// Called once from the root view's `.task`. Genuinely idempotent: the
+    /// observer token is stashed as an associated object and a second call
+    /// returns early, so a shell re-mount cannot stack duplicate observers.
     func registerForegroundRefresh() {
-        NotificationCenter.default.addObserver(
+        if objc_getAssociatedObject(self, &WorkspaceStore.foregroundObserverKey) != nil {
+            return
+        }
+        let token = NotificationCenter.default.addObserver(
             forName: NSApplication.willBecomeActiveNotification,
             object: nil,
             queue: .main
@@ -66,6 +96,12 @@ extension WorkspaceStore {
                 self.triggerRefresh(for: self.profile)
             }
         }
+        objc_setAssociatedObject(
+            self,
+            &WorkspaceStore.foregroundObserverKey,
+            token,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
     }
 }
 

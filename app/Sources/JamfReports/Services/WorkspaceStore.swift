@@ -142,6 +142,10 @@ final class WorkspaceStore {
         authStatus = nil
         if !demoMode {
             org = Self.org(for: profiles.first(where: { $0.name == id }))
+            // PR-24: a profile switch backfills the new profile's Refresh-tier
+            // data if it's overdue. Debounced in the coordinator so rapid chip
+            // cycling doesn't spawn a refresh per intermediate selection.
+            observeProfileSwitchRefresh(for: id)
         }
         if !demoMode {
             schedules = LaunchAgentService.list().filter { $0.profile == id }
