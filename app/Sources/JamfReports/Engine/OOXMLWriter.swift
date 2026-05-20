@@ -240,6 +240,26 @@ final class Worksheet: @unchecked Sendable {
             xScale: xScale, yScale: yScale
         ))
     }
+
+    /// Cells de-duplicated by `(row, col)`, keeping the LAST write — matching
+    /// `xlsxwriter`'s last-write-wins semantics. Excel rejects a worksheet that
+    /// contains two `<c>` elements with the same `r` reference inside one
+    /// `<row>` ("Repaired Records: Cell information"), so every consumer of the
+    /// cell list must read through here rather than the raw `cells` array.
+    var dedupedCells: [(row: Int, col: Int, value: CellValue, format: CellFormat?)] {
+        var index: [String: Int] = [:]
+        var result: [(row: Int, col: Int, value: CellValue, format: CellFormat?)] = []
+        for cell in cells {
+            let key = "\(cell.row)-\(cell.col)"
+            if let existing = index[key] {
+                result[existing] = cell
+            } else {
+                index[key] = result.count
+                result.append(cell)
+            }
+        }
+        return result
+    }
 }
 
 // MARK: - Workbook
@@ -297,11 +317,23 @@ final class Workbook: @unchecked Sendable {
     // MARK: - Private ZIP assembly
 
     /// Add a pre-computed `Data` blob to a ZIPFoundation `Archive`.
-    /// `uncompressedSize` must be Int64; the provider returns the full blob
-    /// regardless of the `position`/`size` arguments (single-shot delivery).
+    ///
+    /// ZIPFoundation calls the provider repeatedly in `bufferSize`-byte chunks
+    /// (16 KB by default), advancing `position` each iteration, and sums the
+    /// returned bytes into the entry's compressed size. The provider MUST return
+    /// only the requested slice `data[position ..< position + requested]`.
+    /// Returning the whole blob on every call inflates `compressedSize` to a
+    /// multiple of the real length — for a STORED entry that desynchronizes
+    /// `compressedSize` from `uncompressedSize`, which Excel rejects as corrupt
+    /// worksheet content even though the ZIP container still opens.
     private static func addData(_ data: Data, path: String, to archive: Archive) throws {
         let size = Int64(data.count)
-        try archive.addEntry(with: path, type: .file, uncompressedSize: size) { _, _ in data }
+        try archive.addEntry(with: path, type: .file, uncompressedSize: size) { position, requested in
+            let start = Int(position)
+            guard start < data.count else { return Data() }
+            let end = Swift.min(start + requested, data.count)
+            return data.subdata(in: start..<end)
+        }
     }
 
     private func buildZIP(at url: URL) throws {
@@ -490,8 +522,10 @@ final class Workbook: @unchecked Sendable {
         // cellStyleXfs
         xml += "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>"
 
-        // cellXfs — one per CellFormat case
-        xml += "<cellXfs>"
+        // cellXfs — one per CellFormat case. The `count` attribute is required
+        // by ECMA-376; every sibling collection element (numFmts, fonts, fills,
+        // borders, cellStyleXfs) carries it.
+        xml += "<cellXfs count=\"13\">"
         // 0: title  — bold 14, no border
         xml += "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"
         // 1: subtitle — italic 10, grey, no border
@@ -537,7 +571,7 @@ final class Workbook: @unchecked Sendable {
         var totalRefs = 0
 
         for ws in sheets {
-            for (_, _, value, _) in ws.cells {
+            for (_, _, value, _) in ws.dedupedCells {
                 if case .string(let s) = value, !s.isEmpty {
                     totalRefs += 1
                     if table[s] == nil {
@@ -596,9 +630,11 @@ final class Workbook: @unchecked Sendable {
             xml += "</cols>"
         }
 
-        // Build row dictionary
+        // Build row dictionary. `dedupedCells` collapses repeated (row, col)
+        // writes to a single last-write-wins cell so no `<row>` emits two `<c>`
+        // elements with the same `r` reference.
         var rowDict: [Int: [(col: Int, value: CellValue, format: CellFormat?)]] = [:]
-        for (row, col, value, fmt) in ws.cells {
+        for (row, col, value, fmt) in ws.dedupedCells {
             rowDict[row, default: []].append((col, value, fmt))
         }
 

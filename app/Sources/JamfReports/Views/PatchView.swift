@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Patch management dashboard. Surfaces Jamf Pro patch-management status and
 /// failure detail from `pro report patch-status` and `patch-status --scan-failures`
@@ -137,6 +138,15 @@ struct PatchView: View {
                             ? "\(Self.titlesDisplayCap) of \(sortedTitles.count) shown"
                             : nil
                     )
+                    PNPButton(
+                        title: "Export CSV",
+                        icon: "tablecells",
+                        style: .neutral,
+                        size: .sm,
+                        action: exportPatchComplianceCSV
+                    )
+                    .accessibilityLabel("Export patch compliance report as CSV")
+                    .help("Save the full patch compliance report as a CSV file")
                     PNPButton(
                         title: "Export PNG",
                         icon: "square.and.arrow.down",
@@ -308,6 +318,31 @@ struct PatchView: View {
             suggestedFilename: "patch-titles-table-\(workspace.profile)"
         ) {
             PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
+        }
+    }
+
+    /// Export the full patch compliance report as a standalone CSV — the same
+    /// column shape as the workbook's "Patch Compliance" sheet. Unlike the PNG
+    /// export (capped and sorted for on-screen readability), this writes every
+    /// tracked title in collected order.
+    private func exportPatchComplianceCSV() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.nameFieldStringValue = "patch-compliance-\(workspace.profile).csv"
+        panel.title = "Export Patch Compliance CSV"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try PatchStatusService.complianceCSV(snapshot.titles)
+                .write(to: url, atomically: true, encoding: .utf8)
+            workspace.toast = Toast(
+                message: "Exported \(snapshot.totalTitles) patch titles to \(url.lastPathComponent)",
+                style: .success
+            )
+        } catch {
+            workspace.toast = Toast(
+                message: "Could not export CSV: \(error.localizedDescription)",
+                style: .danger
+            )
         }
     }
 }

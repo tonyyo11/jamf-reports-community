@@ -259,7 +259,7 @@ struct Sidebar: View {
             HStack(spacing: 10) {
                 let activeProfile = workspace.profiles.first(where: { $0.name == workspace.profile })
                 workspaceAvatar(engaged: engaged)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 36, height: 22)
                     .overlay(alignment: .topTrailing) {
                         if activeProfile?.status == .error {
                             Circle()
@@ -323,10 +323,12 @@ struct Sidebar: View {
 
     /// Distinctive avatar: gradient derived from a hue keyed off the profile's first
     /// letter, so each workspace gets a stable but unique tint. Adds a gold ring when
-    /// the chip is engaged.
+    /// the chip is engaged. The monogram shows the first four characters of the
+    /// profile slug so adjacent workspaces (e.g. "prod" / "prod-dr") stay tellable
+    /// apart at a glance.
     @ViewBuilder
     private func workspaceAvatar(engaged: Bool) -> some View {
-        let monogram = String(workspace.profile.prefix(2)).uppercased()
+        let monogram = String(workspace.profile.prefix(4)).uppercased()
         let hue = avatarHue(for: workspace.profile)
         ZStack {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
