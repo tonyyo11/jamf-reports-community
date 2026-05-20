@@ -42,6 +42,10 @@ struct SettingsView: View {
     // PR-23 T-23: per-report cadence table, shown when preset is .custom.
     @State private var customCadence: [String: PerReportCadence] = [:]
     @State private var customCadenceMessage: String? = nil
+    // PR-23 T-25: legacy collect_skip migration notice.
+    @State private var hasLegacyCollectSkip = false
+    @AppStorage("collectSkipMigrationBannerDismissed")
+    private var migrationBannerDismissed = false
 
     var body: some View {
         ScrollView {
@@ -53,6 +57,8 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.Text.primary)
                 }
                 .padding(.bottom, 8)
+
+                migrationBanner
 
                 HStack(alignment: .top, spacing: 14) {
                     cliCard
@@ -484,6 +490,45 @@ struct SettingsView: View {
         return "Run the four per-device commands (ea-results, patch-device-failures, update-device-failures, device-compliance) on every collect."
     }
 
+    // MARK: - Migration banner (PR-23 T-25)
+
+    /// One-time notice that the active profile's config still carries the
+    /// legacy `jamf_cli.collect_skip` key. It is read transparently (PR-22
+    /// T-12 folds it into per-report cadence), but saving a preset under
+    /// Performance rewrites the file onto the new schema and removes it —
+    /// at which point this banner stops appearing on its own. The Dismiss
+    /// button is for operators who want to acknowledge without acting.
+    ///
+    /// Never shows on fresh installs: `hasLegacyCollectSkip` is only true
+    /// when the key is physically present in config.yaml.
+    @ViewBuilder
+    private var migrationBanner: some View {
+        if hasLegacyCollectSkip && !migrationBannerDismissed {
+            Card(padding: 14) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(Theme.Colors.goldBright)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Collection settings migrated")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(Theme.Text.primary)
+                        Text("This profile's jamf_cli.collect_skip is now read as "
+                             + "per-report cadence. Review it under Performance below; "
+                             + "saving a preset there finalizes the migration.")
+                            .font(Theme.Fonts.mono(11))
+                            .foregroundStyle(Theme.Text.tertiary)
+                    }
+                    Spacer()
+                    PNPButton(title: "Dismiss", size: .sm) {
+                        migrationBannerDismissed = true
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Collection settings migration notice")
+        }
+    }
+
     // MARK: - Performance (PR-23 T-21)
 
     private var performanceCard: some View {
@@ -574,6 +619,9 @@ struct SettingsView: View {
             try ConfigService.setCadencePreset(profile: workspace.profile, preset: target)
             cadencePreset = target
             presetWriteError = nil
+            // setCadencePreset rewrites the file without jamf_cli.collect_skip,
+            // so the migration notice no longer applies (T-25).
+            hasLegacyCollectSkip = false
         } catch {
             presetWriteError = "Could not save preset: \(error.localizedDescription)"
         }
@@ -603,6 +651,10 @@ struct SettingsView: View {
             for (kind, entry) in existing { table[kind] = entry }
         }
         customCadence = table
+
+        // T-25: the banner shows while the legacy key is physically in the
+        // file. A preset save (which removes it) clears this on next load.
+        hasLegacyCollectSkip = config?.jamfCli?.collectSkip?.isEmpty == false
     }
 
     // MARK: - Custom per-report editor (PR-23 T-23)

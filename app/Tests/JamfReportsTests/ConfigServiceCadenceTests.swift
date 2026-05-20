@@ -218,6 +218,37 @@ final class ConfigServiceCadenceTests: XCTestCase {
         XCTAssertEqual(cfg.collectCadence?.perReport?["security"]?.cadence, .never)
     }
 
+    // MARK: - Migration banner data source (T-25)
+
+    /// The Settings migration banner shows while `jamfCli.collectSkip` is
+    /// non-empty in the decoded config and hides once a preset save removes
+    /// the key. Pin that exact transition — the banner's whole condition.
+    func testCollectSkipDecodedThenClearedByPresetSave() throws {
+        let root = try tempRoot()
+        let profile = "cad-banner-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            jamf_cli:
+              profile: tenant-a
+              collect_skip:
+                - update-status
+            """,
+            profile: profile, root: root
+        )
+
+        // Before: the banner's data source sees the legacy key.
+        let before = try loadEngineConfig(profile: profile, root: root)
+        XCTAssertEqual(before.jamfCli?.collectSkip?.isEmpty, false,
+                       "collect_skip must decode while it's in the file — banner shows")
+
+        try ConfigService.setCadencePreset(profile: profile, preset: .onPrem, workspaceRoot: root)
+
+        // After: the key is gone, so the banner condition is false.
+        let after = try loadEngineConfig(profile: profile, root: root)
+        XCTAssertNil(after.jamfCli?.collectSkip,
+                     "collect_skip removed by the preset save — banner hides")
+    }
+
     // MARK: - Helpers
 
     private func tempRoot() throws -> URL {
