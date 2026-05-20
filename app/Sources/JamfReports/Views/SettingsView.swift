@@ -75,7 +75,10 @@ struct SettingsView: View {
                                 bottom: Theme.Metrics.pagePadBottom,
                                 trailing: Theme.Metrics.pagePadH))
         }
-        .task {
+        // id: workspace.profile — re-run when the sidebar chip switches
+        // profiles, otherwise the Performance card + migration banner would
+        // keep showing the first profile's config (PR-23 advisor finding).
+        .task(id: workspace.profile) {
             workspace.refreshToolStatus()
             workspace.reloadFromDisk()
             testResults = [:]
@@ -659,10 +662,23 @@ struct SettingsView: View {
 
     // MARK: - Custom per-report editor (PR-23 T-23)
 
-    /// Common cadence values offered in the per-report editor. Covers every
-    /// preset cadence; an operator wanting an oddball interval can still
-    /// hand-edit config.yaml (the decoder accepts any non-negative integer).
-    private static let customCadenceChoices: [Int] = [43_200, 86_400, 172_800, 604_800]
+    /// The four standard preset cadences offered in the per-report editor.
+    private static let standardCadenceChoices: [Int] = [43_200, 86_400, 172_800, 604_800]
+
+    /// Cadence values the per-report picker offers: the standard four, plus
+    /// any non-standard `.seconds` value already present in the loaded
+    /// config. Including in-config values means a hand-edited interval
+    /// (e.g. `overview: 3600`) stays selectable rather than being silently
+    /// rounded to a standard value on first edit. Sorted ascending.
+    private var customCadenceChoices: [Int] {
+        var values = Set(Self.standardCadenceChoices)
+        for entry in customCadence.values {
+            if case .seconds(let seconds) = entry.cadence, seconds > 0 {
+                values.insert(seconds)
+            }
+        }
+        return values.sorted()
+    }
 
     private var customCadenceEditor: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -706,7 +722,7 @@ struct SettingsView: View {
             .frame(width: 110)
 
             Picker("", selection: cadenceSecondsBinding(kind)) {
-                ForEach(Self.customCadenceChoices, id: \.self) { secs in
+                ForEach(customCadenceChoices, id: \.self) { secs in
                     Text(CadencePreset.humanCadence(seconds: secs)).tag(secs)
                 }
             }

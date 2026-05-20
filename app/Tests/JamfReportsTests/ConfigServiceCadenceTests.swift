@@ -218,6 +218,38 @@ final class ConfigServiceCadenceTests: XCTestCase {
         XCTAssertEqual(cfg.collectCadence?.perReport?["security"]?.cadence, .never)
     }
 
+    func testSetCustomCadenceAlsoRemovesLegacyCollectSkip() throws {
+        // Edge case: a config with preset: custom AND a stale collect_skip.
+        // Saving the per-report table must finalize the migration too, so
+        // the invariant "any GUI cadence write removes collect_skip" holds
+        // regardless of which control the operator used.
+        let root = try tempRoot()
+        let profile = "cad-custom-skip-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            jamf_cli:
+              profile: tenant-a
+              collect_skip:
+                - update-status
+            collect_cadence:
+              preset: custom
+            """,
+            profile: profile, root: root
+        )
+
+        try ConfigService.setCustomCadence(
+            profile: profile,
+            perReport: ["overview": PerReportCadence(cadence: .seconds(86_400))],
+            workspaceRoot: root
+        )
+
+        let url = try ConfigService.configURL(for: profile, workspaceRoot: root)
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(raw.contains("collect_skip"),
+                       "setCustomCadence must finalize the collect_skip migration")
+        XCTAssertTrue(raw.contains("tenant-a"), "Other jamf_cli keys must remain")
+    }
+
     // MARK: - Migration banner data source (T-25)
 
     /// The Settings migration banner shows while `jamfCli.collectSkip` is

@@ -261,7 +261,12 @@ enum ConfigService {
     ///
     /// Sibling keys inside `collect_cadence` (`preset`, `pace_seconds`)
     /// are preserved. Entries are emitted in sorted key order so the
-    /// plist— er, the YAML — is byte-stable across writes.
+    /// YAML is byte-stable across writes.
+    ///
+    /// Like `setCadencePreset`, this finalizes the legacy `collect_skip`
+    /// migration — any cadence-write removes the old key, so the
+    /// invariant is "saving cadence from the GUI converges the file onto
+    /// the new schema" regardless of which control the operator used.
     ///
     /// The write is atomic (temp file + `replaceItemAt`).
     static func setCustomCadence(
@@ -298,9 +303,18 @@ enum ConfigService {
         cadence.set("per_report", value: .mapping(perReportMapping))
         root.set("collect_cadence", value: .mapping(cadence))
 
+        // Finalize the legacy collect_skip migration, same as setCadencePreset.
+        var keysToReplace: Set<String> = ["collect_cadence"]
+        if var jamfCli = root.value(for: "jamf_cli")?.mapping,
+           jamfCli.entries.contains(where: { $0.key == "collect_skip" }) {
+            jamfCli.entries.removeAll { $0.key == "collect_skip" }
+            root.set("jamf_cli", value: .mapping(jamfCli))
+            keysToReplace.insert("jamf_cli")
+        }
+
         document.root = .mapping(root)
         let encoded = try YAMLCodec.encode(
-            document, replacingTopLevelKeys: ["collect_cadence"]
+            document, replacingTopLevelKeys: keysToReplace
         )
 
         let tempURL = directory.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
