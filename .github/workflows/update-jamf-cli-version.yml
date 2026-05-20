@@ -56,7 +56,7 @@ jobs:
 
       - name: Create pull request
         if: steps.get_latest.outputs.tag != steps.read_current.outputs.current
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         env:
           TAG: ${{ steps.get_latest.outputs.tag }}
         with:
