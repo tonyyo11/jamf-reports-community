@@ -46,10 +46,6 @@ Schedules → Run History → Config → Customize → Data Sources → Backups 
 
 ## Security hardening
 
-**Sparkle auto-update keys.** Release builds pin a public Sparkle verification key to
-prevent downgrade attacks. Bundled Python runtime fetches only from allowlisted CDN
-hosts via certificate pinning.
-
 **pip lock files.** The bundled Python runtime installs dependencies with `--require-
 hashes` to enforce integrity of all transitive deps.
 

@@ -9,40 +9,6 @@ import XCTest
 /// green in CI environments without those resources.
 final class SecurityHardeningTests: XCTestCase {
 
-    // MARK: - P9-A-01 — release builds require SU_PUBLIC_ED_KEY
-
-    func test_buildScript_failsRelease_whenSparkleKeyMissing() throws {
-        // The build script lives outside the test target's runtime sandbox; we
-        // assert on its source so the guard cannot be silently regressed.
-        let scriptURL = sourceRoot()
-            .appendingPathComponent("build-app.sh")
-        let text = try String(contentsOf: scriptURL, encoding: .utf8)
-        XCTAssertTrue(
-            text.contains("SU_PUBLIC_ED_KEY:?"),
-            "build-app.sh must hard-fail release builds when SU_PUBLIC_ED_KEY is unset"
-        )
-        // Security audit TA-01/TA-02: the heredoc carries a literal placeholder,
-        // PlistBuddy substitutes the real key (XML-injection-safe), and the
-        // value is regex-validated against the EdDSA base64 charset before use.
-        XCTAssertTrue(
-            text.contains("__SU_PUBLIC_ED_KEY_PLACEHOLDER__"),
-            "Info.plist heredoc must carry a placeholder string for PlistBuddy substitution"
-        )
-        XCTAssertTrue(
-            text.contains("PlistBuddy") && text.contains("Set :SUPublicEDKey"),
-            "build-app.sh must substitute SUPublicEDKey via PlistBuddy (not raw heredoc interpolation)"
-        )
-        XCTAssertTrue(
-            text.contains("[A-Za-z0-9+/]{43}=$"),
-            "build-app.sh must regex-validate SU_PUBLIC_ED_KEY before substitution"
-        )
-        XCTAssertTrue(
-            text.contains("__SU_PUBLIC_ED_KEY_PLACEHOLDER__\"") &&
-            text.contains("Info.plist still contains SU_PUBLIC_ED_KEY placeholder"),
-            "build-app.sh must refuse to ship release builds whose Info.plist still has the placeholder"
-        )
-    }
-
     // MARK: - P9-A-02 — sanitizedHexColor
 
     func test_sanitizedHexColor_acceptsValidHex() {

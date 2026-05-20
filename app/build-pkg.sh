@@ -33,8 +33,8 @@ DISTRIBUTION_XML="build/Distribution.xml"
 PKG_UNSIGNED="build/JamfReports-unsigned.pkg"
 
 # Bundle identifier — must match the .app's CFBundleIdentifier so MDM
-# inventory and Sparkle update detection align. ".pkg" suffix distinguishes
-# the installer package identifier from the app identifier in receipts.
+# inventory aligns. ".pkg" suffix distinguishes the installer package
+# identifier from the app identifier in receipts.
 PKG_BUNDLE_ID="com.tonyyo.jamfreports.pkg"
 
 if [[ ! -d "$APP_PATH" ]]; then

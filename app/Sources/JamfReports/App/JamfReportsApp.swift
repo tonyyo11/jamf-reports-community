@@ -1,5 +1,4 @@
 import SwiftUI
-import Sparkle
 
 // Entry point lives in main.swift (top-level code) which dispatches to either
 // the SwiftUI UI path or the --scheduled-run / --check CLI paths. The @main
@@ -10,15 +9,6 @@ struct JamfReportsApp: App {
     /// Update `ResponsiveLayoutTests` if this constant changes.
     static let minSupportedWidth: CGFloat = 960
     @State private var workspace = WorkspaceStore()
-
-    /// Sparkle updater — single shared instance for the app's lifetime.
-    /// Configuration (SUFeedURL + SUPublicEDKey) lives in Info.plist set by
-    /// `build-app.sh`.
-    private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: nil,
-        userDriverDelegate: nil
-    )
 
     init() {
         FontRegistry.registerBundledFonts()
@@ -63,7 +53,7 @@ struct JamfReportsApp: App {
 
                 Divider()
 
-                CheckForUpdatesView(updater: updaterController.updater)
+                CheckForUpdatesView()
                 AcknowledgementsMenuButton()
             }
         }

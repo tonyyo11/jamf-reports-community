@@ -8,19 +8,6 @@ cd "$(dirname "$0")"
 
 CONFIG="${1:-release}"
 
-# Sparkle EdDSA public key — REQUIRED for release builds. Without it the
-# release Info.plist would carry an empty `SUPublicEDKey`, which combined
-# with `cs.disable-library-validation` (entitlements) and the active
-# Sparkle XPC helpers makes the update channel a high-value target. Debug
-# builds may proceed without it (Sparkle refuses to apply updates without
-# a key — safe-by-default). See P9-A-01 in the security audit.
-if [[ "$CONFIG" == "release" ]]; then
-  : "${SU_PUBLIC_ED_KEY:?SU_PUBLIC_ED_KEY env var must be set for release builds. Generate with Sparkle's generate_keys tool; private key stays offline.}"
-else
-  : "${SU_PUBLIC_ED_KEY:=}"
-fi
-export SU_PUBLIC_ED_KEY
-
 echo "→ swift build (${CONFIG})"
 if [[ "$CONFIG" == "release" ]]; then
   swift build -c release
@@ -109,12 +96,11 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>2.0.0</string>
-    <!-- CFBundleVersion is Sparkle's monotonic build number across the entire
-         project lifetime. Bump per beta (10 → 11 → 12 …). Never reuse or reset,
-         even when the marketing version changes — the next 2.0.1 beta starts at
-         build > 10. Re-using a build number makes Sparkle refuse the update. -->
+    <!-- CFBundleVersion equals CFBundleShortVersionString for a release build.
+         build-dmg.sh / build-pkg.sh treat a differing value as a beta and name
+         the artifacts -betaN; keep the two in sync for a public release. -->
     <key>CFBundleVersion</key>
-    <string>11</string>
+    <string>2.0.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
@@ -136,90 +122,14 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
     <true/>
     <key>NSSupportsSuddenTermination</key>
     <true/>
-
-    <!-- Sparkle auto-update — see ADR-W23-sparkle-integration.md.
-         For release builds, SU_PUBLIC_ED_KEY env var MUST be set; this script
-         hard-fails earlier when it isn't. Debug builds may ship empty —
-         Sparkle 2.x refuses to apply updates without a key (safe-by-default).
-         Tony generates the EdDSA keypair offline with `generate_keys`; private
-         key is stored in 1Password + offline backup, never committed. -->
-    <key>SUFeedURL</key>
-    <string>https://tonyyo11.github.io/jamf-reports-community/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>__SU_PUBLIC_ED_KEY_PLACEHOLDER__</string>
-    <key>SUEnableInstallerLauncherService</key>
-    <true/>
-    <key>SUAutomaticallyUpdate</key>
-    <false/>
 </dict>
 </plist>
 PLIST
 
-# Substitute SUPublicEDKey via PlistBuddy after writing the placeholder.
-#
-# Why not unquote the heredoc? Doing so would interpolate $SU_PUBLIC_ED_KEY raw
-# into XML, allowing a hostile/typo'd value containing `</string>` to inject
-# arbitrary plist keys (e.g. swap SUFeedURL). PlistBuddy parses the real plist
-# tree, so XML metacharacters in the value are stored as data, not structure.
-# Defense-in-depth: regex-validate first — Sparkle EdDSA pubkeys are 32 bytes
-# base64-encoded (44 chars including padding), strict charset.
-if [[ -n "${SU_PUBLIC_ED_KEY}" ]]; then
-  if [[ ! "$SU_PUBLIC_ED_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
-    echo "✗ SU_PUBLIC_ED_KEY does not match expected EdDSA base64 format (43 chars + '=')." >&2
-    echo "  Got: ${#SU_PUBLIC_ED_KEY} chars." >&2
-    exit 1
-  fi
-  /usr/libexec/PlistBuddy -c "Set :SUPublicEDKey $SU_PUBLIC_ED_KEY" \
-    "$APP_OUT/Contents/Info.plist"
-fi
-
-# Post-build assertion: refuse to ship a release build whose Info.plist still
-# contains the literal placeholder. Debug builds may carry the placeholder
-# (Sparkle 2.x refuses to apply updates with a malformed key — safe-by-default).
-if [[ "$CONFIG" == "release" ]] \
-   && grep -q "__SU_PUBLIC_ED_KEY_PLACEHOLDER__" "$APP_OUT/Contents/Info.plist"; then
-  echo "✗ Info.plist still contains SU_PUBLIC_ED_KEY placeholder after substitution." >&2
-  exit 1
-fi
-
-# Embed Sparkle.framework. SwiftPM stages it under .build/<triple>/<config>/
-# but does NOT copy it into the .app — without this step the binary fails to
-# launch with: Library not loaded: @rpath/Sparkle.framework/...
-SPARKLE_SRC="${BUILT_DIR}/Sparkle.framework"
-if [[ -d "$SPARKLE_SRC" ]]; then
-  echo "→ embedding Sparkle.framework"
-  mkdir -p "$APP_OUT/Contents/Frameworks"
-  rm -rf "$APP_OUT/Contents/Frameworks/Sparkle.framework"
-  cp -R "$SPARKLE_SRC" "$APP_OUT/Contents/Frameworks/Sparkle.framework"
-
-  # Strip build-time artifacts from the embedded framework. Sparkle's binary
-  # tarball ships Headers/ and PrivateHeaders/ for SDK consumers; shipping them
-  # inside a notarized .app trips Gatekeeper's strict-mode validation on
-  # quarantined launches with "unsealed contents present in the root directory
-  # of an embedded framework" — even though notarytool itself accepts them.
-  EMBEDDED_SPARKLE="$APP_OUT/Contents/Frameworks/Sparkle.framework"
-  find "$EMBEDDED_SPARKLE/Versions" -type d \
-    \( -name Headers -o -name PrivateHeaders \) \
-    -prune -exec rm -rf {} +
-  rm -f "$EMBEDDED_SPARKLE/Headers" "$EMBEDDED_SPARKLE/PrivateHeaders"
-
-  # Strip extended attributes (com.apple.quarantine from the curl download,
-  # com.apple.provenance, etc.). Leftover xattrs invalidate the seal in
-  # strict-mode validation. Apply to the whole .app for safety.
-  xattr -cr "$APP_OUT"
-
-  # Add @loader_path/../Frameworks to the main binary's rpath so dyld can
-  # resolve @rpath/Sparkle.framework/... at launch. SwiftPM does not add this
-  # rpath automatically. Must run BEFORE codesign — install_name_tool
-  # invalidates any prior signature.
-  if ! otool -l "$APP_OUT/Contents/MacOS/JamfReports" \
-       | grep -q "@loader_path/../Frameworks"; then
-    install_name_tool -add_rpath "@loader_path/../Frameworks" \
-      "$APP_OUT/Contents/MacOS/JamfReports"
-  fi
-else
-  echo "⚠ Sparkle.framework not found at $SPARKLE_SRC; auto-update will fail" >&2
-fi
+# Strip extended attributes (com.apple.quarantine, com.apple.provenance, etc.)
+# from the whole .app. Leftover xattrs invalidate the code-signing seal under
+# Gatekeeper strict-mode validation on quarantined launches.
+xattr -cr "$APP_OUT"
 
 # Resolve signing identity.
 #   - Release: prefer SIGNING_IDENTITY env var; otherwise auto-pick the first
@@ -252,35 +162,7 @@ echo "→ signing identity: ${SIGNING_IDENTITY}"
 
 ENTITLEMENTS="JamfReports.entitlements"
 if [[ -f "$ENTITLEMENTS" ]]; then
-  # Sparkle requires inside-out signing of its inner helpers BEFORE the outer
-  # framework, BEFORE the main app. Order matters; --deep is not sufficient
-  # for nested XPC services + the Updater.app helper.
-  SPARKLE_FRAMEWORK="$APP_OUT/Contents/Frameworks/Sparkle.framework"
-  if [[ -d "$SPARKLE_FRAMEWORK" ]]; then
-    echo "→ signing Sparkle.framework helpers"
-    SPARKLE_INNER="$SPARKLE_FRAMEWORK/Versions/B"
-    for helper in \
-      "$SPARKLE_INNER/XPCServices/Downloader.xpc" \
-      "$SPARKLE_INNER/XPCServices/Installer.xpc" \
-      "$SPARKLE_INNER/Updater.app" \
-      "$SPARKLE_INNER/Autoupdate"
-    do
-      if [[ -e "$helper" ]]; then
-        if ! codesign --force --sign "$SIGNING_IDENTITY" --options runtime "$TS_FLAG" "$helper" >/dev/null; then
-          echo "✗ codesign failed for $helper" >&2
-          exit 1
-        fi
-      fi
-    done
-    if ! codesign --force --sign "$SIGNING_IDENTITY" --options runtime "$TS_FLAG" "$SPARKLE_FRAMEWORK" >/dev/null; then
-      echo "✗ codesign failed for $SPARKLE_FRAMEWORK" >&2
-      exit 1
-    fi
-  fi
-
   echo "→ signing $APP_OUT"
-  # Drop --deep: Sparkle.framework was already signed inside-out above; --deep
-  # would re-sign helpers without their entitlements/identifiers.
   if ! codesign --force --sign "$SIGNING_IDENTITY" \
     --options runtime \
     "$TS_FLAG" \
