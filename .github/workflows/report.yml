@@ -23,7 +23,7 @@ jobs:
       # 1. Check out the repository
       # ------------------------------------------------------------------
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ------------------------------------------------------------------
       # 2. Set up Python
