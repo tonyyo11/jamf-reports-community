@@ -179,6 +179,24 @@ final class PatchStatusServiceTests: XCTestCase {
         )
     }
 
+    func testComplianceCSVNeutralizesFormulaInjection() {
+        // Patch titles originate from jamf-cli / Jamf Pro patch definitions;
+        // a leading =,+,-,@ must be tab-guarded so opening the CSV in Excel
+        // or Numbers treats it as text, not a formula — matching the xlsx path.
+        let rows = [
+            sampleRow(title: "=HYPERLINK(\"http://evil\",\"x\")", latest: "1.0"),
+            sampleRow(title: "@SUM(A1:A9)", latest: "+1+1"),
+        ]
+        let lines = PatchStatusService.complianceCSV(rows)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+        XCTAssertTrue(String(lines[1]).contains("\t=HYPERLINK"),
+                      "A '=' title must be tab-prefixed")
+        XCTAssertTrue(String(lines[2]).contains("\t@SUM"),
+                      "A '@' title must be tab-prefixed")
+        XCTAssertTrue(String(lines[2]).contains("\t+1+1"),
+                      "A '+' value in any column must be tab-prefixed")
+    }
+
     func testFailuresOnlyWithoutTitles() throws {
         // Test that we can handle missing failures file gracefully
         let titlesJSON = """
