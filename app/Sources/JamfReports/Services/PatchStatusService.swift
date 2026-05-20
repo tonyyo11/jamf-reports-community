@@ -152,4 +152,32 @@ struct PatchStatusService: Sendable {
         let stripped = raw.trimmingCharacters(in: CharacterSet(charactersIn: "% "))
         return Double(stripped) ?? 0
     }
+
+    // MARK: - CSV export
+
+    /// Column header for the standalone patch-compliance CSV. Matches the
+    /// engine's "Patch Compliance" workbook sheet (`CoreDashboard.writePatch`).
+    static let complianceCSVHeader = "Title,Latest,On Latest,On Other,Total,Compliance %"
+
+    /// Render `titles` as a standalone CSV with the same column shape and row
+    /// order as the engine's "Patch Compliance" sheet, so an admin can export
+    /// the patch report on its own without generating a full workbook.
+    static func complianceCSV(_ titles: [PatchStatusRow]) -> String {
+        var lines = [complianceCSVHeader]
+        for t in titles {
+            let cells = [
+                t.title, t.latest, String(t.onLatest),
+                String(t.onOther), String(t.total), t.compliancePct,
+            ]
+            lines.append(cells.map(csvField).joined(separator: ","))
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// RFC 4180 field escaping: a field containing a comma, double-quote, CR
+    /// or LF is wrapped in double-quotes with embedded quotes doubled.
+    private static func csvField(_ value: String) -> String {
+        guard value.contains(where: { ",\"\n\r".contains($0) }) else { return value }
+        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
 }

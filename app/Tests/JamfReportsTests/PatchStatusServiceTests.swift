@@ -129,6 +129,56 @@ final class PatchStatusServiceTests: XCTestCase {
         XCTAssertEqual(PatchStatusService.parseCompliancePct("N/A"), 0.0)
     }
 
+    // MARK: - Compliance CSV export
+
+    private func sampleRow(
+        title: String, latest: String = "1.0",
+        onLatest: Int = 5, onOther: Int = 5,
+        total: Int = 10, compliancePct: String = "50%"
+    ) -> PatchStatusRow {
+        PatchStatusRow(
+            title: title, id: "id-\(title)", onLatest: onLatest,
+            onOther: onOther, total: total, latest: latest,
+            compliancePct: compliancePct
+        )
+    }
+
+    func testComplianceCSVMatchesSheetColumnShape() {
+        let rows = [
+            sampleRow(title: "Firefox", latest: "132.0", onLatest: 80,
+                      onOther: 20, total: 100, compliancePct: "80%"),
+            sampleRow(title: "Chrome", latest: "131.0", onLatest: 45,
+                      onOther: 55, total: 100, compliancePct: "45%"),
+        ]
+        let csv = PatchStatusService.complianceCSV(rows)
+        let lines = csv.split(separator: "\n", omittingEmptySubsequences: false)
+
+        // Header matches the engine's "Patch Compliance" sheet columns.
+        XCTAssertEqual(String(lines[0]), "Title,Latest,On Latest,On Other,Total,Compliance %")
+        // Rows follow input order — same as CoreDashboard.writePatch.
+        XCTAssertEqual(String(lines[1]), "Firefox,132.0,80,20,100,80%")
+        XCTAssertEqual(String(lines[2]), "Chrome,131.0,45,55,100,45%")
+        XCTAssertTrue(csv.hasSuffix("\n"), "CSV should end with a trailing newline")
+    }
+
+    func testComplianceCSVQuotesFieldsContainingCommas() {
+        let rows = [sampleRow(title: "Acme, Inc. Security Agent", latest: "2.0")]
+        let csv = PatchStatusService.complianceCSV(rows)
+        let lines = csv.split(separator: "\n", omittingEmptySubsequences: false)
+        XCTAssertEqual(
+            String(lines[1]),
+            "\"Acme, Inc. Security Agent\",2.0,5,5,10,50%",
+            "A title with a comma must be wrapped in double-quotes per RFC 4180"
+        )
+    }
+
+    func testComplianceCSVEmptyTitlesYieldsHeaderOnly() {
+        XCTAssertEqual(
+            PatchStatusService.complianceCSV([]),
+            PatchStatusService.complianceCSVHeader + "\n"
+        )
+    }
+
     func testFailuresOnlyWithoutTitles() throws {
         // Test that we can handle missing failures file gracefully
         let titlesJSON = """
