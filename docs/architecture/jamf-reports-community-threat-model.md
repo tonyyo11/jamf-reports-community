@@ -269,7 +269,7 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Goal:** Bundle backdoored code into a release.
 - **Path:** A6 introduces a malicious commit to `requirements*.txt` or `python-runtime.lock`.
 - **Existing mitigations:**
-  - **PR-7 hash-pinned deps:** `requirements.lock.txt` + `requirements-dev.lock.txt` generated via `uv pip compile --generate-hashes --universal --python-version 3.9`. SHA-256 per package across all platforms.
+  - **PR-7 hash-pinned deps:** `requirements.lock.txt` + `requirements-dev.lock.txt` generated via `uv pip compile --generate-hashes --universal --python-version 3.11`. SHA-256 per package across all platforms.
   - `app/python-runtime.lock` pins SHA-256 of the downloaded runtime archive.
   - CODEOWNERS file present.
 - **Likelihood:** Low.

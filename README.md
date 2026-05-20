@@ -85,7 +85,7 @@ Those fixtures are derived from Jamf-provided fake/demo data from the local `Dum
 
 ## Prerequisites
 
-**Python 3.9 or later**
+**Python 3.11 or later**
 
 ```
 python3 --version
@@ -114,7 +114,7 @@ pip install -r requirements.lock.txt --require-hashes
 
 The `requirements.lock.txt` file is regenerated from `requirements.txt` via
 `uv pip compile requirements.txt -o requirements.lock.txt --generate-hashes --universal`.
-It is universal across CPython 3.9+ (Linux/macOS/Windows). Use the unpinned
+It is universal across CPython 3.11+ (Linux/macOS/Windows). Use the unpinned
 `requirements.txt` for casual local installs; use the lock file when supply-chain
 tampering is in scope.
 

@@ -15,7 +15,7 @@ when your jamf-cli build includes the new `pro report` platform commands.
 
 ### Python
 
-Install Python 3.9 or later:
+Install Python 3.11 or later:
 
 ```bash
 python3 --version

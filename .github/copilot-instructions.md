@@ -159,7 +159,7 @@ To add a new type:
 
 ## Code Conventions
 
-- **Python 3.9+** with type hints on all method signatures
+- **Python 3.11+** with type hints on all method signatures
 - **Google-style docstrings** on classes and public methods
 - **Functions ≤100 lines**, cyclomatic complexity ≤8
 - **100-character line length**

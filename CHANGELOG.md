@@ -7,6 +7,17 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- **Minimum Python is now 3.11** (was 3.9). The Python CLI requires
+  `pandas>=3.0`, and pandas 3.0 dropped support for Python 3.9 and 3.10.
+  CI now tests Python 3.11, 3.12, and 3.13.
+- Bumped `pandas` to 3.0. Regenerated `requirements.lock.txt` and
+  `requirements-dev.lock.txt` against the Python 3.11 floor; the pinned
+  set no longer includes the `exceptiongroup`, `importlib-resources`,
+  `pytz`, `typing-extensions`, and `zipp` backports that older Python
+  versions required.
+
 ## [2.0.0] - 2026-05-20
 
 ### Added
