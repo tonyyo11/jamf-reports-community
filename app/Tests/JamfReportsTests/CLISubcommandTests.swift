@@ -97,8 +97,9 @@ final class CLISubcommandTests: XCTestCase {
     }
 
     func testCheckMissingWorkspaceExits1() {
-        // A valid slug that has no workspace on disk.
-        let result = checkConfigForProfile("no-such-workspace-\(UUID().uuidString.prefix(8))")
+        // A valid slug (lowercase — the UUID hex must be lowercased or it is
+        // an invalid slug) that has no workspace on disk.
+        let result = checkConfigForProfile("no-such-workspace-\(UUID().uuidString.prefix(8).lowercased())")
         XCTAssertEqual(result, 1)
     }
 
@@ -110,7 +111,9 @@ final class CLISubcommandTests: XCTestCase {
     }
 
     func testSchoolCheckMissingWorkspaceExits1() {
-        let result = schoolCheckForProfile("no-such-workspace-\(UUID().uuidString.prefix(8))")
+        // Lowercase the UUID hex so the slug is valid — otherwise this
+        // exercises the invalid-slug path instead of the missing-workspace one.
+        let result = schoolCheckForProfile("no-such-workspace-\(UUID().uuidString.prefix(8).lowercased())")
         XCTAssertEqual(result, 1)
     }
 }
@@ -197,10 +200,18 @@ func schoolScaffoldToFile(csvPath: String, outPath: String) -> Int32 {
     }
 }
 
-/// Testable version of runCheck (validates profile and workspace only).
+/// Testable version of `runCheck`'s validation gates: profile slug, workspace
+/// URL, and `config.yaml` presence. Stops short of the full config decode.
+///
+/// `ProfileService.workspaceURL(for:)` is pure path construction — it never
+/// touches the disk, so it is non-nil for every valid slug. The `config.yaml`
+/// existence check is what actually distinguishes a real workspace from a
+/// missing one, exactly as `main.swift`'s `runCheck` does.
 func checkConfigForProfile(_ profile: String) -> Int32 {
     guard ProfileService.isValid(profile) else { return 1 }
-    guard ProfileService.workspaceURL(for: profile) != nil else { return 1 }
+    guard let workspace = ProfileService.workspaceURL(for: profile) else { return 1 }
+    let configURL = workspace.appendingPathComponent("config.yaml")
+    guard FileManager.default.fileExists(atPath: configURL.path) else { return 1 }
     return 0
 }
 
