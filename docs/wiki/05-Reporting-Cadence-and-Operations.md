@@ -118,6 +118,10 @@ Recommended stance:
 - keep historical data stores append-only
 - prune only after you understand what data you still need for trend lines
 
+The app provides dedicated screens for Patch and Updates operations:
+
+![Patch Management](../images/patch.png)
+
 ## Delivery Models
 
 There is no single right operating model. Common options:

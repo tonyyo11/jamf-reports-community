@@ -1,0 +1,60 @@
+[
+  {
+    "error_devices": null,
+    "failed_plans": [
+      {
+        "action": "DOWNLOAD_INSTALL",
+        "device_type": "Mobile",
+        "error": "NOT_SUPERVISED",
+        "last_event": "PlanRejectedEvent",
+        "name": "Test Device 1",
+        "os_version": "17.0",
+        "serial": "AABBCC112233",
+        "state": "PlanFailed",
+        "username": "",
+        "version": "LATEST_ANY"
+      },
+      {
+        "action": "DOWNLOAD_INSTALL",
+        "device_type": "Mobile",
+        "error": "MDM_EXCEPTION",
+        "last_event": "PlanExceptionEvent",
+        "name": "Test Device 2",
+        "os_version": "16.7.1",
+        "serial": "AABBCC445566",
+        "state": "PlanException",
+        "username": "jdoe",
+        "version": "LATEST_ANY"
+      },
+      {
+        "action": "DOWNLOAD_INSTALL",
+        "device_type": "Mobile",
+        "error": "NOT_SUPERVISED",
+        "last_event": "PlanRejectedEvent",
+        "name": "",
+        "os_version": "",
+        "serial": "AABBCC778899",
+        "state": "PlanFailed",
+        "username": "",
+        "version": "LATEST_ANY"
+      }
+    ],
+    "plan_state_summary": [
+      {
+        "count": 104,
+        "state": "PlanFailed"
+      },
+      {
+        "count": 3,
+        "state": "PlanException"
+      },
+      {
+        "count": 1,
+        "state": "SchedulingScanForOSUpdates"
+      }
+    ],
+    "plan_total": 108,
+    "status_summary": [],
+    "total": 0
+  }
+]

@@ -22,6 +22,7 @@ Harbor/
 __pycache__/
 *.pyc
 *.pyo
+*.orig
 
 # macOS
 .DS_Store
@@ -34,3 +35,24 @@ Community Edition Recap.rtf
 *.xlsx
 /.vscode
 dist/
+
+# Swift / Xcode build artifacts (app/)
+app/.build/
+app/.swiftpm/
+app/Package.resolved
+app/build/
+# Intermediate icon outputs — only the source script and AppIcon.icns are committed.
+app/iconset/AppIcon.iconset/
+app/iconset/AppIcon-1024.png
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+.codex/config.toml
+
+# Engineering / AI session artifacts — never ship
+app/.specs/
+app/SESSION_STATE.md
+app/HANDOFF.md
+SESSION_STATE.md
+HANDOFF.md
+.opencode/plugins/emdash-notifications.js

@@ -67,6 +67,10 @@ python3 jamf-reports-community.py workspace-init \
 
 Then point `launchagent-setup` at the generated workspace config.
 
+The app provides a Schedules screen for managing LaunchAgent automation:
+
+![Schedules Configuration](../images/schedules.png)
+
 ## What `launchagent-setup` Creates
 
 Run:
@@ -106,75 +110,108 @@ an interactive Terminal session.
 
 ## Workflow Modes
 
+The Python `launchagent-setup --mode` flag and the Swift app's Schedules form
+share the same four modes. As of PR-20 / PR-21, the Swift app's mode contract
+is strict — each mode does exactly one thing, with no operational overlap and
+no silent fallback. The mode descriptions below describe that behavior.
+
+The Python `launchagent-run` path predates PR-21 and retains the legacy
+behavior (notably the csv-assisted "fall back to jamf-cli-only when no CSV"
+fallback). That divergence will be reconciled in a follow-up PR; until then,
+the table at the end of this section calls out where the two paths differ.
+
 ### `snapshot-only`
 
-Use when you want historical data first and workbook generation later.
+Use when you want fresh data for the Trends page without generating a workbook.
 
 What it does:
 
-- runs `collect`
-- refreshes jamf-cli JSON snapshots
-- optionally archives the newest CSV from the inbox into the historical snapshot folder
-- optionally runs `inventory-csv`, `generate`, and/or `html` based on `automation.*`
+- runs `collect` to refresh `jamf-cli` JSON snapshots
+- writes a daily `summary_YYYY-MM-DD.json` so the Trends page advances
+- does NOT generate a workbook
 
 Best for:
 
-- nightly or weekly snapshot preservation
-- building trend history before leadership reporting
-- keeping live collection separate from workbook generation
+- nightly snapshot preservation
+- keeping trend history current without producing files anyone has to read
+- separating "did the data refresh" from "did the report get built"
+
+Note: the daily summary is written first-run-of-day-wins. If you schedule
+multiple `snapshot-only` runs in the same day, only the first writes the
+summary; subsequent runs log `[info] summary_<today>.json already exists`.
 
 ### `jamf-cli-only`
 
-Use when you want a workbook without a CSV dependency.
+Use when you want a workbook re-rendered from data that's already cached.
 
 What it does:
 
-- runs `generate` without `--csv`
-- uses live `jamf-cli` data and/or cached JSON snapshots
+- runs `generate` against the latest cached `jamf-cli` snapshots
+- does NOT collect fresh data — no API calls, no network dependency
 
 Best for:
 
-- API-driven dashboards
-- lighter scheduled reporting
-- environments that do not rely on emailed Jamf inventory exports
+- fast re-render after editing `config.yaml`, templates, or column maps
+- offline workbook regeneration when the Jamf server is unavailable
+- "I just collected, now I want a new workbook" loops
+
+If no cached snapshots exist (fresh workspace), the run fails with a clear
+"no cached data" error rather than silently producing an empty workbook.
 
 ### `jamf-cli-full`
 
-Use when you want the most self-contained scheduled reporting path.
+Use when you want a self-contained scheduled run that does not depend on a CSV.
 
 What it does:
 
-- runs `inventory-csv`
-- runs `collect`
-- runs `generate --csv <generated_inventory_csv>`
+- runs `collect` to refresh `jamf-cli` JSON snapshots
+- runs `generate` without a CSV
+- writes the daily Trends summary as a side effect of collect
 
 Best for:
 
-- orgs that want CSV-driven sheets without relying on Jamf email exports
-- fully local, API-driven recurring reports
+- fully API-driven recurring reports
+- environments without emailed Jamf inventory exports
 - admins who want one scheduled job to refresh both workbook inputs and snapshots
 
 ### `csv-assisted`
 
-Use when Jamf CSV exports arrive through email, sync folders, or other human workflows.
+Use when a CSV export is required for the workbook to be complete (custom
+inventory columns `jamf-cli` cannot reach, vendor-specific fields, etc.).
 
 What it does:
 
-- looks for the newest `.csv` in the configured inbox folder
-- if a fresh CSV is found, runs `generate --csv <that file>`
-- if no fresh CSV is found, falls back to jamf-cli-only workbook generation
-- still runs `collect` first so jamf-cli snapshots stay current when possible
+- requires a `.csv` in the configured `csv-inbox/` directory (newest wins)
+- runs `collect` to refresh `jamf-cli` JSON snapshots
+- runs `generate --csv <that file>` to combine both data sources
 
 Best for:
 
-- orgs that already receive Jamf exports by email
-- SharePoint/OneDrive synced report folders
-- mixed workflows where CSV availability is helpful but not guaranteed
+- orgs that already receive Jamf exports by email or sync folder
+- workflows where the CSV contains columns nothing else can supply
+- jobs where missing CSV should fail loudly rather than silently degrade
 
-Important behavior:
+Important behavior (PR-21):
 
-- fallback is based on CSV presence and age
-- a malformed CSV is not silently ignored; that should fail loudly so you notice it
+- the run hard-fails if `csv-inbox/` has no `.csv` file. Earlier versions
+  silently fell back to a jamf-cli-only workbook, which masked broken CSV
+  drops for days at a time. If you want the silent-fallback behavior, use
+  `jamf-cli-full` explicitly instead.
+- a malformed CSV is not silently ignored — `generate` fails the run.
+
+### Mode parity between Python and Swift
+
+| Mode            | Swift app (GUI Schedules + LaunchAgent)         | Python `launchagent-setup` (legacy) |
+|-----------------|--------------------------------------------------|-------------------------------------|
+| snapshot-only   | collect + Trends summary, no workbook            | collect + optional `automation.*` artifacts |
+| jamf-cli-only   | generate from cache only, NO collect             | runs `generate` without `--csv` (with collect side-effects) |
+| jamf-cli-full   | collect + generate, no CSV                       | runs `inventory-csv` + `collect` + `generate --csv <inventory>` |
+| csv-assisted    | collect + generate, **CSV required (hard fail)** | collect + generate, **fallback to jamf-cli-only when no CSV** |
+
+If you author plists by hand, follow the Swift contract — the parser in the
+GUI honors `--mode <rawValue>` (snapshot-only / jamf-cli-only / jamf-cli-full /
+csv-assisted) in `ProgramArguments`. Plists written before PR-20 omit `--mode`
+and default to jamf-cli-only at run time.
 
 ## Automation Output Flags
 

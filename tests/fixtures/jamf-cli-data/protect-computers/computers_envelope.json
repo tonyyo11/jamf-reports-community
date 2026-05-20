@@ -1,0 +1,23 @@
+{
+  "nodes": [
+    {
+      "uuid": "44444444-4444-4444-4444-444444444444",
+      "hostName": "envelope-test-01",
+      "serial": "ENV0000001",
+      "modelName": "MacBook Air",
+      "osMajor": 15,
+      "osMinor": 7,
+      "osPatch": 3,
+      "plan": {"id": "plan-x", "name": "Default"},
+      "tags": ["envelope"],
+      "webProtectionActive": true,
+      "fullDiskAccess": true,
+      "insightsStatsPass": 50,
+      "insightsStatsFail": 0,
+      "insightsStatsUnknown": 0,
+      "connectionStatus": "online",
+      "lastConnection": "2026-05-02T00:00:00Z"
+    }
+  ],
+  "pageInfo": {"next": null, "total": 1}
+}

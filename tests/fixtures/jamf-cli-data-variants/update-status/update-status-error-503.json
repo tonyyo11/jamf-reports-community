@@ -1,0 +1,11 @@
+{
+  "httpStatus": 503,
+  "errors": [
+    {
+      "code": null,
+      "description": "This endpoint cannot be used if the Managed Software Update Plans toggle is off.",
+      "id": "0",
+      "field": null
+    }
+  ]
+}

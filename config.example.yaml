@@ -214,6 +214,21 @@ jamf_cli:
   # jamf-cli. When you use multiple profiles, point data_dir at a profile-
   # specific folder so cached snapshots do not mix between tenants.
   profile: ""
+
+  # jamf-cli multi support (v1.9+)
+  # Run commands against multiple profiles. When enabled, report results
+  # are aggregated into a single JSON snapshot by jamf-cli.
+  multi:
+    # Set true to use 'jamf-cli multi' for all live data collection.
+    enabled: false
+    # Optional glob pattern to filter profiles (e.g., 'prod-*').
+    filter: ""
+    # Optional comma-separated list of profile names.
+    profiles: ""
+    # Optional path to a file containing profile names or instance URLs.
+    from_file: ""
+    # Set true to run profiles sequentially instead of in parallel.
+    sequential: false
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.
   # This helps generate/check keep working from cached report data, but
   # inventory-csv still requires live jamf-cli auth.
@@ -229,6 +244,32 @@ jamf_cli:
   # value for every device and is consistently the slowest jamf-cli call. Bump
   # this when inventory-csv runs hit "jamf-cli timed out" errors.
   ea_results_timeout_seconds: 600
+  # Maximum age of a cached snapshot used on live-call fallback, in hours.
+  # 0 disables the check (any cached file is accepted).
+  max_cache_age_hours: 0    # 0 = no limit; raise an error if cached fallback is older than N hours
+  # Hard-fail on snapshot integrity violations (missing manifest entry, SHA-256
+  # mismatch). Equivalent to passing --strict-manifest on every invocation.
+  # Recommended for production / shared workspaces; leave false for ad-hoc
+  # exploration. Threat-model T-11. The Swift app surfaces an "Unverified
+  # snapshot" pill in AuditView regardless of this setting.
+  require_manifest: false
+  # Report types to skip during live collection (`jamf-reports-community collect`).
+  # Use this on on-prem Jamf Pro instances where the expensive per-device queries
+  # below stall the server or consume excessive API time. Underscores and hyphens
+  # are interchangeable ("update_status" == "update-status"). Only the four
+  # report types below honor this list — core inventory commands always run.
+  #
+  # Supported values:
+  #   patch-device-failures   `pro report patch-status --scan-failures`
+  #   profile-status          `pro report profile-status`
+  #   update-status           `pro report update-status`
+  #   update-device-failures  `pro report update-status --scan-failures`
+  #
+  # Example: skip update-status and its scan-failures variant on a slow server.
+  collect_skip: []
+  # collect_skip:
+  #   - update-status
+  #   - update-device-failures
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +359,25 @@ protect:
   # Set true to enable the experimental Protect Overview sheet and snapshot
   # collection for Jamf Protect commands.
   enabled: false
+  # Cached JSON snapshots are kept separate from Pro so multi-tenant setups
+  # don't collide. Path is resolved relative to this config file's directory.
+  data_dir: "jamf-cli-data/protect"
+  # jamf-cli protect profile name; empty = jamf-cli's default Protect profile.
+  # Distinct from jamf_cli.profile (the Pro profile).
+  profile: ""
+  # Fall back to cached snapshots when a live Protect call fails.
+  use_cached_data: true
+  plans:
+    enabled: true                  # W22 — Protect Plans sheet (quick win)
+  # W23 standard pack — opt-in. Sheets are Experimental until pagination shape
+  # is verified against a live Protect tenant; field names follow the
+  # jamfprotect-go-sdk camelCase contract.
+  computers:
+    enabled: false                 # Protect Computers sheet (hostname/serial/plan/insights/connection)
+  alerts:
+    enabled: false                 # Protect Alerts sheet (severity/status/event/computer)
+  insights:
+    enabled: false                 # Protect Insights sheet (label/section/pass-fail-none)
 
 
 # =============================================================================
@@ -352,6 +412,13 @@ platform:
   compliance_benchmarks:
     # - "NIST 800-53r5 Moderate"
     # - "DISA STIG"
+  # Platform-only health checks via `jamf-cli pro audit --checks platform`.
+  # Adds a "Platform Health" sheet with seven platform-specific findings
+  # (undeployed blueprints, deployment failures, stale blueprints,
+  # benchmark updates available, monitor-mode benchmarks, empty platform
+  # scope, devices with failed DDM declarations). Gated by platform.enabled.
+  audit_platform:
+    enabled: true
 
 
 # =============================================================================
@@ -690,8 +757,43 @@ school_cli:
   data_dir: "school-cli-data"
   # Profile name configured via: jamf-cli school setup --profile-name <name>
   profile: "school"
+
+  # jamf-cli multi support (v1.9+)
+  # Run commands against multiple school profiles.
+  multi:
+    # Set true to use 'jamf-cli multi' for all live school data collection.
+    enabled: false
+    # Optional glob pattern to filter profiles (e.g., 'school-*').
+    filter: ""
+    # Optional comma-separated list of profile names.
+    profiles: ""
+    # Optional path to a file containing profile names or instance URLs.
+    from_file: ""
+    # Set true to run profiles sequentially instead of in parallel.
+    sequential: false
+
   # Fall back to cached snapshots when live commands fail.
   use_cached_data: true
+
+
+# ---------------------------------------------------------------------------
+# Jamf School sheet toggles (jamf-cli v1.9+)
+# ---------------------------------------------------------------------------
+# Optional sheets sourced from jamf-cli school read-only resources. Each is
+# enabled by default; set enabled: false to skip the sheet without affecting
+# the rest of the school workbook.
+
+school:
+  # DEP Devices sheet — DEP-enrolled inventory via `jamf-cli school dep-devices list`.
+  # Columns: Serial Number, Model, Color, Status, Profile Name, Device Name.
+  # Note: jamf-cli's flatten drops dateAdded / datePushed; those columns are
+  # only available via the Jamf School REST API directly.
+  dep_devices:
+    enabled: true
+  # iBeacons sheet — registered iBeacons via `jamf-cli school ibeacons list`.
+  # Columns: Name, UUID, Major, Minor, Description.
+  ibeacons:
+    enabled: true
 
 
 # ---------------------------------------------------------------------------
@@ -710,10 +812,14 @@ school_columns:
   # Device display name (e.g. "Jamf School exports this as 'Name'")
   device_name: ""
   serial_number: ""
+  # Device type (e.g. "iPad", "AppleTV", "Mac")
+  device_type: ""
   os_version: ""
   model: ""
   # School/location name the device belongs to
   location_name: ""
+  # Assigned user display name (separate from owner_username)
+  user_name: ""
   owner_email: ""
   owner_first_name: ""
   owner_last_name: ""

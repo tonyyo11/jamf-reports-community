@@ -5,9 +5,45 @@ a Jamf Pro CSV export — no Power BI, no custom infrastructure, no hardcoded cr
 
 This tool is featured in the [jamf-cli Community Showcase](https://github.com/Jamf-Concepts/jamf-cli/wiki/Community-Showcase).
 
-Long-form setup and operations docs live in the [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki).
+## macOS App
 
-Automated testing docs and fixture guidance live in [docs/testing.md](docs/testing.md).
+A native SwiftUI macOS application (macOS 14+) is the **recommended way** to use this tool.
+It wraps every CLI flow — collect, generate, schedule, configure — and provides dashboards
+covering the full posture/operations/fleet lifecycle: **Overview, Devices, Device Lookup,
+Fleet Overview, Trends, Reports, Audit, Schedules, Runs, Sources, Backups, Config,
+Customize, Settings, Onboarding, Security Posture, Compliance Posture, Outreach, Patch,
+Updates, Policy/Profile, Extension Attributes, Mobile Fleet, and Protect.** Every dashboard
+is toggleable in Settings → Sidebar Visibility, so unused screens disappear from the sidebar
+without losing data.
+
+Key capabilities:
+
+- **Configurable Security Score** (Config → Scoring) with the same weighted formula used
+  by `jamf_reports_cli_v3.5.py` (FileVault, SIP, Firewall, CrowdStrike, mSCP, XProtect,
+  CVE, Secure Boot).
+- **Historical Trends** built on Swift Charts and `summary.json` snapshots. The default
+  trend range is 4 weeks and is configurable in Settings → Data & Charts.
+- **Smart refresh**: the manual "Skip expensive collections" toggle pauses the four
+  per-device commands so on-prem Jamf servers aren't hammered between full refreshes.
+  Scheduled LaunchAgent collects always run the full set.
+- **Legacy history import** (Settings → Import legacy history) reads
+  `fleet_health_metrics_history.json` produced by `jamf_reports_cli_v3.5.py` and seeds
+  Trends with up to a year of back-data.
+
+The Python CLI remains in the repository as a standalone tool for headless, automation,
+or non-Mac environments.
+
+![Security & Health Overview Screenshot](docs/wiki/images/security-health-fleet-overview.png)
+
+**Start here:** [docs/onboarding/GETTING_STARTED.md](docs/onboarding/GETTING_STARTED.md)
+
+**Build instructions:** [app/README.md](app/README.md). The app requires Xcode 16+ to
+build from source. Package via `cd app && ./build-app.sh release`. Local builds are ad-hoc
+signed; wider distribution requires Developer ID signature and notarization.
+
+Long-form setup and operations docs: [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki)
+
+Testing and fixture docs: [docs/testing.md](docs/testing.md)
 
 ---
 
@@ -67,6 +103,21 @@ Or using `uv` (faster):
 uv pip install xlsxwriter pandas pyyaml
 ```
 
+**Hash-pinned install (production)**
+
+For supply-chain integrity in production or CI environments, install from the
+generated lock file with hash verification:
+
+```
+pip install -r requirements.lock.txt --require-hashes
+```
+
+The `requirements.lock.txt` file is regenerated from `requirements.txt` via
+`uv pip compile requirements.txt -o requirements.lock.txt --generate-hashes --universal`.
+It is universal across CPython 3.9+ (Linux/macOS/Windows). Use the unpinned
+`requirements.txt` for casual local installs; use the lock file when supply-chain
+tampering is in scope.
+
 **matplotlib** (optional — required only for chart generation)
 
 ```
@@ -75,7 +126,7 @@ pip install matplotlib
 
 If matplotlib is not installed, the script runs normally and skips chart generation.
 
-**jamf-cli v1.2.0 or later** (optional — required only for live API, EA discovery, and software sheets)
+**jamf-cli v1.16.1 or later** (optional — required only for live API, snapshots, and jamf-cli-driven sheets)
 
 jamf-cli is a command-line interface for Jamf Pro. Documentation and setup guides are at
 the [jamf-cli wiki](https://github.com/Jamf-Concepts/jamf-cli/wiki). If you want the live
@@ -87,12 +138,8 @@ jamf-cli pro setup --url https://jamf.example.com
 
 Follow the prompts to enter your API client ID and client secret. If jamf-cli is not
 installed or not authenticated, those sheets are silently skipped and the rest of the
-report is unaffected. Older jamf-cli builds may also lack some report subcommands; those
-sheets are skipped automatically with a clear message. If you keep saved jamf-cli JSON
-snapshots, the script can also reuse those as an offline cache.
-
-jamf-cli v1.2.0 is the minimum version that supports `app-status` and `update-status`.
-Builds before 1.2.0 will skip those sheets with a clear skip message.
+report is unaffected. The app surfaces a settings notice when the detected jamf-cli is
+below v1.16.1; most code paths still work, the warning is to nudge updates.
 
 If you also want the experimental Jamf Protect sheet, use `jamf-cli 1.6.0+`, configure
 Protect separately, and then opt in from `config.yaml`:
@@ -142,6 +189,10 @@ it, as it may affect future integrations and tooling in this space as it matures
 If you use multiple jamf-cli profiles, set `jamf_cli.profile` in `config.yaml` to the
 profile name you want this report to target. This is the same profile selected with
 `jamf-cli -p <name> ...`.
+
+You can also pass `--profile <name>` to Jamf Pro commands such as `generate`, `collect`,
+`html`, `inventory-csv`, `backup`, `check`, `device`, and `patch-managed`. That override
+is process-local and takes precedence over `jamf_cli.profile` in the config file.
 
 If a specific tenant has trouble with live overview collection, you can set
 `jamf_cli.allow_live_overview: false` to force Fleet Overview to use cached JSON only.
@@ -263,6 +314,7 @@ downloads, build a smaller release bundle that contains just the runtime files:
 
 - `jamf-reports-community.py`
 - `requirements.txt`
+- `requirements.lock.txt`
 - `config.example.yaml`
 - `CHANGELOG.md`
 - `README.md`
@@ -495,6 +547,7 @@ python3 jamf-reports-community.py generate \
 | `--csv` | none | Path to Jamf Pro CSV export (enables CSV sheets) |
 | `--out-file` | auto-named | Output path for the xlsx file. Timestamp appended by default if needed |
 | `--historical-csv-dir` | none | Directory of dated CSV snapshots for trend charts |
+| `--profile` | `jamf_cli.profile` | Runtime jamf-cli profile override for Jamf Pro commands |
 
 If you omit `--csv`, the workbook is built from jamf-cli data only unless a matching
 report family is enabled. `report_families.computers` is preferred; if no computer
@@ -536,6 +589,10 @@ for the blueprint, DDM, and optional benchmark sheets. The saved JSON files are 
 timestamped; the generated report outputs can also auto-archive older runs out of the
 active output folder.
 
+`collect` does not require a CSV or preexisting history. In a fresh workspace, it can
+bootstrap `jamf-cli-data/` from the selected Jamf Pro profile by saving inventory,
+security, compliance, app/update, group, package, script, and org metadata snapshots.
+
 When `report_families` is enabled, `collect` also archives the newest matching CSV for
 each enabled family into that family's `historical_dir`, even when `--csv` is omitted.
 
@@ -561,8 +618,10 @@ best for bootstrap and general inventory reporting. It is not a full replacement
 every possible Jamf Pro Advanced Search or every per-device field exposed by `jamf-cli
 pro device`.
 
-`inventory-csv` is a live-auth path. Unlike `generate`, it does not reuse cached JSON
-snapshots when jamf-cli auth is broken.
+`inventory-csv` uses live auth for the computer inventory list and writes that response
+to `jamf-cli-data/computers-list/`. Extension attribute results use the normal
+live-or-cached snapshot path; if EAs are temporarily unavailable, the command still
+writes the base inventory CSV and prints a warning.
 
 Hardware, OS, user/location, and standard security columns (FileVault, SIP, firewall,
 Gatekeeper, bootstrap token state) come directly from the inventory list response, so
@@ -576,6 +635,20 @@ inventory list response has the columns you need. Tune parallelism with
 If you want later commands to use `--csv inventory.csv`, create it explicitly with
 `inventory-csv --out-file inventory.csv`. If you omit `--out-file`, the export is written
 to `Generated Reports/` using the configured timestamp behavior.
+
+### `backup` — Snapshot Jamf Pro configuration objects
+
+```bash
+python3 jamf-reports-community.py backup \
+    [--config config.yaml] \
+    [--label before-change-window]
+```
+
+Runs `jamf-cli pro backup --format json` for the configured `jamf_cli.profile` and writes
+the result under `backups/<timestamp>-<label>/` next to the profile's `config.yaml`.
+Each backup includes a `manifest.json` with profile, timing, file count, byte size, and
+the exact jamf-cli command used. The macOS app's Backups screen can reveal these folders
+and compare two backups with `jamf-cli pro diff`.
 
 ### `workspace-init` — Create a per-profile workspace skeleton
 
@@ -664,6 +737,31 @@ Generated LaunchAgents call `launchagent-run`. It is safe to run manually when
 troubleshooting, but most users should use `launchagent-setup` and let it compose the
 correct arguments.
 
+### `capabilities` — Print app/report capabilities
+
+```bash
+python3 jamf-reports-community.py capabilities --output json
+```
+
+Prints a deterministic JSON manifest for GUI clients and automation wrappers. The
+manifest lists supported Jamf products, commands, data sources, current-status surfaces,
+historical/trend surfaces, config sections, and known product gaps. It does not load
+`config.yaml`, probe the filesystem, or call `jamf-cli`.
+
+### App-facing run summaries
+
+```bash
+python3 jamf-reports-community.py generate --summary-json run-summary.json
+python3 jamf-reports-community.py collect --summary-json collect-summary.json
+python3 jamf-reports-community.py school-generate --summary-json school-summary.json
+python3 jamf-reports-community.py school-collect --summary-json school-collect-summary.json
+python3 jamf-reports-community.py html --summary-json html-summary.json
+```
+
+These commands can write deterministic JSON summaries for GUI clients and automation
+wrappers. The summaries include command metadata, output paths, counts, selected inputs,
+and source/archive information without changing the normal console output.
+
 ### `scaffold` — Generate a starter config from your CSV
 
 ```
@@ -725,6 +823,57 @@ Sheets appear only when the required config and data are present. Use
 | Platform Compliance Devices | jamf-cli platform preview + `platform.compliance_benchmarks` | Devices with benchmark rule failures and aggregate compliance |
 | Platform DDM Status | jamf-cli platform preview | Declaration success vs unsuccessful counts by source |
 | Report Sources | always when data exists | Declares whether each sheet came from jamf-cli, CSV, or charts |
+
+### Integrity envelope for shareable reports
+
+Every generated report ships with a self-attesting fingerprint so a recipient
+can confirm the file has not been tampered with after generation. This addresses
+the cross-trust-boundary tampering vector (threat-model T-13): no code execution
+is required to edit an HTML or XLSX after it leaves your workstation, so
+recipients benefit from a baseline integrity hint.
+
+**XLSX (`.sha256` sidecar).** Every `.xlsx` written by `generate` or
+`school-generate` is accompanied by `<basename>.xlsx.sha256` in standard
+`shasum -a 256` output format:
+
+```
+8f4c2a...64hex...e9b7  jamf_report_prod_2026-05-17_103045.xlsx
+```
+
+Verify from the directory containing both files:
+
+```sh
+shasum -a 256 -c jamf_report_prod_2026-05-17_103045.xlsx.sha256
+# → jamf_report_prod_2026-05-17_103045.xlsx: OK
+```
+
+A non-zero exit (or `FAILED` in the output) means the workbook bytes do not
+match the recorded hash — the file was modified, truncated, or corrupted.
+
+**HTML (`<meta>` tag + visible footer).** Reports written by `html` /
+`generateHTML` embed `<meta name="report-sha256" content="HASH">` in
+`<head>` and a `class="verify-footer"` block near the document footer that
+lists the same hash plus the verification procedure. The embedded hash is
+a **source fingerprint**: it covers a *placeholder version* of the file
+where the hash field is replaced with 64 zeros. To reproduce it:
+
+```sh
+# Replace the embedded 64-hex hash with 64 zeros in two sites (meta tag
+# + footer), then hash the result. The output must equal the embedded hash.
+HASH=$(sed -nE 's/.*name="report-sha256" content="([0-9a-f]{64})".*/\1/p' report.html | head -1)
+sed "s/${HASH}/0000000000000000000000000000000000000000000000000000000000000000/g" report.html \
+    | shasum -a 256
+# → <HASH>  -
+```
+
+If the recomputed digest matches the embedded `HASH`, the report content
+has not been altered. (Direct `shasum -a 256 report.html` does **not**
+match the embedded value because the embedded hash itself is part of the
+final bytes — this is unavoidable for self-attesting documents.)
+
+In the macOS app, the per-artifact fingerprint appears truncated in the
+Reports screen's "Report ready" toast and in full (with a copy-to-clipboard
+button) in the Generate sheet's completion banner.
 
 ---
 
@@ -811,6 +960,7 @@ jamf_cli:
   allow_live_overview: true
   command_timeout_seconds: 300
   ea_results_timeout_seconds: 600
+  require_manifest: false
 ```
 
 The community default is a plain `jamf-cli-data/` folder next to the script. If you prefer
@@ -828,6 +978,12 @@ default. `ea_results_timeout_seconds` overrides that ceiling specifically for
 `pro report ea-results --all`, which queries every EA value across the fleet and is
 consistently the slowest jamf-cli call — the 600s default has headroom for fleets with
 hundreds of EAs and thousands of devices.
+
+Set `require_manifest: true` to hard-fail on snapshot integrity violations (missing
+manifest entry, SHA-256 mismatch, or absent `manifest.json`). Equivalent to passing
+`--strict-manifest` on every invocation. Recommended for production / shared workspaces;
+leave `false` for ad-hoc exploration. The Swift app also surfaces an "Unverified
+snapshot" warning card in AuditView regardless of this setting.
 
 ### `inventory_csv`
 

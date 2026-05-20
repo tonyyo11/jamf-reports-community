@@ -1,0 +1,41 @@
+[
+  {
+    "rule": "Firewall Enabled",
+    "passed": 90,
+    "failed": 0,
+    "unknown": 0,
+    "devices": 90,
+    "passRate": "100%"
+  },
+  {
+    "rule": "FileVault Enabled",
+    "passed": 85,
+    "failed": 5,
+    "unknown": 0,
+    "devices": 90,
+    "passRate": "94.4%"
+  },
+  {
+    "rule": "SIP Enabled",
+    "passed": 60,
+    "failed": 0,
+    "unknown": 8,
+    "devices": 68,
+    "passRate": "88.2%"
+  },
+  {
+    "rule": "Screen Lock",
+    "passed": 70,
+    "failed": 3,
+    "unknown": 2,
+    "devices": 75,
+    "passRate": "93.3%"
+  },
+  {
+    "rule": "Gatekeeper Status",
+    "passed": 0,
+    "unknown": 0,
+    "devices": 50,
+    "passRate": ""
+  }
+]

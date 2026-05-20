@@ -1,0 +1,11 @@
+{
+  "date": "2026-04-28",
+  "totalDevices": 96,
+  "fileVaultPct": 99.0,
+  "compliancePct": 0.0,
+  "staleCount": 94,
+  "osCurrentPct": 0.0,
+  "crowdstrikePct": 0.0,
+  "patchPct": 0.0,
+  "source": "csv"
+}

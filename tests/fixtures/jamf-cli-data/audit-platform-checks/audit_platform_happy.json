@@ -1,0 +1,51 @@
+[
+  {
+    "category": "platform",
+    "severity": "warning",
+    "name": "Undeployed blueprints",
+    "affected": 2,
+    "recommendation": "Deploy or archive draft blueprints to keep the platform inventory clean."
+  },
+  {
+    "category": "platform",
+    "severity": "critical",
+    "name": "Blueprint deployment failures",
+    "affected": 4,
+    "recommendation": "Investigate failed blueprint deployments under Platform > Blueprints."
+  },
+  {
+    "category": "platform",
+    "severity": "warning",
+    "name": "Stale blueprints (updated since last deploy)",
+    "affected": 1,
+    "recommendation": "Re-deploy blueprints whose source has changed since the last successful deploy."
+  },
+  {
+    "category": "platform",
+    "severity": "warning",
+    "name": "Compliance benchmarks with updates available",
+    "affected": 1,
+    "recommendation": "Review benchmark updates and re-deploy when changes are acceptable."
+  },
+  {
+    "category": "platform",
+    "severity": "info",
+    "name": "Compliance benchmarks in MONITOR mode",
+    "affected": 2,
+    "recommendation": "Move benchmarks from MONITOR to ENFORCE once results are validated."
+  },
+  {
+    "category": "platform",
+    "severity": "warning",
+    "name": "Empty platform scope",
+    "affected": 1,
+    "recommendation": "Add devices to the platform scope to receive blueprint and benchmark deployments."
+  },
+  {
+    "category": "platform",
+    "severity": "critical",
+    "name": "Devices with failed DDM declarations",
+    "affected": 7,
+    "recommendation": "Inspect Platform DDM Status for devices with unsuccessful declarations."
+  }
+]

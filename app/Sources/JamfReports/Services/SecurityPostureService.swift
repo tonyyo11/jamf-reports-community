@@ -1,0 +1,162 @@
+import Foundation
+
+/// Reads the latest `pro report security --output json` snapshot from the
+/// workspace's jamf-cli data directory and prepares it for the
+/// `SecurityPostureView`. Decoupled from the SwiftUI view so it stays
+/// unit-testable.
+///
+/// The view consumes a single `Snapshot` value containing both raw counts
+/// (for KPI tiles) and the OS-version distribution (for the donut). The
+/// `SecurityScore` is computed separately by `SecurityScoreCalculator` so
+/// the view can pass user-configurable weights through.
+struct SecurityPostureService: Sendable {
+
+    /// Everything the SecurityPostureView needs from a single security
+    /// snapshot. `nil` fields mean "data not present in this snapshot" — the
+    /// view should hide the corresponding tile rather than zero it.
+    struct Snapshot: Sendable, Equatable {
+        let totalDevices: Int
+        let fileVaultEncrypted: Int?
+        let sipEnabled: Int?
+        let firewallEnabled: Int?
+        let gatekeeperEnabled: Int?
+        let osVersions: [OSVersion]
+        let sourceFile: URL?
+        let snapshotDate: Date?
+
+        struct OSVersion: Sendable, Equatable, Identifiable {
+            let osVersion: String
+            let count: Int
+            let pct: Double
+            var id: String { osVersion }
+        }
+
+        /// Empty snapshot used when no data file exists for the active profile.
+        /// Hides every KPI but renders an explanatory empty state in the view.
+        static let empty = Snapshot(
+            totalDevices: 0,
+            fileVaultEncrypted: nil,
+            sipEnabled: nil,
+            firewallEnabled: nil,
+            gatekeeperEnabled: nil,
+            osVersions: [],
+            sourceFile: nil,
+            snapshotDate: nil
+        )
+    }
+
+    enum LoadError: Error, Equatable {
+        case dirMissing
+        case noSnapshot
+        case decodeFailed(String)
+    }
+
+    /// Returns the newest snapshot for `profile`. Returns `.empty` (not throws)
+    /// when no snapshot exists — that's a normal state pre-first-collect and
+    /// the view should render a "Run Collect" prompt rather than an error.
+    static func load(profile: String) -> Snapshot {
+        guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
+            return .empty
+        }
+        let securityDir = dir.appendingPathComponent("security", isDirectory: true)
+        guard let newest = newestJSON(in: securityDir) else {
+            return .empty
+        }
+        return decode(at: newest) ?? .empty
+    }
+
+    /// Test seam: load directly from an arbitrary file URL.
+    static func load(from url: URL) throws -> Snapshot {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw LoadError.noSnapshot
+        }
+        guard let snapshot = decode(at: url) else {
+            throw LoadError.decodeFailed("Failed to decode \(url.lastPathComponent)")
+        }
+        return snapshot
+    }
+
+    // MARK: - Internals
+
+    private static func newestJSON(in dir: URL) -> URL? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: dir.path) else { return nil }
+        guard let files = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+        let json = files.filter { $0.pathExtension == "json" }
+        return json.max { lhs, rhs in
+            let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            return l < r
+        }
+    }
+
+    private static func decode(at url: URL) -> Snapshot? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data)
+        else { return nil }
+
+        var summary: SecuritySummaryData?
+        var osVersions: [Snapshot.OSVersion] = []
+
+        for item in items {
+            switch item {
+            case .summary(let s):
+                summary = s.data
+            case .osVersion(let v):
+                osVersions.append(.init(
+                    osVersion: v.osVersion,
+                    count: v.count,
+                    pct: parsePct(v.pct)
+                ))
+            case .device, .unknown:
+                continue
+            }
+        }
+        let total = summary?.totalDevices ?? 0
+        let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+        return Snapshot(
+            totalDevices: total,
+            fileVaultEncrypted: summary?.fileVaultEncrypted,
+            sipEnabled: summary?.sipEnabled,
+            firewallEnabled: summary?.firewallEnabled,
+            gatekeeperEnabled: summary?.gatekeeperEnabled,
+            osVersions: osVersions.sorted { $0.osVersion > $1.osVersion },
+            sourceFile: url,
+            snapshotDate: mtime
+        )
+    }
+
+    /// "60%" → 60.0. Best-effort: returns 0 on any parse failure since the
+    /// percentage is decorative (the count is the source of truth).
+    private static func parsePct(_ raw: String) -> Double {
+        let stripped = raw.trimmingCharacters(in: CharacterSet(charactersIn: "% "))
+        return Double(stripped) ?? 0
+    }
+}
+
+// MARK: - SecurityScore convenience
+
+extension SecurityScoreCalculator {
+    /// Build the calculator input directly from a posture snapshot. The mSCP,
+    /// CrowdStrike, XProtect, CVE, and Secure Boot signals are not in the
+    /// `pro security report` JSON — wire those in from EA results or
+    /// `device-compliance` once those services land.
+    static func input(from snapshot: SecurityPostureService.Snapshot) -> Input {
+        var counts: [SecurityScore.Metric: Int] = [:]
+        if let n = snapshot.fileVaultEncrypted { counts[.fileVault] = n }
+        if let n = snapshot.sipEnabled { counts[.sip] = n }
+        if let n = snapshot.firewallEnabled { counts[.firewall] = n }
+        // Note: gatekeeperEnabled exists in the snapshot but is not one of the
+        // SecurityScore.Metric cases. v3.5 weighted Gatekeeper at 5% under the
+        // CVE/Secure Boot bucket — keeping the calculator focused on the 8
+        // canonical metrics and treating Gatekeeper as a per-tile signal only.
+        return Input(totalDevices: snapshot.totalDevices, compliantCounts: counts)
+    }
+}

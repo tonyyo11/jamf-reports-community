@@ -88,6 +88,12 @@ Build the workbook:
 python3 jamf-reports-community.py generate --config config.yaml --csv "Jamf Reports/97 Computers.csv"
 ```
 
+The resulting workbook contains device inventory, stale device tracking, security controls,
+and security agent coverage. If you use the native macOS app, the fleet view appears in
+the Devices screen:
+
+![Devices Fleet View](../images/devices.png)
+
 ## Ongoing CSV Workflow
 
 For recurring reporting:

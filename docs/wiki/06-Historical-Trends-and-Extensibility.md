@@ -58,6 +58,10 @@ That has practical consequences:
 
 - Weekly collection gives you weekly trend points.
 - Daily collection gives you daily trend points.
+
+The app displays historical trends in the Trends screen:
+
+![Historical Trends Dashboard](../images/trends.png)
 - Ad-hoc collections create irregular timelines, which are still useful for investigations
   but less ideal for recurring leadership dashboards.
 

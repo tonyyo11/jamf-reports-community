@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "name": "Library Front Desk",
+    "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
+    "major": 100,
+    "minor": 1,
+    "description": "Beacon at the library entrance"
+  },
+  {
+    "id": 2,
+    "name": "Cafeteria",
+    "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
+    "major": 100,
+    "minor": 2,
+    "description": "Cafeteria check-in beacon"
+  },
+  {
+    "id": 3,
+    "name": "Auditorium Stage",
+    "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
+    "major": 200,
+    "minor": 1,
+    "description": ""
+  }
+]

@@ -1,0 +1,321 @@
+import Foundation
+import XCTest
+@testable import JamfReports
+
+final class TrendStoreTests: XCTestCase {
+    func testOptionalMetricPointsKeepDatesAlignedWhenValuesAreMissing() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-04-01", compliancePct: 91),
+                summary(date: "2026-04-08", compliancePct: nil),
+                summary(date: "2026-04-15", compliancePct: 84),
+            ],
+            range: .all
+        )
+
+        let points = store.points(metric: .compliance)
+
+        XCTAssertEqual(points.map { dateString($0.date) }, ["2026-04-01", "2026-04-15"])
+        XCTAssertEqual(points.map(\.value), [91, 84])
+        XCTAssertEqual(store.dates().map(dateString), ["2026-04-01", "2026-04-08", "2026-04-15"])
+    }
+
+    func testActiveDevicePointsIncludeEverySummary() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-04-01", totalDevices: 100),
+                summary(date: "2026-04-08", totalDevices: 125),
+            ],
+            range: .all
+        )
+
+        let points = store.points(metric: .activeDevices)
+
+        XCTAssertEqual(points.map { dateString($0.date) }, ["2026-04-01", "2026-04-08"])
+        XCTAssertEqual(points.map(\.value), [100, 125])
+    }
+
+    func testActiveDevicesDemoSeriesUsesTotalDevicesTrend() {
+        let points = TrendDemoSeries.points(for: .activeDevices, range: .all)
+
+        XCTAssertEqual(points.count, min(TrendDemoSeries.dates.count, DemoData.totalDevicesTrend.count))
+        XCTAssertEqual(points.map(\.value), DemoData.totalDevicesTrend)
+    }
+
+    func testDemoPointsClampMismatchedDateAndValueArrays() {
+        let dates = ["2026-04-01", "2026-04-08", "2026-04-15"]
+            .compactMap(SummaryJSONParser.dateFormatter.date)
+        let values = [10.0, 20.0]
+
+        let points = TrendDemoSeries.points(dates: dates, values: values, range: .all)
+
+        XCTAssertEqual(points.map { dateString($0.date) }, ["2026-04-01", "2026-04-08"])
+        XCTAssertEqual(points.map(\.value), values)
+    }
+
+    private func summary(
+        date: String,
+        totalDevices: Int = 500,
+        compliancePct: Double? = 90,
+        crowdstrikePct: Double? = 95
+    ) -> DailySummary {
+        DailySummary(
+            date: date,
+            totalDevices: totalDevices,
+            fileVaultPct: 98,
+            compliancePct: compliancePct,
+            staleCount: 12,
+            osCurrentPct: 80,
+            crowdstrikePct: crowdstrikePct,
+            patchPct: 88
+        )
+    }
+
+    private func dateString(_ date: Date) -> String {
+        SummaryJSONParser.dateFormatter.string(from: date)
+    }
+
+    // MARK: - stabilityIndex tests
+
+    func testStabilityIndexCalculation() throws {
+        // Normal case: compliance=90, patch=80, stale=10/100
+        let idx1 = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: 80, staleCount: 10, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx1), 86.0, accuracy: 0.1)
+
+        // compliancePct is nil -> returns nil
+        let idx2 = TrendSeries.stabilityIndex(compliancePct: nil, patchPct: 80, staleCount: 10, totalDevices: 100)
+        XCTAssertNil(idx2)
+
+        // staleCount = 0, staleInverse = 100
+        let idx3 = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: 80, staleCount: 0, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx3), 88.0, accuracy: 0.1)
+
+        // All stale, staleInverse = 0
+        let idx4 = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: 80, staleCount: 100, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx4), 68.0, accuracy: 0.1)
+
+        // All perfect -> 100
+        let idx5 = TrendSeries.stabilityIndex(compliancePct: 100, patchPct: 100, staleCount: 0, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx5), 100.0, accuracy: 0.1)
+
+        // All terrible -> 0
+        let idx6 = TrendSeries.stabilityIndex(compliancePct: 0, patchPct: 0, staleCount: 100, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx6), 0.0, accuracy: 0.1)
+    }
+
+    // MARK: - chartDomain tests
+
+    func testChartDomainReturnsNilWhenEmpty() {
+        let store = TrendStore(summaries: [], range: .w26)
+        XCTAssertNil(store.chartDomain)
+    }
+
+    func testChartDomainForFourWeekRange() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-04-01"),
+                summary(date: "2026-04-15"),
+                summary(date: "2026-05-01"),
+            ],
+            range: .w4
+        )
+        guard let domain = store.chartDomain else {
+            XCTFail("chartDomain should not be nil")
+            return
+        }
+        let endDateStr = dateString(domain.upperBound)
+        XCTAssertEqual(endDateStr, "2026-05-01")
+        // startDate should be ~4 weeks before 2026-05-01
+        let startDateStr = dateString(domain.lowerBound)
+        XCTAssertTrue(startDateStr <= "2026-04-03" && startDateStr >= "2026-03-31",
+                    "startDate \(startDateStr) not in expected range")
+    }
+
+    func testChartDomainForAllRange() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-01-01"),
+                summary(date: "2026-05-01"),
+            ],
+            range: .all
+        )
+        guard let domain = store.chartDomain else {
+            XCTFail("chartDomain should not be nil")
+            return
+        }
+        let startDateStr = dateString(domain.lowerBound)
+        let endDateStr = dateString(domain.upperBound)
+        XCTAssertEqual(startDateStr, "2026-01-01")
+        XCTAssertEqual(endDateStr, "2026-05-01")
+    }
+
+    func testChartDomainSingleSummary() {
+        let store = TrendStore(
+            summaries: [summary(date: "2026-05-01")],
+            range: .w4
+        )
+        guard let domain = store.chartDomain else {
+            XCTFail("chartDomain should not be nil")
+            return
+        }
+        let startDateStr = dateString(domain.lowerBound)
+        let endDateStr = dateString(domain.upperBound)
+        XCTAssertEqual(startDateStr, "2026-04-03")
+        XCTAssertEqual(endDateStr, "2026-05-01")
+    }
+
+    // MARK: - PR-13: CacheSource plumbing
+
+    func testCacheSourceIsNeverFetchedLiveWithDemoOnlySummaries() {
+        // Default `summary(...)` helper uses `source = "demo"` — no live runs
+        // exist in the corpus, so cacheSource must report .neverFetchedLive
+        // even though summaries are present.
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-04-01"),
+                summary(date: "2026-05-01"),
+            ],
+            range: .all
+        )
+        XCTAssertEqual(store.cacheSource, .neverFetchedLive,
+                       "Demo-only summaries must not register as live data — closes PR-7 first-install false-stale")
+    }
+
+    func testCacheSourceIsNeverFetchedLiveWhenEmpty() {
+        let store = TrendStore(summaries: [], range: .all)
+        XCTAssertEqual(store.cacheSource, .neverFetchedLive)
+    }
+
+    // MARK: - PR-18: reload() vs load(profile:range:) cache invalidation
+
+    /// `load(profile:range:)` short-circuits the filesystem scan when the
+    /// profile hasn't changed (intentional optimization for range-only
+    /// re-filters). When a sibling write (Generate, Refresh) lands on the
+    /// same profile, callers must use `reload()` to pick up the new
+    /// `summary_*.json` mtime — otherwise `cacheSource` stays stuck on
+    /// the previous run's mtime and `StaleDataBanner` keeps showing the
+    /// old "last fetched" timestamp.
+    func testReloadPicksUpFreshSummaryAfterLoadCachedAnOlderMTime() throws {
+        let env = try TrendStoreTestEnv.make()
+        defer { env.tearDown() }
+
+        // First snapshot: oldish mtime — simulates the workspace state when
+        // the user opens Overview a week after the last Generate.
+        let weekAgo = Date(timeIntervalSinceNow: -7 * 86_400)
+        try env.writeSummary(date: "2026-05-11", mtime: weekAgo, source: "jamf-cli")
+        let store = TrendStore()
+        store.load(profile: env.profile, range: .w4)
+        XCTAssertEqual(
+            store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
+            weekAgo.timeIntervalSince1970.rounded()
+        )
+
+        // Sibling write: a fresh summary lands while the same TrendStore
+        // instance is alive (simulates Overview's Generate Report flow).
+        let now = Date()
+        try env.writeSummary(date: "2026-05-18", mtime: now, source: "jamf-cli")
+
+        // Bug-repro guard: `load()` with the same profile must NOT pick up
+        // the new mtime (this is the documented short-circuit behavior the
+        // Refresh-button bug relied on).
+        store.load(profile: env.profile, range: .w4)
+        XCTAssertEqual(
+            store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
+            weekAgo.timeIntervalSince1970.rounded(),
+            "load(profile:range:) must short-circuit on unchanged profile — this is the documented optimization Refresh used to misuse"
+        )
+
+        // Fix: `reload()` re-scans and picks up the fresh file's mtime.
+        store.reload()
+        XCTAssertEqual(
+            store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
+            now.timeIntervalSince1970.rounded(),
+            "reload() must re-scan the filesystem — this is what the Refresh button and Generate completion now call"
+        )
+    }
+
+    func testCacheSourceTreatsJamfCliSourceAsLive() {
+        // A summary with `source == "jamf-cli"` flips hasEverFetchedLive=true.
+        // Without an mtime (no on-disk file in this constructor path), the
+        // freshness helper returns .neverFetchedLive — but only because the
+        // date is nil. The hasEverFetchedLive guard short-circuits to the
+        // same state. Verify by constructing a live summary and confirming
+        // the guard isn't tripped by source detection alone.
+        let liveSummary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 500,
+            fileVaultPct: 98,
+            compliancePct: 90,
+            staleCount: 12,
+            osCurrentPct: 80,
+            crowdstrikePct: 95,
+            patchPct: 88,
+            source: "jamf-cli"
+        )
+        let store = TrendStore(summaries: [liveSummary], range: .all)
+        XCTAssertTrue(store.hasEverFetchedLive,
+                      "TrendStore must detect jamf-cli-sourced summaries as live")
+        // latestSnapshotDate is nil for the in-memory init path (no filesystem
+        // scan happens), so cacheSource folds back to .neverFetchedLive via
+        // the date-nil branch of CacheSource.from. That's the right behavior:
+        // we treat "no mtime evidence" as "never live", not "stale forever".
+        XCTAssertEqual(store.cacheSource, .neverFetchedLive)
+    }
+}
+
+// MARK: - PR-18 test scaffolding
+
+/// Temp workspace + profile setup for tests that need TrendStore to actually
+/// scan the filesystem. Uses `JRC_TEST_WORKSPACES_ROOT` env override.
+private struct TrendStoreTestEnv {
+    let workspacesRoot: URL
+    let profile: String
+
+    static func make() throws -> TrendStoreTestEnv {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("trendStore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+
+        // Profile slug must satisfy ProfileService.isValid: lowercase alnum
+        // starting with alnum, then [a-z0-9._-]. The UUID suffix is uppercase
+        // hex; lowercase it.
+        let profile = "test-\(UUID().uuidString.prefix(8).lowercased())"
+        let summariesDir = root
+            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("snapshots", isDirectory: true)
+            .appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        return TrendStoreTestEnv(workspacesRoot: root, profile: profile)
+    }
+
+    func tearDown() {
+        unsetenv("JRC_TEST_WORKSPACES_ROOT")
+        try? FileManager.default.removeItem(at: workspacesRoot)
+    }
+
+    func writeSummary(date: String, mtime: Date, source: String) throws {
+        let summariesDir = workspacesRoot
+            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("snapshots", isDirectory: true)
+            .appendingPathComponent("summaries", isDirectory: true)
+        let file = summariesDir.appendingPathComponent("summary_\(date).json")
+        let payload: [String: Any] = [
+            "date": date,
+            "totalDevices": 100,
+            "fileVaultPct": 95,
+            "compliancePct": 90,
+            "staleCount": 5,
+            "osCurrentPct": 80,
+            "crowdstrikePct": 92,
+            "patchPct": 85,
+            "source": source,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        try data.write(to: file)
+        try FileManager.default.setAttributes(
+            [.modificationDate: mtime],
+            ofItemAtPath: file.path
+        )
+    }
+}

@@ -17,18 +17,24 @@ Usage:
                                                         [--mode csv-assisted]
                                                         [--schedule weekdays]
                                                         [--time-of-day 07:00]
+    python3 jamf-reports-community.py capabilities [--output json|text]
     python3 jamf-reports-community.py scaffold [--csv path/to/export.csv] [--out config.yaml]
     python3 jamf-reports-community.py check [--csv path/to/export.csv]
 """
 
+from __future__ import annotations
+
 import argparse
 import copy
 import hashlib
+import hmac
 import json
 import math
 import os
+import platform
 import plistlib
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -38,8 +44,9 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
 from pathlib import Path
@@ -64,6 +71,90 @@ DEFAULT_AUTOMATION_MODE = "jamf-cli-only"
 DEFAULT_AUTOMATION_SCHEDULE = "weekdays"
 DEFAULT_AUTOMATION_TIME_OF_DAY = "07:00"
 DEFAULT_CSV_FRESHNESS_DAYS = 14
+# Error message constants for jamf-cli update-status
+NO_UPDATE_DATA_MESSAGE = "No managed software update data found."
+PLAN_TOGGLE_OFF_MESSAGE = "Managed Software Update Plans toggle is off."
+
+
+def _update_no_data_detail_matches(detail: str) -> bool:
+    """Return True when jamf-cli says managed software update data is unavailable."""
+    return (
+        NO_UPDATE_DATA_MESSAGE in detail
+        or PLAN_TOGGLE_OFF_MESSAGE in detail
+    )
+
+
+def _jamf_error_detail(raw: Any) -> str:
+    """Extract human-readable error text from a Jamf API error JSON response."""
+    nodes = raw if isinstance(raw, list) else [raw]
+    details: list[str] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        for key in ("message", "detail", "description", "error"):
+            value = node.get(key)
+            if value:
+                details.append(str(value))
+        errors = node.get("errors")
+        if isinstance(errors, list):
+            for item in errors:
+                if isinstance(item, dict):
+                    for key in ("message", "detail", "description", "error"):
+                        value = item.get(key)
+                        if value:
+                            details.append(str(value))
+                elif item:
+                    details.append(str(item))
+    return "\n".join(details)
+
+
+def _is_update_no_data_response(raw: Any) -> bool:
+    """Return True for cached Jamf JSON that means update-status has no data.
+
+    Two shapes count as "no data":
+
+    * A real Jamf API error envelope — identified by ``errors`` or ``httpStatus``
+      and a detail string matching one of our sentinels.
+    * Our own synthesized empty envelopes from
+      :func:`_empty_update_status_envelope` and
+      :func:`_empty_update_failures_envelope`.
+
+    Plain ``"message"`` presence alone is not enough: real result rows can carry
+    that key without meaning "no data".
+    """
+    if raw == _empty_update_status_envelope() or raw == _empty_update_failures_envelope():
+        return True
+    envelope = raw[0] if isinstance(raw, list) and raw else raw
+    if not isinstance(envelope, dict):
+        return False
+    has_error_envelope = "errors" in envelope or "httpStatus" in envelope
+    if has_error_envelope:
+        return _update_no_data_detail_matches(_jamf_error_detail(raw))
+    return False
+
+
+def _empty_update_status_envelope() -> dict[str, Any]:
+    """Return the normalized no-data envelope for update-status."""
+    return {
+        "message": NO_UPDATE_DATA_MESSAGE,
+        "summary": {},
+        "ErrorDevices": [],
+    }
+
+
+def _empty_update_failures_envelope() -> list[dict[str, Any]]:
+    """Return the normalized no-data envelope for update-status --scan-failures."""
+    return [{
+        "message": NO_UPDATE_DATA_MESSAGE,
+        "total": 0,
+        "status_summary": [],
+        "error_devices": [],
+        "plan_total": 0,
+        "plan_state_summary": [],
+        "failed_plans": [],
+    }]
+
+
 AUTOMATION_MODE_DESCRIPTIONS: dict[str, str] = {
     "snapshot-only": "Refresh jamf-cli snapshots and archive history; optional xlsx/HTML outputs are controlled by config.",
     "jamf-cli-only": "Use jamf-cli data to generate configured automation outputs.",
@@ -77,6 +168,8 @@ AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
     "monthly": "One day of the month at the chosen time",
 }
 REPORT_FAMILY_NAMES = ("computers", "mobile", "compliance")
+APP_CAPABILITIES_VERSION = 1
+COMMAND_SUMMARY_SCHEMA_VERSION = 1
 WEEKDAY_NAME_TO_VALUE: dict[str, int] = {
     "sun": 0,
     "sunday": 0,
@@ -148,23 +241,51 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "enabled": True,
         "data_dir": "jamf-cli-data",
         "profile": "",
+        "multi": {
+            "enabled": False,
+            "filter": "",
+            "profiles": "",
+            "from_file": "",
+            "sequential": False,
+        },
         "use_cached_data": True,
         "allow_live_overview": True,
         "command_timeout_seconds": 300,
         "ea_results_timeout_seconds": 600,
+        "max_cache_age_hours": 0,   # 0 = no limit; set to enforce freshness on cache fallback
+        # When True, manifest mismatches and missing manifest entries are hard errors
+        # (equivalent to passing --strict-manifest on every invocation). Threat-model T-11.
+        "require_manifest": False,
+        # Report types to skip during live collection (`jamf-reports-community collect`).
+        # Accepts jamf-cli report type identifiers, e.g. "update-status", "profile-status".
+        # Use this to exclude expensive per-device queries that can stall on-prem Jamf Pro.
+        # Underscores and hyphens are interchangeable ("update_status" == "update-status").
+        # Only the four skippable report types (Patch Failures, Profile Status,
+        # Update Status, Update Failures) honor this list — core inventory commands
+        # always run because the primary report sheets depend on them.
+        "collect_skip": [],
     },
     "school_cli": {
         "enabled": False,
         "data_dir": "school-cli-data",
         "profile": "school",
+        "multi": {
+            "enabled": False,
+            "filter": "",
+            "profiles": "",
+            "from_file": "",
+            "sequential": False,
+        },
         "use_cached_data": True,
     },
     "school_columns": {
         "device_name": "",
         "serial_number": "",
+        "device_type": "",
         "os_version": "",
         "model": "",
         "location_name": "",
+        "user_name": "",
         "owner_email": "",
         "owner_first_name": "",
         "owner_last_name": "",
@@ -181,10 +302,30 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "protect": {
         "enabled": False,
+        "data_dir": "jamf-cli-data/protect",
+        "profile": "",
+        "use_cached_data": True,
+        "plans": {"enabled": True},
+        # W23 standard pack — opt-in (default off) until verified against a live
+        # Protect tenant. Sheets are marked Experimental in their headers.
+        "computers": {"enabled": False},
+        "alerts": {"enabled": False},
+        "insights": {"enabled": False},
     },
     "platform": {
         "enabled": False,
         "compliance_benchmarks": [],
+        "audit_platform": {
+            "enabled": True,
+        },
+    },
+    "school": {
+        "dep_devices": {
+            "enabled": True,
+        },
+        "ibeacons": {
+            "enabled": True,
+        },
     },
     "compliance": {
         "enabled": False,
@@ -336,13 +477,15 @@ COLUMN_EXCLUDES: dict[str, list[str]] = {
 SCHOOL_COLUMN_HINTS: dict[str, list[str]] = {
     "device_name": ["name", "devicename", "device name"],
     "serial_number": ["serialnumber", "serial number", "serial"],
+    "device_type": ["devicetype", "device type"],
     "os_version": ["osversion", "os version", "iosversion", "ios version"],
     "model": ["model"],
     "location_name": ["locationname", "location name", "location", "school"],
+    "user_name": ["username"],
     "owner_email": ["owneremail", "owner email", "email"],
     "owner_first_name": ["ownerfirstname", "owner first name", "first name", "firstname"],
     "owner_last_name": ["ownerlastname", "owner last name", "last name", "lastname"],
-    "owner_username": ["ownerusername", "owner username", "username"],
+    "owner_username": ["ownerusername", "owner username"],
     "managed": ["ismanaged", "managed"],
     "supervised": ["issupervised", "supervised"],
     "shared": ["isshared", "shared"],
@@ -359,6 +502,7 @@ SCHOOL_COLUMN_EXCLUDES: dict[str, list[str]] = {
     "owner_email": ["ownerfirstname", "ownerlastname", "ownerusername"],
     "location_name": ["schoolnumber"],
     "model": ["modelidentifier", "modelid"],
+    "user_name": ["owner"],
 }
 
 
@@ -434,6 +578,37 @@ def _parse_manager(raw_value: Any) -> str:
     return s
 
 
+def strict_parse_failures(value: Any) -> int:
+    """Parse a compliance failure count strictly — fail-closed on non-numeric input.
+
+    Args:
+        value: Raw value from CSV (may be string, numeric, or empty).
+
+    Returns:
+        Integer failure count.
+
+    Raises:
+        ValueError: If value is non-numeric (empty, "N/A", "unknown", etc.).
+    """
+    if value is None:
+        raise ValueError("Compliance value is None")
+    if isinstance(value, float) and (value != value):
+        raise ValueError("Compliance value is NaN")
+    s = str(value).strip()
+    if not s:
+        raise ValueError("Compliance value is empty")
+    # Reject common non-numeric placeholders
+    if s.lower() in ("", "n/a", "na", "unknown", "none", "null", "-", "--"):
+        raise ValueError(f"Compliance value is non-numeric: '{s}'")
+    try:
+        result = int(float(s))
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"Compliance value is non-numeric: '{s}'") from exc
+    if result < 0:
+        raise ValueError(f"Compliance value is negative: {result}")
+    return result
+
+
 def _now_ts() -> str:
     """Return current UTC timestamp as a compact string."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S%f")
@@ -451,6 +626,135 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+SNAPSHOT_MANIFEST_FILENAME = "manifest.json"
+
+
+def _snapshot_manifest_path(snapshot_dir: Path) -> Path:
+    """Return the manifest path that lives alongside cached JSON snapshots."""
+    return snapshot_dir / SNAPSHOT_MANIFEST_FILENAME
+
+
+def _rewrite_snapshot_manifest(
+    snapshot_dir: Path,
+    *,
+    pinned: Optional[dict[str, str]] = None,
+) -> None:
+    """Recompute and atomically rewrite the SHA-256 manifest for a snapshot dir.
+
+    The manifest lists every `*.json` file in the directory (excluding the
+    manifest itself and any `.partial` write-in-progress files) keyed by
+    filename, value = lowercase hex digest. Rewritten in full on each call so
+    older files purged by ``keep_latest_runs`` are not left in the manifest.
+
+    ``pinned`` lets the caller supply pre-computed hashes for files it just
+    wrote — those entries are used verbatim instead of re-hashing from disk.
+    Pinning closes the collect-side TOCTOU race: an attacker who tampers with
+    a freshly-written file between rename and manifest rewrite would otherwise
+    poison the manifest with the attacker's hash. The just-written buffer's
+    hash is the source of truth for files it covers.
+
+    Failures are surfaced as a `[warn]` print and otherwise swallowed —
+    snapshot writes must not be blocked by manifest hygiene.
+    """
+    try:
+        if not snapshot_dir.is_dir():
+            return
+        manifest_path = _snapshot_manifest_path(snapshot_dir)
+        entries: dict[str, str] = {}
+        pinned_map = dict(pinned or {})
+        for child in sorted(snapshot_dir.iterdir()):
+            if not child.is_file():
+                continue
+            if child.name == SNAPSHOT_MANIFEST_FILENAME:
+                continue
+            if child.suffix == ".partial" or ".partial" in child.name:
+                continue
+            if child.suffix != ".json":
+                continue
+            if child.name in pinned_map:
+                entries[child.name] = pinned_map[child.name].lower()
+            else:
+                entries[child.name] = _sha256_file(child)
+        partial = manifest_path.with_suffix(".json.partial")
+        with open(partial, "w", encoding="utf-8") as fh:
+            json.dump({"algorithm": "sha256", "files": entries}, fh, indent=2, sort_keys=True)
+        partial.rename(manifest_path)
+    except OSError as exc:
+        print(f"  [warn] Could not write snapshot manifest for '{snapshot_dir}': {exc}")
+
+
+def _expected_manifest_hash(snapshot_path: Path) -> Optional[str]:
+    """Return the expected SHA-256 hex for ``snapshot_path`` from the sibling manifest.
+
+    Returns None when the manifest is absent, malformed, or omits this filename
+    (legacy snapshots, partial collects, cross-tool workflows). Callers MUST
+    treat None as "no check" rather than failure.
+    """
+    manifest_path = _snapshot_manifest_path(snapshot_path.parent)
+    if not manifest_path.is_file():
+        return None
+    try:
+        with open(manifest_path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"  [warn] Could not read snapshot manifest {manifest_path}: {exc}")
+        return None
+    files = manifest.get("files", {}) if isinstance(manifest, dict) else {}
+    expected = files.get(snapshot_path.name)
+    return str(expected) if expected else None
+
+
+def _verify_snapshot_bytes_against_manifest(
+    snapshot_path: Path, raw: bytes, strict: bool = False
+) -> None:
+    """Verify ``raw`` (bytes already read from ``snapshot_path``) matches the
+    sibling manifest entry.
+
+    Operating on caller-supplied bytes — not re-reading the file — closes the
+    verify-then-parse TOCTOU race: callers must `path.read_bytes()` once, pass
+    that buffer here AND to `json.loads()`. An attacker swapping file contents
+    between two `open()` calls is no longer exploitable.
+
+    On mismatch:
+      - When ``strict`` is True, raises ``RuntimeError`` (used by --strict-manifest).
+      - Otherwise prints a ``[warn]`` line and returns.
+
+    No-op when the manifest is absent or omits this filename.
+    """
+    expected = _expected_manifest_hash(snapshot_path)
+    if expected is None:
+        return
+    actual = hashlib.sha256(raw).hexdigest()
+    if actual.lower() != expected.lower():
+        message = (
+            f"snapshot SHA-256 mismatch for {snapshot_path}: "
+            f"expected {expected[:12]}…, got {actual[:12]}…"
+        )
+        if strict:
+            raise RuntimeError(message)
+        print(f"  [warn] {message}")
+
+
+def _verify_snapshot_against_manifest(
+    snapshot_path: Path, strict: bool = False
+) -> None:
+    """Verify ``snapshot_path``'s SHA-256 matches its sibling manifest entry.
+
+    Convenience wrapper around `_verify_snapshot_bytes_against_manifest` that
+    reads the file from disk. Prefer the bytes-based form when you also need
+    to parse the contents — calling both functions opens a TOCTOU race.
+
+    Kept for callers (e.g. Swift-side parity test fixtures) that only need
+    verification without parsing.
+    """
+    try:
+        raw = snapshot_path.read_bytes()
+    except OSError as exc:
+        print(f"  [warn] Could not hash snapshot {snapshot_path} for verification: {exc}")
+        return
+    _verify_snapshot_bytes_against_manifest(snapshot_path, raw, strict=strict)
 
 
 def _path_has_timestamp(path: Path) -> bool:
@@ -487,6 +791,32 @@ def _run_group_prefix(stem: str, family_base: str) -> str:
     if match:
         return match.group(1)
     return stem
+
+
+def _write_sha256_sidecar(artifact_path: Path) -> Optional[Path]:
+    """Write a `<file>.sha256` sidecar in `shasum -a 256` output format.
+
+    Format: ``<64hex><two-spaces><basename><LF>`` so users can verify with
+    ``shasum -a 256 -c <basename>.sha256`` from the artifact's directory.
+    Returns the sidecar path on success or ``None`` if the artifact could
+    not be read. Failures are logged as warnings and never raise — a
+    sidecar write must not block report delivery (T-13 integrity envelope).
+    """
+    try:
+        data = artifact_path.read_bytes()
+    except OSError as exc:
+        print(f"  [warn] sha256 sidecar: could not read {artifact_path}: {exc}")
+        return None
+    digest = hashlib.sha256(data).hexdigest()
+    sidecar_path = artifact_path.with_suffix(artifact_path.suffix + ".sha256")
+    try:
+        sidecar_path.write_text(
+            f"{digest}  {artifact_path.name}\n", encoding="utf-8"
+        )
+    except OSError as exc:
+        print(f"  [warn] sha256 sidecar: could not write {sidecar_path}: {exc}")
+        return None
+    return sidecar_path
 
 
 def _archive_old_output_runs(
@@ -572,7 +902,7 @@ def _resolve_cli_input_path(
     candidates = _cli_input_candidates(path_value, config)
     for candidate in candidates:
         if candidate.exists():
-            return candidate
+            return candidate.resolve()
     return candidates[0] if candidates else None
 
 
@@ -702,10 +1032,40 @@ def _parse_day_of_month(value: Any) -> int:
 
 
 def _default_launchagent_label(config: "Config") -> str:
-    """Return the default LaunchAgent label for a config/profile combination."""
+    """Return the default LaunchAgent label for a config/profile combination.
+
+    Lowercases the slug source because ``_validate_launchagent_label`` and the
+    Swift app both restrict labels to ``[a-z0-9._-]``. Profiles are already
+    validated lowercase, but config stems are not, and a generated label has
+    to stay loadable by the GUI.
+    """
     profile_name = str(config.jamf_cli.get("profile", "") or "").strip()
     slug_source = profile_name or config.path.stem or "default"
-    return f"{LAUNCHAGENT_LABEL_PREFIX}.{_filename_component(slug_source)}"
+    return f"{LAUNCHAGENT_LABEL_PREFIX}.{_filename_component(slug_source).lower()}"
+
+
+def _validate_launchagent_label(value: str) -> str:
+    """Return a validated LaunchAgent label under this tool's namespace.
+
+    The Swift app validates labels against ``[a-z0-9._-]`` (see
+    ``LaunchAgentWriter.isValidLabel``). Allow only the same character set so
+    Python and the GUI agree about what plists are loadable.
+    """
+    label = str(value).strip()
+    prefix = f"{LAUNCHAGENT_LABEL_PREFIX}."
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789._-")
+    if (
+        not label.startswith(prefix)
+        or label.endswith(".")
+        or ".." in label
+        or any(ch not in allowed for ch in label)
+    ):
+        raise SystemExit(
+            f"Error: LaunchAgent label must start with {prefix}"
+            " and contain only lowercase letters, numbers, dots, underscores,"
+            " or hyphens."
+        )
+    return label
 
 
 def _launchagent_schedule_items(
@@ -1053,6 +1413,89 @@ def _write_status_file(path_value: Optional[str], status: dict[str, Any]) -> Non
         print(f"[warning] could not write status file {path}: {e}")
 
 
+def _command_summary_base(command: str, config: "Config") -> dict[str, Any]:
+    """Return stable metadata shared by app-facing command summaries."""
+    started_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "schema_version": COMMAND_SUMMARY_SCHEMA_VERSION,
+        "command": command,
+        "status": "started",
+        "started_at": started_at,
+        "finished_at": None,
+        "config_path": str(config.path),
+        "config_base_dir": str(config.base_dir),
+        "profile": str(config.jamf_cli.get("profile", "") or "").strip(),
+    }
+
+
+def _summary_file_entry(kind: str, path: Optional[Path]) -> dict[str, Any]:
+    """Return a stable file descriptor for command summaries.
+
+    The ``path`` field is ``None`` (JSON ``null``) when no path is available,
+    so downstream decoders can distinguish a missing artifact from one that
+    happened to resolve to an empty string. ``""`` would round-trip through
+    ``URL(string:)`` as a relative URL on the Swift side.
+    """
+    entry: dict[str, Any] = {
+        "kind": kind,
+        "path": str(path) if path is not None else None,
+        "exists": False,
+        "size_bytes": None,
+        "modified_at": None,
+    }
+    if path is None:
+        return entry
+    try:
+        stat = path.stat()
+    except OSError:
+        return entry
+    entry["exists"] = True
+    entry["size_bytes"] = stat.st_size
+    entry["modified_at"] = datetime.fromtimestamp(
+        stat.st_mtime,
+        timezone.utc,
+    ).isoformat()
+    return entry
+
+
+def _finish_command_summary(summary: dict[str, Any], status: str = "ok") -> dict[str, Any]:
+    """Mark a command summary as complete."""
+    summary["status"] = status
+    summary["finished_at"] = datetime.now(timezone.utc).isoformat()
+    return summary
+
+
+def _write_summary_json(path_value: Optional[str], summary: dict[str, Any]) -> None:
+    """Atomically write a command summary JSON file when requested.
+
+    Uses ``tempfile.NamedTemporaryFile`` so concurrent calls from the same
+    process can't collide on a pid-based filename, and so an interrupted write
+    leaves a `.tmp` sibling rather than a partial real file.
+    """
+    if not path_value:
+        return
+    path = Path(path_value).expanduser()
+    temp_path: Optional[Path] = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w",
+            delete=False,
+            dir=str(path.parent),
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            encoding="utf-8",
+        ) as fh:
+            json.dump(summary, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+            temp_path = Path(fh.name)
+        os.replace(temp_path, path)
+    except OSError as exc:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        print(f"[warning] could not write summary JSON {path}: {exc}")
+
+
 def _require_existing_config_path(path_value: str) -> Path:
     """Return a resolved config path, raising when the file does not exist."""
     path = Path(path_value).expanduser()
@@ -1151,35 +1594,21 @@ def _profile_isolation_guidance(config: "Config") -> list[str]:
     return guidance
 
 
-def _days_since(date_str: str) -> Optional[int]:
-    """Parse a date string and return days elapsed since then.
+def _days_since(value: Any) -> Optional[int]:
+    """Return whole days since a timestamp-like value, or None when unavailable.
 
     Args:
-        date_str: Date string in common formats.
+        value: Date string or timestamp in common formats.
 
     Returns:
         Integer days since that date, or None if unparseable.
     """
-    text = str(date_str).strip()
-    if not text:
+    if value in (None, ""):
         return None
-
-    iso_text = text[:-1] + "+00:00" if text.endswith("Z") else text
-    try:
-        parsed = datetime.fromisoformat(iso_text)
-        if parsed.tzinfo is not None:
-            return (datetime.now(timezone.utc) - parsed.astimezone(timezone.utc)).days
-        return (datetime.now() - parsed).days
-    except ValueError:
-        pass
-
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y", "%Y-%m-%d"):
-        try:
-            dt = datetime.strptime(text, fmt)
-            return (datetime.now() - dt).days
-        except ValueError:
-            continue
-    return None
+    parsed = pd.to_datetime(value, utc=True, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return max(0, int((datetime.now(timezone.utc) - parsed.to_pydatetime()).days))
 
 
 def _package_size_mb(raw_size: Any) -> Optional[float]:
@@ -1269,11 +1698,6 @@ def _load_pptx() -> bool:
 def _normalized_text(value: Any) -> str:
     """Return a lowercase, single-spaced representation of a header or cell value."""
     return re.sub(r"\s+", " ", str(value).strip().lower())
-
-
-def _header_tokens(value: Any) -> set[str]:
-    """Return lowercase alphanumeric tokens from a header or cell value."""
-    return set(re.findall(r"[a-z0-9]+", _normalized_text(value)))
 
 
 def _column_match_score(header: str, logical: str) -> int:
@@ -1387,34 +1811,37 @@ def _to_bool(value: Any) -> bool:
     return _normalized_text(value) in {"true", "1", "yes", "y"}
 
 
-# Jamf reports some macOS versions with the name prefix ("macOS 14.6.0") and some
-# without ("14.6"), and alternates between "14.6.0" and "14.6" for the same release.
-# All three forms must merge to the same key for charts and grouped stats.
-_OS_NAME_PREFIXES = ("Mac OS X ", "macOS ", "OS X ")
-
-
+# Jamf alternates between "14.6.0" and "14.6" for the same macOS release, and CSV
+# exports prefix the name ("macOS 14.6.0") while jamf-cli JSON does not. Collapsing
+# trailing ".0" merges the variant forms within a data source to one grouping key.
 def _normalize_os_version(ver: str) -> str:
-    """Normalize a macOS version string from Jamf inventory data.
+    """Normalize a macOS version string by collapsing trailing-zero patch parts.
 
-    Strips the OS name prefix that Jamf CSV exports include (e.g. "macOS ") and
-    collapses trailing .0 segments so that "14.6.0", "14.6", and "macOS 14.6.0"
-    all normalize to "14.6".  At least major.minor is always preserved.
+    Collapses trailing ".0" patch segments so "14.6.0" and "14.6" merge to one
+    key, while keeping at least major.minor. Any non-numeric name prefix (e.g.
+    "macOS ") is preserved.
+
+    Examples:
+        "26.4.0"        -> "26.4"
+        "26.0.0"        -> "26.0"
+        "26.4.1"        -> "26.4.1"   (no trailing zero, unchanged)
+        "macOS 15.4.0"  -> "macOS 15.4"
 
     Args:
         ver: Raw version string from Jamf (CSV or jamf-cli JSON).
 
     Returns:
-        Normalized version string, e.g. "14.6", "26.3.1".
+        Normalized version string.
     """
     ver = str(ver).strip()
-    for prefix in _OS_NAME_PREFIXES:
-        if ver.lower().startswith(prefix.lower()):
-            ver = ver[len(prefix):].strip()
-            break
-    parts = ver.split(".")
+    m = re.search(r"(\d+(?:\.\d+)+)", ver)
+    if not m:
+        return ver
+    prefix = ver[: m.start()]
+    parts = m.group(1).split(".")
     while len(parts) > 2 and parts[-1] == "0":
         parts.pop()
-    return ".".join(parts)
+    return prefix + ".".join(parts)
 
 
 MOBILE_INVENTORY_FIELD_CANDIDATES: dict[str, list[str]] = {
@@ -1579,6 +2006,66 @@ PROTECT_ANALYTIC_FIELD_CANDIDATES: dict[str, list[str]] = {
     "enabled": ["enabled", "active", "isEnabled"],
 }
 
+# W23 — Protect standard pack. Field shapes follow the jamfprotect-go-sdk
+# camelCase convention (see protect_sdk_inventory.md). Candidate lists are
+# defensive against jamf-cli flatten-key drift; pagination shape unverified
+# against a live Protect tenant — sheets are # Experimental until verified.
+PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "uuid": ["uuid", "id"],
+    "hostname": ["hostName", "hostname", "computerName", "displayName", "name"],
+    "serial": ["serial", "serialNumber"],
+    "model": ["modelName", "model"],
+    "os_string": ["osString"],
+    "os_major": ["osMajor"],
+    "os_minor": ["osMinor"],
+    "os_patch": ["osPatch"],
+    "plan_name": ["plan.name", "planName"],
+    "tags": ["tags"],
+    "web_protection": ["webProtectionActive", "webProtectionEnabled"],
+    "full_disk_access": ["fullDiskAccess"],
+    "insights_pass": ["insightsStatsPass"],
+    "insights_fail": ["insightsStatsFail"],
+    "insights_unknown": ["insightsStatsUnknown"],
+    "connection_status": ["connectionStatus"],
+    "last_connection": ["lastConnection", "checkin"],
+}
+
+PROTECT_ALERT_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "uuid": ["uuid", "id"],
+    "created": ["created", "createdAt"],
+    "received": ["received"],
+    "event_timestamp": ["eventTimestamp"],
+    "severity": ["severity"],
+    "status": ["status"],
+    "event_type": ["eventType"],
+    "computer_hostname": ["computer.hostName", "computer.hostname"],
+    "computer_serial": ["computer.serial"],
+    "computer_uuid": ["computer.uuid"],
+    "plan_name": ["plan.name", "planName"],
+    "tags": ["tags"],
+    "actions": ["actions"],
+    "analytics": ["analytics"],
+}
+
+PROTECT_INSIGHT_FIELD_CANDIDATES: dict[str, list[str]] = {
+    "uuid": ["uuid", "id"],
+    "label": ["label", "name", "title"],
+    "section": ["section", "category"],
+    "description": ["description"],
+    "enabled": ["enabled", "active", "isEnabled"],
+    "total_pass": ["totalPass"],
+    "total_fail": ["totalFail"],
+    "total_none": ["totalNone"],
+    "tags": ["tags"],
+    "cisid": ["cisid"],
+}
+
+# Hard caps — typical tenant sizes are well below these; the cap exists to
+# prevent a runaway response from consuming the workbook.
+PROTECT_COMPUTERS_HARD_CAP = 25_000
+PROTECT_ALERTS_HARD_CAP = 25_000
+PROTECT_INSIGHTS_HARD_CAP = 5_000
+
 
 def _extract_items(raw: Any) -> list[Any]:
     """Return a list payload from list- or envelope-shaped jamf-cli output."""
@@ -1677,12 +2164,7 @@ def _yes_no_unknown(value: Any) -> str:
 
 def _days_since_timestamp(value: Any) -> Optional[int]:
     """Return whole days since a timestamp-like value, or None when unavailable."""
-    if value in (None, ""):
-        return None
-    parsed = pd.to_datetime(value, utc=True, errors="coerce")
-    if pd.isna(parsed):
-        return None
-    return max(0, int((datetime.now(timezone.utc) - parsed.to_pydatetime()).days))
+    return _days_since(value)
 
 
 def _mobile_device_family(model: Any, name: Any) -> str:
@@ -1942,11 +2424,11 @@ def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
 
 def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[Path], bool]:
     """Copy the current CSV into the historical snapshot directory for future trend runs."""
-    source = Path(csv_path)
+    source = Path(csv_path).resolve()
     if not source.is_file():
         return None, False
 
-    out_dir = Path(historical_dir)
+    out_dir = Path(historical_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     source_size = source.stat().st_size
     source_digest = _sha256_file(source)
@@ -1969,6 +2451,369 @@ def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[
     return dest, True
 
 
+def _emit_summary_json(
+    config: Config,
+    csv_dash: Optional[CSVDashboard],
+    bridge: Optional[JamfCLIBridge],
+    historical_dir: Optional[str],
+    *,
+    force: bool = False,
+) -> None:
+    """Emit a summary JSON for the current run for GUI trend consumption.
+
+    Calculates 8 key metrics (FileVault, Compliance, OS Current, etc.) and writes
+    them to ``snapshots/summaries/summary_YYYY-MM-DD.json``.
+
+    Args:
+        force: Overwrite an existing same-day summary file. Default ``False``
+            keeps intraday runs idempotent (the first run of the day wins) so
+            an automation re-run doesn't accidentally overwrite a hand-edited
+            summary. Pass ``True`` from ``--force-summary`` when the user
+            explicitly wants the latest data to replace the existing entry.
+    """
+    if not historical_dir:
+        return
+
+    summaries_dir = Path(historical_dir) / "summaries"
+    summaries_dir.mkdir(parents=True, exist_ok=True)
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    summary_file = summaries_dir / f"summary_{date_str}.json"
+
+    if summary_file.exists() and not force:
+        # Validate existing file before skipping.
+        try:
+            existing = json.loads(summary_file.read_text(encoding="utf-8"))
+            required_keys = {"date", "totalDevices", "source"}
+            if not all(k in existing for k in required_keys):
+                raise ValueError("missing required keys")
+        except Exception as exc:
+            print(
+                f"  [warn] Existing summary {summary_file} is invalid "
+                f"({exc}); regenerating"
+            )
+        else:
+            print(
+                f"  [note] Trend summary for {date_str} already exists; "
+                f"re-run with --force-summary to overwrite ({summary_file})"
+            )
+            return
+
+    df = getattr(csv_dash, "_df", None) if csv_dash else None
+    if df is None:
+        summary_data = _build_summary_from_bridge(config, bridge, date_str)
+        if summary_data is None:
+            return
+        _atomic_write_summary(summary_file, summaries_dir, summary_data)
+        return
+
+    total_devices = len(df)
+    if total_devices == 0:
+        return
+
+    # 1. FileVault
+    fv_col = csv_dash._col("filevault")
+    fv_pct = 0.0
+    if fv_col and fv_col in df.columns:
+        compliant = df[fv_col].apply(lambda v: _security_control_is_compliant("filevault", v)).sum()
+        fv_pct = (compliant / total_devices * 100.0)
+
+    # 2. Compliance (NIST/CIS) — skip metric on unparseable values
+    comp_cfg = config.compliance
+    count_col = comp_cfg.get("failures_count_column")
+    comp_pct = None
+    if count_col and count_col in df.columns:
+        compliant = 0
+        unparseable_count = 0
+        for val in df[count_col]:
+            try:
+                failures = strict_parse_failures(val)
+                if failures == 0:
+                    compliant += 1
+            except ValueError as exc:
+                unparseable_count += 1
+                if unparseable_count <= 3:
+                    print(f"  [error] Unparseable compliance value: {exc}")
+        if unparseable_count > 0:
+            print(
+                f"  [warn] {unparseable_count} devices have unparseable compliance "
+                f"values in '{count_col}' — skipping compliancePct in summary"
+            )
+        else:
+            comp_pct = (compliant / total_devices * 100.0) if total_devices > 0 else 0.0
+
+    # 3. Stale count (30d+)
+    checkin_col = csv_dash._col("last_checkin")
+    stale_days = int(config.thresholds.get("stale_device_days", 30))
+    stale_count = 0
+    if checkin_col and checkin_col in df.columns:
+        stale_count = int(df[checkin_col].apply(lambda v: (_days_since(v) or 0) > stale_days if v else True).sum())
+
+    # 4. OS Current
+    os_col = csv_dash._col("operating_system")
+    os_pct = 0.0
+    current_os_versions = []
+    for ea in config.custom_eas:
+        if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
+            current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
+            break
+    if os_col and os_col in df.columns and current_os_versions:
+        os_vals = df[os_col].fillna("").astype(str).str.lower()
+        is_current = os_vals.apply(lambda v: any(v.startswith(cv) for cv in current_os_versions))
+        os_pct = (is_current.sum() / total_devices * 100.0)
+
+    # 5. CrowdStrike
+    cs_pct = 0.0
+    for agent in config.security_agents:
+        if "crowdstrike" in str(agent.get("name", "")).lower():
+            col = agent.get("column")
+            val = agent.get("connected_value", "installed")
+            if col and col in df.columns:
+                connected_mask = _contains_case_insensitive(df[col].fillna("").astype(str), val)
+                cs_pct = (connected_mask.sum() / total_devices * 100.0)
+            break
+
+    # 6. Patch Compliance — None when no data is available so the Swift side
+    # treats it as "missing metric" rather than a real 0% floor on trend
+    # charts. Mirrors the Swift `patchPct: Double?` shape in
+    # `ReportEngine.emitSummaryJSON` and `DailySummary`.
+    patch_pct: Optional[float] = None
+    if bridge and bridge.is_available():
+        try:
+            patches = bridge.patch_status()
+            if patches:
+                valid_pcts = []
+                for p in patches:
+                    val = p.get("compliance_pct")
+                    if val:
+                        try:
+                            valid_pcts.append(float(str(val).replace("%", "")))
+                        except ValueError:
+                            pass
+                if valid_pcts:
+                    patch_pct = sum(valid_pcts) / len(valid_pcts)
+        except Exception as exc:
+            print(f"  [warn] _emit_summary_json: patch_status failed — patchPct omitted (no data): {exc}")
+
+    summary_data: dict[str, Any] = {
+        "date": date_str,
+        "totalDevices": int(total_devices),
+        "fileVaultPct": round(fv_pct, 1),
+        "staleCount": int(stale_count),
+        "osCurrentPct": round(os_pct, 1),
+        "crowdstrikePct": round(cs_pct, 1),
+        "source": "csv",
+    }
+    if patch_pct is not None:
+        summary_data["patchPct"] = round(patch_pct, 1)
+    if comp_pct is not None:
+        summary_data["compliancePct"] = round(comp_pct, 1)
+
+    _atomic_write_summary(summary_file, summaries_dir, summary_data)
+
+
+def _emit_per_log_summary_json(
+    historical_dir: str,
+    log_filename: str,
+    run_status: str,
+    *,
+    started_at: Optional[str] = None,
+    finished_at: Optional[str] = None,
+    profile: Optional[str] = None,
+) -> None:
+    """Emit a per-LaunchAgent-run status JSON for Swift partial-status checks.
+
+    Writes ``snapshots/computers/summaries/summary_<log_filename>.json``
+    with a minimal payload containing the run's ``status`` field. The Swift
+    ``RunHistoryService.isPartialRun`` and
+    ``LaunchAgentService.checkSummaryFileForPartialStatus`` use this file as
+    the authoritative source for the PARTIAL pill (PR-8 + PR-11). Before
+    this writer existed (PR-11 / threat-model T-12), those paths were
+    dormant — emitters wrote only daily ``summary_YYYY-MM-DD.json`` files
+    and Swift fell back to scanning logs for ``[partial]`` markers.
+
+    Manifest discipline: ``_atomic_write_summary`` rewrites the sibling
+    ``manifest.json`` so the Swift verifier can detect tampering against
+    the cross-trust-boundary status signal.
+
+    Args:
+        historical_dir: Charts ``historical_csv_dir`` (``snapshots/`` under
+            the workspace). Required — without it the summary directory
+            tree doesn't exist.
+        log_filename: Log filename stem matching Swift's
+            ``logURL.deletingPathExtension().lastPathComponent``
+            (e.g. ``<job_slug>.out`` for ``<job_slug>.out.log``).
+        run_status: One of ``"ok"``, ``"partial"``, or ``"fail"``.
+        started_at / finished_at: ISO-8601 timestamps (UTC).
+        profile: Owning jamf-cli profile slug (informational).
+    """
+    if not historical_dir or not log_filename:
+        return
+    summaries_dir = Path(historical_dir) / "summaries"
+    summaries_dir.mkdir(parents=True, exist_ok=True)
+    summary_file = summaries_dir / f"summary_{log_filename}.json"
+    payload: dict[str, Any] = {
+        "status": run_status,
+        "log_filename": log_filename,
+    }
+    if started_at is not None:
+        payload["started_at"] = started_at
+    if finished_at is not None:
+        payload["finished_at"] = finished_at
+    if profile:
+        payload["profile"] = profile
+    _atomic_write_summary(summary_file, summaries_dir, payload)
+
+
+def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: dict[str, Any]) -> None:
+    """Atomically write a summary.json under summaries_dir.
+
+    Uses a `.tmp` suffix so an interrupted write doesn't leave a stray `.json`
+    sibling that downstream readers might mistake for a real summary.
+
+    PR-11 / threat-model T-12: after the write succeeds, rewrite the sibling
+    `manifest.json` with the SHA-256 of the just-written payload pinned. This
+    extends PR-7's manifest discipline to the `snapshots/computers/summaries/`
+    tree so the Swift app can verify summary integrity (e.g.
+    `RunHistoryService.isPartialRun`'s `status` field).
+    """
+    temp_path: Optional[Path] = None
+    try:
+        payload = json.dumps(data, indent=2).encode("utf-8")
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            dir=str(summaries_dir),
+            prefix=f".{summary_file.stem}.",
+            suffix=".tmp",
+        ) as tf:
+            tf.write(payload)
+            temp_path = Path(tf.name)
+        temp_path.replace(summary_file)
+        # Pin the hash from the in-memory payload (TOCTOU fix — matches
+        # _save_snapshot's pattern). Rewrite manifest in full so files purged
+        # by retention sweeps don't leave stale entries.
+        _rewrite_snapshot_manifest(
+            summaries_dir,
+            pinned={summary_file.name: hashlib.sha256(payload).hexdigest()},
+        )
+    except Exception as exc:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        print(f"  [warn] Could not emit summary.json: {exc}")
+
+
+def _build_summary_from_bridge(
+    config: Config,
+    bridge: Optional["JamfCLIBridge"],
+    date_str: str,
+) -> Optional[dict[str, Any]]:
+    """Compute the trend summary metrics from cached jamf-cli JSON when no CSV is present.
+
+    Pure-CLI users still need historical trend data. We mine the same JSON snapshots
+    that CoreDashboard already consumes (security, inventory-summary, device-compliance,
+    patch-status). Metrics that require CSV-only data (compliance failure counts,
+    CrowdStrike agent column) are omitted from the emitted JSON — TrendStore decodes
+    them as nil and skips them, rather than rendering a flat 0% line that users could
+    mistake for a real reading.
+    """
+    if not bridge:
+        return None
+
+    total_devices = 0
+    fv_pct = 0.0
+    try:
+        sec = bridge.security_report() or []
+        for entry in sec:
+            if isinstance(entry, dict) and entry.get("section") == "summary":
+                data = entry.get("data") or {}
+                total_devices = _to_int(data.get("total_devices"))
+                pct_raw = data.get("filevault_encrypted_pct")
+                if pct_raw not in (None, ""):
+                    fv_pct = _percent_string_to_float(pct_raw)
+                elif total_devices > 0:
+                    encrypted = _to_int(data.get("filevault_encrypted"))
+                    fv_pct = (encrypted / total_devices) * 100.0
+                break
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: security_report failed — fv_pct defaulting to 0.0: {exc}")
+
+    if total_devices == 0:
+        try:
+            inv = bridge.inventory_summary() or []
+            total_devices = sum(int(row.get("count") or 0) for row in inv if isinstance(row, dict))
+        except Exception as exc:
+            print(f"  [warn] _build_summary_from_bridge: inventory_summary failed — totalDevices defaulting to 0: {exc}")
+
+    if total_devices == 0:
+        return None
+
+    stale_count = 0
+    try:
+        comp = bridge.device_compliance() or []
+        stale_count = sum(1 for row in comp if isinstance(row, dict) and row.get("stale"))
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
+
+    os_pct = 0.0
+    current_os_versions: list[str] = []
+    for ea in config.custom_eas:
+        if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
+            current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
+            break
+    if current_os_versions:
+        try:
+            inv = bridge.inventory_summary() or []
+            current = 0
+            for row in inv:
+                if not isinstance(row, dict):
+                    continue
+                ver = str(row.get("os_version") or "").lower()
+                count = int(row.get("count") or 0)
+                if any(ver.startswith(cv) for cv in current_os_versions):
+                    current += count
+            if total_devices:
+                os_pct = (current / total_devices) * 100.0
+        except Exception as exc:
+            print(f"  [warn] _build_summary_from_bridge: inventory_summary (os adoption) failed — osCurrentPct defaulting to 0.0: {exc}")
+
+    patch_pct = 0.0
+    try:
+        patches = bridge.patch_status()
+        if patches:
+            valid = []
+            for p in patches:
+                val = p.get("compliance_pct") if isinstance(p, dict) else None
+                if val:
+                    try:
+                        valid.append(float(str(val).replace("%", "")))
+                    except ValueError:
+                        pass
+            if valid:
+                patch_pct = sum(valid) / len(valid)
+    except Exception as exc:
+        print(f"  [warn] _build_summary_from_bridge: patch_status failed — patchPct defaulting to 0.0: {exc}")
+
+    return {
+        "date": date_str,
+        "totalDevices": int(total_devices),
+        "fileVaultPct": round(fv_pct, 1),
+        "staleCount": int(stale_count),
+        "osCurrentPct": round(os_pct, 1),
+        "patchPct": round(patch_pct, 1),
+        "source": "jamf-cli",
+    }
+
+
+def _percent_string_to_float(raw: Any) -> float:
+    """Parse a `'99.0%'`-style value out of jamf-cli JSON, returning 0.0 on failure."""
+    if raw is None:
+        return 0.0
+    try:
+        return float(str(raw).replace("%", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _load_prior_snapshot(
     historical_dir: str,
     current_csv_path: str,
@@ -1988,16 +2833,45 @@ def _load_prior_snapshot(
     Returns:
         Tuple of (prior_df, prior_path_str), or (None, None).
 
-    TODO: Implement this function. Strategy:
-        1. List all .csv files in historical_dir sorted by mtime descending.
-        2. Exclude any file whose SHA-256 matches the current CSV (same content
-           as current run — use _sha256_file).
-        3. Return pd.read_csv on the first remaining candidate.
-        4. If the candidate has a different column schema, return (None, None)
-           with a warning rather than erroring.
     """
-    # TODO: implement
-    raise NotImplementedError("_load_prior_snapshot is not yet implemented")
+    hist_path = Path(historical_dir).expanduser()
+    current_path = Path(current_csv_path).expanduser()
+    if not hist_path.is_dir() or not current_path.is_file():
+        return None, None
+
+    try:
+        current_digest = _sha256_file(current_path)
+        current_size = current_path.stat().st_size
+        current_header = pd.read_csv(current_path, nrows=0, encoding="utf-8-sig")
+    except Exception as exc:
+        print(f"  [warn] Fleet Drift: could not inspect current CSV: {exc}")
+        return None, None
+    current_schema = tuple(current_header.columns)
+
+    candidates = sorted(
+        (p for p in hist_path.rglob("*.csv") if p.is_file() and not p.is_symlink()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for candidate in candidates:
+        try:
+            if candidate.resolve() == current_path.resolve():
+                continue
+            if candidate.stat().st_size == current_size:
+                if _sha256_file(candidate) == current_digest:
+                    continue
+            header = pd.read_csv(candidate, nrows=0, encoding="utf-8-sig")
+            if tuple(header.columns) != current_schema:
+                print(
+                    "  [skip] Fleet Drift:"
+                    f" {candidate.name} schema differs from current CSV"
+                )
+                continue
+            prior_df = pd.read_csv(candidate, dtype=str, encoding="utf-8-sig").fillna("")
+            return prior_df, candidate.name
+        except Exception as exc:
+            print(f"  [warn] Fleet Drift: skipping {candidate.name}: {exc}")
+    return None, None
 
 
 def _age_label_from_seconds(total_seconds: int) -> str:
@@ -2374,6 +3248,383 @@ def _enrich_inventory_rows_with_security_details(
 
 
 # ---------------------------------------------------------------------------
+# LogRedactor — shared by diagnostic-bundle and RunHistoryService callers
+# ---------------------------------------------------------------------------
+
+
+class LogRedactor:
+    """Redacts credentials and (optionally) PII from text and JSON payloads.
+
+    Two redaction tiers:
+
+    * **Secrets** (always on, not toggleable): OAuth `client_secret`,
+      `client_id`, bearer tokens, JWTs, `access_token` / `refresh_token`
+      JSON shapes, generic `password` fields. False-negative tolerance is
+      low; false-positive tolerance is high (over-redact rather than miss).
+    * **PII** (per-category toggle, default on): Jamf hostnames in URLs,
+      Apple serial numbers, email addresses. Device names are too generic
+      to regex without unbounded false positives and are handled only via
+      `redact_json` when a known schema key is matched.
+
+    PII redactions use HMAC-SHA256(per-instance random salt, value)[:8] for
+    stable placeholders within a single redactor instance — so a device
+    referenced ten times in one bundle gets the same placeholder ten times
+    (preserving cross-references for diagnosis) but cannot be correlated to
+    the same device in a different bundle.
+
+    Designed for one-pass redaction over text streams; not a streaming
+    parser. Single-threaded; reset the cache via `forget()` between
+    unrelated bundles if reused.
+    """
+
+    # Always-on credential patterns. Each tuple is (compiled_regex, replacement).
+    # Replacements use raw \1..\3 backrefs so the surrounding quotes/markers
+    # are preserved and the redacted output remains valid JSON / YAML.
+    _SECRET_PATTERNS: list[tuple[re.Pattern, str]] = [
+        # OAuth client_secret in YAML or JSON form.
+        (
+            re.compile(
+                r'(client_secret\s*[:=]\s*["\']?)([^"\'\s,\}]{8,})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_CLIENT_SECRET\3",
+        ),
+        # OAuth client_id — UUID (matched by the 20+ branch) or a 16+ char
+        # opaque token. The 16-char floor is deliberate: it avoids redacting
+        # short example values like `client_id: dev` in docs and log echoes,
+        # and keeps Python <-> Swift LogRedactor parity (LogRedactor.swift uses
+        # the same floor). A manually-set client_id under 16 chars is a narrow,
+        # accepted residual gap.
+        (
+            re.compile(
+                r'(client_id\s*[:=]\s*["\']?)([A-Fa-f0-9\-]{20,}|[A-Za-z0-9_\-]{16,64})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_CLIENT_ID\3",
+        ),
+        # Bearer tokens in HTTP-like contexts (Authorization headers, log echoes).
+        (
+            re.compile(r"(Bearer\s+)[A-Za-z0-9._\-+/=]{20,}", re.IGNORECASE),
+            r"\1REDACTED_BEARER",
+        ),
+        # JWTs — three base64url segments separated by dots, starting with `eyJ`.
+        (
+            re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),
+            "REDACTED_JWT",
+        ),
+        # OAuth token-response JSON shapes.
+        (
+            re.compile(r'("access_token"\s*:\s*")[^"]+(")'),
+            r"\1REDACTED_ACCESS_TOKEN\2",
+        ),
+        (
+            re.compile(r'("refresh_token"\s*:\s*")[^"]+(")'),
+            r"\1REDACTED_REFRESH_TOKEN\2",
+        ),
+        # Password fields (generic; redact the value, keep the key).
+        (
+            re.compile(
+                r'(password\s*[:=]\s*["\']?)([^"\'\s,\}]{1,})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_PASSWORD\3",
+        ),
+        # Generic API keys — covers both `api_key` and `apikey` spellings.
+        # The `_SENSITIVE_JSON_KEYS` set already redacts these in JSON walks;
+        # this pattern catches free-text occurrences (log lines that echo a
+        # YAML config or HTTP header). 8-char floor mirrors `client_secret`.
+        (
+            re.compile(
+                r'(api_?key\s*[:=]\s*["\']?)([^"\'\s,\}]{8,})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_API_KEY\3",
+        ),
+        # HTTP Basic auth headers (security-reviewer S-1).
+        (
+            re.compile(r"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]{8,}", re.IGNORECASE),
+            r"\1REDACTED_BASIC_CREDENTIAL",
+        ),
+        # Webhook URLs in YAML/JSON — tenant identifiers travel in the path.
+        # Covers Microsoft Teams (outlook.office.com / *.webhook.office.com),
+        # Slack (hooks.slack.com), generic webhook_url config keys.
+        (
+            re.compile(
+                r'(webhook_url\s*[:=]\s*["\']?)(https?://[^\s"\',}]+)(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_WEBHOOK_URL\3",
+        ),
+    ]
+
+    # JSON keys that always have their value replaced regardless of the value's
+    # shape. Used by `redact_json` walks. Lowercased for case-insensitive match.
+    _SENSITIVE_JSON_KEYS: set[str] = {
+        "client_secret",
+        "client_id",
+        "access_token",
+        "refresh_token",
+        "password",
+        "secret",
+        "api_key",
+        "apikey",
+        "authorization",
+    }
+
+    # JSON keys whose value should be hash-placeholder'd when the corresponding
+    # PII category is enabled. The set value names the category.
+    _PII_JSON_KEYS: dict[str, str] = {
+        "serial": "serial",
+        "serialnumber": "serial",
+        "serial_number": "serial",
+        "computername": "device",
+        "computer_name": "device",
+        "devicename": "device",
+        "device_name": "device",
+        "displayname": "device",
+        "assettag": "device",
+        "asset_tag": "device",
+        "managementid": "device",
+        "management_id": "device",
+        "udid": "udid",
+        "hostname": "host",
+        "host_name": "host",
+        "host": "host",
+        "ipaddress": "ip",
+        "ip_address": "ip",
+        "username": "user",
+        "user_name": "user",
+        "user": "user",
+        "realname": "user",
+        "real_name": "user",
+        "email": "email",
+        "emailaddress": "email",
+        "email_address": "email",
+        "building": "org",
+        "department": "org",
+        "room": "org",
+        "position": "org",
+    }
+
+    # Apple serial numbers: 10-12 alphanumeric, no vowels (Apple convention skips
+    # I/O to avoid confusion with 1/0). Conservative — won't match the full
+    # historical serial space but covers ~2010+ devices.
+    _SERIAL_RE = re.compile(r"\b[B-DF-HJ-NP-TV-Z0-9]{10,12}\b")
+    # Two hostname patterns:
+    #   (a) URL-anchored — matches any FQDN that follows an `https?://` scheme.
+    #       Catches both cloud (`*.jamfcloud.com|.io`) and on-prem (`jamf.acme
+    #       .corp`, `mdm.internal.agency.gov`) instances. Over-redaction
+    #       tradeoff: any URL in a log will have its host portion replaced.
+    #   (b) Bare cloud-Jamf — matches `*.jamfcloud.com` / `*.jamfcloud.io`
+    #       without a URL prefix (covers log lines like "connection to
+    #       acme-prod.jamfcloud.com failed"). Narrow to well-known TLDs to
+    #       avoid false-positives on every dotted path.
+    _HOSTNAME_URL_RE = re.compile(
+        r"(https?://)([a-z0-9][a-z0-9\-\.]{1,253}\.[a-z]{2,63})\b",
+        re.IGNORECASE,
+    )
+    _HOSTNAME_BARE_RE = re.compile(
+        r"\b([a-z0-9][a-z0-9\-]{0,62}\.(?:jamfcloud\.com|jamfcloud\.io))\b",
+        re.IGNORECASE,
+    )
+    _EMAIL_RE = re.compile(
+        r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
+    )
+    # Absolute /Users/<name>/ paths in log free-text leak the local macOS
+    # username. Capture the home-directory owner for placeholdering.
+    _HOME_PATH_RE = re.compile(r"(/Users/)([A-Za-z0-9._-]+)")
+
+    # Seed-from-cache device-name redaction: device names are not regex-
+    # patternable, so redact_text redacts exact identifier literals harvested
+    # from cached jamf-cli JSON. Literals shorter than this are skipped to
+    # avoid over-matching common log words; per-category collection is capped.
+    _MIN_SEED_LEN = 4
+    _MAX_SEED_PER_CATEGORY = 5000
+
+    def __init__(
+        self,
+        *,
+        redact_hostnames: bool = True,
+        redact_serials: bool = True,
+        redact_emails: bool = True,
+        redact_device_names: bool = True,
+        redact_usernames: bool = True,
+    ) -> None:
+        self._redact_hostnames = redact_hostnames
+        self._redact_serials = redact_serials
+        self._redact_emails = redact_emails
+        self._redact_device_names = redact_device_names
+        self._redact_usernames = redact_usernames
+        # Per-instance random salt → stable within bundle, opaque across bundles.
+        self._salt = secrets.token_bytes(16)
+        self._cache: dict[tuple[str, str], str] = {}
+        # Compiled per-category regexes of known identifier literals, populated
+        # by seed_from_workspace(). Empty until seeded — redact_text no-ops it.
+        self._known_res: dict[str, re.Pattern] = {}
+
+    def policy(self) -> dict[str, bool]:
+        """Return the active redaction policy as a plain dict (for manifests)."""
+        return {
+            "secrets": True,
+            "hostnames": self._redact_hostnames,
+            "serials": self._redact_serials,
+            "emails": self._redact_emails,
+            "device_names_in_json": self._redact_device_names,
+            "usernames": self._redact_usernames,
+        }
+
+    def forget(self) -> None:
+        """Clear the placeholder cache. Use between unrelated bundles."""
+        self._cache.clear()
+
+    def redact_text(self, text: str) -> str:
+        """Apply secret + PII redactions to a free-text blob (log lines, YAML)."""
+        out = text
+        for pattern, replacement in self._SECRET_PATTERNS:
+            out = pattern.sub(replacement, out)
+        if self._redact_hostnames:
+            # URL-anchored: preserve the scheme, hash-placeholder the host.
+            out = self._HOSTNAME_URL_RE.sub(
+                lambda m: f"{m.group(1)}{self._placeholder('host', m.group(2))}",
+                out,
+            )
+            # Bare cloud-Jamf hosts: replace entire match.
+            out = self._HOSTNAME_BARE_RE.sub(
+                lambda m: self._placeholder("host", m.group(1)),
+                out,
+            )
+        if self._redact_emails:
+            out = self._EMAIL_RE.sub(
+                lambda m: self._placeholder("email", m.group(0)),
+                out,
+            )
+        if self._redact_serials:
+            out = self._SERIAL_RE.sub(
+                lambda m: self._placeholder("serial", m.group(0)),
+                out,
+            )
+        if self._redact_usernames:
+            # Redact the local macOS username from absolute /Users/<name>/ paths.
+            out = self._HOME_PATH_RE.sub(
+                lambda m: f"{m.group(1)}{self._placeholder('user', m.group(2))}",
+                out,
+            )
+        # Seeded literal redaction — exact device/identity strings harvested
+        # from cached jamf-cli JSON, closing the free-text device-name gap the
+        # regex passes cannot cover.
+        for category, pattern in self._known_res.items():
+            if self._pii_enabled(category):
+                out = pattern.sub(
+                    lambda m, c=category: self._placeholder(c, m.group(0)),
+                    out,
+                )
+        return out
+
+    def redact_json(self, obj: Any) -> Any:
+        """Recursively redact a JSON-decodable object.
+
+        Dict values whose key matches `_SENSITIVE_JSON_KEYS` (case-insensitive)
+        get the value replaced with `REDACTED_<KIND>`. Keys matching
+        `_PII_JSON_KEYS` get the value replaced with a stable hash placeholder
+        when the corresponding category is enabled. String values are
+        additionally run through `redact_text` to catch embedded secrets.
+        """
+        if isinstance(obj, dict):
+            out: dict[str, Any] = {}
+            for key, value in obj.items():
+                key_lower = str(key).lower()
+                if key_lower in self._SENSITIVE_JSON_KEYS:
+                    out[key] = f"REDACTED_{key_lower.upper()}"
+                    continue
+                if key_lower in self._PII_JSON_KEYS:
+                    category = self._PII_JSON_KEYS[key_lower]
+                    if self._pii_enabled(category) and isinstance(value, str) and value:
+                        out[key] = self._placeholder(category, value)
+                        continue
+                out[key] = self.redact_json(value)
+            return out
+        if isinstance(obj, list):
+            return [self.redact_json(item) for item in obj]
+        if isinstance(obj, str):
+            return self.redact_text(obj)
+        return obj
+
+    def _pii_enabled(self, category: str) -> bool:
+        # The five user-toggleable categories each map to a --keep-* flag.
+        # Categories without a flag (udid, ip, org) have no opt-out and are
+        # always redacted.
+        return {
+            "host": self._redact_hostnames,
+            "serial": self._redact_serials,
+            "email": self._redact_emails,
+            "device": self._redact_device_names,
+            "user": self._redact_usernames,
+        }.get(category, True)
+
+    def _placeholder(self, kind: str, value: str) -> str:
+        cache_key = (kind, value)
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+        digest = hmac.new(self._salt, value.encode("utf-8"), hashlib.sha256).hexdigest()[:8]
+        placeholder = f"{kind}-{digest}"
+        self._cache[cache_key] = placeholder
+        return placeholder
+
+    def seed_from_workspace(self, workspace: Path) -> int:
+        """Harvest device/identity literals from cached jamf-cli JSON.
+
+        Walks ``<workspace>/jamf-cli-data/`` for JSON snapshots and collects
+        string values under `_PII_JSON_KEYS` keys into per-category literal
+        sets, then compiles per-category alternation regexes. `redact_text`
+        uses these to redact exact device names, UDIDs, asset tags, etc. from
+        log free-text — the gap the regex passes cannot cover because device
+        names are not regex-patternable.
+
+        Args:
+            workspace: Profile workspace directory.
+
+        Returns:
+            Count of distinct literals collected across all categories.
+        """
+        data_dir = workspace / "jamf-cli-data"
+        if not data_dir.is_dir():
+            return 0
+        known: dict[str, set[str]] = {}
+        for json_path in sorted(data_dir.rglob("*.json")):
+            try:
+                payload = json.loads(json_path.read_text(errors="replace"))
+            except (OSError, ValueError):
+                continue
+            self._harvest(payload, known)
+        self._known_res = {}
+        for category, values in known.items():
+            literals = sorted(
+                (v for v in values if len(v) >= self._MIN_SEED_LEN),
+                key=len,
+                reverse=True,
+            )[: self._MAX_SEED_PER_CATEGORY]
+            if literals:
+                self._known_res[category] = re.compile(
+                    "|".join(re.escape(v) for v in literals)
+                )
+        return sum(len(v) for v in known.values())
+
+    def _harvest(self, obj: Any, known: dict[str, set[str]]) -> None:
+        """Recursively collect `_PII_JSON_KEYS` string values into `known`."""
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                category = self._PII_JSON_KEYS.get(str(key).lower())
+                if category and isinstance(value, str) and value.strip():
+                    known.setdefault(category, set()).add(value.strip())
+                else:
+                    self._harvest(value, known)
+        elif isinstance(obj, list):
+            for item in obj:
+                self._harvest(item, known)
+
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
@@ -2437,6 +3688,17 @@ class Config:
     def to_dict(self) -> dict[str, Any]:
         """Return a deep copy of the loaded config data."""
         return copy.deepcopy(self._data)
+
+    def override_jamf_cli_profile(self, profile: str) -> None:
+        """Override jamf_cli.profile for this process without rewriting config.yaml."""
+        profile_name = str(profile or "").strip()
+        if not profile_name:
+            return
+        jamf_cli = self._data.get("jamf_cli")
+        if not isinstance(jamf_cli, dict):
+            jamf_cli = {}
+        jamf_cli["profile"] = profile_name
+        self._data["jamf_cli"] = jamf_cli
 
     @property
     def base_dir(self) -> Path:
@@ -2601,6 +3863,8 @@ class JamfCLIBridge:
         data_dir: Directory used to save or read cached jamf-cli JSON snapshots.
         profile: Optional jamf-cli profile name passed as -p to every command.
         use_cached_data: If True, fall back to saved snapshots when live commands fail.
+        max_cache_age_hours: Raise an error on cache fallback if the snapshot is older
+            than this many hours. 0 disables the check.
     """
 
     def __init__(
@@ -2611,6 +3875,9 @@ class JamfCLIBridge:
         use_cached_data: bool = True,
         command_timeout: int = 300,
         ea_results_timeout: int = 600,
+        max_cache_age_hours: int = 0,
+        multi_config: Optional[dict[str, Any]] = None,
+        strict_manifest: bool = False,
     ) -> None:
         self._binary = self._find_binary()
         self._save = save_output
@@ -2619,9 +3886,12 @@ class JamfCLIBridge:
         self._use_cached_data = use_cached_data
         self._command_timeout = max(1, int(command_timeout))
         self._ea_results_timeout = max(1, int(ea_results_timeout))
+        self._max_cache_age_hours = max(0, int(max_cache_age_hours))
+        self._multi = multi_config or {}
         self._report_commands_cache: Optional[set[str]] = None
-        self._protect_commands_cache: Optional[set[str]] = None
         self._last_source_info: dict[str, dict[str, Any]] = {}
+        # When True, manifest mismatches raise rather than warn on cached reads.
+        self._strict_manifest = bool(strict_manifest)
 
     def _find_binary(self) -> Optional[str]:
         return _find_jamf_cli_binary()
@@ -2676,6 +3946,9 @@ class JamfCLIBridge:
             "hardware_models",
             "env-stats",
             "env_stats",
+            "audit",
+            "group-tools-analyze",
+            "group_tools_analyze",
         ]
         if include_protect:
             report_names.extend(
@@ -2795,77 +4068,6 @@ class JamfCLIBridge:
                 " installed jamf-cli build."
             )
 
-    def _protect_commands(self) -> set[str]:
-        """Return the installed jamf-cli protect subcommands, if discoverable."""
-        if self._protect_commands_cache is not None:
-            return self._protect_commands_cache
-        if not self._binary:
-            self._protect_commands_cache = set()
-            return self._protect_commands_cache
-
-        try:
-            cmd = [self._binary]
-            if self._profile:
-                cmd.extend(["-p", self._profile])
-            cmd.extend(["protect", "--help"])
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=30,
-                stdin=subprocess.DEVNULL,
-            )
-        except (subprocess.SubprocessError, PermissionError):
-            self._protect_commands_cache = set()
-            return self._protect_commands_cache
-
-        commands: set[str] = set()
-        in_available_section = False
-        section_headers = {
-            "Core Commands:",
-            "Security Configuration:",
-            "Endpoints:",
-            "Organization:",
-            "Access & Identity:",
-            "Available Commands:",
-        }
-        for line in result.stdout.splitlines():
-            stripped = line.strip()
-            if stripped in section_headers:
-                in_available_section = True
-                continue
-            if not in_available_section:
-                continue
-            if (
-                not stripped
-                or stripped.startswith("Flags:")
-                or stripped.startswith("Global Flags:")
-            ):
-                if stripped.startswith("Flags:") or stripped.startswith("Global Flags:"):
-                    break
-                in_available_section = False
-                continue
-            commands.add(stripped.split()[0])
-
-        self._protect_commands_cache = commands
-        return commands
-
-    def _require_protect_command(
-        self,
-        command_name: str,
-        cache_names: Optional[list[str]] = None,
-    ) -> None:
-        """Raise when the installed jamf-cli does not support a protect subcommand."""
-        commands = self._protect_commands()
-        if commands and command_name not in commands:
-            if self._use_cached_data and cache_names and self._latest_cached_json(cache_names):
-                return
-            raise RuntimeError(
-                f"jamf-cli protect '{command_name}' is not available in the"
-                " installed jamf-cli build."
-            )
-
     @staticmethod
     def _parse_json_output(raw_output: str) -> Any:
         """Return parsed JSON from output that may include banners or prefixes."""
@@ -2927,9 +4129,24 @@ class JamfCLIBridge:
             raise RuntimeError(
                 "jamf-cli binary not found. Set JAMFCLI_PATH or install via Homebrew."
             )
-        cmd = [self._binary, "--output", "json", "--no-input"]
-        if self._profile:
+        cmd = [self._binary]
+
+        multi_enabled = self._multi.get("enabled") is True
+        if multi_enabled:
+            cmd.append("multi")
+            if self._multi.get("filter"):
+                cmd.extend(["--filter", str(self._multi["filter"])])
+            if self._multi.get("profiles"):
+                cmd.extend(["--profiles", str(self._multi["profiles"])])
+            if self._multi.get("from_file"):
+                cmd.extend(["--from-file", str(self._multi["from_file"])])
+            if self._multi.get("sequential") is True:
+                cmd.append("--sequential")
+            cmd.append("--")
+        elif self._profile:
             cmd.extend(["-p", self._profile])
+
+        cmd.extend(["--output", "json", "--no-input"])
         cmd.extend(args)
         effective_timeout = self._command_timeout if timeout is None else max(1, int(timeout))
         try:
@@ -2971,7 +4188,9 @@ class JamfCLIBridge:
 
         Uses non-recursive glob so that per-ID detail subdirectories (e.g.
         classic-policies/14/) are not mistaken for list-level cache files when
-        querying the parent directory (e.g. classic-policies/).
+        querying the parent directory (e.g. classic-policies/). Excludes the
+        sibling SHA-256 manifest file (`manifest.json`) — it is metadata about
+        snapshots, never itself a snapshot.
         """
         candidates: list[Path] = []
         for report_name in report_names:
@@ -2979,7 +4198,9 @@ class JamfCLIBridge:
             if report_dir.is_dir():
                 candidates.extend(
                     path for path in report_dir.glob("*.json")
-                    if path.is_file() and not path.is_symlink() and ".partial" not in path.name
+                    if path.is_file() and not path.is_symlink()
+                    and ".partial" not in path.name
+                    and path.name != SNAPSHOT_MANIFEST_FILENAME
                 )
             elif self._data_dir.is_dir():
                 pattern = f"{report_name}_*.json"
@@ -3002,16 +4223,23 @@ class JamfCLIBridge:
         cached_path = self._latest_cached_json(report_names)
         if cached_path is None:
             raise RuntimeError("no cached jamf-cli snapshot is available")
+        # T-2 mitigation with TOCTOU fix: read the file ONCE into bytes, then
+        # hash and parse from the same buffer. Verifying via a second open()
+        # would let an attacker swap the contents between the two reads.
         try:
-            with open(cached_path, encoding="utf-8") as fh:
-                data = json.load(fh)
+            raw = cached_path.read_bytes()
+        except OSError as exc:
+            raise RuntimeError(f"Could not read cached snapshot {cached_path}: {exc}") from exc
+        _verify_snapshot_bytes_against_manifest(
+            cached_path, raw, strict=self._strict_manifest
+        )
+        try:
+            data = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise RuntimeError(
                 f"Cached snapshot is malformed and cannot be parsed: {cached_path}\n"
                 f"  Delete it and re-run 'collect' to refresh. Detail: {exc}"
             ) from exc
-        except OSError as exc:
-            raise RuntimeError(f"Could not read cached snapshot {cached_path}: {exc}") from exc
         print(f"  [cache] {cached_path}")
         self._set_source_info(report_type, source_mode, cached_path)
         return data
@@ -3093,6 +4321,19 @@ class JamfCLIBridge:
             if not self._use_cached_data:
                 raise
             try:
+                if self._max_cache_age_hours > 0:
+                    cached_path = self._latest_cached_json(cache_candidates)
+                    if cached_path is not None:
+                        age = datetime.now() - datetime.fromtimestamp(
+                            cached_path.stat().st_mtime
+                        )
+                        if age > timedelta(hours=self._max_cache_age_hours):
+                            age_h = age.total_seconds() / 3600
+                            raise RuntimeError(
+                                f"cached snapshot is too old ({age_h:.1f}h >"
+                                f" {self._max_cache_age_hours}h limit):"
+                                f" {cached_path}"
+                            ) from exc
                 return self._load_cached_json(
                     cache_candidates,
                     report_type=report_type,
@@ -3108,9 +4349,25 @@ class JamfCLIBridge:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 final_path = out_dir / f"{report_type}_{_now_ts()}.json"
                 tmp_path = final_path.with_suffix(".partial")
-                with open(tmp_path, "w", encoding="utf-8") as fh:
-                    json.dump(data, fh, indent=2)
+                # Serialize into memory FIRST so the manifest hash is computed
+                # against the exact bytes we wrote (TOCTOU fix). Re-reading
+                # from disk in _rewrite_snapshot_manifest would let an attacker
+                # tamper with the file between rename and rehash, then have
+                # their hash recorded as authoritative.
+                payload = json.dumps(data, indent=2).encode("utf-8")
+                with open(tmp_path, "wb") as fh:
+                    fh.write(payload)
                 tmp_path.rename(final_path)
+                # T-2 mitigation (Google Gemini security-review 2026-05-12):
+                # rewrite the SHA-256 manifest so loaders can detect tampering
+                # between collect and generate. Full rewrite (not append) so
+                # files purged by keep_latest_runs leave no stale entries.
+                # The just-written file's hash is pinned from `payload` rather
+                # than re-read from disk.
+                _rewrite_snapshot_manifest(
+                    out_dir,
+                    pinned={final_path.name: hashlib.sha256(payload).hexdigest()},
+                )
             except OSError as exc:
                 print(f"  [warn] Could not save snapshot for '{report_type}': {exc}")
         return data
@@ -3124,6 +4381,45 @@ class JamfCLIBridge:
                 source_mode="cached",
             )
         return self._run_and_save("overview", ["pro", "overview"], ["overview"])
+
+    def audit(self, category: Optional[str] = None) -> Any:
+        """Fetch health check results from jamf-cli pro audit."""
+        args = ["pro", "audit"]
+        if category:
+            args.extend(["--checks", category])
+        return self._run_and_save("audit", args, ["audit"])
+
+    def audit_platform_checks(self) -> Optional[list[dict]]:
+        """Fetch platform-specific health checks via `pro audit --checks platform`.
+
+        Wraps `jamf-cli pro audit --checks platform --output json`. Requires the
+        active jamf-cli profile to have working platform-gateway auth. Returns the
+        parsed top-level JSON array (objects with `category`, `severity`, `name`,
+        `affected`, `recommendation`), or None when the call fails and no cached
+        snapshot is available.
+
+        Returns:
+            Parsed list of platform check records, or None.
+        """
+        result = self._run_and_save(
+            "audit-platform-checks",
+            ["pro", "audit", "--checks", "platform"],
+            ["audit-platform-checks", "audit_platform_checks"],
+        )
+        if isinstance(result, list):
+            return result
+        return None
+
+    def group_analyze(self, mode: str = "unused") -> Any:
+        """Fetch computer group hygiene analysis from jamf-cli pro group-tools analyze."""
+        args = ["pro", "group-tools", "analyze"]
+        if mode == "unused":
+            args.append("--unused")
+        return self._run_and_save(
+            "group-tools-analyze",
+            args,
+            ["group-tools-analyze", "group_tools_analyze"]
+        )
 
     def security_report(self) -> Any:
         """Fetch security posture report from jamf-cli pro report security."""
@@ -3158,7 +4454,7 @@ class JamfCLIBridge:
     def patch_device_failures(self) -> Any:
         """Fetch per-device patch failures via pro report patch-status --scan-failures.
 
-        Requires jamf-cli v1.4.0+. Returns one row per failing device per patch policy,
+        Requires jamf-cli v1.14.0+. Returns one row per failing device per patch policy,
         enriched with inventory data and the last action taken from the patch log.
         JSON shape:
           [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
@@ -3268,30 +4564,26 @@ class JamfCLIBridge:
         """Fetch managed software update report from jamf-cli pro report update-status."""
         self._require_report_command("update-status", ["update-status", "update_status"])
         try:
-            return self._run_and_save(
+            data = self._run_and_save(
                 "update-status",
                 ["pro", "report", "update-status"],
                 ["update-status", "update_status"],
             )
         except RuntimeError as exc:
             detail = str(exc)
-            if (
-                "No managed software update data found." in detail
-                or "Managed Software Update Plans toggle is off." in detail
-            ):
-                return {
-                    "message": "No managed software update data found.",
-                    "summary": {},
-                    "ErrorDevices": [],
-                }
+            if _update_no_data_detail_matches(detail):
+                return _empty_update_status_envelope()
             raise
+        if _is_update_no_data_response(data):
+            return _empty_update_status_envelope()
+        return data
 
     def update_device_failures(self) -> Any:
         """Fetch per-device update failures via pro report update-status --scan-failures.
 
-        Requires jamf-cli v1.6.0+. Enriches error devices and failed plans with
+        Requires jamf-cli v1.14.0+. Enriches error devices and failed plans with
         inventory details (name, serial, OS, username) and per-plan last events.
-        JSON shape (v1.6):
+        JSON shape:
           [{"total": N, "status_summary": [{"status": "...", "count": N}],
             "error_devices": [{"name": "...", "serial": "...", "device_type": "...",
                                "os_version": "...", "username": "...", "status": "...",
@@ -3305,27 +4597,19 @@ class JamfCLIBridge:
         """
         self._require_report_command("update-status", ["update-status", "update_status"])
         try:
-            return self._run_and_save(
+            data = self._run_and_save(
                 "update-device-failures",
                 ["pro", "report", "update-status", "--scan-failures"],
                 ["update-device-failures", "update_device_failures"],
             )
         except RuntimeError as exc:
             detail = str(exc)
-            if (
-                "No managed software update data found." in detail
-                or "Managed Software Update Plans toggle is off." in detail
-            ):
-                return [{
-                    "message": "No managed software update data found.",
-                    "total": 0,
-                    "status_summary": [],
-                    "error_devices": [],
-                    "plan_total": 0,
-                    "plan_state_summary": [],
-                    "failed_plans": [],
-                }]
+            if _update_no_data_detail_matches(detail):
+                return _empty_update_failures_envelope()
             raise
+        if _is_update_no_data_response(data):
+            return _empty_update_failures_envelope()
+        return data
 
     def checkin_status(self, threshold_days: int = 7) -> Any:
         """Fetch check-in health summary.
@@ -3459,42 +4743,6 @@ class JamfCLIBridge:
             "ddm-status",
             ["pro", "report", "ddm-status"],
             ["ddm-status", "ddm_status"],
-        )
-
-    def protect_overview(self) -> Any:
-        """Fetch a Jamf Protect instance summary from jamf-cli protect overview."""
-        self._require_protect_command("overview", ["protect-overview", "protect_overview"])
-        return self._run_and_save(
-            "protect-overview",
-            ["protect", "overview"],
-            ["protect-overview", "protect_overview"],
-        )
-
-    def protect_computers_list(self) -> Any:
-        """Fetch Jamf Protect computer rows from jamf-cli protect computers list."""
-        self._require_protect_command("computers", ["protect-computers", "protect_computers"])
-        return self._run_and_save(
-            "protect-computers",
-            ["protect", "computers", "list"],
-            ["protect-computers", "protect_computers"],
-        )
-
-    def protect_analytics(self) -> Any:
-        """Fetch Jamf Protect analytics from jamf-cli protect analytics list."""
-        self._require_protect_command("analytics", ["protect-analytics", "protect_analytics"])
-        return self._run_and_save(
-            "protect-analytics",
-            ["protect", "analytics", "list"],
-            ["protect-analytics", "protect_analytics"],
-        )
-
-    def protect_plans(self) -> Any:
-        """Fetch Jamf Protect plans from jamf-cli protect plans list."""
-        self._require_protect_command("plans", ["protect-plans", "protect_plans"])
-        return self._run_and_save(
-            "protect-plans",
-            ["protect", "plans", "list"],
-            ["protect-plans", "protect_plans"],
         )
 
     def device_detail(self, identifier: str) -> Any:
@@ -3657,7 +4905,7 @@ class JamfCLIBridge:
     ) -> Any:
         """Patch writable fields on a computer identified by serial number.
 
-        Requires jamf-cli v1.6.0+ (computers-inventory patch subcommand).
+        Requires jamf-cli v1.14.0+ (computers-inventory patch subcommand).
         Uses --serial to identify the device; --set for each field/value pair.
 
         Args:
@@ -3846,6 +5094,40 @@ class JamfCLIBridge:
             ["departments"],
         )
 
+    @staticmethod
+    def _classify_platform_error(message: str) -> str:
+        """Classify a Platform API error message into a short token.
+
+        Returns one of: ``auth_not_configured``, ``unknown_command``,
+        ``network_error``, ``parse_error``, ``general``. Mirrors the token
+        vocabulary used by `_classify_protect_error`. Message construction
+        belongs at the call site.
+
+        Args:
+            message: The raw RuntimeError message from a failed Platform bridge call.
+
+        Returns:
+            A short snake_case classification token.
+        """
+        lowered = (message or "").lower()
+        auth_tokens = ("401", "unauthorized", "oauth2", "oauth", "platform credential",
+                       "client_id", "client_secret", "forbidden", "403")
+        not_found_tokens = ("404", "not found", "no such command", "unknown command",
+                            "command not found")
+        network_tokens = ("connection refused", "timeout", "network", "unreachable",
+                          "name or service not known", "ssl", "certificate")
+        parse_tokens = ("json", "decode", "parse", "malformed", "unexpected character")
+
+        if any(token in lowered for token in auth_tokens):
+            return "auth_not_configured"
+        if any(token in lowered for token in not_found_tokens):
+            return "unknown_command"
+        if any(token in lowered for token in network_tokens):
+            return "network_error"
+        if any(token in lowered for token in parse_tokens):
+            return "parse_error"
+        return "general"
+
 
 # ---------------------------------------------------------------------------
 # jamf-cli helpers
@@ -3865,6 +5147,7 @@ def _build_jamf_cli_bridge(
     *,
     save_output: bool,
     use_cached_data: Optional[bool] = None,
+    strict_manifest: bool = False,
 ) -> JamfCLIBridge:
     """Construct a JamfCLIBridge from config with consistent defaults."""
     jamf_cli_cfg = config.jamf_cli
@@ -3875,6 +5158,12 @@ def _build_jamf_cli_bridge(
         use_cached = use_cached_data
     command_timeout = _to_int(jamf_cli_cfg.get("command_timeout_seconds", 300), 300)
     ea_timeout = _to_int(jamf_cli_cfg.get("ea_results_timeout_seconds", 600), 600)
+    max_cache_age = _to_int(jamf_cli_cfg.get("max_cache_age_hours", 0), 0)
+    # PR-10 / threat-model T-11: jamf_cli.require_manifest config gate forces
+    # --strict-manifest semantics on by default. Explicit --strict-manifest flag
+    # still wins; config gate raises the floor.
+    require_manifest_cfg = bool(jamf_cli_cfg.get("require_manifest", False))
+    effective_strict = strict_manifest or require_manifest_cfg
     return JamfCLIBridge(
         save_output=save_output,
         data_dir=str(jamf_cli_dir or Path("jamf-cli-data")),
@@ -3882,6 +5171,9 @@ def _build_jamf_cli_bridge(
         use_cached_data=use_cached,
         command_timeout=command_timeout,
         ea_results_timeout=ea_timeout,
+        max_cache_age_hours=max_cache_age,
+        multi_config=jamf_cli_cfg.get("multi"),
+        strict_manifest=effective_strict,
     )
 
 
@@ -4199,6 +5491,42 @@ def _extract_envelope(raw: Any) -> dict:
     return node if isinstance(node, dict) and node else {}
 
 
+def _format_bool_yes_no(value: Any) -> str:
+    """Render booleans as 'Yes'/'No', leave empty/null as ''."""
+    if value is None or value == "":
+        return ""
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    text = str(value).strip().lower()
+    if text in {"true", "yes", "1", "on", "enabled"}:
+        return "Yes"
+    if text in {"false", "no", "0", "off", "disabled"}:
+        return "No"
+    return str(value)
+
+
+def _format_named_list(value: Any, max_chars: int = 200) -> str:
+    """Render an array of {name: ...} (or strings) as 'count: name1, name2, ...'."""
+    if not isinstance(value, list) or not value:
+        return ""
+    names: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            inner = item.get("analyticSet") if isinstance(item.get("analyticSet"), dict) else item
+            name = inner.get("name") or inner.get("displayName") or inner.get("uuid")
+        else:
+            name = item
+        text = str(name or "").strip()
+        if text:
+            names.append(text)
+    if not names:
+        return f"{len(value)}"
+    joined = ", ".join(names)
+    if len(joined) > max_chars:
+        joined = joined[: max_chars - 1] + "…"
+    return f"{len(names)}: {joined}"
+
+
 def _protect_overview_has_data(raw: Any) -> bool:
     """Return True when a Protect overview response contains a non-placeholder value."""
     for item in _extract_items(raw):
@@ -4214,6 +5542,310 @@ def _protect_overview_has_data(raw: Any) -> bool:
             if text and _normalized_text(text) not in {"n/a", "na"}:
                 return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# ProtectCLIBridge (W22 — graduated from experimental in-class methods)
+# ---------------------------------------------------------------------------
+
+
+# W22: Pagination shape against a live tenant has not been verified. The bridge
+# accepts both a bare JSON array and a `{nodes, pageInfo}` envelope defensively.
+PROTECT_PLANS_HARD_CAP = 5000
+
+
+class ProtectCLIBridge(JamfCLIBridge):
+    """Subprocess wrapper around `jamf-cli protect` commands.
+
+    Inherits transport plumbing (_run, _run_and_save, _latest_cached_json) from
+    JamfCLIBridge. Adds Protect-specific helpers: command introspection, an auth
+    probe (`is_protect_available`), error classification, and resource-fetch
+    methods. Mirrors the SchoolCLIBridge subclass pattern.
+
+    W22 ships `plans_list()` only. `overview()`, `computers_list()`, and
+    `analytics_list()` are exposed for the deprecated JamfCLIBridge shim and the
+    existing experimental Protect Overview sheet; W23 will graduate them with
+    dedicated sheets.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._protect_commands_cache: Optional[set[str]] = None
+
+    # --- introspection / auth ------------------------------------------------
+
+    def _protect_commands(self) -> set[str]:
+        """Return the installed jamf-cli protect subcommands, if discoverable."""
+        if self._protect_commands_cache is not None:
+            return self._protect_commands_cache
+        if not self._binary:
+            self._protect_commands_cache = set()
+            return self._protect_commands_cache
+
+        try:
+            cmd = [self._binary]
+            if self._profile:
+                cmd.extend(["-p", self._profile])
+            cmd.extend(["protect", "--help"])
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
+        except (subprocess.SubprocessError, PermissionError):
+            self._protect_commands_cache = set()
+            return self._protect_commands_cache
+
+        commands: set[str] = set()
+        in_available_section = False
+        section_headers = {
+            "Core Commands:",
+            "Security Configuration:",
+            "Endpoints:",
+            "Organization:",
+            "Access & Identity:",
+            "Available Commands:",
+        }
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped in section_headers:
+                in_available_section = True
+                continue
+            if not in_available_section:
+                continue
+            if (
+                not stripped
+                or stripped.startswith("Flags:")
+                or stripped.startswith("Global Flags:")
+            ):
+                if stripped.startswith("Flags:") or stripped.startswith("Global Flags:"):
+                    break
+                in_available_section = False
+                continue
+            commands.add(stripped.split()[0])
+
+        self._protect_commands_cache = commands
+        return commands
+
+    def _require_protect_command(
+        self,
+        command_name: str,
+        cache_names: Optional[list[str]] = None,
+    ) -> None:
+        """Raise when the installed jamf-cli does not support a protect subcommand."""
+        commands = self._protect_commands()
+        if commands and command_name not in commands:
+            if self._use_cached_data and cache_names and self._latest_cached_json(cache_names):
+                return
+            raise RuntimeError(
+                f"jamf-cli protect '{command_name}' is not available in the"
+                " installed jamf-cli build."
+            )
+
+    def is_protect_available(self) -> bool:
+        """Return True when jamf-cli protect is reachable for this profile.
+
+        Pre-flight probe used by the dashboard before scheduling Protect sheets.
+        Returns True when the binary exists, the `plans` subcommand is present,
+        and either a live `protect plans list` succeeds OR a cached fallback is
+        available.
+        """
+        if not self.is_available():
+            return False
+        commands = self._protect_commands()
+        if commands and "plans" not in commands:
+            return False
+        try:
+            self._run(["protect", "plans", "list", "--output", "json"], timeout=15)
+            return True
+        except RuntimeError:
+            if self._use_cached_data and self._latest_cached_json(
+                ["protect-plans", "protect_plans"]
+            ):
+                return True
+            return False
+
+    @staticmethod
+    def _classify_protect_error(stderr: str, exit_code: int = 0) -> str:
+        """Classify a Protect bridge stderr/error into a graceful skip reason.
+
+        Returns one of: ``auth_not_configured``, ``network_error``,
+        ``unknown_command``, ``general``. Mirrors `_classify_platform_error`.
+        """
+        lowered = (stderr or "").lower()
+        auth_tokens = (
+            "401", "unauthorized", "oauth2", "oauth", "client_id", "client_secret",
+            "403", "forbidden", "protect credential", "protect not configured",
+            "tenant url",
+        )
+        unknown_command_tokens = (
+            "404", "not found", "no such command", "unknown command",
+            "command not found",
+        )
+        network_tokens = (
+            "connection refused", "timeout", "network", "unreachable",
+            "name or service not known", "ssl", "certificate",
+        )
+        if any(token in lowered for token in auth_tokens):
+            return "auth_not_configured"
+        if any(token in lowered for token in unknown_command_tokens):
+            return "unknown_command"
+        if any(token in lowered for token in network_tokens):
+            return "network_error"
+        return "general"
+
+    # --- W22 fetch methods ---------------------------------------------------
+
+    def plans_list(self) -> Any:
+        """Fetch Jamf Protect plans via `jamf-cli protect plans list --output json`.
+
+        Defensively normalizes the response to a list whether jamf-cli returns
+        a bare JSON array or a `{nodes, pageInfo}` envelope. Hard-caps at
+        ``PROTECT_PLANS_HARD_CAP`` rows; emits a warning log when the cap is
+        hit (real-world plan counts are typically <50).
+
+        Returns:
+            List of plan dicts. Empty list when the tenant has no plans.
+
+        Raises:
+            RuntimeError: When the protect subcommand is unavailable, the live
+                call fails, and no cached fallback is available.
+        """
+        self._require_protect_command("plans", ["protect-plans", "protect_plans"])
+        raw = self._run_and_save(
+            "protect-plans",
+            ["protect", "plans", "list", "--output", "json"],
+            ["protect-plans", "protect_plans"],
+        )
+        plans, raw_count = self._normalize_plans_payload(raw)
+        if raw_count > PROTECT_PLANS_HARD_CAP:
+            print(
+                f"  [warn] Protect plans response exceeded the {PROTECT_PLANS_HARD_CAP}-row"
+                f" cap ({raw_count} rows); response was truncated."
+            )
+        return plans
+
+    @staticmethod
+    def _normalize_plans_payload(raw: Any) -> tuple[list[dict], int]:
+        """Return a flat list of plan dicts plus the pre-cap row count."""
+        if raw is None:
+            return [], 0
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            nodes = raw.get("nodes")
+            if isinstance(nodes, list):
+                items = nodes
+            else:
+                items = _extract_items(raw)
+        else:
+            return [], 0
+        plans = [item for item in items if isinstance(item, dict)]
+        raw_count = len(plans)
+        return plans[:PROTECT_PLANS_HARD_CAP], raw_count
+
+    # --- Methods used by the existing experimental Protect Overview sheet ----
+    # These methods preserve the call surface that `_write_protect_overview`
+    # expects. W23 will graduate each to a dedicated sheet.
+
+    def overview(self) -> Any:
+        """Fetch Protect overview via `jamf-cli protect overview`."""
+        self._require_protect_command("overview", ["protect-overview", "protect_overview"])
+        return self._run_and_save(
+            "protect-overview",
+            ["protect", "overview"],
+            ["protect-overview", "protect_overview"],
+        )
+
+    def computers_list(self) -> Any:
+        """Fetch Protect computer rows via `jamf-cli protect computers list`."""
+        self._require_protect_command(
+            "computers", ["protect-computers", "protect_computers"]
+        )
+        return self._run_and_save(
+            "protect-computers",
+            ["protect", "computers", "list"],
+            ["protect-computers", "protect_computers"],
+        )
+
+    def analytics_list(self) -> Any:
+        """Fetch Protect analytics via `jamf-cli protect analytics list`."""
+        self._require_protect_command(
+            "analytics", ["protect-analytics", "protect_analytics"]
+        )
+        return self._run_and_save(
+            "protect-analytics",
+            ["protect", "analytics", "list"],
+            ["protect-analytics", "protect_analytics"],
+        )
+
+    # --- W23 standard pack ---------------------------------------------------
+
+    def alerts_list(self) -> Any:
+        """Fetch Protect alerts via `jamf-cli protect alerts list --output json`.
+
+        Returns the raw response. Pagination shape is unverified against a live
+        tenant; consumers must defensively handle bare-array OR `{nodes,
+        pageInfo}` envelope responses (mirrors `plans_list`).
+        """
+        self._require_protect_command(
+            "alerts", ["protect-alerts", "protect_alerts"]
+        )
+        return self._run_and_save(
+            "protect-alerts",
+            ["protect", "alerts", "list", "--output", "json"],
+            ["protect-alerts", "protect_alerts"],
+        )
+
+    def insights_list(self) -> Any:
+        """Fetch Protect insights via `jamf-cli protect insights list --output json`."""
+        self._require_protect_command(
+            "insights", ["protect-insights", "protect_insights"]
+        )
+        return self._run_and_save(
+            "protect-insights",
+            ["protect", "insights", "list", "--output", "json"],
+            ["protect-insights", "protect_insights"],
+        )
+
+
+def _build_protect_bridge(
+    config: Config,
+    *,
+    save_output: bool,
+    use_cached_data: Optional[bool] = None,
+) -> ProtectCLIBridge:
+    """Construct a ProtectCLIBridge from the `protect.*` config block.
+
+    Reads `protect.data_dir`, `protect.profile`, and `protect.use_cached_data`
+    independently of the `jamf_cli.*` block so that Pro and Protect can target
+    different tenants/profiles. Falls back to `jamf_cli.command_timeout_seconds`
+    for transport timeouts since Protect commands use the same binary.
+    """
+    protect_cfg = config.get("protect", default={}) or {}
+    jamf_cli_cfg = config.jamf_cli
+    protect_dir = config.resolve_path(
+        "protect", "data_dir", default="jamf-cli-data/protect"
+    )
+    if use_cached_data is None:
+        use_cached = protect_cfg.get("use_cached_data", True) is not False
+    else:
+        use_cached = use_cached_data
+    command_timeout = _to_int(jamf_cli_cfg.get("command_timeout_seconds", 300), 300)
+    ea_timeout = _to_int(jamf_cli_cfg.get("ea_results_timeout_seconds", 600), 600)
+    max_cache_age = _to_int(jamf_cli_cfg.get("max_cache_age_hours", 0), 0)
+    return ProtectCLIBridge(
+        save_output=save_output,
+        data_dir=str(protect_dir or Path("jamf-cli-data/protect")),
+        profile=str(protect_cfg.get("profile", "") or "").strip(),
+        use_cached_data=use_cached,
+        command_timeout=command_timeout,
+        ea_results_timeout=ea_timeout,
+        max_cache_age_hours=max_cache_age,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -4332,6 +5964,36 @@ class SchoolCLIBridge(JamfCLIBridge):
             cache_names=["school-profiles", "school_profiles"],
         )
 
+    def dep_devices_list(self) -> list[dict] | None:
+        """Fetch DEP-enrolled devices via `jamf-cli school dep-devices list`.
+
+        Returns a list of dep-device records, or None if the call fails and no
+        cached snapshot is available. Read-only resource (jamf-cli v1.9+).
+
+        Returns:
+            Parsed JSON list of DEP device records, or None.
+        """
+        return self._run_and_save(
+            "school-dep-devices",
+            ["school", "dep-devices", "list"],
+            cache_names=["school-dep-devices", "school_dep_devices"],
+        )
+
+    def ibeacons_list(self) -> list[dict] | None:
+        """Fetch iBeacons via `jamf-cli school ibeacons list`.
+
+        Returns a list of ibeacon records, or None if the call fails and no
+        cached snapshot is available. Available in jamf-cli v1.9+.
+
+        Returns:
+            Parsed JSON list of iBeacon records, or None.
+        """
+        return self._run_and_save(
+            "school-ibeacons",
+            ["school", "ibeacons", "list"],
+            cache_names=["school-ibeacons", "school_ibeacons"],
+        )
+
     def locations_list(self) -> Any:
         """Fetch all Jamf School locations.
 
@@ -4376,6 +6038,7 @@ class CoreDashboard:
         bridge: JamfCLIBridge,
         workbook: xlsxwriter.Workbook,
         fmts: dict,
+        protect_bridge: Optional["ProtectCLIBridge"] = None,
     ) -> None:
         self._config = config
         self._bridge = bridge
@@ -4385,6 +6048,24 @@ class CoreDashboard:
         self._overview_source_label: str = ""
         self._mobile_inventory_cache: Optional[tuple[list[dict[str, Any]], str]] = None
         self._mobile_profile_cache: Optional[list[dict[str, Any]]] = None
+        # Protect bridge is owned separately because Protect uses its own
+        # `protect.*` config block (data_dir/profile/use_cached_data) that may
+        # target a different tenant than the Pro `jamf_cli.*` block. Tests
+        # inject a stub via this parameter; production lazy-builds via
+        # `_build_protect_bridge(config)` on first access.
+        self._protect_bridge_override = protect_bridge
+        self._protect_bridge_cache: Optional["ProtectCLIBridge"] = None
+
+    @property
+    def _protect_bridge(self) -> "ProtectCLIBridge":
+        if self._protect_bridge_override is not None:
+            return self._protect_bridge_override
+        if self._protect_bridge_cache is not None:
+            return self._protect_bridge_cache
+        self._protect_bridge_cache = _build_protect_bridge(
+            self._config, save_output=getattr(self._bridge, "_save", False)
+        )
+        return self._protect_bridge_cache
 
     @property
     def _org_name(self) -> str:
@@ -4619,6 +6300,14 @@ class CoreDashboard:
         sheets = [("Fleet Overview", self._write_overview)]
         if self._protect_enabled():
             sheets.append(("Protect Overview", self._write_protect_overview))
+            if self._protect_plans_enabled():
+                sheets.append(("Protect Plans", self._write_protect_plans))
+            if self._protect_computers_enabled():
+                sheets.append(("Protect Computers", self._write_protect_computers))
+            if self._protect_alerts_enabled():
+                sheets.append(("Protect Alerts", self._write_protect_alerts))
+            if self._protect_insights_enabled():
+                sheets.append(("Protect Insights", self._write_protect_insights))
         if self._platform_enabled():
             sheets.append(("Platform Blueprints", self._write_platform_blueprints))
             for bench in self._platform_benchmark_titles():
@@ -4633,12 +6322,16 @@ class CoreDashboard:
                     lambda b=bench: self._write_platform_compliance_devices(b),
                 ))
             sheets.append(("Platform DDM Status", self._write_platform_ddm_status))
+            if self._audit_platform_enabled():
+                sheets.append(("Platform Health", self._write_audit_platform))
         sheets.extend(
             [
                 ("Mobile Fleet Summary", self._write_mobile_fleet_summary),
                 ("Inventory Summary", self._write_inventory_summary),
                 ("Hardware Models", self._write_hardware_models),
                 ("Mobile Inventory", self._write_mobile_inventory),
+                ("Audit Summary", self._write_audit),
+                ("Group Hygiene", self._write_group_analysis),
                 ("Security Posture", self._write_security),
                 ("Device Compliance", self._write_device_compliance),
                 ("Check-in Health", self._write_checkin_health),
@@ -4666,9 +6359,20 @@ class CoreDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Write all enabled core sheets. Returns list of sheet names written."""
-        written = []
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Write all enabled core sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` is the list of
+            sheets that were generated successfully and ``failures`` is a list
+            of ``{"sheet": name, "error": "<ErrorType>: <message>"}`` entries
+            for sheets whose writer raised. ``RuntimeError`` is treated as a
+            data-shape miss (logged as ``[skip]`` and excluded from
+            ``failures``) — only unexpected exceptions become failures so
+            partial-success reflects genuine bugs rather than absent inputs.
+        """
+        written: list[str] = []
+        failures: list[dict[str, str]] = []
         sheets = self.sheet_plan()
         for name, fn in sheets:
             if selected_names is not None and _normalized_sheet_name(name) not in selected_names:
@@ -4681,8 +6385,10 @@ class CoreDashboard:
             except RuntimeError as exc:
                 print(f"  [skip] {name}: {exc}")
             except Exception as exc:  # unexpected shape or type from jamf-cli JSON
-                print(f"  [skip] {name}: unexpected error — {type(exc).__name__}: {exc}")
-        return written
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": name, "error": error_label})
+                print(f"  [fail] {name}: unexpected error — {error_label}")
+        return written, failures
 
     def _write_overview(self) -> None:
         ws = self._wb.add_worksheet("Fleet Overview")
@@ -4743,7 +6449,7 @@ class CoreDashboard:
             return self._fmts["red"]
         if any(
             token in normalized
-            for token in ("pending", "draft", "partial", "progress", "scheduled")
+            for token in ("pending", "draft", "partial", "progress", "scheduled", "out_of_date", "out of date")
         ):
             return self._fmts["yellow"]
         return self._fmts["cell"]
@@ -4756,6 +6462,14 @@ class CoreDashboard:
         if isinstance(value, bool):
             return "Yes" if value else "No"
         return str(value).strip()
+
+    @staticmethod
+    def _protect_tags_text(item: dict[str, Any]) -> str:
+        """Render a Protect `tags` list to a comma-joined display string."""
+        tags = item.get("tags")
+        if not isinstance(tags, list):
+            return ""
+        return ", ".join(str(t) for t in tags if str(t).strip())
 
     def _protect_has_plan(self, value: str) -> bool:
         """Return True when a Protect plan value appears assigned."""
@@ -4904,7 +6618,8 @@ class CoreDashboard:
         if not self._protect_enabled():
             raise RuntimeError("disabled in config (set protect.enabled: true to opt in)")
 
-        overview_raw = self._bridge.protect_overview()
+        protect_bridge = self._protect_bridge
+        overview_raw = protect_bridge.overview()
         overview_rows = self._protect_overview_rows(overview_raw)
         if not overview_rows:
             raise RuntimeError("jamf-cli protect overview returned no usable rows")
@@ -4916,9 +6631,9 @@ class CoreDashboard:
         plans: list[dict[str, Any]] = []
         analytics: list[dict[str, Any]] = []
         optional_sources = [
-            ("jamf-cli protect computers list", self._bridge.protect_computers_list, self._protect_computer_rows),
-            ("jamf-cli protect plans list", self._bridge.protect_plans, self._protect_plan_rows),
-            ("jamf-cli protect analytics list", self._bridge.protect_analytics, self._protect_analytic_rows),
+            ("jamf-cli protect computers list", protect_bridge.computers_list, self._protect_computer_rows),
+            ("jamf-cli protect plans list", protect_bridge.plans_list, self._protect_plan_rows),
+            ("jamf-cli protect analytics list", protect_bridge.analytics_list, self._protect_analytic_rows),
         ]
         for source_label, fetcher, normalizer in optional_sources:
             try:
@@ -5066,7 +6781,431 @@ class CoreDashboard:
             notes = [{"Note": message} for message in optional_errors[:5]]
             self._write_table_block(ws, row, "Optional Source Notes", ["Note"], notes, max_rows=5)
 
+    def _protect_plans_enabled(self) -> bool:
+        """Return True when the W22 Protect Plans sheet is opted in."""
+        if not self._protect_enabled():
+            return False
+        return self._config.get("protect", "plans", "enabled", default=True) is not False
+
+    def _write_protect_plans(self) -> None:
+        # Experimental — W22. Pagination shape against a live tenant is unverified;
+        # the bridge accepts both bare-array and {nodes, pageInfo} envelope responses.
+        """Write the Jamf Protect Plans sheet from `jamf-cli protect plans list`."""
+        if not self._protect_plans_enabled():
+            raise RuntimeError(
+                "disabled in config (set protect.plans.enabled: true to opt in)"
+            )
+
+        plans_raw = self._protect_bridge.plans_list()
+
+        plans = self._protect_plan_detail_rows(plans_raw)
+
+        ws = self._wb.add_worksheet("Protect Plans")
+        ws.set_column(0, 0, 28)   # Plan Name
+        ws.set_column(1, 1, 36)   # UUID
+        ws.set_column(2, 2, 40)   # Description
+        ws.set_column(3, 4, 20)   # Created / Updated
+        ws.set_column(5, 5, 12)   # Log Level
+        ws.set_column(6, 6, 12)   # Auto Update
+        ws.set_column(7, 7, 22)   # Threat Prevention Strategy
+        ws.set_column(8, 8, 14)   # Profile Version
+        ws.set_column(9, 9, 60)   # Custom Engine Config
+        ws.set_column(10, 10, 32) # Exception Sets
+        ws.set_column(11, 11, 32) # Analytic Sets
+        ws.set_column(12, 13, 14) # Telemetry / Telemetry V2
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Protect Plans"),
+            f"Source: jamf-cli protect plans list | Generated: {ts}",
+            self._fmts,
+            ncols=14,
+        )
+        _safe_write(ws, row, 0, "Support Status", self._fmts["cell"])
+        _safe_write(ws, row, 1, "Experimental (W22)", self._fmts["yellow"])
+        row += 1
+        _safe_write(ws, row, 0, "Validation Note", self._fmts["cell"])
+        _safe_write(
+            ws,
+            row,
+            1,
+            "Pagination shape against a live tenant is unverified; bridge accepts"
+            " both bare-array and envelope responses.",
+            self._fmts["yellow"],
+        )
+        row += 2
+
+        headers = [
+            "Plan Name", "UUID", "Description", "Created", "Updated", "Log Level",
+            "Auto Update", "Threat Prevention Strategy", "Profile Version",
+            "Custom Engine Config", "Exception Sets", "Analytic Sets",
+            "Telemetry", "Telemetry V2",
+        ]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        if not plans:
+            _safe_write(
+                ws, row, 0,
+                "No Protect plans configured.",
+                self._fmts["yellow"],
+            )
+            return
+
+        plans.sort(key=lambda p: str(p.get("Plan Name", "") or "").lower())
+        for plan in plans:
+            for col_i, header in enumerate(headers):
+                _safe_write(ws, row, col_i, plan.get(header, ""), self._fmts["cell"])
+            row += 1
+
+    @staticmethod
+    def _protect_plan_detail_rows(raw: Any) -> list[dict[str, Any]]:
+        """Normalize Protect plan records into the 14-column sheet shape.
+
+        Preserves PascalCase sub-keys inside ``customEngineConfig`` so the
+        summary column reflects the SDK exactly. Defensively handles missing
+        fields by leaving cells blank rather than synthesizing values.
+        """
+        items: list[Any]
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            nodes = raw.get("nodes")
+            items = nodes if isinstance(nodes, list) else _extract_items(raw)
+        else:
+            items = []
+
+        rows: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            cec = item.get("customEngineConfig")
+            cec_summary = ""
+            if isinstance(cec, dict) and cec:
+                # Preserve PascalCase keys verbatim — defensive against parsers
+                # that lowercase keys.
+                cec_summary = ", ".join(str(key) for key in cec.keys())
+
+            rows.append({
+                "Plan Name": item.get("name", "") or "",
+                "UUID": item.get("uuid", "") or "",
+                "Description": item.get("description", "") or "",
+                "Created": item.get("created", "") or "",
+                "Updated": item.get("updated", "") or "",
+                "Log Level": item.get("logLevel", "") or "",
+                "Auto Update": _format_bool_yes_no(item.get("autoUpdate")),
+                "Threat Prevention Strategy": item.get("threatPreventionStrategy", "") or "",
+                "Profile Version": item.get("profileVersion", "") or "",
+                "Custom Engine Config": cec_summary,
+                "Exception Sets": _format_named_list(item.get("exceptionSets")),
+                "Analytic Sets": _format_named_list(item.get("analyticSets")),
+                "Telemetry": _format_bool_yes_no(item.get("telemetry")),
+                "Telemetry V2": _format_bool_yes_no(item.get("telemetryV2")),
+            })
+        return rows
+
+    # --- W23 Protect standard pack ---------------------------------------
+
+    def _protect_computers_enabled(self) -> bool:
+        """Return True when the W23 Protect Computers sheet is opted in."""
+        if not self._protect_enabled():
+            return False
+        return self._config.get("protect", "computers", "enabled", default=False) is True
+
+    def _protect_alerts_enabled(self) -> bool:
+        """Return True when the W23 Protect Alerts sheet is opted in."""
+        if not self._protect_enabled():
+            return False
+        return self._config.get("protect", "alerts", "enabled", default=False) is True
+
+    def _protect_insights_enabled(self) -> bool:
+        """Return True when the W23 Protect Insights sheet is opted in."""
+        if not self._protect_enabled():
+            return False
+        return self._config.get("protect", "insights", "enabled", default=False) is True
+
+    @staticmethod
+    def _normalize_protect_payload(raw: Any, hard_cap: int) -> tuple[list[dict], int]:
+        """Coerce a Protect response into a flat list, applying a row cap.
+
+        Accepts either a bare list or a `{nodes, pageInfo}` envelope (per
+        graphql conventions in jamfprotect-go-sdk). Returns the capped list
+        and the pre-cap raw count so callers can warn on truncation.
+        """
+        if raw is None:
+            return [], 0
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            nodes = raw.get("nodes")
+            items = nodes if isinstance(nodes, list) else _extract_items(raw)
+        else:
+            return [], 0
+        records = [item for item in items if isinstance(item, dict)]
+        return records[:hard_cap], len(records)
+
+    def _protect_computer_detail_rows(self, raw: Any) -> list[dict[str, Any]]:
+        """Normalize Protect computer records into the W23 Computers sheet shape."""
+        records, _ = self._normalize_protect_payload(raw, PROTECT_COMPUTERS_HARD_CAP)
+        rows: list[dict[str, Any]] = []
+        for item in records:
+            flat = _flatten_record(item)
+            os_string = self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["os_string"])
+            if not os_string:
+                parts = [
+                    self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES[k])
+                    for k in ("os_major", "os_minor", "os_patch")
+                ]
+                os_string = ".".join(p for p in parts if p)
+            tags_text = self._protect_tags_text(item)
+            rows.append({
+                "Hostname": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["hostname"]),
+                "Serial": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["serial"]),
+                "UUID": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["uuid"]),
+                "Model": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["model"]),
+                "OS Version": os_string,
+                "Plan": self._protect_text(flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["plan_name"]),
+                "Tags": tags_text,
+                "Web Protection": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["web_protection"]
+                ),
+                "Full Disk Access": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["full_disk_access"]
+                ),
+                "Insights Pass": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["insights_pass"]
+                ),
+                "Insights Fail": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["insights_fail"]
+                ),
+                "Insights Unknown": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["insights_unknown"]
+                ),
+                "Connection Status": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["connection_status"]
+                ),
+                "Last Connection": self._protect_text(
+                    flat, PROTECT_COMPUTER_DETAIL_FIELD_CANDIDATES["last_connection"]
+                ),
+            })
+        return rows
+
+    def _protect_alert_detail_rows(self, raw: Any) -> list[dict[str, Any]]:
+        """Normalize Protect alert records into the W23 Alerts sheet shape."""
+        records, _ = self._normalize_protect_payload(raw, PROTECT_ALERTS_HARD_CAP)
+        rows: list[dict[str, Any]] = []
+        for item in records:
+            flat = _flatten_record(item)
+            analytics = item.get("analytics")
+            analytic_names = ", ".join(
+                str(a.get("name", "") or a.get("label", "") or "")
+                for a in analytics if isinstance(a, dict)
+            ) if isinstance(analytics, list) else ""
+            actions = item.get("actions")
+            actions_text = ""
+            if isinstance(actions, list):
+                names = []
+                for action in actions:
+                    if isinstance(action, dict):
+                        names.append(str(action.get("name", "") or ""))
+                    else:
+                        names.append(str(action))
+                actions_text = ", ".join(n for n in names if n.strip())
+            tags_text = self._protect_tags_text(item)
+            rows.append({
+                "Created": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["created"]),
+                "Severity": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["severity"]),
+                "Status": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["status"]),
+                "Event Type": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["event_type"]),
+                "Computer": self._protect_text(
+                    flat, PROTECT_ALERT_FIELD_CANDIDATES["computer_hostname"]
+                ),
+                "Computer Serial": self._protect_text(
+                    flat, PROTECT_ALERT_FIELD_CANDIDATES["computer_serial"]
+                ),
+                "Plan": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["plan_name"]),
+                "Analytics": analytic_names,
+                "Actions": actions_text,
+                "Tags": tags_text,
+                "UUID": self._protect_text(flat, PROTECT_ALERT_FIELD_CANDIDATES["uuid"]),
+            })
+        return rows
+
+    def _protect_insight_detail_rows(self, raw: Any) -> list[dict[str, Any]]:
+        """Normalize Protect insight records into the W23 Insights sheet shape."""
+        records, _ = self._normalize_protect_payload(raw, PROTECT_INSIGHTS_HARD_CAP)
+        rows: list[dict[str, Any]] = []
+        for item in records:
+            flat = _flatten_record(item)
+            cisid = item.get("cisid")
+            cisid_text = ""
+            if isinstance(cisid, list):
+                ids = [
+                    str(entry.get("id", "") or "") for entry in cisid
+                    if isinstance(entry, dict)
+                ]
+                cisid_text = ", ".join(i for i in ids if i.strip())
+            tags_text = self._protect_tags_text(item)
+            rows.append({
+                "Label": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["label"]),
+                "Section": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["section"]),
+                "Description": self._protect_text(
+                    flat, PROTECT_INSIGHT_FIELD_CANDIDATES["description"]
+                ),
+                "Pass": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["total_pass"]),
+                "Fail": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["total_fail"]),
+                "None": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["total_none"]),
+                "Enabled": _format_bool_yes_no(item.get("enabled")),
+                "Tags": tags_text,
+                "CIS IDs": cisid_text,
+                "UUID": self._protect_text(flat, PROTECT_INSIGHT_FIELD_CANDIDATES["uuid"]),
+            })
+        return rows
+
+    def _write_protect_table_sheet(
+        self,
+        sheet_name: str,
+        title: str,
+        source_label: str,
+        headers: list[str],
+        column_widths: list[tuple[int, int]],
+        rows: list[dict[str, Any]],
+        empty_message: str,
+        sort_key: Optional[str] = None,
+    ) -> None:
+        """Write a tabular Protect sheet with the standard W22/W23 chrome.
+
+        Used by the W23 Computers / Alerts / Insights writers. Mirrors the
+        structure of `_write_protect_plans`: title row, "Experimental"
+        validation banner, header row, data rows; empty payload is replaced
+        with a yellow note rather than a blank sheet.
+        """
+        ws = self._wb.add_worksheet(sheet_name)
+        for col_idx, width in column_widths:
+            ws.set_column(col_idx, col_idx, width)
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t(title),
+            f"Source: {source_label} | Generated: {ts}",
+            self._fmts,
+            ncols=len(headers),
+        )
+        _safe_write(ws, row, 0, "Support Status", self._fmts["cell"])
+        _safe_write(ws, row, 1, "Experimental (W23)", self._fmts["yellow"])
+        row += 1
+        _safe_write(ws, row, 0, "Validation Note", self._fmts["cell"])
+        _safe_write(
+            ws, row, 1,
+            "Pagination shape against a live Protect tenant is unverified;"
+            " field names follow the jamfprotect-go-sdk camelCase contract.",
+            self._fmts["yellow"],
+        )
+        row += 2
+
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+
+        if not rows:
+            _safe_write(ws, row, 0, empty_message, self._fmts["yellow"])
+            return
+
+        if sort_key is not None:
+            rows.sort(key=lambda r: str(r.get(sort_key, "") or "").lower())
+
+        for record in rows:
+            for col_i, header in enumerate(headers):
+                _safe_write(ws, row, col_i, record.get(header, ""), self._fmts["cell"])
+            row += 1
+
+    def _write_protect_computers(self) -> None:
+        # Experimental — W23. Pagination shape against a live tenant unverified.
+        """Write the Jamf Protect Computers sheet from `jamf-cli protect computers list`."""
+        if not self._protect_computers_enabled():
+            raise RuntimeError(
+                "disabled in config (set protect.computers.enabled: true to opt in)"
+            )
+        rows = self._protect_computer_detail_rows(self._protect_bridge.computers_list())
+        headers = [
+            "Hostname", "Serial", "UUID", "Model", "OS Version", "Plan", "Tags",
+            "Web Protection", "Full Disk Access", "Insights Pass", "Insights Fail",
+            "Insights Unknown", "Connection Status", "Last Connection",
+        ]
+        widths = [
+            (0, 28), (1, 18), (2, 36), (3, 22), (4, 12), (5, 22), (6, 28),
+            (7, 14), (8, 14), (9, 12), (10, 12), (11, 14), (12, 18), (13, 22),
+        ]
+        self._write_protect_table_sheet(
+            "Protect Computers",
+            "Protect Computers",
+            "jamf-cli protect computers list",
+            headers,
+            widths,
+            rows,
+            "No Protect computers reported.",
+            sort_key="Hostname",
+        )
+
+    def _write_protect_alerts(self) -> None:
+        # Experimental — W23. Pagination shape against a live tenant unverified.
+        """Write the Jamf Protect Alerts sheet from `jamf-cli protect alerts list`."""
+        if not self._protect_alerts_enabled():
+            raise RuntimeError(
+                "disabled in config (set protect.alerts.enabled: true to opt in)"
+            )
+        rows = self._protect_alert_detail_rows(self._protect_bridge.alerts_list())
+        headers = [
+            "Created", "Severity", "Status", "Event Type", "Computer",
+            "Computer Serial", "Plan", "Analytics", "Actions", "Tags", "UUID",
+        ]
+        widths = [
+            (0, 20), (1, 12), (2, 14), (3, 24), (4, 24), (5, 18),
+            (6, 22), (7, 36), (8, 24), (9, 24), (10, 36),
+        ]
+        self._write_protect_table_sheet(
+            "Protect Alerts",
+            "Protect Alerts",
+            "jamf-cli protect alerts list",
+            headers,
+            widths,
+            rows,
+            "No Protect alerts reported.",
+            sort_key="Created",
+        )
+
+    def _write_protect_insights(self) -> None:
+        # Experimental — W23. Pagination shape against a live tenant unverified.
+        """Write the Jamf Protect Insights sheet from `jamf-cli protect insights list`."""
+        if not self._protect_insights_enabled():
+            raise RuntimeError(
+                "disabled in config (set protect.insights.enabled: true to opt in)"
+            )
+        rows = self._protect_insight_detail_rows(self._protect_bridge.insights_list())
+        headers = [
+            "Label", "Section", "Description", "Pass", "Fail", "None",
+            "Enabled", "Tags", "CIS IDs", "UUID",
+        ]
+        widths = [
+            (0, 32), (1, 18), (2, 50), (3, 8), (4, 8), (5, 8),
+            (6, 10), (7, 24), (8, 18), (9, 36),
+        ]
+        self._write_protect_table_sheet(
+            "Protect Insights",
+            "Protect Insights",
+            "jamf-cli protect insights list",
+            headers,
+            widths,
+            rows,
+            "No Protect insights reported.",
+            sort_key="Label",
+        )
+
     def _write_platform_blueprints(self) -> None:
+        # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write a blueprint deployment summary from Platform API report data."""
         if not self._platform_enabled():
             raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
@@ -5133,6 +7272,7 @@ class CoreDashboard:
             row += 1
 
     def _write_platform_compliance_rules(self, benchmark: str) -> None:
+        # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write per-rule Platform compliance results for a single benchmark.
 
         Args:
@@ -5148,6 +7288,7 @@ class CoreDashboard:
         ]
         rules_with_failures = sum(1 for item in rows if _to_int(item.get("failed", 0)) > 0)
         rules_with_unknown = sum(1 for item in rows if _to_int(item.get("unknown", 0)) > 0)
+        rules_missing_data = sum(1 for item in rows if "failed" not in item)
 
         sheet_title = "Compliance Rules"
         sheet_name = _excel_sheet_name(
@@ -5171,6 +7312,7 @@ class CoreDashboard:
             ("Rules Returned", len(rows)),
             ("Rules with Failures", rules_with_failures),
             ("Rules with Unknown Results", rules_with_unknown),
+            ("Rules with Missing Data", rules_missing_data),
             (
                 "Average Pass Rate",
                 (sum(avg_pass_rate) / len(avg_pass_rate)) if avg_pass_rate else "",
@@ -5188,13 +7330,30 @@ class CoreDashboard:
         row += 1
 
         for item in rows:
-            failed = _to_int(item.get("failed", 0))
+            # Distinguish absent "failed" key (unknown) from explicit 0 (no failures).
+            # An absent key must not render as passing — flag it yellow like unknown.
+            failed_raw = item.get("failed")
+            failed = _to_int(failed_raw, 0) if failed_raw is not None else None
             unknown = _to_int(item.get("unknown", 0))
             pass_rate = _parse_percent(item.get("passRate", ""))
-            base_fmt = self._fmts["red"] if failed else self._fmts["yellow"] if unknown else self._fmts["cell"]
+            if failed:
+                base_fmt = self._fmts["red"]
+            elif failed is None or unknown:
+                # None means the field was absent — status is unknown, not passing.
+                base_fmt = self._fmts["yellow"]
+            else:
+                base_fmt = self._fmts["cell"]
             _safe_write(ws, row, 0, item.get("rule", ""), base_fmt)
             _safe_write(ws, row, 1, _to_int(item.get("passed", 0)), self._fmts["cell"])
-            _safe_write(ws, row, 2, failed, self._fmts["red"] if failed else self._fmts["cell"])
+            failed_display = failed if failed is not None else "—"
+            _safe_write(
+                ws,
+                row,
+                2,
+                failed_display,
+                self._fmts["red"] if failed else self._fmts["yellow"] if failed is None
+                else self._fmts["cell"],
+            )
             _safe_write(
                 ws,
                 row,
@@ -5210,6 +7369,7 @@ class CoreDashboard:
             row += 1
 
     def _write_platform_compliance_devices(self, benchmark: str) -> None:
+        # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write failing Platform compliance devices for a single benchmark.
 
         Args:
@@ -5242,10 +7402,15 @@ class CoreDashboard:
         ws.set_column(0, 0, 34)
         ws.set_column(1, 1, 18)
         ws.set_column(2, 4, 16)
+        devices_with_failures = sum(
+            1 for item in rows if _to_int(item.get("rulesFailed", 0), 0) > 0
+        )
+        devices_unknown_status = sum(1 for item in rows if "rulesFailed" not in item)
         for label, value in [
             ("Benchmark", benchmark),
             ("Devices Returned", len(rows)),
-            ("Devices with Failing Rules", sum(1 for item in rows if _to_int(item.get("rulesFailed", 0)) > 0)),
+            ("Devices with Failing Rules", devices_with_failures),
+            ("Devices with Unknown Status", devices_unknown_status),
             (
                 "Average Compliance",
                 (sum(compliance_values) / len(compliance_values)) if compliance_values else "",
@@ -5265,20 +7430,25 @@ class CoreDashboard:
         for item in sorted(
             rows,
             key=lambda current: (
-                -_to_int(current.get("rulesFailed", 0)),
+                # Absent rulesFailed sorts before confirmed-0 so unknown devices surface first.
+                -_to_int(current["rulesFailed"], 0) if "rulesFailed" in current else 1,
                 str(current.get("device", "")).lower(),
             ),
         ):
-            rules_failed = _to_int(item.get("rulesFailed", 0))
+            # Distinguish absent rulesFailed (unknown compliance) from explicit 0 (passing).
+            rules_failed_raw = item.get("rulesFailed")
+            rules_failed = _to_int(rules_failed_raw, 0) if rules_failed_raw is not None else None
             compliance = _parse_percent(item.get("compliance", ""))
             _safe_write(ws, row, 0, item.get("device", ""), self._fmts["cell"])
             _safe_write(ws, row, 1, item.get("deviceId", ""), self._fmts["cell"])
+            failed_display = rules_failed if rules_failed is not None else "—"
             _safe_write(
                 ws,
                 row,
                 2,
-                rules_failed,
-                self._fmts["red"] if rules_failed else self._fmts["cell"],
+                failed_display,
+                self._fmts["red"] if rules_failed else self._fmts["yellow"] if rules_failed is None
+                else self._fmts["cell"],
             )
             _safe_write(ws, row, 3, _to_int(item.get("rulesPassed", 0)), self._fmts["cell"])
             if compliance is None:
@@ -5288,6 +7458,7 @@ class CoreDashboard:
             row += 1
 
     def _write_platform_ddm_status(self) -> None:
+        # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write DDM declaration health from Platform API report data."""
         if not self._platform_enabled():
             raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
@@ -5681,6 +7852,150 @@ class CoreDashboard:
                 _safe_write(ws, row, 2, pct, _pct_format(self._fmts, pct))
                 row += 1
 
+    def _write_audit(self) -> None:
+        """Write health check findings from jamf-cli pro audit."""
+        raw = self._bridge.audit()
+        items = raw if isinstance(raw, list) else []
+
+        ws = self._wb.add_worksheet("Audit Summary")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Health Audit Summary"),
+            f"Source: jamf-cli pro audit | Generated: {ts}",
+            self._fmts,
+            ncols=5,
+        )
+        ws.set_column(0, 0, 35)
+        ws.set_column(1, 1, 15)
+        ws.set_column(2, 2, 15)
+        ws.set_column(3, 3, 50)
+        ws.set_column(4, 4, 15)
+
+        headers = ["Finding", "Category", "Severity", "Recommendation", "Affected"]
+        for c, h in enumerate(headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        row += 1
+
+        for item in items:
+            severity = str(item.get("severity", "")).upper()
+            fmt = self._fmts["cell"]
+            if severity == "CRITICAL":
+                fmt = self._fmts["red"]
+            elif severity == "WARNING":
+                fmt = self._fmts["yellow"]
+
+            _safe_write(ws, row, 0, item.get("name", ""), fmt)
+            _safe_write(ws, row, 1, item.get("category", ""), fmt)
+            _safe_write(ws, row, 2, severity, fmt)
+            _safe_write(ws, row, 3, item.get("recommendation", ""), fmt)
+            _safe_write(ws, row, 4, item.get("affected", 0), fmt)
+            row += 1
+
+    def _audit_platform_enabled(self) -> bool:
+        """Return True when the platform audit-checks sheet is enabled.
+
+        Gated by both `platform.enabled` (parent toggle, requires platform-gateway
+        auth) and `platform.audit_platform.enabled` (sheet-level toggle).
+        """
+        if not self._platform_enabled():
+            return False
+        return self._config.get("platform", "audit_platform", "enabled", default=True) is True
+
+    def _write_audit_platform(self) -> None:
+        """Write platform-only health check findings from `pro audit --checks platform`.
+
+        Sibling to `_write_audit`: distinct sheet, distinct cache key, gated by
+        `platform.enabled`. Skips silently when the call returns no data.
+        """
+        raw = self._bridge.audit_platform_checks()
+        if raw is None:
+            raise RuntimeError(
+                "no platform audit findings available "
+                "(requires platform-gateway auth)"
+            )
+        items = raw if isinstance(raw, list) else []
+
+        ws = self._wb.add_worksheet("Platform Health")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Platform Health Audit"),
+            f"Source: jamf-cli pro audit --checks platform | Generated: {ts}",
+            self._fmts,
+            ncols=5,
+        )
+        ws.set_column(0, 0, 35)
+        ws.set_column(1, 1, 15)
+        ws.set_column(2, 2, 15)
+        ws.set_column(3, 3, 50)
+        ws.set_column(4, 4, 15)
+
+        headers = ["Finding", "Category", "Severity", "Recommendation", "Affected"]
+        for c, h in enumerate(headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        row += 1
+
+        if not items:
+            _safe_write(
+                ws, row, 0,
+                "No platform audit findings — fleet is healthy.",
+                self._fmts["yellow"],
+            )
+            return
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            severity = str(item.get("severity", "")).upper()
+            fmt = self._fmts["cell"]
+            if severity == "CRITICAL":
+                fmt = self._fmts["red"]
+            elif severity == "WARNING":
+                fmt = self._fmts["yellow"]
+
+            _safe_write(ws, row, 0, item.get("name", ""), fmt)
+            _safe_write(ws, row, 1, item.get("category", ""), fmt)
+            _safe_write(ws, row, 2, severity, fmt)
+            _safe_write(ws, row, 3, item.get("recommendation", ""), fmt)
+            _safe_write(ws, row, 4, item.get("affected", 0), fmt)
+            row += 1
+
+    def _write_group_analysis(self) -> None:
+        """Write unused computer group analysis from jamf-cli pro group-tools analyze."""
+        raw = self._bridge.group_analyze(mode="unused")
+        items = raw if isinstance(raw, list) else []
+
+        ws = self._wb.add_worksheet("Group Hygiene")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Group Hygiene: Unused Groups"),
+            f"Source: jamf-cli pro group-tools analyze --unused | Generated: {ts}",
+            self._fmts,
+            ncols=4,
+        )
+        ws.set_column(0, 0, 45)
+        ws.set_column(1, 1, 15)
+        ws.set_column(2, 2, 15)
+        ws.set_column(3, 3, 15)
+
+        headers = ["Group Name", "Type", "Jamf ID", "Members"]
+        for c, h in enumerate(headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        row += 1
+
+        if not items:
+            _safe_write(ws, row, 0, "No unused computer groups found.", self._fmts["cell"])
+            return
+
+        for item in items:
+            _safe_write(ws, row, 0, item.get("name", ""), self._fmts["cell"])
+            _safe_write(ws, row, 1, item.get("type", ""), self._fmts["cell"])
+            _safe_write(ws, row, 2, item.get("id", ""), self._fmts["cell"])
+            _safe_write(ws, row, 3, item.get("memberCount", 0), self._fmts["cell"])
+            row += 1
+
     def _write_inventory_summary(self) -> None:
         """Write a flat inventory breakdown by model and OS version."""
         raw = self._bridge.inventory_summary()
@@ -5800,7 +8115,8 @@ class CoreDashboard:
             raise RuntimeError("jamf-cli device-compliance returned no rows")
 
         total = len(rows)
-        stale_count = sum(1 for item in rows if _to_bool(item.get("stale")))
+        # Only count devices with an explicit stale=true; absent field is unknown, not current.
+        stale_count = sum(1 for item in rows if item.get("stale") is True)
         managed_count = sum(1 for item in rows if _to_bool(item.get("managed")))
 
         ws = self._wb.add_worksheet("Device Compliance")
@@ -5848,21 +8164,34 @@ class CoreDashboard:
         for item in sorted(
             rows,
             key=lambda current: (
-                not _to_bool(current.get("stale")),
+                # Unknown stale status (absent field) sorts after confirmed-stale but
+                # before confirmed-current, so it is never silently buried at the bottom.
+                0 if "stale" not in current else (1 if not _to_bool(current["stale"]) else 0),
                 -_to_int(current.get("days_since_contact", -1), -1),
                 str(current.get("name", "")),
             ),
         ):
-            stale = _to_bool(item.get("stale"))
+            stale_raw = item.get("stale")
+            stale_known = "stale" in item
+            stale = _to_bool(stale_raw) if stale_known else None
             managed = _to_bool(item.get("managed"))
-            row_fmt = self._fmts["red"] if stale else self._fmts["cell"]
+            if stale is True:
+                row_fmt = self._fmts["red"]
+                stale_label = "Yes"
+            elif stale is None:
+                # stale field absent — status unknown; flag conservatively
+                row_fmt = self._fmts["yellow"]
+                stale_label = "Unknown"
+            else:
+                row_fmt = self._fmts["cell"]
+                stale_label = "No"
             _safe_write(ws, row, 0, item.get("name", ""), row_fmt)
             _safe_write(ws, row, 1, item.get("serial", ""), row_fmt)
             _safe_write(ws, row, 2, "Yes" if managed else "No", row_fmt)
             _safe_write(ws, row, 3, item.get("os_version", ""), row_fmt)
             _safe_write(ws, row, 4, item.get("last_contact", ""), row_fmt)
             _safe_write(ws, row, 5, item.get("days_since_contact", ""), row_fmt)
-            _safe_write(ws, row, 6, "Yes" if stale else "No", row_fmt)
+            _safe_write(ws, row, 6, stale_label, row_fmt)
             row += 1
 
     def _write_checkin_health(self) -> None:
@@ -6546,12 +8875,9 @@ class CoreDashboard:
         # jamf-cli pro report patch-status --output json returns a flat list:
         #   [{"title":"Firefox","id":"123","on_latest":100,"on_other":20,
         #     "total":120,"latest":"130.0","compliance_pct":"83%"}, ...]
-        # Newer builds may instead return:
-        #   [{"title":"Firefox","id":"123","installed":100,
-        #     "total":120,"latest":"130.0","compliance_pct":"83%"}, ...]
+        # on_latest/on_other is the canonical shape on v1.14+.
         raw = self._bridge.patch_status()
         titles = raw if isinstance(raw, list) else []
-        uses_installed_shape = any("installed" in item for item in titles if isinstance(item, dict))
 
         # Attempt to load release-date metadata from patch-software-title-configurations.
         # Falls back gracefully — Release Date column is omitted if unavailable.
@@ -6607,28 +8933,12 @@ class CoreDashboard:
         ws.set_column(1, base_cols - 1, 18)
         if adj_available:
             ws.set_column(base_cols, base_cols + 3, 22)
-
-        if uses_installed_shape:
-            raw_headers: list[str] = [
-                "Software Title", "Installed", "Not Installed", "Total", "Latest Version",
-            ]
-            adj_headers = [
-                "Adjusted Installed", "Adjusted Not Installed", "Adjusted Total",
-                "Adjusted Completion %",
-            ]
-        else:
-            raw_headers = [
-                "Software Title", "On Latest", "On Other", "Total", "Latest Version",
-            ]
-            adj_headers = [
-                "Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
-                "Adjusted Completion %",
-            ]
-
+        raw_headers = ["Software Title", "On Latest", "On Other", "Total", "Latest Version"]
+        adj_headers = ["Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
+                       "Adjusted Completion %"]
         if release_date_available:
             raw_headers.append("Release Date")
         raw_headers.append("Compliance %")
-
         headers = raw_headers + (adj_headers if adj_available else [])
         for c, h in enumerate(headers):
             _safe_write(ws, row, c, h, self._fmts["header"])
@@ -6639,14 +8949,10 @@ class CoreDashboard:
 
         for item in titles:
             total = _to_int(item.get("total", 0))
-            if uses_installed_shape:
-                primary = _to_int(item.get("installed", 0))
-                secondary = max(total - primary, 0)
-            else:
-                primary = _to_int(item.get("on_latest", 0))
-                secondary = _to_int(item.get("on_other", 0))
-                if total == 0:
-                    total = primary + secondary
+            primary = _to_int(item.get("on_latest", 0))
+            secondary = _to_int(item.get("on_other", 0))
+            if total == 0:
+                total = primary + secondary
 
             pct_raw = str(item.get("compliance_pct", "")).strip()
             pct_match = re.fullmatch(r"(\d+(?:\.\d+)?)%", pct_raw)
@@ -6685,7 +8991,7 @@ class CoreDashboard:
             row += 1
 
     def _write_patch_failures(self) -> None:
-        # jamf-cli pro report patch-status --scan-failures --output json (v1.4.0+) returns:
+        # jamf-cli pro report patch-status --scan-failures --output json returns:
         #   [{"policy":"Firefox 130.0","policy_id":"42","device":"MacBook-001",
         #     "device_id":"123","status_date":"2026-04-01","attempt":3,
         #     "last_action":"Retrying","serial":"ABC123",
@@ -6817,29 +9123,22 @@ class CoreDashboard:
                 row += 1
 
     def _write_update_status(self) -> None:
-        # jamf-cli pro report update-status --output json shape differs by version:
-        #
-        # v1.5 and earlier:
-        #   {"summary": {"total_updates": N, "pending": N, "downloading": N,
-        #                "installing": N, "installed": N, "errors": N},
-        #    "ErrorDevices": [{"device_name":"...","serial":"...","os_version":"...",
-        #                      "status":"...","product_key":"...","updated":"..."},...]}
-        #
-        # v1.6+:
+        # jamf-cli pro report update-status --output json canonical shape (v1.14):
         #   [{"total": N,
         #     "status_summary": [{"status": "...", "count": N}, ...],
         #     "plan_total": N,
         #     "plan_state_summary": [{"state": "...", "count": N}, ...]}]
         #   (error_devices and failed_plans only present with --scan-failures)
         #
-        # Detect format by checking which summary key is present.
+        # NOTE: Both shapes preserved — v1.14 not yet verified against live data with
+        # update plans. The older shape (summary dict) is kept operational as a fallback.
         raw = self._bridge.update_status()
         envelope = _extract_envelope(raw)
         if not envelope:
             raise RuntimeError("update-status returned no data")
 
         no_data_message = str(envelope.get("message", "") or "").strip()
-        is_v16 = "status_summary" in envelope
+        is_current = "status_summary" in envelope
 
         ws = self._wb.add_worksheet("Update Status")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -6853,7 +9152,7 @@ class CoreDashboard:
         ws.set_column(0, 0, 32)
         ws.set_column(1, 5, 20)
 
-        if no_data_message and not is_v16 and not envelope.get("summary"):
+        if no_data_message and not is_current and not envelope.get("summary"):
             _safe_write(ws, row, 0, "Status", self._fmts["header"])
             _safe_write(ws, row, 1, "Details", self._fmts["header"])
             row += 1
@@ -6861,8 +9160,8 @@ class CoreDashboard:
             _safe_write(ws, row, 1, no_data_message, self._fmts["yellow"])
             return
 
-        if is_v16:
-            # v1.6+ format: status_summary list + plan_state_summary list
+        if is_current:
+            # Canonical format: status_summary list + plan_state_summary list
             status_summary = envelope.get("status_summary") or []
             plan_state_summary = envelope.get("plan_state_summary") or []
             total = _to_int(envelope.get("total", 0))
@@ -6892,7 +9191,7 @@ class CoreDashboard:
                     _safe_write(ws, row, 1, _to_int(item.get("count", 0)), self._fmts["cell"])
                     row += 1
         else:
-            # v1.5 and earlier: summary dict + ErrorDevices list
+            # Older shape: summary dict + ErrorDevices list
             summary = envelope.get("summary", {})
             error_devices = envelope.get("ErrorDevices", [])
             summary_fields = [
@@ -6929,7 +9228,7 @@ class CoreDashboard:
                     row += 1
 
     def _write_update_failures(self) -> None:
-        # jamf-cli pro report update-status --scan-failures --output json (v1.6+) returns:
+        # jamf-cli pro report update-status --scan-failures --output json returns:
         #   [{"total": N, "status_summary": [...],
         #     "error_devices": [{"name":"...","serial":"...","device_type":"...",
         #                        "os_version":"...","username":"...","status":"...",
@@ -6955,7 +9254,7 @@ class CoreDashboard:
             self._t("Update Failures"),
             (
                 "Source: jamf-cli pro report update-status --scan-failures"
-                f" (v1.6.0+) | Generated: {ts}"
+                f" | Generated: {ts}"
             ),
             self._fmts,
             ncols=8,
@@ -7239,6 +9538,8 @@ class CSVDashboard:
             filled with empty strings.  Column names must match across files for
             the config mapping to work correctly — the primary CSV's schema is
             authoritative.
+        historical_dir: Optional directory containing prior CSV snapshots.
+        current_csv_path: Current CSV path to exclude from Fleet Drift lookup.
     """
 
     def __init__(
@@ -7249,6 +9550,8 @@ class CSVDashboard:
         fmts: dict,
         family_name: str = "computers",
         extra_csv_paths: Optional[list[str]] = None,
+        historical_dir: Optional[str] = None,
+        current_csv_path: Optional[str] = None,
     ) -> None:
         self._config = config
         self._family_name = family_name
@@ -7289,6 +9592,15 @@ class CSVDashboard:
                         f" other CSVs — those cells will be empty: {names}{suffix}"
                     )
             self._df = pd.concat(frames, ignore_index=True).fillna("")
+            serial_col = self._mapper.get("serial_number")
+            if serial_col and serial_col in self._df.columns:
+                before = len(self._df)
+                self._df = self._df.drop_duplicates(subset=[serial_col], keep="first")
+                removed = before - len(self._df)
+                if removed:
+                    print(
+                        f"  [warn] Removed {removed} duplicate serial number row(s) across merged CSVs."
+                    )
             print(
                 f"  Loaded {len(frames)} CSV(s): {len(self._df)} rows total,"
                 f" {len(self._df.columns)} columns"
@@ -7296,6 +9608,15 @@ class CSVDashboard:
         else:
             self._df = primary
             print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
+
+        self._prior_df: Optional[pd.DataFrame] = None
+        self._prior_label = ""
+        if family_name != "mobile" and historical_dir and current_csv_path:
+            prior_df, prior_label = _load_prior_snapshot(historical_dir, current_csv_path)
+            if prior_df is not None and prior_label:
+                self._prior_df = prior_df
+                self._prior_label = prior_label
+                print(f"  Fleet Drift baseline: {prior_label}")
 
     @property
     def _org_name(self) -> str:
@@ -7339,9 +9660,22 @@ class CSVDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Write all enabled CSV-derived sheets. Returns list of sheet names written."""
-        written = []
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Write all enabled CSV-derived sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` is the list of
+            sheets generated successfully and ``failures`` records sheets that
+            errored unexpectedly as ``{"sheet": name, "error": ...}`` entries.
+            ``RuntimeError`` / ``NotImplementedError`` for non-required sheets
+            are still logged as ``[skip]`` and excluded from ``failures``.
+            Required sheets that fail still raise ``SystemExit`` — partial
+            success is reserved for optional sheets.
+        """
+        written: list[str] = []
+        failures: list[dict[str, str]] = []
+        required_failures: list[str] = []
+        compliance_enabled = bool(self._config.compliance.get("enabled"))
         for name, fn in self.sheet_plan():
             if selected_names is not None and _normalized_sheet_name(name) not in selected_names:
                 print(f"  [disabled] {name}: skipped via {filter_label or 'sheet filter'}")
@@ -7352,11 +9686,31 @@ class CSVDashboard:
                 print(f"  [ok] {name}")
             except NotImplementedError:
                 pass
-            except (KeyError, ValueError, RuntimeError) as exc:
-                print(f"  [skip] {name}: {exc}")
+            except RuntimeError as exc:
+                msg = str(exc)
+                if name == "Compliance" and compliance_enabled and "not enabled" not in msg:
+                    required_failures.append(f"{name}: {msg}")
+                    print(f"  [fail] {name}: {msg}")
+                else:
+                    print(f"  [skip] {name}: {msg}")
+            except (KeyError, ValueError) as exc:
+                error_label = f"{type(exc).__name__}: {exc}"
+                if name == "Compliance" and compliance_enabled:
+                    required_failures.append(f"{name}: {error_label}")
+                    print(f"  [fail] {name}: {error_label}")
+                else:
+                    failures.append({"sheet": name, "error": error_label})
+                    print(f"  [fail] {name}: {error_label}")
             except Exception as exc:
-                print(f"  [skip] {name}: unexpected error — {type(exc).__name__}: {exc}")
-        return written
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": name, "error": error_label})
+                print(f"  [fail] {name}: unexpected error — {error_label}")
+        if required_failures:
+            raise SystemExit(
+                "Error: required sheet(s) failed:\n"
+                + "\n".join(f"  {f}" for f in required_failures)
+            )
+        return written, failures
 
     def _col(self, logical: str) -> Optional[str]:
         return self._mapper.get(logical)
@@ -7449,6 +9803,59 @@ class CSVDashboard:
         ws.set_column(0, 0, 30)
         ws.set_column(1, 5, 22)
 
+    def _row_value(self, row: Any, column: Optional[str]) -> str:
+        """Return a string value from a DataFrame row by physical column name."""
+        if not column or column not in row.index:
+            return ""
+        return str(row.get(column, "") or "").strip()
+
+    def _serial_row_map(self, df: "pd.DataFrame", serial_col: str) -> dict[str, Any]:
+        """Return a serial-number keyed row map for a CSV snapshot."""
+        rows: dict[str, Any] = {}
+        if serial_col not in df.columns:
+            return rows
+        dup_count = 0
+        for _, row in df.iterrows():
+            serial = self._row_value(row, serial_col).upper()
+            if serial:
+                if serial in rows:
+                    dup_count += 1
+                else:
+                    rows[serial] = row
+        if dup_count:
+            print(
+                f"  [warn] Fleet Drift: {dup_count} duplicate serial(s) in snapshot"
+                " — first occurrence used for drift comparison."
+            )
+        return rows
+
+    def _write_drift_section(
+        self,
+        ws: Any,
+        row_i: int,
+        title: str,
+        headers: list[str],
+        rows: list[list[Any]],
+        note: str = "",
+    ) -> int:
+        """Write one Fleet Drift sub-table and return the next row."""
+        _safe_write(ws, row_i, 0, title, self._fmts["title"])
+        if note:
+            _safe_write(ws, row_i, 1, note, self._fmts["cell"])
+        row_i += 1
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row_i, col_i, header, self._fmts["header"])
+        row_i += 1
+        if not rows:
+            _safe_write(ws, row_i, 0, "No changes", self._fmts["cell"])
+            row_i += 2
+            return row_i
+        for values in rows:
+            for col_i, value in enumerate(values):
+                _safe_write(ws, row_i, col_i, value, self._fmts["cell"])
+            row_i += 1
+        return row_i + 1
+
     def _write_fleet_drift(self, prior_df: "pd.DataFrame", prior_label: str) -> None:
         """Write a Fleet Drift sheet comparing current fleet snapshot to the prior run.
 
@@ -7467,26 +9874,112 @@ class CSVDashboard:
             prior_df: DataFrame from the prior snapshot loaded by _load_prior_snapshot.
             prior_label: Human-readable label for the prior snapshot (e.g. a filename
                 or date string) for display in the sheet header.
-
-        TODO: Implement this method. Design notes:
-            - Use serial_number as the join key (always present, always stable).
-            - Compute set differences: current_serials - prior_serials (new),
-              prior_serials - current_serials (departed).
-            - For stale transitions: compare _days_since(checkin) against
-              stale_device_days threshold in both DataFrames.
-            - For OS drift: join on serial_number, compare operating_system column.
-            - For compliance drift: join on serial_number, compare the numeric value
-              in failures_count_column. A device is "drifted" if it was 0 in prior
-              and >0 in current, or >0 in prior and 0 in current.
-            - Each section should be a separate sub-table within the same worksheet,
-              with a bold section header row and an empty separator row between sections.
-            - If a section has zero rows, print a "No changes" message row instead of
-              omitting the section header — this makes it clear the comparison ran.
-            - If a required column is missing from either DataFrame, skip that section
-              with a [skip] note rather than raising.
         """
-        # TODO: implement
-        raise NotImplementedError("_write_fleet_drift is not yet implemented")
+        serial_col = self._col("serial_number")
+        name_col = self._col("computer_name")
+        os_col = self._col("operating_system")
+        checkin_col = self._col("last_checkin")
+        dept_col = self._col("department")
+        fail_col = str(self._config.compliance.get("failures_count_column", "") or "")
+        if (
+            not serial_col
+            or serial_col not in self._df.columns
+            or serial_col not in prior_df.columns
+        ):
+            raise RuntimeError("serial_number column is required for Fleet Drift")
+
+        current = self._serial_row_map(self._df, serial_col)
+        prior = self._serial_row_map(prior_df, serial_col)
+        current_serials = set(current)
+        prior_serials = set(prior)
+        common_serials = sorted(current_serials & prior_serials)
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+
+        def device_row(row: Any, serial: str) -> list[Any]:
+            return [
+                self._row_value(row, name_col),
+                serial,
+                self._row_value(row, os_col),
+                self._row_value(row, checkin_col),
+                self._row_value(row, dept_col),
+            ]
+
+        def stale_state(row: Any) -> tuple[bool, Any]:
+            days = _days_since(self._row_value(row, checkin_col)) if checkin_col else None
+            return bool(days is not None and days > stale_days), days if days is not None else ""
+
+        new_rows = [device_row(current[s], s) for s in sorted(current_serials - prior_serials)]
+        departed_rows = [device_row(prior[s], s) for s in sorted(prior_serials - current_serials)]
+        new_stale: list[list[Any]] = []
+        recovered_stale: list[list[Any]] = []
+        os_changed: list[list[Any]] = []
+        compliance_changed: list[list[Any]] = []
+
+        for serial in common_serials:
+            cur_row = current[serial]
+            prev_row = prior[serial]
+            prev_stale, prev_days = stale_state(prev_row)
+            cur_stale, cur_days = stale_state(cur_row)
+            if not prev_stale and cur_stale:
+                new_stale.append([self._row_value(cur_row, name_col), serial, prev_days, cur_days])
+            elif prev_stale and not cur_stale:
+                recovered_stale.append([self._row_value(cur_row, name_col), serial, prev_days, cur_days])
+
+            prev_os = self._row_value(prev_row, os_col)
+            cur_os = self._row_value(cur_row, os_col)
+            if os_col and prev_os and cur_os and prev_os != cur_os:
+                os_changed.append([self._row_value(cur_row, name_col), serial, prev_os, cur_os])
+
+            if fail_col and fail_col in self._df.columns and fail_col in prior_df.columns:
+                prev_fail = _to_int(self._row_value(prev_row, fail_col), 0)
+                cur_fail = _to_int(self._row_value(cur_row, fail_col), 0)
+                if prev_fail != cur_fail:
+                    status = "Recovered" if cur_fail == 0 else "Regressed"
+                    if prev_fail and cur_fail:
+                        status = "Changed"
+                    compliance_changed.append(
+                        [self._row_value(cur_row, name_col), serial, prev_fail, cur_fail, status]
+                    )
+
+        ws = self._wb.add_worksheet("Fleet Drift")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_i = _write_sheet_header(
+            ws,
+            self._t("Fleet Drift"),
+            f"Current CSV vs {prior_label} | Generated: {ts}",
+            self._fmts,
+            ncols=6,
+        )
+        headers = ["Name", "Serial", "OS", "Last Check-in", "Department"]
+        row_i = self._write_drift_section(ws, row_i, "New Enrollments", headers, new_rows)
+        row_i = self._write_drift_section(ws, row_i, "Departed Devices", headers, departed_rows)
+        stale_headers = ["Name", "Serial", "Prior Days Stale", "Current Days Stale"]
+        row_i = self._write_drift_section(ws, row_i, "New Stale", stale_headers, new_stale)
+        row_i = self._write_drift_section(
+            ws,
+            row_i,
+            "Recovered Stale",
+            stale_headers,
+            recovered_stale,
+        )
+        row_i = self._write_drift_section(
+            ws,
+            row_i,
+            "OS Changed",
+            ["Name", "Serial", "Prior OS", "Current OS"],
+            os_changed,
+        )
+        note = "" if fail_col else "compliance.failures_count_column is not configured"
+        self._write_drift_section(
+            ws,
+            row_i,
+            "Compliance Changed",
+            ["Name", "Serial", "Prior Failures", "Current Failures", "Status"],
+            compliance_changed,
+            note,
+        )
+        ws.set_column(0, 0, 34)
+        ws.set_column(1, 5, 22)
 
     def _write_mobile_inventory_csv(self) -> None:
         """Write a mobile CSV inventory sheet using mobile_columns mappings."""
@@ -7703,16 +10196,40 @@ class CSVDashboard:
             ws, self._t(label), f"Generated: {ts}", self._fmts, ncols=4
         )
         if count_col:
-            counts = pd.to_numeric(self._df[count_col], errors="coerce").fillna(0)
-            compliant = int((counts == 0).sum())
-            non_compliant = int((counts > 0).sum())
+            compliant = 0
+            non_compliant = 0
+            unparseable = 0
+            unparseable_details: list[str] = []
+            for idx, val in enumerate(self._df[count_col]):
+                try:
+                    failures = strict_parse_failures(val)
+                    if failures == 0:
+                        compliant += 1
+                    else:
+                        non_compliant += 1
+                except ValueError:
+                    unparseable += 1
+                    if len(unparseable_details) < 10:
+                        device = self._device_name(self._df.iloc[idx])
+                        unparseable_details.append(f"{device}: '{val}'")
             total = len(self._df)
             pct = compliant / total if total > 0 else 0.0
-            for lbl, val in [("Fully Compliant", compliant), ("Has Failures", non_compliant),
-                             ("Total Devices", total)]:
-                _safe_write(ws, row_i, 0, lbl, self._fmts["cell"])
-                _safe_write(ws, row_i, 1, val, self._fmts["cell"])
+            rows_to_write = [("Fully Compliant", compliant), ("Has Failures", non_compliant),
+                             ("Total Devices", total)]
+            if unparseable:
+                rows_to_write.append(("Unparseable (excluded)", unparseable))
+            for lbl, val in rows_to_write:
+                fmt = self._fmts["yellow"] if lbl.startswith("Unparseable") else self._fmts["cell"]
+                _safe_write(ws, row_i, 0, lbl, fmt)
+                _safe_write(ws, row_i, 1, val, fmt)
                 row_i += 1
+            if unparseable_details:
+                row_i += 1
+                _safe_write(ws, row_i, 0, "Unparseable Details (first 10):", self._fmts["yellow"])
+                row_i += 1
+                for detail in unparseable_details:
+                    _safe_write(ws, row_i, 0, detail, self._fmts["yellow"])
+                    row_i += 1
             _safe_write(ws, row_i, 0, "Compliance %", self._fmts["cell"])
             _safe_write(ws, row_i, 1, pct, _pct_format(self._fmts, pct))
             row_i += 2
@@ -7999,17 +10516,21 @@ class SchoolDashboard:
         if self._bridge is not None:
             sheets += [
                 (self._t("School Overview"), self._write_overview),
-                (self._t("Device Groups"), self._write_device_groups),
+                (self._t("Device Groups"), self._write_device_groups_sorted),
                 (self._t("Users"), self._write_users),
                 (self._t("Classes"), self._write_classes),
                 (self._t("Apps"), self._write_apps),
                 (self._t("Profiles"), self._write_profiles),
                 (self._t("Locations"), self._write_locations),
             ]
+            if self._config.get("school", "dep_devices", "enabled", default=True) is True:
+                sheets.append((self._t("DEP Devices"), self._write_dep_devices))
+            if self._config.get("school", "ibeacons", "enabled", default=True) is True:
+                sheets.append((self._t("iBeacons"), self._write_ibeacons))
 
         if self._df is not None:
             sheets += [
-                (self._t("Device Inventory"), self._write_device_inventory),
+                (self._t("Device Inventory"), self._write_device_inventory_compact),
                 (self._t("OS Versions"), self._write_os_versions),
                 (self._t("Device Status"), self._write_device_status),
                 (self._t("Stale Devices"), self._write_stale_devices),
@@ -8028,9 +10549,19 @@ class SchoolDashboard:
         self,
         selected_names: Optional[set[str]] = None,
         filter_label: Optional[str] = None,
-    ) -> list[str]:
-        """Build all enabled school report sheets and return the names written."""
+    ) -> tuple[list[str], list[dict[str, str]]]:
+        """Build all enabled school report sheets.
+
+        Returns:
+            A tuple ``(written, failures)`` where ``written`` lists sheets that
+            were generated (including data-unavailable sheets that received a
+            ``[Data unavailable: ...]`` annotation), and ``failures`` records
+            sheets whose writer raised an unexpected exception. ``RuntimeError``
+            is treated as a data-shape miss and produces an annotation rather
+            than a failure entry, matching ``CoreDashboard``.
+        """
         written: list[str] = []
+        failures: list[dict[str, str]] = []
         for title, fn in self.sheet_plan():
             if selected_names is not None and _normalized_sheet_name(title) not in selected_names:
                 print(f"  [disabled] {title}: skipped via {filter_label or 'sheet filter'}")
@@ -8042,9 +10573,15 @@ class SchoolDashboard:
             except RuntimeError as exc:
                 ws = self._wb.get_worksheet_by_name(title)
                 if ws:
-                    ws.write(1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
+                    _safe_write(ws, 1, 0, f"[Data unavailable: {exc}]", self._fmts["cell"])
                     written.append(title)
-        return written
+                else:
+                    print(f"  [skip] {title}: {exc}")
+            except Exception as exc:
+                error_label = f"{type(exc).__name__}: {exc}"
+                failures.append({"sheet": title, "error": error_label})
+                print(f"  [fail] {title}: unexpected error — {error_label}")
+        return written, failures
 
     # ------------------------------------------------------------------
     # Bridge-driven sheets
@@ -8070,36 +10607,50 @@ class SchoolDashboard:
                 _safe_write(ws, row, 1, value, self._fmts["cell"])
                 row += 1
 
-    def _write_device_groups(self, ws: xlsxwriter.workbook.Worksheet) -> None:
-        """Write Device Groups sheet from jamf-cli school device-groups list."""
+    def _write_device_groups_sorted(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write Device Groups sheet sorted by device count descending.
+
+        Columns: Group Name, Device Count, Locations (comma-joined when multiple).
+        Handles None or empty group list by writing the header row only.
+        """
         raw = self._bridge.device_groups_list()  # type: ignore[union-attr]
         items = _extract_items(raw)
 
-        headers = ["Name", "Type", "Device Count", "Description"]
+        headers = ["Group Name", "Device Count", "Locations"]
         self._header_row(ws, headers)
         ws.set_column(0, 0, 40)
-        ws.set_column(1, 1, 16)
-        ws.set_column(2, 2, 14)
-        ws.set_column(3, 3, 50)
+        ws.set_column(1, 1, 14)
+        ws.set_column(2, 2, 50)
 
-        for row_i, item in enumerate(items, start=1):
+        def _count_key(item: dict) -> int:
             flat = _flatten_record(item)
-            _safe_write(ws, row_i, 0,
-                        _first_value(flat, ["name", "group_name", "groupName"]),
-                        self._fmts["cell"])
-            _safe_write(ws, row_i, 1,
-                        _first_value(flat, ["type", "group_type", "groupType"]),
-                        self._fmts["cell"])
+            raw_count = _first_value(flat, ["device_count", "deviceCount", "count",
+                                            "total_devices", "totalDevices"])
+            try:
+                return int(raw_count) if raw_count not in (None, "") else 0
+            except (ValueError, TypeError):
+                return 0
+
+        for row_i, item in enumerate(sorted(items, key=_count_key, reverse=True), start=1):
+            flat = _flatten_record(item)
+            name = _first_value(flat, ["name", "group_name", "groupName"])
             count_raw = _first_value(flat, ["device_count", "deviceCount", "count",
                                             "total_devices", "totalDevices"])
             try:
-                count = int(count_raw) if count_raw else ""
+                count: Any = int(count_raw) if count_raw not in (None, "") else ""
             except (ValueError, TypeError):
                 count = count_raw
-            _safe_write(ws, row_i, 2, count, self._fmts["cell"])
-            _safe_write(ws, row_i, 3,
-                        _first_value(flat, ["description", "notes"]),
-                        self._fmts["cell"])
+
+            loc_raw = _first_value(flat, ["locations", "location_names", "locationNames",
+                                           "location_name", "locationName", "location"])
+            if isinstance(loc_raw, list):
+                locations = ", ".join(str(loc) for loc in loc_raw if loc)
+            else:
+                locations = str(loc_raw) if loc_raw else ""
+
+            _safe_write(ws, row_i, 0, name, self._fmts["cell"])
+            _safe_write(ws, row_i, 1, count, self._fmts["cell"])
+            _safe_write(ws, row_i, 2, locations, self._fmts["cell"])
 
     def _write_users(self, ws: xlsxwriter.workbook.Worksheet) -> None:
         """Write Users sheet from jamf-cli school users list."""
@@ -8260,6 +10811,103 @@ class SchoolDashboard:
                 count = count_raw
             _safe_write(ws, row_i, 3, count, self._fmts["cell"])
 
+    def _write_dep_devices(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write DEP Devices sheet from jamf-cli school dep-devices list.
+
+        jamf-cli's `flattenSchoolDEPDevice` drops `dateAdded` and `datePushed`,
+        so date columns are unavailable on this code path. Output columns:
+        Serial Number, Model, Color, Status, Profile Name, Device Name.
+        Sorted by serial number ascending. Empty / None bridge results produce
+        a header-only sheet without raising.
+        """
+        raw = self._bridge.dep_devices_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Serial Number", "Model", "Color", "Status",
+                   "Profile Name", "Device Name"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 22)
+        ws.set_column(1, 1, 24)
+        ws.set_column(2, 2, 14)
+        ws.set_column(3, 3, 18)
+        ws.set_column(4, 4, 32)
+        ws.set_column(5, 5, 28)
+
+        def _serial_key(item: Any) -> str:
+            if not isinstance(item, dict):
+                return ""
+            flat = _flatten_record(item)
+            return str(_first_value(flat, ["serialNumber", "serial_number"]) or "")
+
+        for row_i, item in enumerate(sorted(items, key=_serial_key), start=1):
+            flat = _flatten_record(item) if isinstance(item, dict) else {}
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["serialNumber", "serial_number"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["model"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 2,
+                        _first_value(flat, ["color"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 3,
+                        _first_value(flat, ["status"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 4,
+                        _first_value(flat, ["profileName", "profile_name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 5,
+                        _first_value(flat, ["deviceName", "device_name"]),
+                        self._fmts["cell"])
+
+    def _write_ibeacons(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write iBeacons sheet from jamf-cli school ibeacons list.
+
+        jamf-cli flattens to lowerCamelCase, so `uuid` is lowercase here (the
+        SDK's PascalCase `UUID` does not survive the flatten). Output columns:
+        Name, UUID, Major, Minor, Description. Sorted by name ascending.
+        Empty / None bridge results produce a header-only sheet.
+        """
+        raw = self._bridge.ibeacons_list()  # type: ignore[union-attr]
+        items = _extract_items(raw)
+
+        headers = ["Name", "UUID", "Major", "Minor", "Description"]
+        self._header_row(ws, headers)
+        ws.set_column(0, 0, 32)
+        ws.set_column(1, 1, 38)
+        ws.set_column(2, 3, 10)
+        ws.set_column(4, 4, 48)
+
+        def _name_key(item: Any) -> str:
+            if not isinstance(item, dict):
+                return ""
+            flat = _flatten_record(item)
+            return str(_first_value(flat, ["name"]) or "")
+
+        for row_i, item in enumerate(sorted(items, key=_name_key), start=1):
+            flat = _flatten_record(item) if isinstance(item, dict) else {}
+            _safe_write(ws, row_i, 0,
+                        _first_value(flat, ["name"]),
+                        self._fmts["cell"])
+            _safe_write(ws, row_i, 1,
+                        _first_value(flat, ["uuid", "UUID"]),
+                        self._fmts["cell"])
+            major_raw = _first_value(flat, ["major"])
+            try:
+                major: Any = int(major_raw) if major_raw not in (None, "") else ""
+            except (ValueError, TypeError):
+                major = major_raw
+            _safe_write(ws, row_i, 2, major, self._fmts["cell"])
+            minor_raw = _first_value(flat, ["minor"])
+            try:
+                minor: Any = int(minor_raw) if minor_raw not in (None, "") else ""
+            except (ValueError, TypeError):
+                minor = minor_raw
+            _safe_write(ws, row_i, 3, minor, self._fmts["cell"])
+            _safe_write(ws, row_i, 4,
+                        _first_value(flat, ["description"]),
+                        self._fmts["cell"])
+
     # ------------------------------------------------------------------
     # CSV-driven sheets
     # ------------------------------------------------------------------
@@ -8269,46 +10917,6 @@ class SchoolDashboard:
         if self._df is None:
             return []
         return self._df.to_dict("records")
-
-    def _write_device_inventory(self, ws: xlsxwriter.workbook.Worksheet) -> None:
-        """Write Device Inventory sheet from Jamf School CSV export."""
-        rows = self._device_rows()
-        col = self._col
-
-        headers = [
-            "Device Name", "Serial Number", "Model", "OS Version",
-            "Location", "Owner", "Email", "Enrollment Type",
-            "Enrollment Date", "Last Check-in", "Managed", "Supervised",
-            "Shared", "Lost Mode", "Groups",
-        ]
-        self._header_row(ws, headers)
-        ws.set_column(0, 1, 28)
-        ws.set_column(2, 3, 24)
-        ws.set_column(4, 5, 28)
-        ws.set_column(6, 6, 32)
-        ws.set_column(7, 9, 20)
-        ws.set_column(10, 13, 12)
-        ws.set_column(14, 14, 48)
-
-        for row_i, row in enumerate(rows, start=1):
-            first = col.extract(row, "owner_first_name")
-            last = col.extract(row, "owner_last_name")
-            owner = f"{first} {last}".strip() if (first or last) else col.extract(row, "owner_username")
-            _safe_write(ws, row_i, 0, col.extract(row, "device_name"), self._fmts["cell"])
-            _safe_write(ws, row_i, 1, col.extract(row, "serial_number"), self._fmts["cell"])
-            _safe_write(ws, row_i, 2, col.extract(row, "model"), self._fmts["cell"])
-            _safe_write(ws, row_i, 3, col.extract(row, "os_version"), self._fmts["cell"])
-            _safe_write(ws, row_i, 4, col.extract(row, "location_name"), self._fmts["cell"])
-            _safe_write(ws, row_i, 5, owner, self._fmts["cell"])
-            _safe_write(ws, row_i, 6, col.extract(row, "owner_email"), self._fmts["cell"])
-            _safe_write(ws, row_i, 7, col.extract(row, "enroll_type"), self._fmts["cell"])
-            _safe_write(ws, row_i, 8, col.extract(row, "enrollment_date"), self._fmts["cell"])
-            _safe_write(ws, row_i, 9, col.extract(row, "last_checkin"), self._fmts["cell"])
-            _safe_write(ws, row_i, 10, col.extract(row, "managed"), self._fmts["cell"])
-            _safe_write(ws, row_i, 11, col.extract(row, "supervised"), self._fmts["cell"])
-            _safe_write(ws, row_i, 12, col.extract(row, "shared"), self._fmts["cell"])
-            _safe_write(ws, row_i, 13, col.extract(row, "lost_mode"), self._fmts["cell"])
-            _safe_write(ws, row_i, 14, col.extract(row, "member_of"), self._fmts["cell"])
 
     def _write_os_versions(self, ws: xlsxwriter.workbook.Worksheet) -> None:
         """Write OS version distribution from CSV."""
@@ -8383,11 +10991,28 @@ class SchoolDashboard:
             _safe_write(ws, row_i, 1, count, fmt)
             _safe_write(ws, row_i, 2, pct, fmt)
 
+    def _classify_stale(self, row: dict) -> tuple[str, Optional[int]]:
+        """Classify a CSV row by stale-device status.
+
+        Reads the configured ``last_checkin`` column, computes days since
+        check-in, and returns a `(raw_ts, days)` tuple where `days` is None
+        when no check-in timestamp is available or parseable.
+
+        Args:
+            row: One CSV row dict.
+
+        Returns:
+            Tuple of (raw timestamp string, days since check-in or None).
+        """
+        checkin_col = self._col.get("last_checkin")
+        raw_ts = str(row.get(checkin_col, "")).strip() if checkin_col else ""
+        days = _days_since(raw_ts) if raw_ts else None
+        return raw_ts, days
+
     def _write_stale_devices(self, ws: xlsxwriter.workbook.Worksheet) -> None:
         """Write Stale Devices sheet — devices not seen within stale_device_days."""
         rows = self._device_rows()
         checkin_col = self._col.get("last_checkin")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=self._stale_days)
 
         headers = [
             "Device Name", "Serial Number", "Model", "OS Version",
@@ -8402,31 +11027,20 @@ class SchoolDashboard:
 
         stale_count = 0
         for row in rows:
-            if not checkin_col:
-                break
-            raw_ts = str(row.get(checkin_col, "")).strip()
-            if not raw_ts:
-                continue
-            try:
-                ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            if ts >= cutoff:
+            raw_ts, days = self._classify_stale(row)
+            if days is None or days <= self._stale_days:
                 continue
 
-            days_since = (datetime.now(timezone.utc) - ts).days
             row_i = stale_count + 1
             stale_count += 1
-            row_fmt = self._fmts["red"] if days_since >= self._stale_days * 3 else \
-                      self._fmts["yellow"] if days_since >= self._stale_days else \
-                      self._fmts["cell"]
+            row_fmt = self._fmts["red"] if days >= self._stale_days * 3 else self._fmts["yellow"]
             _safe_write(ws, row_i, 0, self._col.extract(row, "device_name"), row_fmt)
             _safe_write(ws, row_i, 1, self._col.extract(row, "serial_number"), row_fmt)
             _safe_write(ws, row_i, 2, self._col.extract(row, "model"), row_fmt)
             _safe_write(ws, row_i, 3, self._col.extract(row, "os_version"), row_fmt)
             _safe_write(ws, row_i, 4, self._col.extract(row, "location_name"), row_fmt)
             _safe_write(ws, row_i, 5, raw_ts, row_fmt)
-            _safe_write(ws, row_i, 6, days_since, row_fmt)
+            _safe_write(ws, row_i, 6, days, row_fmt)
 
         if stale_count == 0 and not checkin_col:
             ws.write(1, 0, "[last_checkin column not mapped in school_columns]",
@@ -8434,6 +11048,43 @@ class SchoolDashboard:
         elif stale_count == 0:
             ws.write(1, 0, f"No devices stale beyond {self._stale_days} days.",
                      self._fmts["cell"])
+
+    def _write_device_inventory_compact(self, ws: xlsxwriter.workbook.Worksheet) -> None:
+        """Write compact device inventory with stale-status classification from CSV.
+
+        Columns: Serial Number, Device Name, Device Type, OS Version, Location,
+        User, Days Since Check-in, Status.  Status is "Active" when the device
+        checked in within ``stale_device_days``; otherwise "Stale".  Missing or
+        unmapped columns produce blank cells without raising.
+        """
+        rows = self._device_rows()
+        col = self._col
+
+        headers = [
+            "Serial Number", "Device Name", "Device Type", "OS Version",
+            "Location", "User", "Days Since Check-in", "Status",
+        ]
+        self._header_row(ws, headers)
+        ws.set_column(0, 1, 28)
+        ws.set_column(2, 3, 20)
+        ws.set_column(4, 5, 28)
+        ws.set_column(6, 6, 20)
+        ws.set_column(7, 7, 14)
+
+        for row_i, row in enumerate(rows, start=1):
+            _, days = self._classify_stale(row)
+            is_stale = days is None or days > self._stale_days
+            status = "Stale" if is_stale else "Active"
+            row_fmt = self._fmts["yellow"] if is_stale else self._fmts["cell"]
+
+            _safe_write(ws, row_i, 0, col.extract(row, "serial_number"), row_fmt)
+            _safe_write(ws, row_i, 1, col.extract(row, "device_name"), row_fmt)
+            _safe_write(ws, row_i, 2, col.extract(row, "device_type"), row_fmt)
+            _safe_write(ws, row_i, 3, col.extract(row, "os_version"), row_fmt)
+            _safe_write(ws, row_i, 4, col.extract(row, "location_name"), row_fmt)
+            _safe_write(ws, row_i, 5, col.extract(row, "user_name"), row_fmt)
+            _safe_write(ws, row_i, 6, days if days is not None else "", row_fmt)
+            _safe_write(ws, row_i, 7, status, row_fmt)
 
     # ------------------------------------------------------------------
     # Bridge-only device sheets (when no CSV provided)
@@ -8705,6 +11356,7 @@ class ChartGenerator:
         jamf_cli_dir: Optional[Path],
         output_stem: str,
         embed_in_workbook: bool = True,
+        csv_family_name: str = "computers",
     ) -> None:
         self._config = config
         self._csv_path = csv_path
@@ -8715,6 +11367,10 @@ class ChartGenerator:
         self._jamf_cli_dir = jamf_cli_dir.expanduser() if jamf_cli_dir else None
         self._chart_prefix = _filename_component(output_stem)
         self._embed_in_workbook = embed_in_workbook
+        self._csv_family_name = csv_family_name
+        self._csv_columns = (
+            config.mobile_columns if csv_family_name == "mobile" else config.columns
+        )
 
     def generate_all(self) -> tuple[list[str], list[str], bool]:
         """Generate enabled charts and return (png_paths, source_labels, embedded_sheet)."""
@@ -8727,7 +11383,8 @@ class ChartGenerator:
 
         save_png = charts_cfg.get("save_png", True) is not False
         temp_chart_dir: Optional[Path] = None
-        if save_png:
+        embed_images = charts_cfg.get("embed_in_xlsx", True) and self._embed_in_workbook
+        if save_png or embed_images:
             self._chart_dir = self._out_dir
         else:
             temp_chart_dir = Path(tempfile.mkdtemp(prefix="jamf-reports-community-charts-"))
@@ -8745,7 +11402,7 @@ class ChartGenerator:
                     chart_sources.add(source_label)
 
             comp_cfg = charts_cfg.get("compliance_trend", {})
-            if comp_cfg.get("enabled", True):
+            if self._csv_family_name != "mobile" and comp_cfg.get("enabled", True):
                 fail_col = self._config.compliance.get("failures_count_column", "")
                 if csv_snapshots and fail_col:
                     path = self._generate_compliance_trend(csv_snapshots, fail_col, comp_cfg)
@@ -8780,7 +11437,7 @@ class ChartGenerator:
         """Load all CSV snapshots sorted by date. Returns list of (date, DataFrame)."""
         loaded: list[dict[str, Any]] = []
         relevant_columns: set[str] = set()
-        os_col = self._config.columns.get("operating_system", "")
+        os_col = self._csv_columns.get("operating_system", "")
         if charts_cfg.get("os_adoption", {}).get("enabled", True) and os_col:
             relevant_columns.add(os_col)
         fail_col = self._config.compliance.get("failures_count_column", "")
@@ -8921,20 +11578,29 @@ class ChartGenerator:
             report_dir = self._jamf_cli_dir / report_name
             if report_dir.is_dir():
                 for path in report_dir.rglob("*.json"):
-                    if ".partial" not in path.name:
+                    if ".partial" not in path.name and path.name != SNAPSHOT_MANIFEST_FILENAME:
                         candidates[str(path)] = path
                 continue
             pattern = f"{report_name}_*.json"
             for path in self._jamf_cli_dir.rglob(pattern):
-                if ".partial" not in path.name:
+                if ".partial" not in path.name and path.name != SNAPSHOT_MANIFEST_FILENAME:
                     candidates[str(path)] = path
 
         snapshots: list[tuple[datetime, Any]] = []
         for path in sorted(candidates.values()):
             try:
-                with open(path, encoding="utf-8") as fh:
-                    data = json.load(fh)
-            except (json.JSONDecodeError, OSError) as exc:
+                # Single read into bytes, then hash + parse from the same
+                # buffer to close the verify-then-parse TOCTOU race. Trend
+                # reads are warn-only (no strict mode) by design — a bad
+                # historical snapshot shouldn't break the chart, just log.
+                raw = path.read_bytes()
+            except OSError as exc:
+                print(f"  [warn] Skipping unreadable JSON snapshot {path.name}: {exc}")
+                continue
+            _verify_snapshot_bytes_against_manifest(path, raw, strict=False)
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as exc:
                 print(f"  [warn] Skipping unreadable JSON snapshot {path.name}: {exc}")
                 continue
             snapshots.append((self._parse_date_from_path(path), data))
@@ -9005,11 +11671,15 @@ class ChartGenerator:
         """Generate OS adoption charts. Returns (PNG paths, source label)."""
         ts = pd.DataFrame()
         source_label = ""
-        os_col = self._config.columns.get("operating_system", "")
+        os_col = self._csv_columns.get("operating_system", "")
         if csv_snapshots and os_col:
             ts = self._build_os_timeseries(csv_snapshots, os_col)
             if not ts.empty:
-                source_label = "CSV snapshots"
+                source_label = (
+                    "Mobile CSV snapshots"
+                    if self._csv_family_name == "mobile"
+                    else "CSV snapshots"
+                )
 
         if ts.empty:
             inventory_snapshots = self._load_json_snapshots(
@@ -9113,15 +11783,22 @@ class ChartGenerator:
             if fail_col not in df.columns:
                 continue
             counts_by_band: dict[str, int] = {b["label"]: 0 for b in bands}
+            unparseable = 0
             for val in df[fail_col]:
                 try:
-                    n = int(str(val).strip())
-                except (ValueError, TypeError):
+                    n = strict_parse_failures(val)
+                except ValueError:
+                    unparseable += 1
                     continue
                 for band in bands:
                     if band["min_failures"] <= n <= band["max_failures"]:
                         counts_by_band[band["label"]] += 1
                         break
+            if unparseable > 0:
+                print(
+                    f"  [warn] Compliance trend {dt.date()}: {unparseable} "
+                    f"unparseable values in '{fail_col}' (excluded from chart)"
+                )
             row: dict[str, Any] = {"date": dt}
             row.update(counts_by_band)
             records.append(row)
@@ -9461,6 +12138,13 @@ def _render_scaffold_config(config_data: dict[str, Any], csv_path: Path) -> str:
                 if key in config_data["compliance"]:
                     rendered.append(f"  {key}: {_yaml_scalar(config_data['compliance'][key])}")
                     continue
+            if nested_match and current_section == "jamf_cli":
+                key = nested_match.group(2)
+                if key == "profile" and config_data.get("jamf_cli", {}).get("profile"):
+                    rendered.append(
+                        f"  profile: {_yaml_scalar(config_data['jamf_cli']['profile'])}"
+                    )
+                    continue
 
             rendered.append(raw_line)
 
@@ -9542,13 +12226,20 @@ def _interactive_column_mapping(
     return result
 
 
-def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> None:
+def cmd_scaffold(
+    csv_path: str,
+    out_path: str,
+    interactive: bool = False,
+    profile: Optional[str] = None,
+) -> None:
     """Auto-generate a starter config.yaml from CSV headers.
 
     Args:
         csv_path: Path to the CSV file to inspect.
         out_path: Output path for generated config.yaml.
         interactive: If True, prompt the user to review each column mapping before writing.
+        profile: Optional jamf-cli profile name to seed into ``jamf_cli.profile``.
+            Required for multi-tenant setups so generated reports hit the right tenant.
     """
     csv_path_obj = _cli_path(csv_path)
     out_path_obj = _cli_path(out_path)
@@ -9560,6 +12251,8 @@ def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> Non
             "Refusing to overwrite the file. Choose a different --out path or move"
             " the existing config aside first."
         )
+
+    profile_value = _validate_profile_override(profile or "")
 
     try:
         df = pd.read_csv(csv_path_obj, nrows=0, encoding="utf-8-sig")
@@ -9622,6 +12315,8 @@ def cmd_scaffold(csv_path: str, out_path: str, interactive: bool = False) -> Non
         config_data["compliance"]["failures_count_column"]
         and config_data["compliance"]["failures_list_column"]
     )
+    if profile_value:
+        config_data.setdefault("jamf_cli", {})["profile"] = profile_value
 
     config_str = _render_scaffold_config(config_data, csv_path_obj)
     out_path_obj.parent.mkdir(parents=True, exist_ok=True)
@@ -9655,6 +12350,27 @@ def _resolve_workspace_profile_name(
         "Error: workspace-init requires --profile when the seed config does not"
         " already set jamf_cli.profile."
     )
+
+
+def _validate_profile_override(profile: str) -> str:
+    """Return a validated jamf-cli profile override."""
+    profile_name = str(profile or "").strip()
+    if not profile_name:
+        return ""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", profile_name):
+        raise SystemExit(
+            "Error: --profile must match ^[a-z0-9][a-z0-9._-]*$"
+        )
+    return profile_name
+
+
+def _apply_profile_override(config: Config, profile: Optional[str], command: str) -> None:
+    """Apply --profile to Jamf Pro jamf-cli commands."""
+    if command.startswith("school-") or command == "workspace-init":
+        return
+    profile_name = _validate_profile_override(profile or "")
+    if profile_name:
+        config.override_jamf_cli_profile(profile_name)
 
 
 def _resolve_workspace_root_dir(
@@ -9694,6 +12410,10 @@ def _workspace_seed_config_data(seed_config: Config, profile_name: str) -> dict[
     config_data.setdefault("charts", {})
     config_data["jamf_cli"]["profile"] = profile_name
     config_data["jamf_cli"]["data_dir"] = "jamf-cli-data"
+    # PR-10 / threat-model T-11: new workspaces are deployment-safe by default.
+    # DEFAULT_CONFIG keeps require_manifest=False to preserve PR-7 behavior on
+    # upgrade-in-place, but freshly-seeded workspaces opt INTO strict mode.
+    config_data["jamf_cli"]["require_manifest"] = True
     config_data["output"]["output_dir"] = "Generated Reports"
     config_data["output"]["archive_dir"] = ""
     config_data["charts"]["historical_csv_dir"] = "snapshots"
@@ -9776,7 +12496,7 @@ def cmd_workspace_init(
 
     print("\nNext steps")
     print(f"  1. Review {config_path}")
-    print(f"  2. jamf-cli config validate -p {shlex.quote(profile_name)}")
+    print(f"  2. jamf-cli -p {shlex.quote(profile_name)} config validate")
     print(
         "  3. python3 jamf-reports-community.py check"
         f" --config {shlex.quote(str(config_path))}"
@@ -10057,7 +12777,7 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
         if latest_path is not None:
             print(f"    latest: {latest_path.name}")
         else:
-            print(f"    latest: none")
+            print("    latest: none")
         print(f"    note: {note}")
     if not manifest_found:
         print("  No enabled report_families entries.")
@@ -10201,7 +12921,6 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     protect_enabled = config.get("protect", "enabled", default=False) is True
     platform_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
-    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
     live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
     bridge = _build_jamf_cli_bridge(config, save_output=False)
@@ -10248,7 +12967,10 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             if missing_platform:
                 print(f"  missing platform commands: {', '.join(missing_platform)}")
         if protect_enabled:
-            protect_commands = bridge._protect_commands()
+            protect_probe = _build_protect_bridge(
+                config, save_output=False, use_cached_data=True
+            )
+            protect_commands = protect_probe._protect_commands()
             if protect_commands:
                 print(f"  supported protect commands: {', '.join(sorted(protect_commands))}")
         try:
@@ -10287,16 +13009,18 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
             print(f"  auth: failed — {exc}")
         if protect_enabled:
             try:
-                live_protect_bridge = _build_jamf_cli_bridge(
+                live_protect_bridge = _build_protect_bridge(
                     config,
                     save_output=False,
                     use_cached_data=False,
                 )
-                protect_overview = live_protect_bridge.protect_overview()
-                if _protect_overview_has_data(protect_overview):
-                    print("  protect auth: ok (overview returned live values)")
+                if live_protect_bridge.is_protect_available():
+                    print("  protect auth: ok")
                 else:
-                    print("  protect auth: inconclusive (overview returned placeholder values)")
+                    print(
+                        "  protect auth: failed — `jamf-cli protect plans list` did"
+                        " not succeed and no cached fallback is available."
+                    )
             except RuntimeError as exc:
                 print(f"  protect auth: failed — {exc}")
         if platform_enabled:
@@ -10413,6 +13137,11 @@ def cmd_generate(
     historical_csv_dir: Optional[str] = None,
     notify_url: Optional[str] = None,
     csv_extra: Optional[list[str]] = None,
+    summary_json: Optional[str] = None,
+    *,
+    force_summary: bool = False,
+    strict_manifest: bool = False,
+    per_log_summary_filename: Optional[str] = None,
 ) -> Path:
     """Run all report generation and write the Excel file.
 
@@ -10423,7 +13152,11 @@ def cmd_generate(
         historical_csv_dir: Optional directory of dated CSV snapshots for trend charts.
         notify_url: Optional Teams incoming webhook URL for post-generation notification.
         csv_extra: Optional list of additional CSV paths to merge with csv_path.
+        summary_json: Optional path for an app-facing run summary JSON file.
+        force_summary: When True, overwrite the per-day trend summary JSON
+            instead of leaving the existing entry in place.
     """
+    summary = _command_summary_base("generate", config)
     selected_family_name: Optional[str] = None
     selected_csv_origin = ""
     if not csv_path:
@@ -10452,6 +13185,12 @@ def cmd_generate(
         else:
             selected_csv_origin = "--csv"
     csv_path_str = str(csv_path_obj) if csv_path_obj else None
+    hist_dir_obj = _default_historical_dir(
+        config,
+        selected_family_name,
+        historical_csv_dir,
+    )
+    hist_dir = str(hist_dir_obj) if hist_dir_obj else None
 
     output_cfg = config.output
     out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
@@ -10476,7 +13215,9 @@ def cmd_generate(
     bridge: Optional[JamfCLIBridge] = None
     jamf_cli_ready = False
     if jamf_cli_enabled:
-        bridge = _build_jamf_cli_bridge(config, save_output=True)
+        bridge = _build_jamf_cli_bridge(
+            config, save_output=True, strict_manifest=strict_manifest
+        )
         jamf_cli_ready = bridge.is_available() or bridge.has_cached_data(
             include_protect=protect_enabled,
             include_platform=platform_enabled,
@@ -10504,16 +13245,22 @@ def cmd_generate(
     print(f"Output: {out_path}")
     print(f"  config base dir: {config.base_dir}")
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    wb = xlsxwriter.Workbook(str(out_path))
+    tmp_path = out_path.with_name("." + out_path.name + ".partial")
+    wb = xlsxwriter.Workbook(str(tmp_path))
     accent_color = (config.get("branding", "accent_color") or "#2D5EA2").strip()
     fmts = _build_formats(wb, accent_color)
     sheets_written = 0
     jamf_cli_written: list[str] = []
     csv_written: list[str] = []
+    sheet_failures: list[dict[str, str]] = []
     chart_source = ""
+    chart_png_paths: list[Path] = []
+    charts_embedded = False
     source_details: list[dict[str, str]] = []
     archived_csv_path: Optional[Path] = None
     archived_csv_created: Optional[bool] = None
+    archived_output_paths: list[Path] = []
+    report_sources_written = False
     if jamf_cli_enabled and bridge is not None:
         print(f"  jamf-cli data dir: {bridge._data_dir}")
         if jamf_cli_profile:
@@ -10550,6 +13297,8 @@ def cmd_generate(
                     fmts,
                     family_name=selected_family_name or "computers",
                     extra_csv_paths=csv_extra,
+                    historical_dir=hist_dir,
+                    current_csv_path=csv_path_str,
                 )
             except (pd.errors.ParserError, UnicodeDecodeError, OSError) as exc:
                 csv_init_error = exc
@@ -10575,9 +13324,13 @@ def cmd_generate(
 
         if jamf_cli_enabled and bridge is not None and jamf_cli_ready:
             print("\nGenerating jamf-cli sheets...")
-            jamf_cli_written = (
-                core.write_all(selected_sheet_names, filter_label) if core is not None else []
-            )
+            if core is not None:
+                jamf_cli_written, core_failures = core.write_all(
+                    selected_sheet_names, filter_label
+                )
+                sheet_failures.extend(core_failures)
+            else:
+                jamf_cli_written = []
             sheets_written += len(jamf_cli_written)
         elif jamf_cli_enabled:
             print("\nWarning: jamf-cli not available — skipping core dashboard sheets.")
@@ -10589,28 +13342,26 @@ def cmd_generate(
             print("\njamf-cli disabled in config — skipping core dashboard sheets.")
 
         if csv_path_str:
-            print("\nGenerating CSV sheets...")
             if csv_dash is None:
-                print(f"  [error] Cannot read CSV: {csv_init_error}")
-                print("  Skipping CSV sheets. Verify the file is a valid UTF-8 CSV export.")
-            else:
-                csv_written = csv_dash.write_all(selected_sheet_names, filter_label)
-                sheets_written += len(csv_written)
+                raise SystemExit(
+                    f"Error: cannot read explicit CSV '{csv_path_str}': {csv_init_error}"
+                )
+            print("\nGenerating CSV sheets...")
+            csv_written, csv_failures = csv_dash.write_all(selected_sheet_names, filter_label)
+            sheet_failures.extend(csv_failures)
+            sheets_written += len(csv_written)
         else:
             print("\nNo CSV provided — skipping inventory sheets.")
             print("  Pass --csv path/to/export.csv to enable inventory analysis.")
 
-        hist_dir_obj = _default_historical_dir(
-            config,
-            selected_family_name,
-            historical_csv_dir,
-        )
-        hist_dir = str(hist_dir_obj) if hist_dir_obj else None
         if hist_dir_obj:
             print(f"  historical CSV dir: {hist_dir_obj}")
         if csv_path_str and hist_dir and config.get("charts", "archive_current_csv") is not False:
             try:
-                archived_csv_path, archived_csv_created = _archive_csv_snapshot(csv_path_str, hist_dir)
+                archived_csv_path, archived_csv_created = _archive_csv_snapshot(
+                    csv_path_str,
+                    hist_dir,
+                )
                 if archived_csv_path:
                     if archived_csv_created:
                         print(f"  Archived CSV snapshot: {archived_csv_path}")
@@ -10621,21 +13372,19 @@ def cmd_generate(
 
         if charts_enabled is None or charts_enabled:
             print("\nGenerating charts...")
-            chart_csv_path = csv_path_str if selected_family_name != "mobile" else None
-            chart_hist_dir = hist_dir if selected_family_name != "mobile" else None
-            if selected_family_name == "mobile":
-                print("  [note] Mobile CSV family selected; skipping CSV trend charts for this run.")
             chart_gen = ChartGenerator(
                 config,
-                chart_csv_path,
-                chart_hist_dir,
+                csv_path_str,
+                hist_dir,
                 out_path.parent,
                 wb,
                 jamf_cli_dir if jamf_cli_enabled else None,
                 out_path.stem,
                 embed_in_workbook=charts_sheet_enabled,
+                csv_family_name=selected_family_name or "computers",
             )
             png_paths, chart_sources, charts_embedded = chart_gen.generate_all()
+            chart_png_paths = png_paths
             if chart_sources:
                 chart_source = " + ".join(chart_sources)
             if png_paths and config.get("charts", "save_png") is not False:
@@ -10704,13 +13453,16 @@ def cmd_generate(
             source_details.append(
                 {
                     "scope": "charts",
-                    "kind": "jamf_cli_or_cache_only",
+                    "kind": "mobile_csv_os_adoption",
                     "origin": "mobile CSV workbook",
                     "family": "mobile",
                     "path": "",
                     "timestamp": "",
                     "age": "",
-                    "notes": "CSV trend charts are skipped for mobile CSV families in this release.",
+                    "notes": (
+                        "Mobile CSV snapshots drive OS adoption trend charts;"
+                        " compliance trend remains computer-only."
+                    ),
                 }
             )
 
@@ -10735,6 +13487,7 @@ def cmd_generate(
                 source_details=source_details,
             )
             sheets_written += 1
+            report_sources_written = True
         else:
             print(f"  [disabled] Report Sources: skipped via {filter_label or 'sheet filter'}")
 
@@ -10742,17 +13495,25 @@ def cmd_generate(
             raise SystemExit("Error: sheets filter removed every workbook tab for this run.")
 
         wb.close()
+        os.replace(tmp_path, out_path)
     except SystemExit:
         wb.close()
-        out_path.unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
         raise
     except Exception:
         try:
             wb.close()
         except Exception:
             pass
-        out_path.unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
         raise
+    # T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar so
+    # recipients can verify with `shasum -a 256 -c <basename>.xlsx.sha256`.
+    sidecar_path = _write_sha256_sidecar(out_path)
+    if sidecar_path is not None:
+        print(f"  Wrote sha256 sidecar: {sidecar_path.name}")
+    # Emit trend summary JSON only after xlsxwriter has finalized the workbook.
+    _emit_summary_json(config, csv_dash, bridge, hist_dir, force=force_summary)
     if archive_enabled:
         archive_dir = config.resolve_path("output", "archive_dir")
         if archive_dir is None:
@@ -10765,9 +13526,31 @@ def cmd_generate(
             keep_latest_runs,
             archive_dir,
         )
+        archived_output_paths = archived_paths
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older output file(s) to {archive_dir}")
-    print(f"\nReport written: {out_path}")
+    run_status = "partial" if sheet_failures else "ok"
+    if sheet_failures:
+        print(
+            f"\n[partial] Report written with {len(sheet_failures)} sheet failure(s): "
+            f"{out_path}"
+        )
+        for failure in sheet_failures:
+            print(f"  failed sheet: {failure['sheet']}: {failure['error']}")
+    else:
+        print(f"\nReport written: {out_path}")
+    # PR-11 / threat-model T-12: emit per-LaunchAgent-run status summary so the
+    # Swift app's PARTIAL-pill check (RunHistoryService.isPartialRun and
+    # LaunchAgentService.checkSummaryFileForPartialStatus) has an authoritative,
+    # manifest-protected source instead of scanning logs for `[partial]` markers.
+    if per_log_summary_filename and hist_dir:
+        _emit_per_log_summary_json(
+            historical_dir=hist_dir,
+            log_filename=per_log_summary_filename,
+            run_status=run_status,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+            profile=str(config.jamf_cli.get("profile", "") or "").strip() or None,
+        )
     if notify_url:
         print("  Sending Teams notification...")
         _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
@@ -10784,6 +13567,59 @@ def cmd_generate(
         pptx_path = exporter.export_pptx()
         if pptx_path:
             print(f"  PPTX export: {pptx_path}")
+    summary.update(
+        {
+            "status": run_status,
+            "outputs": [_summary_file_entry("xlsx", out_path)],
+            "inputs": {
+                "csv": str(csv_path_obj) if csv_path_obj is not None else None,
+                "csv_extra": csv_extra or [],
+                "historical_csv_dir": hist_dir,
+                "selected_csv_family": selected_family_name,
+                "selected_csv_origin": selected_csv_origin,
+            },
+            "counts": {
+                "sheets_written": sheets_written,
+                "jamf_cli_sheets": len(jamf_cli_written),
+                "csv_sheets": len(csv_written),
+                "chart_pngs": len(chart_png_paths),
+                "archived_outputs": len(archived_output_paths),
+                "sheet_failures": len(sheet_failures),
+            },
+            "sheets": {
+                "all": (
+                    jamf_cli_written
+                    + csv_written
+                    + (["Charts"] if charts_embedded else [])
+                    + (["Report Sources"] if report_sources_written else [])
+                ),
+                "jamf_cli": jamf_cli_written,
+                "csv": csv_written,
+                "charts_embedded": charts_embedded,
+                "report_sources": report_sources_written,
+                "failures": sheet_failures,
+            },
+            "sources": source_details,
+            "charts": {
+                "source": chart_source,
+                "pngs": [str(path) for path in chart_png_paths],
+            },
+            "archives": {
+                "csv_snapshot": (
+                    _summary_file_entry("csv_snapshot", archived_csv_path)
+                    if archived_csv_path is not None
+                    else None
+                ),
+                "csv_snapshot_created": archived_csv_created,
+                "outputs": [
+                    _summary_file_entry("archived_output", path)
+                    for path in archived_output_paths
+                ],
+            },
+        }
+    )
+    _finish_command_summary(summary, status=run_status)
+    _write_summary_json(summary_json, summary)
     return out_path
 
 
@@ -10929,6 +13765,13 @@ class ReportExporter:
 # ---------------------------------------------------------------------------
 
 
+# T-13 integrity envelope: placeholder for the self-attesting SHA-256 hash.
+# Same shape as a real hex digest so HTML structure / attribute parsing is
+# identical pre- and post-substitution. The string itself is recognisable
+# so a verifier knows what to replace when reproducing the digest.
+HTML_REPORT_SHA256_PLACEHOLDER = "0" * 64
+
+
 class HtmlReport:
     """Generates a self-contained, management-facing HTML status report."""
     _TREND_PALETTE = [
@@ -11032,14 +13875,40 @@ class HtmlReport:
             print(f"  [warn] html history: could not update {history_path}: {exc}")
 
     def generate(self) -> Path:
-        """Fetch data and write the HTML report to disk."""
+        """Fetch data and write the HTML report to disk.
+
+        T-13 integrity envelope: the rendered HTML contains a placeholder hash
+        in the `<meta name="report-sha256">` tag and the visible footer.
+        After rendering, compute SHA-256 over the UTF-8 bytes of the
+        placeholder-version HTML, then substitute the real hash for the
+        placeholder so the embedded fingerprint covers the final document.
+
+        Verification procedure (documented in README): replace the meta
+        hash in the file with `HASH_PLACEHOLDER` and the same value in the
+        footer, then `shasum -a 256` the modified bytes — the digest must
+        match the embedded hash. This proves the report has not been
+        tampered with after generation.
+        """
         print("\n--- HTML Report ---")
         data = self._fetch_all()
         self._append_history_snapshot(data)
         html = self._render(data)
+        placeholder = HTML_REPORT_SHA256_PLACEHOLDER
+        # The placeholder appears in two places (meta tag + footer); both
+        # must remain unmodified before we compute the placeholder-version
+        # hash, otherwise the verifier procedure won't reproduce it.
+        if html.count(placeholder) != 2:
+            print(
+                "  [warn] report-sha256 envelope: expected 2 placeholders, "
+                f"found {html.count(placeholder)} — verification may fail."
+            )
+        placeholder_bytes = html.encode("utf-8")
+        digest = hashlib.sha256(placeholder_bytes).hexdigest()
+        final_html = html.replace(placeholder, digest)
         self._out_file.parent.mkdir(parents=True, exist_ok=True)
-        self._out_file.write_text(html, encoding="utf-8")
+        self._out_file.write_text(final_html, encoding="utf-8")
         print(f"  Written: {self._out_file}")
+        print(f"  Source fingerprint (sha256): {digest}")
         if not self._no_open and sys.platform == "darwin":
             subprocess.run(["open", str(self._out_file)], check=False)
         return self._out_file
@@ -11134,6 +14003,30 @@ class HtmlReport:
         return _escape(str(value), quote=True)
 
     @staticmethod
+    def _safe_css_color(value: Any) -> str:
+        """Return a simple hex CSS color, or an empty string for unsafe input."""
+        candidate = str(value or "").strip()
+        if re.fullmatch(
+            r"#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})",
+            candidate,
+        ):
+            return candidate
+        return ""
+
+    @staticmethod
+    def _safe_image_mime(data: bytes) -> Optional[str]:
+        """Return a safe bitmap MIME type for inline report logos."""
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if data.startswith((b"GIF87a", b"GIF89a")):
+            return "image/gif"
+        if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "image/webp"
+        return None
+
+    @staticmethod
     def _safe_href(url: str) -> str:
         """Return url only if it uses https:// or http://; otherwise return '#'."""
         return url if url.startswith(("https://", "http://")) else "#"
@@ -11144,12 +14037,6 @@ class HtmlReport:
         candidate = str(url or "").strip().rstrip("/")
         safe = cls._safe_href(candidate)
         return "" if safe == "#" else safe
-
-    @staticmethod
-    def _json_text(value: Any) -> str:
-        """Serialize data for an inline script without allowing script breakout."""
-        text = json.dumps(value, ensure_ascii=False)
-        return text.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
 
     @staticmethod
     def _health_badge_class(status: Any) -> str:
@@ -11661,26 +14548,57 @@ class HtmlReport:
             if not points:
                 continue
             path = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
-            color = str(item.get("borderColor", "#0076B6"))
+            color = self._safe_css_color(item.get("borderColor")) or "#0076B6"
+            stroke_width = float(item.get("borderWidth", 2))
             paths.append(
-                f'<polyline fill="none" stroke="{color}" stroke-width="{float(item.get("borderWidth", 2)):.1f}" '
+                f'<polyline fill="none" stroke="{self._html_text(color)}" '
+                f'stroke-width="{stroke_width:.1f}" '
                 f'stroke-linejoin="round" stroke-linecap="round" points="{path}"/>'
             )
             for x_pos, y_pos in points:
                 paths.append(
-                    f'<circle cx="{x_pos:.1f}" cy="{y_pos:.1f}" r="3.2" fill="{color}" />'
+                    f'<circle cx="{x_pos:.1f}" cy="{y_pos:.1f}" r="3.2" '
+                    f'fill="{self._html_text(color)}" />'
                 )
 
-        legend = "".join(
-            '<span class="chart-legend-item">'
-            f'<span class="chart-legend-swatch" style="background:{self._html_text(item.get("borderColor", "#0076B6"))}"></span>'
-            f'{self._html_text(item.get("label", "Series"))}</span>'
-            for item in series
+        legend_parts = []
+        for item in series:
+            color = self._safe_css_color(item.get("borderColor")) or "#0076B6"
+            legend_parts.append(
+                '<span class="chart-legend-item">'
+                f'<span class="chart-legend-swatch" style="background:{color}"></span>'
+                f'{self._html_text(item.get("label", "Series"))}</span>'
+            )
+        legend = "".join(legend_parts)
+        unit = "%" if percent_scale else ""
+        series_labels = [str(item.get("label", "Series")) for item in series]
+        header_cells = "".join(
+            f'<th scope="col">{self._html_text(label)}</th>' for label in series_labels
+        )
+        body_rows = []
+        for col_idx, label in enumerate(labels):
+            cells = [f'<th scope="row">{self._html_text(label)}</th>']
+            for item in series:
+                values = item.get("data") or []
+                cell_value = (
+                    f"{values[col_idx]}{unit}"
+                    if col_idx < len(values)
+                    else ""
+                )
+                cells.append(f"<td>{self._html_text(cell_value)}</td>")
+            body_rows.append("<tr>" + "".join(cells) + "</tr>")
+        data_table = (
+            '<table class="sr-only">'
+            '<caption>Trend chart data values.</caption>'
+            f'<thead><tr><th scope="col">Period</th>{header_cells}</tr></thead>'
+            f'<tbody>{"".join(body_rows)}</tbody>'
+            '</table>'
         )
         return (
             f'<svg class="trend-svg" viewBox="0 0 {int(width)} {int(height)}" '
             'role="img" aria-label="Trend chart">'
             f"{''.join(grid)}{axis}{''.join(ticks)}{''.join(x_labels)}{''.join(paths)}</svg>"
+            f"{data_table}"
             f'<div class="chart-legend">{legend}</div>'
         )
 
@@ -11720,7 +14638,12 @@ class HtmlReport:
   <div class="chart-title">macOS Version Distribution</div>
   <svg class="trend-svg" viewBox="0 0 {int(width)} {int(height)}" role="img" aria-label="macOS version distribution">{''.join(bars)}</svg>
   <table class="os-table">
-    <thead><tr><th>Version</th><th>Devices</th><th>%</th></tr></thead>
+    <caption class="sr-only">macOS version distribution across managed computers.</caption>
+    <thead><tr>
+      <th scope="col">Version</th>
+      <th scope="col">Devices</th>
+      <th scope="col">%</th>
+    </tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
 </div>"""
@@ -11764,13 +14687,19 @@ class HtmlReport:
                 f"<td>{self._html_text(detail)}</td>"
                 "</tr>"
             )
-        return f"""<div class="section-title">Report Sources</div>
+        return f"""<h3 class="section-title">Report Sources</h3>
 <div class="card card-sm">
   <div class="table-note" style="margin-bottom:10px">
     Live and cached source state is shown here so partial-data runs are visible in the report itself.
   </div>
   <table class="data-table">
-    <thead><tr><th>Dataset</th><th>Source</th><th>Detail</th></tr></thead>
+    <caption class="sr-only">Provenance for each dataset in this report
+      (live vs cached source).</caption>
+    <thead><tr>
+      <th scope="col">Dataset</th>
+      <th scope="col">Source</th>
+      <th scope="col">Detail</th>
+    </tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
 </div>"""
@@ -11781,8 +14710,8 @@ class HtmlReport:
         Colour palette and layout inspired by DevliegereM/JamfReport.
         See the code-level comment above the HtmlReport class for attribution.
         """
-        accent = (self._config.get("branding", "accent_color") or "").strip()
-        accent_dark = (self._config.get("branding", "accent_dark") or "").strip()
+        accent = self._safe_css_color(self._config.get("branding", "accent_color"))
+        accent_dark = self._safe_css_color(self._config.get("branding", "accent_dark"))
         overrides = ""
         if accent or accent_dark:
             parts = []
@@ -11806,7 +14735,7 @@ class HtmlReport:
     --surface-2: #f8fafc;
     --border:    #e2e8f0;
     --text:      #1e293b;
-    --muted:     #64748b;
+    --muted:     #475569;
     --radius:    10px;
     --shadow:    0 1px 4px rgba(0,0,0,.08);
 }
@@ -11858,6 +14787,40 @@ body {
     color: var(--text);
     font-size: 14px;
     line-height: 1.5;
+}
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+.org-caption {
+    text-align: left;
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    margin-bottom: 8px;
+    caption-side: top;
+}
+.org-table-card th[scope="row"] {
+    font-weight: normal;
+    text-align: left;
+}
+:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+.topbar :focus-visible,
+.dark-toggle:focus-visible {
+    outline-color: #fff;
 }
 a { color: var(--blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -12106,6 +15069,10 @@ a:hover { text-decoration: underline; }
     font-weight: 600;
     font-size: .82rem;
     user-select: none;
+    width: 100%;
+    text-align: left;
+    color: inherit;
+    font-family: inherit;
 }
 .cat-toggle:hover { border-color: var(--blue); }
 .cat-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -12202,23 +15169,62 @@ a:hover { text-decoration: underline; }
 
 document.querySelectorAll('.cat-toggle').forEach((toggle) => {
   toggle.addEventListener('click', () => {
-    const items = toggle.nextElementSibling;
+    const items = document.getElementById(toggle.getAttribute('aria-controls'));
     const caret = toggle.querySelector('.cat-caret');
     if (!items) return;
     const open = items.classList.toggle('open');
     if (caret) caret.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
 });
 
+function activateTreeTab(tab, opts) {
+  const targetId = tab.getAttribute('data-target');
+  if (!targetId) return;
+  const tablist = tab.closest('.tree-tabs');
+  const peers = tablist
+    ? tablist.querySelectorAll('.tree-tab')
+    : document.querySelectorAll('.tree-tab');
+  peers.forEach((el) => {
+    el.classList.remove('active');
+    el.setAttribute('aria-selected', 'false');
+    el.setAttribute('tabindex', '-1');
+    const peerTarget = el.getAttribute('data-target');
+    if (peerTarget) {
+      const peerPane = document.getElementById(peerTarget);
+      if (peerPane) peerPane.classList.remove('active');
+    }
+  });
+  tab.classList.add('active');
+  tab.setAttribute('aria-selected', 'true');
+  tab.setAttribute('tabindex', '0');
+  const pane = document.getElementById(targetId);
+  if (pane) pane.classList.add('active');
+  if (opts && opts.focus) tab.focus();
+}
+
 document.querySelectorAll('.tree-tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    const targetId = tab.getAttribute('data-target');
-    if (!targetId) return;
-    document.querySelectorAll('.tree-tab').forEach((el) => el.classList.remove('active'));
-    document.querySelectorAll('.tree-pane').forEach((el) => el.classList.remove('active'));
-    tab.classList.add('active');
-    const pane = document.getElementById(targetId);
-    if (pane) pane.classList.add('active');
+  tab.addEventListener('click', () => activateTreeTab(tab));
+  tab.addEventListener('keydown', (event) => {
+    const tablist = tab.closest('.tree-tabs');
+    if (!tablist) return;
+    const tabs = Array.from(tablist.querySelectorAll('.tree-tab'));
+    if (tabs.length === 0) return;
+    const idx = tabs.indexOf(tab);
+    let next = null;
+    if (event.key === 'ArrowLeft') {
+      next = tabs[(idx - 1 + tabs.length) % tabs.length];
+    } else if (event.key === 'ArrowRight') {
+      next = tabs[(idx + 1) % tabs.length];
+    } else if (event.key === 'Home') {
+      next = tabs[0];
+    } else if (event.key === 'End') {
+      next = tabs[tabs.length - 1];
+    }
+    if (next) {
+      event.preventDefault();
+      activateTreeTab(next, { focus: true });
+    }
   });
 });
 
@@ -12234,9 +15240,16 @@ const filterTreePane = (container, query) => {
     node.classList.toggle('item-hidden', !visible);
     const children = node.querySelector('.cat-items');
     const caret = node.querySelector('.cat-caret');
+    const toggle = node.querySelector('.cat-toggle');
     if (children && caret) {
       children.classList.toggle('open', query ? visible : children.classList.contains('open'));
       caret.classList.toggle('open', children.classList.contains('open'));
+    }
+    if (toggle && children) {
+      toggle.setAttribute(
+        'aria-expanded',
+        children.classList.contains('open') ? 'true' : 'false'
+      );
     }
   });
 };
@@ -12339,9 +15352,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             return ""
         try:
             import base64
-            import mimetypes
-            mime = mimetypes.guess_type(str(logo_path))[0] or "image/png"
-            b64 = base64.b64encode(logo_path.read_bytes()).decode()
+
+            data = logo_path.read_bytes()
+            if len(data) > 2 * 1024 * 1024:
+                return ""
+            mime = self._safe_image_mime(data)
+            if not mime:
+                return ""
+            b64 = base64.b64encode(data).decode()
             return (
                 f'<img src="data:{mime};base64,{b64}" alt="" '
                 f'style="height:28px;margin-right:10px;vertical-align:middle;'
@@ -12406,19 +15424,23 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                     for name in group["items"]
                 )
                 chunks.append(
-                    '<div class="cat-node"><div class="cat-toggle"><span class="cat-label">'
-                    '<span class="cat-caret">▶</span>'
+                    '<div class="cat-node">'
+                    '<button type="button" class="cat-toggle" aria-expanded="false">'
+                    '<span class="cat-label">'
+                    '<span class="cat-caret" aria-hidden="true">▶</span>'
                     f'<span>{self._html_text(group["category"])}</span>'
-                    f'</span><span class="cat-count">{group["count"]}</span></div>'
+                    f'</span><span class="cat-count">{group["count"]}</span></button>'
                     f'<div class="cat-items">{items}</div></div>'
                 )
             body = "".join(chunks)
-        return f"""<div class="tree-pane" id="{self._html_text(pane_id)}">
+        safe_pane = self._html_text(pane_id)
+        return f"""<div class="tree-pane" id="{safe_pane}" role="tabpanel"
+  aria-labelledby="tab-{safe_pane}" tabindex="0">
   <input class="tree-search" type="search"
     placeholder="{self._html_text(search_placeholder)}"
-    data-filter-target="{self._html_text(pane_id)}-list" data-filter-kind="tree">
+    data-filter-target="{safe_pane}-list" data-filter-kind="tree">
   <div class="tree-summary">{self._html_text(summary)}</div>
-  <div id="{self._html_text(pane_id)}-list">{body}</div>
+  <div id="{safe_pane}-list">{body}</div>
 </div>"""
 
     def _render_hierarchy_flat_panel(
@@ -12438,12 +15460,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 f'{self._html_text(item.lower())}">{self._html_text(item)}</div>'
                 for item in items
             )
-        return f"""<div class="tree-pane" id="{self._html_text(pane_id)}">
+        safe_pane = self._html_text(pane_id)
+        return f"""<div class="tree-pane" id="{safe_pane}" role="tabpanel"
+  aria-labelledby="tab-{safe_pane}" tabindex="0">
   <input class="tree-search" type="search"
     placeholder="{self._html_text(search_placeholder)}"
-    data-filter-target="{self._html_text(pane_id)}-list" data-filter-kind="flat">
+    data-filter-target="{safe_pane}-list" data-filter-kind="flat">
   <div class="tree-summary">{self._html_text(summary)}</div>
-  <div id="{self._html_text(pane_id)}-list">{body}</div>
+  <div id="{safe_pane}-list">{body}</div>
 </div>"""
 
     def _render_hierarchy_tabs(
@@ -12466,7 +15490,13 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         ]
         tab_html = "".join(
             '<button type="button" class="tree-tab'
-            f'{" active" if idx == 0 else ""}" data-target="{self._html_text(tab_id)}">'
+            f'{" active" if idx == 0 else ""}"'
+            f' id="tab-{self._html_text(tab_id)}"'
+            f' role="tab"'
+            f' aria-controls="{self._html_text(tab_id)}"'
+            f' aria-selected="{"true" if idx == 0 else "false"}"'
+            f' tabindex="{"0" if idx == 0 else "-1"}"'
+            f' data-target="{self._html_text(tab_id)}">'
             f'{self._html_text(label)} ({count})</button>'
             for idx, (tab_id, label, count) in enumerate(tabs)
         )
@@ -12484,9 +15514,10 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             ),
         ]
         panes[0] = panes[0].replace('class="tree-pane"', 'class="tree-pane active"', 1)
-        return f"""<div class="section-title">Deployment Hierarchy</div>
+        return f"""<h3 class="section-title">Deployment Hierarchy</h3>
 <div class="card">
-  <div class="tree-tabs">{tab_html}</div>
+  <div class="tree-tabs" role="tablist"
+    aria-label="Deployment hierarchy categories">{tab_html}</div>
   {''.join(panes)}
 </div>"""
 
@@ -12516,11 +15547,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                     f"<td class='val'>{self._html_text(item['value'])}</td>"
                     f"<td>{badge}</td></tr>"
                 )
-        return f"""<div class="section-title">Full Overview</div>
+        return f"""<h3 class="section-title">Full Overview</h3>
 <div class="card">
   <table class="data-table">
+    <caption class="sr-only">Full Jamf Pro resource inventory grouped by section.</caption>
     <thead><tr>
-      <th>Resource</th><th style="text-align:right">Value</th><th>Status</th>
+      <th scope="col">Resource</th>
+      <th scope="col" style="text-align:right">Value</th>
+      <th scope="col">Status</th>
     </tr></thead>
     <tbody>{rows_html}</tbody>
   </table>
@@ -12536,13 +15570,13 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             f'target="_blank" rel="noopener noreferrer">{self._html_text(label)}</a>'
             for label, url in links
         )
-        return f"""<div class="section-title">Quick Links</div>
+        return f"""<h3 class="section-title">Quick Links</h3>
 <div class="links-grid">{cards}</div>"""
 
     def _render_flagged_table(self, flagged: list[dict[str, Any]], console_url: str) -> str:
         """Render the searchable and sortable flagged-devices table."""
         if not flagged:
-            return """<div class="section-title">Devices with Security Issues</div>
+            return """<h3 class="section-title">Devices with Security Issues</h3>
 <div class="card"><p class="empty-note">No devices with security issues found.</p></div>"""
 
         rows = []
@@ -12555,6 +15589,10 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             gk_cls = "val-ok" if gk.upper() not in ("DISABLED",) else "val-err"
             sip_cls = "val-ok" if sip.upper() in ("ENABLED",) else "val-err"
             fw_cls = "val-err" if fw.casefold() in {"no", "false", "off", "disabled"} else "val-ok"
+            fv_label = f"[OK] {fv}" if fv_cls == "val-ok" else f"[FAIL] {fv}"
+            gk_label = f"[OK] {gk}" if gk_cls == "val-ok" else f"[FAIL] {gk}"
+            sip_label = f"[OK] {sip}" if sip_cls == "val-ok" else f"[FAIL] {sip}"
+            fw_label = f"[OK] {fw}" if fw_cls == "val-ok" else f"[FAIL] {fw}"
             query_value = str(dev.get("serial") or dev.get("name") or "")
             open_link = ""
             if console_url and query_value:
@@ -12574,14 +15612,14 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 f"<td>{self._html_text(dev['name'])}</td>"
                 f"<td>{self._html_text(dev['serial'])}</td>"
                 f"<td>{self._html_text(dev['os'])}</td>"
-                f"<td class='{fv_cls}'>{fv}</td>"
-                f"<td class='{gk_cls}'>{gk}</td>"
-                f"<td class='{sip_cls}'>{sip}</td>"
-                f"<td class='{fw_cls}'>{fw}</td>"
+                f"<td class='{fv_cls}'>{fv_label}</td>"
+                f"<td class='{gk_cls}'>{gk_label}</td>"
+                f"<td class='{sip_cls}'>{sip_label}</td>"
+                f"<td class='{fw_cls}'>{fw_label}</td>"
                 f"<td>{link_html}</td></tr>"
             )
 
-        return f"""<div class="section-title">Devices with Security Issues ({len(flagged)})</div>
+        return f"""<h3 class="section-title">Devices with Security Issues ({len(flagged)})</h3>
 <div class="card" style="padding:0">
   <div class="table-tools">
     <input class="tree-search" id="flaggedSearch" type="search"
@@ -12591,11 +15629,25 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
   <div class="table-wrap">
     <table class="data-table" id="flaggedTable">
+      <caption class="sr-only">Devices flagged with one or more security control failures.</caption>
       <thead><tr>
-        <th><button type="button" class="table-sort" data-flagged-sort="name">Device ↕</button></th>
-        <th><button type="button" class="table-sort" data-flagged-sort="serial">Serial ↕</button></th>
-        <th><button type="button" class="table-sort" data-flagged-sort="os">macOS ↕</button></th>
-        <th>FileVault</th><th>Gatekeeper</th><th>SIP</th><th>Firewall</th><th>Link</th>
+        <th scope="col">
+          <button type="button" class="table-sort"
+            data-flagged-sort="name">Device ↕</button>
+        </th>
+        <th scope="col">
+          <button type="button" class="table-sort"
+            data-flagged-sort="serial">Serial ↕</button>
+        </th>
+        <th scope="col">
+          <button type="button" class="table-sort"
+            data-flagged-sort="os">macOS ↕</button>
+        </th>
+        <th scope="col">FileVault</th>
+        <th scope="col">Gatekeeper</th>
+        <th scope="col">SIP</th>
+        <th scope="col">Firewall</th>
+        <th scope="col">Link</th>
       </tr></thead>
       <tbody id="flaggedBody">
         {''.join(rows)}
@@ -12609,11 +15661,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         """Render a small org-item name list as a card."""
         if not items:
             return ""
-        rows = "".join(f"<tr><td>{self._html_text(name)}</td></tr>" for name in items)
+        safe_label = self._html_text(label)
+        row_cells = "".join(
+            f'<tr><th scope="row">{self._html_text(name)}</th></tr>' for name in items
+        )
         return f"""<div class="card card-sm" style="margin-bottom:10px">
-  <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;
-      letter-spacing:.05em;color:var(--muted);margin-bottom:8px">{self._html_text(label)}</div>
-  <table class="data-table"><tbody>{rows}</tbody></table>
+  <table class="data-table org-table-card">
+    <caption class="org-caption">{safe_label}</caption>
+    <tbody>{row_cells}</tbody>
+  </table>
 </div>"""
 
     def _render_counter_table(
@@ -12634,10 +15690,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             f"<tr><td>{self._html_text(str(label))}</td><td class='val'>{count}</td></tr>"
             for label, count in counter.most_common(max_rows)
         )
+        safe_title = self._html_text(title)
         return f"""<div class="card card-sm">
-  <div class="chart-title">{self._html_text(title)}</div>
+  <div class="chart-title">{safe_title}</div>
   <table class="data-table">
-    <thead><tr><th>{self._html_text(left_header)}</th><th style="text-align:right">Count</th></tr></thead>
+    <caption class="sr-only">{safe_title} frequency table.</caption>
+    <thead><tr>
+      <th scope="col">{self._html_text(left_header)}</th>
+      <th scope="col" style="text-align:right">Count</th>
+    </tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </div>"""
@@ -12649,7 +15710,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     ) -> str:
         """Render a table of the mobile devices needing the most review."""
         if not rows:
-            return """<div class="section-title">Mobile Inventory Review</div>
+            return """<h3 class="section-title">Mobile Inventory Review</h3>
 <div class="card"><p class="empty-note">No mobile inventory rows were available.</p></div>"""
 
         ranked = sorted(
@@ -12679,12 +15740,18 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 f"<td>{self._html_text(str(row.get('Managed', '')))}</td>"
                 f"<td>{self._html_text(str(row.get('Supervised', '')))}</td></tr>"
             )
-        return f"""<div class="section-title">Mobile Inventory Review</div>
+        return f"""<h3 class="section-title">Mobile Inventory Review</h3>
 <div class="card">
   <table class="data-table">
+    <caption class="sr-only">Mobile devices ranked by days since last inventory update.</caption>
     <thead><tr>
-      <th>Device</th><th>Family</th><th>OS</th><th>User</th>
-      <th>Days Since Inventory</th><th>Managed</th><th>Supervised</th>
+      <th scope="col">Device</th>
+      <th scope="col">Family</th>
+      <th scope="col">OS</th>
+      <th scope="col">User</th>
+      <th scope="col">Days Since Inventory</th>
+      <th scope="col">Managed</th>
+      <th scope="col">Supervised</th>
     </tr></thead>
     <tbody>{body}</tbody>
   </table>
@@ -12713,7 +15780,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             )
         if not cards:
             return ""
-        return f"""<div class="section-title">Trends</div>
+        return f"""<h3 class="section-title">Trends</h3>
 <div class="grid grid-2">{''.join(cards)}</div>"""
 
     @staticmethod
@@ -12859,7 +15926,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         }
         chart_svg = self._render_line_chart_svg(svg_payload)
 
-        return f"""<div class="section-title">macOS Adoption Timeline</div>
+        return f"""<h3 class="section-title">macOS Adoption Timeline</h3>
 <div class="card card-sm">
   <div class="chart-title">macOS Adoption Timeline
     <span class="badge badge-dim" style="margin-left:6px">{entry_count} snapshots</span>
@@ -13056,9 +16123,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         def _tab_btn(idx: int, tab_id: str, label: str, items: list[str]) -> str:
             active = " active" if idx == 0 else ""
             badge_cls = "badge-warn" if items else "badge-ok"
+            safe_tab = self._html_text(tab_id)
             return (
                 f'<button type="button" class="tree-tab{active}"'
-                f' data-target="{self._html_text(tab_id)}">'
+                f' id="tab-{safe_tab}"'
+                f' role="tab"'
+                f' aria-controls="{safe_tab}"'
+                f' aria-selected="{"true" if idx == 0 else "false"}"'
+                f' tabindex="{"0" if idx == 0 else "-1"}"'
+                f' data-target="{safe_tab}">'
                 f'{self._html_text(label)}'
                 f' <span class="badge {badge_cls}">{len(items)}</span>'
                 f'</button>'
@@ -13072,19 +16145,21 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         panes = []
         for idx, (pane_id, _label, items) in enumerate(categories):
             active_cls = " active" if idx == 0 else ""
+            safe_pane = self._html_text(pane_id)
             if items:
                 rows = "".join(
                     f'<div class="sg-node">{self._html_text(name)}</div>'
                     for name in items
                 )
-                body = f'<div id="{self._html_text(pane_id)}-list">{rows}</div>'
+                body = f'<div id="{safe_pane}-list">{rows}</div>'
             else:
                 body = (
-                    f'<div id="{self._html_text(pane_id)}-list">'
+                    f'<div id="{safe_pane}-list">'
                     '<p class="empty-note">None found — good!</p></div>'
                 )
             panes.append(
-                f'<div class="tree-pane{active_cls}" id="{self._html_text(pane_id)}">'
+                f'<div class="tree-pane{active_cls}" id="{safe_pane}"'
+                f' role="tabpanel" aria-labelledby="tab-{safe_pane}" tabindex="0">'
                 f'{body}</div>'
             )
 
@@ -13092,10 +16167,10 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             f"Based on {cleanup['policies_with_detail']} policies and "
             f"{cleanup['profiles_with_detail']} profiles with cached detail."
         )
-        return f"""<div class="section-title">Cleanup Analysis</div>
+        return f"""<h3 class="section-title">Cleanup Analysis</h3>
 <div class="card">
   <div class="chart-sub" style="margin-bottom:10px">{self._html_text(detail_note)}</div>
-  <div class="tree-tabs">{tab_html}</div>
+  <div class="tree-tabs" role="tablist" aria-label="Cleanup categories">{tab_html}</div>
   {''.join(panes)}
 </div>"""
 
@@ -13121,7 +16196,6 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         active_alerts = self._ov(ov, "Active Alerts")
         managed_computers = self._ov(ov, "Managed Computers")
         unmanaged_computers = self._ov(ov, "Unmanaged Computers")
-        managed_devices = self._ov(ov, "Managed Devices")
         checkin_freq = self._ov(ov, "Check-In Frequency")
         dep_token_exp = self._ov(ov, "DEP Token Expires")
         ca_expires = self._ov(ov, "Built-in CA Expires")
@@ -13219,20 +16293,25 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             if org_name
             else f"Jamf Pro Report \u2014 {instance_url}"
         )
+        safe_brand_label = self._html_text(brand_label)
+        safe_page_title = self._html_text(page_title)
         logo_html = self._logo_html()
 
+        verify_filename = self._html_text(self._out_file.name)
+        report_sha256_placeholder = HTML_REPORT_SHA256_PLACEHOLDER
         return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{page_title}</title>
+<meta name="report-sha256" content="{report_sha256_placeholder}">
+<title>{safe_page_title}</title>
 <style>{css}</style>
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-brand">{logo_html}{brand_label}</div>
+<header class="topbar">
+  <h1 class="topbar-brand">{logo_html}{safe_brand_label}</h1>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <div class="topbar-meta">
       <strong>{self._html_text(instance_url, "N/A")}</strong><br>
@@ -13242,12 +16321,12 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     </div>
     <button class="dark-toggle" id="darkToggle">Dark mode</button>
   </div>
-</div>
+</header>
 
-<div class="page">
+<main class="page">
 
   <div class="section-block">
-    <div class="section-block-title">Overall Server Health</div>
+    <h2 class="section-block-title">Overall Server Health</h2>
     <div class="section-block-subtitle">
       Instance status, enrollment posture, organization footprint, and high-level services.
     </div>
@@ -13275,7 +16354,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       </div>
     </div>
 
-    <div class="section-title">Instance Summary</div>
+    <h3 class="section-title">Instance Summary</h3>
     <div class="grid grid-4">
       {self._render_stat_card("Jamf Pro Version", jamf_version)}
       {self._render_stat_card("Health Status", health_status)}
@@ -13283,7 +16362,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_stat_card("Check-In Frequency", checkin_freq)}
     </div>
 
-    <div class="section-title">Enrollment &amp; Configuration</div>
+    <h3 class="section-title">Enrollment &amp; Configuration</h3>
     <div class="grid grid-5">
       {self._render_stat_card("ADE Instances", ade_instances, ade_preview)}
       {self._render_stat_card("VPP Locations", vpp_locations)}
@@ -13298,7 +16377,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_stat_card("App Installers", app_installers)}
     </div>
 
-    <div class="section-title">Organisation</div>
+    <h3 class="section-title">Organisation</h3>
     <div class="grid grid-4">
       {self._render_org_table("Sites", site_names)}
       {self._render_org_table("Buildings", bldg_names)}
@@ -13306,7 +16385,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_org_table("Categories", cat_names)}
     </div>
 
-    <div class="section-title">Enabled Features</div>
+    <h3 class="section-title">Enabled Features</h3>
     <div class="card card-sm">{feature_pills}</div>
 
     {self._render_source_status(fetch_status)}
@@ -13315,12 +16394,12 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
 
   <div class="section-block">
-    <div class="section-block-title">macOS Fleet</div>
+    <h2 class="section-block-title">macOS Fleet</h2>
     <div class="section-block-subtitle">
       Computer inventory, security posture, and deployment coverage for macOS endpoints.
     </div>
 
-    <div class="section-title">Computer Inventory</div>
+    <h3 class="section-title">Computer Inventory</h3>
     <div class="grid grid-6">
       {self._render_stat_card("Managed Computers", managed_computers, "", f"{console_url}/computers.html" if console_url else "", "Open in Jamf")}
       {self._render_stat_card("Unmanaged Computers", unmanaged_computers)}
@@ -13335,7 +16414,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_stat_card("Security Rows Scanned", total_scanned, f"{len(flagged)} flagged devices")}
     </div>
 
-    <div class="section-title">Security Posture &amp; OS Distribution</div>
+    <h3 class="section-title">Security Posture &amp; OS Distribution</h3>
     <div class="grid grid-2">
       <div class="chart-card">
         <div class="chart-title">Security Feature Compliance
@@ -13358,12 +16437,12 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
 
   <div class="section-block">
-    <div class="section-block-title">Mobile Devices</div>
+    <h2 class="section-block-title">Mobile Devices</h2>
     <div class="section-block-subtitle">
       Mobile inventory, supervision posture, and iOS configuration profile coverage.
     </div>
 
-    <div class="section-title">Mobile Inventory</div>
+    <h3 class="section-title">Mobile Inventory</h3>
     <div class="grid grid-6">
       {self._render_stat_card("Total Mobile Devices", str(mobile_summary["total"]))}
       {self._render_stat_card("Managed", str(mobile_summary["managed"]))}
@@ -13379,7 +16458,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_stat_card(f"Older Than {stale_days} Days", str(mobile_stale))}
     </div>
 
-    <div class="section-title">Mobile Distribution</div>
+    <h3 class="section-title">Mobile Distribution</h3>
     <div class="grid grid-3">
       {self._render_counter_table("Device Families", "Device Family", mobile_summary["families"])}
       {self._render_counter_table("OS Versions", "OS Version", mobile_summary["os_versions"])}
@@ -13389,11 +16468,16 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     {self._render_mobile_inventory_table(mobile_rows, stale_days)}
   </div>
 
-  <div class="footer">
-    Generated by jamf-reports-community &mdash; Cloud Lake Technology
-  </div>
+</main>
 
-</div>
+<footer class="footer">
+  Generated by jamf-reports-community &mdash; Cloud Lake Technology
+  <p class="verify-footer" style="margin-top:8px;font-size:11px;opacity:0.7">
+    Source fingerprint: <code>{report_sha256_placeholder}</code>
+    &mdash; verify with <code>shasum -a 256 {verify_filename}</code>
+    (see report-sha256 meta tag; replace the hash field with 64 zeros to reproduce)
+  </p>
+</footer>
 
 <script>{js}</script>
 </body>
@@ -13404,6 +16488,9 @@ def cmd_html(
     config: Config,
     out_file: Optional[str],
     no_open: bool = False,
+    summary_json: Optional[str] = None,
+    *,
+    strict_manifest: bool = False,
 ) -> Path:
     """Generate a self-contained HTML status report from jamf-cli data.
 
@@ -13414,13 +16501,16 @@ def cmd_html(
         config: Loaded Config instance.
         out_file: Destination file path. Defaults to the output_dir from config.
         no_open: When True, do not auto-open the file after writing.
+        summary_json: Optional path for an app-facing run summary JSON file.
+        strict_manifest: When True, abort on cached-snapshot SHA-256 mismatch.
 
     Returns:
         Path to the generated HTML report.
     """
+    summary = _command_summary_base("html", config)
     if not _jamf_cli_enabled(config):
         raise SystemExit("Error: html requires jamf_cli.enabled: true in config.yaml.")
-    bridge = _build_jamf_cli_bridge(config, save_output=True)
+    bridge = _build_jamf_cli_bridge(config, save_output=True, strict_manifest=strict_manifest)
     if not bridge.is_available():
         print(
             "  [warn] jamf-cli not found — will attempt to use cached data only.\n"
@@ -13448,6 +16538,7 @@ def cmd_html(
 
     report = HtmlReport(config, bridge, out_path, no_open=no_open)
     report.generate()
+    archived_paths: list[Path] = []
     if archive_enabled:
         archive_dir = config.resolve_path("output", "archive_dir")
         if archive_dir is None:
@@ -13462,7 +16553,143 @@ def cmd_html(
         )
         if archived_paths:
             print(f"  Archived {len(archived_paths)} older HTML report(s) to {archive_dir}")
+    history_path = report._history_file_path()
+    summary.update(
+        {
+            "status": "ok",
+            "outputs": [_summary_file_entry("html", out_path)],
+            "inputs": {
+                "jamf_cli_data_dir": str(getattr(bridge, "_data_dir", "")),
+                "no_open": no_open,
+            },
+            "counts": {
+                "archived_outputs": len(archived_paths),
+            },
+            "archives": {
+                "outputs": [
+                    _summary_file_entry("archived_output", path)
+                    for path in archived_paths
+                ],
+            },
+            "history": {
+                "path": history_path,
+                "tracking_enabled": bool((config.get("html") or {}).get("track_history", False)),
+            },
+        }
+    )
+    _finish_command_summary(summary)
+    _write_summary_json(summary_json, summary)
     return out_path
+
+
+def _collect_jamf_cli_commands(
+    config: Config,
+    bridge: JamfCLIBridge,
+    live_overview_allowed: bool,
+) -> list[tuple[str, Any]]:
+    """Return Jamf Pro snapshot commands collected without CSV input.
+
+    Commands with a non-empty report type key are skippable via
+    ``jamf_cli.collect_skip`` in config (use jamf-cli report type identifiers,
+    e.g. "update-status", "profile-status"). Core inventory commands are not
+    skippable because they are required for the primary report sheets.
+    """
+    stale_days = int(config.thresholds.get("stale_device_days", 30))
+    skip_types: set[str] = {
+        s.strip().lower().replace("_", "-")
+        for s in _list_of_strings(config.jamf_cli.get("collect_skip", []))
+    }
+
+    # Each entry: (human label, callable, report-type key).
+    # An empty report-type key means the command is not skippable via collect_skip.
+    candidates: list[tuple[str, Any, str]] = []
+    if live_overview_allowed:
+        candidates.append(("Fleet Overview", bridge.overview, ""))
+    else:
+        print("  [skip] Fleet Overview: live overview disabled in config")
+    candidates.extend(
+        [
+            ("Computer Inventory", lambda: bridge.computers_list(_inventory_computer_sections()), ""),
+            ("Inventory Summary", bridge.inventory_summary, ""),
+            ("Hardware Models", bridge.hardware_models, ""),
+            ("Mobile Inventory", bridge.mobile_device_inventory_details, ""),
+            ("Mobile Device List", bridge.mobile_devices_list, ""),
+            ("Mobile Config Profiles", bridge.ios_profiles_list, ""),
+            ("Security Posture", bridge.security_report, ""),
+            ("Device Compliance", lambda: bridge.device_compliance(stale_days), ""),
+            ("Check-in Health", bridge.checkin_status, ""),
+            ("EA Coverage", lambda: bridge.ea_results_report(include_all=True), ""),
+            ("EA Definitions", bridge.computer_extension_attributes, ""),
+            ("Software Installs", bridge.software_installs, ""),
+            ("Patch Compliance", bridge.patch_status, ""),
+            ("Patch Summaries", bridge.patch_summaries, ""),
+            ("Patch Failures", bridge.patch_device_failures, "patch-device-failures"),
+            ("Policy Health", bridge.policy_status, ""),
+            ("Profile Status", bridge.profile_status, "profile-status"),
+            ("App Status", bridge.app_status, ""),
+            ("Update Status", bridge.update_status, "update-status"),
+            ("Update Failures", bridge.update_device_failures, "update-device-failures"),
+            ("Group Inventory", bridge.groups, ""),
+            ("Smart Computer Groups", bridge.smart_groups_list, ""),
+            ("Package Lifecycle", bridge.packages, ""),
+            ("Classic Policies", bridge.classic_policies_list, ""),
+            ("macOS Config Profiles", bridge.macos_profiles_list, ""),
+            ("Scripts", bridge.scripts_list, ""),
+            ("Categories", bridge.categories_list, ""),
+            ("Device Enrollments", bridge.device_enrollments_list, ""),
+            ("Sites", bridge.sites_list, ""),
+            ("Buildings", bridge.buildings_list, ""),
+            ("Departments", bridge.departments_list, ""),
+        ]
+    )
+
+    commands: list[tuple[str, Any]] = []
+    for label, fn, rtype in candidates:
+        if rtype and rtype in skip_types:
+            print(f"  [skip] {label}: excluded by jamf_cli.collect_skip")
+            continue
+        commands.append((label, fn))
+    return commands
+
+
+def _archive_collect_csv_inputs(
+    config: Config,
+    csv_path: Optional[str],
+    historical_csv_dir: Optional[str],
+) -> bool:
+    """Archive CSV inputs for collect when any are configured."""
+    archived = False
+    csv_path_obj = _resolve_cli_input_path(csv_path, config)
+    selected_family_name = _family_for_csv_path(config, csv_path_obj) if csv_path_obj else None
+    hist_dir_obj = _default_historical_dir(config, selected_family_name, historical_csv_dir)
+    if config.get("charts", "archive_current_csv") is False:
+        return archived
+    if csv_path_obj and hist_dir_obj:
+        print(f"  historical CSV dir: {hist_dir_obj}")
+        archived_path, created = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
+        if archived_path:
+            archived = True
+            label = "Archived CSV snapshot" if created else "Reusing existing identical CSV snapshot"
+            print(f"  [ok] {label}: {archived_path}")
+        return archived
+    if csv_path_obj is not None:
+        return archived
+    for family_name in REPORT_FAMILY_NAMES:
+        family = _report_family_config(config, family_name)
+        if family.get("enabled") is not True:
+            continue
+        latest_path, note = _latest_report_family_file(config, family_name)
+        hist_dir = _report_family_historical_dir(config, family_name)
+        print(f"  {family_name}: {note}")
+        if latest_path is None or hist_dir is None:
+            continue
+        print(f"    historical dir: {hist_dir}")
+        archived_path, created = _archive_csv_snapshot(str(latest_path), str(hist_dir))
+        if archived_path:
+            archived = True
+            label = "Archived" if created else "Reusing identical snapshot"
+            print(f"    [ok] {label}: {archived_path}")
+    return archived
 
 
 def _collect_snapshots(
@@ -13476,7 +16703,6 @@ def _collect_snapshots(
 
     collected = 0
     jamf_cli_enabled = _jamf_cli_enabled(config)
-    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
     protect_enabled = config.get("protect", "enabled", default=False) is True
     platform_enabled = config.get("platform", "enabled", default=False) is True
@@ -13497,40 +16723,28 @@ def _collect_snapshots(
             for bench in platform_benchmarks:
                 print(f"  platform benchmark: {bench}")
     if jamf_cli_enabled and bridge is not None and bridge.is_available():
-
-        stale_days = int(config.thresholds.get("stale_device_days", 30))
-        commands = []
-        if live_overview_allowed:
-            commands.append(("Fleet Overview", bridge.overview))
-        else:
-            print("  [skip] Fleet Overview: live overview disabled in config")
-        commands.extend(
-            [
-                ("Inventory Summary", bridge.inventory_summary),
-                ("Mobile Inventory", bridge.mobile_device_inventory_details),
-                ("Mobile Device List", bridge.mobile_devices_list),
-                ("Mobile Config Profiles", bridge.ios_profiles_list),
-                ("Security Posture", bridge.security_report),
-                ("Device Compliance", lambda: bridge.device_compliance(stale_days)),
-                ("EA Coverage", lambda: bridge.ea_results_report(include_all=True)),
-                ("EA Definitions", bridge.computer_extension_attributes),
-                ("Software Installs", bridge.software_installs),
-                ("Patch Compliance", bridge.patch_status),
-                ("Patch Summaries", bridge.patch_summaries),
-                ("Patch Failures", bridge.patch_device_failures),
-                ("Policy Health", bridge.policy_status),
-                ("Profile Status", bridge.profile_status),
-            ]
-        )
+        commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed)
         if protect_enabled:
-            commands.extend(
-                [
-                    ("Protect Overview", bridge.protect_overview),
-                    ("Protect Computers", bridge.protect_computers_list),
-                    ("Protect Analytics", bridge.protect_analytics),
-                    ("Protect Plans", bridge.protect_plans),
-                ]
+            protect_bridge = _build_protect_bridge(
+                config, save_output=True, use_cached_data=False
             )
+            if protect_bridge.is_protect_available():
+                commands.extend(
+                    [
+                        ("Protect Overview", protect_bridge.overview),
+                        ("Protect Computers", protect_bridge.computers_list),
+                        ("Protect Analytics", protect_bridge.analytics_list),
+                        ("Protect Plans", protect_bridge.plans_list),
+                        ("Protect Alerts", protect_bridge.alerts_list),
+                        ("Protect Insights", protect_bridge.insights_list),
+                    ]
+                )
+            else:
+                print(
+                    "  [skip] protect: jamf-cli protect is not reachable for this"
+                    " profile (auth missing or binary lacks `protect` subcommand);"
+                    " skipping Protect snapshots."
+                )
         if platform_enabled:
             commands.extend(
                 [
@@ -13569,48 +16783,17 @@ def _collect_snapshots(
     else:
         print("  jamf-cli disabled in config; skipping live snapshot collection.")
 
-    archived = False
-    csv_path_obj = _resolve_cli_input_path(csv_path, config)
-    selected_family_name = _family_for_csv_path(config, csv_path_obj) if csv_path_obj else None
-    hist_dir_obj = _default_historical_dir(config, selected_family_name, historical_csv_dir)
-    if config.get("charts", "archive_current_csv") is not False:
-        if csv_path_obj and hist_dir_obj:
-            print(f"  historical CSV dir: {hist_dir_obj}")
-            archived_path, created = _archive_csv_snapshot(str(csv_path_obj), str(hist_dir_obj))
-            if archived_path:
-                archived = True
-                if created:
-                    print(f"  [ok] Archived CSV snapshot: {archived_path}")
-                else:
-                    print(f"  [ok] Reusing existing identical CSV snapshot: {archived_path}")
-        elif csv_path_obj is None:
-            for family_name in REPORT_FAMILY_NAMES:
-                family = _report_family_config(config, family_name)
-                if family.get("enabled") is not True:
-                    continue
-                latest_path, note = _latest_report_family_file(config, family_name)
-                hist_dir = _report_family_historical_dir(config, family_name)
-                print(f"  {family_name}: {note}")
-                if latest_path is None or hist_dir is None:
-                    continue
-                print(f"    historical dir: {hist_dir}")
-                archived_path, created = _archive_csv_snapshot(str(latest_path), str(hist_dir))
-                if archived_path:
-                    archived = True
-                    if created:
-                        print(f"    [ok] Archived: {archived_path}")
-                    else:
-                        print(f"    [ok] Reusing identical snapshot: {archived_path}")
-
-    return collected, archived
+    return collected, _archive_collect_csv_inputs(config, csv_path, historical_csv_dir)
 
 
 def cmd_collect(
     config: Config,
     csv_path: Optional[str] = None,
     historical_csv_dir: Optional[str] = None,
+    summary_json: Optional[str] = None,
 ) -> None:
     """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
+    summary = _command_summary_base("collect", config)
     collected, archived = _collect_snapshots(config, csv_path, historical_csv_dir)
     if collected == 0 and not archived:
         if not _jamf_cli_enabled(config):
@@ -13624,6 +16807,201 @@ def cmd_collect(
             " pass --csv plus --historical-csv-dir or enable report_families to"
             " archive CSV history."
         )
+    jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    selected_csv_path = _resolve_cli_input_path(csv_path, config)
+    selected_family_name = (
+        _family_for_csv_path(config, selected_csv_path) if selected_csv_path else None
+    )
+    hist_dir_obj = _default_historical_dir(
+        config,
+        selected_family_name,
+        historical_csv_dir,
+    )
+    summary.update(
+        {
+            "status": "ok",
+            "outputs": [],
+            "inputs": {
+                "csv": str(selected_csv_path) if selected_csv_path is not None else None,
+                "historical_csv_dir": str(hist_dir_obj) if hist_dir_obj is not None else None,
+            },
+            "counts": {
+                "collected_snapshots": collected,
+                "archived_csv": 1 if archived else 0,
+            },
+            "sources": {
+                "jamf_cli_enabled": _jamf_cli_enabled(config),
+                "jamf_cli_data_dir": str(jamf_cli_dir) if jamf_cli_dir is not None else "",
+                "protect_enabled": config.get("protect", "enabled", default=False) is True,
+                "platform_enabled": config.get("platform", "enabled", default=False) is True,
+            },
+        }
+    )
+    _finish_command_summary(summary)
+    _write_summary_json(summary_json, summary)
+
+
+def _backup_directory_stats(path: Path) -> tuple[int, int]:
+    """Return file count and total byte size for a backup directory."""
+    file_count = 0
+    total_bytes = 0
+    for item in path.rglob("*"):
+        if not item.is_file():
+            continue
+        file_count += 1
+        total_bytes += item.stat().st_size
+    return file_count, total_bytes
+
+
+def _backup_destination(config: Config, label: Optional[str]) -> tuple[Path, Path]:
+    """Return final and temporary backup directories for a new backup run."""
+    backups_root = (config.base_dir / "backups").resolve()
+    stamp = _now_ts()
+    label_part = ""
+    if label and label.strip():
+        label_part = f"-{_filename_component(label)}"
+    name = f"{stamp}{label_part}"
+    final_dir = backups_root / name
+    suffix = 1
+    while final_dir.exists():
+        suffix += 1
+        final_dir = backups_root / f"{name}-{suffix}"
+    temp_dir = backups_root / f".{final_dir.name}.partial"
+    return final_dir, temp_dir
+
+
+def _safe_remove_partial_backup(temp_dir: Path, backups_root: Path) -> None:
+    """Remove a leftover ``*.partial`` backup directory, refusing risky paths.
+
+    This guards the destructive ``shutil.rmtree`` in :func:`cmd_backup` against
+    three failure modes:
+
+    * ``temp_dir`` resolves outside ``backups_root`` (a symlink or ``..``
+      injection from a malformed label).
+    * ``temp_dir`` is a symlink — following it would let ``rmtree`` escape the
+      backups directory.
+    * ``temp_dir`` is missing the ``.partial`` suffix, which marks it as a
+      leftover from an interrupted run rather than a finished backup.
+    """
+    if not temp_dir.exists() and not temp_dir.is_symlink():
+        return
+    if temp_dir.is_symlink() or not temp_dir.name.endswith(".partial"):
+        raise SystemExit(
+            f"Error: refusing to remove unexpected backup temp dir: {temp_dir}"
+        )
+    backups_root_resolved = backups_root.resolve()
+    resolved = temp_dir.resolve(strict=False)
+    inside_backups = (
+        resolved == backups_root_resolved
+        or backups_root_resolved in resolved.parents
+    )
+    if not inside_backups:
+        raise SystemExit(
+            f"Error: refusing to remove backup temp dir outside backups root: {temp_dir}"
+        )
+    try:
+        shutil.rmtree(temp_dir)
+    except OSError as exc:
+        raise SystemExit(
+            f"Error: failed to remove backup temp dir {temp_dir}: {exc}"
+        ) from exc
+
+
+def _write_backup_manifest(backup_dir: Path, manifest: dict[str, Any]) -> None:
+    """Atomically write the backup manifest JSON."""
+    manifest_path = backup_dir / "manifest.json"
+    tmp_path = manifest_path.with_suffix(".json.partial")
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    tmp_path.replace(manifest_path)
+
+
+def cmd_backup(config: Config, label: Optional[str] = None) -> Path:
+    """Run jamf-cli pro backup into the current profile workspace."""
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: jamf_cli.enabled is false; backup requires jamf-cli.")
+    binary = _find_jamf_cli_binary()
+    if not binary:
+        raise SystemExit("Error: jamf-cli binary not found. Install jamf-cli or set JAMFCLI_PATH.")
+
+    final_dir, temp_dir = _backup_destination(config, label)
+    backups_root = (config.base_dir / "backups").resolve()
+    _safe_remove_partial_backup(temp_dir, backups_root)
+    temp_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    def abort_after_partial_cleanup(message: str, exc: BaseException) -> None:
+        temp_existed = temp_dir.exists() or temp_dir.is_symlink()
+        try:
+            _safe_remove_partial_backup(temp_dir, backups_root)
+        except SystemExit as cleanup_exc:
+            raise SystemExit(
+                f"{message}; additionally failed to remove temp backup "
+                f"{temp_dir}: {cleanup_exc}"
+            ) from exc
+        if temp_existed:
+            raise SystemExit(f"{message}; removed temp backup {temp_dir}") from exc
+        raise SystemExit(f"{message}; temp backup already absent: {temp_dir}") from exc
+
+    profile = str(config.jamf_cli.get("profile", "") or "").strip()
+    cmd = [binary]
+    if profile:
+        cmd.extend(["-p", profile])
+    cmd.append("--no-input")
+    cmd.extend(["pro", "backup", "--format", "json", "--output", str(temp_dir)])
+
+    timeout = _to_int(config.jamf_cli.get("command_timeout_seconds", 300), 300)
+    started = datetime.now(timezone.utc)
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout).strip()
+        abort_after_partial_cleanup(
+            f"Error: jamf-cli pro backup failed ({exc.returncode}): {detail}",
+            exc,
+        )
+    except subprocess.TimeoutExpired as exc:
+        abort_after_partial_cleanup(
+            f"Error: jamf-cli pro backup timed out after {timeout}s: {exc}",
+            exc,
+        )
+
+    try:
+        file_count, total_bytes = _backup_directory_stats(temp_dir)
+        manifest = {
+            "schema_version": 1,
+            "created_at": started.isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "profile": profile,
+            "label": str(label or "").strip(),
+            "command": " ".join(shlex.quote(part) for part in cmd),
+            "file_count": file_count,
+            "size_bytes": total_bytes,
+            "stdout": (result.stdout or "").strip(),
+            "stderr": (result.stderr or "").strip(),
+        }
+        _write_backup_manifest(temp_dir, manifest)
+        temp_dir.rename(final_dir)
+    except Exception as exc:
+        abort_after_partial_cleanup(
+            f"Error: backup finalization failed after jamf-cli completed: {exc}",
+            exc,
+        )
+
+    print("\nBackup summary")
+    print(f"  profile: {profile or '(default)'}")
+    print(f"  backup: {final_dir}")
+    print(f"  files: {file_count}")
+    print(f"  size: {total_bytes} bytes")
+    print("  [ok] backup complete")
+    return final_dir
 
 
 def _default_inventory_csv_out_file(config: Config) -> Path:
@@ -13650,96 +17028,38 @@ def _automation_inventory_out_file(config: Config) -> Path:
     return out_dir / stem
 
 
-def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
-    """Export a wide computer inventory CSV from jamf-cli inventory and EA data."""
-    if not _jamf_cli_enabled(config):
-        raise SystemExit("Error: inventory-csv requires jamf_cli.enabled: true in config.yaml.")
-    output_cfg = config.output
-    out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
-    if out_dir is None:
-        out_dir = Path("Generated Reports")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    timestamp_outputs = output_cfg.get("timestamp_outputs", True) is not False
-    archive_enabled = output_cfg.get("archive_enabled", True) is not False
-    keep_latest_runs = _to_int(output_cfg.get("keep_latest_runs", 10), 10)
+def _inventory_computer_sections() -> list[str]:
+    """Return Jamf Pro computer inventory sections used for CSV export."""
+    return [
+        "GENERAL",
+        "HARDWARE",
+        "OPERATING_SYSTEM",
+        "USER_AND_LOCATION",
+        "DISK_ENCRYPTION",
+        "SECURITY",
+    ]
 
-    run_stamp = _file_stamp()
-    if out_file:
-        out_path = _timestamped_output_path(
-            Path(out_file).expanduser(), run_stamp, timestamp_outputs
-        )
-    else:
-        out_path = _timestamped_output_path(
-            _default_inventory_csv_out_file(config),
-            run_stamp,
-            timestamp_outputs,
-        )
-    out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Output: {out_path}")
-    print(f"  config base dir: {config.base_dir}")
+def _compact_error_text(exc: Exception, limit: int = 500) -> str:
+    """Return a single-line error string suitable for operator logs."""
+    text = " ".join(str(exc).split())
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}..."
 
-    bridge = _build_jamf_cli_bridge(config, save_output=False, use_cached_data=False)
-    if not bridge.is_available():
-        raise SystemExit("Error: jamf-cli not found. Install it or set JAMFCLI_PATH.")
 
-    computers_raw = bridge.computers_list(
-        sections=[
-            "GENERAL",
-            "HARDWARE",
-            "OPERATING_SYSTEM",
-            "USER_AND_LOCATION",
-            "DISK_ENCRYPTION",
-            "SECURITY",
-        ]
-    )
-    computers = computers_raw if isinstance(computers_raw, list) else []
-    if not computers:
-        raise SystemExit("Error: jamf-cli returned no computers.")
+def _apply_inventory_ea_results(
+    bridge: JamfCLIBridge,
+    row_index: dict[str, list[dict[str, Any]]],
+) -> tuple[set[str], int, Optional[str]]:
+    """Apply jamf-cli EA result rows to inventory rows when available."""
+    try:
+        ea_raw = bridge.ea_results_report(include_all=True)
+    except RuntimeError as exc:
+        return set(), 0, _compact_error_text(exc)
 
-    counts_by_name: dict[str, int] = {}
-    base_rows: list[dict[str, Any]] = []
-    for item in computers:
-        if not isinstance(item, dict):
-            continue
-        row = _inventory_export_row(item)
-        name = row["Computer Name"]
-        counts_by_name[name] = counts_by_name.get(name, 0) + 1
-        base_rows.append(row)
-
-    duplicate_names = sorted(
-        name for name, count in counts_by_name.items() if count > 1 and name
-    )
-    if duplicate_names:
-        names_preview = ", ".join(duplicate_names[:5])
-        print(
-            "  [warn] Duplicate computer names detected;"
-            " matching will prefer Jamf Pro ID, serial number, UDID, and"
-            f" management ID before name: {names_preview}"
-        )
-
-    row_index = _inventory_build_row_index(base_rows)
-    inv_cfg = config.get("inventory_csv") or {}
-    skip_enrichment = bool(inv_cfg.get("skip_security_enrichment", False))
-    enrich_workers = _to_int(inv_cfg.get("max_workers", 20), 20)
-    if skip_enrichment:
-        print(
-            f"  [skip] security detail enrichment"
-            f" (inventory_csv.skip_security_enrichment: true)"
-        )
-        detail_enriched, detail_failures, detail_unresolved = 0, 0, 0
-    else:
-        detail_enriched, detail_failures, detail_unresolved = (
-            _enrich_inventory_rows_with_security_details(
-                bridge,
-                computers,
-                row_index,
-                max_workers=enrich_workers,
-            )
-        )
     ea_columns: set[str] = set()
     unmatched_ea_rows = 0
-    ea_raw = bridge.ea_results(include_all=True)
     ea_rows = ea_raw if isinstance(ea_raw, list) else []
     for item in ea_rows:
         if not isinstance(item, dict):
@@ -13754,14 +17074,101 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
             continue
         row[ea_name] = str(item.get("value", "") or "").strip()
         ea_columns.add(ea_name)
+    return ea_columns, unmatched_ea_rows, None
 
-    ordered_columns = INVENTORY_EXPORT_COLUMNS + sorted(
-        column for column in ea_columns if column not in INVENTORY_EXPORT_COLUMNS
+
+def _inventory_output_settings(
+    config: Config,
+    out_file: Optional[str],
+) -> tuple[Path, bool, int]:
+    """Return inventory CSV output path and archive settings."""
+    output_cfg = config.output
+    out_dir = config.resolve_path("output", "output_dir", default="Generated Reports")
+    if out_dir is None:
+        out_dir = Path("Generated Reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    timestamp_outputs = output_cfg.get("timestamp_outputs", True) is not False
+    archive_enabled = output_cfg.get("archive_enabled", True) is not False
+    keep_latest_runs = _to_int(output_cfg.get("keep_latest_runs", 10), 10)
+    run_stamp = _file_stamp()
+    raw_path = Path(out_file).expanduser() if out_file else _default_inventory_csv_out_file(config)
+    out_path = _timestamped_output_path(raw_path, run_stamp, timestamp_outputs)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    return out_path, archive_enabled, keep_latest_runs
+
+
+def _inventory_base_rows(
+    computers: list[Any],
+) -> tuple[list[dict[str, Any]], list[str], dict[str, list[dict[str, Any]]]]:
+    """Build base inventory CSV rows and lookup indexes."""
+    counts_by_name: dict[str, int] = {}
+    base_rows: list[dict[str, Any]] = []
+    for item in computers:
+        if not isinstance(item, dict):
+            continue
+        row = _inventory_export_row(item)
+        name = row["Computer Name"]
+        counts_by_name[name] = counts_by_name.get(name, 0) + 1
+        base_rows.append(row)
+    duplicate_names = sorted(
+        name for name, count in counts_by_name.items() if count > 1 and name
     )
-    df = pd.DataFrame(base_rows, columns=ordered_columns).fillna("")
-    df.to_csv(out_path, index=False, encoding="utf-8-sig")
+    return base_rows, duplicate_names, _inventory_build_row_index(base_rows)
 
-    print(f"  [ok] Exported {len(df)} computers")
+
+def _archive_inventory_output(config: Config, out_path: Path, keep_latest_runs: int) -> None:
+    """Archive older inventory CSV exports according to output settings."""
+    archive_dir = config.resolve_path("output", "archive_dir")
+    if archive_dir is None:
+        archive_dir = out_path.parent / "archive"
+    family_base = _strip_timestamp_suffix(out_path.stem)
+    archived_paths = _archive_old_output_runs(
+        out_path.parent,
+        family_base,
+        {".csv"},
+        keep_latest_runs,
+        archive_dir,
+    )
+    if archived_paths:
+        print(f"  Archived {len(archived_paths)} older inventory export(s) to {archive_dir}")
+
+
+def _write_inventory_csv_atomic(df: pd.DataFrame, out_path: Path) -> None:
+    """Write an inventory CSV via a temporary file in the destination directory."""
+    temp_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=out_path.parent,
+            prefix=f".{out_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+        df.to_csv(temp_path, index=False, encoding="utf-8-sig")
+        temp_path.replace(out_path)
+    except Exception as exc:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError as cleanup_exc:
+                raise SystemExit(
+                    f"Error: failed to write inventory CSV {out_path}: {exc}; "
+                    f"also failed to remove temp file {temp_path}: {cleanup_exc}"
+                ) from exc
+        raise SystemExit(f"Error: failed to write inventory CSV {out_path}: {exc}") from exc
+
+
+def _print_inventory_export_summary(
+    row_count: int,
+    detail_enriched: int,
+    detail_failures: int,
+    detail_unresolved: int,
+    ea_columns: set[str],
+    unmatched_ea_rows: int,
+    ea_error: Optional[str],
+) -> None:
+    """Print a concise inventory CSV export summary."""
+    print(f"  [ok] Exported {row_count} computers")
     print(
         "  [ok] Added"
         f" {len(INVENTORY_SECURITY_DETAIL_COLUMNS)} generic security detail column(s)"
@@ -13778,7 +17185,10 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
             "  [warn] Could not uniquely match security details for"
             f" {detail_unresolved} computer(s)"
         )
-    print(f"  [ok] Included {len(ea_columns)} extension attribute columns")
+    if ea_error:
+        print(f"  [warn] Extension attribute results unavailable; continuing: {ea_error}")
+    else:
+        print(f"  [ok] Included {len(ea_columns)} extension attribute columns")
     if unmatched_ea_rows:
         print(
             "  [warn] Could not uniquely match"
@@ -13788,20 +17198,73 @@ def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
         "  Note: this export is built from jamf-cli computers list plus"
         " per-device security details and jamf-cli report ea-results."
     )
-    if archive_enabled:
-        archive_dir = config.resolve_path("output", "archive_dir")
-        if archive_dir is None:
-            archive_dir = out_path.parent / "archive"
-        family_base = _strip_timestamp_suffix(out_path.stem)
-        archived_paths = _archive_old_output_runs(
-            out_path.parent,
-            family_base,
-            {".csv"},
-            keep_latest_runs,
-            archive_dir,
+
+
+def cmd_inventory_csv(config: Config, out_file: Optional[str]) -> Path:
+    """Export a wide computer inventory CSV from jamf-cli inventory and EA data."""
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: inventory-csv requires jamf_cli.enabled: true in config.yaml.")
+    out_path, archive_enabled, keep_latest_runs = _inventory_output_settings(config, out_file)
+    print(f"Output: {out_path}")
+    print(f"  config base dir: {config.base_dir}")
+
+    bridge = _build_jamf_cli_bridge(config, save_output=True)
+    if not bridge.is_available():
+        raise SystemExit("Error: jamf-cli not found. Install it or set JAMFCLI_PATH.")
+
+    computers_raw = bridge.computers_list(sections=_inventory_computer_sections())
+    computers = computers_raw if isinstance(computers_raw, list) else []
+    if not computers:
+        raise SystemExit("Error: jamf-cli returned no computers.")
+
+    base_rows, duplicate_names, row_index = _inventory_base_rows(computers)
+    if duplicate_names:
+        names_preview = ", ".join(duplicate_names[:5])
+        print(
+            "  [warn] Duplicate computer names detected;"
+            " matching will prefer Jamf Pro ID, serial number, UDID, and"
+            f" management ID before name: {names_preview}"
         )
-        if archived_paths:
-            print(f"  Archived {len(archived_paths)} older inventory export(s) to {archive_dir}")
+
+    inv_cfg = config.get("inventory_csv") or {}
+    skip_enrichment = bool(inv_cfg.get("skip_security_enrichment", False))
+    enrich_workers = _to_int(inv_cfg.get("max_workers", 20), 20)
+    if skip_enrichment:
+        print(
+            "  [skip] security detail enrichment"
+            " (inventory_csv.skip_security_enrichment: true)"
+        )
+        detail_enriched, detail_failures, detail_unresolved = 0, 0, 0
+    else:
+        detail_enriched, detail_failures, detail_unresolved = (
+            _enrich_inventory_rows_with_security_details(
+                bridge,
+                computers,
+                row_index,
+                max_workers=enrich_workers,
+            )
+        )
+    ea_columns, unmatched_ea_rows, ea_error = _apply_inventory_ea_results(
+        bridge,
+        row_index,
+    )
+
+    ordered_columns = INVENTORY_EXPORT_COLUMNS + sorted(
+        column for column in ea_columns if column not in INVENTORY_EXPORT_COLUMNS
+    )
+    df = pd.DataFrame(base_rows, columns=ordered_columns).fillna("")
+    _write_inventory_csv_atomic(df, out_path)
+    _print_inventory_export_summary(
+        len(df),
+        detail_enriched,
+        detail_failures,
+        detail_unresolved,
+        ea_columns,
+        unmatched_ea_rows,
+        ea_error,
+    )
+    if archive_enabled:
+        _archive_inventory_output(config, out_path, keep_latest_runs)
     return out_path
 
 
@@ -14163,6 +17626,8 @@ def _launchagent_environment() -> dict[str, str]:
     env = {
         "HOME": str(Path.home()),
         "PATH": DEFAULT_LAUNCHD_PATH,
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONNOUSERSITE": "1",
         "PYTHONUNBUFFERED": "1",
     }
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME", "").strip()
@@ -14177,6 +17642,7 @@ def _launchagent_environment() -> dict[str, str]:
 def _launchagent_program_arguments(
     config_path: Path,
     mode: str,
+    profile: Optional[str],
     status_file: Path,
     historical_csv_dir: Optional[Path],
     csv_inbox_dir: Optional[Path],
@@ -14195,6 +17661,9 @@ def _launchagent_program_arguments(
         "--status-file",
         str(status_file),
     ]
+    profile_name = _validate_profile_override(profile or "")
+    if profile_name:
+        args.extend(["--profile", profile_name])
     if historical_csv_dir:
         args.extend(["--historical-csv-dir", str(historical_csv_dir)])
     if csv_inbox_dir:
@@ -14220,6 +17689,35 @@ def _automation_output_flags(config: Config) -> tuple[bool, bool, bool]:
     return generate_xlsx, generate_html, generate_inventory_csv
 
 
+def _launchagent_previous_plist_path(plist_path: Path) -> Path:
+    """Return the sibling path used to preserve a replaceable LaunchAgent plist."""
+    return plist_path.with_name(f".{plist_path.name}.previous")
+
+
+def _write_launchagent_bytes(path: Path, payload: bytes, mode: int = 0o644) -> None:
+    """Atomically write bytes to a LaunchAgent-adjacent file."""
+    temp_path: Optional[Path] = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "wb",
+            delete=False,
+            dir=str(path.parent),
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        ) as fh:
+            temp_path = Path(fh.name)
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(temp_path, mode)
+        os.replace(temp_path, path)
+    except OSError:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
+
+
 def _write_launchagent_plist(
     plist_path: Path,
     label: str,
@@ -14228,6 +17726,7 @@ def _write_launchagent_plist(
     schedule_items: list[dict[str, int]],
     stdout_path: Path,
     stderr_path: Path,
+    disabled: bool = False,
 ) -> None:
     """Write a LaunchAgent plist for the supplied automation plan."""
     payload = {
@@ -14237,24 +17736,38 @@ def _write_launchagent_plist(
         "EnvironmentVariables": _launchagent_environment(),
         "StartCalendarInterval": schedule_items,
         "RunAtLoad": False,
+        "Disabled": disabled,
         "StandardOutPath": str(stdout_path),
         "StandardErrorPath": str(stderr_path),
     }
     plist_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(plist_path, "wb") as fh:
-        plistlib.dump(payload, fh, sort_keys=True)
+    previous_path = _launchagent_previous_plist_path(plist_path)
+    mode = 0o644
+    if plist_path.exists():
+        mode = plist_path.stat().st_mode & 0o777
+        _write_launchagent_bytes(previous_path, plist_path.read_bytes(), mode)
+    else:
+        previous_path.unlink(missing_ok=True)
+    _write_launchagent_bytes(plist_path, plistlib.dumps(payload, sort_keys=True), mode)
+
+
+def _unload_launchagent(label: str) -> str:
+    """Boot out a LaunchAgent label from the current GUI session if it is loaded."""
+    target = f"gui/{os.getuid()}"
+    subprocess.run(
+        ["launchctl", "bootout", f"{target}/{label}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return target
 
 
 def _load_launchagent(plist_path: Path, label: str, run_now: bool) -> str:
     """Bootstrap a LaunchAgent into the current GUI session."""
     target = f"gui/{os.getuid()}"
     label_target = f"{target}/{label}"
-    subprocess.run(
-        ["launchctl", "bootout", target, str(plist_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    _unload_launchagent(label)
     try:
         subprocess.run(
             ["launchctl", "bootstrap", target, str(plist_path)],
@@ -14264,13 +17777,48 @@ def _load_launchagent(plist_path: Path, label: str, run_now: bool) -> str:
         )
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout).strip()
-        raise SystemExit(f"Error: launchctl bootstrap failed: {detail}") from None
+        previous_path = _launchagent_previous_plist_path(plist_path)
+        if not previous_path.exists():
+            raise SystemExit(f"Error: launchctl bootstrap failed: {detail}") from None
+        try:
+            os.replace(previous_path, plist_path)
+            subprocess.run(
+                ["launchctl", "bootstrap", target, str(plist_path)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            subprocess.run(
+                ["launchctl", "enable", label_target],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as restore_exc:
+            raise SystemExit(
+                f"Error: launchctl bootstrap failed: {detail}. "
+                f"Previous LaunchAgent plist restore failed: {restore_exc}"
+            ) from None
+        except subprocess.CalledProcessError as restore_exc:
+            restore_detail = (restore_exc.stderr or restore_exc.stdout).strip()
+            raise SystemExit(
+                f"Error: launchctl bootstrap failed: {detail}. "
+                f"Previous LaunchAgent restored, but bootstrap failed: {restore_detail}"
+            ) from None
+        raise SystemExit(
+            f"Error: launchctl bootstrap failed: {detail}. "
+            "Previous LaunchAgent restored and reloaded."
+        ) from None
     subprocess.run(
         ["launchctl", "enable", label_target],
         capture_output=True,
         text=True,
         check=False,
     )
+    try:
+        _launchagent_previous_plist_path(plist_path).unlink(missing_ok=True)
+    except OSError:
+        pass
     if run_now:
         try:
             subprocess.run(
@@ -14296,6 +17844,19 @@ def cmd_launchagent_run(
 ) -> None:
     """Run a scheduled automation workflow from a generated LaunchAgent."""
     started_at = datetime.now(timezone.utc).isoformat()
+    # PR-11 / threat-model T-12: derive the per-log summary filename from
+    # status_file so cmd_generate can write a manifest-protected status
+    # snapshot for Swift's PARTIAL-pill check. status_file convention is
+    # `<workspace>/automation/<job_slug>_status.json`; logs land in
+    # `<workspace>/automation/logs/<job_slug>.out.log` and Swift derives
+    # `logFilename = "<job_slug>.out"` via `deletingPathExtension`.
+    per_log_summary_filename: Optional[str] = None
+    if status_file:
+        status_name = Path(status_file).name
+        if status_name.endswith("_status.json"):
+            job_slug = status_name[: -len("_status.json")]
+            if job_slug:
+                per_log_summary_filename = f"{job_slug}.out"
     status: dict[str, Any] = {
         "config_path": str(config.path),
         "finished_at": None,
@@ -14365,6 +17926,7 @@ def cmd_launchagent_run(
                     None,
                     historical_csv_dir,
                     notify_url,
+                    per_log_summary_filename=per_log_summary_filename,
                 )
                 status["report_path"] = str(report_path)
                 status["xlsx_report_path"] = str(report_path)
@@ -14376,7 +17938,10 @@ def cmd_launchagent_run(
                 inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
                 status["inventory_csv_path"] = str(inventory_path)
             if generate_xlsx:
-                report_path = cmd_generate(config, None, None, historical_csv_dir, notify_url)
+                report_path = cmd_generate(
+                    config, None, None, historical_csv_dir, notify_url,
+                    per_log_summary_filename=per_log_summary_filename,
+                )
                 status["report_path"] = str(report_path)
                 status["xlsx_report_path"] = str(report_path)
             if generate_html:
@@ -14398,6 +17963,7 @@ def cmd_launchagent_run(
                     None,
                     historical_csv_dir,
                     notify_url,
+                    per_log_summary_filename=per_log_summary_filename,
                 )
                 status["report_path"] = str(report_path)
                 status["xlsx_report_path"] = str(report_path)
@@ -14424,6 +17990,7 @@ def cmd_launchagent_run(
                     None,
                     historical_csv_dir,
                     notify_url,
+                    per_log_summary_filename=per_log_summary_filename,
                 )
                 status["report_path"] = str(report_path)
                 status["xlsx_report_path"] = str(report_path)
@@ -14465,6 +18032,7 @@ def cmd_launchagent_setup(
     notify_url: Optional[str],
     skip_load: bool,
     run_now: bool,
+    disabled: bool,
 ) -> None:
     """Interactively create and optionally load a LaunchAgent automation job."""
     config_path = _require_existing_config_path(config_path_value)
@@ -14505,7 +18073,7 @@ def cmd_launchagent_setup(
         launchagents_dir or str(Path.home() / "Library" / "LaunchAgents"),
         automation_root,
     )
-    job_label = label or _default_launchagent_label(config)
+    job_label = _validate_launchagent_label(label or _default_launchagent_label(config))
     job_slug = _filename_component(job_label)
     automation_dir = automation_root / "automation"
     logs_dir = automation_dir / "logs"
@@ -14523,6 +18091,7 @@ def cmd_launchagent_setup(
     program_arguments = _launchagent_program_arguments(
         config_path,
         selected_mode,
+        str(config.jamf_cli.get("profile", "") or "").strip(),
         status_path,
         csv_history_dir,
         csv_inbox_path,
@@ -14544,6 +18113,7 @@ def cmd_launchagent_setup(
         schedule_items,
         stdout_path,
         stderr_path,
+        disabled,
     )
 
     print("\nLaunchAgent setup summary")
@@ -14569,12 +18139,19 @@ def cmd_launchagent_setup(
     print(f"  stdout log: {stdout_path}")
     print(f"  stderr log: {stderr_path}")
     print(f"  status file: {status_path}")
+    if disabled:
+        print("  enabled: false")
     print(f"  command: {shlex.join(program_arguments)}")
     isolation_guidance = _profile_isolation_guidance(config)
     if isolation_guidance:
         print("  profile isolation guidance:")
         for item in isolation_guidance:
             print(f"    - {item}")
+
+    if disabled:
+        target = _unload_launchagent(job_label)
+        print(f"  LaunchAgent written disabled and unloaded from launchd target: {target}")
+        return
 
     if skip_load:
         print("  LaunchAgent not loaded (--skip-load).")
@@ -14586,8 +18163,239 @@ def cmd_launchagent_setup(
         print("  Triggered one immediate run with launchctl kickstart.")
 
 
+def _multi_launchagent_profile_list(
+    workspace_root: Optional[str],
+    profiles: Optional[str],
+    profile_filter: Optional[str],
+) -> tuple[Path, list[str]]:
+    """Resolve multi-profile LaunchAgent targets from initialized workspaces."""
+    root = Path(workspace_root or Path.home() / "Jamf-Reports").expanduser().resolve()
+
+    def valid_profile(value: str) -> str:
+        return _validate_profile_override(value)
+
+    if profiles:
+        names = [
+            valid_profile(item.strip())
+            for item in profiles.split(",")
+            if item.strip()
+        ]
+    else:
+        names = []
+        if root.is_dir():
+            for child in sorted(root.iterdir(), key=lambda p: p.name):
+                if not child.is_dir() or not (child / "config.yaml").exists():
+                    continue
+                try:
+                    names.append(valid_profile(child.name))
+                except SystemExit:
+                    continue
+        if profile_filter:
+            names = [name for name in names if fnmatch(name, profile_filter)]
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        if name and name not in seen:
+            deduped.append(name)
+            seen.add(name)
+    return root, deduped
+
+
+def _multi_launchagent_run_one(
+    profile: str,
+    workspace_root: Path,
+    mode: str,
+    csv_inbox_dir: Optional[str],
+    csv_freshness_days: int,
+    historical_csv_dir: Optional[str],
+    notify_url: Optional[str],
+) -> dict[str, Any]:
+    """Run one profile's LaunchAgent workflow and return a compact result."""
+    config_path = workspace_root / profile / "config.yaml"
+    if not config_path.exists():
+        return {
+            "profile": profile,
+            "success": False,
+            "error": f"config not found: {config_path}",
+        }
+
+    started_at = datetime.now(timezone.utc).isoformat()
+    try:
+        config = Config(str(config_path))
+        _apply_profile_override(config, profile, "launchagent-run")
+        automation_dir = config.base_dir / "automation"
+        automation_dir.mkdir(parents=True, exist_ok=True)
+        status_path = automation_dir / f"multi_{_filename_component(profile)}_status.json"
+
+        per_historical_dir = historical_csv_dir
+        if per_historical_dir is None:
+            resolved_hist = _resolve_historical_csv_dir(None, config.base_dir, mode)
+            per_historical_dir = str(resolved_hist) if resolved_hist else None
+
+        per_csv_inbox_dir = csv_inbox_dir
+        per_csv_freshness_days = csv_freshness_days
+        if per_csv_inbox_dir is None:
+            resolved_inbox, per_csv_freshness_days = _resolve_csv_inbox_settings(
+                None,
+                csv_freshness_days,
+                config.base_dir,
+                mode,
+            )
+            per_csv_inbox_dir = str(resolved_inbox) if resolved_inbox else None
+
+        print(f"\n=== Multi profile: {profile} ===")
+        cmd_launchagent_run(
+            config,
+            mode,
+            per_csv_inbox_dir,
+            per_csv_freshness_days,
+            per_historical_dir,
+            str(status_path),
+            notify_url,
+        )
+        return {
+            "profile": profile,
+            "success": True,
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "status_file": str(status_path),
+        }
+    except SystemExit as exc:
+        return {
+            "profile": profile,
+            "success": False,
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "error": str(exc),
+        }
+    except Exception as exc:  # noqa: BLE001 - aggregate profile failures.
+        return {
+            "profile": profile,
+            "success": False,
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def cmd_multi_launchagent_run(
+    mode: str,
+    workspace_root: Optional[str],
+    profiles: Optional[str],
+    profile_filter: Optional[str],
+    sequential: bool,
+    csv_inbox_dir: Optional[str],
+    csv_freshness_days: int,
+    historical_csv_dir: Optional[str],
+    status_file: Optional[str],
+    notify_url: Optional[str] = None,
+) -> None:
+    """Run one automation workflow across initialized profile workspaces."""
+    started_at = datetime.now(timezone.utc).isoformat()
+    root, targets = _multi_launchagent_profile_list(workspace_root, profiles, profile_filter)
+    status: dict[str, Any] = {
+        "command": "multi-launchagent-run",
+        "finished_at": None,
+        "mode": mode,
+        "profile_count": len(targets),
+        "profiles": targets,
+        "started_at": started_at,
+        "status_file": status_file,
+        "success": False,
+        "workspace_root": str(root),
+    }
+    if profile_filter:
+        status["profile_filter"] = profile_filter
+    if profiles:
+        status["profile_list"] = profiles
+
+    if not targets:
+        status["error"] = "no initialized profile workspaces matched the multi-profile target"
+        status["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _write_status_file(status_file, status)
+        raise SystemExit(f"Error: {status['error']}")
+
+    print("\nMulti-profile LaunchAgent run")
+    print(f"  mode: {mode}")
+    print(f"  workspace root: {root}")
+    print(f"  profiles: {', '.join(targets)}")
+    print(f"  execution: {'sequential' if sequential else 'parallel'}")
+
+    if sequential or len(targets) == 1:
+        results = [
+            _multi_launchagent_run_one(
+                profile,
+                root,
+                mode,
+                csv_inbox_dir,
+                csv_freshness_days,
+                historical_csv_dir,
+                notify_url,
+            )
+            for profile in targets
+        ]
+    else:
+        max_workers = min(4, len(targets))
+        results = []
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(
+                    _multi_launchagent_run_one,
+                    profile,
+                    root,
+                    mode,
+                    csv_inbox_dir,
+                    csv_freshness_days,
+                    historical_csv_dir,
+                    notify_url,
+                ): profile
+                for profile in targets
+            }
+            done, not_done = wait(futures.keys(), timeout=3600)  # 1 hour timeout
+            for future in done:
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    profile = futures[future]
+                    results.append({
+                        "profile": profile,
+                        "success": False,
+                        "error": str(exc),
+                        "started_at": None,
+                        "finished_at": datetime.now(timezone.utc).isoformat(),
+                    })
+            for future in not_done:
+                future.cancel()
+                profile = futures[future]
+                results.append({
+                    "profile": profile,
+                    "success": False,
+                    "error": "timeout after 3600s",
+                    "started_at": None,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                })
+        results.sort(key=lambda item: str(item.get("profile", "")))
+
+    failures = [item for item in results if not item.get("success")]
+    status["results"] = results
+    status["success"] = not failures
+    status["finished_at"] = datetime.now(timezone.utc).isoformat()
+    _write_status_file(status_file, status)
+
+    print("\nMulti-profile summary")
+    for item in results:
+        label = "[ok]" if item.get("success") else "[fail]"
+        print(f"  {label} {item.get('profile')}")
+        if item.get("error"):
+            print(f"       {item['error']}")
+    if failures:
+        failed_names = ", ".join(str(item.get("profile", "")) for item in failures)
+        raise SystemExit(f"Error: multi-profile run failed for: {failed_names}")
+
+
 # ---------------------------------------------------------------------------
-# Managed-state patching (requires jamf-cli v1.6.0+)
+# Managed-state patching (requires jamf-cli v1.14.0+)
 # ---------------------------------------------------------------------------
 
 
@@ -14625,7 +18433,7 @@ def cmd_patch_managed(
 ) -> None:
     """Set managed state on computers via jamf-cli computers-inventory patch.
 
-    Requires jamf-cli v1.6.0+. Without --serials-file, queries device-compliance
+    Requires jamf-cli v1.14.0+. Without --serials-file, queries device-compliance
     and patches all devices currently in the opposite managed state. With
     --serials-file, patches every listed serial to the target state.
 
@@ -14689,12 +18497,291 @@ def cmd_patch_managed(
             if "unknown command" in detail.lower() or "computers-inventory" in detail.lower():
                 raise SystemExit(
                     "Error: 'computers-inventory patch' not available."
-                    " Upgrade to jamf-cli v1.6.0+."
+                    " Upgrade to jamf-cli v1.14.0+."
                 ) from exc
             print(f"  [fail] {serial}: {exc}")
             failed += 1
 
     print(f"\nDone: {success} patched, {failed} failed.")
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic bundle
+# ---------------------------------------------------------------------------
+
+
+_BUNDLE_SCHEMA_VERSION = 1
+
+
+def _bundle_redact_yaml_text(text: str, redactor: Optional[LogRedactor]) -> str:
+    """Apply the redactor to a YAML/config text blob."""
+    if redactor is None:
+        return text
+    return redactor.redact_text(text)
+
+
+def _bundle_collect_logs(
+    workspace: Path,
+    days: int,
+    redactor: Optional[LogRedactor],
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Walk `workspace/automation/logs/` and add files newer than `days` to the zip."""
+    logs_dir = workspace / "automation" / "logs"
+    if not logs_dir.exists():
+        return
+    cutoff = datetime.now().timestamp() - (days * 86400)
+    for log_path in sorted(logs_dir.rglob("*")):
+        if not log_path.is_file() or log_path.stat().st_mtime < cutoff:
+            continue
+        rel = log_path.relative_to(logs_dir)
+        arcname = f"logs/{rel.as_posix()}"
+        try:
+            content = log_path.read_text(errors="replace")
+        except OSError as exc:
+            manifest_files.append({"path": arcname, "skipped": True, "reason": str(exc)})
+            continue
+        if redactor is not None:
+            content = redactor.redact_text(content)
+        zip_file.writestr(arcname, content)
+        manifest_files.append({
+            "path": arcname,
+            "size": len(content),
+            "redacted": redactor is not None,
+        })
+
+
+def _bundle_collect_summaries(
+    workspace: Path,
+    limit: int,
+    redactor: Optional[LogRedactor],
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Add the N most recent summary_*.json files to the zip."""
+    summaries_dir = workspace / "snapshots" / "computers" / "summaries"
+    if not summaries_dir.exists():
+        return
+    summaries = sorted(
+        summaries_dir.glob("summary_*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )[:limit]
+    for summary in summaries:
+        arcname = f"summaries/{summary.name}"
+        try:
+            raw = summary.read_text()
+            obj = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            manifest_files.append({"path": arcname, "skipped": True, "reason": str(exc)})
+            continue
+        if redactor is not None:
+            obj = redactor.redact_json(obj)
+        zip_file.writestr(arcname, json.dumps(obj, indent=2, sort_keys=True))
+        manifest_files.append({
+            "path": arcname,
+            "redacted": redactor is not None,
+        })
+
+
+def _bundle_collect_config(
+    config: Config,
+    redactor: Optional[LogRedactor],
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Add the workspace's config.yaml to the zip with secrets redacted."""
+    config_path = Path(config.path) if hasattr(config, "path") else None
+    if config_path is None or not config_path.exists():
+        return
+    try:
+        content = config_path.read_text()
+    except OSError as exc:
+        manifest_files.append({
+            "path": "config.yaml",
+            "skipped": True,
+            "reason": str(exc),
+        })
+        return
+    content = _bundle_redact_yaml_text(content, redactor)
+    zip_file.writestr("config.yaml", content)
+    manifest_files.append({
+        "path": "config.yaml",
+        "size": len(content),
+        "redacted": redactor is not None,
+    })
+
+
+def _bundle_collect_workspace_tree(
+    workspace: Path,
+    redactor: Optional[LogRedactor],
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+    max_depth: int = 3,
+) -> None:
+    """Emit a `workspace_tree.txt` listing rooted at the workspace's basename.
+
+    The full absolute path (`/Users/<user>/Jamf-Reports/<profile>/`) is
+    deliberately NOT emitted — it would leak the local macOS username.
+    Use only the workspace's basename as the root label. Entries are run
+    through the redactor so a user-named CSV with a device name or serial in
+    its filename does not leak.
+    """
+    lines: list[str] = [f"{workspace.name}/"]
+    workspace_resolved = workspace.resolve()
+    for root, dirs, files in os.walk(workspace):
+        root_path = Path(root).resolve()
+        rel = root_path.relative_to(workspace_resolved)
+        depth = len(rel.parts)
+        if depth > max_depth:
+            dirs[:] = []
+            continue
+        if depth > 0:
+            lines.append(f"{'  ' * depth}{rel.name}/")
+        for name in sorted(files):
+            lines.append(f"{'  ' * (depth + 1)}{name}")
+    content = "\n".join(lines)
+    if redactor is not None:
+        content = redactor.redact_text(content)
+    zip_file.writestr("workspace_tree.txt", content)
+    manifest_files.append({
+        "path": "workspace_tree.txt",
+        "size": len(content),
+        "redacted": redactor is not None,
+    })
+
+
+def _bundle_collect_versions(
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Capture jamf-cli version, Python version, OS platform."""
+    jamf_version = "not installed"
+    try:
+        result = subprocess.run(
+            ["jamf-cli", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode == 0:
+            jamf_version = (result.stdout or result.stderr or "").strip().splitlines()[0]
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    versions = {
+        "jamf_cli_version": jamf_version,
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "bundle_schema_version": _BUNDLE_SCHEMA_VERSION,
+    }
+    content = json.dumps(versions, indent=2, sort_keys=True)
+    zip_file.writestr("versions.json", content)
+    manifest_files.append({"path": "versions.json", "size": len(content)})
+
+
+def cmd_diagnostic_bundle(
+    config: Config,
+    *,
+    days: int = 7,
+    summary_limit: int = 10,
+    output_path: Optional[Path] = None,
+    no_redact: bool = False,
+    keep_hostnames: bool = False,
+    keep_serials: bool = False,
+    keep_emails: bool = False,
+    keep_device_names: bool = False,
+    keep_usernames: bool = False,
+) -> Path:
+    """Bundle local diagnostic data into a redacted zip for sharing.
+
+    Gathers recent automation logs, last N summary snapshots, redacted
+    config.yaml, workspace directory listing, and version metadata into a
+    single zip on the desktop (or `output_path` if specified). Default
+    redaction strips credentials always and PII (hostnames, serials,
+    emails, device names in known JSON fields, usernames) unless overridden.
+
+    Args:
+        config: Loaded Config instance.
+        days: Log lookback window in days. Default 7.
+        summary_limit: Number of most-recent summary JSON files to include.
+        output_path: Override default `~/Desktop/jamf-reports-diagnostic-*.zip`.
+        no_redact: Disable all redaction (credentials + PII). Use only for
+            local debugging; never for shared bundles.
+        keep_hostnames: Preserve raw hostnames in URLs.
+        keep_serials: Preserve raw device serial numbers.
+        keep_emails: Preserve raw email addresses.
+        keep_device_names: Preserve raw device names from known JSON fields.
+            Note: free-text device-name mentions in log lines are never
+            redacted regardless of this flag — the redactor only walks
+            structured JSON fields.
+        keep_usernames: Preserve raw usernames from known JSON fields.
+
+    Returns:
+        Path to the written zip file.
+    """
+    workspace = Path(config.base_dir).resolve() if hasattr(config, "base_dir") else Path.cwd()
+
+    if no_redact:
+        redactor: Optional[LogRedactor] = None
+    else:
+        redactor = LogRedactor(
+            redact_hostnames=not keep_hostnames,
+            redact_serials=not keep_serials,
+            redact_emails=not keep_emails,
+            redact_device_names=not keep_device_names,
+            redact_usernames=not keep_usernames,
+        )
+        # Harvest device/identity literals from cached jamf-cli JSON so log
+        # redaction strips device names, UDIDs, asset tags, etc. that appear
+        # in free-text — not just the regex-patternable serials and hosts.
+        seeded = redactor.seed_from_workspace(workspace)
+        if seeded:
+            print(f"  redaction seeded with {seeded} identifier(s) from jamf-cli-data/")
+
+    if output_path is None:
+        ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+        profile = ""
+        try:
+            jamf_cfg = config.get("jamf_cli") or {}
+            profile = (jamf_cfg.get("profile") or "").strip()
+        except (AttributeError, KeyError):
+            pass
+        profile_slug = re.sub(r"[^a-z0-9._-]+", "-", profile.lower()) if profile else "default"
+        output_path = Path.home() / "Desktop" / f"jamf-reports-diagnostic-{profile_slug}-{ts}.zip"
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    manifest_files: list[dict[str, Any]] = []
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        _bundle_collect_logs(workspace, days, redactor, zf, manifest_files)
+        _bundle_collect_summaries(workspace, summary_limit, redactor, zf, manifest_files)
+        _bundle_collect_config(config, redactor, zf, manifest_files)
+        _bundle_collect_workspace_tree(workspace, redactor, zf, manifest_files)
+        _bundle_collect_versions(zf, manifest_files)
+
+        manifest = {
+            "schema_version": _BUNDLE_SCHEMA_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            # `workspace` is intentionally the basename only — the absolute
+            # path under /Users/<username>/ would leak the local account name.
+            "workspace": workspace.name,
+            "log_lookback_days": days,
+            "summary_limit": summary_limit,
+            "redaction_policy": (
+                {"enabled": False} if redactor is None
+                else {"enabled": True, **redactor.policy()}
+            ),
+            "files": manifest_files,
+        }
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+
+    print(f"Wrote diagnostic bundle: {output_path}")
+    print(f"  {len(manifest_files)} files bundled.")
+    if redactor is None:
+        print("  WARNING: --no-redact in effect. Bundle contains raw credentials and PII.")
+    return output_path
 
 
 # ---------------------------------------------------------------------------
@@ -14721,6 +18808,7 @@ def _build_school_bridge(config: Config) -> SchoolCLIBridge:
         data_dir=data_dir,
         profile=profile,
         use_cached_data=use_cached,
+        multi_config=school_cfg.get("multi"),
     )
 
 
@@ -14833,7 +18921,7 @@ def cmd_school_check(config: Config, csv_path: Optional[str] = None) -> None:
         print(f"  school_columns: {mapped}/{len(school_cols)} mapped and found in CSV")
 
 
-def cmd_school_collect(config: Config) -> None:
+def cmd_school_collect(config: Config, summary_json: Optional[str] = None) -> None:
     """Fetch and cache Jamf School snapshots via jamf-cli school commands.
 
     Runs all school data-fetch commands in parallel and saves results
@@ -14841,7 +18929,9 @@ def cmd_school_collect(config: Config) -> None:
 
     Args:
         config: Loaded Config instance.
+        summary_json: Optional path for an app-facing run summary JSON file.
     """
+    summary = _command_summary_base("school-collect", config)
     bridge = _build_school_bridge(config)
     if not bridge.is_available():
         raise SystemExit("jamf-cli not found. Cannot collect school snapshots.")
@@ -14860,12 +18950,14 @@ def cmd_school_collect(config: Config) -> None:
 
     print(f"Collecting {len(fetchers)} school snapshots (profile: {bridge._profile!r})...")
     errors: list[str] = []
+    collected: list[str] = []
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {pool.submit(fn): name for name, fn in fetchers}
         for future in as_completed(futures):
             name = futures[future]
             try:
                 future.result()
+                collected.append(name)
                 print(f"  OK: {name}")
             except RuntimeError as exc:
                 errors.append(f"  WARN: {name}: {exc}")
@@ -14877,12 +18969,32 @@ def cmd_school_collect(config: Config) -> None:
         print("All school snapshots collected successfully.")
     else:
         print(f"{len(fetchers) - len(errors)}/{len(fetchers)} snapshots collected.")
+    summary.update(
+        {
+            "status": "partial" if errors else "ok",
+            "outputs": [],
+            "counts": {
+                "requested_snapshots": len(fetchers),
+                "collected_snapshots": len(collected),
+                "failed_snapshots": len(errors),
+            },
+            "snapshots": {
+                "collected": sorted(collected),
+                "errors": errors,
+                "data_dir": str(bridge._data_dir),
+                "profile": bridge._profile,
+            },
+        }
+    )
+    _finish_command_summary(summary, status="partial" if errors else "ok")
+    _write_summary_json(summary_json, summary)
 
 
 def cmd_school_generate(
     config: Config,
     csv_path: Optional[str] = None,
     out_file: Optional[str] = None,
+    summary_json: Optional[str] = None,
 ) -> None:
     """Build the Jamf School Excel report workbook.
 
@@ -14894,7 +19006,9 @@ def cmd_school_generate(
         config: Loaded Config instance.
         csv_path: Optional path to a Jamf School device export CSV.
         out_file: Optional explicit output path for the generated workbook.
+        summary_json: Optional path for an app-facing run summary JSON file.
     """
+    summary = _command_summary_base("school-generate", config)
     school_cfg = config.get("school_cli") or {}
     bridge: Optional[SchoolCLIBridge] = None
 
@@ -14940,13 +19054,297 @@ def cmd_school_generate(
             config,
             [name for name, _ in dashboard.sheet_plan()],
         )
-        written = dashboard.build_all(selected_names, filter_label)
+        written, sheet_failures = dashboard.build_all(selected_names, filter_label)
         if not written:
             raise SystemExit("Error: sheets filter removed every school workbook tab for this run.")
     finally:
         workbook.close()
 
-    print(f"Done. Report written to: {out_path}")
+    # T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
+    sidecar_path = _write_sha256_sidecar(out_path)
+    if sidecar_path is not None:
+        print(f"  Wrote sha256 sidecar: {sidecar_path.name}")
+
+    run_status = "partial" if sheet_failures else "ok"
+    if sheet_failures:
+        print(
+            f"[partial] School report written with {len(sheet_failures)} sheet "
+            f"failure(s): {out_path}"
+        )
+        for failure in sheet_failures:
+            print(f"  failed sheet: {failure['sheet']}: {failure['error']}")
+    else:
+        print(f"Done. Report written to: {out_path}")
+    summary.update(
+        {
+            "status": run_status,
+            "outputs": [_summary_file_entry("xlsx", out_path)],
+            "inputs": {
+                "csv": str(Path(csv_path).expanduser()) if csv_path else None,
+                "school_cli_enabled": school_cfg.get("enabled", False) is True,
+                "school_cli_data_dir": str(bridge._data_dir) if bridge is not None else "",
+            },
+            "counts": {
+                "sheets_written": len(written),
+                "csv_rows": len(csv_df) if csv_df is not None else 0,
+                "sheet_failures": len(sheet_failures),
+            },
+            "sheets": {
+                "school": written,
+                "failures": sheet_failures,
+            },
+        }
+    )
+    _finish_command_summary(summary, status=run_status)
+    _write_summary_json(summary_json, summary)
+
+
+def _capability(
+    identifier: str,
+    label: str,
+    products: list[str],
+    sources: list[str],
+    current: bool = True,
+    historical: bool = False,
+    status: str = "supported",
+    notes: str = "",
+) -> dict[str, Any]:
+    """Return one app-facing capability row."""
+    row: dict[str, Any] = {
+        "id": identifier,
+        "label": label,
+        "products": products,
+        "sources": sources,
+        "current": current,
+        "historical": historical,
+        "status": status,
+    }
+    if notes:
+        row["notes"] = notes
+    return row
+
+
+def _capability_products() -> list[dict[str, str]]:
+    """Return Jamf product rows known to the report engine."""
+    return [
+        {"id": "jamf_pro", "label": "Jamf Pro"},
+        {"id": "jamf_school", "label": "Jamf School"},
+        {"id": "jamf_protect", "label": "Jamf Protect"},
+        {"id": "jamf_platform", "label": "Jamf Platform"},
+    ]
+
+
+def _capability_commands() -> dict[str, list[str]]:
+    """Return report-engine commands grouped for GUI routing."""
+    return {
+        "jamf_pro": [
+            "generate", "html", "collect", "inventory-csv", "export-reports",
+            "backup", "scaffold", "check", "device", "patch-managed",
+        ],
+        "jamf_school": [
+            "school-generate", "school-collect", "school-scaffold", "school-check",
+        ],
+        "automation": [
+            "workspace-init",
+            "launchagent-setup",
+            "launchagent-run",
+            "multi-launchagent-run",
+            "diagnostic-bundle",
+        ],
+    }
+
+
+def _capability_data_sources(
+    pro: list[str],
+    school: list[str],
+    protect: list[str],
+) -> list[dict[str, Any]]:
+    """Return supported current and historical input sources."""
+    return [
+        _capability(
+            "jamf-pro-csv", "Jamf Pro computer CSV", pro, ["csv"],
+            historical=True,
+            notes="Drives CSV-backed workbook sheets and CSV snapshot trends.",
+        ),
+        _capability(
+            "jamf-pro-mobile-csv", "Jamf Pro mobile-device CSV", pro, ["csv"],
+            historical=True,
+            notes="Drives current mobile CSV sheets and mobile OS adoption trend charts.",
+        ),
+        _capability(
+            "jamf-cli-pro-json", "jamf-cli Pro JSON snapshots", pro, ["jamf_cli"],
+            historical=True,
+            notes="Cached snapshots support current workbooks and selected trend charts.",
+        ),
+        _capability(
+            "jamf-cli-school-json", "jamf-cli School JSON snapshots", school, ["jamf_cli"],
+            notes="Current School workbook sheets only.",
+        ),
+        _capability(
+            "jamf-cli-protect-json", "jamf-cli Protect JSON snapshots", protect,
+            ["jamf_cli"],
+            status="experimental",
+            notes="Collected when protect.enabled is true; workbook surface only.",
+        ),
+        _capability(
+            "html-history-json", "HTML history JSON", pro, ["history_file"],
+            current=False,
+            historical=True,
+            notes="Separate optional OS adoption timeline used by the HTML report.",
+        ),
+        _capability(
+            "automation-status-json", "LaunchAgent status JSON", pro + school + protect,
+            ["status_file"],
+            notes="Records automation outputs and failures, not fleet metrics.",
+        ),
+    ]
+
+
+def _capability_report_surfaces(
+    pro: list[str],
+    school: list[str],
+    protect: list[str],
+    platform: list[str],
+) -> list[dict[str, Any]]:
+    """Return file/report outputs available from the report engine."""
+    return [
+        _capability("xlsx-pro-core", "Jamf Pro Excel workbook", pro, ["jamf_cli", "csv"]),
+        _capability("html-pro", "Jamf Pro HTML report", pro, ["jamf_cli"], historical=True),
+        _capability("xlsx-school", "Jamf School Excel workbook", school, ["jamf_cli", "csv"]),
+        _capability(
+            "xlsx-protect", "Jamf Protect workbook sheet", protect, ["jamf_cli"],
+            status="experimental",
+        ),
+        _capability(
+            "xlsx-platform", "Platform API workbook sheets", platform, ["jamf_cli"],
+            status="opt_in",
+        ),
+    ]
+
+
+def _capability_status_surfaces(
+    pro: list[str],
+    school: list[str],
+    protect: list[str],
+    platform: list[str],
+) -> list[dict[str, Any]]:
+    """Return current-status surfaces emitted by workbooks or HTML."""
+    return [
+        _capability("fleet-overview", "Fleet Overview", pro, ["jamf_cli"]),
+        _capability("security-posture", "Security Posture", pro, ["jamf_cli"], True, True),
+        _capability("inventory-summary", "Inventory Summary", pro, ["jamf_cli"], True, True),
+        _capability("device-compliance", "Device Compliance", pro, ["jamf_cli"], True, True),
+        _capability("checkin-health", "Check-in Health", pro, ["jamf_cli"]),
+        _capability("policy-health", "Policy Health", pro, ["jamf_cli"]),
+        _capability("profile-status", "Profile Status", pro, ["jamf_cli"]),
+        _capability("mobile-config-profiles", "Mobile Config Profiles", pro, ["jamf_cli"]),
+        _capability("app-status", "Managed App Status", pro, ["jamf_cli"]),
+        _capability("patch-compliance", "Patch Compliance", pro, ["jamf_cli"]),
+        _capability("patch-failures", "Patch Failures", pro, ["jamf_cli"]),
+        _capability("update-status", "Managed Software Update Status", pro, ["jamf_cli"]),
+        _capability("update-failures", "Managed Software Update Failures", pro, ["jamf_cli"]),
+        _capability("smart-groups", "Smart Groups", pro, ["jamf_cli"]),
+        _capability("package-lifecycle", "Package Lifecycle", pro, ["jamf_cli"]),
+        _capability("csv-device-inventory", "CSV Device Inventory", pro, ["csv"]),
+        _capability("csv-stale-devices", "CSV Stale Devices", pro, ["csv"]),
+        _capability("csv-security-controls", "CSV Security Controls", pro, ["csv"]),
+        _capability("csv-security-agents", "CSV Security Agents", pro, ["csv"]),
+        _capability("csv-compliance", "CSV Compliance", pro, ["csv"], True, True),
+        _capability("school-overview", "School Overview", school, ["jamf_cli"]),
+        _capability("school-devices", "School Device Inventory", school, ["jamf_cli", "csv"]),
+        _capability("school-os-versions", "School OS Versions", school, ["jamf_cli", "csv"]),
+        _capability("school-status", "School Device Status", school, ["jamf_cli", "csv"]),
+        _capability("protect-overview", "Protect Overview", protect, ["jamf_cli"]),
+        _capability("protect-computers", "Protect Computers", protect, ["jamf_cli"]),
+        _capability("protect-analytics", "Protect Analytics", protect, ["jamf_cli"]),
+        _capability("protect-plans", "Protect Plans", protect, ["jamf_cli"]),
+        _capability("platform-blueprints", "Platform Blueprints", platform, ["jamf_cli"]),
+        _capability("platform-ddm", "Platform DDM Status", platform, ["jamf_cli"]),
+        _capability("platform-compliance", "Platform Compliance", platform, ["jamf_cli"]),
+    ]
+
+
+def _capability_historical_surfaces(pro: list[str]) -> list[dict[str, Any]]:
+    """Return trend surfaces emitted from snapshots or HTML history."""
+    return [
+        _capability(
+            "os-adoption", "macOS Adoption Trend", pro, ["csv", "jamf_cli"],
+            current=False,
+            historical=True,
+        ),
+        _capability(
+            "compliance-trend", "Compliance Trend", pro, ["csv", "jamf_cli"],
+            current=False,
+            historical=True,
+        ),
+        _capability(
+            "device-state-trend", "Device State Trend", pro, ["jamf_cli"],
+            current=False,
+            historical=True,
+        ),
+        _capability(
+            "security-trend", "Security Posture Trend", pro, ["jamf_cli"],
+            current=False,
+            historical=True,
+        ),
+        _capability(
+            "html-os-timeline", "HTML OS Timeline", pro, ["history_file"],
+            current=False,
+            historical=True,
+        ),
+    ]
+
+
+def _capability_config_sections() -> list[str]:
+    """Return config sections exposed by the script's canonical config."""
+    return [
+        "columns", "mobile_columns", "security_agents", "jamf_cli", "school_cli",
+        "school_columns", "protect", "platform", "compliance", "custom_eas",
+        "sheets", "report_families", "thresholds", "output", "automation",
+        "charts", "branding", "html", "inventory_csv", "export_reports",
+    ]
+
+
+def _capabilities_manifest() -> dict[str, Any]:
+    """Return a stable manifest of reporting capabilities for GUI clients."""
+    pro = ["jamf_pro"]
+    school = ["jamf_school"]
+    protect = ["jamf_protect"]
+    platform = ["jamf_platform"]
+    return {
+        "schema_version": APP_CAPABILITIES_VERSION,
+        "products": _capability_products(),
+        "commands": _capability_commands(),
+        "data_sources": _capability_data_sources(pro, school, protect),
+        "report_surfaces": _capability_report_surfaces(pro, school, protect, platform),
+        "status_surfaces": _capability_status_surfaces(pro, school, protect, platform),
+        "historical_surfaces": _capability_historical_surfaces(pro),
+        "config_sections": _capability_config_sections(),
+        "known_gaps": [
+            "JSON summaries are opt-in and do not yet expose per-sheet row counts.",
+            "Jamf School has workbook output but no HTML or trend surface.",
+            "Jamf Protect is collected and rendered experimentally, without trends.",
+            "Fleet Drift currently compares CSV snapshots only, not jamf-cli JSON snapshots.",
+            "Mobile CSV snapshots drive OS adoption only; mobile compliance trends are not supported.",
+        ],
+    }
+
+
+def cmd_capabilities(output: str = "json") -> None:
+    """Print a machine-readable capability manifest for GUI clients."""
+    manifest = _capabilities_manifest()
+    if output == "text":
+        print("Products:")
+        for product in manifest["products"]:
+            print(f"  - {product['id']}: {product['label']}")
+        print("Current status surfaces:")
+        for surface in manifest["status_surfaces"]:
+            print(f"  - {surface['id']}: {surface['label']}")
+        print("Historical surfaces:")
+        for surface in manifest["historical_surfaces"]:
+            print(f"  - {surface['id']}: {surface['label']}")
+        return
+    print(json.dumps(manifest, indent=2, sort_keys=True))
 
 
 # ---------------------------------------------------------------------------
@@ -14965,13 +19363,17 @@ def main() -> None:
             "  html          Build a self-contained HTML status report for management\n"
             "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
+            "  backup        Export Jamf Pro configuration objects to backups/\n"
             "  workspace-init Create a per-profile reporting workspace skeleton\n"
             "  launchagent-setup Create a LaunchAgent for scheduled reporting\n"
             "  launchagent-run   Internal runner used by generated LaunchAgents\n"
+            "  multi-launchagent-run Internal runner for multi-profile LaunchAgents\n"
+            "  capabilities Print machine-readable app/report capabilities\n"
             "  scaffold      Generate a starter config.yaml from a Jamf Pro CSV\n"
             "  check         Verify jamf-cli auth and config\n"
             "  device        Print a device detail view from jamf-cli pro device\n"
-            "  patch-managed Set managed state on computers (requires jamf-cli v1.6.0+)\n"
+            "  patch-managed Set managed state on computers (requires jamf-cli v1.14.0+)\n"
+            "  diagnostic-bundle Bundle redacted logs/config/versions into a zip for sharing\n"
             "\n"
             "Jamf School commands:\n"
             "  school-generate  Build the Jamf School Excel report\n"
@@ -14988,13 +19390,17 @@ def main() -> None:
             "collect",
             "inventory-csv",
             "export-reports",
+            "backup",
             "workspace-init",
             "launchagent-setup",
             "launchagent-run",
+            "multi-launchagent-run",
+            "capabilities",
             "scaffold",
             "check",
             "device",
             "patch-managed",
+            "diagnostic-bundle",
             "school-generate",
             "school-collect",
             "school-scaffold",
@@ -15060,7 +19466,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--profile",
-        help="jamf-cli profile name (workspace-init only)",
+        help=(
+            "jamf-cli profile override for Jamf Pro commands; workspace-init target"
+            " profile; for scaffold, seeds jamf_cli.profile in the generated config"
+        ),
     )
     parser.add_argument(
         "--schedule",
@@ -15082,7 +19491,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--label",
-        help="LaunchAgent label override (launchagent-setup only)",
+        help="LaunchAgent label override or backup label",
     )
     parser.add_argument(
         "--workspace-dir",
@@ -15116,6 +19525,24 @@ def main() -> None:
         help="Kickstart the LaunchAgent immediately after loading it",
     )
     parser.add_argument(
+        "--multi-profiles",
+        help="Comma-separated profile list for multi-launchagent-run",
+    )
+    parser.add_argument(
+        "--multi-filter",
+        help="Glob filter for initialized profile workspaces in multi-launchagent-run",
+    )
+    parser.add_argument(
+        "--multi-sequential",
+        action="store_true",
+        help="Run multi-launchagent-run profiles one at a time",
+    )
+    parser.add_argument(
+        "--disabled",
+        action="store_true",
+        help="Write the LaunchAgent disabled and unload any existing instance",
+    )
+    parser.add_argument(
         "--seed-config",
         help="Seed config path for workspace-init; defaults to config.example.yaml when absent",
     )
@@ -15137,12 +19564,105 @@ def main() -> None:
         action="store_true",
         help="Do not auto-open the generated HTML file after writing (html command only)",
     )
+    parser.add_argument(
+        "--output",
+        choices=["json", "text"],
+        default="json",
+        help="Output format for commands that support structured metadata",
+    )
+    parser.add_argument(
+        "--summary-json",
+        help=(
+            "Write a stable app-facing summary JSON file"
+            " (generate, html, collect, school-generate, school-collect)"
+        ),
+    )
+    parser.add_argument(
+        "--force-summary",
+        action="store_true",
+        help=(
+            "Overwrite the per-day trend summary JSON if it already exists"
+            " (generate command only)"
+        ),
+    )
+    parser.add_argument(
+        "--strict-manifest",
+        action="store_true",
+        help=(
+            "Abort when a cached jamf-cli JSON snapshot fails SHA-256 verification"
+            " against the sibling manifest.json; only applies to 'generate' and 'html'"
+            " commands. Default: warn and continue. Trend chart reads"
+            " (compliance/security/OS-adoption history) always warn-only."
+        ),
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Log lookback window in days (diagnostic-bundle only). Default 7.",
+    )
+    parser.add_argument(
+        "--summary-limit",
+        type=int,
+        default=10,
+        help="Number of most-recent summary snapshots to include (diagnostic-bundle only). Default 10.",
+    )
+    parser.add_argument(
+        "--bundle-output",
+        metavar="PATH",
+        help=(
+            "Override the diagnostic bundle output path. Default is"
+            " ~/Desktop/jamf-reports-diagnostic-<profile>-<ts>.zip"
+        ),
+    )
+    parser.add_argument(
+        "--no-redact",
+        action="store_true",
+        help=(
+            "Disable ALL redaction (credentials + PII) in the diagnostic bundle."
+            " Local debugging only — never use for shared bundles."
+        ),
+    )
+    parser.add_argument(
+        "--keep-hostnames",
+        action="store_true",
+        help="Preserve raw Jamf hostnames in the diagnostic bundle (default redacts).",
+    )
+    parser.add_argument(
+        "--keep-serials",
+        action="store_true",
+        help="Preserve raw device serial numbers in the diagnostic bundle (default redacts).",
+    )
+    parser.add_argument(
+        "--keep-emails",
+        action="store_true",
+        help="Preserve raw email addresses in the diagnostic bundle (default redacts).",
+    )
+    parser.add_argument(
+        "--keep-device-names",
+        action="store_true",
+        help=(
+            "Preserve raw device names from known JSON fields in the diagnostic"
+            " bundle (default redacts). Does not affect device names appearing"
+            " in free-text log lines — those are never automatically redacted."
+        ),
+    )
+    parser.add_argument(
+        "--keep-usernames",
+        action="store_true",
+        help="Preserve raw usernames from known JSON fields (default redacts).",
+    )
     args = parser.parse_args()
 
     if args.command == "scaffold":
         if not args.csv:
             parser.error("scaffold requires --csv")
-        cmd_scaffold(args.csv, args.out, interactive=args.interactive)
+        cmd_scaffold(
+            args.csv,
+            args.out,
+            interactive=args.interactive,
+            profile=args.profile,
+        )
         return
 
     if args.command == "school-scaffold":
@@ -15155,6 +19675,7 @@ def main() -> None:
         if not args.id:
             parser.error("device requires --id")
         config = Config(args.config)
+        _apply_profile_override(config, args.profile, args.command)
         cmd_device(config, args.id)
         return
 
@@ -15168,74 +19689,125 @@ def main() -> None:
         )
         return
 
-    if args.command in {"launchagent-setup", "launchagent-run"}:
-        _require_existing_config_path(args.config)
-    config = Config(args.config)
+    if args.command == "capabilities":
+        cmd_capabilities(args.output)
+        return
 
-    if args.command == "check":
-        cmd_check(config, args.csv)
-    elif args.command == "collect":
-        cmd_collect(config, args.csv, args.historical_csv_dir)
-    elif args.command == "inventory-csv":
-        cmd_inventory_csv(config, args.out_file)
-    elif args.command == "export-reports":
-        # --csv: explicit inventory CSV path; omit to auto-locate the latest one.
-        # To force all reports regardless of schedule, delete state files:
-        #   jamf-cli-data/state/export-<name>.last
-        cmd_export_reports(config, Path(args.csv) if args.csv else None)
-    elif args.command == "launchagent-setup":
-        cmd_launchagent_setup(
-            config,
-            args.config,
-            args.label,
-            args.mode,
-            args.schedule,
-            args.time_of_day,
-            args.weekday,
-            args.day_of_month,
-            args.workspace_dir,
-            args.launchagents_dir,
-            args.csv_inbox_dir,
-            args.csv_freshness_days,
-            args.historical_csv_dir,
-            args.notify,
-            args.skip_load,
-            args.run_now,
-        )
-    elif args.command == "launchagent-run":
+    if args.command == "multi-launchagent-run":
         if not args.mode:
-            parser.error("launchagent-run requires --mode")
-        cmd_launchagent_run(
-            config,
+            parser.error("multi-launchagent-run requires --mode")
+        cmd_multi_launchagent_run(
             args.mode,
+            args.workspace_root,
+            args.multi_profiles,
+            args.multi_filter,
+            args.multi_sequential,
             args.csv_inbox_dir,
             _resolve_csv_freshness_days(args.csv_freshness_days),
             args.historical_csv_dir,
             args.status_file,
             args.notify,
         )
-    elif args.command == "html":
-        cmd_html(config, args.out_file, no_open=args.no_open)
-    elif args.command == "generate":
-        cmd_generate(
-            config, args.csv, args.out_file, args.historical_csv_dir,
-            args.notify, args.csv_extra,
-        )
-    elif args.command == "patch-managed":
-        if not args.managed:
-            parser.error("patch-managed requires --managed true|false")
-        cmd_patch_managed(
-            config,
-            managed_value=args.managed == "true",
-            dry_run=args.dry_run,
-            serials_file=args.serials_file,
-        )
-    elif args.command == "school-check":
-        cmd_school_check(config, args.csv)
-    elif args.command == "school-collect":
-        cmd_school_collect(config)
-    elif args.command == "school-generate":
-        cmd_school_generate(config, args.csv, args.out_file)
+        return
+
+    if args.command in {"launchagent-setup", "launchagent-run"}:
+        _require_existing_config_path(args.config)
+    config = Config(args.config)
+    _apply_profile_override(config, args.profile, args.command)
+
+    try:
+        if args.command == "check":
+            cmd_check(config, args.csv)
+        elif args.command == "collect":
+            cmd_collect(config, args.csv, args.historical_csv_dir, args.summary_json)
+        elif args.command == "inventory-csv":
+            cmd_inventory_csv(config, args.out_file)
+        elif args.command == "backup":
+            cmd_backup(config, args.label)
+        elif args.command == "export-reports":
+            # --csv: explicit inventory CSV path; omit to auto-locate the latest one.
+            # To force all reports regardless of schedule, delete state files:
+            #   jamf-cli-data/state/export-<name>.last
+            cmd_export_reports(config, Path(args.csv) if args.csv else None)
+        elif args.command == "launchagent-setup":
+            cmd_launchagent_setup(
+                config,
+                args.config,
+                args.label,
+                args.mode,
+                args.schedule,
+                args.time_of_day,
+                args.weekday,
+                args.day_of_month,
+                args.workspace_dir,
+                args.launchagents_dir,
+                args.csv_inbox_dir,
+                args.csv_freshness_days,
+                args.historical_csv_dir,
+                args.notify,
+                args.skip_load,
+                args.run_now,
+                args.disabled,
+            )
+        elif args.command == "launchagent-run":
+            if not args.mode:
+                parser.error("launchagent-run requires --mode")
+            cmd_launchagent_run(
+                config,
+                args.mode,
+                args.csv_inbox_dir,
+                _resolve_csv_freshness_days(args.csv_freshness_days),
+                args.historical_csv_dir,
+                args.status_file,
+                args.notify,
+            )
+        elif args.command == "html":
+            cmd_html(
+                config, args.out_file,
+                no_open=args.no_open,
+                summary_json=args.summary_json,
+                strict_manifest=args.strict_manifest,
+            )
+        elif args.command == "generate":
+            cmd_generate(
+                config, args.csv, args.out_file, args.historical_csv_dir,
+                args.notify, args.csv_extra, args.summary_json,
+                force_summary=args.force_summary,
+                strict_manifest=args.strict_manifest,
+            )
+        elif args.command == "patch-managed":
+            if not args.managed:
+                parser.error("patch-managed requires --managed true|false")
+            cmd_patch_managed(
+                config,
+                managed_value=args.managed == "true",
+                dry_run=args.dry_run,
+                serials_file=args.serials_file,
+            )
+        elif args.command == "diagnostic-bundle":
+            cmd_diagnostic_bundle(
+                config,
+                days=args.days,
+                summary_limit=args.summary_limit,
+                output_path=Path(args.bundle_output) if args.bundle_output else None,
+                no_redact=args.no_redact,
+                keep_hostnames=args.keep_hostnames,
+                keep_serials=args.keep_serials,
+                keep_emails=args.keep_emails,
+                keep_device_names=args.keep_device_names,
+                keep_usernames=args.keep_usernames,
+            )
+        elif args.command == "school-check":
+            cmd_school_check(config, args.csv)
+        elif args.command == "school-collect":
+            cmd_school_collect(config, args.summary_json)
+        elif args.command == "school-generate":
+            cmd_school_generate(config, args.csv, args.out_file, args.summary_json)
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except Exception as exc:
+        print(f"Error: {type(exc).__name__}: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

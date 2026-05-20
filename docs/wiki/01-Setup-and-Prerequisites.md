@@ -35,7 +35,7 @@ Optional charts require:
 pip install matplotlib
 ```
 
-### jamf-cli
+### jamf-cli (v1.16.1+)
 
 `jamf-cli` is optional, but strongly recommended if you want:
 
