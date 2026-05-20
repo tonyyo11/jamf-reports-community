@@ -711,7 +711,7 @@ so totals match the live console rather than including never-checked-in records.
 
 ### Python CLI
 
-- Python 3.9+. Type hints on all method signatures.
+- Python 3.11+. Type hints on all method signatures.
 - Google-style docstrings on all classes and public methods.
 - Functions ≤100 lines. Cyclomatic complexity ≤8.
 - 100-character line length.

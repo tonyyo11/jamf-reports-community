@@ -5,7 +5,7 @@
 Generates Excel reports from jamf-cli output and optional CSV exports.
 Config-driven: no org-specific values are hardcoded.
 
-Requirements: Python 3.9+, xlsxwriter, pandas, pyyaml, matplotlib (optional)
+Requirements: Python 3.11+, xlsxwriter, pandas, pyyaml, matplotlib (optional)
 Usage:
     python3 jamf-reports-community.py generate [--config config.yaml] [--csv path/to/export.csv]
                                                [--historical-csv-dir path/to/snapshots/]
