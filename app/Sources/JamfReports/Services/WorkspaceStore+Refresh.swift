@@ -36,15 +36,28 @@ extension WorkspaceStore {
     private static var coordinatorKey: UInt8 = 0
     private static var foregroundObserverKey: UInt8 = 0
 
+    // MARK: Refresh gate
+
+    /// Whether a background refresh may run for `profileSlug`.
+    ///
+    /// False in demo mode — the demo workspace has no real Jamf data to
+    /// fetch — and false for slugs that fail the profile-name validator.
+    /// `RefreshCoordinator` has no demo concept, so this gate lives at the
+    /// `WorkspaceStore` boundary and both refresh entry points consult it.
+    ///
+    /// (There is deliberately no `profileSlug != "demo"` check: the demo
+    /// profile is `DemoData.org.profile` ("meridian-prod"), not "demo", so
+    /// such a literal never matched. `demoMode` is the real gate.)
+    func canRefresh(profileSlug: String) -> Bool {
+        !demoMode && ProfileService.isValid(profileSlug)
+    }
+
     // MARK: Public trigger
 
     /// Fire a `.refresh`-tier refresh for `profile`, subject to coordinator
-    /// backoff/coalescing.
-    ///
-    /// No-ops when demo mode is active or the profile slug is invalid.
+    /// backoff/coalescing. No-ops when `canRefresh` is false.
     func triggerRefresh(for profileSlug: String) {
-        guard !demoMode, profileSlug != "demo" else { return }
-        guard ProfileService.isValid(profileSlug) else { return }
+        guard canRefresh(profileSlug: profileSlug) else { return }
         coordinator.refreshIfStale(profile: profileSlug, tier: .refresh)
     }
 
@@ -52,12 +65,10 @@ extension WorkspaceStore {
     ///
     /// Routed through `RefreshCoordinator.observeProfileSwitch` (500 ms
     /// debounce) so cycling the sidebar chip through several profiles
-    /// doesn't spawn a refresh per intermediate selection. No-ops in demo
-    /// mode — `observeProfileSwitch` itself has no demo guard, so the
-    /// check lives here at the WorkspaceStore boundary.
+    /// doesn't spawn a refresh per intermediate selection. No-ops when
+    /// `canRefresh` is false.
     func observeProfileSwitchRefresh(for profileSlug: String) {
-        guard !demoMode, profileSlug != "demo" else { return }
-        guard ProfileService.isValid(profileSlug) else { return }
+        guard canRefresh(profileSlug: profileSlug) else { return }
         coordinator.observeProfileSwitch(profileSlug)
     }
 
