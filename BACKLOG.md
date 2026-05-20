@@ -487,12 +487,6 @@ Items surfaced while answering "does the Swift app replicate the tiered
 collection pattern from the Python/zsh reference deployment?" Design
 work captured in `docs/architecture/tiered-collection-adr.md`.
 
-- **FEATURE (PR-23) — GUI layer for per-report collection cadence.** PR-22
-  landed the engine (CollectionTier, CadenceResolver, StateFileStore,
-  `collect_cadence` config, `collect` filtering). PR-23 adds the GUI:
-  Schedules-form tier picker, Settings → Performance preset chooser,
-  custom-mode per-report editor, onboarding preset prompt, migration
-  banner. See `docs/architecture/tiered-collection-plan.md` Phases 2–5.
 - **CONSIDER (PR-23 T-16 finding) — `RefreshCoordinator` has no production caller.** `app/Sources/JamfReports/Services/RefreshCoordinator.swift`. `observeProfileSwitch`, `registerForegroundRefresh`, and `WorkspaceStore.triggerRefresh` are not invoked from any View, the app entry point, or `WorkspaceStore`'s profile-switch path — the whole backfill subsystem is unwired. Pre-existing (predates PR-22). T-16 retargeted it to `CollectionTier` per the plan so `ScheduleTier` could be deleted, but did not wire it. ADR Q1 envisions `RefreshCoordinator` as the "backfill if overdue" mechanism — wiring `observeProfileSwitch` into the sidebar profile chip and `registerForegroundRefresh` into app launch is the natural follow-up. Until then, `RefreshCoordinator` + `RefreshPolicy` + `RefreshCoordinatorTests` exercise code nothing calls.
 
 ---
