@@ -265,8 +265,8 @@ struct SchedulesView: View {
                 }
             }
         }
-        .popover(isPresented: $showRunLog) {
-            runLogPopover
+        .sheet(isPresented: $showRunLog) {
+            runLogSheet
         }
     }
 
@@ -315,7 +315,11 @@ struct SchedulesView: View {
         return min(max(elapsed / total, 0), 1)
     }
 
-    private var runLogPopover: some View {
+    /// Live run-output console. Presented as a window-modal sheet (not a
+    /// popover) so it does not light-dismiss on a stray click mid-run —
+    /// `showRunLog` has no re-open path while `isRunning`, and the run is a
+    /// detached task that keeps going regardless. Closed only via the ✕.
+    private var runLogSheet: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Mono(text: "Live output", size: 12, color: Theme.Colors.fg2)
