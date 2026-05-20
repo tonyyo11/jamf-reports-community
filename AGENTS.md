@@ -465,7 +465,7 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `ComplianceBandingService` | Buckets per-device failure counts into Pass / Low (1–10) / Med-Low (11–30) / Medium (31–50) / High (>50) / No Data. Reuses `ComplianceBand` from Models.swift. |
 | `SecurityPostureService` | Reads `pro security report` snapshots into a single Snapshot the SecurityPostureView renders. |
 | `CompliancePostureService` | Same data source as SecurityPostureService but derives per-device control-gap counts (0–4) for the compliance band donut. Honest "proxy for true mSCP failure count — configure an EA for full banding" callout in the view. |
-| `PatchStatusService` | Reads `patch-status/` + `patch-device-failures/` snapshots; aggregates fleet compliance and groups failures by title for PatchView. |
+| `PatchStatusService` | Reads `patch-status/` + `patch-device-failures/` snapshots; aggregates fleet compliance and groups failures by title for PatchView. `complianceCSV` renders a standalone Patch Compliance CSV matching the workbook sheet (formula-injection-neutralized). |
 | `UpdateStatusService` | Reads `update-status/` snapshots (both summary-only and `--scan-failures` shapes). Provides plan-state donut data, error device list, failed plans list for UpdatesView. |
 | `PolicyHealthService` | Reads `policy-status/` + `profile-status/`; surfaces config findings grouped by severity and profile assignment failures for PolicyProfileView. |
 | `ExtensionAttributeService` | Reads `ea-results/` + `computer-extension-attributes/`; computes per-EA coverage (% of fleet populated) and top-10 value distributions. Returns `.empty` Snapshot for empty content, nil only when no input URLs given. |
@@ -536,7 +536,7 @@ P0/P1/P2 action items + OS donut), `CompliancePostureView` (compliance band
 donut + control-gap bars + per-OS breakdown), `OutreachView` (stale tier cards
 + devices table + clipboard mail-merge).
 
-Operations group: `PatchView` (titles table + per-title failure drawer),
+Operations group: `PatchView` (titles table with CSV + PNG export, per-title failure drawer),
 `UpdatesView` (plan state donut + failed-plans table + error-devices table),
 `PolicyProfileView` (two-tab segment: Policies findings + Profiles status),
 `ExtensionAttributesView` (coverage grid + value-distribution chart).
@@ -736,9 +736,8 @@ cd app
 swift test
 ```
 
-Tests live in `app/Tests/JamfReportsTests/`. Current coverage:
-`AuditHygieneTests`, `DeviceInventoryRecordTests`, `LaunchAgentServiceTests`,
-`LaunchAgentWriterTests`, `RunHistoryServiceTests`, `TrendStoreTests`.
+Tests live in `app/Tests/JamfReportsTests/`, with engine-layer suites under
+its `Engine/` subdirectory — one suite per service or feature area.
 
 All new services and business-logic functions should have corresponding test files.
 Follow the same naming convention: `<ServiceName>Tests.swift`.
@@ -871,7 +870,7 @@ jamf-reports-community/
 │   │   ├── Models/             # Data models + DemoData
 │   │   ├── Services/           # Business logic, CLIBridge, workspace management
 │   │   ├── Theme/              # Design tokens, shared components
-│   │   └── Views/              # 16 SwiftUI screens
+│   │   └── Views/              # 27 SwiftUI screens + shared components
 │   └── Tests/JamfReportsTests/ # Swift XCTest suite
 └── .gitignore                  # Excludes config.yaml, Generated Reports/, jamf-cli-data/
 ```

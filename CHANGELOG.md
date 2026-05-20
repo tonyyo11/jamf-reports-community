@@ -9,6 +9,13 @@ versions in this repository map to git tags.
 
 ### Added
 
+- **Standalone Patch Compliance CSV export** (PR-25, macOS app): the Patch
+  screen's Patch Titles card gains an "Export CSV" action beside the
+  existing PNG export. It writes every tracked patch title in collected
+  order with the same column shape as the workbook's "Patch Compliance"
+  sheet (Title, Latest, On Latest, On Other, Total, Compliance %). Field
+  values are formula-injection-neutralized, matching the xlsx export path.
+
 - **Per-report collection cadence — GUI layer** (PR-23, macOS app):
   Surfaces the PR-22 cadence engine in the app so operators never hand-edit
   `config.yaml`.
@@ -79,6 +86,11 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- **Sidebar workspace monogram widened to four characters** (PR-25, macOS
+  app): the workspace-chip avatar shows the first four characters of the
+  profile slug instead of two, so profiles that share a short prefix stay
+  distinguishable at a glance. The avatar widens from 22 to 36 points.
+
 - **Schedule mode semantics tightened — each mode now does exactly one thing** (PR-21, macOS app):
   Before PR-21, three of the four `Schedule.RunMode` cases had descriptions
   that disagreed with the code: `jamf-cli-only` said "from cached data" but
@@ -104,6 +116,18 @@ versions in this repository map to git tags.
   silent fallback).
 
 ### Fixed
+
+- **Generated workbooks were unreadable in Excel** (PR-25, macOS app):
+  `OOXMLWriter`'s ZIP-entry provider returned the entire part on every
+  chunk call. ZIPFoundation sums each returned chunk into the STORED
+  entry's `compressedSize`, inflating it to a 4–16x multiple of the real
+  length; Excel read past the real data and rejected the worksheet ("We
+  found a problem with some content"). QuickLook tolerated the mismatch,
+  so the corruption surfaced only in Excel. The provider now returns only
+  the requested byte range. Also adds the ECMA-376-required `count`
+  attribute on `<cellXfs>` and a defensive last-write-wins cell de-dup.
+  New `XLSXIntegrityTests` covers STORED-entry size consistency, XML
+  well-formedness, and absence of duplicate cell references.
 
 - **Schedule mode now round-trips through the LaunchAgent plist** (PR-20, macOS app):
   The Swift `LaunchAgentWriter.nativeSingleWrite` / `nativeMultiWrite` now embed
