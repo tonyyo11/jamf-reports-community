@@ -100,7 +100,7 @@ jobs:
       #    Adjust retention-days to suit your policy.
       # ------------------------------------------------------------------
       - name: Upload report artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jamf-report-${{ github.run_number }}
           path: "Generated Reports/*.xlsx"
