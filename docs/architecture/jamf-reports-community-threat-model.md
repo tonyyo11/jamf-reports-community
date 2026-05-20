@@ -3,6 +3,7 @@
 Repository: `jamf-reports-community` (Python CLI + native macOS Swift app)
 Original model: 2026-05-12
 Refreshed: 2026-05-17 (post PR-1..PR-9 backlog-burndown sequence)
+Refreshed: 2026-05-20 (post PR-16..PR-26 — tiered collection, xlsx-corruption fix, Patch CSV export)
 Scope basis: full repo (`app/`, `jamf-reports-community.py`, CI workflows, scripts)
 
 ---
@@ -33,15 +34,16 @@ Scope basis: full repo (`app/`, `jamf-reports-community.py`, CI workflows, scrip
 | `CLIBridge` | `app/Sources/JamfReports/Services/CLIBridge*.swift` | `Process`-based async wrapper for `jamf-cli`; environment hardening; codesign gate (PR-6) |
 | `LogRedactor` | `app/Sources/JamfReports/Services/LogRedactor.swift` + `jamf-reports-community.py:3144-3203` | Free-text + JSON credential redaction; 10 patterns; Python ↔ Swift parity (PR-A baseline, PR-7 reuse, PR-9 api_key addition) |
 | `SnapshotManifest` | `app/Sources/JamfReports/Engine/SnapshotManifest.swift` + `_rewrite_snapshot_manifest`/`_verify_snapshot_bytes_against_manifest` in Python | SHA-256 manifest covering `jamf-cli-data/*.json` (PR-7) |
-| `jamf-reports-community.py` | repo root | Python fallback for Excel/HTML output |
-| LaunchAgents | `~/Library/LaunchAgents/com.jamfreports.<profile>-{hot,warm,cold}.plist` | Re-invoke daemon mode at 15 m / 4 h / 24 h |
+| `jamf-reports-community.py` | repo root; copied into `JamfReports.app/Contents/Resources/` by `build-app.sh` (PR-19) | Standalone Python CLI. The app never executes it — `ReportEngine` (native Swift) generates every report. The bundled copy exists only so Settings → "Copy Diagnostic Command" can emit an absolute-path command. |
+| LaunchAgents | `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.<profile>.<slug>.plist` (`.multi.<slug>` for multi-profile) | Re-invoke daemon mode on each schedule's own cadence. The per-cadence `{hot,warm,cold}` tier model was removed in PR-23; a schedule now carries a `--tiers` flag selecting Refresh / Inventory / Scan collection tiers. |
 
 ### Data stores
 - `~/Jamf-Reports/<profile>/jamf-cli-data/*.json` — cached snapshots (0600). **Manifest-covered** as of PR-7.
+- `~/Jamf-Reports/<profile>/jamf-cli-data/state/<report>.last` — per-report last-successful-fetch timestamps driving the PR-22 tiered-collection `is_due()` gate. Covered by the SHA-256 manifest (schema bumped to v2 in PR-22) so a forged `.last` cannot silently suppress a scheduled fetch — see T-21.
 - `~/Jamf-Reports/<profile>/Generated Reports/*.{xlsx,html}` — outputs. **Not** manifest-covered (see T-13).
 - `~/Jamf-Reports/<profile>/snapshots/computers/summaries/*.json` — trend history. **Not** manifest-covered (see T-12).
 - `~/Jamf-Reports/<profile>/automation/logs/` — per-run stdout/stderr. Redacted at read-time via `RunHistoryService.loadLog` + `RunsView.exportLogFile` (PR-7); raw file on disk untouched.
-- `~/Jamf-Reports/<profile>/config.yaml` — column mapping + `jamf_cli.profile`.
+- `~/Jamf-Reports/<profile>/config.yaml` — column mapping, `jamf_cli.profile`, and the PR-22 `collect_cadence` block (preset + per-report tier/cadence overrides).
 - macOS Keychain (managed by `jamf-cli`, not this app) — long-term Jamf API client secret.
 - **(2026-05-17 addition)** Release artifacts in GitHub Releases (`*.dmg`, `*.pkg`, SHA-256 of each).
 
@@ -133,7 +135,7 @@ When the app is shipped to external organizations via notarized DMG or PKG insta
 
 ## 6. Threats (abuse paths)
 
-For each: **goal → path → assets → likelihood × impact → priority**, with file evidence where applicable. Mitigations split into **existing** vs **recommended**. T-1..T-10 updated to reflect PR-1..PR-9 work; T-11..T-15 added from post-PR review batch; T-16..T-20 are post-release (see §11).
+For each: **goal → path → assets → likelihood × impact → priority**, with file evidence where applicable. Mitigations split into **existing** vs **recommended**. T-1..T-10 updated to reflect PR-1..PR-9 work; T-11..T-15 added from post-PR review batch; T-16..T-20 are post-release (see §11); T-21 added 2026-05-20 for the PR-22 tiered-collection surface.
 
 ### T-1. Malicious shim at `/opt/homebrew/bin/jamf-cli` exfiltrates onboarding secret or command-time data
 - **Goal:** Steal the Jamf API client secret during onboarding, or hijack a later routine command to receive credentials / corrupt collected data.
@@ -186,18 +188,19 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   - Mirror Python sanitization tests to the Swift `OOXMLWriter` equivalent (currently Python-only).
   - Lint/regex check that any new `HtmlReport` interpolation site routes through `escapeHTML`.
 
-### T-4. CSV/spreadsheet formula injection in generated XLSX
-- **Goal:** When a recipient opens the XLSX in Excel, a leading `=`, `+`, `-`, `@`, or `\t` triggers `WEBSERVICE` / `HYPERLINK` / DDE.
-- **Path:** A6 / device with attacker-controlled metadata.
+### T-4. CSV/spreadsheet formula injection in generated XLSX or CSV exports
+- **Goal:** When a recipient opens a generated XLSX or CSV in Excel/Numbers, a leading `=`, `+`, `-`, `@`, or `\t` triggers `WEBSERVICE` / `HYPERLINK` / DDE.
+- **Path:** A6 / a device record or patch title with attacker-controlled metadata.
 - **Existing mitigations:**
-  - `_safe_write` is the documented invariant (CLAUDE.md "Invariants") sanitizing formula injection.
-  - PR-5 added 29 malicious-payload tests including formula-injection payloads.
+  - Python `_safe_write` is the documented invariant (CLAUDE.md "Invariants") sanitizing formula injection; PR-5 added 29 malicious-payload tests including formula-injection payloads.
+  - Swift `OOXMLWriter.sanitizeString` prepends a tab to any cell beginning with `=+-@` — parity with `_safe_write`, verified clean in the PR-26 security review (`app/SECURITY_AUDIT.md`).
+  - **PR-25 Patch Compliance CSV export:** `PatchStatusService.csvField` neutralizes the same formula-injection prefixes before RFC 4180 quoting; covered by `testComplianceCSVNeutralizesFormulaInjection`. This was a MUST-FIX caught in the PR-26 security review and folded into PR-25 before merge.
 - **Likelihood:** Low.
 - **Impact:** Medium.
 - **Priority: LOW–MEDIUM.**
 - **Recommended mitigations:**
   - Per-run counter + end-of-run summary of how many cells `_safe_write` truncated / sanitized (BACKLOG N-13 — formula-injection silent truncation).
-  - Mirror `_safe_write` sanitization tests on the Swift `OOXMLWriter` (Swift is currently untested at this layer).
+  - Treat any new structured-data export (CSV/XLSX/clipboard sink) as required to route through a neutralizing escaper; add a lint or test that fails a new export path lacking one.
 
 ### T-5. Symlink/traversal escape in `SystemActions` open/reveal
 - **Goal:** Trick the app into opening or revealing an attacker-chosen path outside the workspace.
@@ -216,7 +219,7 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 ### T-6. LaunchAgent plist takeover or label-parsing confusion persists attacker code as the user
 - **Goal:** Persist code that runs at every interval boundary.
 - **Path:** Two variants:
-  - **T-6a (plist overwrite):** A1 overwrites `~/Library/LaunchAgents/com.jamfreports.<profile>-hot.plist`.
+  - **T-6a (plist overwrite):** A1 overwrites a `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist` job.
   - **T-6b (label-parsing confusion, closed):** Previously the validator allowed `.` in profile slugs; the label parser then split ambiguously.
 - **Existing mitigations:**
   - App writes plists atomically with `replaceItem(at:withItemAt:)`.
@@ -342,6 +345,16 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Priority: LOW.**
 - **Recommended mitigations:** Extend `SnapshotManifest` schema with `generated_at`; surface that to the stale banner instead of mtime. Tracked in BACKLOG.
 
+### T-21. Tiered-collection state file forged to suppress a scheduled fetch (NEW)
+- **Goal:** Freeze the fleet data the app shows by making the PR-22 tiered-collection engine believe a report is fresh when it is not.
+- **Path:** A1 writes a recent (or future) timestamp into `jamf-cli-data/state/<report>.last`. `ReportEngine.collect`'s `is_due()` check then skips that report's fetch indefinitely; dashboards keep rendering the last-collected JSON while the schedule appears to run normally.
+- **Assets:** Freshness/integrity of inventory + compliance data → operational decisions made on stale data.
+- **Existing mitigations:** The PR-22 manifest schema bump (v2) extends SHA-256 coverage to `state/*.last`, so a forged `.last` fails manifest verification on the next verified read. Run logs record `[skip] <report> not due` lines, making an unexpectedly-never-fetched report visible to an operator who reads them.
+- **Likelihood:** Low (assumes A1; single-file edit, but the v2 manifest catches it).
+- **Impact:** Low–Medium (no credential loss; decision quality degraded).
+- **Priority: LOW.** The residual is identical to T-11 — if the manifest itself is absent or deleted, the forged `.last` passes silently. Closing T-11 closes this too.
+- **Recommended mitigations:** Fold into the T-11 fix — the "Unverified snapshot" surface should also flag a `state/` directory whose manifest is missing.
+
 ---
 
 ## 7. Priority Summary (current state)
@@ -363,15 +376,17 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 | T-10 YAML parser abuse | LOW | `safe_load` only |
 | T-14 Codesign TOCTOU | LOW (ACCEPTED) | Foundation-API limited |
 | T-15 mtime-forged stale banner | LOW | BACKLOG |
+| T-21 Tiered-collection state-file skip | LOW | Manifest v2 covers `state/*.last`; residual = T-11 |
 
 ---
 
 ## 8. Assumptions and Open Questions
 
-Confirmed with user (2026-05-12, refreshed 2026-05-17):
-- **Single-admin laptop** deployment for current state. Cross-user threats deprioritized.
+Confirmed with user (2026-05-12, refreshed 2026-05-17, re-confirmed 2026-05-20):
+- **Single-admin laptop** deployment for current state — re-confirmed 2026-05-20. One trusted user per Mac, no co-resident accounts. Cross-user threats deprioritized.
 - Generated report distribution is **unknown / varies** — output-side injection threats (T-3, T-4) kept at LOW–MEDIUM.
-- **External distribution planned** (2026-05-17): notarized DMG **and** PKG installer to other orgs. See §11 annex.
+- **Public release in preparation** (confirmed 2026-05-20), not yet shipped. Distribution will be a notarized DMG **and** a PKG installer (PKG confirmed in scope — see T-17). The §11 annex stays forward-looking but is now near-term; T-16 / T-17 should be treated as imminent rather than hypothetical.
+- The Developer ID signing certificate is an **individual** Apple Developer enrollment, not an organization. Recipient-Mac background-activity / Login Items prompts therefore show the individual developer's name. T-16 blast radius is one individual certificate on a single signing host.
 
 Material assumptions still in effect:
 - `JamfCLIIdentity.expectedTeamID` (`"483DWKW443"`) is the legitimate jamf-cli publisher. If false, T-1 jumps to HIGH.
@@ -405,6 +420,7 @@ Items 1 + 2 are pure follow-ups to PR-7 / PR-8 — close gaps in controls just s
 - [x] Current-state vs post-release annex separated (§6 vs §11 per user request).
 - [x] Both DMG and PKG installer scenarios covered in §11 per user request.
 - [x] PR-1..PR-9 mitigations reflected in T-1..T-10 existing mitigations.
+- [x] PR-16..PR-26 reflected: tiered-collection surface (T-21, `state/` + `collect_cadence` stores), xlsx-corruption fix + Patch CSV export (T-4), Python script role corrected (§1), single-admin + public-release prep re-confirmed with user 2026-05-20 (§8).
 
 ---
 

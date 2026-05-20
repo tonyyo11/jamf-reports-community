@@ -1,8 +1,12 @@
 # ADR PR-22+: Per-report tiered collection with screen-driven defaults
 
-**Status:** Draft (pending review)
+**Status:** Accepted — implemented in PR-22 (engine), PR-23 (GUI), and
+PR-24 (`RefreshCoordinator` wiring). The "Open questions" Q1–Q4 below were
+all resolved during implementation; the "Phasing" section records the
+original 2026-05-18 plan, not the final PR split (PR-24 became the
+`RefreshCoordinator` wiring rather than time-of-day gating).
 **Authors:** Tony Young + Claude (drafted 2026-05-18 session)
-**Date:** 2026-05-18
+**Date:** 2026-05-18 · implemented 2026-05-20
 
 ---
 
