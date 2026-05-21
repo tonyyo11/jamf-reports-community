@@ -705,6 +705,28 @@ enum LaunchAgentWriter {
         )
     }
 
+#if DEBUG
+    /// Test seam (Epic #102, item #4): runs `nativeManualRunPlan` and returns
+    /// its parsed result as public-typed fields, without promoting the private
+    /// `ManualRunPlan` struct. `nativeManualRunPlan` is the path-validation core
+    /// of the "Run now" flow — a regression there once silently broke it with no
+    /// test to catch it. Compiled only into DEBUG builds.
+    static func nativeManualRunPlanFieldsForTesting(
+        label: String,
+        plist: [String: Any],
+        args: [String],
+        profile: String,
+        root: URL
+    ) throws -> (executable: URL, arguments: [String], workingDirectory: URL,
+                 stdoutURL: URL, stderrURL: URL) {
+        let plan = try nativeManualRunPlan(
+            label: label, plist: plist, args: args, profile: profile, root: root
+        )
+        return (plan.executable, plan.arguments, plan.workingDirectory,
+                plan.stdoutURL, plan.stderrURL)
+    }
+#endif
+
     /// True only when the URL resolves to the current process's own executable.
     /// Restricting to Bundle.main prevents a tampered plist from pointing at any
     /// other binary under /Applications or ~/Applications.

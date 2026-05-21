@@ -191,6 +191,117 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
         )
         XCTAssertNotEqual(exit, -1, "Cached-verified binary must pass the gate; got \(exit) which would indicate gate rejection")
     }
+
+    // MARK: - #1: gate ACCEPTS a properly signed binary (happy path)
+    //
+    // Every other gate test exercises the rejection path. These confirm the
+    // accept path: the real CodeSignVerifier returns true for a genuinely
+    // signed binary, and CLIBridge.codesignGate returns nil (allow).
+
+    /// Locate a validly-signed binary that carries a Team ID so the real
+    /// `CodeSignVerifier` success branch can be exercised. Apple platform
+    /// binaries (`/bin/ls`, …) carry no Team ID; third-party apps under
+    /// `/Applications` do. Returns nil when none is found so the caller skips.
+    private func firstTeamIDSignedBinary() -> (url: URL, teamID: String)? {
+        let fm = FileManager.default
+        guard let apps = try? fm.contentsOfDirectory(
+            at: URL(fileURLWithPath: "/Applications"),
+            includingPropertiesForKeys: nil
+        ) else { return nil }
+        for app in apps.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+        where app.pathExtension == "app" {
+            let exeDir = app.appendingPathComponent("Contents/MacOS", isDirectory: true)
+            guard let exes = try? fm.contentsOfDirectory(
+                at: exeDir, includingPropertiesForKeys: nil
+            ) else { continue }
+            for exe in exes.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                if let team = CodeSignVerifier.teamID(of: exe), !team.isEmpty {
+                    return (exe, team)
+                }
+            }
+        }
+        return nil
+    }
+
+    func testCodeSignVerifierAcceptsProperlySignedBinary() throws {
+        guard let (binary, teamID) = firstTeamIDSignedBinary() else {
+            throw XCTSkip("No Team-ID-signed binary found under /Applications on this host")
+        }
+        // Real verifier, real signed binary, `expectedTeamID` stubbed to the
+        // binary's own Team ID — the success branch the rejection-only suite
+        // never exercised (Epic #102, item #1).
+        XCTAssertTrue(
+            CodeSignVerifier.verify(url: binary, expectedTeamID: teamID),
+            "A validly-signed binary must verify against its own Team ID: \(binary.path)"
+        )
+        // A non-matching Team ID on the same (valid) signature must still fail —
+        // confirms the accept above is the Team-ID match, not a degenerate pass.
+        XCTAssertFalse(
+            CodeSignVerifier.verify(url: binary, expectedTeamID: "000NOMATCH0"),
+            "A valid signature with the wrong Team ID must not verify"
+        )
+    }
+
+    func testCodesignGateAllowsCacheVerifiedJamfCLI() throws {
+        // codesignGate keys on basename == "jamf-cli" and uses the pinned
+        // production Team ID, which no test binary can satisfy. Prime the
+        // fingerprint cache via the verify seam, then confirm the gate returns
+        // nil (allow) and emits no log line — the gate's own accept path.
+        let fake = tempDir.appendingPathComponent("jamf-cli")
+        try Data("primed-cli-bytes".utf8).write(to: fake)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: fake.path
+        )
+        let primed = JamfCLIIdentity.ensureVerifiedJamfCLI(
+            executable: fake,
+            verify: { _, _ in true }
+        )
+        XCTAssertNoThrow(try primed.get(), "Cache priming must succeed for the test setup")
+
+        let collector = LogLineCollector()
+        let blocked = CLIBridge.codesignGate(executable: fake, onLine: { collector.append($0) })
+        XCTAssertNil(blocked, "A cache-verified jamf-cli must pass the gate (nil == allow)")
+        XCTAssertTrue(collector.snapshot().isEmpty,
+                      "The accept path must emit no log lines; got \(collector.snapshot().map(\.text))")
+    }
+
+    // MARK: - #2: gate rejection emits a forensic AppLogger.cli.error
+    //
+    // The rejection tests above assert the user-visible `onLine` fatal line.
+    // They do NOT assert the OSLog forensic line — a regression that silenced
+    // `AppLogger.cli.error` while keeping `onLine` would pass them all. This
+    // captures the OSLog emission via the `OSLogCapture` test seam.
+
+    func testRunRejectionEmitsAppLoggerError() async throws {
+        let fake = tempDir.appendingPathComponent("jamf-cli")
+        try Data("not-a-real-binary".utf8).write(to: fake)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: fake.path
+        )
+
+        let capture = OSLogCapture.start()
+        let bridge = CLIBridge()
+        let exit = await bridge.run(executable: fake, arguments: ["--version"], onLine: { _ in })
+        XCTAssertEqual(exit, -1, "Codesign gate must reject the unsigned binary")
+
+        // Give the unified-logging pipeline a moment to flush. If this ever
+        // flakes under CI load, the fix is a short retry loop around
+        // `containsError`, not a longer fixed sleep.
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        let logged: Bool
+        do {
+            logged = try capture.containsError("codesign gate rejected")
+        } catch {
+            throw XCTSkip("OSLogStore unavailable in this test host: \(error.localizedDescription)")
+        }
+        XCTAssertTrue(
+            logged,
+            "Gate rejection must emit AppLogger.cli.error('codesign gate rejected …') for post-mortem forensics"
+        )
+    }
 }
 
 /// Thread-safe collector that satisfies `@Sendable` for the onLine

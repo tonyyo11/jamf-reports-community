@@ -83,16 +83,24 @@ final class CoreDashboardTests: XCTestCase {
                              fromFixture fixtureRelPath: String) throws -> URL {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-test-\(UUID().uuidString)")
-        let subdirURL = tmp.appendingPathComponent(subdir, isDirectory: true)
-        try FileManager.default.createDirectory(at: subdirURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         createdTempDirs.append(tmp)
         let src = fixturesDir.appendingPathComponent("jamf-cli-data/\(fixtureRelPath)")
-        if FileManager.default.fileExists(atPath: src.path) {
-            try FileManager.default.copyItem(
-                at: src,
-                to: subdirURL.appendingPathComponent(src.lastPathComponent)
-            )
+        // Only create the writer-expected subdir when the source fixture is
+        // actually present. Creating it unconditionally leaves an EMPTY subdir,
+        // which makes the body-level `fileExists(subdir)` XCTSkip guards pass —
+        // the test then runs against no data and the writer throws
+        // `noCachedData`. That surfaced as 21 failures under `.claude/worktrees/`
+        // checkouts whose corpus lacked the fixture (Epic #102).
+        guard FileManager.default.fileExists(atPath: src.path) else {
+            return tmp
         }
+        let subdirURL = tmp.appendingPathComponent(subdir, isDirectory: true)
+        try FileManager.default.createDirectory(at: subdirURL, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(
+            at: src,
+            to: subdirURL.appendingPathComponent(src.lastPathComponent)
+        )
         return tmp
     }
 

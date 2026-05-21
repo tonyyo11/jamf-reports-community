@@ -99,7 +99,14 @@ final class CLISubcommandTests: XCTestCase {
     func testCheckMissingWorkspaceExits1() {
         // A valid slug (lowercase — the UUID hex must be lowercased or it is
         // an invalid slug) that has no workspace on disk.
-        let result = checkConfigForProfile("no-such-workspace-\(UUID().uuidString.prefix(8).lowercased())")
+        let slug = "no-such-workspace-\(UUID().uuidString.prefix(8).lowercased())"
+        // Defensive: a stale workspace dir from a prior run (or a UUID-prefix
+        // collision) would let checkConfigForProfile see a config.yaml and
+        // return 0, flaking this test. Remove any pre-existing dir for the slug.
+        if let workspace = ProfileService.workspaceURL(for: slug) {
+            try? FileManager.default.removeItem(at: workspace)
+        }
+        let result = checkConfigForProfile(slug)
         XCTAssertEqual(result, 1)
     }
 
@@ -113,7 +120,13 @@ final class CLISubcommandTests: XCTestCase {
     func testSchoolCheckMissingWorkspaceExits1() {
         // Lowercase the UUID hex so the slug is valid — otherwise this
         // exercises the invalid-slug path instead of the missing-workspace one.
-        let result = schoolCheckForProfile("no-such-workspace-\(UUID().uuidString.prefix(8).lowercased())")
+        let slug = "no-such-workspace-\(UUID().uuidString.prefix(8).lowercased())"
+        // Defensive: remove any stale workspace dir for this slug (see
+        // testCheckMissingWorkspaceExits1).
+        if let workspace = ProfileService.workspaceURL(for: slug) {
+            try? FileManager.default.removeItem(at: workspace)
+        }
+        let result = schoolCheckForProfile(slug)
         XCTAssertEqual(result, 1)
     }
 }

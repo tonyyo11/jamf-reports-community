@@ -228,7 +228,53 @@ final class CLIBridge {
             return (blocked, Data())
         }
 
+        // Resumes the async continuation only once BOTH the stdout pipe has
+        // reached EOF (an empty `availableData` delivery) and the process has
+        // terminated. Resuming on `terminationHandler` alone races the final
+        // `readabilityHandler` delivery — they run on different GCD queues — so
+        // under CI load the continuation can resume before the last stdout chunk
+        // is appended, truncating the captured payload to empty (Epic #102).
+        final class CaptureCompletion: @unchecked Sendable {
+            private let lock = NSLock()
+            private var stdoutAtEOF = false
+            private var exitCode: Int32?
+            private var resumed = false
+            private let continuation: CheckedContinuation<Int32, Never>
+
+            init(_ continuation: CheckedContinuation<Int32, Never>) {
+                self.continuation = continuation
+            }
+
+            func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
+
+            func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
+
+            /// Process never spawned — resume immediately, bypassing the EOF wait
+            /// (no child means the stdout pipe will never deliver EOF).
+            func failFast(_ code: Int32) {
+                let shouldResume: Bool
+                lock.lock()
+                shouldResume = !resumed
+                if shouldResume { resumed = true }
+                lock.unlock()
+                if shouldResume { continuation.resume(returning: code) }
+            }
+
+            private func finish(_ mutate: (CaptureCompletion) -> Void) {
+                var pending: Int32?
+                lock.lock()
+                mutate(self)
+                if !resumed, stdoutAtEOF, let exitCode {
+                    resumed = true
+                    pending = exitCode
+                }
+                lock.unlock()
+                if let pending { continuation.resume(returning: pending) }
+            }
+        }
+
         let code = await withCheckedContinuation { (continuation: CheckedContinuation<Int32, Never>) in
+            let completion = CaptureCompletion(continuation)
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
@@ -242,7 +288,14 @@ final class CLIBridge {
 
             stdout.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
-                guard !data.isEmpty else { return }
+                if data.isEmpty {
+                    // Empty delivery == EOF: the child closed its stdout write end,
+                    // and every preceding non-empty chunk has already been appended
+                    // (a DispatchSource delivers in order). Capture is now complete.
+                    handle.readabilityHandler = nil
+                    completion.markStdoutEOF()
+                    return
+                }
                 // stdout is the structured payload (typically JSON) consumed by the
                 // report engine — do NOT stream it to onLine, only capture it. Progress
                 // messages from jamf-cli arrive on stderr and are streamed below.
@@ -257,9 +310,8 @@ final class CLIBridge {
             }
 
             process.terminationHandler = { proc in
-                stdout.fileHandleForReading.readabilityHandler = nil
                 stderr.fileHandleForReading.readabilityHandler = nil
-                continuation.resume(returning: proc.terminationStatus)
+                completion.markTerminated(proc.terminationStatus)
             }
 
             do {
@@ -270,7 +322,9 @@ final class CLIBridge {
                     "CLIBridge.runAndCapture: process launch failed: \(error.localizedDescription, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
-                continuation.resume(returning: -1)
+                stdout.fileHandleForReading.readabilityHandler = nil
+                stderr.fileHandleForReading.readabilityHandler = nil
+                completion.failFast(-1)
             }
         }
         return (code, box.data)

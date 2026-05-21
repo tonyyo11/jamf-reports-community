@@ -467,4 +467,83 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertEqual(workingDir, ProfileService.workspacesRoot().path)
         XCTAssertTrue(LaunchAgentWriter.isExpectedMultiWorkingDirectory(workingDir))
     }
+
+    // MARK: - #4: nativeManualRunPlan round-trip (Epic #102)
+
+    /// `nativeManualRunPlan` is the path-validation core of the "Run now" flow;
+    /// a regression there once silently broke it with no test to catch it.
+    /// Write a native plist with the real writer, then confirm the reader
+    /// accepts it and recovers the executable, arguments, and log paths.
+    func testNativeManualRunPlanRoundTripsWrittenPlist() throws {
+        let sched = schedule(name: "Test-ManualRun-RoundTrip", mode: .jamfCLIFull)
+        guard let label = LaunchAgentWriter.label(for: sched) else {
+            return XCTFail("Expected a valid label for schedule")
+        }
+        let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+        defer { cleanUp(plan: plan, label: label) }
+
+        let data = try Data(contentsOf: plan.plistURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        )
+        let args = try XCTUnwrap(plist["ProgramArguments"] as? [String])
+        // ProgramArguments: [exec, "--scheduled-run", "--profile", slug, ...].
+        let profile = try XCTUnwrap(args.count >= 4 ? args[3] : nil)
+        let root = try XCTUnwrap(WorkspacePathGuard.root(for: profile))
+
+        let fields = try LaunchAgentWriter.nativeManualRunPlanFieldsForTesting(
+            label: label, plist: plist, args: args, profile: profile, root: root
+        )
+
+        XCTAssertEqual(
+            fields.executable.resolvingSymlinksInPath().standardizedFileURL,
+            Bundle.main.executableURL?.resolvingSymlinksInPath().standardizedFileURL,
+            "Round-trip must recover the running executable the writer recorded"
+        )
+        XCTAssertEqual(fields.arguments, Array(args.dropFirst()),
+                       "Plan arguments must be ProgramArguments minus the executable")
+        XCTAssertEqual(fields.workingDirectory, root)
+        XCTAssertEqual(
+            fields.stdoutURL.standardizedFileURL,
+            LaunchAgentWriter.expectedMultiLogURL(label: label, filename: "stdout.log")
+                .standardizedFileURL,
+            "stdout log path must round-trip to the per-label log directory"
+        )
+        XCTAssertEqual(
+            fields.stderrURL.standardizedFileURL,
+            LaunchAgentWriter.expectedMultiLogURL(label: label, filename: "stderr.log")
+                .standardizedFileURL,
+            "stderr log path must round-trip to the per-label log directory"
+        )
+    }
+
+    /// A plist whose `StandardOutPath` was tampered to point outside the
+    /// per-label log directory must be rejected — the exact path validation
+    /// the "Run now" reader exists to enforce.
+    func testNativeManualRunPlanRejectsTamperedStdoutPath() throws {
+        let sched = schedule(name: "Test-ManualRun-Tampered", mode: .jamfCLIFull)
+        guard let label = LaunchAgentWriter.label(for: sched) else {
+            return XCTFail("Expected a valid label for schedule")
+        }
+        let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+        defer { cleanUp(plan: plan, label: label) }
+
+        let data = try Data(contentsOf: plan.plistURL)
+        var plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        )
+        let args = try XCTUnwrap(plist["ProgramArguments"] as? [String])
+        let profile = try XCTUnwrap(args.count >= 4 ? args[3] : nil)
+        let root = try XCTUnwrap(WorkspacePathGuard.root(for: profile))
+
+        // Redirect stdout outside ~/Library/Logs/JamfReports/<label>/.
+        plist["StandardOutPath"] = "/tmp/jrc-evil-\(UUID().uuidString).log"
+
+        XCTAssertThrowsError(
+            try LaunchAgentWriter.nativeManualRunPlanFieldsForTesting(
+                label: label, plist: plist, args: args, profile: profile, root: root
+            ),
+            "A StandardOutPath outside the per-label log dir must be rejected"
+        )
+    }
 }
