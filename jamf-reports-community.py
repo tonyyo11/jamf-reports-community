@@ -15136,15 +15136,40 @@ a:hover { text-decoration: underline; }
     text-decoration: none;
 }
 .empty-note { color: var(--muted); font-size: .82rem; }
-	.footer {
-	    text-align: center;
+.footer {
+    text-align: center;
     font-size: .72rem;
     color: var(--muted);
     margin-top: 40px;
     padding-top: 16px;
     border-top: 1px solid var(--border);
 }
-	"""
+.skip-link {
+    position: absolute;
+    top: -999px;
+    left: 0;
+    background: var(--blue-dark);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 0 0 6px 0;
+    font-size: .85rem;
+    font-weight: 600;
+    z-index: 9999;
+    text-decoration: none;
+}
+.skip-link:focus { top: 0; }
+@media (prefers-reduced-motion: reduce) {
+    .sec-bar-fill { transition: none; }
+    .dark-toggle  { transition: none; }
+}
+@media print {
+    .topbar { display: none !important; }
+    .dark-toggle { display: none !important; }
+    .tree-search { display: none !important; }
+    .table-tools { display: none !important; }
+    .skip-link { display: none !important; }
+}
+"""
 
     def _js(self) -> str:
         """Return the embedded JavaScript block for HTML interactivity."""
@@ -16325,6 +16350,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
 <style>{css}</style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 
 <header class="topbar">
   <h1 class="topbar-brand">{logo_html}{safe_brand_label}</h1>
@@ -16339,7 +16365,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
 </header>
 
-<main class="page">
+<main class="page" id="main-content">
 
   <div class="section-block">
     <h2 class="section-block-title">Overall Server Health</h2>

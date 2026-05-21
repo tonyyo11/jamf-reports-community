@@ -658,7 +658,7 @@ final class HtmlReportTests: XCTestCase {
         // The appendix div should appear after the main content sections in DOM order.
         // We use the closing </main> tag's predecessor as the structural anchor:
         // the appendix block is rendered inside <main> immediately before </main>.
-        let mainOpen = html.range(of: "<main>")
+        let mainOpen = html.range(of: "<main id=\"main-content\">")
         // Anchor on the rendered <div class=\"appendix-section\"> (not the CSS class
         // definition that also contains the substring \"appendix-section\").
         let appendixRange = html.range(of: "<div class=\"appendix-section\">")
