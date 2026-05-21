@@ -105,6 +105,9 @@ final class DeviceLookupIndexTests: XCTestCase {
         let ids = Set(index.candidates.map(\.id))
         XCTAssertEqual(ids, ["20", "21"],
                        "Newest snapshot's devices must be the only ones indexed; got \(ids)")
+        let names = Set(index.candidates.map(\.name))
+        XCTAssertEqual(names, ["New-Mac-A", "New-Mac-B"],
+                       "Newest snapshot's device names must be indexed, not the older snapshot's; got \(names)")
         XCTAssertNil(index.lastError, "No error expected when newest snapshot decodes cleanly")
     }
 

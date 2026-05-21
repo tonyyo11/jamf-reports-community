@@ -83,7 +83,8 @@ final class CompliancePostureTests: XCTestCase {
 
     func testCompliancePostureRendersWithFixtureData() throws {
         let dataDir = try tempDataDir(copying: ["security", "device-compliance"])
-        defer { try? FileManager.default.removeItem(at: dataDir) }
+        // No inline `defer` cleanup: tempDataDir(copying:) registers the dir in
+        // `createdTempDirs`, which `tearDown` sweeps (Epic #102).
 
         let hasSecurityFixture = FileManager.default.fileExists(
             atPath: dataDir.appendingPathComponent("security").path
