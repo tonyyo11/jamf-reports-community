@@ -102,8 +102,15 @@ final class TemplateApplierTests: XCTestCase {
         // as a value change. LIMIT: `compliance` and `executive` both
         // return 30 which equals the default, so deleting either case is
         // undetectable via behavioral testing alone (the value is the
-        // same whether the named arm or `default:` is taken). Tracked in
-        // BACKLOG under "From PR-5 review gates (2026-05-16)".
+        // same whether the named arm or `default:` is taken).
+        //
+        // Epic #102 item #9: this limit is ACCEPTED, not closed. A tagged
+        // return exposing which switch arm matched would test implementation,
+        // not behavior — and `recommendedStaleDays` is a shipping API called
+        // by `CLISuggester`, so the tag would leak a test-only concern into
+        // production. When two arms return the same value they are
+        // behaviorally identical; a deletion that changes nothing observable
+        // is not a regression a behavioral test should catch.
         XCTAssertEqual(TemplateApplier.recommendedStaleDays(for: ExecutiveTemplate()), 30,
                        "executive: monthly view → 30 (matches default — case-deletion undetectable)")
         XCTAssertEqual(TemplateApplier.recommendedStaleDays(for: OperationalTemplate()), 14,
@@ -126,8 +133,9 @@ final class TemplateApplierTests: XCTestCase {
         // for those four is undetectable via behavioral testing alone (the
         // value is the same whether the named arm or `default:` is taken).
         // `operational` explicitly ships a `case` arm that returns the same
-        // value as default; the tripwire here cannot discriminate. Tracked
-        // in BACKLOG under "From PR-5 review gates (2026-05-16)".
+        // value as default; the tripwire here cannot discriminate.
+        //
+        // Epic #102 item #9: accepted limit — rationale in testRecommendedStaleDays.
         let compliance = TemplateApplier.recommendedThresholds(for: ComplianceTemplate())
         XCTAssertEqual(compliance.warning, 85, "compliance: audit-tight warning")
         XCTAssertEqual(compliance.critical, 95, "compliance: audit-tight critical")

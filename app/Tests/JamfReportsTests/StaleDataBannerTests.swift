@@ -82,4 +82,34 @@ final class StaleDataBannerTests: XCTestCase {
             "No live data fetched yet — run Collect to populate"
         )
     }
+
+    // MARK: - #12: .stale(at:) relative time is always finite (Epic #102)
+    //
+    // DeviceLookupView.staleSince feeds StaleDataBanner(.stale(at:)) only when
+    // non-nil; on first launch (no manifest, no cache) it stays nil and the
+    // banner is not rendered (`if let since = staleSince`). That nil path was
+    // audited and confirmed safe. The remaining risk is the relative-time
+    // suffix itself: this pins that `RelativeDateTimeFormatter` yields a
+    // finite, non-empty phrase even for extreme dates, so a formatter
+    // regression cannot surface as a NaN / empty banner.
+
+    func testStaleBannerRelativeTimeIsFiniteForEdgeDates() {
+        let prefix = "Stale data — last fetched "
+        let edgeDates: [Date] = [
+            .distantPast,
+            .distantFuture,
+            Date(),
+            Date(timeIntervalSinceNow: -86_400 * 365),
+        ]
+        for date in edgeDates {
+            let message = StaleDataBanner(source: .stale(at: date)).message
+            XCTAssertTrue(message.hasPrefix(prefix),
+                          "Expected stale prefix for \(date); got: \(message)")
+            let suffix = String(message.dropFirst(prefix.count))
+            XCTAssertFalse(suffix.isEmpty,
+                           "Relative-time suffix must not be empty for \(date)")
+            XCTAssertFalse(suffix.lowercased().contains("nan"),
+                           "Relative-time suffix must never contain NaN for \(date); got: \(suffix)")
+        }
+    }
 }
