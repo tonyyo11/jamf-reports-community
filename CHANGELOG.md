@@ -18,6 +18,15 @@ versions in this repository map to git tags.
   `pytz`, `typing-extensions`, and `zipp` backports that older Python
   versions required.
 
+### Fixed
+
+- **`runAndCapture` could drop the tail of a `jamf-cli` response** (macOS
+  app): the capture continuation resumed as soon as the process terminated,
+  without waiting for the stdout pipe to reach EOF. Under load a final
+  unread chunk could be lost — collapsing a structured JSON response to a
+  truncated or empty payload. It now resumes only once stdout EOF and
+  process termination are both observed.
+
 ## [2.0.0] - 2026-05-20
 
 ### Added
