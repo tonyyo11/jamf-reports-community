@@ -403,7 +403,8 @@ struct TrendsView: View {
                     .chartYAxis {
                         AxisMarks(position: .leading) {
                             AxisGridLine().foregroundStyle(Theme.Colors.hairline)
-                            AxisValueLabel().font(Theme.Fonts.mono(10))
+                            // WCAG 1.4.4: .caption is a Dynamic Type style; scales with text size.
+                            AxisValueLabel().font(.caption.monospaced())
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
@@ -601,7 +602,7 @@ struct TrendsView: View {
                 .chartYAxis {
                     AxisMarks(position: .leading) {
                         AxisGridLine().foregroundStyle(Theme.Colors.hairline)
-                        AxisValueLabel().font(Theme.Fonts.mono(10))
+                        AxisValueLabel().font(.caption.monospaced())
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
@@ -678,16 +679,17 @@ struct TrendsView: View {
     @AxisContentBuilder
     private func trendXAxisMarks(for range: TrendRange) -> some AxisContent {
         let format = xAxisDateFormat(for: range)
+        // WCAG 1.4.4: .caption.monospaced() is a Dynamic Type style; scales with text size.
         if range == .all {
             AxisMarks(values: .automatic(desiredCount: 8)) { _ in
                 AxisValueLabel(format: format)
-                    .font(Theme.Fonts.mono(10))
+                    .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         } else {
             AxisMarks(values: .stride(by: .day, count: xAxisStrideDays(for: range))) { _ in
                 AxisValueLabel(format: format)
-                    .font(Theme.Fonts.mono(10))
+                    .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }

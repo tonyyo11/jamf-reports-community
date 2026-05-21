@@ -368,9 +368,10 @@ struct FleetOverviewView: View {
         .chartXAxis {
             AxisMarks { _ in
                 AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                // WCAG 1.4.4: .caption.monospaced() scales with Accessibility text size.
                 AxisValueLabel(format: .dateTime.month(.abbreviated).day(),
                                centered: false)
-                    .font(Theme.Fonts.mono(10))
+                    .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
@@ -380,7 +381,7 @@ struct FleetOverviewView: View {
                 AxisValueLabel(horizontalSpacing: 6) {
                     if let pct = value.as(Double.self) {
                         Text("\(Int(pct))%")
-                            .font(Theme.Fonts.mono(10))
+                            .font(.caption.monospaced())
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)

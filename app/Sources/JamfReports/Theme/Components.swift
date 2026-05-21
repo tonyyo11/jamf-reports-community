@@ -347,6 +347,10 @@ struct PNPToggle: View {
             }
         }
         .buttonStyle(.plain)
+        // WCAG 2.5.8: minimum hit area ≥24×24pt. The visible capsule is 36×22;
+        // adding 2pt top+bottom padding lifts the interactive area to 36×26pt.
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
         .accessibilityLabel(label.isEmpty ? "Toggle" : label)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(.isButton)
@@ -413,12 +417,16 @@ struct StatTile: View {
     var sparkValues: [Double]? = nil
     var sparkColor: Color? = nil
 
+    // WCAG 1.4.4: scaled relative to .largeTitle so the KPI numeral responds
+    // to Accessibility text size while keeping the design baseline at 32pt.
+    @ScaledMetric(relativeTo: .largeTitle) private var displaySize: CGFloat = 32
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Kicker(text: label)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(value)
-                    .font(Theme.Fonts.serif(32, weight: .bold))
+                    .font(Theme.Fonts.serif(displaySize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()
                 if let delta {
