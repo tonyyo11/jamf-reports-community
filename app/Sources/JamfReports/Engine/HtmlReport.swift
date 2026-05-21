@@ -1424,6 +1424,7 @@ struct HtmlReport: Sendable {
                        gap: 1.5rem; }
         .chart-card { background: var(--card); border: 1px solid var(--border);
                       border-radius: 10px; padding: 1.2rem; }
+        .content-section { overflow-x: auto; }
         .content-section table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
         table th, table td { padding: 0.6rem 1rem; text-align: left;
                              border-bottom: 1px solid var(--border); }

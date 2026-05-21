@@ -15560,15 +15560,17 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 )
         return f"""<h3 class="section-title">Full Overview</h3>
 <div class="card">
-  <table class="data-table">
-    <caption class="sr-only">Full Jamf Pro resource inventory grouped by section.</caption>
-    <thead><tr>
-      <th scope="col">Resource</th>
-      <th scope="col" style="text-align:right">Value</th>
-      <th scope="col">Status</th>
-    </tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="data-table">
+      <caption class="sr-only">Full Jamf Pro resource inventory grouped by section.</caption>
+      <thead><tr>
+        <th scope="col">Resource</th>
+        <th scope="col" style="text-align:right">Value</th>
+        <th scope="col">Status</th>
+      </tr></thead>
+      <tbody>{rows_html}</tbody>
+    </table>
+  </div>
 </div>"""
 
     def _render_quick_links(self, console_url: str) -> str:
@@ -15754,19 +15756,21 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             )
         return f"""<h3 class="section-title">Mobile Inventory Review</h3>
 <div class="card">
-  <table class="data-table">
-    <caption class="sr-only">Mobile devices ranked by days since last inventory update.</caption>
-    <thead><tr>
-      <th scope="col">Device</th>
-      <th scope="col">Family</th>
-      <th scope="col">OS</th>
-      <th scope="col">User</th>
-      <th scope="col">Days Since Inventory</th>
-      <th scope="col">Managed</th>
-      <th scope="col">Supervised</th>
-    </tr></thead>
-    <tbody>{body}</tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="data-table">
+      <caption class="sr-only">Mobile devices ranked by days since last inventory update.</caption>
+      <thead><tr>
+        <th scope="col">Device</th>
+        <th scope="col">Family</th>
+        <th scope="col">OS</th>
+        <th scope="col">User</th>
+        <th scope="col">Days Since Inventory</th>
+        <th scope="col">Managed</th>
+        <th scope="col">Supervised</th>
+      </tr></thead>
+      <tbody>{body}</tbody>
+    </table>
+  </div>
 </div>"""
 
     def _render_trends_section(self, trends: dict[str, Any]) -> str:
