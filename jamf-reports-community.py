@@ -15426,20 +15426,22 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             body = '<p class="empty-note">No data available.</p>'
         else:
             chunks = []
-            for group in groups:
+            for idx, group in enumerate(groups):
                 items = "".join(
                     '<div class="item-node" data-name="'
                     f'{self._html_text(name.lower())}">{self._html_text(name)}</div>'
                     for name in group["items"]
                 )
+                cat_items_id = f"cat-{self._html_text(pane_id)}-{idx}"
                 chunks.append(
                     '<div class="cat-node">'
-                    '<button type="button" class="cat-toggle" aria-expanded="false">'
+                    f'<button type="button" class="cat-toggle" aria-expanded="false"'
+                    f' aria-controls="{cat_items_id}">'
                     '<span class="cat-label">'
                     '<span class="cat-caret" aria-hidden="true">▶</span>'
                     f'<span>{self._html_text(group["category"])}</span>'
                     f'</span><span class="cat-count">{group["count"]}</span></button>'
-                    f'<div class="cat-items">{items}</div></div>'
+                    f'<div class="cat-items" id="{cat_items_id}">{items}</div></div>'
                 )
             body = "".join(chunks)
         safe_pane = self._html_text(pane_id)
