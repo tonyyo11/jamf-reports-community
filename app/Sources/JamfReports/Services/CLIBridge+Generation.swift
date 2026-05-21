@@ -45,6 +45,49 @@ extension CLIBridge {
         template: any ReportTemplate = ExecutiveTemplate(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> GenerateAllResult {
+        await Self.runGenerateAll(
+            types: types,
+            collectFresh: collectFresh,
+            onLine: onLine,
+            collect: { await self.collect(profile: profile, onLine: onLine) },
+            generateXLSX: {
+                if schoolMode {
+                    return await self.schoolGenerate(profile: profile, csvPath: nil, onLine: onLine)
+                }
+                return await self.generate(
+                    profile: profile, csvPath: nil, template: template,
+                    outputDir: outputDir, onLine: onLine
+                )
+            },
+            generateHTML: {
+                let outURL = self.htmlOutputURL(profile: profile, outputDir: outputDir)
+                return await self.generateHTML(
+                    profile: profile, outFile: outURL.path, template: template, onLine: onLine
+                )
+            },
+            tighten: { WorkspacePermissionHardener.tighten(profile: profile) }
+        )
+    }
+
+    /// Orchestration core of `generateAll`, with the side-effecting operations
+    /// (`collect`, the XLSX/HTML generators, the permission sweep) injected as
+    /// closures. `generateAll` wires the real `CLIBridge` methods; tests inject
+    /// stubs returning synthetic exit codes to exercise the collect-fallback
+    /// (exit 3/5/6) and partial-success branches without a live jamf-cli.
+    ///
+    /// `CLIBridge` is `final` and its generator methods are intentionally not
+    /// behind the `CLICommand`/`CLIExecutor` protocol (ADR-W21 Hybrid scope), so
+    /// this closure seam is the minimal injection point — it changes no method
+    /// signatures and no call sites (Epic #102, item #3).
+    static func runGenerateAll(
+        types: Set<GenerateOutputType>,
+        collectFresh: Bool,
+        onLine: @Sendable @escaping (LogLine) -> Void,
+        collect: () async -> Int32,
+        generateXLSX: () async -> Int32,
+        generateHTML: () async -> Int32,
+        tighten: () -> Void
+    ) async -> GenerateAllResult {
         var result = GenerateAllResult()
 
         // Collect fresh snapshots first if requested.
@@ -53,7 +96,7 @@ extension CLIBridge {
         // Exit 6 = HTTP 429 — rate-limited; transient, safe to use cached data.
         // All other non-zero codes: warn and continue with cached data.
         if collectFresh {
-            let code = await collect(profile: profile, onLine: onLine)
+            let code = await collect()
             if code == CLIBridge.exitCodeUnauthorized {
                 result.failed.append((.xlsx, code))
                 return result
@@ -72,12 +115,7 @@ extension CLIBridge {
 
         // XLSX is the canonical workbook output.
         if types.contains(.xlsx) {
-            let code: Int32
-            if schoolMode {
-                code = await schoolGenerate(profile: profile, csvPath: nil, onLine: onLine)
-            } else {
-                code = await generate(profile: profile, csvPath: nil, template: template, outputDir: outputDir, onLine: onLine)
-            }
+            let code = await generateXLSX()
             if code == 0 {
                 result.succeeded.append(.xlsx)
             } else {
@@ -87,13 +125,7 @@ extension CLIBridge {
 
         // HTML executive summary.
         if types.contains(.html) {
-            let outURL = htmlOutputURL(profile: profile, outputDir: outputDir)
-            let code = await generateHTML(
-                profile: profile,
-                outFile: outURL.path,
-                template: template,
-                onLine: onLine
-            )
+            let code = await generateHTML()
             if code == 0 {
                 result.succeeded.append(.html)
             } else {
@@ -109,7 +141,7 @@ extension CLIBridge {
         // (ReportEngine XLSX, native HTML, PDF) are now Swift; each respects the
         // process umask, so the sweep normalises any 0644 files to 0600.
         if result.anySucceeded {
-            WorkspacePermissionHardener.tighten(profile: profile)
+            tighten()
         }
 
         return result
