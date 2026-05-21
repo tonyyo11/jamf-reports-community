@@ -3,6 +3,7 @@ import AppKit
 
 struct RunsView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     @State private var runs: [RunHistoryService.RunSummary] = []
     @State private var selectedRun: RunHistoryService.RunSummary? = nil
@@ -196,12 +197,15 @@ struct RunsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     Image(systemName: "terminal").foregroundStyle(Theme.Colors.gold).font(.system(size: 13))
+                        .accessibilityHidden(true)
                     if let run = selectedRun {
                         Mono(text: run.logURL.path.replacingOccurrences(
                             of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"
                         ), size: 12, color: Theme.Colors.fg2)
+                        .accessibilityAddTraits(.updatesFrequently)
                     } else {
-                        Mono(text: "Select a run to view its log", size: 12, color: Theme.Colors.fgMuted)
+                        Mono(text: "Select a run to view its log", size: 12, color: Theme.Text.tertiary(contrast))
+                            .accessibilityAddTraits(.updatesFrequently)
                     }
                     Spacer()
                     if let run = selectedRun, let code = run.exitCode {

@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct OnboardingView: View {
     @Environment(WorkspaceStore.self) private var workspaceStore
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var flow = OnboardingFlow()
     @State private var showingCSVImporter = false
 
@@ -73,12 +74,12 @@ struct OnboardingView: View {
             } else {
                 Text("\(step.number)")
                     .font(Theme.Fonts.mono(10, weight: .semibold))
-                    .foregroundStyle(current ? Theme.Colors.goldBright : Theme.Colors.fgMuted)
+                    .foregroundStyle(current ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
             }
             Text(step.label)
                 .font(.caption)
                 .foregroundStyle(current ? Theme.Colors.fg :
-                                 done ? Theme.Colors.fg2 : Theme.Colors.fgMuted)
+                                 done ? Theme.Colors.fg2 : Theme.Text.tertiary(contrast))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -108,7 +109,7 @@ struct OnboardingView: View {
                 .foregroundStyle(Theme.Colors.fg)
             Text(headerSubtitle)
                 .font(.system(size: 14))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
                 .frame(maxWidth: 650, alignment: .leading)
         }
     }
@@ -356,7 +357,7 @@ struct OnboardingView: View {
                                 .foregroundStyle(Theme.Colors.fg)
                             Text("Policy: accepted locations are Documents, Downloads, and Desktop.")
                                 .font(.footnote)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         Spacer()
                         PNPButton(title: "Choose CSV", icon: "folder") {
@@ -605,12 +606,12 @@ struct OnboardingView: View {
                     if lines.isEmpty {
                         Text("No output yet.")
                             .font(Theme.Fonts.mono(11.5))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
                         ForEach(lines) { line in
                             HStack(alignment: .top, spacing: 12) {
                                 Text(line.timestamp, style: .time)
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .frame(width: 72, alignment: .leading)
                                 Text(line.text)
                                     .foregroundStyle(color(for: line.level))

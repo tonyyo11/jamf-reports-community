@@ -659,6 +659,7 @@ private struct RunLogConsoleEmbed: View {
                             Text(isRunning ? "Starting\u{2026}" : "No output yet")
                                 .font(Theme.Fonts.mono(11.5))
                                 .foregroundStyle(Theme.Text.tertiary)
+                                .accessibilityAddTraits(.updatesFrequently)
                             blinkingCursor
                         }
                     } else {
@@ -668,6 +669,7 @@ private struct RunLogConsoleEmbed: View {
                                     .font(Theme.Fonts.mono(11.5))
                                     .foregroundStyle(lineColor(line))
                                     .textSelection(.enabled)
+                                    .accessibilityAddTraits(.updatesFrequently)
                                 if idx == lines.count - 1 { blinkingCursor }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)

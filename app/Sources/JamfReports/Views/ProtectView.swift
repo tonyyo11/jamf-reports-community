@@ -6,6 +6,7 @@ import Charts
 /// clear empty state when no Protect data exists (many tenants don't run Protect).
 struct ProtectView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ProtectDashboardService.Snapshot = .empty
     @State private var hasLoaded = false
 
@@ -280,7 +281,7 @@ struct ProtectView: View {
                     .monospacedDigit()
                 Text(String(format: "%.0f%%", pct))
                     .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 48, alignment: .trailing)
                     .monospacedDigit()
             }
@@ -346,7 +347,7 @@ struct ProtectView: View {
                     if let host = alert.hostName {
                         Text(host)
                             .font(Theme.Fonts.mono(10.5))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -354,7 +355,7 @@ struct ProtectView: View {
                 if let created = alert.created {
                     Text(formatCreatedDate(created))
                         .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 80, alignment: .trailing)
                 }
 
@@ -385,13 +386,13 @@ struct ProtectView: View {
 
                     Text(alert.hostName)
                         .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(formatCreatedDate(alert.created))
                     .font(Theme.Fonts.mono(10.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .trailing)
 
                 statusPill(alert.status)
@@ -483,13 +484,13 @@ struct ProtectView: View {
 
                     Text(computer.osString ?? "Unknown OS")
                         .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .frame(width: 140, alignment: .leading)
 
                 Text(computer.planName ?? "—")
                     .font(Theme.Fonts.mono(10.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .leading)
 
                 booleanPill(computer.webProtectionActive, trueLabel: "Active", falseLabel: "Inactive")
@@ -506,7 +507,7 @@ struct ProtectView: View {
                 if let lastConnection = computer.lastConnection {
                     Text(formatCreatedDate(lastConnection))
                         .font(Theme.Fonts.mono(9.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 80, alignment: .trailing)
                 }
             }
@@ -531,13 +532,13 @@ struct ProtectView: View {
 
                     Text(computer.osString)
                         .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .frame(width: 140, alignment: .leading)
 
                 Text(computer.planName)
                     .font(Theme.Fonts.mono(10.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .leading)
 
                 demoBooleanPill(computer.webProtection, trueLabel: "Active", falseLabel: "Inactive")
@@ -557,7 +558,7 @@ struct ProtectView: View {
 
                 Text(formatCreatedDate(computer.lastConnection))
                     .font(Theme.Fonts.mono(9.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .trailing)
             }
             .padding(.vertical, 8)
@@ -637,7 +638,7 @@ struct ProtectView: View {
             if let section = insight.section {
                 Text(section)
                     .font(.caption)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
             if total > 0 {
@@ -652,7 +653,7 @@ struct ProtectView: View {
 
                     Text("Fail: \(fail)")
                         .font(Theme.Fonts.mono(10))
-                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
 
                     Spacer()
 
@@ -695,7 +696,7 @@ struct ProtectView: View {
 
             Text(insight.section)
                 .font(.caption)
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
 
             if total > 0 {
                 HStack(spacing: 4) {
@@ -709,7 +710,7 @@ struct ProtectView: View {
 
                     Text("Fail: \(fail)")
                         .font(Theme.Fonts.mono(10))
-                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
 
                     Spacer()
 

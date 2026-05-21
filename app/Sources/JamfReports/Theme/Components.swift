@@ -318,9 +318,16 @@ struct PNPButton: View {
 struct PNPToggle: View {
     @Binding var isOn: Bool
     var label: String = ""
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Button {
-            withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
+            if reduceMotion {
+                isOn.toggle()
+            } else {
+                withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
+            }
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()

@@ -5,6 +5,42 @@ import SwiftUI
 // These aliases map logical roles to the dark-mode palette defined in Theme.swift.
 // Views should reference these rather than raw color values so light-mode and any
 // future tint overrides only need to change this file.
+//
+// WCAG 2.2 contrast ratios (dark-mode; all computed against the standard dark surfaces):
+//
+//   Text on winBG (#1D1D1F):
+//     fg  (#F2F2F7)    — 15.08:1  passes AA + AAA (7:1)
+//     fg2 (#D8D8DD)    — 11.85:1  passes AA + AAA
+//     fgMuted (#8E8E93) —  5.16:1  passes AA Normal (4.5:1); FAILS Large-text-only threshold
+//     fgDisabled (#8A8A90) — 4.90:1  passes AA Normal; intended for non-essential chrome
+//
+//   Text on winBG2 (#232326):
+//     fg  (#F2F2F7)    — 14.05:1  passes AA + AAA
+//     fg2 (#D8D8DD)    — 11.04:1  passes AA + AAA
+//     fgMuted (#8E8E93) —  4.81:1  passes AA Normal (marginally)
+//
+//   Text on winBG3 (#2A2A2E):
+//     fg  (#F2F2F7)    — 12.81:1  passes AA + AAA
+//     fg2 (#D8D8DD)    — 10.06:1  passes AA + AAA
+//     fgMuted (#8E8E93) —  4.38:1  FAILS AA Normal for body-size text; use only at 18pt+ or bold 14pt+
+//
+//   Code surface text on codeBG (#0E0F12):
+//     fg2 (#D8D8DD)    — 13.49:1  passes AA + AAA
+//     fgMuted (#8E8E93) —  5.88:1  passes AA Normal
+//     dangerSoft (#FFA39A) — 10.00:1  passes AA + AAA (verified 2026-05-20; see item #9)
+//     warnSoft (#FFCE7A) — 13.11:1  passes AA + AAA
+//
+//   Status on winBG:
+//     ok (#30D158)     —  8.32:1  passes AA + AAA
+//     warn (#FF9F0A)   —  8.19:1  passes AA + AAA
+//     danger (#FF453A) —  4.94:1  passes AA Normal
+//     dangerSoft (#FFA39A) — 8.78:1  passes AA + AAA
+//     goldBright (#E8B614) — 8.92:1  passes AA + AAA
+//
+// Increase Contrast notes:
+//   Under .increased, Theme.Text.tertiary() promotes fgMuted → fg2 (+6.69pp).
+//   Under .increased, Theme.Text.disabled() promotes fgDisabled → fgMuted (+0.26pp).
+//   This ensures all body-copy tertiary text passes AA Normal even on winBG3 contexts.
 
 extension Theme {
 

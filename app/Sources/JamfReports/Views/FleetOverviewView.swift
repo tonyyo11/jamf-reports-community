@@ -4,6 +4,7 @@ import SwiftUI
 struct FleetOverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var rows: [FleetProfileOverview] = []
     @State private var isLoading = false
     @State private var issuesOnly: Bool = false
@@ -138,7 +139,7 @@ struct FleetOverviewView: View {
                 .contentTransition(.numericText())
             Text("Most recent summary across all profiles")
                 .font(.system(size: 11.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
@@ -173,7 +174,7 @@ struct FleetOverviewView: View {
                             .foregroundStyle(Theme.Colors.teal)
                         Text("No profiles with issues — fleet looks healthy")
                             .font(.system(size: 14))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                         PNPButton(title: "Show all profiles", icon: "list.bullet", size: .sm) {
                             issuesOnly = false
                         }
@@ -261,7 +262,7 @@ struct FleetOverviewView: View {
                         } else {
                             Text("Run a schedule or generate a report for this workspace to create its first summary.")
                                 .font(.system(size: 12.5))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
@@ -270,7 +271,7 @@ struct FleetOverviewView: View {
                         HStack {
                             Text("Switch to this workspace and open the relevant surface.")
                                 .font(.system(size: 12.5))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                             Spacer()
                             PNPButton(title: "Overview", icon: Tab.overview.sfSymbol, size: .sm) {
                                 open(row.profile, tab: .overview)
@@ -335,7 +336,7 @@ struct FleetOverviewView: View {
             Kicker(text: "No stability history yet")
             Text("Generate a report to start tracking trends")
                 .font(.system(size: 12.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .frame(maxWidth: .infinity)
         .frame(height: 200)
@@ -370,7 +371,7 @@ struct FleetOverviewView: View {
                 AxisValueLabel(format: .dateTime.month(.abbreviated).day(),
                                centered: false)
                     .font(Theme.Fonts.mono(10))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
         .chartYAxis {
@@ -380,7 +381,7 @@ struct FleetOverviewView: View {
                     if let pct = value.as(Double.self) {
                         Text("\(Int(pct))%")
                             .font(Theme.Fonts.mono(10))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                     }
@@ -508,6 +509,7 @@ private struct StabilityTrendPoint: Identifiable, Sendable {
 
 private struct FleetProfileCard: View {
     let row: FleetProfileOverview
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var stability: Double? {
         row.summary?.stabilityIndex
@@ -569,7 +571,7 @@ private struct FleetProfileCard: View {
                         Kicker(text: "Last Run")
                         Text(row.summary?.date ?? "No summary")
                             .font(Theme.Fonts.mono(12, weight: .semibold))
-                            .foregroundStyle(row.summary == nil ? Theme.Colors.fgMuted : Theme.Colors.fg2)
+                            .foregroundStyle(row.summary == nil ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                     }
                     Spacer()
                 }
@@ -585,7 +587,7 @@ private struct FleetProfileCard: View {
                 } else {
                     Text("Run a schedule or generate a report to create the first summary.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
         }
@@ -595,7 +597,7 @@ private struct FleetProfileCard: View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.system(size: 11.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
                 .frame(width: 72, alignment: .leading)
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.08))

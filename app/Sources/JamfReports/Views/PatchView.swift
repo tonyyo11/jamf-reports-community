@@ -7,6 +7,7 @@ import AppKit
 /// on-screen dashboard.
 struct PatchView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: PatchStatusService.Snapshot = .empty
     @State private var hasLoaded = false
 
@@ -169,7 +170,7 @@ struct PatchView: View {
                     TableColumn("Latest Version") { title in
                         Text(title.latest)
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .width(min: 120, ideal: 150)
 
@@ -191,7 +192,7 @@ struct PatchView: View {
                     TableColumn("On Latest / Total") { title in
                         Text("\(title.onLatest) / \(title.total)")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                             .monospacedDigit()
                             .accessibilityLabel("\(title.onLatest) devices on latest version, \(title.total) total devices")
                     }
@@ -201,7 +202,7 @@ struct PatchView: View {
                         let failureCount = snapshot.failuresByTitle[title.title] ?? 0
                         Text("\(failureCount)")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(failureCount > 0 ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                            .foregroundStyle(failureCount > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                             .monospacedDigit()
                             .accessibilityLabel("\(failureCount) device\(failureCount == 1 ? "" : "s") with patch failures")
                     }
@@ -211,7 +212,7 @@ struct PatchView: View {
                 if sortedTitles.count > Self.titlesDisplayCap {
                     Text("Generated reports include every patch title.")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
         }
@@ -250,7 +251,7 @@ struct PatchView: View {
                 if snapshot.failures.isEmpty {
                     Text("No recent patch failures recorded.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
                     Table(recentFailures) {
                         TableColumn("Device") { failure in
@@ -279,7 +280,7 @@ struct PatchView: View {
                         TableColumn("Status Date") { failure in
                             Text(failure.statusDate)
                                 .font(Theme.Fonts.mono(10.5))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         .width(min: 90, ideal: 110)
                     }

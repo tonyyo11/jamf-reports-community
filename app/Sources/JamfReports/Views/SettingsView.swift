@@ -26,6 +26,7 @@ private enum CustomTierChoice: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
     @State private var testingProfile: String? = nil
     @State private var testResults: [String: Bool] = [:]
@@ -944,7 +945,7 @@ struct SettingsView: View {
                 }
                 Text("Hide dashboards you don't use. Core tabs (Overview, Devices, Sources, Settings) cannot be hidden.")
                     .font(.caption)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 ForEach(SettingsView.toggleableGroups, id: \.label) { group in
                     visibilityGroupRow(label: group.label, tabs: group.tabs)
                 }
@@ -968,7 +969,7 @@ struct SettingsView: View {
             Text(label.uppercased())
                 .font(Theme.Fonts.mono(10, weight: .semibold))
                 .tracking(1.2)
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
             ForEach(tabs, id: \.self) { tab in
                 visibilityRow(for: tab)
             }

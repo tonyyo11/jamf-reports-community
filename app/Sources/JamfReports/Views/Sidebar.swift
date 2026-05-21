@@ -117,7 +117,7 @@ struct Sidebar: View {
                     .truncationMode(.tail)
                 Text("Jamf Reports · v\(appVersion)")
                     .font(.caption)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
     }
@@ -135,7 +135,7 @@ struct Sidebar: View {
                 Text(group.group)
                     .font(Theme.Fonts.mono(10, weight: .semibold))
                     .tracking(1.2)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(.horizontal, 22)
                     .padding(.top, 8)
                     .padding(.bottom, 4)
@@ -171,7 +171,7 @@ struct Sidebar: View {
                     if let badge = badge(for: item) {
                         Text(badge)
                             .font(Theme.Fonts.mono(10, weight: .semibold))
-                            .foregroundStyle(item.badgeIsGold ? Theme.Colors.goldBright : Theme.Colors.fgMuted)
+                            .foregroundStyle(item.badgeIsGold ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
                             .background(

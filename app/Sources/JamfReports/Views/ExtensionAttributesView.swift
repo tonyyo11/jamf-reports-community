@@ -7,6 +7,7 @@ import Charts
 /// and what values are appearing.
 struct ExtensionAttributesView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ExtensionAttributeService.Snapshot = .empty
     @State private var hasLoaded = false
     @State private var selectedEA: String?
@@ -262,7 +263,7 @@ struct ExtensionAttributesView: View {
                     if snapshot.coverage.count > 30 {
                         Text("+\(snapshot.coverage.count - 30) more")
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, 8)
                     }
@@ -282,7 +283,7 @@ struct ExtensionAttributesView: View {
                 Spacer()
                 Text("\(coverage.populatedDevices) / \(coverage.totalDevices)")
                     .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(String(format: "%.1f%%", coverage.coveragePct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(coverageColor(for: coverage.coveragePct))
@@ -396,12 +397,12 @@ struct ExtensionAttributesView: View {
                 if distribution.otherCount > 0 {
                     Text("+\(distribution.otherCount) value\(distribution.otherCount == 1 ? "" : "s") in \(distribution.distinctValueCount - distribution.top.count) other bucket\(distribution.distinctValueCount - distribution.top.count == 1 ? "" : "s")")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 if snapshot.totalRowCount > Self.largeFleetRowThreshold {
                     Text("Top values shown per EA; generated reports include all values.")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
         }
@@ -420,7 +421,7 @@ struct ExtensionAttributesView: View {
                 if snapshot.definitions.isEmpty {
                     Text("No EA definitions loaded.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
                     Table(Array(snapshot.definitions.prefix(Self.definitionsDisplayCap))) {
                         TableColumn("Name") { definition in
@@ -442,7 +443,7 @@ struct ExtensionAttributesView: View {
                         TableColumn("Input") { definition in
                             Text(definition.inputType ?? "Unknown")
                                 .font(.footnote)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         .width(min: 80, ideal: 100)
 
@@ -458,7 +459,7 @@ struct ExtensionAttributesView: View {
                     if snapshot.definitions.count > Self.definitionsDisplayCap {
                         Text("Generated reports include every definition.")
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
             }

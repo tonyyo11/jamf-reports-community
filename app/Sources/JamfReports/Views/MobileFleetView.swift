@@ -7,6 +7,7 @@ import Charts
 /// `classic-mobile-config-profiles` snapshots.
 struct MobileFleetView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: MobileFleetService.Snapshot = .empty
     @State private var hasLoaded = false
 
@@ -238,7 +239,7 @@ struct MobileFleetView: View {
                 Spacer()
                 Text("\(count) device\(count == 1 ? "" : "s")")
                     .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(String(format: "%.1f%%", percentage))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Theme.Colors.fg)
@@ -293,21 +294,21 @@ struct MobileFleetView: View {
                     TableColumn("Serial") { device in
                         Text(getSerial(device) ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .width(min: 120, ideal: 140)
 
                     TableColumn("User") { device in
                         Text(getUsername(device) ?? "—")
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .width(min: 100, ideal: 130)
 
                     TableColumn("OS") { device in
                         Text(getOSVersion(device) ?? "—")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .width(min: 80, ideal: 100)
 
@@ -318,7 +319,7 @@ struct MobileFleetView: View {
                     TableColumn("Last Inventory") { device in
                         Text(getLastInventoryRelative(device))
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .width(min: 100, ideal: 120)
                 }
@@ -326,7 +327,7 @@ struct MobileFleetView: View {
                 if totalMobileDevices > devicesForTable.count {
                     Text("Generated reports include every mobile device.")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
         }
@@ -347,14 +348,14 @@ struct MobileFleetView: View {
                     TableColumn("Category") { item in
                         Text(item.profile.category ?? "—")
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .width(min: 100, ideal: 120)
 
                     TableColumn("Site") { item in
                         Text(item.profile.site ?? "—")
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .width(min: 80, ideal: 100)
                 }

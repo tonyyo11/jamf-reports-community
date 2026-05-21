@@ -6,6 +6,7 @@ import SwiftUI
 /// from Excel reports into a live, on-screen dashboard.
 struct PolicyProfileView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: PolicyHealthService.Snapshot = .empty
     @State private var hasLoaded = false
     @State private var selectedTab: Tab = .policies
@@ -228,14 +229,14 @@ struct PolicyProfileView: View {
 
                             Text(finding.check)
                                 .font(.callout)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .frame(width: 150, alignment: .leading)
 
                             Spacer(minLength: 12)
 
                             Text(finding.detail)
                                 .font(.callout)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .accessibilityElement(children: .combine)
@@ -341,14 +342,14 @@ struct PolicyProfileView: View {
 
                             Text(profile.category ?? "—")
                                 .font(.callout)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .frame(width: 120, alignment: .leading)
 
                             Spacer(minLength: 12)
 
                             Text(profile.site ?? "—")
                                 .font(.callout)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .frame(width: 100, alignment: .leading)
 
                             Spacer(minLength: 12)
@@ -362,7 +363,7 @@ struct PolicyProfileView: View {
                             } else {
                                 Text("Unknown")
                                     .font(.callout)
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .frame(width: 120, alignment: .leading)
                             }
 
@@ -371,13 +372,13 @@ struct PolicyProfileView: View {
                             if let errorCount = profile.errorCount?.value as? Int {
                                 Text("\(errorCount)")
                                     .font(Theme.Fonts.mono(11))
-                                    .foregroundStyle(errorCount > 0 ? Theme.Colors.danger : Theme.Colors.fgMuted)
+                                    .foregroundStyle(errorCount > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
                                     .monospacedDigit()
                                     .frame(width: 80, alignment: .leading)
                             } else {
                                 Text("—")
                                     .font(Theme.Fonts.mono(11))
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .frame(width: 80, alignment: .leading)
                             }
                         }

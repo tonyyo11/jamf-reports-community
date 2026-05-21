@@ -7,6 +7,7 @@ import AppKit
 struct OutreachView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: StaleDeviceService.Snapshot = .empty
     @State private var hasLoaded = false
     @State private var selectedTier: StaleDeviceService.Tier = .offline
@@ -259,7 +260,7 @@ struct OutreachView: View {
                         TableColumn("Serial") { device in
                             Text(device.displaySerial)
                                 .font(Theme.Fonts.mono(11))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         .width(min: 110, ideal: 130)
 
@@ -267,7 +268,7 @@ struct OutreachView: View {
                             let displayUser = device.user.isEmpty ? "—" : device.user
                             Text(displayUser)
                                 .font(.footnote)
-                                .foregroundStyle(displayUser == "—" ? Theme.Colors.fgMuted : Theme.Colors.fg2)
+                                .foregroundStyle(displayUser == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                         }
                         .width(min: 120, ideal: 150)
 
@@ -275,7 +276,7 @@ struct OutreachView: View {
                             let displayEmail = device.email.isEmpty ? "—" : device.email
                             Text(displayEmail)
                                 .font(Theme.Fonts.mono(11))
-                                .foregroundStyle(displayEmail == "—" ? Theme.Colors.fgMuted : Theme.Colors.fg2)
+                                .foregroundStyle(displayEmail == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                                 .accessibilityLabel(displayEmail == "—" ? "No email" : "Email \(displayEmail)")
                         }
                         .width(min: 140, ideal: 180)
@@ -284,7 +285,7 @@ struct OutreachView: View {
                             let displayDept = device.department.isEmpty ? "—" : device.department
                             Text(displayDept)
                                 .font(.footnote)
-                                .foregroundStyle(displayDept == "—" ? Theme.Colors.fgMuted : Theme.Colors.fg2)
+                                .foregroundStyle(displayDept == "—" ? Theme.Text.tertiary(contrast) : Theme.Colors.fg2)
                         }
                         .width(min: 100, ideal: 120)
 
@@ -302,7 +303,7 @@ struct OutreachView: View {
                             let relative = relativeDate(from: device.lastContact)
                             Text(relative)
                                 .font(Theme.Fonts.mono(10.5))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .accessibilityLabel("Last contact \(relative)")
                         }
                         .width(min: 100, ideal: 120)
@@ -311,7 +312,7 @@ struct OutreachView: View {
                 } else {
                     Text("No devices in the \(selectedTier.label.lowercased()) tier.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .padding(.vertical, 20)
                 }
             }

@@ -185,6 +185,7 @@ final class SmartGroupApplySheetViewModel {
 struct SmartGroupApplySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @Bindable var viewModel: SmartGroupApplySheetViewModel
 
     var body: some View {
@@ -270,7 +271,7 @@ struct SmartGroupApplySheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Criteria preview (read-only)")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 ScrollView {
                     Text(preview.bodyJSON)
                         .font(Theme.Fonts.mono(11))
@@ -293,14 +294,14 @@ struct SmartGroupApplySheet: View {
     private var nameAndParamsForm: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Smart group name").font(.caption.weight(.medium)).foregroundStyle(Theme.Colors.fgMuted)
+                Text("Smart group name").font(.caption.weight(.medium)).foregroundStyle(Theme.Text.tertiary(contrast))
                 TextField("Smart group name", text: $viewModel.smartGroupName)
                     .textFieldStyle(.roundedBorder)
             }
             ForEach(viewModel.template.params, id: \.name) { param in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
-                        Text(param.name).font(.caption.weight(.medium)).foregroundStyle(Theme.Colors.fgMuted)
+                        Text(param.name).font(.caption.weight(.medium)).foregroundStyle(Theme.Text.tertiary(contrast))
                         if param.required {
                             Text("*").foregroundStyle(Theme.Colors.danger).font(.caption.weight(.bold))
                         }
@@ -308,7 +309,7 @@ struct SmartGroupApplySheet: View {
                     TextField(param.description, text: paramBinding(for: param.name))
                         .textFieldStyle(.roundedBorder)
                     if !param.description.isEmpty {
-                        Text(param.description).font(.caption2).foregroundStyle(Theme.Colors.fgMuted)
+                        Text(param.description).font(.caption2).foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
             }
@@ -342,7 +343,7 @@ struct SmartGroupApplySheet: View {
                     .font(.callout).foregroundStyle(Theme.Colors.fg2)
             } else {
                 Text("Membership count not available — refresh the smart group in Jamf Pro.")
-                    .font(.callout).foregroundStyle(Theme.Colors.fgMuted)
+                    .font(.callout).foregroundStyle(Theme.Text.tertiary(contrast))
             }
             if let consoleURL = workspace.consoleURL(forComputerGroupID: result.smartGroupID, isStatic: false) {
                 Link(destination: consoleURL) {

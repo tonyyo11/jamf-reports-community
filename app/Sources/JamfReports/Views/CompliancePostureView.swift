@@ -7,6 +7,7 @@ import Charts
 /// failure-count banding once an Extension Attribute is configured.
 struct CompliancePostureView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
     @State private var hasLoaded = false
 
@@ -194,7 +195,7 @@ struct CompliancePostureView: View {
                         .foregroundStyle(Theme.Colors.fg)
                     Text("Each device is bucketed by how many of FileVault, SIP, Firewall, and Gatekeeper are failing. For full mSCP failure-count banding, configure a Compliance EA in your Jamf Pro tenant.")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
         }
@@ -289,7 +290,7 @@ struct CompliancePostureView: View {
                         .foregroundStyle(Theme.Colors.fg)
                     Text("(\(band.range))")
                         .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                     Spacer()
                     Text("\(band.count)")
                         .font(Theme.Fonts.mono(12, weight: .semibold))
@@ -297,7 +298,7 @@ struct CompliancePostureView: View {
                         .monospacedDigit()
                     Text(String(format: "%.1f%%", band.pct))
                         .font(Theme.Fonts.mono(11))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 56, alignment: .trailing)
                         .monospacedDigit()
                 }
@@ -334,7 +335,7 @@ struct CompliancePostureView: View {
                 Spacer()
                 Text("\(gap.failingDevices) failing")
                     .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(String(format: "%.1f%%", gap.pct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(barColor(for: gap.pct))
@@ -382,7 +383,7 @@ struct CompliancePostureView: View {
                 if snapshot.perOSMajor.isEmpty {
                     Text("Not enough OS version data in this snapshot.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
                     perOSGrid
                 }
@@ -402,7 +403,7 @@ struct CompliancePostureView: View {
                         .frame(height: 14)
                     Text("\(row.bands.reduce(0) { $0 + $1.count })")
                         .font(Theme.Fonts.mono(11))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 50, alignment: .trailing)
                         .monospacedDigit()
                 }

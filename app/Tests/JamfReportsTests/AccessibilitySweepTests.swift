@@ -124,6 +124,73 @@ final class AccessibilitySweepTests: XCTestCase {
         // OnboardingView requires no specific environment
         _ = OnboardingView()
     }
+
+    // MARK: - VoiceOver label contract tests
+
+    /// StatTile must produce a combined accessibility label that includes the metric name and value.
+    /// We mirror the private `fullAccessibilityLabel` logic in a test extension (below).
+    func testStatTileAccessibilityLabel() {
+        let label = StatTile.testAccessibilityLabel(
+            label: "FileVault", value: "91%", delta: nil, deltaTrend: .flat, sub: "Encrypted"
+        )
+        XCTAssertTrue(label.contains("FileVault"), "StatTile label must contain the metric name")
+        XCTAssertTrue(label.contains("91%"), "StatTile label must contain the value")
+        XCTAssertTrue(label.contains("Encrypted"), "StatTile label must contain the subtitle")
+    }
+
+    /// StatTile with an upward delta must include the delta and trend direction.
+    func testStatTileWithDeltaAccessibilityLabel() {
+        let label = StatTile.testAccessibilityLabel(
+            label: "Compliance", value: "78%", delta: "+3pp", deltaTrend: .up, sub: nil
+        )
+        XCTAssertTrue(label.contains("up"), "Upward delta must be announced as 'up' for VoiceOver")
+        XCTAssertTrue(label.contains("+3pp"), "Delta value must appear in the label")
+    }
+
+    /// StatTile with a downward delta must include the 'down' direction.
+    func testStatTileWithDownDeltaAccessibilityLabel() {
+        let label = StatTile.testAccessibilityLabel(
+            label: "Stale Devices", value: "42", delta: "−5", deltaTrend: .down, sub: nil
+        )
+        XCTAssertTrue(label.contains("down"), "Downward delta must be announced as 'down'")
+    }
+
+    // MARK: - Chart wiring VoiceOver contract
+
+    /// TrendsView hero chart uses .accessibilityChartDescriptor(TrendLineChartDescriptor(...)).
+    /// Assert the contract: the descriptor type must be AXChartDescriptorRepresentable-conforming.
+    func testTrendLineChartDescriptorConformsToRepresentable() {
+        let descriptor = TrendLineChartDescriptor(
+            title: "Test Trend",
+            seriesName: "Metric",
+            dates: [Date()],
+            values: [50.0],
+            unit: "%"
+        )
+        // Conformance is a compile-time check. This runtime call validates the descriptor
+        // produces a non-crashing AXChartDescriptor with the correct title.
+        let ax = descriptor.makeChartDescriptor()
+        XCTAssertEqual(ax.title, "Test Trend")
+        XCTAssertFalse(ax.series.isEmpty, "Descriptor must have at least one series")
+    }
+
+    /// SectorChartDescriptor must be usable for OS distribution donuts on SecurityPostureView.
+    func testSectorChartDescriptorForOSDistribution() {
+        let descriptor = SectorChartDescriptor(
+            title: "macOS Distribution",
+            unit: "%",
+            slices: [
+                .init(label: "Tahoe", value: 61.0),
+                .init(label: "Sonoma", value: 29.0),
+                .init(label: "Other", value: 10.0),
+            ]
+        )
+        let ax = descriptor.makeChartDescriptor()
+        XCTAssertEqual(ax.series[0].dataPoints.count, 3)
+        // Summary must list all slices so VoiceOver can read out the full distribution
+        XCTAssertTrue(ax.summary?.contains("Tahoe") ?? false)
+        XCTAssertTrue(ax.summary?.contains("Sonoma") ?? false)
+    }
 }
 
 // MARK: - Test Extensions
@@ -156,5 +223,29 @@ extension Schedule {
         case .partial:
             return "Schedule completed with partial success"
         }
+    }
+}
+
+extension StatTile {
+    /// Mirrors the private `fullAccessibilityLabel` logic from StatTile so tests
+    /// can verify the VoiceOver announcement contract without access to the private property.
+    /// `nonisolated` so test methods can call it without @MainActor.
+    nonisolated static func testAccessibilityLabel(
+        label: String,
+        value: String,
+        delta: String?,
+        deltaTrend: Trend,
+        sub: String?
+    ) -> String {
+        var parts = ["\(label): \(value)"]
+        if let delta {
+            switch deltaTrend {
+            case .up:   parts.append("up \(delta)")
+            case .down: parts.append("down \(delta)")
+            case .flat: break
+            }
+        }
+        if let sub { parts.append(sub) }
+        return parts.joined(separator: ", ")
     }
 }

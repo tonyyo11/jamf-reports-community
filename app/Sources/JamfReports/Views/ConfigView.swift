@@ -5,6 +5,7 @@ import AppKit
 
 struct ConfigView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var cli = CLIBridge()
 
     enum ConfigTab: String, CaseIterable {
@@ -1054,6 +1055,7 @@ private struct EACard: View {
 /// that metric from the score entirely.
 private struct ScoringTab: View {
     @AppStorage(ScoringConfig.storageKey) private var raw: String = ""
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var config: ScoringConfig {
         raw.isEmpty ? ScoringConfig() : ScoringConfig.parse(raw)
@@ -1086,7 +1088,7 @@ private struct ScoringTab: View {
                          "Set a weight to 0 to drop that metric entirely. Missing metrics in your " +
                          "data are auto-renormalized so the score still scales to 100.")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                     VStack(spacing: 6) {
                         weightRow("FileVault Encryption",
                                   value: Binding(get: { Int(config.weights.fileVault) },

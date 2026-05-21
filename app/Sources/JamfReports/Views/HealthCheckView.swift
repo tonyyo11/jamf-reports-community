@@ -4,6 +4,7 @@ import SwiftUI
 
 struct HealthCheckView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var bridge = CLIBridge()
 
     @State private var findings: [AuditFinding] = []
@@ -259,7 +260,7 @@ struct HealthCheckView: View {
                             HStack(spacing: 8) {
                                 Text(f.recommendation)
                                     .font(.footnote.weight(.medium))
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
                                 PNPButton(title: "Details", icon: "info.circle", size: .sm) {
@@ -305,7 +306,7 @@ struct HealthCheckView: View {
                                         .strikethrough(true, color: Theme.Colors.fgMuted)
                                     Text(finding.recommendation)
                                         .font(.caption)
-                                        .foregroundStyle(Theme.Colors.fgMuted)
+                                        .foregroundStyle(Theme.Text.tertiary(contrast))
                                         .lineLimit(1)
                                 }
                                 Spacer()
@@ -377,7 +378,7 @@ struct HealthCheckView: View {
                             TableColumn("Why Flagged") { g in
                                 Text(g.reasonLabel)
                                     .font(.footnote.weight(.medium))
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .lineLimit(2)
                             }
                             TableColumn("Actions") { g in
