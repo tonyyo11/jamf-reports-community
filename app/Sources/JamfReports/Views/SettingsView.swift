@@ -170,7 +170,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.callout.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
-                Text(sub).font(Theme.Fonts.mono(11)).foregroundStyle(Theme.Text.tertiary)
+                Text(sub).font(.caption.monospaced()).foregroundStyle(Theme.Text.tertiary)
             }
             Spacer()
             trailing
@@ -238,7 +238,7 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     if let msg = addConnectionMessage {
                         Text(msg)
-                            .font(Theme.Fonts.mono(10.5))
+                            .font(.caption.monospaced())
                             .foregroundStyle(Theme.Text.tertiary)
                     }
                 }
@@ -271,7 +271,7 @@ struct SettingsView: View {
                 }
                 if let err = testErrors[profileName] {
                     Text(err)
-                        .font(Theme.Fonts.mono(10.5))
+                        .font(.caption.monospaced())
                         .foregroundStyle(Theme.Colors.warn)
                         .lineLimit(4)
                         .onTapGesture { testErrors[profileName] = nil }
@@ -364,7 +364,7 @@ struct SettingsView: View {
                     HStack(spacing: 4) {
                         Text("A GUI for the open-source")
                         Text("jamf-reports-community").foregroundStyle(Theme.Colors.goldBright)
-                            .font(Theme.Fonts.mono(13))
+                            .font(.footnote.monospaced())
                         Text("project — every flow in this app maps to a CLI command.")
                     }
                     .font(.callout)
@@ -433,7 +433,7 @@ struct SettingsView: View {
             Text(label).foregroundStyle(Theme.Text.tertiary)
             Text(value).foregroundStyle(Theme.Text.primary)
         }
-        .font(Theme.Fonts.mono(11.5))
+        .font(.caption.monospaced())
     }
 
     // MARK: - Sidebar visibility
@@ -519,7 +519,7 @@ struct SettingsView: View {
                         Text("This profile's jamf_cli.collect_skip is now read as "
                              + "per-report cadence. Review it under Performance below; "
                              + "saving a preset there finalizes the migration.")
-                            .font(Theme.Fonts.mono(11))
+                            .font(.caption.monospaced())
                             .foregroundStyle(Theme.Text.tertiary)
                     }
                     Spacer()
@@ -541,7 +541,7 @@ struct SettingsView: View {
                 SectionHeader(title: "Performance")
                 Text("Collection cadence preset for the active profile (\(workspace.profile)). "
                      + "Controls how often scheduled runs fetch each tier of jamf-cli data.")
-                    .font(Theme.Fonts.mono(11))
+                    .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary)
 
                 Picker("Cadence preset", selection: cadencePresetBinding) {
@@ -553,7 +553,7 @@ struct SettingsView: View {
                 .pickerStyle(.radioGroup)
 
                 Text(cadencePreset.displaySubtitle)
-                    .font(Theme.Fonts.mono(11))
+                    .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary)
 
                 Divider().background(Theme.Hairline.standard)
@@ -563,7 +563,7 @@ struct SettingsView: View {
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Text.primary)
                     Text(cadencePreset.cadenceSummary)
-                        .font(Theme.Fonts.mono(11))
+                        .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary)
                 }
 
@@ -688,7 +688,7 @@ struct SettingsView: View {
                 .foregroundStyle(Theme.Text.primary)
             Text("Each report's tier and how often it's fetched. "
                  + "Set a report to Never to skip it entirely.")
-                .font(Theme.Fonts.mono(11))
+                .font(.caption.monospaced())
                 .foregroundStyle(Theme.Text.tertiary)
 
             ForEach(ReportEngine.knownCollectKinds.sorted(), id: \.self) { kind in
@@ -712,7 +712,7 @@ struct SettingsView: View {
     private func customCadenceRow(kind: String) -> some View {
         HStack(spacing: 8) {
             Text(kind)
-                .font(Theme.Fonts.mono(11))
+                .font(.caption.monospaced())
                 .foregroundStyle(Theme.Text.primary)
             Spacer()
             Picker("", selection: tierChoiceBinding(kind)) {
@@ -833,7 +833,7 @@ struct SettingsView: View {
 
                 if let msg = diagnosticBundleMessage {
                     Text(msg)
-                        .font(Theme.Fonts.mono(10.5))
+                        .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -967,7 +967,7 @@ struct SettingsView: View {
     private func visibilityGroupRow(label: String, tabs: [Tab]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(Theme.Fonts.mono(10, weight: .semibold))
+                .font(.caption2.monospaced().weight(.semibold))
                 .tracking(1.2)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
             ForEach(tabs, id: \.self) { tab in

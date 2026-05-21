@@ -290,7 +290,7 @@ private struct ColumnsTab: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(title: "Tip")
-                (Text("Run ") + Text("scaffold").font(Theme.Fonts.mono(11)) +
+                (Text("Run ") + Text("scaffold").font(.caption.monospaced()) +
                  Text(" to auto-detect columns from a new CSV export. Existing config is preserved."))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
@@ -430,7 +430,7 @@ private struct AgentsTab: View {
 
     private func tableHeaderCell(_ title: String, width: CGFloat?) -> some View {
         Text(title)
-            .font(Theme.Fonts.mono(10.5, weight: .semibold))
+            .font(.caption.monospaced().weight(.semibold))
             .foregroundStyle(Theme.Text.tertiary)
             .frame(maxWidth: width ?? .infinity, alignment: .leading)
     }
@@ -540,7 +540,7 @@ private struct EACardEdit: View {
                 } else if type == "version" {
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "Current versions")
-                        Text("Comma-separated list").font(.system(size: 10)).foregroundStyle(Theme.Text.tertiary)
+                        Text("Comma-separated list").font(.caption2).foregroundStyle(Theme.Text.tertiary)
                         PNPTextField(value: Binding(
                             get: { ws.configState.customEAs[index].currentVersions.joined(separator: ", ") },
                             set: { ws.configState.customEAs[index].currentVersions = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
@@ -629,10 +629,10 @@ private struct ThresholdsTab: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Generate compliance sheet")
-                                    .font(.system(size: 12.5, weight: .medium))
+                                    .font(.callout.weight(.medium))
                                     .foregroundStyle(Theme.Text.primary)
                                 Text("Failed-rule counts per device")
-                                    .font(.system(size: 11))
+                                    .font(.caption)
                                     .foregroundStyle(Theme.Text.tertiary)
                             }
                             Spacer()
@@ -693,9 +693,9 @@ private struct PlatformTab: View {
                     Pill(text: "PREVIEW", tone: .warn)
                 }
                 (Text("Public beta · requires ")
-                 + Text("jamf-cli").font(Theme.Fonts.mono(11))
+                 + Text("jamf-cli").font(.caption.monospaced())
                  + Text(" build with ")
-                 + Text("pro report").font(Theme.Fonts.mono(11))
+                 + Text("pro report").font(.caption.monospaced())
                  + Text(" commands."))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary)
@@ -771,14 +771,14 @@ private struct PlatformTab: View {
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Requires a Platform Gateway profile")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 (Text("Run ")
-                 + Text("jamf-cli platform setup").font(Theme.Fonts.mono(11))
+                 + Text("jamf-cli platform setup").font(.caption.monospaced())
                  + Text(" to create a Platform Gateway profile. "
                         + "This routes Pro API traffic through the Jamf Platform Gateway "
                         + "and unlocks Platform API commands used by these sheets."))
-                    .font(.system(size: 11))
+                    .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                 Button {
                     if let url = URL(string: "https://github.com/Jamf-Concepts/jamf-cli/wiki/"
@@ -960,7 +960,7 @@ private struct ColumnFieldRow: View {
             HStack(spacing: 4) {
                 Mono(text: mapping.key, size: 11.5, color: Theme.Text.secondary)
                 if mapping.required {
-                    Text("*").font(.system(size: 10)).foregroundStyle(Theme.Colors.goldBright)
+                    Text("*").font(.caption2).foregroundStyle(Theme.Colors.goldBright)
                 }
             }
             .frame(width: 180, alignment: .leading)

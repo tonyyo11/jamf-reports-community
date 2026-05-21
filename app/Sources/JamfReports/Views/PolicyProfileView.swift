@@ -371,13 +371,13 @@ struct PolicyProfileView: View {
 
                             if let errorCount = profile.errorCount?.value as? Int {
                                 Text("\(errorCount)")
-                                    .font(Theme.Fonts.mono(11))
+                                    .font(.caption.monospaced())
                                     .foregroundStyle(errorCount > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
                                     .monospacedDigit()
                                     .frame(width: 80, alignment: .leading)
                             } else {
                                 Text("—")
-                                    .font(Theme.Fonts.mono(11))
+                                    .font(.caption.monospaced())
                                     .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .frame(width: 80, alignment: .leading)
                             }
