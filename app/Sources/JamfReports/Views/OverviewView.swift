@@ -212,9 +212,9 @@ struct OverviewView: View {
             Text(value)
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
-                .lineLimit(1)
+                .lineLimit(2)
             Mono(text: sub, size: 10.5, color: Theme.Text.tertiary(contrast))
-                .lineLimit(1)
+                .lineLimit(2)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -424,7 +424,7 @@ struct OverviewView: View {
                                         Text("\(String(format: "%.1f", o.pct))%")
                                             .font(Theme.Fonts.mono(11, weight: .semibold))
                                             .foregroundStyle(Theme.Colors.fg)
-                                            .frame(width: 44, alignment: .trailing)
+                                            .frame(minWidth: 44, alignment: .trailing)
                                     }
                                 }
                             }
@@ -499,8 +499,8 @@ struct OverviewView: View {
                     Text(r.ruleID)
                         .font(Theme.Fonts.mono(11.5))
                         .foregroundStyle(Theme.Colors.fg2)
-                        .frame(width: 260, alignment: .leading)
-                        .lineLimit(1)
+                        .frame(minWidth: 260, alignment: .leading)
+                        .lineLimit(2)
                     GeometryReader { geo in
                         let w = CGFloat(r.fails) / CGFloat(maxFails) * geo.size.width
                         ZStack(alignment: .leading) {
@@ -514,7 +514,7 @@ struct OverviewView: View {
                     Text("\(r.fails)")
                         .font(Theme.Fonts.mono(11.5, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg)
-                        .frame(width: 36, alignment: .trailing)
+                        .frame(minWidth: 36, alignment: .trailing)
                 }
             }
         }
@@ -886,8 +886,8 @@ struct OverviewView: View {
             Text(label)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg2)
-                .lineLimit(1)
-                .frame(width: 260, alignment: .leading)
+                .lineLimit(2)
+                .frame(minWidth: 260, alignment: .leading)
             GeometryReader { geo in
                 let width = maxValue == 0 ? 0 : min(value / maxValue, 1) * geo.size.width
                 ZStack(alignment: .leading) {
@@ -897,7 +897,7 @@ struct OverviewView: View {
             }
             .frame(height: 8)
             Mono(text: trailing, color: Theme.Colors.fg)
-                .frame(width: 112, alignment: .trailing)
+                .frame(minWidth: 112, alignment: .trailing)
         }
         .padding(.vertical, 4)
     }
