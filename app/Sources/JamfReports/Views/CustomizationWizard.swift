@@ -204,6 +204,7 @@ final class WizardState {
 
 struct CustomizationWizard: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var state = WizardState()
     @State private var bridge = CLIBridge()
     @State private var showCancelConfirm = false
@@ -259,7 +260,7 @@ struct CustomizationWizard: View {
                     .foregroundStyle(Theme.Text.primary)
                 Text("Step \(state.currentStep) of \(state.totalSteps) — \(stepTitle)")
                     .font(Theme.Fonts.label)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
             Spacer()
             ProgressView(value: Double(state.currentStep), total: Double(state.totalSteps))
@@ -383,13 +384,15 @@ struct CustomizationWizard: View {
 
 private struct Step1BrandingView: View {
     var state: WizardState
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             stepIntro(
                 icon: "building.2",
                 title: "Org Branding",
-                detail: "Your org name and colors appear in the report cover sheet and headers."
+                detail: "Your org name and colors appear in the report cover sheet and headers.",
+                contrast: contrast
             )
 
             Card(padding: 16) {
@@ -444,7 +447,7 @@ private struct Step1BrandingView: View {
                     .accessibilityLabel(label)
                 Text(color.wrappedValue.hexString)
                     .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
     }
@@ -467,13 +470,15 @@ private struct Step1BrandingView: View {
 
 private struct Step2FrameworkView: View {
     var state: WizardState
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             stepIntro(
                 icon: "checkmark.shield",
                 title: "Compliance Framework",
-                detail: "Labels the compliance baseline across all report sheets."
+                detail: "Labels the compliance baseline across all report sheets.",
+                contrast: contrast
             )
 
             Card(padding: 16) {
@@ -510,11 +515,11 @@ private struct Step2FrameworkView: View {
                     Divider().background(Theme.Hairline.standard)
                     HStack(spacing: 6) {
                         Image(systemName: "info.circle")
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                             .font(Theme.Fonts.label)
                         Text("Writes to \(Text("compliance.framework").font(Theme.Fonts.mono(11))) in config.yaml")
                             .font(Theme.Fonts.label)
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
             }
@@ -528,6 +533,7 @@ private struct Step3EAsView: View {
     var state: WizardState
     var bridge: CLIBridge
     var profile: String
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var searchText: String = ""
     @State private var lastSuggestAction: String? = nil
     @State private var showUndoButton: Bool = false
@@ -547,7 +553,8 @@ private struct Step3EAsView: View {
                     stepIntro(
                         icon: "sparkles",
                         title: "Surface Custom EAs",
-                        detail: "Pick EAs to include as dedicated sheets. Types are inferred from Jamf's data type."
+                        detail: "Pick EAs to include as dedicated sheets. Types are inferred from Jamf's data type.",
+                        contrast: contrast
                     )
                 }
 
@@ -563,7 +570,7 @@ private struct Step3EAsView: View {
                     ProgressView()
                     Text("Loading extension attributes…")
                         .font(Theme.Fonts.label)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .padding(16)
             } else if let err = state.eaLoadError {
@@ -572,7 +579,7 @@ private struct Step3EAsView: View {
                         .foregroundStyle(Theme.Colors.warn)
                     Text(err)
                         .font(Theme.Fonts.label)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .padding(16)
             } else if state.availableEAs.isEmpty {
@@ -580,7 +587,7 @@ private struct Step3EAsView: View {
                 Text("This tenant has no Extension Attributes configured. "
                      + "You can skip this step or add some in Jamf Pro.")
                     .font(Theme.Fonts.label)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(16)
             } else {
                 Card(padding: 0) {
@@ -588,7 +595,7 @@ private struct Step3EAsView: View {
                         // Search bar
                         HStack {
                             Image(systemName: "magnifyingglass")
-                                .foregroundStyle(Theme.Text.tertiary)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .font(Theme.Fonts.label)
                             TextField("Filter EAs…", text: $searchText)
                                 .textFieldStyle(.plain)
@@ -646,7 +653,7 @@ private struct Step3EAsView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isSelected ? Theme.Colors.goldBright : Theme.Text.tertiary)
+                    .foregroundStyle(isSelected ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
                     .font(.system(size: 14))
                     .accessibilityLabel(isSelected ? "Selected" : "Not selected")
 
@@ -657,7 +664,7 @@ private struct Step3EAsView: View {
                     if let desc = ea.description, !desc.isEmpty {
                         Text(desc)
                             .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                             .lineLimit(1)
                     }
                 }
@@ -729,7 +736,7 @@ private struct Step3EAsView: View {
 
                 Button("?", action: { showEAHelp() })
                     .font(Theme.Fonts.label)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 16, height: 16)
                     .background(Circle().fill(Theme.Surface.raised))
                     .help("Show help about EA suggestions")
@@ -799,6 +806,7 @@ private struct Step4ExceptionsView: View {
     var state: WizardState
     var bridge: CLIBridge
     var profile: String
+    @Environment(\.colorSchemeContrast) private var contrast
 
     @State private var isLoadingAudit = false
     @State private var cachedFindings: [AuditFinding] = []
@@ -827,7 +835,8 @@ private struct Step4ExceptionsView: View {
                     stepIntro(
                         icon: "doc.text.below.ecg",
                         title: "Exceptions (optional)",
-                        detail: "Document signed-off waivers for compliance findings. This step is optional — skip if you don't have any to record yet."
+                        detail: "Document signed-off waivers for compliance findings. This step is optional — skip if you don't have any to record yet.",
+                        contrast: contrast
                     )
                 }
 
@@ -856,7 +865,7 @@ private struct Step4ExceptionsView: View {
     private var emptyStateMessage: some View {
         Text("No exceptions to display. Use the suggest button to generate drafts from audit findings, or manually add entries.")
             .font(Theme.Fonts.label)
-            .foregroundStyle(Theme.Text.tertiary)
+            .foregroundStyle(Theme.Text.tertiary(contrast))
             .padding(16)
     }
 
@@ -878,7 +887,7 @@ private struct Step4ExceptionsView: View {
 
                 Button("?", action: { showHelp = true })
                     .font(Theme.Fonts.label)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 16, height: 16)
                     .background(Circle().fill(Theme.Surface.raised))
                     .help("Show help about exception suggestions")
@@ -916,7 +925,7 @@ private struct Step4ExceptionsView: View {
 
             Text("Suggested exceptions group findings by category and rule. Only findings with severity 'high', 'medium', 'critical', or 'warning' are included.")
                 .font(Theme.Fonts.label)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -974,12 +983,12 @@ private struct Step4ExceptionsView: View {
                     if let finding = draft.linkedFinding {
                         Text("Linked: \(finding)")
                             .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
 
                     Text("Signed off by \(draft.proposedSignedOffBy) on \(draft.proposedSignedOffDate)")
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
 
                 Spacer()
@@ -1088,7 +1097,7 @@ private struct Step4ExceptionsView: View {
 
                 Text("Signed off by \(exception.signedOffBy) on \(exception.signedOffDate)")
                     .font(Theme.Fonts.caption)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
             Spacer()
@@ -1148,13 +1157,15 @@ private struct Step4ExceptionsView: View {
 
 private struct Step5SheetsView: View {
     var state: WizardState
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             stepIntro(
                 icon: "list.number",
                 title: "Pick & Order Sheets",
-                detail: "Drag to reorder. CSV-only sheets require a Jamf Pro CSV export."
+                detail: "Drag to reorder. CSV-only sheets require a Jamf Pro CSV export.",
+                contrast: contrast
             )
 
             Card(padding: 0) {
@@ -1178,17 +1189,17 @@ private struct Step5SheetsView: View {
             Mono(
                 text: "\(position)",
                 size: 11,
-                color: Theme.Text.tertiary
+                color: Theme.Text.tertiary(contrast)
             )
             .frame(width: 22, alignment: .trailing)
 
             Image(systemName: "doc")
                 .font(Theme.Fonts.label)
-                .foregroundStyle(isCSVOnly ? Theme.Text.tertiary : Theme.Colors.gold)
+                .foregroundStyle(isCSVOnly ? Theme.Text.tertiary(contrast) : Theme.Colors.gold)
 
             Text(item.name)
                 .font(Theme.Fonts.label)
-                .foregroundStyle(isCSVOnly ? Theme.Text.tertiary : Theme.Text.primary)
+                .foregroundStyle(isCSVOnly ? Theme.Text.tertiary(contrast) : Theme.Text.primary)
                 .opacity(isCSVOnly ? 0.6 : 1.0)
 
             Spacer()
@@ -1198,7 +1209,7 @@ private struct Step5SheetsView: View {
 
             Image(systemName: "line.3.horizontal")
                 .font(Theme.Fonts.label)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .padding(.vertical, 2)
     }
@@ -1239,6 +1250,7 @@ private struct Step6InventoryView: View {
     var state: WizardState
     var bridge: CLIBridge
     var profile: String
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isLoading: Bool = false
 
     var body: some View {
@@ -1246,7 +1258,8 @@ private struct Step6InventoryView: View {
             stepIntro(
                 icon: "server.rack",
                 title: "Inventory Fields",
-                detail: "Select additional inventory fields to surface in the Device Inventory sheet."
+                detail: "Select additional inventory fields to surface in the Device Inventory sheet.",
+                contrast: contrast
             )
 
             if isLoading {
@@ -1254,13 +1267,13 @@ private struct Step6InventoryView: View {
                     ProgressView()
                     Text("Loading inventory sample…")
                         .font(Theme.Fonts.label)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .padding(16)
             } else if state.availableInventoryKeys.isEmpty {
                 Text("Could not load inventory sample. Ensure jamf-cli is authenticated.")
                     .font(Theme.Fonts.label)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(16)
             } else {
                 Card(padding: 0) {
@@ -1302,7 +1315,7 @@ private struct Step6InventoryView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isSelected ? Theme.Colors.goldBright : Theme.Text.tertiary)
+                    .foregroundStyle(isSelected ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
                     .font(.system(size: 14))
                     .accessibilityLabel(isSelected ? "Selected" : "Not selected")
 
@@ -1313,9 +1326,9 @@ private struct Step6InventoryView: View {
                 Spacer()
 
                 if let mapped = colKey {
-                    Mono(text: "→ \(mapped)", size: 10, color: Theme.Text.tertiary)
+                    Mono(text: "→ \(mapped)", size: 10, color: Theme.Text.tertiary(contrast))
                 } else {
-                    Mono(text: "unmapped", size: 10, color: Theme.Text.tertiary.opacity(0.5))
+                    Mono(text: "unmapped", size: 10, color: Theme.Text.tertiary(contrast).opacity(0.5))
                 }
             }
             .padding(.horizontal, 12)
@@ -1330,13 +1343,15 @@ private struct Step6InventoryView: View {
 
 private struct Step7OutputView: View {
     var state: WizardState
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             stepIntro(
                 icon: "folder",
                 title: "Output Preferences",
-                detail: "Where reports land and how they're named."
+                detail: "Where reports land and how they're named.",
+                contrast: contrast
             )
 
             Card(padding: 16) {
@@ -1365,7 +1380,7 @@ private struct Step7OutputView: View {
                                 .foregroundStyle(Theme.Text.primary)
                             Text("_2026-04-25_091418")
                                 .font(Theme.Fonts.caption)
-                                .foregroundStyle(Theme.Text.tertiary)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         Spacer()
                         PNPToggle(isOn: Binding(
@@ -1383,7 +1398,7 @@ private struct Step7OutputView: View {
                                 .foregroundStyle(Theme.Text.primary)
                             Text("Older files moved to archive")
                                 .font(Theme.Fonts.caption)
-                                .foregroundStyle(Theme.Text.tertiary)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         Spacer()
                         EditableNumberStepper(
@@ -1418,6 +1433,7 @@ private struct Step7OutputView: View {
 private struct Step8PreviewView: View {
     var state: WizardState
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var templateSummary: String {
         state.selectedTemplateName
@@ -1432,7 +1448,8 @@ private struct Step8PreviewView: View {
             stepIntro(
                 icon: "checkmark.circle",
                 title: "Done — Preview",
-                detail: "Review your selections below. Clicking 'Save & Close' writes config.yaml."
+                detail: "Review your selections below. Clicking 'Save & Close' writes config.yaml.",
+                contrast: contrast
             )
 
             Card(padding: 16) {
@@ -1457,7 +1474,7 @@ private struct Step8PreviewView: View {
         HStack {
             Text(label)
                 .font(Theme.Fonts.label)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
                 .frame(width: 110, alignment: .leading)
             Text(value)
                 .font(Theme.Fonts.label.weight(.medium))
@@ -1468,7 +1485,12 @@ private struct Step8PreviewView: View {
 
 // MARK: - Shared helpers
 
-private func stepIntro(icon: String, title: String, detail: String) -> some View {
+private func stepIntro(
+    icon: String,
+    title: String,
+    detail: String,
+    contrast: ColorSchemeContrast
+) -> some View {
     HStack(alignment: .top, spacing: 12) {
         Image(systemName: icon)
             .font(.system(size: 22, weight: .light))
@@ -1480,7 +1502,7 @@ private func stepIntro(icon: String, title: String, detail: String) -> some View
                 .foregroundStyle(Theme.Text.primary)
             Text(detail)
                 .font(Theme.Fonts.label)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
     }
 }
@@ -1489,6 +1511,7 @@ private func stepIntro(icon: String, title: String, detail: String) -> some View
 
 private struct Step0TemplateView: View {
     var state: WizardState
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private let availableTemplates: [any ReportTemplate] = TemplateResolver.allTemplates
 
@@ -1497,7 +1520,8 @@ private struct Step0TemplateView: View {
             stepIntro(
                 icon: "doc.badge.gearshape",
                 title: "Choose Template",
-                detail: "Pick a template optimized for your audience, or start with a custom configuration."
+                detail: "Pick a template optimized for your audience, or start with a custom configuration.",
+                contrast: contrast
             )
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 2), spacing: 12) {
@@ -1541,7 +1565,7 @@ private struct Step0TemplateView: View {
 
                     Text(template.description)
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .multilineTextAlignment(.leading)
                         .lineLimit(3)
                 }
@@ -1579,7 +1603,7 @@ private struct Step0TemplateView: View {
                 HStack {
                     Image(systemName: "wrench.and.screwdriver")
                         .font(.system(size: 24, weight: .light))
-                        .foregroundStyle(isSelected ? Theme.Colors.goldBright : Theme.Text.tertiary)
+                        .foregroundStyle(isSelected ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
                         .frame(width: 32, alignment: .leading)
 
                     Spacer()
@@ -1599,7 +1623,7 @@ private struct Step0TemplateView: View {
 
                     Text("Start with a blank configuration and manually select all settings.")
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .multilineTextAlignment(.leading)
                         .lineLimit(3)
                 }

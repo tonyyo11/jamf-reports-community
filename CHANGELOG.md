@@ -7,6 +7,32 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Accessibility
+
+WCAG 2.2 Level AA fixes across the macOS app and the HTML instance report.
+
+macOS app:
+
+- Increase Contrast is now honored for secondary text on every screen. Previously
+  only a few components responded, leaving below-AA contrast on the Config,
+  Settings, and several other screens.
+- Dynamic Type: pinned font sizes were replaced with scalable text styles in the
+  Config, Settings, Policy & Profile, Protect, Trends, and Fleet Overview screens.
+  Chart axis labels and KPI numerals now scale with the system Larger Text setting.
+- Reduce Motion now suppresses the settings toggle animation.
+- VoiceOver: decorative icons are hidden from the reader, charts expose
+  descriptive labels, and live run status is announced as it updates.
+
+HTML instance report (Python CLI and macOS app):
+
+- Added a "Skip to main content" link, a print stylesheet that hides the toolbar
+  and interactive controls, and reduced-motion support for animated elements.
+- Wide tables now scroll horizontally instead of clipping on narrow viewports.
+- The dark-mode toggle reports its state, sortable headers report sort direction,
+  and per-row open links carry distinct labels for screen-reader link lists.
+- Fixed category disclosure buttons that did nothing when clicked — they were
+  missing the aria-controls wiring the expand/collapse script depends on.
+
 ### Changed
 
 - **Minimum Python is now 3.11** (was 3.9). The Python CLI requires

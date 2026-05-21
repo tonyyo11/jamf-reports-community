@@ -7,6 +7,7 @@ import Charts
 /// `SecurityPostureService`.
 struct SecurityPostureView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: SecurityPostureService.Snapshot = .empty
     @State private var hasLoaded = false
     /// User-configurable weight overrides edited in ConfigView → Scoring tab.
@@ -224,12 +225,12 @@ struct SecurityPostureView: View {
                     if !score.available.isEmpty {
                         Text(availabilityText)
                             .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     if !score.missing.isEmpty {
                         Text(missingText)
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
                 Spacer()
@@ -318,7 +319,7 @@ struct SecurityPostureView: View {
             }
             Text(caption)
                 .font(.caption)
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -352,7 +353,7 @@ struct SecurityPostureView: View {
                 if snapshot.osVersions.isEmpty {
                     Text("No OS version data in this snapshot.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
                     osChart
                 }
@@ -433,6 +434,7 @@ struct SecurityPostureView: View {
 private struct ScoreRing: View {
     let score: SecurityScore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         ZStack {
@@ -454,7 +456,7 @@ private struct ScoreRing: View {
                 Text("of 100")
                     .font(Theme.Fonts.mono(9.5))
                     .tracking(1.0)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
         .accessibilityElement(children: .ignore)

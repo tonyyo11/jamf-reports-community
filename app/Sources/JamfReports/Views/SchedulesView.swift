@@ -10,6 +10,7 @@ private final class LineBuffer: @unchecked Sendable {
 
 struct SchedulesView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var profileFilter: String = "All"
     @State private var bridge = CLIBridge()
     @State private var isRunning = false
@@ -259,7 +260,7 @@ struct SchedulesView: View {
                     .disabled(workspace.demoMode || isRunning)
                     .help(workspace.demoMode ? "Available in live mode only" : "")
                     if let msg = lastRunMessage {
-                        Mono(text: msg, size: 10, color: Theme.Colors.fgMuted)
+                        Mono(text: msg, size: 10, color: Theme.Text.tertiary(contrast))
                             .accessibilityAddTraits(.updatesFrequently)
                     }
                 }
@@ -388,14 +389,14 @@ struct SchedulesView: View {
                 TableColumn("Cadence") { s in Mono(text: s.schedule) }
                 TableColumn("Mode")    { s in Pill(text: s.mode.rawValue, tone: .muted) }
                 TableColumn("Next Run") { s in
-                    Mono(text: s.next, color: s.enabled ? Theme.Colors.goldBright : Theme.Colors.fgMuted)
+                    Mono(text: s.next, color: s.enabled ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
                 }
                 TableColumn("Last Run") { s in Mono(text: s.last) }
                 TableColumn("Status")   { s in statusPill(for: s.lastStatus) }.width(80)
                 TableColumn("Outputs") { s in
                     HStack(spacing: 4) {
                         if s.artifacts.isEmpty {
-                            Text("—").foregroundStyle(Theme.Colors.fgMuted)
+                            Text("—").foregroundStyle(Theme.Text.tertiary(contrast))
                         } else {
                             ForEach(s.artifacts, id: \.self) { Pill(text: $0, tone: .muted) }
                         }
@@ -458,7 +459,7 @@ struct SchedulesView: View {
                                 .foregroundStyle(Theme.Colors.fg)
                             Text(mode.displayDescription)
                                 .font(.caption)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .lineLimit(3)
                         }
                     }
@@ -484,13 +485,13 @@ struct SchedulesView: View {
                                     Text(mode.displayTitle)
                                         .font(.caption.weight(.semibold))
                                         .foregroundStyle(Theme.Colors.fg)
-                                    Mono(text: mode.rawValue, size: 9, color: Theme.Colors.fgMuted)
+                                    Mono(text: mode.rawValue, size: 9, color: Theme.Text.tertiary(contrast))
                                 }
                             }
                             Divider().background(Theme.Colors.hairline)
                             Text(mode.displayDescription)
                                 .font(.caption)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .lineLimit(4)
                         }
                     }
@@ -590,20 +591,14 @@ struct SchedulesView: View {
     // MARK: - Helpers
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
+        let pill: Pill
         switch s {
-        case .ok:
-            Pill(text: "OK",      tone: .teal,   icon: "checkmark")
-                .accessibilityLabel("Last run status: OK")
-        case .warn:
-            Pill(text: "WARN",    tone: .warn,   icon: "exclamationmark")
-                .accessibilityLabel("Last run status: Warning")
-        case .fail:
-            Pill(text: "FAIL",    tone: .danger, icon: "xmark")
-                .accessibilityLabel("Last run status: Failed")
-        case .partial:
-            Pill(text: "PARTIAL", tone: .warn,   icon: "exclamationmark.triangle.fill")
-                .accessibilityLabel("Last run status: Partial")
+        case .ok:      pill = Pill(text: "OK",      tone: .teal,   icon: "checkmark")
+        case .warn:    pill = Pill(text: "WARN",    tone: .warn,   icon: "exclamationmark")
+        case .fail:    pill = Pill(text: "FAIL",    tone: .danger, icon: "xmark")
+        case .partial: pill = Pill(text: "PARTIAL", tone: .warn,   icon: "exclamationmark.triangle.fill")
         }
+        return pill.accessibilityLabel(s.accessibilityLabel)
     }
 
     private func labelText(for schedule: Schedule) -> String {
@@ -645,6 +640,7 @@ struct SchedulesView: View {
 private struct RunLogConsole: View {
     let lines: [CLIBridge.LogLine]
     let isRunning: Bool
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isScrolledToBottom = true
     @State private var cursorVisible = true
     private let cursorTick = Timer.publish(every: 0.55, on: .main, in: .common).autoconnect()
@@ -657,7 +653,7 @@ private struct RunLogConsole: View {
                         HStack(spacing: 0) {
                             Text(isRunning ? "Starting" : "No output")
                                 .font(Theme.Fonts.mono(12))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                             cursor
                         }
                     } else {
@@ -858,6 +854,7 @@ private struct NewScheduleSheet: View {
     let profiles: [String]
     let onSave: (ScheduleFormState) -> Void
     let onCancel: () -> Void
+    @Environment(\.colorSchemeContrast) private var contrast
 
     @FocusState private var nameFieldFocused: Bool
     @State private var nameWasTouched = false
@@ -935,7 +932,7 @@ private struct NewScheduleSheet: View {
                                 .labelsHidden()
                             Text("Run profiles one at a time")
                                 .font(.caption)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
 
@@ -997,7 +994,7 @@ private struct NewScheduleSheet: View {
                                 }
                                 Text("Which collection tiers this schedule fetches.")
                                     .font(.caption)
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                             }
                         }
                     }

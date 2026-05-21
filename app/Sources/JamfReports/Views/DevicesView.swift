@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct DevicesView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot = DeviceInventorySnapshot.empty
     @State private var query = ""
     @State private var filter: DeviceFilter = .all
@@ -327,7 +328,7 @@ struct DevicesView: View {
                                     .textSelection(.enabled)
                                 Text(device.model.isEmpty ? device.source : device.model)
                                     .font(.caption)
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .lineLimit(1)
                             }
                         }
@@ -343,7 +344,7 @@ struct DevicesView: View {
                         if !isCompact {
                             Text(device.user.isEmpty ? "Unassigned" : device.user)
                                 .font(.footnote)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .lineLimit(1)
                         }
                     }
@@ -356,7 +357,7 @@ struct DevicesView: View {
                                     .accessibilityLabel("Stale")
                             }
                             Mono(text: lastContactLabel(device),
-                                 color: isStale(device) ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                                 color: isStale(device) ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                         }
                     }
                     TableColumn("Patch") { device in patchPill(device) }
@@ -466,7 +467,7 @@ struct DevicesView: View {
                     SectionHeader(title: "No Device Selected")
                     Text("No inventory rows match the current filters.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
         }
@@ -492,19 +493,19 @@ struct DevicesView: View {
             if workspace.demoMode {
                 Text("Available in live mode only.")
                     .font(.footnote)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             } else {
                 switch deviceDetailState {
                 case .idle:
                     Text("Select a device to load jamf-cli detail.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 case .loading:
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading device detail...")
                             .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 case .loaded:
                     if let deviceDetail {
@@ -528,7 +529,7 @@ struct DevicesView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(item.label)
                                 .font(.caption)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .frame(width: 112, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.value)
@@ -536,7 +537,7 @@ struct DevicesView: View {
                                     .foregroundStyle(Theme.Colors.fg2)
                                     .lineLimit(3)
                                 if !item.note.isEmpty {
-                                    Mono(text: item.note, size: 10.5, color: Theme.Colors.fgMuted)
+                                    Mono(text: item.note, size: 10.5, color: Theme.Text.tertiary(contrast))
                                         .lineLimit(2)
                                 }
                             }
@@ -572,7 +573,7 @@ struct DevicesView: View {
                 if activeSnapshot.osDistribution.isEmpty {
                     Text("No OS data available.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
                     Chart(activeSnapshot.osDistribution.prefix(6)) { item in
                         BarMark(
@@ -586,7 +587,7 @@ struct DevicesView: View {
                         AxisMarks(position: .leading) {
                             AxisValueLabel()
                                 .font(Theme.Fonts.mono(10))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
                     .frame(height: 150)
@@ -614,7 +615,7 @@ struct DevicesView: View {
                                     Mono(text: "\(item.count)")
                                     Text("\(String(format: "%.1f", item.pct))%")
                                         .font(Theme.Fonts.mono(10.5))
-                                        .foregroundStyle(Theme.Colors.fgMuted)
+                                        .foregroundStyle(Theme.Text.tertiary(contrast))
                                 }
                                 .padding(.vertical, 5)
                             }
@@ -639,13 +640,13 @@ struct DevicesView: View {
                 if activeSnapshot.sourceFiles.isEmpty {
                     Text("No current inventory, compliance, or patch snapshots were found.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
                     ForEach(activeSnapshot.sourceFiles, id: \.self) { file in
                         HStack(spacing: 8) {
                             Image(systemName: file.hasSuffix(".csv") ? "tablecells" : "curlybraces")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                             Mono(text: file)
                                 .lineLimit(1)
                         }
@@ -684,7 +685,7 @@ struct DevicesView: View {
                         Text(row.0.uppercased())
                             .font(Theme.Fonts.mono(10.5, weight: .semibold))
                             .tracking(1.0)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                             .frame(width: 92, alignment: .leading)
                         Text(row.1)
                             .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .footnote)
@@ -713,7 +714,7 @@ struct DevicesView: View {
                     Text("FAILED RULES")
                         .font(Theme.Fonts.mono(10.5, weight: .semibold))
                         .tracking(1.0)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 92, alignment: .leading)
                     Text(device.failedRules == 0 ? "0" : "\(device.failedRules)")
                         .font(.footnote)
@@ -758,7 +759,7 @@ struct DevicesView: View {
                             }
                             Text(entry.factor.remediation)
                                 .font(.caption)
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         .padding(.vertical, 3)
                         .accessibilityElement(children: .combine)
@@ -788,7 +789,7 @@ struct DevicesView: View {
                 Text(label.uppercased())
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .tracking(1.0)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 92, alignment: .leading)
                 Pill(text: value, tone: securityTone(for: value))
                 Spacer(minLength: 0)
@@ -828,7 +829,7 @@ struct DevicesView: View {
                 .accessibilityHidden(true)
             Text(label)
                 .font(.caption)
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
     }
 

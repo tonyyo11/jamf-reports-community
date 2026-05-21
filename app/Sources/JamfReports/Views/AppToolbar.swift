@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppToolbar: ToolbarContent {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     let title: String
     var subtitle: String?
@@ -34,7 +35,7 @@ struct AppToolbar: ToolbarContent {
                 Text("/")
                     .font(Theme.Fonts.mono(10.5))
                     .tracking(0.6)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(subtitle)
                     .font(Theme.Fonts.mono(10.5))
                     .tracking(0.6)
@@ -99,7 +100,7 @@ struct AppToolbar: ToolbarContent {
                 Text("JAMF-CLI PATH")
                     .font(Theme.Fonts.mono(9, weight: .semibold))
                     .tracking(0.8)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(workspace.jamfCLIPath ?? "not found on PATH")
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.primary)
@@ -112,7 +113,7 @@ struct AppToolbar: ToolbarContent {
                 Text("ADMIN MODE")
                     .font(Theme.Fonts.mono(9, weight: .semibold))
                     .tracking(0.8)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
 
                 HStack(spacing: 6) {
                     Button {
@@ -122,7 +123,7 @@ struct AppToolbar: ToolbarContent {
                     } label: {
                         Text("Limited")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(workspace.demoMode ? Theme.Text.primary : Theme.Text.tertiary)
+                            .foregroundStyle(workspace.demoMode ? Theme.Text.primary : Theme.Text.tertiary(contrast))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
@@ -140,7 +141,7 @@ struct AppToolbar: ToolbarContent {
                     } label: {
                         Text("Full Admin")
                             .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(!workspace.demoMode ? Theme.Text.primary : Theme.Text.tertiary)
+                            .foregroundStyle(!workspace.demoMode ? Theme.Text.primary : Theme.Text.tertiary(contrast))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(

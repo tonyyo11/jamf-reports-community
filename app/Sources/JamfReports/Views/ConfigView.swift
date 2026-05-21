@@ -5,6 +5,7 @@ import AppKit
 
 struct ConfigView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var cli = CLIBridge()
 
     enum ConfigTab: String, CaseIterable {
@@ -183,6 +184,7 @@ struct ConfigView: View {
 private struct ColumnsTab: View {
     @Binding var triggerCheck: Bool
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var cli = CLIBridge()
     @State private var checkStatus: String? = nil
 
@@ -206,7 +208,7 @@ private struct ColumnsTab: View {
                     HStack(spacing: 4) {
                         Text("Mapping logical fields → column headers in your CSV export")
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .padding(.bottom, 12)
 
@@ -254,13 +256,13 @@ private struct ColumnsTab: View {
                                       title: "\(warn) warnings", detail: "Run check for details")
                     }
                     if skip > 0 {
-                        validationRow(icon: "minus.circle", color: Theme.Text.tertiary,
+                        validationRow(icon: "minus.circle", color: Theme.Text.tertiary(contrast),
                                       title: "\(skip) unmapped", detail: "Sheets that use these will be skipped")
                     }
                 }
                 Divider().background(Theme.Hairline.standard).padding(.vertical, 12)
                 if let status = checkStatus {
-                    Mono(text: status, size: 10.5, color: Theme.Text.tertiary)
+                    Mono(text: status, size: 10.5, color: Theme.Text.tertiary(contrast))
                         .lineLimit(2)
                         .padding(.bottom, 6)
                 }
@@ -280,7 +282,7 @@ private struct ColumnsTab: View {
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.footnote.weight(.medium)).foregroundStyle(Theme.Text.primary)
-                Text(detail).font(.caption).foregroundStyle(Theme.Text.tertiary)
+                Text(detail).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
     }
@@ -289,7 +291,7 @@ private struct ColumnsTab: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(title: "Tip")
-                (Text("Run ") + Text("scaffold").font(Theme.Fonts.mono(11)) +
+                (Text("Run ") + Text("scaffold").font(.caption.monospaced()) +
                  Text(" to auto-detect columns from a new CSV export. Existing config is preserved."))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
@@ -376,6 +378,7 @@ private struct ColumnsTab: View {
 
 private struct AgentsTab: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         @Bindable var ws = workspace
@@ -399,7 +402,7 @@ private struct AgentsTab: View {
             if ws.configState.securityAgents.isEmpty {
                 Text("No security agents configured. Add one to track install rates.")
                     .font(.footnote)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(16)
             } else {
                 ForEach(ws.configState.securityAgents.indices, id: \.self) { i in
@@ -429,8 +432,8 @@ private struct AgentsTab: View {
 
     private func tableHeaderCell(_ title: String, width: CGFloat?) -> some View {
         Text(title)
-            .font(Theme.Fonts.mono(10.5, weight: .semibold))
-            .foregroundStyle(Theme.Text.tertiary)
+            .font(.caption.monospaced().weight(.semibold))
+            .foregroundStyle(Theme.Text.tertiary(contrast))
             .frame(maxWidth: width ?? .infinity, alignment: .leading)
     }
 
@@ -450,7 +453,7 @@ private struct AgentsTab: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.footnote)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 36, height: 28)
                     .contentShape(Rectangle())
             }
@@ -465,6 +468,7 @@ private struct AgentsTab: View {
 
 private struct EasTab: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         @Bindable var ws = workspace
@@ -478,7 +482,7 @@ private struct EasTab: View {
                 if ws.configState.customEAs.isEmpty {
                     Text("No custom EA sheets configured.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 } else {
                     VStack(spacing: 12) {
                         ForEach(ws.configState.customEAs.indices, id: \.self) { i in
@@ -493,6 +497,7 @@ private struct EasTab: View {
 
 private struct EACardEdit: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     let index: Int
 
     var body: some View {
@@ -539,7 +544,7 @@ private struct EACardEdit: View {
                 } else if type == "version" {
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "Current versions")
-                        Text("Comma-separated list").font(.system(size: 10)).foregroundStyle(Theme.Text.tertiary)
+                        Text("Comma-separated list").font(.caption2).foregroundStyle(Theme.Text.tertiary(contrast))
                         PNPTextField(value: Binding(
                             get: { ws.configState.customEAs[index].currentVersions.joined(separator: ", ") },
                             set: { ws.configState.customEAs[index].currentVersions = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
@@ -562,7 +567,7 @@ private struct EACardEdit: View {
             HStack(spacing: 8) {
                 PNPTextField(value: value, mono: true).frame(width: 80)
                 if let unit {
-                    Text(unit).font(.caption).foregroundStyle(Theme.Text.tertiary)
+                    Text(unit).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
             if let help {
@@ -576,6 +581,7 @@ private struct EACardEdit: View {
 
 private struct ThresholdsTab: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         @Bindable var ws = workspace
@@ -628,11 +634,11 @@ private struct ThresholdsTab: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Generate compliance sheet")
-                                    .font(.system(size: 12.5, weight: .medium))
+                                    .font(.callout.weight(.medium))
                                     .foregroundStyle(Theme.Text.primary)
                                 Text("Failed-rule counts per device")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Theme.Text.tertiary)
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                             }
                             Spacer()
                             PNPToggle(isOn: $ws.configState.complianceEnabled)
@@ -666,7 +672,7 @@ private struct ThresholdsTab: View {
             FieldLabel(label: label, trailing: key)
             HStack(spacing: 8) {
                 PNPTextField(value: value, mono: true).frame(width: 100)
-                Text(unit).font(.footnote).foregroundStyle(Theme.Text.tertiary)
+                Text(unit).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
             }
             FieldHelp(text: help)
         }
@@ -678,6 +684,7 @@ private struct ThresholdsTab: View {
 
 private struct PlatformTab: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var isPlatformProfile: Bool {
         workspace.profiles.first(where: { $0.name == workspace.profile })?.authMethod == "platform"
@@ -692,12 +699,12 @@ private struct PlatformTab: View {
                     Pill(text: "PREVIEW", tone: .warn)
                 }
                 (Text("Public beta · requires ")
-                 + Text("jamf-cli").font(Theme.Fonts.mono(11))
+                 + Text("jamf-cli").font(.caption.monospaced())
                  + Text(" build with ")
-                 + Text("pro report").font(Theme.Fonts.mono(11))
+                 + Text("pro report").font(.caption.monospaced())
                  + Text(" commands."))
                     .font(.footnote)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 Divider().background(Theme.Hairline.standard)
                 if isPlatformProfile {
                     platformReadyCallout
@@ -712,7 +719,7 @@ private struct PlatformTab: View {
                             .foregroundStyle(Theme.Text.primary)
                         Text("Blueprints, DDM Status, Compliance benchmarks")
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     PNPToggle(isOn: $ws.configState.platformEnabled)
@@ -770,14 +777,14 @@ private struct PlatformTab: View {
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Requires a Platform Gateway profile")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 (Text("Run ")
-                 + Text("jamf-cli platform setup").font(Theme.Fonts.mono(11))
+                 + Text("jamf-cli platform setup").font(.caption.monospaced())
                  + Text(" to create a Platform Gateway profile. "
                         + "This routes Pro API traffic through the Jamf Platform Gateway "
                         + "and unlocks Platform API commands used by these sheets."))
-                    .font(.system(size: 11))
+                    .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                 Button {
                     if let url = URL(string: "https://github.com/Jamf-Concepts/jamf-cli/wiki/"
@@ -812,6 +819,7 @@ private struct PlatformTab: View {
 
 private struct OutputTab: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         @Bindable var ws = workspace
@@ -924,7 +932,7 @@ private struct OutputTab: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.callout.weight(.medium)).foregroundStyle(Theme.Text.primary)
-                Text(detail).font(.caption).foregroundStyle(Theme.Text.tertiary)
+                Text(detail).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
             }
             Spacer()
             PNPToggle(isOn: isOn)
@@ -953,13 +961,14 @@ private struct OutputTab: View {
 private struct ColumnFieldRow: View {
     let mapping: ColumnMapping
     @Binding var value: String
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 4) {
                 Mono(text: mapping.key, size: 11.5, color: Theme.Text.secondary)
                 if mapping.required {
-                    Text("*").font(.system(size: 10)).foregroundStyle(Theme.Colors.goldBright)
+                    Text("*").font(.caption2).foregroundStyle(Theme.Colors.goldBright)
                 }
             }
             .frame(width: 180, alignment: .leading)
@@ -983,7 +992,7 @@ private struct ColumnFieldRow: View {
             case .warn:
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.Colors.warn)
             case .skip:
-                Image(systemName: "minus.circle").foregroundStyle(Theme.Text.tertiary)
+                Image(systemName: "minus.circle").foregroundStyle(Theme.Text.tertiary(contrast))
             case .fail:
                 Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.Colors.danger)
             }
@@ -996,18 +1005,19 @@ private struct ColumnFieldRow: View {
 
 private struct EACard: View {
     let ea: CustomEA
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(ea.name).font(.callout.weight(.semibold)).foregroundStyle(Theme.Text.primary)
-                    Mono(text: ea.column, size: 11, color: Theme.Text.tertiary)
+                    Mono(text: ea.column, size: 11, color: Theme.Text.tertiary(contrast))
                 }
                 Spacer()
                 Pill(text: ea.type.rawValue, tone: pillTone)
             }
-            Text(eaDetail).font(.caption).foregroundStyle(Theme.Text.tertiary)
+            Text(eaDetail).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1054,6 +1064,7 @@ private struct EACard: View {
 /// that metric from the score entirely.
 private struct ScoringTab: View {
     @AppStorage(ScoringConfig.storageKey) private var raw: String = ""
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var config: ScoringConfig {
         raw.isEmpty ? ScoringConfig() : ScoringConfig.parse(raw)
@@ -1086,7 +1097,7 @@ private struct ScoringTab: View {
                          "Set a weight to 0 to drop that metric entirely. Missing metrics in your " +
                          "data are auto-renormalized so the score still scales to 100.")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                     VStack(spacing: 6) {
                         weightRow("FileVault Encryption",
                                   value: Binding(get: { Int(config.weights.fileVault) },

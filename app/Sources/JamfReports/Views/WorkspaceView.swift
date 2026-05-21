@@ -39,6 +39,7 @@ struct WorkspaceView: View {
     @State private var subtab: Subtab = .data
     @State private var saveError: String?
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     // MARK: - Body
 
@@ -72,7 +73,7 @@ struct WorkspaceView: View {
         return HStack(spacing: 10) {
             Text("Compliance Framework")
                 .font(Theme.Fonts.mono(11, weight: .semibold))
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
             Menu {
                 ForEach(knownFrameworks, id: \.self) { fw in
                     Button {
@@ -107,7 +108,7 @@ struct WorkspaceView: View {
                         .foregroundStyle(Theme.Text.primary)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 8)
@@ -159,7 +160,7 @@ struct WorkspaceView: View {
             HStack(spacing: 5) {
                 Image(systemName: tab.icon)
                     .font(Theme.Fonts.label.weight(.medium))
-                    .foregroundStyle(isActive ? Theme.Colors.gold : Theme.Text.tertiary)
+                    .foregroundStyle(isActive ? Theme.Colors.gold : Theme.Text.tertiary(contrast))
                     .accessibilityHidden(true)
                 Text(tab.label)
                     .font(Theme.Fonts.label.weight(isActive ? .semibold : .regular))

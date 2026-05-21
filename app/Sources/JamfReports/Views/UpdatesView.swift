@@ -6,6 +6,7 @@ import Charts
 /// `UpdateStatusService`.
 struct UpdatesView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: UpdateStatusService.Snapshot = .empty
     @State private var hasLoaded = false
 
@@ -369,7 +370,7 @@ struct UpdatesView: View {
                         : 0
                     Text(String(format: "%.1f%%", pct))
                         .font(Theme.Fonts.mono(11))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 56, alignment: .trailing)
                         .monospacedDigit()
                 }
@@ -412,7 +413,7 @@ struct UpdatesView: View {
                 Spacer()
                 Text("\(slice.count) devices")
                     .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(String(format: "%.1f%%", pct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Color(hex: slice.colorHex))
@@ -496,7 +497,7 @@ struct UpdatesView: View {
 
                                     Text(truncatedError(plan.error))
                                         .font(.caption)
-                                        .foregroundStyle(Theme.Colors.fgMuted)
+                                        .foregroundStyle(Theme.Text.tertiary(contrast))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .lineLimit(1)
                                 }
@@ -512,7 +513,7 @@ struct UpdatesView: View {
                 if snapshot.failedPlans.count > 50 {
                     Text("+ \(snapshot.failedPlans.count - 50) more")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .padding(.top, 4)
                 }
             }
@@ -564,7 +565,7 @@ struct UpdatesView: View {
 
                                     Text(formatDate(device.updated))
                                         .font(.caption)
-                                        .foregroundStyle(Theme.Colors.fgMuted)
+                                        .foregroundStyle(Theme.Text.tertiary(contrast))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .background(Color.white.opacity(0.03))

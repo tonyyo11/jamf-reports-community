@@ -2,6 +2,7 @@ import SwiftUI
 
 struct Titlebar: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     let title: String
     var sub: String?
@@ -41,7 +42,7 @@ struct Titlebar: View {
                     Text(sub)
                         .font(Theme.Fonts.mono(10.5))
                         .tracking(0.6)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .buttonStyle(.plain)
                 .help("Return to \(title)")
@@ -80,7 +81,7 @@ struct Titlebar: View {
                 }
             Text(cliStatusText)
                 .font(Theme.Fonts.mono(11))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
@@ -105,7 +106,7 @@ struct Titlebar: View {
             Text("JAMF-CLI PATH")
                 .font(Theme.Fonts.mono(9, weight: .semibold))
                 .tracking(0.8)
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
             Text(workspace.jamfCLIPath ?? "not found on PATH")
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Colors.fg)

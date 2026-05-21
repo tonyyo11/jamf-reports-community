@@ -3,6 +3,7 @@ import Charts
 
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @State private var bridge = CLIBridge()
     @State private var trendStore = TrendStore()
@@ -128,7 +129,7 @@ struct OverviewView: View {
                         .foregroundStyle(Theme.Colors.fg)
                     Text(workspace.workspaceInitMessage ?? workspaceInitDefaultMessage)
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
@@ -199,7 +200,7 @@ struct OverviewView: View {
                     Divider().background(Theme.Colors.hairline)
                     Text("No cached tenant summaries are available for this profile yet.")
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
         }
@@ -212,7 +213,7 @@ struct OverviewView: View {
                 .font(Theme.Fonts.serif(22, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .lineLimit(1)
-            Mono(text: sub, size: 10.5, color: Theme.Colors.fgMuted)
+            Mono(text: sub, size: 10.5, color: Theme.Text.tertiary(contrast))
                 .lineLimit(1)
         }
         .padding(12)
@@ -417,7 +418,7 @@ struct OverviewView: View {
                                             .frame(width: 8, height: 8)
                                         Text(o.version)
                                             .font(.footnote)
-                                            .foregroundStyle(o.current ? Theme.Colors.fg : Theme.Colors.fgMuted)
+                                            .foregroundStyle(o.current ? Theme.Colors.fg : Theme.Text.tertiary(contrast))
                                         Spacer(minLength: 0)
                                         Mono(text: "\(o.count)")
                                         Text("\(String(format: "%.1f", o.pct))%")
@@ -444,7 +445,7 @@ struct OverviewView: View {
                                 SectionHeader(title: "Top Failing Rules")
                                 Text(failingRulesSubtitle(baseline: "NIST 800-53r5 Moderate", fleetCount: overviewFleetCount))
                                     .font(.caption)
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                             }
                             Spacer()
                             Pill(text: "View all 47", tone: .gold)
@@ -580,7 +581,7 @@ struct OverviewView: View {
                     TableColumn("Serial") { d in Mono(text: d.serial) }
                     TableColumn("macOS") { d in Mono(text: d.os) }
                     TableColumn("User") { d in
-                        Text(d.user).font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                        Text(d.user).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     TableColumn("Department") { d in Text(d.dept).font(.footnote) }
                     TableColumn("FV") { d in
@@ -592,7 +593,7 @@ struct OverviewView: View {
                     TableColumn("Failed Rules") { d in failurePill(d.fails) }
                     TableColumn("Last Seen") { d in
                         Mono(text: d.lastSeen,
-                             color: d.lastSeen.contains("day") ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                             color: d.lastSeen.contains("day") ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                     }
                 }
                 .frame(minHeight: 260)
@@ -690,7 +691,7 @@ struct OverviewView: View {
                     if values.isEmpty {
                         Text("No trend summaries are available for this metric yet.")
                             .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
                         Sparkline(values: values, color: Color(hex: metric.colorHex))
                             .frame(height: 90)
@@ -738,7 +739,7 @@ struct OverviewView: View {
                     HStack {
                         Text("Use Devices to inspect individual records and filter by OS version.")
                             .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                         Spacer()
                         PNPButton(title: "Open Devices", icon: Tab.devices.sfSymbol, size: .sm) {
                             navigate(to: .devices)
@@ -772,7 +773,7 @@ struct OverviewView: View {
                     HStack {
                         Text("Open Health Audit for finding context and remediation guidance.")
                             .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                         Spacer()
                         PNPButton(title: "Open Health Audit", icon: Tab.audit.sfSymbol, size: .sm) {
                             navigate(to: .audit)
@@ -808,7 +809,7 @@ struct OverviewView: View {
                     HStack {
                         Text("Open Devices for host-level status, or Config to adjust tracked agent columns.")
                             .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                         Spacer()
                         PNPButton(title: "Devices", icon: Tab.devices.sfSymbol, size: .sm) {
                             navigate(to: .devices)
@@ -838,12 +839,12 @@ struct OverviewView: View {
                     TableColumn("Serial") { d in Mono(text: d.serial) }
                     TableColumn("macOS") { d in Mono(text: d.os) }
                     TableColumn("User") { d in
-                        Text(d.user).font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                        Text(d.user).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     TableColumn("Failed Rules") { d in failurePill(d.fails) }
                     TableColumn("Last Seen") { d in
                         Mono(text: d.lastSeen,
-                             color: d.lastSeen.contains("day") ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                             color: d.lastSeen.contains("day") ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                     }
                 }
                 .frame(minHeight: 340)
@@ -924,7 +925,7 @@ struct OverviewView: View {
         }
         return Text(text)
             .font(.footnote)
-            .foregroundStyle(Theme.Colors.fgMuted)
+            .foregroundStyle(Theme.Text.tertiary(contrast))
     }
 
     private func relatedTabs(for metric: TrendSeries.Metric) -> [Tab] {
@@ -1043,6 +1044,7 @@ private struct StatTileHealthModifier: ViewModifier {
 struct AgentCardView: View {
     let agent: SecurityAgent
     let fleetCount: Int
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isHovering = false
 
     var body: some View {
@@ -1078,7 +1080,7 @@ struct AgentCardView: View {
             .padding(.top, 4)
             .accessibilityHidden(true)
             if isAtRisk {
-                Mono(text: "\(gap) not installed", size: 10, color: Theme.Colors.fgMuted)
+                Mono(text: "\(gap) not installed", size: 10, color: Theme.Text.tertiary(contrast))
                     .padding(.top, 2)
             }
         }

@@ -6,6 +6,7 @@ import SwiftUI
 struct WhatsNewBanner: View {
     let onDismiss: () -> Void
     let onShowCustomize: () -> Void
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private let highlights: [(icon: String, text: String)] = [
         ("shield.lefthalf.filled", "9 new dashboards: Security Posture, Compliance Posture, Patch, Updates, Policy/Profile, EAs, Outreach, Protect, Mobile Fleet"),
@@ -42,7 +43,7 @@ struct WhatsNewBanner: View {
                     .foregroundStyle(Theme.Text.primary)
                 Text("Highlights from the latest release")
                     .font(Theme.Fonts.bodyText)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
         .padding(20)

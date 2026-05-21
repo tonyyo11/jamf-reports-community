@@ -49,7 +49,7 @@ struct ThemeSurfaceTests {
     }
 
     @Test func textTertiaryIsColor() {
-        let c: Color = Theme.Text.tertiary
+        let c: Color = Theme.Text.tertiary(.standard)
         _ = c
     }
 

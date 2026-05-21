@@ -6,6 +6,7 @@ import Charts
 /// clear empty state when no Protect data exists (many tenants don't run Protect).
 struct ProtectView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ProtectDashboardService.Snapshot = .empty
     @State private var hasLoaded = false
 
@@ -275,12 +276,12 @@ struct ProtectView: View {
                 }
                 Spacer()
                 Text("\(count)")
-                    .font(Theme.Fonts.mono(12, weight: .semibold))
+                    .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(Theme.Colors.fg2)
                     .monospacedDigit()
                 Text(String(format: "%.0f%%", pct))
-                    .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 48, alignment: .trailing)
                     .monospacedDigit()
             }
@@ -345,16 +346,16 @@ struct ProtectView: View {
 
                     if let host = alert.hostName {
                         Text(host)
-                            .font(Theme.Fonts.mono(10.5))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let created = alert.created {
                     Text(formatCreatedDate(created))
-                        .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 80, alignment: .trailing)
                 }
 
@@ -384,14 +385,14 @@ struct ProtectView: View {
                         .lineLimit(1)
 
                     Text(alert.hostName)
-                        .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(formatCreatedDate(alert.created))
-                    .font(Theme.Fonts.mono(10.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .trailing)
 
                 statusPill(alert.status)
@@ -482,14 +483,14 @@ struct ProtectView: View {
                         .lineLimit(1)
 
                     Text(computer.osString ?? "Unknown OS")
-                        .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .frame(width: 140, alignment: .leading)
 
                 Text(computer.planName ?? "—")
-                    .font(Theme.Fonts.mono(10.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .leading)
 
                 booleanPill(computer.webProtectionActive, trueLabel: "Active", falseLabel: "Inactive")
@@ -505,8 +506,8 @@ struct ProtectView: View {
 
                 if let lastConnection = computer.lastConnection {
                     Text(formatCreatedDate(lastConnection))
-                        .font(Theme.Fonts.mono(9.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .frame(width: 80, alignment: .trailing)
                 }
             }
@@ -530,14 +531,14 @@ struct ProtectView: View {
                         .lineLimit(1)
 
                     Text(computer.osString)
-                        .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 .frame(width: 140, alignment: .leading)
 
                 Text(computer.planName)
-                    .font(Theme.Fonts.mono(10.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .leading)
 
                 demoBooleanPill(computer.webProtection, trueLabel: "Active", falseLabel: "Inactive")
@@ -556,8 +557,8 @@ struct ProtectView: View {
                 .accessibilityLabel("\(computer.connected ? "Online" : "Offline") connection status")
 
                 Text(formatCreatedDate(computer.lastConnection))
-                    .font(Theme.Fonts.mono(9.5))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .trailing)
             }
             .padding(.vertical, 8)
@@ -637,22 +638,22 @@ struct ProtectView: View {
             if let section = insight.section {
                 Text(section)
                     .font(.caption)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
 
             if total > 0 {
                 HStack(spacing: 4) {
                     Text("Pass: \(pass)")
-                        .font(Theme.Fonts.mono(10))
+                        .font(.caption2.monospaced())
                         .foregroundStyle(Theme.Colors.teal)
 
                     Text("•")
-                        .font(Theme.Fonts.mono(10))
+                        .font(.caption2.monospaced())
                         .foregroundStyle(Theme.Colors.hairlineStrong)
 
                     Text("Fail: \(fail)")
-                        .font(Theme.Fonts.mono(10))
-                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
 
                     Spacer()
 
@@ -695,21 +696,21 @@ struct ProtectView: View {
 
             Text(insight.section)
                 .font(.caption)
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
 
             if total > 0 {
                 HStack(spacing: 4) {
                     Text("Pass: \(pass)")
-                        .font(Theme.Fonts.mono(10))
+                        .font(.caption2.monospaced())
                         .foregroundStyle(Theme.Colors.teal)
 
                     Text("•")
-                        .font(Theme.Fonts.mono(10))
+                        .font(.caption2.monospaced())
                         .foregroundStyle(Theme.Colors.hairlineStrong)
 
                     Text("Fail: \(fail)")
-                        .font(Theme.Fonts.mono(10))
-                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Colors.fgMuted)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
 
                     Spacer()
 
@@ -815,15 +816,15 @@ private struct ProtectAlertsSeverityExport: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         Text(row.label)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundStyle(Color(hex: 0x111827))
                         Spacer(minLength: 6)
                         Text("\(row.count)")
-                            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                            .font(.caption.monospaced().weight(.semibold))
                             .foregroundStyle(Color(hex: 0x111827))
                             .monospacedDigit()
                         Text(String(format: "%.1f%%", pct))
-                            .font(.system(size: 10.5, design: .monospaced))
+                            .font(.caption.monospaced())
                             .foregroundStyle(Color(hex: 0x475569))
                             .frame(width: 50, alignment: .trailing)
                             .monospacedDigit()
@@ -844,7 +845,7 @@ private struct ProtectAlertsSeverityExport: View {
                 HStack {
                     Spacer()
                     Text("Total: \(total) alert\(total == 1 ? "" : "s")")
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .font(.caption.monospaced().weight(.semibold))
                         .foregroundStyle(Color(hex: 0x475569))
                 }
             }

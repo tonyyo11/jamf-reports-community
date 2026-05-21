@@ -132,7 +132,22 @@ struct Schedule: Identifiable, Sendable {
             }
         }
     }
-    enum LastStatus: String, Sendable, CaseIterable { case ok, warn, fail, partial }
+    enum LastStatus: String, Sendable, CaseIterable {
+        case ok, warn, fail, partial
+
+        /// VoiceOver label for a status pill describing the last run outcome.
+        var accessibilityLabel: String {
+            switch self {
+            case .ok:      "Last run status: OK"
+            case .warn:    "Last run status: Warning"
+            case .fail:    "Last run status: Failed"
+            case .partial: "Last run status: Partial"
+            }
+        }
+    }
+
+    /// VoiceOver label for this schedule's last-run status pill.
+    var accessibilityStatusLabel: String { lastStatus.accessibilityLabel }
 
     var id: String { launchAgentLabel ?? "\(profile)/\(name)" }
     var name: String
@@ -223,6 +238,18 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
 
     var createdLabel: String { FileDisplay.date(created) }
     var sizeLabel: String { FileDisplay.size(sizeBytes) }
+
+    /// VoiceOver label for a backup row: display name, file count, size, date.
+    var accessibilityLabel: String {
+        let displayName = label.isEmpty ? name : label
+        return "\(displayName), \(fileCount) files, \(sizeLabel), created \(createdLabel)"
+    }
+
+    /// VoiceOver summary describing the backup's content and purpose.
+    var accessibilitySummary: String {
+        let displayName = label.isEmpty ? name : label
+        return "Configuration backup: \(displayName), \(fileCount) files, created \(createdLabel)"
+    }
 }
 
 // MARK: - Sheet catalog (for Customize screen)

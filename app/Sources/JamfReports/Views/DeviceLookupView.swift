@@ -16,6 +16,7 @@ import SwiftUI
 ///      re-collect lists without having to leave this screen.
 struct DeviceLookupView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     @State private var searchTerm = ""
     @State private var submittedTerm = ""
@@ -124,7 +125,7 @@ struct DeviceLookupView: View {
             Card(padding: 18) {
                 Text("Device lookup is available in live mode only.")
                     .font(.footnote)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         } else {
             switch state {
@@ -136,7 +137,7 @@ struct DeviceLookupView: View {
                         ProgressView().controlSize(.small)
                         Text("Resolving \(submittedTerm) via jamf-cli…")
                             .font(.footnote)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
             case .loaded:
@@ -159,7 +160,7 @@ struct DeviceLookupView: View {
                 SectionHeader(title: "Multiple matches for \(submittedTerm)")
                 Text("Pick the device you want to inspect.")
                     .font(.footnote)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(candidates) { cand in
                         candidateRow(cand)
@@ -177,17 +178,21 @@ struct DeviceLookupView: View {
                 Pill(text: cand.kind.displayLabel,
                      tone: cand.kind == .computer ? .teal : .gold,
                      icon: cand.kind == .computer ? "desktopcomputer" : "ipad")
+                    // The icon inside the Pill is decorative — the Pill text already
+                    // announces the device type. The outer Pill is part of the combined
+                    // accessibility element so it doesn't need its own VoiceOver focus.
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(cand.name)
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                     HStack(spacing: 8) {
-                        Mono(text: "ID \(cand.id)", size: 10.5, color: Theme.Colors.fgMuted)
+                        Mono(text: "ID \(cand.id)", size: 10.5, color: Theme.Text.tertiary(contrast))
                         if let serial = cand.serial, !serial.isEmpty {
-                            Mono(text: serial, size: 10.5, color: Theme.Colors.fgMuted)
+                            Mono(text: serial, size: 10.5, color: Theme.Text.tertiary(contrast))
                         }
                         if let os = cand.osVersion, !os.isEmpty {
-                            Mono(text: os, size: 10.5, color: Theme.Colors.fgMuted)
+                            Mono(text: os, size: 10.5, color: Theme.Text.tertiary(contrast))
                         }
                     }
                 }
@@ -195,6 +200,7 @@ struct DeviceLookupView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.Colors.fgMuted)
+                    .accessibilityHidden(true)  // decorative navigation affordance
             }
             .padding(.vertical, 6)
             .padding(.horizontal, 8)
@@ -204,6 +210,8 @@ struct DeviceLookupView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(cand.kind.displayLabel): \(cand.name)\(cand.serial.map { ", serial \($0)" } ?? "")")
     }
 
     private func unavailableCard(_ message: String) -> some View {
@@ -240,7 +248,7 @@ struct DeviceLookupView: View {
                         .foregroundStyle(Theme.Colors.fgMuted)
                     Text(message)
                         .font(.footnote)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 HStack(spacing: 8) {
                     PNPButton(
@@ -263,7 +271,7 @@ struct DeviceLookupView: View {
                     }
                     Text("Re-runs `jamf-cli pro computers list` and `mobile-devices list`, then retries.")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
         }
@@ -307,7 +315,7 @@ struct DeviceLookupView: View {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text(item.label)
                                     .font(.caption)
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .frame(width: 140, alignment: .leading)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.value)
@@ -315,7 +323,7 @@ struct DeviceLookupView: View {
                                         .foregroundStyle(Theme.Colors.fg2)
                                         .textSelection(.enabled)
                                     if !item.note.isEmpty {
-                                        Mono(text: item.note, size: 10.5, color: Theme.Colors.fgMuted)
+                                        Mono(text: item.note, size: 10.5, color: Theme.Text.tertiary(contrast))
                                     }
                                 }
                                 Spacer(minLength: 0)

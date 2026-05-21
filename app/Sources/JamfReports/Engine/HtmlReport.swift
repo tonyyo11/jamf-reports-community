@@ -181,16 +181,17 @@ struct HtmlReport: Sendable {
         \(css)
         </head>
         <body>
+        <a class="skip-link" href="#main-content">Skip to main content</a>
         <header>
           <div class="header-content">
             <div>
               <h1>\(titleEscaped)</h1>
               <p class="subtitle">Jamf Instance Report · \(ts)</p>
             </div>
-            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">&#9728; / &#9790;</button>
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" aria-pressed="false">&#9728; / &#9790;</button>
           </div>
         </header>
-        <main>
+        <main id="main-content">
         \(mainBody)
         </main>
         \(provenanceHTML)
@@ -465,16 +466,17 @@ struct HtmlReport: Sendable {
         \(css)
         </head>
         <body>
+        <a class="skip-link" href="#main-content">Skip to main content</a>
         <header>
           <div class="header-content">
             <div>
               <h1>\(titleEscaped)</h1>
               <p class="subtitle">Jamf Instance Report · \(ts)</p>
             </div>
-            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">&#9728; / &#9790;</button>
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" aria-pressed="false">&#9728; / &#9790;</button>
           </div>
         </header>
-        <main>
+        <main id="main-content">
         \(complianceTileHTML)
         \(topNonCompliantHTML)
         \(momHTML)
@@ -1424,6 +1426,7 @@ struct HtmlReport: Sendable {
                        gap: 1.5rem; }
         .chart-card { background: var(--card); border: 1px solid var(--border);
                       border-radius: 10px; padding: 1.2rem; }
+        .content-section { overflow-x: auto; }
         .content-section table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
         table th, table td { padding: 0.6rem 1rem; text-align: left;
                              border-bottom: 1px solid var(--border); }
@@ -1473,7 +1476,26 @@ struct HtmlReport: Sendable {
         .device-link { color: inherit; text-decoration: underline dotted; }
         .device-anchor { display: block; visibility: hidden; height: 0; }
         :target { background: rgba(255,234,0,0.18); transition: background 0.4s ease; }
-        /* Task 3: Print media query — force light backgrounds/dark text */
+        /* Skip-link: visually hidden until focused */
+        .skip-link {
+          position: absolute;
+          top: -999px;
+          left: 0;
+          background: #004165;
+          color: #fff;
+          padding: 8px 16px;
+          border-radius: 0 0 6px 0;
+          font-size: 0.85rem;
+          font-weight: 600;
+          z-index: 9999;
+          text-decoration: none;
+        }
+        .skip-link:focus { top: 0; }
+        /* Reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+          :target { transition: none; }
+        }
+        /* Print media query — force light backgrounds/dark text; hide interactive controls */
         @media print {
           :root, [data-theme="dark"] {
             --bg: #ffffff !important;
@@ -1489,6 +1511,7 @@ struct HtmlReport: Sendable {
           .compliance-hero-amber { background: #fff3e0 !important; }
           .compliance-hero-red   { background: #ffebee !important; }
           .theme-toggle { display: none; }
+          .skip-link { display: none; }
           a { color: #000 !important; text-decoration: none; }
         }
         </style>
@@ -1512,6 +1535,8 @@ struct HtmlReport: Sendable {
           const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
           html.setAttribute('data-theme', next);
           localStorage.setItem('jr-theme', next);
+          const btn = document.querySelector('.theme-toggle');
+          if (btn) btn.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
         }
         </script>
         """

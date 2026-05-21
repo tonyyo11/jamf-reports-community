@@ -6,6 +6,7 @@ import Charts
 struct TrendsView: View {
     @Environment(WorkspaceStore.self) private var workspaceStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @State private var trendStore = TrendStore()
     @State private var bridge = CLIBridge()
@@ -245,7 +246,7 @@ struct TrendsView: View {
                 Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(
-                        deltaState == .flat ? Theme.Colors.fgMuted
+                        deltaState == .flat ? Theme.Text.tertiary(contrast)
                             : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
                     )
                 if sparkValues.count >= 2 {
@@ -402,12 +403,14 @@ struct TrendsView: View {
                     .chartYAxis {
                         AxisMarks(position: .leading) {
                             AxisGridLine().foregroundStyle(Theme.Colors.hairline)
-                            AxisValueLabel().font(Theme.Fonts.mono(10))
-                                .foregroundStyle(Theme.Colors.fgMuted)
+                            // WCAG 1.4.4: .caption is a Dynamic Type style; scales with text size.
+                            AxisValueLabel().font(.caption.monospaced())
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
+                    .accessibilityLabel(Self.metricTrendChartLabel(metric.displayLabel))
                     .accessibilityChartDescriptor(TrendLineChartDescriptor(
                         title: "\(metric.displayLabel) Trend",
                         seriesName: metric.displayLabel,
@@ -425,12 +428,12 @@ struct TrendsView: View {
                     HStack(spacing: 6) {
                         Rectangle().fill(Color(hex: metric.colorHex)).frame(width: 14, height: 2)
                         Text("Weekly snapshot").font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     HStack(spacing: 6) {
                         Image(systemName: "info.circle").font(.system(size: 11))
                         Text("\(trendDates.count) archived summaries").font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     PNPButton(title: "Open in Finder", icon: "folder", style: .ghost, size: .sm) {
@@ -467,7 +470,7 @@ struct TrendsView: View {
                         SectionHeader(title: "Compliance Distribution Over Time")
                         Text("Devices grouped by failed-rule count, weekly")
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                 }
@@ -488,7 +491,7 @@ struct TrendsView: View {
                     SectionHeader(title: "Security Posture · Compared")
                     Text("FileVault vs. Compliance vs. macOS Current")
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 multilineComparisonChart
                 HStack(spacing: 14) {
@@ -508,7 +511,7 @@ struct TrendsView: View {
                         .fill(Color(hex: band.colorHex))
                         .frame(width: 10, height: 10)
                     Text(band.label).font(.caption).foregroundStyle(Theme.Colors.fg2)
-                    Text(band.range).font(Theme.Fonts.mono(10.5)).foregroundStyle(Theme.Colors.fgMuted)
+                    Text(band.range).font(Theme.Fonts.mono(10.5)).foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
         }
@@ -567,6 +570,7 @@ struct TrendsView: View {
                 .chartYAxis(.hidden)
                 .chartLegend(.hidden)
                 .frame(height: 200)
+                .accessibilityLabel(Self.complianceTrendChartLabel)
                 .accessibilityChartDescriptor(StackedBarChartDescriptor(
                     title: "Compliance Distribution Over Time",
                     dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
@@ -600,12 +604,13 @@ struct TrendsView: View {
                 .chartYAxis {
                     AxisMarks(position: .leading) {
                         AxisGridLine().foregroundStyle(Theme.Colors.hairline)
-                        AxisValueLabel().font(Theme.Fonts.mono(10))
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                        AxisValueLabel().font(.caption.monospaced())
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
                 .chartLegend(.hidden)
                 .frame(height: 200)
+                .accessibilityLabel(Self.multilineComparisonChartLabel)
                 .accessibilityChartDescriptor(MultiLineChartDescriptor(
                     title: "Security Posture Comparison",
                     seriesList: [
@@ -677,17 +682,18 @@ struct TrendsView: View {
     @AxisContentBuilder
     private func trendXAxisMarks(for range: TrendRange) -> some AxisContent {
         let format = xAxisDateFormat(for: range)
+        // WCAG 1.4.4: .caption.monospaced() is a Dynamic Type style; scales with text size.
         if range == .all {
             AxisMarks(values: .automatic(desiredCount: 8)) { _ in
                 AxisValueLabel(format: format)
-                    .font(Theme.Fonts.mono(10))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         } else {
             AxisMarks(values: .stride(by: .day, count: xAxisStrideDays(for: range))) { _ in
                 AxisValueLabel(format: format)
-                    .font(Theme.Fonts.mono(10))
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
     }
@@ -723,7 +729,7 @@ struct TrendsView: View {
                             Text(" run")
                         }
                         .font(.caption)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     HStack(spacing: 8) {
@@ -776,7 +782,7 @@ struct TrendsView: View {
                         .foregroundStyle(Theme.Colors.goldBright)
                 }
                 .font(Theme.Fonts.mono(10.5))
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
     }
@@ -901,6 +907,21 @@ struct TrendsView: View {
             workspaceStore.toast = Toast(message: error.userMessage, style: .danger)
         }
     }
+
+    // MARK: - Chart accessibility labels (WCAG 1.1.1 / 4.1.2)
+
+    /// VoiceOver container label for the hero metric trend chart. `nonisolated`
+    /// so unit tests can call it without inheriting View `@MainActor` isolation.
+    nonisolated static func metricTrendChartLabel(_ displayLabel: String) -> String {
+        "\(displayLabel) trend over time"
+    }
+
+    /// VoiceOver container label for the stacked compliance-band chart.
+    nonisolated static let complianceTrendChartLabel = "Compliance trend"
+
+    /// VoiceOver container label for the multi-metric comparison chart.
+    nonisolated static let multilineComparisonChartLabel =
+        "Multi-metric comparison: FileVault, NIST compliance, macOS currency"
 }
 
 

@@ -26,6 +26,7 @@ private enum CustomTierChoice: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
     @State private var testingProfile: String? = nil
     @State private var testResults: [String: Bool] = [:]
@@ -169,7 +170,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.callout.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
-                Text(sub).font(Theme.Fonts.mono(11)).foregroundStyle(Theme.Text.tertiary)
+                Text(sub).font(.caption.monospaced()).foregroundStyle(Theme.Text.tertiary(contrast))
             }
             Spacer()
             trailing
@@ -190,7 +191,7 @@ struct SettingsView: View {
                                 .frame(width: 8, height: 8)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(c.name).font(.footnote.weight(.medium))
-                                    .foregroundStyle(isUnsupported ? Theme.Text.disabled : Theme.Text.primary)
+                                    .foregroundStyle(isUnsupported ? Theme.Text.disabled(contrast) : Theme.Text.primary)
                                 Mono(text: "\(c.url) · \(profileType(c))", size: 10.5)
                                 tokenStatusLabel(for: c.name)
                             }
@@ -209,7 +210,7 @@ struct SettingsView: View {
                     if workspace.profiles.isEmpty {
                         Text("No local jamf-cli profiles found.")
                             .font(.footnote)
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 10)
                     }
@@ -233,12 +234,12 @@ struct SettingsView: View {
                     .help("Opens a Terminal window and copies `jamf-cli config add-profile` to your clipboard.")
                     Text("Opens Terminal and copies the auth command. Paste it in the Terminal window and follow the prompts.")
                         .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                     if let msg = addConnectionMessage {
                         Text(msg)
-                            .font(Theme.Fonts.mono(10.5))
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
                 .padding(.top, 4)
@@ -256,7 +257,7 @@ struct SettingsView: View {
                     if testingTooLong {
                         Text("Taking longer than usual…")
                             .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
             } else if let passed = testResults[profileName] {
@@ -270,7 +271,7 @@ struct SettingsView: View {
                 }
                 if let err = testErrors[profileName] {
                     Text(err)
-                        .font(Theme.Fonts.mono(10.5))
+                        .font(.caption.monospaced())
                         .foregroundStyle(Theme.Colors.warn)
                         .lineLimit(4)
                         .onTapGesture { testErrors[profileName] = nil }
@@ -312,7 +313,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func tokenStatusLabel(for profileName: String) -> some View {
         if loadingTokenProfiles.contains(profileName) {
-            Mono(text: "Token: checking...", size: 10).foregroundStyle(Theme.Text.tertiary)
+            Mono(text: "Token: checking...", size: 10).foregroundStyle(Theme.Text.tertiary(contrast))
         } else if let status = tokenStatuses[profileName] {
             Mono(text: tokenStatusText(status), size: 10)
                 .foregroundStyle(tokenStatusColor(status))
@@ -336,7 +337,7 @@ struct SettingsView: View {
     }
 
     private func tokenStatusColor(_ status: TokenStatus) -> Color {
-        guard status.isValid else { return Theme.Text.tertiary }
+        guard status.isValid else { return Theme.Text.tertiary(contrast) }
         if let exp = status.expiresAt, exp <= Date() { return Theme.Colors.warn }
         return Theme.Colors.ok
     }
@@ -363,7 +364,7 @@ struct SettingsView: View {
                     HStack(spacing: 4) {
                         Text("A GUI for the open-source")
                         Text("jamf-reports-community").foregroundStyle(Theme.Colors.goldBright)
-                            .font(Theme.Fonts.mono(13))
+                            .font(.footnote.monospaced())
                         Text("project — every flow in this app maps to a CLI command.")
                     }
                     .font(.callout)
@@ -420,7 +421,7 @@ struct SettingsView: View {
 
     private func dotColor(for profile: JamfCLIProfile) -> Color {
         if profile.status == .error { return Theme.Colors.warn }
-        return profile.name == workspace.profile ? Theme.Colors.ok : Theme.Text.disabled
+        return profile.name == workspace.profile ? Theme.Colors.ok : Theme.Text.disabled(contrast)
     }
 
     private var appVersion: String {
@@ -429,10 +430,10 @@ struct SettingsView: View {
 
     private func metaPair(label: String, value: String) -> some View {
         HStack(spacing: 4) {
-            Text(label).foregroundStyle(Theme.Text.tertiary)
+            Text(label).foregroundStyle(Theme.Text.tertiary(contrast))
             Text(value).foregroundStyle(Theme.Text.primary)
         }
-        .font(Theme.Fonts.mono(11.5))
+        .font(.caption.monospaced())
     }
 
     // MARK: - Sidebar visibility
@@ -518,8 +519,8 @@ struct SettingsView: View {
                         Text("This profile's jamf_cli.collect_skip is now read as "
                              + "per-report cadence. Review it under Performance below; "
                              + "saving a preset there finalizes the migration.")
-                            .font(Theme.Fonts.mono(11))
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     PNPButton(title: "Dismiss", size: .sm) {
@@ -540,8 +541,8 @@ struct SettingsView: View {
                 SectionHeader(title: "Performance")
                 Text("Collection cadence preset for the active profile (\(workspace.profile)). "
                      + "Controls how often scheduled runs fetch each tier of jamf-cli data.")
-                    .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
 
                 Picker("Cadence preset", selection: cadencePresetBinding) {
                     ForEach(CadencePreset.allCases, id: \.self) { preset in
@@ -552,8 +553,8 @@ struct SettingsView: View {
                 .pickerStyle(.radioGroup)
 
                 Text(cadencePreset.displaySubtitle)
-                    .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
 
                 Divider().background(Theme.Hairline.standard)
 
@@ -562,8 +563,8 @@ struct SettingsView: View {
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Text.primary)
                     Text(cadencePreset.cadenceSummary)
-                        .font(Theme.Fonts.mono(11))
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
 
                 if let presetWriteError {
@@ -687,8 +688,8 @@ struct SettingsView: View {
                 .foregroundStyle(Theme.Text.primary)
             Text("Each report's tier and how often it's fetched. "
                  + "Set a report to Never to skip it entirely.")
-                .font(Theme.Fonts.mono(11))
-                .foregroundStyle(Theme.Text.tertiary)
+                .font(.caption.monospaced())
+                .foregroundStyle(Theme.Text.tertiary(contrast))
 
             ForEach(ReportEngine.knownCollectKinds.sorted(), id: \.self) { kind in
                 customCadenceRow(kind: kind)
@@ -698,7 +699,7 @@ struct SettingsView: View {
                 if let customCadenceMessage {
                     Text(customCadenceMessage)
                         .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 Spacer()
                 PNPButton(title: "Save per-report cadence", size: .sm) {
@@ -711,7 +712,7 @@ struct SettingsView: View {
     private func customCadenceRow(kind: String) -> some View {
         HStack(spacing: 8) {
             Text(kind)
-                .font(Theme.Fonts.mono(11))
+                .font(.caption.monospaced())
                 .foregroundStyle(Theme.Text.primary)
             Spacer()
             Picker("", selection: tierChoiceBinding(kind)) {
@@ -808,7 +809,7 @@ struct SettingsView: View {
                     "replaced with stable hash placeholders by default."
                 )
                 .font(.footnote)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 8) {
@@ -832,8 +833,8 @@ struct SettingsView: View {
 
                 if let msg = diagnosticBundleMessage {
                     Text(msg)
-                        .font(Theme.Fonts.mono(10.5))
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -944,7 +945,7 @@ struct SettingsView: View {
                 }
                 Text("Hide dashboards you don't use. Core tabs (Overview, Devices, Sources, Settings) cannot be hidden.")
                     .font(.caption)
-                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                 ForEach(SettingsView.toggleableGroups, id: \.label) { group in
                     visibilityGroupRow(label: group.label, tabs: group.tabs)
                 }
@@ -966,9 +967,9 @@ struct SettingsView: View {
     private func visibilityGroupRow(label: String, tabs: [Tab]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(Theme.Fonts.mono(10, weight: .semibold))
+                .font(.caption2.monospaced().weight(.semibold))
                 .tracking(1.2)
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
             ForEach(tabs, id: \.self) { tab in
                 visibilityRow(for: tab)
             }

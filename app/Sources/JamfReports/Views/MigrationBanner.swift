@@ -4,6 +4,7 @@ import SwiftUI
 /// Uses @AppStorage for one-time acknowledgment flag to prevent showing repeatedly.
 struct MigrationBanner: View {
     @AppStorage("dottedLegacyMigrationAcknowledged") private var acknowledged = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     let legacyWorkspaces: [String]
     let legacySchedules: [String]
@@ -41,7 +42,7 @@ struct MigrationBanner: View {
                     .foregroundStyle(Theme.Text.primary)
                 Text("Found workspaces or schedules with dotted names")
                     .font(Theme.Fonts.bodyText)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
         .padding(20)
@@ -103,7 +104,7 @@ struct MigrationBanner: View {
                         ForEach(items, id: \.self) { item in
                             Text("• \(item)")
                                 .font(Theme.Fonts.mono)
-                                .foregroundStyle(Theme.Text.tertiary)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
 
@@ -120,7 +121,7 @@ struct MigrationBanner: View {
         HStack(spacing: 10) {
             Text("Rename workspace folders and manually remove legacy schedules to complete migration.")
                 .font(Theme.Fonts.caption)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
 
             Spacer()
 

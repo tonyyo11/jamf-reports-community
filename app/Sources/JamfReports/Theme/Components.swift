@@ -318,9 +318,16 @@ struct PNPButton: View {
 struct PNPToggle: View {
     @Binding var isOn: Bool
     var label: String = ""
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Button {
-            withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
+            if reduceMotion {
+                isOn.toggle()
+            } else {
+                withAnimation(.snappy(duration: 0.2)) { isOn.toggle() }
+            }
         } label: {
             ZStack(alignment: isOn ? .trailing : .leading) {
                 Capsule()
@@ -340,6 +347,10 @@ struct PNPToggle: View {
             }
         }
         .buttonStyle(.plain)
+        // WCAG 2.5.8: minimum hit area ≥24×24pt. The visible capsule is 36×22;
+        // adding 2pt top+bottom padding lifts the interactive area to 36×26pt.
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
         .accessibilityLabel(label.isEmpty ? "Toggle" : label)
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityAddTraits(.isButton)
@@ -406,12 +417,16 @@ struct StatTile: View {
     var sparkValues: [Double]? = nil
     var sparkColor: Color? = nil
 
+    // WCAG 1.4.4: scaled relative to .largeTitle so the KPI numeral responds
+    // to Accessibility text size while keeping the design baseline at 32pt.
+    @ScaledMetric(relativeTo: .largeTitle) private var displaySize: CGFloat = 32
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Kicker(text: label)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(value)
-                    .font(Theme.Fonts.serif(32, weight: .bold))
+                    .font(Theme.Fonts.serif(displaySize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()
                 if let delta {
@@ -446,6 +461,22 @@ struct StatTile: View {
     }
 
     private var fullAccessibilityLabel: String {
+        Self.accessibilityLabel(
+            label: label, value: value, delta: delta, deltaTrend: deltaTrend, sub: sub
+        )
+    }
+
+    /// Pure helper, exposed for unit tests. Builds the combined VoiceOver
+    /// announcement: metric name, value, optional delta with trend direction,
+    /// and optional subtitle. `nonisolated` so unit tests can call it without
+    /// inheriting `StatTile`'s implicit `@MainActor` View isolation.
+    nonisolated static func accessibilityLabel(
+        label: String,
+        value: String,
+        delta: String?,
+        deltaTrend: Trend,
+        sub: String?
+    ) -> String {
         var parts = ["\(label): \(value)"]
         if let delta {
             switch deltaTrend {

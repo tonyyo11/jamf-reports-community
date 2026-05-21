@@ -65,6 +65,7 @@ struct UnusedGroup: Identifiable, Codable {
 
 struct AuditView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var bridge = CLIBridge()
 
     @State private var findings: [AuditFinding] = []
@@ -298,7 +299,7 @@ struct AuditView: View {
                             HStack(spacing: 8) {
                                 Text(f.recommendation)
                                     .font(.footnote)
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
                                 PNPButton(title: "Details", icon: "info.circle", size: .sm) {
@@ -344,7 +345,7 @@ struct AuditView: View {
                                         .strikethrough(true, color: Theme.Colors.fgMuted)
                                     Text(finding.recommendation)
                                         .font(.caption)
-                                        .foregroundStyle(Theme.Colors.fgMuted)
+                                        .foregroundStyle(Theme.Text.tertiary(contrast))
                                         .lineLimit(1)
                                 }
                                 Spacer()
@@ -398,7 +399,7 @@ struct AuditView: View {
                             .foregroundStyle(Theme.Colors.fg)
                         Text(integrityDetail(summary))
                             .font(.caption)
-                            .foregroundStyle(Theme.Colors.fgMuted)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                     Pill(text: "\(summary.unverified)", tone: integrityTone(summary),
@@ -521,7 +522,7 @@ struct AuditView: View {
                             TableColumn("Why Flagged") { g in
                                 Text(g.reasonLabel)
                                     .font(.footnote)
-                                    .foregroundStyle(Theme.Colors.fgMuted)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                                     .lineLimit(2)
                             }
                             TableColumn("Actions") { g in
@@ -563,7 +564,7 @@ struct AuditView: View {
                 .foregroundStyle(Theme.Colors.gold.opacity(0.5))
             Text(text)
                 .font(.callout)
-                .foregroundStyle(Theme.Colors.fgMuted)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .frame(maxWidth: .infinity, minHeight: 300)
         .background(Color.white.opacity(0.01))

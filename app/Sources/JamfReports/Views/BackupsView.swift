@@ -2,6 +2,7 @@ import SwiftUI
 
 struct BackupsView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var bridge = CLIBridge()
     @State private var backups: [BackupRecord] = []
     @State private var selectedBackups = Set<BackupRecord.ID>()
@@ -89,7 +90,7 @@ struct BackupsView: View {
                     Mono(
                         text: diffSelectionHint,
                         size: 10.5,
-                        color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Text.tertiary
+                        color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
                     )
                     PNPButton(
                         title: isRunningDiff ? "Diffing..." : "Diff Selected",
@@ -118,7 +119,7 @@ struct BackupsView: View {
         HStack(spacing: 8) {
             Image(systemName: "tag")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
             TextField("Label", text: $backupLabel)
                 .textFieldStyle(.plain)
                 .font(.callout)
@@ -167,11 +168,13 @@ struct BackupsView: View {
                             if backup.label.isEmpty {
                                 Text("No label set")
                                     .font(Theme.Fonts.mono(10.5))
-                                    .foregroundStyle(Theme.Text.tertiary.opacity(0.65))
+                                    .foregroundStyle(Theme.Text.tertiary(contrast).opacity(0.65))
                             } else {
                                 Mono(text: backup.name, size: 10.5)
                             }
                         }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(backup.accessibilityLabel)
                     }
                     TableColumn("Created") { backup in
                         Mono(text: backup.createdLabel)
@@ -226,7 +229,7 @@ struct BackupsView: View {
                 .foregroundStyle(Theme.Text.primary)
             Text("Create a restore point before making config changes.")
                 .font(.footnote)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
             PNPButton(title: "New Backup", icon: "externaldrive.badge.plus", style: .gold) {
                 runBackup()
             }
@@ -295,7 +298,7 @@ struct BackupsView: View {
                     if diffOutput.isEmpty {
                         Text("No diff output.")
                             .font(Theme.Fonts.mono(11.5))
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
                         ForEach(diffOutput) { line in
                             DiffLineView(text: line.text, fallbackColor: color(for: line.level))
@@ -391,6 +394,7 @@ struct BackupsView: View {
 private struct DiffLineView: View {
     let text: String
     let fallbackColor: Color
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var kind: DiffKind {
         if text.hasPrefix("@@") { return .hunk }
@@ -417,7 +421,7 @@ private struct DiffLineView: View {
         case .deletion: Theme.Colors.danger
         case .hunk: Theme.Colors.goldBright
         case .fileHeader: Theme.Text.secondary
-        case .unchanged: text.hasPrefix("[") ? fallbackColor : Theme.Text.tertiary
+        case .unchanged: text.hasPrefix("[") ? fallbackColor : Theme.Text.tertiary(contrast)
         }
     }
 

@@ -15136,15 +15136,40 @@ a:hover { text-decoration: underline; }
     text-decoration: none;
 }
 .empty-note { color: var(--muted); font-size: .82rem; }
-	.footer {
-	    text-align: center;
+.footer {
+    text-align: center;
     font-size: .72rem;
     color: var(--muted);
     margin-top: 40px;
     padding-top: 16px;
     border-top: 1px solid var(--border);
 }
-	"""
+.skip-link {
+    position: absolute;
+    top: -999px;
+    left: 0;
+    background: var(--blue-dark);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 0 0 6px 0;
+    font-size: .85rem;
+    font-weight: 600;
+    z-index: 9999;
+    text-decoration: none;
+}
+.skip-link:focus { top: 0; }
+@media (prefers-reduced-motion: reduce) {
+    .sec-bar-fill { transition: none; }
+    .dark-toggle  { transition: none; }
+}
+@media print {
+    .topbar { display: none !important; }
+    .dark-toggle { display: none !important; }
+    .tree-search { display: none !important; }
+    .table-tools { display: none !important; }
+    .skip-link { display: none !important; }
+}
+"""
 
     def _js(self) -> str:
         """Return the embedded JavaScript block for HTML interactivity."""
@@ -15154,7 +15179,10 @@ a:hover { text-decoration: underline; }
   const toggle = document.getElementById('darkToggle');
   const applyDark = (enabled) => {
     document.body.classList.toggle('dark', enabled);
-    if (toggle) toggle.textContent = enabled ? 'Light mode' : 'Dark mode';
+    if (toggle) {
+      toggle.textContent = enabled ? 'Light mode' : 'Dark mode';
+      toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    }
     try { localStorage.setItem(key, enabled ? '1' : '0'); } catch (err) {}
   };
   let saved = null;
@@ -15313,6 +15341,12 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       });
       rows.forEach((row) => tbody.appendChild(row));
       if (emptyRow) tbody.appendChild(emptyRow);
+      document.querySelectorAll('[data-flagged-sort]').forEach((btn) => {
+        const th = btn.closest('th');
+        if (th) th.setAttribute('aria-sort', 'none');
+      });
+      const activeTh = button.closest('th');
+      if (activeTh) activeTh.setAttribute('aria-sort', sortAsc ? 'ascending' : 'descending');
       applyFilter();
     });
   });
@@ -15417,20 +15451,22 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             body = '<p class="empty-note">No data available.</p>'
         else:
             chunks = []
-            for group in groups:
+            for idx, group in enumerate(groups):
                 items = "".join(
                     '<div class="item-node" data-name="'
                     f'{self._html_text(name.lower())}">{self._html_text(name)}</div>'
                     for name in group["items"]
                 )
+                cat_items_id = f"cat-{self._html_text(pane_id)}-{idx}"
                 chunks.append(
                     '<div class="cat-node">'
-                    '<button type="button" class="cat-toggle" aria-expanded="false">'
+                    f'<button type="button" class="cat-toggle" aria-expanded="false"'
+                    f' aria-controls="{cat_items_id}">'
                     '<span class="cat-label">'
                     '<span class="cat-caret" aria-hidden="true">▶</span>'
                     f'<span>{self._html_text(group["category"])}</span>'
                     f'</span><span class="cat-count">{group["count"]}</span></button>'
-                    f'<div class="cat-items">{items}</div></div>'
+                    f'<div class="cat-items" id="{cat_items_id}">{items}</div></div>'
                 )
             body = "".join(chunks)
         safe_pane = self._html_text(pane_id)
@@ -15549,15 +15585,17 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 )
         return f"""<h3 class="section-title">Full Overview</h3>
 <div class="card">
-  <table class="data-table">
-    <caption class="sr-only">Full Jamf Pro resource inventory grouped by section.</caption>
-    <thead><tr>
-      <th scope="col">Resource</th>
-      <th scope="col" style="text-align:right">Value</th>
-      <th scope="col">Status</th>
-    </tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="data-table">
+      <caption class="sr-only">Full Jamf Pro resource inventory grouped by section.</caption>
+      <thead><tr>
+        <th scope="col">Resource</th>
+        <th scope="col" style="text-align:right">Value</th>
+        <th scope="col">Status</th>
+      </tr></thead>
+      <tbody>{rows_html}</tbody>
+    </table>
+  </div>
 </div>"""
 
     def _render_quick_links(self, console_url: str) -> str:
@@ -15598,9 +15636,10 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             if console_url and query_value:
                 query = urllib.parse.quote(query_value, safe="")
                 open_link = f"{console_url}/computers.html?query={query}&queryType=COMPUTERS&version="
+            dev_name_safe = self._html_text(str(dev.get("name") or ""))
             link_html = (
                 f'<a href="{self._html_text(self._safe_href(open_link))}" target="_blank" '
-                'rel="noopener noreferrer">Open</a>'
+                f'rel="noopener noreferrer" aria-label="Open {dev_name_safe} in Jamf Pro">Open</a>'
                 if open_link
                 else "—"
             )
@@ -15631,15 +15670,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     <table class="data-table" id="flaggedTable">
       <caption class="sr-only">Devices flagged with one or more security control failures.</caption>
       <thead><tr>
-        <th scope="col">
+        <th scope="col" aria-sort="none">
           <button type="button" class="table-sort"
             data-flagged-sort="name">Device ↕</button>
         </th>
-        <th scope="col">
+        <th scope="col" aria-sort="none">
           <button type="button" class="table-sort"
             data-flagged-sort="serial">Serial ↕</button>
         </th>
-        <th scope="col">
+        <th scope="col" aria-sort="none">
           <button type="button" class="table-sort"
             data-flagged-sort="os">macOS ↕</button>
         </th>
@@ -15742,19 +15781,21 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             )
         return f"""<h3 class="section-title">Mobile Inventory Review</h3>
 <div class="card">
-  <table class="data-table">
-    <caption class="sr-only">Mobile devices ranked by days since last inventory update.</caption>
-    <thead><tr>
-      <th scope="col">Device</th>
-      <th scope="col">Family</th>
-      <th scope="col">OS</th>
-      <th scope="col">User</th>
-      <th scope="col">Days Since Inventory</th>
-      <th scope="col">Managed</th>
-      <th scope="col">Supervised</th>
-    </tr></thead>
-    <tbody>{body}</tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="data-table">
+      <caption class="sr-only">Mobile devices ranked by days since last inventory update.</caption>
+      <thead><tr>
+        <th scope="col">Device</th>
+        <th scope="col">Family</th>
+        <th scope="col">OS</th>
+        <th scope="col">User</th>
+        <th scope="col">Days Since Inventory</th>
+        <th scope="col">Managed</th>
+        <th scope="col">Supervised</th>
+      </tr></thead>
+      <tbody>{body}</tbody>
+    </table>
+  </div>
 </div>"""
 
     def _render_trends_section(self, trends: dict[str, Any]) -> str:
@@ -16309,6 +16350,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
 <style>{css}</style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
 
 <header class="topbar">
   <h1 class="topbar-brand">{logo_html}{safe_brand_label}</h1>
@@ -16319,11 +16361,11 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       Generated {self._html_text(report_date)}
       &nbsp;&bull;&nbsp; Check-in {self._html_text(checkin_freq, "N/A")}
     </div>
-    <button class="dark-toggle" id="darkToggle">Dark mode</button>
+    <button class="dark-toggle" id="darkToggle" aria-pressed="false">Dark mode</button>
   </div>
 </header>
 
-<main class="page">
+<main class="page" id="main-content">
 
   <div class="section-block">
     <h2 class="section-block-title">Overall Server Health</h2>
