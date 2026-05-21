@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SourcesView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var csvFiles: [InboxFile] = []
     @State private var families: [SnapshotFamily] = []
     @State private var inboxWatcher = CSVInboxService.DirectoryWatcher()
@@ -145,7 +146,7 @@ struct SourcesView: View {
                 .foregroundStyle(Theme.Text.primary)
             Text("Live API · cached snapshots · CSV inboxes · historical archives")
                 .font(.footnote)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
     }
 
@@ -171,7 +172,7 @@ struct SourcesView: View {
                     Text("· cache \(cliCacheDisplayPath)")
                 }
                 .font(Theme.Fonts.mono(11.5))
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
 
                 VStack(spacing: 0) {
                     ForEach(Array(cliCommands.enumerated()), id: \.element.id) { idx, c in
@@ -180,7 +181,7 @@ struct SourcesView: View {
                             Spacer()
                             Text(c.status)
                                 .font(.caption)
-                                .foregroundStyle(Theme.Text.tertiary)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         .padding(.vertical, 6)
                         if idx < cliCommands.count - 1 {
@@ -215,7 +216,7 @@ struct SourcesView: View {
                                     .foregroundStyle(
                                         f.status == .pending
                                             ? Theme.Colors.gold
-                                            : Theme.Text.tertiary
+                                            : Theme.Text.tertiary(contrast)
                                     )
                                     .font(.system(size: 12))
                                 VStack(alignment: .leading, spacing: 1) {
@@ -237,7 +238,7 @@ struct SourcesView: View {
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis.circle")
-                                        .foregroundStyle(Theme.Text.tertiary)
+                                        .foregroundStyle(Theme.Text.tertiary(contrast))
                                         .font(.system(size: 14))
                                 }
                                 .menuStyle(.button)
@@ -270,7 +271,7 @@ struct SourcesView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
-                    Image(systemName: "externaldrive").foregroundStyle(Theme.Text.tertiary)
+                    Image(systemName: "externaldrive").foregroundStyle(Theme.Text.tertiary(contrast))
                         .font(.system(size: 16))
                     SectionHeader(title: "Snapshot Archive Families")
                     Spacer()
@@ -302,7 +303,7 @@ struct SourcesView: View {
                         TableColumn("Used By") { f in
                             Text(f.usedBy.isEmpty ? "—" : f.usedBy)
                                 .font(.caption)
-                                .foregroundStyle(Theme.Text.tertiary)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
                     .frame(minHeight: 200)
@@ -319,7 +320,7 @@ struct SourcesView: View {
                 .foregroundStyle(Theme.Text.primary)
             Text("Drop Jamf exports here before running a CSV-assisted report.")
                 .font(.caption)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .padding(.vertical, 10)
     }
@@ -331,7 +332,7 @@ struct SourcesView: View {
                 .foregroundStyle(Theme.Text.primary)
             Text("Historical trend snapshots will appear after collection or CSV archival runs.")
                 .font(.caption)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
     }

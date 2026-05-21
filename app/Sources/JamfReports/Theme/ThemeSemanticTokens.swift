@@ -39,8 +39,11 @@ import SwiftUI
 //
 // Increase Contrast notes:
 //   Under .increased, Theme.Text.tertiary() promotes fgMuted → fg2 (+6.69pp).
-//   Under .increased, Theme.Text.disabled() promotes fgDisabled → fgMuted (+0.26pp).
 //   This ensures all body-copy tertiary text passes AA Normal even on winBG3 contexts.
+//   Under .increased, Theme.Text.disabled() promotes fgDisabled → fgMuted (+0.26pp).
+//   disabled() lands at fgMuted (4.38:1 on winBG3) — it remains sub-AA-Normal even when
+//   increased, by design: disabled controls are exempt from WCAG SC 1.4.3. The AA-pass
+//   guarantee above applies to tertiary() only, not disabled().
 
 extension Theme {
 
@@ -52,10 +55,6 @@ extension Theme {
         static let primary:   Color = Theme.Colors.fg
         /// Secondary content — body copy, field values.
         static let secondary: Color = Theme.Colors.fg2
-        /// Supporting / de-emphasized text — labels, captions, placeholder.
-        static let tertiary:  Color = Theme.Colors.fgMuted
-        /// Disabled state.
-        static let disabled:  Color = Theme.Colors.fgDisabled
 
         /// Accessibility-aware supporting text.
         static func tertiary(_ contrast: ColorSchemeContrast) -> Color {

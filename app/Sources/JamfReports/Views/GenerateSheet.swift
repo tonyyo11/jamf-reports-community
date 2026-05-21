@@ -132,6 +132,7 @@ struct GenerateSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -187,7 +188,7 @@ struct GenerateSheet: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .font(Theme.Fonts.bodyText)
             }
             .buttonStyle(.plain)
@@ -239,13 +240,13 @@ struct GenerateSheet: View {
 
             Text(sheetPreview)
                 .font(Theme.Fonts.caption)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
                 Text("For: \(template.audience)")
                     .font(Theme.Fonts.caption)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
 
                 Spacer()
 
@@ -283,10 +284,10 @@ struct GenerateSheet: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(isSelected ? Theme.Colors.gold : Theme.Text.tertiary)
+                    .foregroundStyle(isSelected ? Theme.Colors.gold : Theme.Text.tertiary(contrast))
                     .font(Theme.Fonts.bodyText)
                 Image(systemName: type.icon)
-                    .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.tertiary)
+                    .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.tertiary(contrast))
                     .font(Theme.Fonts.bodyText)
                     .frame(width: 16)
                 VStack(alignment: .leading, spacing: 1) {
@@ -295,7 +296,7 @@ struct GenerateSheet: View {
                         .foregroundStyle(Theme.Text.primary)
                     Text(type.description)
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 Spacer()
             }
@@ -326,7 +327,7 @@ struct GenerateSheet: View {
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: state.collectFresh ? "checkmark.square.fill" : "square")
-                        .foregroundStyle(state.collectFresh ? Theme.Colors.gold : Theme.Text.tertiary)
+                        .foregroundStyle(state.collectFresh ? Theme.Colors.gold : Theme.Text.tertiary(contrast))
                         .font(Theme.Fonts.bodyText)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Collect fresh data first")
@@ -334,7 +335,7 @@ struct GenerateSheet: View {
                             .foregroundStyle(Theme.Text.primary)
                         Text("Uncheck to use cached snapshots without a live jamf-cli call.")
                             .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Text.tertiary)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
                 }
@@ -352,7 +353,7 @@ struct GenerateSheet: View {
                 Image(systemName: "folder")
                     .foregroundStyle(
                         state.folderPickerError != nil
-                            ? Theme.Colors.danger : Theme.Text.tertiary
+                            ? Theme.Colors.danger : Theme.Text.tertiary(contrast)
                     )
                     .font(Theme.Fonts.label)
                 Text(state.resolvedOutputDir(for: profile).path
@@ -361,7 +362,7 @@ struct GenerateSheet: View {
                             with: "~"
                         ))
                     .font(Theme.Fonts.mono(11.5))
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
@@ -402,7 +403,7 @@ struct GenerateSheet: View {
                 .foregroundStyle(Theme.Colors.goldBright)
             Text("(active)")
                 .font(Theme.Fonts.caption)
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
         }
     }
 
@@ -500,7 +501,7 @@ struct GenerateSheet: View {
             Spacer(minLength: 4)
             Text("sha256: \(truncated)")
                 .font(Theme.Fonts.mono(11))
-                .foregroundStyle(Theme.Text.tertiary)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
                 .help("Full hash: \(hash)")
             Button {
                 #if canImport(AppKit)
@@ -646,6 +647,7 @@ private struct RunLogConsoleEmbed: View {
     let lines: [CLIBridge.LogLine]
     let isRunning: Bool
 
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isScrolledToBottom = true
     @State private var cursorVisible = true
     private let cursorTick = Timer.publish(every: 0.55, on: .main, in: .common).autoconnect()
@@ -658,7 +660,7 @@ private struct RunLogConsoleEmbed: View {
                         HStack(spacing: 0) {
                             Text(isRunning ? "Starting\u{2026}" : "No output yet")
                                 .font(Theme.Fonts.mono(11.5))
-                                .foregroundStyle(Theme.Text.tertiary)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .accessibilityAddTraits(.updatesFrequently)
                             blinkingCursor
                         }
@@ -723,6 +725,7 @@ private struct NewScheduleSheetWrapper: View {
     let profiles: [String]
     let onSave: (ScheduleFormState) -> Void
     let onCancel: () -> Void
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -733,7 +736,7 @@ private struct NewScheduleSheetWrapper: View {
                 Spacer()
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .font(Theme.Fonts.bodyText)
                 }
                 .buttonStyle(.plain)
@@ -764,7 +767,7 @@ private struct NewScheduleSheetWrapper: View {
                     }
                     Text(modeDescription(for: form.mode))
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                     formRow(label: "Cadence") {
                         Picker("", selection: $form.cadenceType) {
                             ForEach(ScheduleFormState.CadenceType.allCases) {
@@ -785,7 +788,7 @@ private struct NewScheduleSheetWrapper: View {
                     FieldHelp(text: "Cadence preview: \(form.scheduleString)")
                     Text("Note: schedules always produce XLSX. HTML/PDF format selection from Generate applies to on-demand runs only.")
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(18)

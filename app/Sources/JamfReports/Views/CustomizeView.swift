@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CustomizeView: View {
     @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
     @State private var sheets: [SheetGroup] = []
 
     // Chart toggle state matches the order in the prototype
@@ -44,7 +45,7 @@ struct CustomizeView: View {
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(Theme.Text.tertiary)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Dismiss error banner")
@@ -159,7 +160,7 @@ struct CustomizeView: View {
                 
                 Text("Select up to 4 metrics for the dashboard.")
                     .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(.bottom, 12)
 
                 ForEach(TrendSeries.Metric.allCases) { metric in
@@ -209,7 +210,7 @@ struct CustomizeView: View {
                                 Mono(
                                     text: "\(idx + 1)",
                                     size: 10,
-                                    color: Theme.Text.tertiary
+                                    color: Theme.Text.tertiary(contrast)
                                 )
                                 .frame(width: 18, alignment: .trailing)
                                 Image(systemName: "doc")
@@ -219,7 +220,7 @@ struct CustomizeView: View {
                                     .font(.caption)
                                     .foregroundStyle(Theme.Text.secondary)
                                 Spacer()
-                                Mono(text: item.req, size: 9.5, color: Theme.Text.tertiary)
+                                Mono(text: item.req, size: 9.5, color: Theme.Text.tertiary(contrast))
                             }
                             .padding(.vertical, 4)
                             .padding(.horizontal, 12)
@@ -232,7 +233,7 @@ struct CustomizeView: View {
 
                 Text("Estimated workbook · ~1.1 MB · \(enabledSheets.count) sheets · matplotlib charts embedded")
                     .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         }
     }
@@ -291,7 +292,7 @@ struct CustomizeView: View {
                         .foregroundStyle(Theme.Text.primary)
                     Text(detail)
                         .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
                 Spacer()
                 PNPToggle(isOn: isOn)
@@ -358,6 +359,7 @@ struct CustomizeView: View {
 
 private struct SheetToggleCell: View {
     @Binding var item: SheetItem
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Button {
@@ -391,7 +393,7 @@ private struct SheetToggleCell: View {
                 Mono(
                     text: item.req.uppercased(),
                     size: 9.5,
-                    color: Theme.Text.tertiary
+                    color: Theme.Text.tertiary(contrast)
                 )
             }
             .padding(.horizontal, 10)
