@@ -410,6 +410,7 @@ struct TrendsView: View {
                     }
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
+                    .accessibilityLabel(Self.metricTrendChartLabel(metric.displayLabel))
                     .accessibilityChartDescriptor(TrendLineChartDescriptor(
                         title: "\(metric.displayLabel) Trend",
                         seriesName: metric.displayLabel,
@@ -569,6 +570,7 @@ struct TrendsView: View {
                 .chartYAxis(.hidden)
                 .chartLegend(.hidden)
                 .frame(height: 200)
+                .accessibilityLabel(Self.complianceTrendChartLabel)
                 .accessibilityChartDescriptor(StackedBarChartDescriptor(
                     title: "Compliance Distribution Over Time",
                     dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
@@ -608,6 +610,7 @@ struct TrendsView: View {
                 }
                 .chartLegend(.hidden)
                 .frame(height: 200)
+                .accessibilityLabel(Self.multilineComparisonChartLabel)
                 .accessibilityChartDescriptor(MultiLineChartDescriptor(
                     title: "Security Posture Comparison",
                     seriesList: [
@@ -904,6 +907,21 @@ struct TrendsView: View {
             workspaceStore.toast = Toast(message: error.userMessage, style: .danger)
         }
     }
+
+    // MARK: - Chart accessibility labels (WCAG 1.1.1 / 4.1.2)
+
+    /// VoiceOver container label for the hero metric trend chart. `nonisolated`
+    /// so unit tests can call it without inheriting View `@MainActor` isolation.
+    nonisolated static func metricTrendChartLabel(_ displayLabel: String) -> String {
+        "\(displayLabel) trend over time"
+    }
+
+    /// VoiceOver container label for the stacked compliance-band chart.
+    nonisolated static let complianceTrendChartLabel = "Compliance trend"
+
+    /// VoiceOver container label for the multi-metric comparison chart.
+    nonisolated static let multilineComparisonChartLabel =
+        "Multi-metric comparison: FileVault, NIST compliance, macOS currency"
 }
 
 

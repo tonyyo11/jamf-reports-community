@@ -390,6 +390,7 @@ struct FleetOverviewView: View {
             }
         }
         .frame(height: 200)
+        .accessibilityLabel(Self.stabilityChartLabel)
         .accessibilityChartDescriptor(TrendLineChartDescriptor(
             title: "Stability Trend",
             seriesName: "Stability Index",
@@ -398,6 +399,10 @@ struct FleetOverviewView: View {
             unit: "%"
         ))
     }
+
+    /// VoiceOver container label for the fleet stability trend chart.
+    /// `nonisolated` so unit tests can assert it without View `@MainActor` isolation.
+    nonisolated static let stabilityChartLabel = "Fleet stability trend over time"
 
     private func profileMetricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
         HStack(spacing: 10) {

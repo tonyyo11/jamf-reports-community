@@ -202,10 +202,8 @@ struct RunsView: View {
                         Mono(text: run.logURL.path.replacingOccurrences(
                             of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"
                         ), size: 12, color: Theme.Colors.fg2)
-                        .accessibilityAddTraits(.updatesFrequently)
                     } else {
                         Mono(text: "Select a run to view its log", size: 12, color: Theme.Text.tertiary(contrast))
-                            .accessibilityAddTraits(.updatesFrequently)
                     }
                     Spacer()
                     if let run = selectedRun, let code = run.exitCode {

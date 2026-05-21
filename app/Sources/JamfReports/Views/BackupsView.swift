@@ -173,6 +173,8 @@ struct BackupsView: View {
                                 Mono(text: backup.name, size: 10.5)
                             }
                         }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(backup.accessibilityLabel)
                     }
                     TableColumn("Created") { backup in
                         Mono(text: backup.createdLabel)

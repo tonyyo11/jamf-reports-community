@@ -591,20 +591,14 @@ struct SchedulesView: View {
     // MARK: - Helpers
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {
+        let pill: Pill
         switch s {
-        case .ok:
-            Pill(text: "OK",      tone: .teal,   icon: "checkmark")
-                .accessibilityLabel("Last run status: OK")
-        case .warn:
-            Pill(text: "WARN",    tone: .warn,   icon: "exclamationmark")
-                .accessibilityLabel("Last run status: Warning")
-        case .fail:
-            Pill(text: "FAIL",    tone: .danger, icon: "xmark")
-                .accessibilityLabel("Last run status: Failed")
-        case .partial:
-            Pill(text: "PARTIAL", tone: .warn,   icon: "exclamationmark.triangle.fill")
-                .accessibilityLabel("Last run status: Partial")
+        case .ok:      pill = Pill(text: "OK",      tone: .teal,   icon: "checkmark")
+        case .warn:    pill = Pill(text: "WARN",    tone: .warn,   icon: "exclamationmark")
+        case .fail:    pill = Pill(text: "FAIL",    tone: .danger, icon: "xmark")
+        case .partial: pill = Pill(text: "PARTIAL", tone: .warn,   icon: "exclamationmark.triangle.fill")
         }
+        return pill.accessibilityLabel(s.accessibilityLabel)
     }
 
     private func labelText(for schedule: Schedule) -> String {

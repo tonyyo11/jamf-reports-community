@@ -461,6 +461,22 @@ struct StatTile: View {
     }
 
     private var fullAccessibilityLabel: String {
+        Self.accessibilityLabel(
+            label: label, value: value, delta: delta, deltaTrend: deltaTrend, sub: sub
+        )
+    }
+
+    /// Pure helper, exposed for unit tests. Builds the combined VoiceOver
+    /// announcement: metric name, value, optional delta with trend direction,
+    /// and optional subtitle. `nonisolated` so unit tests can call it without
+    /// inheriting `StatTile`'s implicit `@MainActor` View isolation.
+    nonisolated static func accessibilityLabel(
+        label: String,
+        value: String,
+        delta: String?,
+        deltaTrend: Trend,
+        sub: String?
+    ) -> String {
         var parts = ["\(label): \(value)"]
         if let delta {
             switch deltaTrend {

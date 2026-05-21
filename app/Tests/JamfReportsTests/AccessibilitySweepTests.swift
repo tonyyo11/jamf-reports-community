@@ -5,11 +5,10 @@ import SwiftUI
 @MainActor
 final class AccessibilitySweepTests: XCTestCase {
 
-    // MARK: - BackupsView Accessibility Tests
+    // MARK: - BackupRecord accessibility (production: Models.swift)
 
+    /// BackupsView wires `backup.accessibilityLabel` onto the Table's Backup column.
     func testBackupsViewAccessibilityLabels() {
-
-        // Test that backup records expose accessible summary information
         let backup = BackupRecord(
             name: "test_backup_20240507",
             label: "Test Backup",
@@ -21,12 +20,50 @@ final class AccessibilitySweepTests: XCTestCase {
 
         let summary = backup.accessibilityLabel
         XCTAssertFalse(summary.isEmpty, "Backup should provide non-empty accessibility label")
-        XCTAssertTrue(summary.contains("Test Backup") || summary.contains("test_backup_20240507"),
-                     "Accessibility label should contain backup name or label")
+        XCTAssertTrue(summary.contains("Test Backup"),
+                      "Accessibility label should prefer the backup label")
+        XCTAssertTrue(summary.contains("5 files"),
+                      "Accessibility label should announce the file count")
     }
 
-    // MARK: - SchedulesView Accessibility Tests
+    func testBackupRecordAccessibilitySummary() {
+        let backup = BackupRecord(
+            name: "backup_20240507_143022",
+            label: "",
+            created: Date(timeIntervalSince1970: 1715083822),
+            sizeBytes: 2048,
+            fileCount: 12,
+            url: URL(fileURLWithPath: "/test/backup")
+        )
 
+        let summary = backup.accessibilitySummary
+        XCTAssertFalse(summary.isEmpty, "Backup should provide accessibility summary")
+        XCTAssertTrue(summary.contains("Configuration backup"),
+                      "Summary should describe the record as a configuration backup")
+        XCTAssertTrue(summary.contains("12 files"),
+                      "Summary should mention the file count")
+        XCTAssertTrue(summary.contains("backup_20240507_143022"),
+                      "Summary should fall back to the name when no label is set")
+    }
+
+    func testBackupRecordWithLabelAccessibilitySummary() {
+        let backup = BackupRecord(
+            name: "backup_uuid_123",
+            label: "Pre-migration Backup",
+            created: Date(),
+            sizeBytes: 1024000,
+            fileCount: 8,
+            url: URL(fileURLWithPath: "/test/backup")
+        )
+
+        let summary = backup.accessibilitySummary
+        XCTAssertTrue(summary.contains("Pre-migration"),
+                      "Summary should prefer label over name when available")
+    }
+
+    // MARK: - Schedule status accessibility (production: Models.swift)
+
+    /// SchedulesView.statusPill applies `s.accessibilityLabel` from `Schedule.LastStatus`.
     func testScheduleStatusAccessibilityLabels() {
         let schedule = Schedule(
             name: "Daily Reports",
@@ -43,10 +80,9 @@ final class AccessibilitySweepTests: XCTestCase {
             multiTarget: nil
         )
 
-        let statusLabel = schedule.accessibilityStatusLabel
-        XCTAssertFalse(statusLabel.isEmpty, "Schedule should provide accessibility status label")
-        XCTAssertTrue(statusLabel.contains("succeeded") || statusLabel.contains("OK"),
-                     "Status label should describe success state for .ok status")
+        XCTAssertEqual(schedule.accessibilityStatusLabel, "Last run status: OK",
+                       "An OK schedule must announce its success state")
+        XCTAssertEqual(Schedule.LastStatus.ok.accessibilityLabel, "Last run status: OK")
     }
 
     func testScheduleFailureStatusAccessibilityLabel() {
@@ -65,44 +101,10 @@ final class AccessibilitySweepTests: XCTestCase {
             multiTarget: nil
         )
 
-        let statusLabel = failedSchedule.accessibilityStatusLabel
-        XCTAssertTrue(statusLabel.contains("failed") || statusLabel.contains("FAIL"),
-                     "Status label should describe failure state for .fail status")
-    }
-
-    // MARK: - BackupRecord Model Tests
-
-    func testBackupRecordAccessibilitySummary() {
-        let backup = BackupRecord(
-            name: "backup_20240507_143022",
-            label: "",
-            created: Date(timeIntervalSince1970: 1715083822), // Fixed date for testing
-            sizeBytes: 2048,
-            fileCount: 12,
-            url: URL(fileURLWithPath: "/test/backup")
-        )
-
-        let summary = backup.accessibilitySummary
-        XCTAssertFalse(summary.isEmpty, "Backup should provide accessibility summary")
-        XCTAssertTrue(summary.contains("backup") || summary.contains("configuration"),
-                     "Summary should mention backup or configuration")
-        XCTAssertTrue(summary.contains("12") || summary.contains("files"),
-                     "Summary should mention file count")
-    }
-
-    func testBackupRecordWithLabelAccessibilitySummary() {
-        let backup = BackupRecord(
-            name: "backup_uuid_123",
-            label: "Pre-migration Backup",
-            created: Date(),
-            sizeBytes: 1024000,
-            fileCount: 8,
-            url: URL(fileURLWithPath: "/test/backup")
-        )
-
-        let summary = backup.accessibilitySummary
-        XCTAssertTrue(summary.contains("Pre-migration"),
-                     "Summary should prefer label over name when available")
+        XCTAssertEqual(failedSchedule.accessibilityStatusLabel, "Last run status: Failed",
+                       "A failed schedule must announce its failure state")
+        XCTAssertEqual(Schedule.LastStatus.warn.accessibilityLabel, "Last run status: Warning")
+        XCTAssertEqual(Schedule.LastStatus.partial.accessibilityLabel, "Last run status: Partial")
     }
 
     // MARK: - Basic View Construction Tests
@@ -125,12 +127,12 @@ final class AccessibilitySweepTests: XCTestCase {
         _ = OnboardingView()
     }
 
-    // MARK: - VoiceOver label contract tests
+    // MARK: - StatTile VoiceOver label contract (production: Components.swift)
 
-    /// StatTile must produce a combined accessibility label that includes the metric name and value.
-    /// We mirror the private `fullAccessibilityLabel` logic in a test extension (below).
+    /// StatTile.body applies `.accessibilityLabel(fullAccessibilityLabel)`, which
+    /// delegates to the `nonisolated static accessibilityLabel(...)` helper asserted here.
     func testStatTileAccessibilityLabel() {
-        let label = StatTile.testAccessibilityLabel(
+        let label = StatTile.accessibilityLabel(
             label: "FileVault", value: "91%", delta: nil, deltaTrend: .flat, sub: "Encrypted"
         )
         XCTAssertTrue(label.contains("FileVault"), "StatTile label must contain the metric name")
@@ -140,7 +142,7 @@ final class AccessibilitySweepTests: XCTestCase {
 
     /// StatTile with an upward delta must include the delta and trend direction.
     func testStatTileWithDeltaAccessibilityLabel() {
-        let label = StatTile.testAccessibilityLabel(
+        let label = StatTile.accessibilityLabel(
             label: "Compliance", value: "78%", delta: "+3pp", deltaTrend: .up, sub: nil
         )
         XCTAssertTrue(label.contains("up"), "Upward delta must be announced as 'up' for VoiceOver")
@@ -149,7 +151,7 @@ final class AccessibilitySweepTests: XCTestCase {
 
     /// StatTile with a downward delta must include the 'down' direction.
     func testStatTileWithDownDeltaAccessibilityLabel() {
-        let label = StatTile.testAccessibilityLabel(
+        let label = StatTile.accessibilityLabel(
             label: "Stale Devices", value: "42", delta: "−5", deltaTrend: .down, sub: nil
         )
         XCTAssertTrue(label.contains("down"), "Downward delta must be announced as 'down'")
@@ -190,62 +192,5 @@ final class AccessibilitySweepTests: XCTestCase {
         // Summary must list all slices so VoiceOver can read out the full distribution
         XCTAssertTrue(ax.summary?.contains("Tahoe") ?? false)
         XCTAssertTrue(ax.summary?.contains("Sonoma") ?? false)
-    }
-}
-
-// MARK: - Test Extensions
-
-extension BackupRecord {
-    /// Accessibility label for VoiceOver describing the backup
-    var accessibilityLabel: String {
-        let displayName = label.isEmpty ? name : label
-        let sizeStr = FileDisplay.size(sizeBytes)
-        return "\(displayName), \(fileCount) files, \(sizeStr), created \(createdLabel)"
-    }
-
-    /// Accessibility summary for VoiceOver describing the backup content and purpose
-    var accessibilitySummary: String {
-        let displayName = label.isEmpty ? name : label
-        return "Configuration backup: \(displayName), \(fileCount) files, created \(createdLabel)"
-    }
-}
-
-extension Schedule {
-    /// Accessibility label for schedule status pills
-    var accessibilityStatusLabel: String {
-        switch lastStatus {
-        case .ok:
-            return "Schedule succeeded"
-        case .warn:
-            return "Schedule completed with warnings"
-        case .fail:
-            return "Schedule failed"
-        case .partial:
-            return "Schedule completed with partial success"
-        }
-    }
-}
-
-extension StatTile {
-    /// Mirrors the private `fullAccessibilityLabel` logic from StatTile so tests
-    /// can verify the VoiceOver announcement contract without access to the private property.
-    /// `nonisolated` so test methods can call it without @MainActor.
-    nonisolated static func testAccessibilityLabel(
-        label: String,
-        value: String,
-        delta: String?,
-        deltaTrend: Trend,
-        sub: String?
-    ) -> String {
-        var parts = ["\(label): \(value)"]
-        if let delta {
-            switch deltaTrend {
-            case .up:   parts.append("up \(delta)")
-            case .down: parts.append("down \(delta)")
-            case .flat: break
-            }
-        }
-        if let sub { parts.append(sub) }
-        return parts.joined(separator: ", ")
     }
 }
