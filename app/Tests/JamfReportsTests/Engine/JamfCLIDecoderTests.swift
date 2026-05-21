@@ -741,4 +741,45 @@ final class JamfCLIDecoderTests: XCTestCase {
             .deletingLastPathComponent()   // worktree root
             .appendingPathComponent("tests/fixtures")
     }
+
+    // MARK: - Negative key-mapping (Epic #102, item #5)
+    //
+    // Every test above asserts decoded values for valid JSON. None assert that
+    // a *required* key's absence fails the decode — so silently changing a
+    // required field to optional, or breaking a CodingKey mapping, would pass
+    // the whole suite. These lift the `keyNotFound` case into explicit
+    // `XCTAssertThrowsError` for a representative plain key and snake_case-
+    // mapped key on `UpdateStatusReport` (`total` non-optional Int;
+    // `status_summary` mapped via `CodingKeys.statusSummary`).
+
+    func testUpdateStatusReportMissingTotalThrowsKeyNotFound() {
+        // `total` is a non-optional Int. JSON without it must throw, not
+        // decode to a default — a regression making it optional fails here.
+        let json = #"[{"status_summary":[]}]"#
+        XCTAssertThrowsError(
+            try JSONDecoder().decode([UpdateStatusReport].self, from: Data(json.utf8))
+        ) { error in
+            guard case DecodingError.keyNotFound(let key, _) = error else {
+                return XCTFail("Expected DecodingError.keyNotFound, got \(error)")
+            }
+            XCTAssertEqual(key.stringValue, "total",
+                           "The missing key must be reported as `total`")
+        }
+    }
+
+    func testUpdateStatusReportMissingStatusSummaryThrowsKeyNotFound() {
+        // Guards the snake_case CodingKey: `status_summary` is required and
+        // mapped from `CodingKeys.statusSummary`. A broken mapping would throw
+        // keyNotFound for a *different* key name than "status_summary".
+        let json = #"[{"total":5}]"#
+        XCTAssertThrowsError(
+            try JSONDecoder().decode([UpdateStatusReport].self, from: Data(json.utf8))
+        ) { error in
+            guard case DecodingError.keyNotFound(let key, _) = error else {
+                return XCTFail("Expected DecodingError.keyNotFound, got \(error)")
+            }
+            XCTAssertEqual(key.stringValue, "status_summary",
+                           "The missing key must be reported under its JSON name")
+        }
+    }
 }
