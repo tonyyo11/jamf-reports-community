@@ -15154,7 +15154,10 @@ a:hover { text-decoration: underline; }
   const toggle = document.getElementById('darkToggle');
   const applyDark = (enabled) => {
     document.body.classList.toggle('dark', enabled);
-    if (toggle) toggle.textContent = enabled ? 'Light mode' : 'Dark mode';
+    if (toggle) {
+      toggle.textContent = enabled ? 'Light mode' : 'Dark mode';
+      toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    }
     try { localStorage.setItem(key, enabled ? '1' : '0'); } catch (err) {}
   };
   let saved = null;
@@ -15313,6 +15316,12 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       });
       rows.forEach((row) => tbody.appendChild(row));
       if (emptyRow) tbody.appendChild(emptyRow);
+      document.querySelectorAll('[data-flagged-sort]').forEach((btn) => {
+        const th = btn.closest('th');
+        if (th) th.setAttribute('aria-sort', 'none');
+      });
+      const activeTh = button.closest('th');
+      if (activeTh) activeTh.setAttribute('aria-sort', sortAsc ? 'ascending' : 'descending');
       applyFilter();
     });
   });
@@ -15598,9 +15607,10 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             if console_url and query_value:
                 query = urllib.parse.quote(query_value, safe="")
                 open_link = f"{console_url}/computers.html?query={query}&queryType=COMPUTERS&version="
+            dev_name_safe = self._html_text(str(dev.get("name") or ""))
             link_html = (
                 f'<a href="{self._html_text(self._safe_href(open_link))}" target="_blank" '
-                'rel="noopener noreferrer">Open</a>'
+                f'rel="noopener noreferrer" aria-label="Open {dev_name_safe} in Jamf Pro">Open</a>'
                 if open_link
                 else "—"
             )
@@ -15631,15 +15641,15 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     <table class="data-table" id="flaggedTable">
       <caption class="sr-only">Devices flagged with one or more security control failures.</caption>
       <thead><tr>
-        <th scope="col">
+        <th scope="col" aria-sort="none">
           <button type="button" class="table-sort"
             data-flagged-sort="name">Device ↕</button>
         </th>
-        <th scope="col">
+        <th scope="col" aria-sort="none">
           <button type="button" class="table-sort"
             data-flagged-sort="serial">Serial ↕</button>
         </th>
-        <th scope="col">
+        <th scope="col" aria-sort="none">
           <button type="button" class="table-sort"
             data-flagged-sort="os">macOS ↕</button>
         </th>
@@ -16319,7 +16329,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       Generated {self._html_text(report_date)}
       &nbsp;&bull;&nbsp; Check-in {self._html_text(checkin_freq, "N/A")}
     </div>
-    <button class="dark-toggle" id="darkToggle">Dark mode</button>
+    <button class="dark-toggle" id="darkToggle" aria-pressed="false">Dark mode</button>
   </div>
 </header>
 

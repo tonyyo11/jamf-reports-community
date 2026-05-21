@@ -187,7 +187,7 @@ struct HtmlReport: Sendable {
               <h1>\(titleEscaped)</h1>
               <p class="subtitle">Jamf Instance Report · \(ts)</p>
             </div>
-            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">&#9728; / &#9790;</button>
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" aria-pressed="false">&#9728; / &#9790;</button>
           </div>
         </header>
         <main>
@@ -471,7 +471,7 @@ struct HtmlReport: Sendable {
               <h1>\(titleEscaped)</h1>
               <p class="subtitle">Jamf Instance Report · \(ts)</p>
             </div>
-            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">&#9728; / &#9790;</button>
+            <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" aria-pressed="false">&#9728; / &#9790;</button>
           </div>
         </header>
         <main>
@@ -1512,6 +1512,8 @@ struct HtmlReport: Sendable {
           const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
           html.setAttribute('data-theme', next);
           localStorage.setItem('jr-theme', next);
+          const btn = document.querySelector('.theme-toggle');
+          if (btn) btn.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
         }
         </script>
         """
