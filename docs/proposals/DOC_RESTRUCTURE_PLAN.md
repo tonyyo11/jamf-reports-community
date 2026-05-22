@@ -130,7 +130,7 @@ other tab is user-toggleable via Settings → Sidebar Visibility, backed by
 | **AUTOMATION** | Schedules (`SchedulesView.swift`), Run History (`RunsView.swift`) |
 | **CONFIGURATION** | Config (`ConfigView.swift`), Customize (`CustomizeView.swift`), Data Sources (`SourcesView.swift`), Backups (`BackupsView.swift`) |
 | **SYSTEM** | Settings (`SettingsView.swift`) |
-| (off-sidebar) | Onboarding (`OnboardingView.swift`) — reached only on first run or via the workspace chip's "Add workspace…" item. |
+| (off-sidebar) | Onboarding (`OnboardingView.swift`) — routed via the sidebar workspace chip → "Add workspace…" (`Sidebar.swift:257` sets `activeTab = .onboarding`). The first-run full-screen path (`ContentView.swift:14`, `profiles.isEmpty && !demoMode`) is effectively unreachable — `WorkspaceStore` forces demo mode whenever no real profile exists, so that condition never holds; flag the dead branch to Epic #104. |
 
 ### Capabilities verifiable in source
 
@@ -505,44 +505,47 @@ it — the plan only schedules it.)*
 
 ## 7. Screenshot audit
 
-**The maintainer supplied a fresh 28-capture v2.0 demo set on 2026-05-22**
-(`~/Desktop/Screenshots/JamfReportsDemoScreenshot/`, timestamped 13:02–13:04). This set
-**supersedes the 7 PNGs currently in `docs/wiki/images/`**. The in-repo 7 were reviewed
-earlier and found to be genuine v2.0 captures but saved under scrambled filenames (every
-file named a different screen than it contained). The plan no longer renames those 7 —
-**PR-B deletes them and replaces them** with a curated selection from the new set.
+**The maintainer supplied a fresh 28-capture v2.0 demo set on 2026-05-22**, originally in
+`~/Desktop/Screenshots/JamfReportsDemoScreenshot/`. All 28 were reviewed visually, then
+**renamed from their capture timestamps to descriptive names** (with the maintainer's
+go-ahead) so the set is self-describing — the names in the tables below are the actual
+on-disk filenames. This set **supersedes the 7 PNGs currently in `docs/wiki/images/`**,
+which were reviewed earlier and found to be genuine v2.0 captures saved under scrambled
+filenames (each named a different screen than it contained). The plan no longer renames
+those 7 — **PR-B deletes them and replaces them** with a curated selection from the new
+set.
 
-All 28 new captures are v2.0-current and org-neutral: they use the built-in "Meridian
-Health" demo tenant (the app's `DemoData` fictional org — no real tenant data), show the
-shipped v2.0 sidebar grouping (REPORTS / POSTURE / OPERATIONS / FLEET / AUTOMATION /
-CONFIGURATION / SYSTEM), and match the §2 code-verified layouts — the Config capture
-shows the seven `ConfigTab` tabs; the Schedules capture shows the four run modes.
+All 28 captures are v2.0-current and org-neutral: they use the built-in "Meridian Health"
+demo tenant (the app's `DemoData` fictional org — no real tenant data), show the shipped
+v2.0 sidebar grouping (REPORTS / POSTURE / OPERATIONS / FLEET / AUTOMATION / CONFIGURATION
+/ SYSTEM), and match the §2 code-verified layouts — the Config capture shows the seven
+`ConfigTab` tabs; the Schedules capture shows the four run modes.
 
-### The 28-capture source set (reviewed visually)
+### The 28-capture source set (renamed, reviewed visually)
 
-| Screen | Source file (`Screenshot 2026-05-22 at …`) |
+| Screen | File name(s) |
 |---|---|
-| Overview — "Meridian Health Fleet Overview" | `1.02.56 PM` |
-| Overview ▸ Stability Index (drill-in) | `1.02.59 PM` |
-| Overview ▸ Top Failing Rules (drill-in) | `1.03.05 PM` |
-| Overview ▸ Security Agents ▸ 1Password (drill-in) | `1.03.10 PM` |
-| Fleet Overview — multi-profile roll-up | `1.03.13 PM` |
-| Fleet Overview ▸ meridian-prod (profile drill-in) | `1.03.16 PM` |
-| Devices — inventory + detail panel | `1.03.19 PM` |
-| Historical Trends — default / Stability Index / FileVault metric | `1.02.52`, `1.03.30`, `1.03.34 PM` |
-| Health Audit — Instance Health Audit (empty state) | `1.03.39 PM` |
-| Security Posture — score ring | `1.03.45 PM` |
-| Compliance Posture — bands | `1.03.53 PM` |
-| Offline Outreach (two stale-tier tabs) | `1.03.56`, `1.04.01 PM` |
-| Patch Compliance | `1.04.03 PM` |
-| OS Updates | `1.04.08 PM` |
-| Policies & Profiles — Policies tab / Profiles tab | `1.04.12`, `1.04.15 PM` |
-| Extension Attributes | `1.04.17 PM` |
-| Mobile Fleet | `1.04.19 PM` |
-| Schedules — Scheduled Runs | `1.04.27 PM` |
-| Config — Columns / Security Agents / Thresholds / Platform API tabs | `1.04.30`, `1.04.32`, `1.04.37`, `1.04.41 PM` |
-| Customize — Customize Reports | `1.04.47 PM` |
-| Data Sources | `1.04.49 PM` |
+| Overview — "Meridian Health Fleet Overview" | `overview.png` |
+| Overview ▸ Stability Index (drill-in) | `overview-stability-index.png` |
+| Overview ▸ Top Failing Rules (drill-in) | `overview-top-failing-rules.png` |
+| Overview ▸ Security Agents ▸ 1Password (drill-in) | `overview-security-agent-detail.png` |
+| Fleet Overview — multi-profile roll-up | `fleet-overview.png` |
+| Fleet Overview ▸ meridian-prod (profile drill-in) | `fleet-overview-profile-detail.png` |
+| Devices — inventory + detail panel | `devices.png` |
+| Historical Trends — default / Stability Index / FileVault metric | `historical-trends.png`, `historical-trends-stability-index.png`, `historical-trends-filevault.png` |
+| Health Audit — Instance Health Audit (empty state) | `health-audit.png` |
+| Security Posture — score ring | `security-posture.png` |
+| Compliance Posture — bands | `compliance-posture.png` |
+| Offline Outreach (two stale-tier tabs) | `offline-outreach.png`, `offline-outreach-dormant.png` |
+| Patch Compliance | `patch-compliance.png` |
+| OS Updates | `os-updates.png` |
+| Policies & Profiles — Policies tab / Profiles tab | `policies-profiles-policies.png`, `policies-profiles-profiles.png` |
+| Extension Attributes | `extension-attributes.png` |
+| Mobile Fleet | `mobile-fleet.png` |
+| Schedules — Scheduled Runs | `schedules.png` |
+| Config — Columns / Security Agents / Thresholds / Platform API tabs | `config-editor.png`, `config-security-agents.png`, `config-thresholds.png`, `config-platform-api.png` |
+| Customize — Customize Reports | `customize.png` |
+| Data Sources | `data-sources.png` |
 
 This covers 19 of the 24 navigable screens. **Not captured:** Device Lookup, Generated
 (Reports), Run History, Settings, and — the only gap the docs care about — **Onboarding**.
@@ -551,19 +554,20 @@ for the README hero, and a Schedules shot for wiki `05`, both now exist.
 
 ### Curated set for the docs (8 images)
 
-Per small-set discipline, the wiki/README use a curated 8 — not all 28. PR-B copies these
-from the source set into `docs/wiki/images/` under the names below.
+Per small-set discipline, the wiki/README use a curated 8 — not all 28. **The eight files
+below are already named exactly as the wiki needs them**, so PR-B simply copies them into
+`docs/wiki/images/` — no renaming required.
 
-| Wiki filename | Depicts | Source | Used on |
-|---|---|---|---|
-| `overview.png` | Overview — Meridian Health Fleet Overview | `1.02.56 PM` | README hero; wiki `Home`; wiki `03` |
-| `devices.png` | Devices — inventory + detail panel | `1.03.19 PM` | wiki `03` |
-| `security-posture.png` | Security Posture — score ring | `1.03.45 PM` | wiki `03` |
-| `patch-compliance.png` | Patch Compliance | `1.04.03 PM` | wiki `03` |
-| `mobile-fleet.png` | Mobile Fleet | `1.04.19 PM` | wiki `03` |
-| `historical-trends.png` | Historical Trends (default view) | `1.02.52 PM` | wiki `06` |
-| `schedules.png` | Schedules — Scheduled Runs | `1.04.27 PM` | wiki `05` |
-| `config-editor.png` | Config — Columns tab | `1.04.30 PM` | wiki `04` |
+| Wiki filename | Depicts | Used on |
+|---|---|---|
+| `overview.png` | Overview — Meridian Health Fleet Overview | README hero; wiki `Home`; wiki `03` |
+| `devices.png` | Devices — inventory + detail panel | wiki `03` |
+| `security-posture.png` | Security Posture — score ring | wiki `03` |
+| `patch-compliance.png` | Patch Compliance | wiki `03` |
+| `mobile-fleet.png` | Mobile Fleet | wiki `03` |
+| `historical-trends.png` | Historical Trends (default view) | wiki `06` |
+| `schedules.png` | Schedules — Scheduled Runs | wiki `05` |
+| `config-editor.png` | Config — Columns tab | wiki `04` |
 
 `overview`, `devices`, `security-posture`, `patch-compliance`, and `mobile-fleet` give
 wiki `03` one illustration per sidebar group (REPORTS / POSTURE / OPERATIONS / FLEET);
@@ -571,16 +575,16 @@ the other dashboards on that page are described in text. `historical-trends`,
 `schedules`, and `config-editor` illustrate their dedicated pages.
 
 **Alternates** — swap from the source set if a different shot reads better when a page is
-written: Fleet Overview (`1.03.13`), Compliance Posture (`1.03.53`), OS Updates
-(`1.04.08`), Extension Attributes (`1.04.17`), Policies & Profiles (`1.04.12`), Customize
-(`1.04.47`), Data Sources (`1.04.49`), or any drill-in detail view. Keep the on-wiki
-total at ~8.
+written: `fleet-overview.png`, `compliance-posture.png`, `os-updates.png`,
+`extension-attributes.png`, `policies-profiles-policies.png`, `customize.png`,
+`data-sources.png`, or any drill-in detail view. Keep the on-wiki total at ~8.
 
 ### Still missing — one capture
 
-The 28-shot set has **no Onboarding-flow capture**. Wiki `02` (App Onboarding) either
-gets one screenshot the maintainer still must take (a step of the 7-step flow), or ships
-without an image — see §10 Q6. This is the only outstanding screenshot dependency.
+The 28-shot set has **no Onboarding-flow capture**. Wiki `02` (App Onboarding) needs one
+screenshot of the 7-step flow. The flow is reachable in the running app via the sidebar
+workspace chip → "Add workspace…" (`Sidebar.swift:257`), so the maintainer can capture it
+without resetting the app — see §10 Q6. This is the only outstanding screenshot dependency.
 
 ### Path note
 
