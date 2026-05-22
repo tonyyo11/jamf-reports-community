@@ -31,6 +31,10 @@ struct DeviceLookupView: View {
     /// to cached data (`CLIBridge.DeviceDetailResult.fromCache == true`); nil when
     /// the live API call succeeded. Drives the staleness banner above the result.
     @State private var staleSince: Date?
+    /// Set when a codesign-gate rejection or launch failure produces a user-actionable
+    /// diagnostic. Surfaced in the failure/not-found card message so the user sees
+    /// the real cause rather than the generic "cache may be stale" copy.
+    @State private var lookupDiagnostic: String?
     @FocusState private var searchFocused: Bool
 
     enum LookupState: Equatable {
@@ -373,20 +377,28 @@ struct DeviceLookupView: View {
         detail = nil
         resolvedKind = kind
         staleSince = nil
+        lookupDiagnostic = nil
 
         Task {
+            let collector = FailLineCollector()
             let result: CLIBridge.DeviceDetailResult?
             switch kind {
             case .computer:
-                result = await CLIBridge().deviceDetailWithProvenance(profile: profile, deviceID: id)
+                result = await CLIBridge().deviceDetailWithProvenance(
+                    profile: profile, deviceID: id, onLine: { line in collector.capture(line) }
+                )
             case .mobile:
-                result = await CLIBridge().mobileDeviceDetailWithProvenance(profile: profile, deviceID: id)
+                result = await CLIBridge().mobileDeviceDetailWithProvenance(
+                    profile: profile, deviceID: id, onLine: { line in collector.capture(line) }
+                )
             }
+            lookupDiagnostic = collector.firstFail()
             guard requestKey == key else { return }
             guard let result else {
-                state = .unavailable(
-                    "jamf-cli could not load the \(kind.displayLabel.lowercased()) detail for ID `\(id)` on profile `\(profile)`. Run `\(cliCommand(kind: kind, profile: profile, id: id))` in a terminal for the underlying error."
-                )
+                let base = "jamf-cli could not load the \(kind.displayLabel.lowercased()) detail " +
+                    "for ID `\(id)` on profile `\(profile)`. " +
+                    "Run `\(cliCommand(kind: kind, profile: profile, id: id))` in a terminal for the underlying error."
+                state = .unavailable(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
                 return
             }
             staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
@@ -410,10 +422,14 @@ struct DeviceLookupView: View {
         detail = nil
         resolvedKind = nil
         staleSince = nil
+        lookupDiagnostic = nil
 
         Task {
             let bridge = CLIBridge()
-            if let result = await bridge.deviceDetailWithProvenance(profile: profile, deviceID: term) {
+            let collector = FailLineCollector()
+            if let result = await bridge.deviceDetailWithProvenance(
+                profile: profile, deviceID: term, onLine: { line in collector.capture(line) }
+            ) {
                 guard requestKey == key else { return }
                 if let decoded = try? DeviceDetail.decode(from: result.data, lookupID: term) {
                     resolvedKind = .computer
@@ -423,7 +439,9 @@ struct DeviceLookupView: View {
                     return
                 }
             }
-            if let result = await bridge.mobileDeviceDetailWithProvenance(profile: profile, deviceID: term) {
+            if let result = await bridge.mobileDeviceDetailWithProvenance(
+                profile: profile, deviceID: term, onLine: { line in collector.capture(line) }
+            ) {
                 guard requestKey == key else { return }
                 if let decoded = try? DeviceDetail.decode(from: result.data, lookupID: term) {
                     resolvedKind = .mobile
@@ -433,10 +451,11 @@ struct DeviceLookupView: View {
                     return
                 }
             }
+            lookupDiagnostic = collector.firstFail()
             guard requestKey == key else { return }
-            state = .noMatchOfferRefresh(
-                "No cached match for `\(term)` on profile `\(profile)`, and direct ID lookups for computer and mobile both failed. The cache may be stale."
-            )
+            let base = "No cached match for `\(term)` on profile `\(profile)`, and direct ID lookups " +
+                "for computer and mobile both failed. The cache may be stale."
+            state = .noMatchOfferRefresh(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
         }
     }
 
@@ -500,5 +519,28 @@ struct DeviceLookupView: View {
             }
         }
         return nil
+    }
+}
+
+// MARK: - FailLineCollector
+
+/// Thread-safe collector for `.fail`-level LogLines produced by `runDeviceDetailProcess`.
+/// Captured into the `@Sendable` `onLine` closure; read back on MainActor after the
+/// await returns. Mirrors the `LogLineCollector` pattern from CLIBridgeCodesignGateTests.
+private final class FailLineCollector: @unchecked Sendable {
+    private var first: String?
+    private let lock = NSLock()
+
+    func capture(_ line: CLIBridge.LogLine) {
+        guard line.level == .fail else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        if first == nil { first = line.text }
+    }
+
+    func firstFail() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return first
     }
 }

@@ -160,6 +160,38 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
         XCTAssertEqual(exit, -1, "runDeviceDetailProcess must invoke the codesign gate before spawning jamf-cli")
     }
 
+    func testRunDeviceDetailProcessGateRejectionEmitsOnLineCallback() async throws {
+        // Verify that on a codesign-gate rejection, runDeviceDetailProcess invokes
+        // the onLine callback with a .fail LogLine in addition to AppLogger.
+        // Uses the same technique as testRunDeviceDetailProcessGatesUnverifiedJamfCLI:
+        // a fake unsigned "jamf-cli" file that the real CodeSignVerifier rejects.
+        let fake = tempDir.appendingPathComponent("jamf-cli")
+        try Data("unsigned-fake-bytes".utf8).write(to: fake)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o755)],
+            ofItemAtPath: fake.path
+        )
+
+        let collector = LogLineCollector()
+        let exit = await runDeviceDetailProcess(
+            executable: fake,
+            arguments: ["pro", "device", "1", "--output", "json"],
+            outputDirectory: tempDir.appendingPathComponent("out2", isDirectory: true),
+            onLine: { line in collector.append(line) }
+        )
+        XCTAssertEqual(exit, -1, "Codesign gate must reject the unsigned binary")
+        let failLines = collector.snapshot().filter { $0.level == CLIBridge.LogLevel.fail }
+        XCTAssertFalse(
+            failLines.isEmpty,
+            "runDeviceDetailProcess must invoke onLine with a .fail line on gate rejection; got \(collector.snapshot().map { $0.text })"
+        )
+        let mentionsSignature = failLines.contains { $0.text.lowercased().contains("signature") }
+        XCTAssertTrue(
+            mentionsSignature,
+            "The .fail LogLine must mention signature verification: got \(failLines.map { $0.text })"
+        )
+    }
+
     func testRunDeviceDetailProcessAllowsCachedVerifiedJamfCLI() async throws {
         // Pre-populate the cache with a fingerprint matching a fake
         // "jamf-cli" file. The gate hits the cache and proceeds; the

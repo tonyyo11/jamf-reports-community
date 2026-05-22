@@ -720,7 +720,8 @@ final class CLIBridge {
 
     nonisolated func deviceDetailWithProvenance(
         profile: String,
-        deviceID: String
+        deviceID: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         guard await authGuard(profile: profile, onLine: { line in
             AppLogger.cli.warning("deviceDetail auth: \(line.text, privacy: .private)")
@@ -729,7 +730,8 @@ final class CLIBridge {
             profile: profile,
             deviceID: deviceID,
             cacheSubdir: "devices",
-            jamfCLIArgs: { id in ["pro", "device", id] }
+            jamfCLIArgs: { id in ["pro", "device", id] },
+            onLine: onLine
         )
     }
 
@@ -742,7 +744,8 @@ final class CLIBridge {
 
     nonisolated func mobileDeviceDetailWithProvenance(
         profile: String,
-        deviceID: String
+        deviceID: String,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         guard await authGuard(profile: profile, onLine: { line in
             AppLogger.cli.warning("mobileDeviceDetail auth: \(line.text, privacy: .private)")
@@ -751,7 +754,8 @@ final class CLIBridge {
             profile: profile,
             deviceID: deviceID,
             cacheSubdir: "mobile-devices",
-            jamfCLIArgs: { id in ["pro", "mobile-devices", "get", id] }
+            jamfCLIArgs: { id in ["pro", "mobile-devices", "get", id] },
+            onLine: onLine
         )
     }
 
@@ -765,7 +769,8 @@ final class CLIBridge {
         profile: String,
         deviceID: String,
         cacheSubdir: String,
-        jamfCLIArgs: (String) -> [String]
+        jamfCLIArgs: (String) -> [String],
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard ProfileService.isValid(profile),
@@ -786,7 +791,8 @@ final class CLIBridge {
                 arguments: baseArgs + [
                     "--output", "json", "--no-input", "--out-file", partial.path,
                 ],
-                outputDirectory: devicesDir
+                outputDirectory: devicesDir,
+                onLine: onLine
             )
             if exit == 0 {
                 do {
@@ -1611,13 +1617,13 @@ final class CLIBridge {
 func runDeviceDetailProcess(
     executable: URL,
     arguments: [String],
-    outputDirectory: URL
+    outputDirectory: URL,
+    onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
 ) async -> Int32 {
     await Task.detached(priority: .userInitiated) {
         // M-01: this path bypasses CLIBridge.run / runAndCapture (it
         // builds its own Process for high-throughput per-device detail
-        // fetches), so it has to invoke the codesign gate directly. No
-        // onLine consumer here — log via AppLogger only.
+        // fetches), so it has to invoke the codesign gate directly.
         if executable.lastPathComponent == "jamf-cli" {
             switch JamfCLIIdentity.ensureVerifiedJamfCLI(executable: executable) {
             case .success:
@@ -1626,6 +1632,10 @@ func runDeviceDetailProcess(
                 AppLogger.cli.error(
                     "runDeviceDetailProcess: codesign gate rejected \(executable.path, privacy: .public): \(String(describing: error), privacy: .private)"
                 )
+                onLine?(.init(
+                    timestamp: Date(), level: .fail,
+                    text: "jamf-cli failed code-signature verification — the binary may be tampered or unsigned. Reinstall jamf-cli."
+                ))
                 return -1
             }
         }
@@ -1658,6 +1668,10 @@ func runDeviceDetailProcess(
             AppLogger.cli.error(
                 "runDeviceDetailProcess launch failed: \(error.localizedDescription, privacy: .private)"
             )
+            onLine?(.init(
+                timestamp: Date(), level: .fail,
+                text: "jamf-cli could not be launched — check that jamf-cli is installed and the executable is intact."
+            ))
             return -1
         }
     }.value
