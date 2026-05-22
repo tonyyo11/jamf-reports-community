@@ -147,13 +147,17 @@ extension Theme.Fonts {
     /// Small label — field labels, captions above controls. Scales off `.callout` (12pt base).
     static let label: Font = .callout
 
-    /// Fine caption — helper text, inline timestamps. Scales off `.caption` (11pt base).
+    /// Fine caption — helper text, inline timestamps. Scales off the `.caption`
+    /// text style with Dynamic Type.
     static let caption: Font = .caption
 
     /// Eyebrow / kicker — uppercase tracked monospaced label above titles.
     static let kicker: Font = .system(.caption, design: .monospaced).weight(.semibold)
 
     /// Display numeral for KPI values. Scales off `.title` (22pt base).
+    /// Scales aggressively — consumers must size their container with
+    /// `.frame(minWidth:)`, never `.frame(width:)`, to avoid clipping at
+    /// large Dynamic Type sizes (see PR #118).
     static let metric: Font = .system(.title, design: .serif, weight: .semibold)
 
     /// Default-size monospaced body. Tests reference this property form;
