@@ -505,32 +505,33 @@ it — the plan only schedules it.)*
 
 ## 7. Screenshot audit
 
-**The maintainer supplied a fresh 28-capture v2.0 demo set on 2026-05-22**, originally in
-`~/Desktop/Screenshots/JamfReportsDemoScreenshot/`. All 28 were reviewed visually, then
-**renamed from their capture timestamps to descriptive names** (with the maintainer's
-go-ahead) so the set is self-describing — the names in the tables below are the actual
-on-disk filenames. This set **supersedes the 7 PNGs currently in `docs/wiki/images/`**,
-which were reviewed earlier and found to be genuine v2.0 captures saved under scrambled
-filenames (each named a different screen than it contained). The plan no longer renames
-those 7 — **PR-B deletes them and replaces them** with a curated selection from the new
-set.
+**The maintainer supplied a v2.0 demo capture set on 2026-05-22 — 37 screenshots in two
+batches** (28 dashboard/screen captures, then 9 onboarding-flow + Settings captures),
+originally in `~/Desktop/Screenshots/JamfReportsDemoScreenshot/`. All 37 were reviewed
+visually, then **renamed from their capture timestamps to descriptive names** (with the
+maintainer's go-ahead) so the set is self-describing — the names in the tables below are
+the actual on-disk filenames. This set **supersedes the 7 PNGs currently in
+`docs/wiki/images/`**, which were reviewed earlier and found to be genuine v2.0 captures
+saved under scrambled filenames (each named a different screen than it contained). The
+plan no longer renames those 7 — **PR-B deletes them and replaces them** with a curated
+selection from the new set.
 
-All 28 captures are v2.0-current and org-neutral: they use the built-in "Meridian Health"
-demo tenant (the app's `DemoData` fictional org — no real tenant data), show the shipped
-v2.0 sidebar grouping (REPORTS / POSTURE / OPERATIONS / FLEET / AUTOMATION / CONFIGURATION
-/ SYSTEM), and match the §2 code-verified layouts — the Config capture shows the seven
-`ConfigTab` tabs; the Schedules capture shows the four run modes.
+All 37 captures are v2.0-current and org-neutral: they use the built-in "Meridian Health"
+demo tenant plus a placeholder "testing" profile, show the shipped v2.0 sidebar grouping
+(REPORTS / POSTURE / OPERATIONS / FLEET / AUTOMATION / CONFIGURATION / SYSTEM), and match
+the §2 code-verified layouts — the Config capture shows the seven `ConfigTab` tabs, the
+Schedules capture shows the four run modes, the onboarding captures show the 7-step flow.
+**One pre-publish check:** `onboarding-authenticate.png` and `settings.png` show a Jamf
+Pro URL and Client ID — confirm those are placeholders, not a real tenant, before publish.
 
-### The 28-capture source set (renamed, reviewed visually)
+### The source set (37 captures, renamed, reviewed visually)
 
 | Screen | File name(s) |
 |---|---|
 | Overview — "Meridian Health Fleet Overview" | `overview.png` |
-| Overview ▸ Stability Index (drill-in) | `overview-stability-index.png` |
-| Overview ▸ Top Failing Rules (drill-in) | `overview-top-failing-rules.png` |
-| Overview ▸ Security Agents ▸ 1Password (drill-in) | `overview-security-agent-detail.png` |
-| Fleet Overview — multi-profile roll-up | `fleet-overview.png` |
-| Fleet Overview ▸ meridian-prod (profile drill-in) | `fleet-overview-profile-detail.png` |
+| Overview ▸ Stability Index / Top Failing Rules / Security-agent detail (drill-ins) | `overview-stability-index.png`, `overview-top-failing-rules.png`, `overview-security-agent-detail.png` |
+| Overview — empty live workspace (post-onboarding "testing" profile) | `overview-live-workspace.png` |
+| Fleet Overview — multi-profile roll-up / profile drill-in | `fleet-overview.png`, `fleet-overview-profile-detail.png` |
 | Devices — inventory + detail panel | `devices.png` |
 | Historical Trends — default / Stability Index / FileVault metric | `historical-trends.png`, `historical-trends-stability-index.png`, `historical-trends-filevault.png` |
 | Health Audit — Instance Health Audit (empty state) | `health-audit.png` |
@@ -546,16 +547,20 @@ v2.0 sidebar grouping (REPORTS / POSTURE / OPERATIONS / FLEET / AUTOMATION / CON
 | Config — Columns / Security Agents / Thresholds / Platform API tabs | `config-editor.png`, `config-security-agents.png`, `config-thresholds.png`, `config-platform-api.png` |
 | Customize — Customize Reports | `customize.png` |
 | Data Sources | `data-sources.png` |
+| Settings | `settings.png` |
+| Onboarding — Step 4 Authenticate / Step 5 Validate ×2 / Step 6 CSV Mapping ×2 / Step 7 First Report ×2 | `onboarding-authenticate.png`, `onboarding-validate.png`, `onboarding-validate-complete.png`, `onboarding-csv-mapping.png`, `onboarding-csv-mapping-output.png`, `onboarding-first-report.png`, `onboarding-first-report-output.png` |
 
-This covers 19 of the 24 navigable screens. **Not captured:** Device Lookup, Generated
-(Reports), Run History, Settings, and — the only gap the docs care about — **Onboarding**.
-The new set closes the two gaps the earlier draft of this plan flagged: an Overview shot
-for the README hero, and a Schedules shot for wiki `05`, both now exist.
+The set now covers every screen the wiki/README curated set needs. The only navigable
+screens still without a capture — Device Lookup, Generated (Reports), Run History, and
+Jamf Protect — are not used by the curated doc set (Jamf Protect's demo state is just the
+"Protect not detected" empty placeholder). The onboarding captures begin at Step 4; Steps
+1–3 (Welcome / Install CLI / Workspace) were not captured but are not needed for a single
+representative wiki image.
 
-### Curated set for the docs (8 images)
+### Curated set for the docs (9 images)
 
-Per small-set discipline, the wiki/README use a curated 8 — not all 28. **The eight files
-below are already named exactly as the wiki needs them**, so PR-B simply copies them into
+Per small-set discipline, the wiki/README use a curated 9 — not all 37. **These files are
+already named exactly as the wiki needs them**, so PR-B simply copies them into
 `docs/wiki/images/` — no renaming required.
 
 | Wiki filename | Depicts | Used on |
@@ -568,23 +573,26 @@ below are already named exactly as the wiki needs them**, so PR-B simply copies 
 | `historical-trends.png` | Historical Trends (default view) | wiki `06` |
 | `schedules.png` | Schedules — Scheduled Runs | wiki `05` |
 | `config-editor.png` | Config — Columns tab | wiki `04` |
+| `onboarding-authenticate.png` | Onboarding Step 4 — Connect to Jamf Pro | wiki `02` |
 
 `overview`, `devices`, `security-posture`, `patch-compliance`, and `mobile-fleet` give
 wiki `03` one illustration per sidebar group (REPORTS / POSTURE / OPERATIONS / FLEET);
 the other dashboards on that page are described in text. `historical-trends`,
-`schedules`, and `config-editor` illustrate their dedicated pages.
+`schedules`, `config-editor`, and `onboarding-authenticate` illustrate their dedicated
+pages.
 
 **Alternates** — swap from the source set if a different shot reads better when a page is
 written: `fleet-overview.png`, `compliance-posture.png`, `os-updates.png`,
 `extension-attributes.png`, `policies-profiles-policies.png`, `customize.png`,
-`data-sources.png`, or any drill-in detail view. Keep the on-wiki total at ~8.
+`data-sources.png`, `settings.png`, the other six `onboarding-*.png` step captures, or
+any drill-in detail view. If wiki `02` reads better as a step sequence, pull in 2–3
+`onboarding-*.png` shots. Keep the on-wiki total near 8–10.
 
-### Still missing — one capture
+### Screenshot set is complete
 
-The 28-shot set has **no Onboarding-flow capture**. Wiki `02` (App Onboarding) needs one
-screenshot of the 7-step flow. The flow is reachable in the running app via the sidebar
-workspace chip → "Add workspace…" (`Sidebar.swift:257`), so the maintainer can capture it
-without resetting the app — see §10 Q6. This is the only outstanding screenshot dependency.
+With the onboarding captures in hand, **no screenshot dependency remains** — the curated
+9 cover the README hero and wiki pages `02`–`06`. Earlier drafts of this plan flagged
+missing Overview, Schedules, and Onboarding captures; all three now exist.
 
 ### Path note
 
@@ -672,7 +680,7 @@ A future writing session can work straight down this list.
 - [ ] Create `01-Installation.md` … `09-Diagnostics-and-Troubleshooting.md` (9 pages).
 - [ ] Create `Glossary.md` from `docs/GLOSSARY.md`; fix its stale entries.
 - [ ] Delete old `01-`…`08-` pages.
-- [ ] Replace `docs/wiki/images/` — delete the 7 superseded scrambled-name PNGs; add the curated 8-image set (§7) copied and renamed from the maintainer's 2026-05-22 capture pool.
+- [ ] Replace `docs/wiki/images/` — delete the 7 superseded scrambled-name PNGs; add the curated 9-image set (§7) copied as-is from the maintainer's 2026-05-22 capture pool (the files are already named for the wiki).
 - [ ] Fix `../images/` → `images/` in every page that embeds an image.
 - [ ] Every jamf-cli command string verified against §1; no pre-v1.16.1 version gates.
 - [ ] No page describes a §2-excluded (unwired) View.
@@ -718,12 +726,12 @@ A future writing session can work straight down this list.
    manual moved to the wiki, should the release zip also include a `CLI-WORKFLOW.md`
    (an export of wiki page 07) so offline CLI users still have the reference? Decide
    when writing wiki page 07.
-6. **One screenshot still missing.** The maintainer supplied a 28-capture v2.0 demo set
-   on 2026-05-22 covering Overview, Schedules, Config, and every dashboard (§7) — this
-   closes the Overview-hero and Schedules gaps the earlier draft flagged. The only page
-   still without an image is wiki `02` (App Onboarding): the 28-shot set has no
-   onboarding-flow capture. Either the maintainer supplies one, or wiki `02` ships
-   without a screenshot. Confirm.
+6. **Screenshots — resolved, one residual check.** The maintainer supplied a 37-capture
+   v2.0 demo set across two batches on 2026-05-22 (§7), including the 7-step onboarding
+   flow. The curated 9 cover the README hero and wiki pages `02`–`06`, so no screenshot
+   *dependency* remains. The one residual pre-publish check: confirm the Jamf Pro URL and
+   Client ID visible in `onboarding-authenticate.png` and `settings.png` are
+   placeholders, not a real tenant.
 
 ### Conflicts with the existing backlog
 
