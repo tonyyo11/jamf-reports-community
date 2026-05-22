@@ -517,12 +517,15 @@ plan no longer renames those 7 — **PR-B deletes them and replaces them** with 
 selection from the new set.
 
 All 37 captures are v2.0-current and org-neutral: they use the built-in "Meridian Health"
-demo tenant plus a placeholder "testing" profile, show the shipped v2.0 sidebar grouping
-(REPORTS / POSTURE / OPERATIONS / FLEET / AUTOMATION / CONFIGURATION / SYSTEM), and match
-the §2 code-verified layouts — the Config capture shows the seven `ConfigTab` tabs, the
-Schedules capture shows the four run modes, the onboarding captures show the 7-step flow.
-**One pre-publish check:** `onboarding-authenticate.png` and `settings.png` show a Jamf
-Pro URL and Client ID — confirm those are placeholders, not a real tenant, before publish.
+demo tenant plus a "testing" profile pointed at Jamf's **public `dummy.jamfcloud.com`
+instance** — the shared dummy-data tenant from Jamf's developer docs
+(`developer.jamf.com/jamf-pro/docs/populating-dummy-data`), not a private server. They
+show the shipped v2.0 sidebar grouping (REPORTS / POSTURE / OPERATIONS / FLEET /
+AUTOMATION / CONFIGURATION / SYSTEM) and match the §2 code-verified layouts — the Config
+capture shows the seven `ConfigTab` tabs, the Schedules capture shows the four run modes,
+the onboarding captures show the 7-step flow. The Jamf Pro URL and Client ID visible in
+`onboarding-authenticate.png` / `settings.png` belong to that public dummy tenant —
+**safe to publish, no redaction needed.**
 
 ### The source set (37 captures, renamed, reviewed visually)
 
@@ -726,12 +729,12 @@ A future writing session can work straight down this list.
    manual moved to the wiki, should the release zip also include a `CLI-WORKFLOW.md`
    (an export of wiki page 07) so offline CLI users still have the reference? Decide
    when writing wiki page 07.
-6. **Screenshots — resolved, one residual check.** The maintainer supplied a 37-capture
+6. **Screenshots — resolved, no action needed.** The maintainer supplied a 37-capture
    v2.0 demo set across two batches on 2026-05-22 (§7), including the 7-step onboarding
    flow. The curated 9 cover the README hero and wiki pages `02`–`06`, so no screenshot
-   *dependency* remains. The one residual pre-publish check: confirm the Jamf Pro URL and
-   Client ID visible in `onboarding-authenticate.png` and `settings.png` are
-   placeholders, not a real tenant.
+   dependency remains. The Jamf Pro URL and Client ID shown in the auth/Settings captures
+   are Jamf's public `dummy.jamfcloud.com` dummy-data tenant — confirmed safe to publish,
+   no redaction needed.
 
 ### Conflicts with the existing backlog
 
