@@ -74,9 +74,11 @@ epic's diff sprawling and hard to review — the anti-churn discipline in
 `CLAUDE.md` exists to prevent exactly that.
 
 The user-facing silent-failure symptom is already addressed for the
-highest-value path (`runDeviceDetailProcess`, #103 item 5). What remains
-is an internal type-safety cleanup, which also fits Epic #104 (Code
-hygiene & refactors).
+highest-value path (`runDeviceDetailProcess`, #103 item 5). Every other
+spawn-site caller still receives an undifferentiated `-1` and infers
+nothing from it — that ambiguity is precisely the deferred work. What
+remains is an internal type-safety cleanup, which also fits Epic #104
+(Code hygiene & refactors).
 
 ## Consequences
 

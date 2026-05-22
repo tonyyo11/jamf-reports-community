@@ -106,11 +106,11 @@ enum RunHistoryService {
         // Redact the whole text in one pass so multi-line patterns (e.g. a bearer
         // token split by a continuation line) are caught before splitting.
         let redactedText = LogRedactor.redact(text)
-        for raw in redactedText.components(separatedBy: "\n") where !raw.isEmpty {
+        for line in redactedText.components(separatedBy: "\n") where !line.isEmpty {
             lines.append(.init(
                 timestamp: Date(),
-                level: CLIBridge.LogLevel.from(line: raw),
-                text: raw
+                level: CLIBridge.LogLevel.from(line: line),
+                text: line
             ))
         }
         return lines

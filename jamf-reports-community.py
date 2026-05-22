@@ -2497,8 +2497,10 @@ def _emit_summary_json(
             missing = required_keys - existing.keys()
             if missing:
                 raise ValueError(f"missing required keys: {sorted(missing)}")
-        # JSONDecodeError and UnicodeDecodeError are both ValueError subclasses;
-        # they must be caught before the bare ValueError arm.
+        # Ordering: JSONDecodeError and UnicodeDecodeError are ValueError
+        # subclasses and must precede the bare ValueError arm. OSError is not a
+        # ValueError subclass — it shares the UnicodeDecodeError arm because both
+        # mean the file "could not be read".
         except json.JSONDecodeError as exc:
             print(
                 f"  [warn] Existing summary {summary_file} is corrupt — not "

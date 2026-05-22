@@ -389,7 +389,9 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   it does not help if the attacker can craft valid JSON.
 - **Likelihood:** Low (specific tool needed; assumes A1 same-user write access).
 - **Impact:** Low (decision quality only).
-- **Priority: LOW (mitigated).**
+- **Priority: LOW (partially mitigated).** The sidecar defeats the metadata-only
+  `touch -t` attack; an A1 attacker who can also write valid JSON content retains
+  the capability — see Residual above.
 
 ### T-21. Tiered-collection state file forged to suppress a scheduled fetch (NEW)
 - **Goal:** Freeze the fleet data the app shows by making the PR-22 tiered-collection engine believe a report is fresh when it is not.
