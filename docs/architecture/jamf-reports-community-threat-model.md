@@ -185,8 +185,11 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   tamper-*prevention* mechanism against A1; (4) the alternative (pin every file
   from a per-run cache) only covers files written in the same run — files
   retained from prior runs must still be re-hashed from disk, so it cannot close
-  the window. `--strict-manifest` / `require_manifest` remain available for
-  deployments that want hard-fail on any mismatch.
+  the window. Chaining trust from the *prior* manifest does not help either: the
+  prior manifest is itself unsigned, so a single tampered manifest write breaks
+  the chain — it relocates the A1 window rather than closing it. `--strict-manifest`
+  / `require_manifest` remain available for deployments that want hard-fail on any
+  mismatch.
 
 ### T-3. HTML report content-injection via attacker-controlled Jamf fields
 - **Goal:** Pop XSS / launch URL handlers when a sysadmin opens a shared HTML report in a browser.

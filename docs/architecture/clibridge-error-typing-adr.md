@@ -1,10 +1,11 @@
 # ADR: Typed CLIBridge failure reasons in place of the `-1` sentinel
 
-**Status:** Proposed — not implemented. Tracked as issue #103 item 10
-(Epic: Security & silent-failure hardening). Implementation is deferred
-to its own PR; this ADR is the disposition recorded for that epic item.
+**Status:** Accepted — implemented on the `feat/clibridge-error-typing`
+branch (issue #103 item 10, Epic: Security & silent-failure hardening).
+The shipped code diverged from the original proposal below in several
+places; see "Implementation notes" for what changed and why.
 **Authors:** Tony Young + Claude (drafted during the #103 session)
-**Date:** 2026-05-22
+**Date:** 2026-05-22 · implemented 2026-05-22
 
 ---
 
@@ -92,3 +93,45 @@ remains is an internal type-safety cleanup, which also fits Epic #104
   not move. Recommend landing it as a single PR with no behavior change
   other than the type — pure refactor, verified by the existing
   `CLIBridge*Tests` suites.
+
+## Implementation notes
+
+The shipped refactor diverged from the proposal above:
+
+- **Untyped `throws`, not `Result<Int32, CLIBridgeError>` or typed
+  throws.** Every caller needs an explicit `do/catch` regardless — SwiftUI
+  `Task { }` closures do not propagate typed errors and `runAndCapture`
+  returns `(Int32, Data)`. Untyped `throws` matches the rest of the
+  codebase and avoids typed-throws corner cases on CI's Swift 6.1. The
+  exhaustiveness goal is met by the enum + `LocalizedError`, not the
+  `throws(...)` annotation.
+
+- **Nine cases, not six.** `executableNotFound` and `invalidArgument`
+  surfaced at ~8 and ~2 sites respectively; `directoryOperationFailed`
+  was added during review to stop a `createDirectory`/`moveItem` failure
+  reporting as `workspaceMissing`. `codesignRejected` dropped its
+  `executable:` associated value (logged at the throw site instead);
+  `csvMissing(inbox:)` became `csvMissing(profile:)` so no path is
+  carried.
+
+- **`CLIBridgeError: LocalizedError` with per-case path-safe
+  `errorDescription`.** No home directory, workspace path, hostname, or
+  launch-failure reason is interpolated into the user-visible string;
+  that context stays in the associated value for `privacy: .private`
+  logging only. This is what lets a caller `catch` and show
+  `error.localizedDescription` without each one writing a `switch`.
+
+- **Engine-layer failures return exit `1`, not a `CLIBridgeError`.** A
+  failure *inside* `generate`/`collect`/`backup` after a successful
+  spawn is neither a pre-spawn error nor a real jamf-cli exit code; it
+  returns `1` (generic failure). `CLIBridgeError` is scoped strictly to
+  pre-spawn failures.
+
+- **`runDeviceDetailProcess` is a deliberate exception — it still
+  returns `Int32` (`-1` on failure).** It is a fire-and-forget free
+  function whose sole caller (`singleDeviceDetail`) collapses any
+  failure to a cache fallback, so a typed throw would have no consumer.
+  Issue #103 item 5 already gives it the codesign-vs-launch distinction
+  the user needs, via the `onLine` `LogLine`. Converting it would add a
+  `do/catch` with no behavioural difference. Both the correctness and
+  security reviewers reviewed this exception and concurred.
