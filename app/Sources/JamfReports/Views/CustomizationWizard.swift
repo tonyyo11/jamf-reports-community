@@ -636,8 +636,10 @@ private struct Step3EAsView: View {
                 state.availableEAs = try await bridge.listExtensionAttributes(profile: profile)
                 // eaLoadError stays nil — empty list shown via its own branch in the view.
             } catch {
-                state.eaLoadError = "Could not load Extension Attributes: "
-                    + "\(error.localizedDescription). "
+                AppLogger.ui.error(
+                    "CustomizationWizard: EA load failed — \(error, privacy: .private)"
+                )
+                state.eaLoadError = "Could not load Extension Attributes. "
                     + "Check that jamf-cli is authenticated."
             }
             state.isLoadingEAs = false
