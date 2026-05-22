@@ -123,7 +123,7 @@ struct CustomizeView: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    SectionHeader(title: group.wrappedValue.group, size: 13.5)
+                    SectionHeader(title: group.wrappedValue.group, style: .body)
                     Spacer()
                     Kicker(
                         text: "\(group.wrappedValue.items.filter(\.on).count)/\(group.wrappedValue.items.count)"
@@ -155,7 +155,7 @@ struct CustomizeView: View {
     private var scoreCardsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Overview Score Cards", size: 13.5)
+                SectionHeader(title: "Overview Score Cards", style: .body)
                     .padding(.bottom, 10)
                 
                 Text("Select up to 4 metrics for the dashboard.")
@@ -200,7 +200,7 @@ struct CustomizeView: View {
     private var workbookPreviewCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Workbook Preview", size: 13.5)
+                SectionHeader(title: "Workbook Preview", style: .body)
 
                 let enabledSheets = sheets.flatMap(\.items).filter(\.on)
                 ScrollView {
@@ -241,7 +241,7 @@ struct CustomizeView: View {
     private var chartsCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Charts", size: 13.5)
+                SectionHeader(title: "Charts", style: .body)
                     .padding(.bottom, 10)
 
                 chartToggleRow(

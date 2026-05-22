@@ -48,9 +48,29 @@ enum Theme {
 
     enum Fonts {
         /// IBM Plex Mono — tracked uppercase labels, stdout, code, profile ids.
+        ///
+        /// `size` is the base size; the font scales with Dynamic Type relative
+        /// to the text style closest to that size (see `monoTextStyle(for:)`),
+        /// so callers get Larger Text support without changing the call.
         static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
             // Falls back to SF Mono if the bundled TTFs aren't registered yet.
-            .custom("IBM Plex Mono", size: size).weight(weight)
+            .custom("IBM Plex Mono", size: size, relativeTo: monoTextStyle(for: size))
+                .weight(weight)
+        }
+
+        /// Maps a pinned point size to the Dynamic Type text style with the
+        /// closest base size, so `mono(_:)` scales on an appropriate curve.
+        private static func monoTextStyle(for size: CGFloat) -> Font.TextStyle {
+            switch size {
+            case ..<10.5: .caption2
+            case ..<12:   .caption
+            case ..<13:   .callout
+            case ..<15:   .body
+            case ..<17:   .title3
+            case ..<20:   .title2
+            case ..<24:   .title
+            default:      .largeTitle
+            }
         }
 
         /// Source Serif 4 / Playfair Display — page H1s + numeric KPIs.

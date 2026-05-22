@@ -310,7 +310,7 @@ struct DeviceLookupView: View {
 
                 ForEach(detail.sections) { section in
                     VStack(alignment: .leading, spacing: 6) {
-                        SectionHeader(title: section.title, size: 13)
+                        SectionHeader(title: section.title, style: .body)
                         ForEach(section.items) { item in
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text(item.label)

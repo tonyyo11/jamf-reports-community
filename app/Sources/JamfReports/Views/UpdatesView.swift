@@ -371,7 +371,7 @@ struct UpdatesView: View {
                     Text(String(format: "%.1f%%", pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .frame(width: 56, alignment: .trailing)
+                        .frame(minWidth: 56, alignment: .trailing)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
@@ -417,7 +417,7 @@ struct UpdatesView: View {
                 Text(String(format: "%.1f%%", pct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(Color(hex: slice.colorHex))
-                    .frame(width: 56, alignment: .trailing)
+                    .frame(minWidth: 56, alignment: .trailing)
                     .monospacedDigit()
             }
             GeometryReader { geo in

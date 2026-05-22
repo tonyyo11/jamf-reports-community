@@ -695,7 +695,7 @@ private struct Step3EAsView: View {
         if !boolEAs.isEmpty {
             Card(padding: 14) {
                 VStack(alignment: .leading, spacing: 10) {
-                    SectionHeader(title: "Compliant values for boolean EAs", size: 12)
+                    SectionHeader(title: "Compliant values for boolean EAs", style: .callout)
                     ForEach(boolEAs) { ea in
                         let eaID = ea.id ?? ""
                         HStack {
@@ -938,7 +938,7 @@ private struct Step4ExceptionsView: View {
         Card(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    SectionHeader(title: "Draft Exceptions", size: 14)
+                    SectionHeader(title: "Draft Exceptions", style: .body)
                     Spacer()
                     Pill(text: "\(state.exceptionDrafts.count) drafts", tone: .gold)
                 }
@@ -1054,7 +1054,7 @@ private struct Step4ExceptionsView: View {
         Card(padding: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    SectionHeader(title: "Accepted Exceptions", size: 14)
+                    SectionHeader(title: "Accepted Exceptions", style: .body)
                     Spacer()
                     Pill(text: "\(state.exceptions.count) accepted", tone: .teal)
                 }

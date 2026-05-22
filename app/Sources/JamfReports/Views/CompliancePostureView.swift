@@ -299,7 +299,7 @@ struct CompliancePostureView: View {
                     Text(String(format: "%.1f%%", band.pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .frame(width: 56, alignment: .trailing)
+                        .frame(minWidth: 56, alignment: .trailing)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
@@ -339,7 +339,7 @@ struct CompliancePostureView: View {
                 Text(String(format: "%.1f%%", gap.pct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(barColor(for: gap.pct))
-                    .frame(width: 56, alignment: .trailing)
+                    .frame(minWidth: 56, alignment: .trailing)
                     .monospacedDigit()
             }
             GeometryReader { geo in
@@ -404,7 +404,7 @@ struct CompliancePostureView: View {
                     Text("\(row.bands.reduce(0) { $0 + $1.count })")
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .frame(width: 50, alignment: .trailing)
+                        .frame(minWidth: 50, alignment: .trailing)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
