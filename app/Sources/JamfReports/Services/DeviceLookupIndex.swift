@@ -170,7 +170,12 @@ final class DeviceLookupIndex {
                   !rawID.isEmpty else { return nil }
             let general = dict["general"] as? [String: Any] ?? [:]
             let hardware = dict["hardware"] as? [String: Any] ?? [:]
-            let name = stringValue(general, "displayName")
+            // jamf-cli `mobile-devices-list` with default `--all=true` uses
+            // `selectTableColumns` which flattens `general.displayName` → top-level
+            // `name`. Check `dict["name"]` first so the common case resolves without
+            // descending into a `general` block that is absent in that output shape.
+            let name = stringValue(dict, "name")
+                ?? stringValue(general, "displayName")
                 ?? stringValue(general, "name")
                 ?? stringValue(dict, "displayName")
                 ?? rawID

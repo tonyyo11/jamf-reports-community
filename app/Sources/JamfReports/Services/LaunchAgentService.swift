@@ -268,8 +268,14 @@ enum LaunchAgentService {
 
     private static func multiTarget(from args: [String]) -> MultiTarget? {
         let flags: [String]
+        // Legacy arm: pre-PR-20 plists written by the old Python CLI used the `multi`
+        // keyword as args[1]. Load-bearing for any plist created before the native
+        // LaunchAgentWriter was introduced — do NOT remove.
         if args.count >= 2, args[1] == "multi" {
             flags = Array(args.dropFirst(2).prefix { $0 != "--" })
+        // Legacy arm: pre-PR-20 plists written by the Python CLI's `multi-launchagent-run`
+        // subcommand embedded the subcommand name literally. Load-bearing for those
+        // plists — do NOT remove.
         } else if let runIndex = args.firstIndex(of: "multi-launchagent-run") {
             flags = Array(args.dropFirst(runIndex + 1))
         } else {
@@ -280,13 +286,19 @@ enum LaunchAgentService {
         var i = 0
         while i < flags.count {
             switch flags[i] {
+            // Legacy aliases: the native writer only emits `--sequential`, but pre-PR-20
+            // plists may carry `--multi-sequential`. Both arms are load-bearing.
             case "--sequential", "--multi-sequential":
                 sequential = true
+            // Legacy aliases: native writer emits `--filter`; pre-PR-20 plists may carry
+            // `--multi-filter`. Both arms are load-bearing.
             case "--filter", "--multi-filter":
                 if i + 1 < flags.count {
                     scope = .filter(flags[i + 1])
                     i += 1
                 }
+            // Legacy aliases: native writer emits `--profiles`; pre-PR-20 plists may carry
+            // `--multi-profiles`. Both arms are load-bearing.
             case "--profiles", "--multi-profiles":
                 if i + 1 < flags.count {
                     let profiles = flags[i + 1]

@@ -134,7 +134,7 @@ struct SourcesView: View {
                 pendingScopeProfile = nil
             }
         } message: {
-            Text("Full Admin enables destructive operations against this tenant. Limited is recommended unless an admin task requires elevated privileges.")
+            Text("Full Admin unlocks destructive app operations for this profile (stored locally). Limited is recommended unless a task requires them.")
         }
     }
 
@@ -411,8 +411,8 @@ struct SourcesView: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .help(scope == .fullAdmin
-              ? "Full Admin — destructive operations enabled. Click to change."
-              : "Limited — destructive operations gated. Click to elevate.")
+              ? "Full Admin — destructive app operations enabled for this profile (local setting). Click to change."
+              : "Limited — destructive app operations gated for this profile (local setting). Click to change.")
     }
 
     private func tone(for status: InboxFileStatus) -> Pill.Tone {

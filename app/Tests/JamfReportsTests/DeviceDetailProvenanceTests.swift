@@ -240,9 +240,9 @@ final class DeviceDetailProvenanceTests: XCTestCase {
 
     // MARK: - DeviceDetailResult shape
 
-    /// Verifies the new result struct exposes the three fields callers depend on.
+    /// Verifies the result struct exposes the three fields callers depend on.
     /// `fromCache` is the visibility signal; `cacheURL` lets the view stat the mtime;
-    /// `data` is the payload the existing `deviceDetail(_:_:)` wrapper unwraps.
+    /// `data` is the payload callers unwrap from `deviceDetailWithProvenance`.
     func testDeviceDetailResultExposesProvenanceFields() {
         let payload = Data(#"{"id":1}"#.utf8)
         let url = URL(fileURLWithPath: "/tmp/x.json")

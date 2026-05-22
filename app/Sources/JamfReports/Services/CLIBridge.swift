@@ -60,6 +60,13 @@ final class CLIBridge {
         let text: String
     }
 
+    /// A no-op `onLine` handler for call sites that do not need log streaming.
+    /// Use this constant instead of an inline `{ _ in }` closure so the intent
+    /// is explicit and the constant type is guaranteed to match the parameter.
+    /// `nonisolated` so it can be referenced from nonisolated static functions
+    /// (e.g. `codesignGate` call sites in `LaunchAgentWriter`, `ProfileService`).
+    nonisolated static let noOpOnLine: @Sendable (LogLine) -> Void = { _ in }
+
     struct CachedJSONSnapshot: Sendable {
         let data: Data
         let modified: Date
@@ -747,10 +754,6 @@ final class CLIBridge {
         let cacheURL: URL?
     }
 
-    nonisolated func deviceDetail(profile: String, deviceID: String) async -> Data? {
-        await deviceDetailWithProvenance(profile: profile, deviceID: deviceID)?.data
-    }
-
     nonisolated func deviceDetailWithProvenance(
         profile: String,
         deviceID: String,
@@ -768,13 +771,9 @@ final class CLIBridge {
         )
     }
 
-    /// Mobile-device detail. Mirrors `deviceDetail` but invokes
+    /// Mobile-device detail. Mirrors `deviceDetailWithProvenance` but invokes
     /// `jamf-cli pro mobile-devices get <id>` and caches under
     /// `jamf-cli-data/mobile-devices/`. Same fall-back-to-cache semantics.
-    nonisolated func mobileDeviceDetail(profile: String, deviceID: String) async -> Data? {
-        await mobileDeviceDetailWithProvenance(profile: profile, deviceID: deviceID)?.data
-    }
-
     nonisolated func mobileDeviceDetailWithProvenance(
         profile: String,
         deviceID: String,

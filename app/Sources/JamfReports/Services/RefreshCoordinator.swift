@@ -143,7 +143,7 @@ final class RefreshCoordinator {
         let exitCode: Int32
         do {
             exitCode = try await bridge.collect(
-                profile: profile, tiers: [tier], onLine: { _ in }
+                profile: profile, tiers: [tier], onLine: CLIBridge.noOpOnLine
             )
         } catch {
             failureCounts[key, default: 0] += 1

@@ -82,7 +82,7 @@ extension Provenance {
     /// is a no-op.
     static func captureJamfCLIVersion(jamfCLIURL: URL?) async -> String? {
         guard let url = jamfCLIURL else { return nil }
-        if CLIBridge.codesignGate(executable: url, onLine: { _ in }) != nil {
+        if CLIBridge.codesignGate(executable: url, onLine: CLIBridge.noOpOnLine) != nil {
             return nil
         }
         return await withCheckedContinuation { continuation in

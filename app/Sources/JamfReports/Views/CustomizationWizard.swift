@@ -1299,7 +1299,7 @@ private struct Step6InventoryView: View {
             guard state.availableInventoryKeys.isEmpty, !isLoading else { return }
             isLoading = true
             // Fetch a single device to extract keys.
-            if let data = await bridge.deviceDetail(profile: profile, deviceID: "0") {
+            if let data = await bridge.deviceDetailWithProvenance(profile: profile, deviceID: "0")?.data {
                 if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     state.availableInventoryKeys = obj.keys.sorted()
                 }
