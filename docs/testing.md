@@ -1,6 +1,8 @@
 # Automated Testing
 
-This project now uses a committed fixture corpus plus `pytest` for automated validation.
+The project has two automated test suites: `pytest` for the Python CLI (covered below,
+backed by a committed fixture corpus) and `swift test` for the macOS app (see
+[Swift app tests](#swift-app-tests)).
 
 ## Fixture Provenance
 
@@ -125,3 +127,30 @@ Do not commit:
 - generated chart PNGs
 - `.DS_Store`
 - duplicate timestamp variants for the same jamf-cli command when one curated sample is enough
+
+## Swift app tests
+
+The macOS app has its own test suite under `app/Tests/JamfReportsTests/`, with
+engine-layer suites in an `Engine/` subdirectory — one suite per service or feature
+area. Run it from the `app/` directory:
+
+```bash
+cd app
+swift test
+```
+
+Verify the app still compiles before committing any Swift change:
+
+```bash
+cd app && swift build 2>&1 | tail -20
+```
+
+CI pins Xcode 16.4 (Swift 6.1.x). A local Swift 6.3+ toolchain relaxes `@MainActor`
+enforcement and can compile code that fails on CI — before pushing, run:
+
+```bash
+cd app && swift build --build-tests 2>&1 | grep "error:" || echo OK
+```
+
+New services and business-logic functions should have a corresponding
+`<ServiceName>Tests.swift`.
