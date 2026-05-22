@@ -171,6 +171,22 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
   - Close T-11 (manifest absence silent pass) — surface unverified-snapshot warning in AuditView.
   - Close T-12 (summary.json outside manifest coverage).
   - Add a UI banner in the Sources screen showing the last-verified-manifest timestamp.
+- **Residual (accepted — Epic #103 item 14):** `_rewrite_snapshot_manifest`
+  rewrites the whole `manifest.json` on each collect, pinning only the hash of
+  the file the current run just wrote (`pinned=`). Every *other* `.json` in the
+  directory — older snapshots still retained by `keep_latest_runs`, or per-day
+  summaries — is re-hashed from disk. An A1 attacker who tampers one of those
+  unpinned files in the window between the previous manifest write and the next
+  one gets the tampered content re-hashed and recorded as authoritative.
+  Accepted because: (1) it requires A1 — local write access to `jamf-cli-data/`;
+  (2) the manifest is unsigned, so an A1 attacker can already rewrite it wholesale
+  — the re-hash window grants no capability A1 lacks; (3) the manifest is a
+  tamper-*detection* aid against non-A1 actors and accidental corruption, not a
+  tamper-*prevention* mechanism against A1; (4) the alternative (pin every file
+  from a per-run cache) only covers files written in the same run — files
+  retained from prior runs must still be re-hashed from disk, so it cannot close
+  the window. `--strict-manifest` / `require_manifest` remain available for
+  deployments that want hard-fail on any mismatch.
 
 ### T-3. HTML report content-injection via attacker-controlled Jamf fields
 - **Goal:** Pop XSS / launch URL handlers when a sysadmin opens a shared HTML report in a browser.

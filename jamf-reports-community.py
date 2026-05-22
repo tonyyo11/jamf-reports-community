@@ -650,10 +650,17 @@ def _rewrite_snapshot_manifest(
 
     ``pinned`` lets the caller supply pre-computed hashes for files it just
     wrote — those entries are used verbatim instead of re-hashing from disk.
-    Pinning closes the collect-side TOCTOU race: an attacker who tampers with
-    a freshly-written file between rename and manifest rewrite would otherwise
-    poison the manifest with the attacker's hash. The just-written buffer's
-    hash is the source of truth for files it covers.
+    Pinning closes the collect-side TOCTOU race for the pinned files only: an
+    attacker who tampers with a freshly-written file between rename and manifest
+    rewrite would otherwise poison the manifest with the attacker's hash. The
+    just-written buffer's hash is the source of truth for files it covers.
+
+    Residual (threat model T-2, accepted): unpinned files already in the
+    directory — older retained snapshots, per-day summaries — are re-hashed
+    from disk, so an attacker who tampers one between two manifest writes has
+    that content blessed. Accepted because the manifest is unsigned (an A1
+    attacker can rewrite it wholesale anyway) and is a tamper-detection aid,
+    not prevention. See the T-2 residual note in the threat model.
 
     Failures are surfaced as a `[warn]` print and otherwise swallowed —
     snapshot writes must not be blocked by manifest hygiene.
