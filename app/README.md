@@ -1,19 +1,22 @@
-# Jamf Reports — macOS App (`dev-app/2.0`)
+# Jamf Reports — macOS App
 
-A native SwiftUI macOS GUI for the [`jamf-reports-community`](https://github.com/tonyyo11/jamf-reports-community)
-CLI. The app wraps every CLI flow — config editing, scheduling via LaunchAgents,
-report generation, run history — and adds a **Historical Trends** screen built on
-26 weeks of archived snapshots.
+A native SwiftUI macOS app for fleet reporting against Jamf Pro and Jamf School — the
+recommended interface for the
+[`jamf-reports-community`](https://github.com/tonyyo11/jamf-reports-community) project.
+It collects data, generates Excel and HTML reports, schedules unattended runs via
+LaunchAgents, and tracks fleet health over time on a Historical Trends screen.
 
-This is a working SwiftPM project, not a hand-rolled `.xcodeproj`. Open `Package.swift`
-in Xcode 16+ for previews and runtime, or build from the command line with `swift build`.
+This is a SwiftPM project, not a hand-rolled `.xcodeproj`. Open `Package.swift` in
+Xcode 16+ for previews and runtime, or build from the command line with `swift build`.
 
 ## Status
 
-- **Build target:** macOS 14+ (Sonoma), Swift 6
-- **State:** scaffold + all 12 screens implemented against the design handoff (Meridian
-  Health demo data). CLI bridge wired to `Process` but `LaunchAgent` round-trip,
-  config.yaml read/write, and live trend data parsing are TODO.
+- **Build target:** macOS 14+ (Sonoma), Swift 6, SwiftPM (no `.xcodeproj`).
+- **State:** shipped in v2.0.0 — all dashboards, scheduling, config editing, report
+  generation, and Historical Trends are implemented. Reports are produced by a native
+  Swift engine; Python is not required for report generation.
+- **Distribution:** local builds are ad-hoc signed; Developer ID signing, notarization,
+  and stapling remain manual steps (see Build distribution below).
 
 ## Quick start
 
@@ -108,32 +111,6 @@ app/
 - `Theme` — single source of truth for colors, fonts, metrics. Hex values and font
   weights mirror the prototype's `pnp-tokens.css` and `app.css`. Body remains San
   Francisco; only mono and serif H1s use brand fonts.
-
-## What's wired up
-
-✅ All 12 screens render from demo data
-✅ Devices screen reads current workspace inventory and cached patch/compliance data
-✅ Backups screen lists per-profile backups and wraps `jrc backup` / `jamf-cli pro diff`
-✅ Sidebar collapse (expanded / compact / hidden) with `⌘0`
-✅ Profile switcher chip and local workspace discovery (`~/Jamf-Reports/*/config.yaml`)
-✅ Active app profile is passed through every `jrc` / `jamf-cli` operation
-✅ Fresh workspaces can collect and generate from jamf-cli only, with no CSV/history
-✅ Swift Charts for the Trends hero, multi-line comparison, stacked compliance bands
-✅ `CLIBridge` prefers the bundled Python runtime + bundled CLI script, falls
-   back to external Python/`jrc`, and streams subprocess stdout live
-✅ `SystemActions` for "Reveal in Finder" and "Open Report" with secure path validation
-✅ `LaunchAgentService` for discovering and parsing existing scheduled jobs
-✅ Scheduled-run setup delegates to Python `launchagent-setup`; Run Now validates
-   and executes generated `launchagent-run` jobs
-✅ Real trend data parser for `summary.json` history
-✅ App icon generation and `.icns` bundling
-
-## Remaining work
-
-- Full arbitrary `config.yaml` round-trip remains scoped to fields exposed by
-  the GUI.
-- Developer ID signing, notarization, and stapling remain manual distribution
-  steps.
 
 ## Build distribution
 
