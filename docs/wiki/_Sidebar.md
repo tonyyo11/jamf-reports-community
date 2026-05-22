@@ -1,11 +1,22 @@
 ### jamf-reports-community
 
-- [Home](Home)
-- [Setup and Prerequisites](01-Setup-and-Prerequisites)
-- [Jamf Pro CSV Workflow](02-Jamf-Pro-CSV-Workflow)
-- [jamf-cli Workflow](03-jamf-cli-Workflow)
-- [Config and Scaffolding](04-Config-and-Scaffolding)
-- [Reporting Cadence and Operations](05-Reporting-Cadence-and-Operations)
-- [Historical Trends and Extensibility](06-Historical-Trends-and-Extensibility)
-- [LaunchAgent Automation](07-LaunchAgent-Automation)
-- [Jamf School Workflow](08-Jamf-School-Workflow)
+[Home](Home)
+
+### macOS app
+
+- [Installation](01-Installation)
+- [App Onboarding](02-App-Onboarding)
+- [Dashboards](03-App-Dashboards)
+- [Configuration & Templates](04-Configuration-and-Templates)
+- [Scheduling & Automation](05-Scheduling-and-Automation)
+- [Historical Trends](06-Historical-Trends)
+
+### Python CLI
+
+- [CLI Workflow](07-CLI-Workflow)
+
+### Reference
+
+- [Jamf School](08-Jamf-School)
+- [Diagnostics & Troubleshooting](09-Diagnostics-and-Troubleshooting)
+- [Glossary](Glossary)

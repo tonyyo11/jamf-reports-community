@@ -1,88 +1,65 @@
-# jamf-reports-community Wiki
+# jamf-reports-community
 
-This wiki set is the long-form companion to [README.md](https://github.com/tonyyo11/jamf-reports-community/blob/main/README.md).
+Fleet reporting for Jamf Pro and Jamf School — a native macOS app, with an optional
+Python CLI for headless and automated use. This wiki is the full setup and operating
+guide; the [README](https://github.com/tonyyo11/jamf-reports-community) is the short
+overview.
 
-Use it when you want a full setup and operating guide instead of a quick-start.
+There are two ways to run the project. **The macOS app is the recommended path.** The
+Python CLI is the optional path for headless servers, CI and Linux environments, and
+scripted automation.
 
-![Security Posture Dashboard](./images/security-posture.png)
+![Jamf Reports — Fleet Overview](images/overview.png)
 
-## What This Tool Covers
+## Pick your path
 
-`jamf-reports-community` turns Jamf Pro inventory data into Excel workbooks, charts, and
-repeatable reporting workflows.
+### The macOS app — recommended
 
-It supports these data collection paths:
+A native SwiftUI app (macOS 14+) that collects data, generates reports, schedules
+unattended runs, and tracks fleet health — all from a GUI, with no Python required. Read
+these pages in order:
 
-- Jamf Pro CSV exports
-- `jamf-cli` live data plus cached JSON snapshots
-- Jamf School device CSV exports and `jamf-cli school` live data (jamf-cli 1.7+)
+1. [Installation](01-Installation) — install the app and `jamf-cli`
+2. [App Onboarding](02-App-Onboarding) — the guided first run
+3. [Dashboards](03-App-Dashboards) — a tour of every screen
+4. [Configuration & Templates](04-Configuration-and-Templates) — `config.yaml`, custom EAs, report templates
+5. [Scheduling & Automation](05-Scheduling-and-Automation) — run modes and LaunchAgent jobs
+6. [Historical Trends](06-Historical-Trends) — snapshots and the Trends screen
 
-It is built and tested against Jamf Pro and Jamf School. Jamf Protect support exists as an
-experimental, opt-in `Protect Overview` sheet driven by `jamf-cli 1.6`, but it has not
-been fully validated against a live Protect tenant. Platform API workbook support is
-also available as an opt-in preview when the selected jamf-cli build exposes the new
-`pro report` platform commands.
+### The Python CLI — optional
 
-This project is open sourced intentionally. The goal is to give Mac admins a practical
-starting point they can extend for their own needs, including deeper Jamf Protect or
-Jamf Platform API work.
+A single-file script for headless and automated reporting. Read:
 
-## Suggested Reading Order
+1. [Installation](01-Installation) — the Requirements section
+2. [CLI Workflow](07-CLI-Workflow) — install, commands, the CSV and jamf-cli paths
 
-1. [Setup and Prerequisites](./01-Setup-and-Prerequisites.md)
-2. [Jamf Pro CSV Workflow](./02-Jamf-Pro-CSV-Workflow.md)
-3. [jamf-cli Workflow](./03-jamf-cli-Workflow.md)
-4. [Config and Scaffolding](./04-Config-and-Scaffolding.md)
-5. [Reporting Cadence and Operations](./05-Reporting-Cadence-and-Operations.md)
-6. [Historical Trends and Extensibility](./06-Historical-Trends-and-Extensibility.md)
-7. [LaunchAgent Automation](./07-LaunchAgent-Automation.md)
+### Reference for everyone
 
-## Try It Offline
+- [Jamf School](08-Jamf-School) — if you manage a Jamf School tenant
+- [Diagnostics & Troubleshooting](09-Diagnostics-and-Troubleshooting)
+- [Glossary](Glossary)
 
-No live Jamf tenant needed. The repo includes committed demo fixtures:
+## Try it offline
+
+No live Jamf tenant or credentials needed — the repo ships demo fixtures:
 
 ```bash
-./scripts/demo.sh all
+./scripts/demo.sh          # build every offline demo report
+./scripts/demo.sh html     # or just one: html | xlsx | mobile | school
 ```
 
-This generates an HTML report, Jamf Pro workbook, mobile CSV workbook, and Jamf School
-workbook in `Generated Reports/demo/`. Run `./scripts/demo.sh help` for individual modes.
+Output lands in `Generated Reports/demo/`.
 
-## Choose Your Starting Path
+## What jamf-reports-community does not replace
 
-Use the Jamf Pro CSV workflow when:
-
-- You already export Advanced Search or Search Inventory data
-- You want full control over which extension attributes are present in the dataset
-- You need a familiar, admin-friendly bootstrap path
-
-Use the `jamf-cli` workflow when:
-
-- You want to reduce reliance on Jamf UI exports
-- You want API-driven summary sheets and cached snapshots
-- You want a quick way to build a baseline CSV with `inventory-csv`
-- You want a jamf-cli-only workbook or chart path
-
-## What jamf-reports-community Does Not Replace
-
-If you only need one-off API actions, direct inventory lookups, or broader Jamf
-automation, go straight to `jamf-cli`:
+For one-off API actions, direct inventory lookups, or broader Jamf automation, use
+`jamf-cli` directly:
 
 - [Jamf Concepts jamf-cli site](https://concepts.jamf.com/jamf-cli/)
 - [jamf-cli Documentation Wiki](https://github.com/Jamf-Concepts/jamf-cli/wiki)
 - [jamf-cli README](https://github.com/Jamf-Concepts/jamf-cli)
 - [jamf-cli Setup Guide](https://github.com/Jamf-Concepts/jamf-cli/wiki/Setup-Guide)
 - [jamf-cli Configuration & Profiles](https://github.com/Jamf-Concepts/jamf-cli/wiki/Configuration-&-Profiles)
-- [jamf-cli Command Reference](https://github.com/Jamf-Concepts/jamf-cli/wiki/Command-Reference)
-- [jamf-cli Common Workflows](https://github.com/Jamf-Concepts/jamf-cli/wiki/Common-Workflows)
 
 Use `jamf-reports-community` when the goal is recurring reporting, workbook generation,
 visualization, or historical snapshots.
-
-If your real objective is historical reporting, read the historical-trends page before
-you automate anything. The quality of your charts depends on how intentionally you save
-point-in-time snapshots.
-
-If you want those snapshots and workbooks to happen on a real cadence, read the
-LaunchAgent automation page next. That is the recommended local-macOS scheduling model
-for this project.
