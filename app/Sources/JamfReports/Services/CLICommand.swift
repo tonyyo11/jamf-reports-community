@@ -192,6 +192,10 @@ struct DefaultCLIExecutor: CLIExecutor {
                 ? bridgeError.localizedDescription
                 : bridgeError.localizedDescription + "\n" + accumulated
             throw CLIExecutorError.nonZeroExit(code: -1, stderr: stderrText)
+        } catch {
+            // Catch-all: if a future change causes runAndCapture to throw a
+            // non-CLIBridgeError type, convert it rather than propagate unknown.
+            throw CLIExecutorError.nonZeroExit(code: -1, stderr: error.localizedDescription)
         }
         guard exitCode == 0 else {
             throw CLIExecutorError.nonZeroExit(code: exitCode, stderr: stderrBuffer.snapshot())

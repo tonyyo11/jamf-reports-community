@@ -369,9 +369,13 @@ final class CLIBridge {
                     withIntermediateDirectories: true
                 )
             } catch {
+                let dirPath = outputURL.deletingLastPathComponent().path
+                AppLogger.cli.error(
+                    "generate: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
+                )
                 onLine(.init(timestamp: Date(), level: .fail,
                     text: "[error] could not create output directory: \(error.localizedDescription)"))
-                throw CLIBridgeError.workspaceMissing(profile: profile)
+                throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
         do {
@@ -493,9 +497,13 @@ final class CLIBridge {
                     withIntermediateDirectories: true
                 )
             } catch {
+                let dirPath = outputURL.deletingLastPathComponent().path
+                AppLogger.cli.error(
+                    "schoolGenerate: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
+                )
                 onLine(.init(timestamp: Date(), level: .fail,
                     text: "[error] could not create output directory: \(error.localizedDescription)"))
-                throw CLIBridgeError.workspaceMissing(profile: profile)
+                throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
         do {
@@ -958,9 +966,13 @@ final class CLIBridge {
                     withIntermediateDirectories: true
                 )
             } catch {
+                let dirPath = outputURL.deletingLastPathComponent().path
+                AppLogger.cli.error(
+                    "generateHTML: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
+                )
                 onLine(.init(timestamp: Date(), level: .fail,
                     text: "[error] could not create output directory: \(error.localizedDescription)"))
-                throw CLIBridgeError.workspaceMissing(profile: profile)
+                throw CLIBridgeError.directoryOperationFailed(path: dirPath)
             }
         }
         do {
@@ -1191,9 +1203,12 @@ final class CLIBridge {
             try fm.createDirectory(at: backupsRoot, withIntermediateDirectories: true,
                                    attributes: [.posixPermissions: 0o700])
         } catch {
+            AppLogger.cli.error(
+                "backup: could not create backups dir: \(backupsRoot.path, privacy: .private) — \(error, privacy: .private)"
+            )
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not create backups directory: \(error.localizedDescription)"))
-            throw CLIBridgeError.workspaceMissing(profile: profile)
+            throw CLIBridgeError.directoryOperationFailed(path: backupsRoot.path)
         }
 
         // Create a temp dir inside the backups root so the atomic rename stays on-volume.
@@ -1206,9 +1221,12 @@ final class CLIBridge {
             try fm.createDirectory(at: validatedTemp, withIntermediateDirectories: true,
                                    attributes: [.posixPermissions: 0o700])
         } catch {
+            AppLogger.cli.error(
+                "backup: could not create temp dir: \(validatedTemp.path, privacy: .private) — \(error, privacy: .private)"
+            )
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not create backup temp dir: \(error.localizedDescription)"))
-            throw CLIBridgeError.workspaceMissing(profile: profile)
+            throw CLIBridgeError.directoryOperationFailed(path: validatedTemp.path)
         }
 
         let args = ["-p", profile, "--no-input", "pro", "backup",
@@ -1261,9 +1279,12 @@ final class CLIBridge {
                 onLine(.init(timestamp: Date(), level: .warn,
                     text: "[warn] backup temp dir could not be removed — delete manually: \(validatedTemp.lastPathComponent)"))
             }
+            AppLogger.cli.error(
+                "backup: move failed \(validatedTemp.path, privacy: .private) → \(validatedFinal.path, privacy: .private) — \(error, privacy: .private)"
+            )
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not finalize backup directory: \(error.localizedDescription)"))
-            throw CLIBridgeError.workspaceMissing(profile: profile)
+            throw CLIBridgeError.directoryOperationFailed(path: validatedFinal.path)
         }
 
         // Write manifest.json so BackupLibrary can read label, date, and counts.
