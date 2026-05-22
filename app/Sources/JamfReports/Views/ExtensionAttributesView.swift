@@ -372,13 +372,13 @@ struct ExtensionAttributesView: View {
                     .chartXAxis {
                         AxisMarks(position: .bottom) { _ in
                             AxisValueLabel()
-                                .font(.system(size: 10))
+                                .font(.caption2)
                         }
                     }
                     .chartYAxis {
                         AxisMarks(position: .leading) { _ in
                             AxisValueLabel()
-                                .font(.system(size: 10))
+                                .font(.caption2)
                         }
                     }
 
