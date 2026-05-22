@@ -1,12 +1,15 @@
 """Failure-branch tests for `_build_summary_from_bridge` and `_emit_summary_json`.
 
 The summary builder emits `[warn]` log lines when individual bridge calls raise
-and falls back to documented defaults (0 or 0.0) for the affected metric. These
-tests guard the visibility fix documented in CHANGELOG: silent zero-fill on
-decode failure used to mask data-quality issues; the warn lines make the
-problem observable. A regression that silenced a warn line, swallowed the
-exception entirely, or changed the default would slip past the existing
-positive tests in `test_command_summaries.py`.
+and OMITS the affected metric's key from the emitted JSON. `totalDevices` and
+`staleCount` are always present; the percentage metrics (`fileVaultPct`,
+`osCurrentPct`, `patchPct`) are conditional. A failed bridge call leaves the
+metric unmeasured, so its key is dropped rather than written as a false 0.0 —
+the Swift `DailySummary` decoder treats a missing key as nil and skips the
+point, whereas a present 0.0 would plot a false zero-floor on the trend chart.
+A regression that silenced a warn line, swallowed the exception entirely, or
+re-introduced zero-fill would slip past the positive tests in
+`test_command_summaries.py`.
 
 `_emit_summary_json` (CSV path) tests close the parallel branch: when the
 bridge throws on `patch_status`, the CSV path must OMIT the `patchPct` key
@@ -62,11 +65,11 @@ def _config_with_macos_ea(jrc, fixtures_root):
 
 
 # -------------------------------------------------------------------
-# security_report failure → fv_pct defaults to 0.0, [warn] emitted.
+# security_report failure → fileVaultPct omitted, [warn] emitted.
 # -------------------------------------------------------------------
 
 
-def test_security_report_failure_defaults_fv_pct_and_warns(jrc, fixtures_root, capsys) -> None:
+def test_security_report_failure_omits_fv_pct_and_warns(jrc, fixtures_root, capsys) -> None:
     config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
 
     class BoomBridge(_BaselineBridge):
@@ -77,10 +80,10 @@ def test_security_report_failure_defaults_fv_pct_and_warns(jrc, fixtures_root, c
     captured = capsys.readouterr()
 
     assert summary is not None, "totalDevices fallback via inventory_summary should keep summary non-None"
-    assert summary["fileVaultPct"] == 0.0, "fv_pct must default to 0.0 when security_report raises"
+    assert "fileVaultPct" not in summary, "fileVaultPct must be omitted when security_report raises"
     assert "[warn]" in captured.out
     assert "security_report failed" in captured.out
-    assert "fv_pct defaulting to 0.0" in captured.out
+    assert "fileVaultPct omitted (no data)" in captured.out
 
 
 # -------------------------------------------------------------------
@@ -135,11 +138,11 @@ def test_device_compliance_failure_defaults_stale_count_and_warns(jrc, fixtures_
 
 
 # -------------------------------------------------------------------
-# inventory_summary failure during OS adoption → osCurrentPct stays 0.0, warn emitted.
+# inventory_summary failure during OS adoption → osCurrentPct omitted, warn emitted.
 # -------------------------------------------------------------------
 
 
-def test_os_adoption_inventory_summary_failure_defaults_pct_and_warns(jrc, fixtures_root, capsys) -> None:
+def test_os_adoption_inventory_summary_failure_omits_pct_and_warns(jrc, fixtures_root, capsys) -> None:
     config = _config_with_macos_ea(jrc, fixtures_root)
 
     # We need security_report to succeed (so total_devices > 0 and we proceed
@@ -157,18 +160,18 @@ def test_os_adoption_inventory_summary_failure_defaults_pct_and_warns(jrc, fixtu
     captured = capsys.readouterr()
 
     assert summary is not None
-    assert summary["osCurrentPct"] == 0.0, "osCurrentPct must default to 0.0 when inventory_summary raises"
+    assert "osCurrentPct" not in summary, "osCurrentPct must be omitted when inventory_summary raises"
     assert "[warn]" in captured.out
     assert "inventory_summary (os adoption) failed" in captured.out
-    assert "osCurrentPct defaulting to 0.0" in captured.out
+    assert "osCurrentPct omitted (no data)" in captured.out
 
 
 # -------------------------------------------------------------------
-# patch_status failure → patchPct stays 0.0, warn emitted.
+# patch_status failure → patchPct omitted, warn emitted.
 # -------------------------------------------------------------------
 
 
-def test_patch_status_failure_defaults_patch_pct_and_warns(jrc, fixtures_root, capsys) -> None:
+def test_patch_status_failure_omits_patch_pct_and_warns(jrc, fixtures_root, capsys) -> None:
     config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
 
     class BoomBridge(_BaselineBridge):
@@ -179,10 +182,10 @@ def test_patch_status_failure_defaults_patch_pct_and_warns(jrc, fixtures_root, c
     captured = capsys.readouterr()
 
     assert summary is not None
-    assert summary["patchPct"] == 0.0, "patchPct must default to 0.0 when patch_status raises"
+    assert "patchPct" not in summary, "patchPct must be omitted when patch_status raises"
     assert "[warn]" in captured.out
     assert "patch_status failed" in captured.out
-    assert "patchPct defaulting to 0.0" in captured.out
+    assert "patchPct omitted (no data)" in captured.out
 
 
 # -------------------------------------------------------------------
