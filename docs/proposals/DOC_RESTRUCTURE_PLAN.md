@@ -262,7 +262,7 @@ README needs to keep.
 |---|---|---|---|
 | 1 | Title + one-liner | 4 | Project name; one sentence: "Config-driven macOS fleet reporting for Jamf Pro and Jamf School — a native macOS app, with an optional Python CLI for headless use." |
 | 2 | Community Showcase line | 1 | Keep the existing jamf-cli Community Showcase link verbatim. |
-| 3 | Hero screenshot | 2 | One image — the Overview / fleet dashboard (`security-health-fleet-overview.png`, pending §7 re-verification). |
+| 3 | Hero screenshot | 2 | One image — the Security Posture dashboard (the score-ring capture; the file is renamed to `security-posture.png` in PR-B — see §7). |
 | 4 | **The macOS app** (primary) | 45–60 | "Recommended way to use this tool." What it does in two sentences. Dashboard groups at a glance — Reports / Posture / Operations / Fleet (cite §2; do **not** enumerate all 24). Key capabilities: configurable Security Score, Historical Trends, scheduled collection, native Swift engine (no Python needed for any report path). Requirements: macOS 14+, jamf-cli optional. "Download" → Releases page; "Build from source" → `app/README.md`. |
 | 5 | **The Python CLI** (optional) | 25–35 | "Optional, secondary — for headless, CI/Linux, server-side, and automation use." 5–6 bullets: multi-sheet xlsx, self-contained HTML report, Jamf School reports, scheduled LaunchAgents, scaffold/check config tooling. "Python 3.11+; jamf-cli optional." One install line. Link to the wiki CLI Workflow page for everything else. |
 | 6 | **Try it offline** | 15 | Keep the `./scripts/demo.sh` block (and `html`/`xlsx`/`mobile`/`school` variants) — it works for both audiences and needs no credentials. |
@@ -505,27 +505,72 @@ it — the plan only schedules it.)*
 
 ## 7. Screenshot audit
 
-`docs/wiki/images/` currently holds **7 PNGs**. All seven map to screens that exist in
-v2.0 (§2), so none is obviously obsolete — but file bytes cannot prove a capture is
-*current*. Each must be visually re-verified by the maintainer against the running v2.0
-app, specifically against the shipped sidebar grouping (REPORTS / POSTURE / OPERATIONS /
-FLEET / AUTOMATION / CONFIGURATION / SYSTEM). Any image showing pre-v2.0 information
-architecture is a re-capture.
+`docs/wiki/images/` holds **7 PNGs**. All seven were reviewed visually on 2026-05-22.
+**Finding: every capture is v2.0-current, but every filename is wrong.** The images are
+real, recent, and use the built-in "Meridian Health" demo org (the app's `DemoData`
+fictional tenant — org-neutral, no real tenant data, safe for a public wiki). Each one
+shows the shipped v2.0 sidebar grouping (REPORTS / POSTURE / OPERATIONS / FLEET /
+AUTOMATION / CONFIGURATION / SYSTEM) and the v2.0 screen layouts verified in §2 — for
+example the Config capture shows the seven `ConfigTab` tabs (Columns / Security Agents /
+Custom EAs / Threshold / Platform API / Output / Scoring). But each file is named for a
+*different* screen than it actually contains.
 
-| Image | Maps to | Decision |
+### What each file actually contains
+
+| Current filename | Screen the file actually shows | Corrected filename |
 |---|---|---|
-| `security-health-fleet-overview.png` | Overview / Fleet Overview | **Keep** if it shows the v2.0 sidebar; else re-capture. README hero + wiki `03`. |
-| `security-posture.png` | Security Posture | **Keep** (pending re-verify). Wiki `03`. Also wiki `Home`. |
-| `compliance-posture.png` | Compliance Posture | **Keep** (pending re-verify). Wiki `03`. |
-| `devices.png` | Devices | **Keep** (pending re-verify). Wiki `03`. |
-| `patch.png` | Patch Compliance | **Keep** (pending re-verify). Wiki `03`. |
-| `schedules.png` | Schedules | **Re-capture** — must show the v2.0 run-mode + cadence-tier form (PR-20/21/23), not a pre-tier form. Wiki `05`. |
-| `trends.png` | Trends | **Keep** if it shows the current metric picker; else re-capture. Wiki `06`. |
+| `security-health-fleet-overview.png` | **Devices** — inventory table, per-device detail panel, macOS-version chart | `devices.png` |
+| `devices.png` | **Historical Trends** — 84% hero line, compliance distribution, snapshot archive | `historical-trends.png` |
+| `trends.png` | **Security Posture** — 99.6 score ring, control KPIs, OS-version donut | `security-posture.png` |
+| `security-posture.png` | **Compliance Posture** — compliance-band donut, control-coverage gaps, per-OS bars | `compliance-posture.png` |
+| `compliance-posture.png` | **Patch Compliance** — patch-titles table, recent-failures table | `patch-compliance.png` |
+| `patch.png` | **OS Updates** — plan-state donut, device-status summary, failed plans | `os-updates.png` |
+| `schedules.png` | **Config** — the `config.yaml` editor, Platform API tab | `config-editor.png` |
 
-**New captures the maintainer must provide** (the writing session cannot generate
-these): one **App Onboarding** screenshot (a step of the 7-step flow) for wiki `02`, and
-optionally one **Configuration / Customize** screenshot for wiki `04`. Total target set:
-**6–8 images** — keep it small; do not add one per dashboard.
+The seven screens actually captured are: **Devices, Historical Trends, Security Posture,
+Compliance Posture, Patch Compliance, OS Updates, Config.**
+
+### Consequences — this corrects two assumptions made before the images were inspected
+
+- There is **no Overview / Fleet Overview** capture. `security-health-fleet-overview.png`
+  is a Devices screenshot — the README hero cannot be that screen.
+- There is **no Schedules** capture. `schedules.png` is the Config editor — wiki page 05
+  needs a Schedules screenshot that does not yet exist.
+- Conversely, **OS Updates** and **Config** captures *do* exist (under wrong names) and
+  were not anticipated by the earlier draft — both are usable as-is.
+
+### Decisions
+
+1. **Rename all seven files to match content** (table above). Two renames collide
+   (`security-health-fleet-overview.png` → `devices.png` while the existing `devices.png`
+   itself moves; and a `trends → security-posture → compliance-posture → patch-compliance`
+   chain). Do the renames with `git mv` through temporary names, or in dependency order.
+   Mechanical step in PR-B.
+2. **All seven are kept** — current, correct captures; none is re-shot.
+3. **README hero** (§4 §3): use the **Security Posture** capture (the green 99.6 score
+   ring is the strongest single image) — *not* an Overview shot, since none exists.
+4. **Two new captures the maintainer must provide** (the writing session cannot generate
+   them): an **App Onboarding** step (one screen of the 7-step flow) for wiki `02`, and
+   the v2.0 **Schedules** form showing the run-mode picker + cadence-tier multi-select
+   (PR-20/21/23) for wiki `05`.
+5. **Final set: 9 images** — 7 renamed existing + 2 new. Slightly above the "~6–8"
+   target, but all 7 existing captures are current and worth using. If the set must be
+   trimmed to 8, drop `os-updates.png` from the wiki — Patch Compliance already
+   represents the Operations group on page `03`.
+
+### Image use by page
+
+| Image (corrected name) | Used on |
+|---|---|
+| `security-posture.png` | README hero; wiki `03`; wiki `Home` |
+| `devices.png` | wiki `03` |
+| `compliance-posture.png` | wiki `03` |
+| `patch-compliance.png` | wiki `03` |
+| `os-updates.png` | wiki `03` (droppable if trimming to 8) |
+| `config-editor.png` | wiki `04` |
+| `historical-trends.png` | wiki `06` |
+| App Onboarding (new capture) | wiki `02` |
+| Schedules (new capture) | wiki `05` |
 
 Fix the broken `../images/` paths (wiki `02/05/06/07`) when the pages are rewritten. In
 the in-repo source use `images/<file>.png`; that same relative form works once published
@@ -611,6 +656,7 @@ A future writing session can work straight down this list.
 - [ ] Create `01-Installation.md` … `09-Diagnostics-and-Troubleshooting.md` (9 pages).
 - [ ] Create `Glossary.md` from `docs/GLOSSARY.md`; fix its stale entries.
 - [ ] Delete old `01-`…`08-` pages.
+- [ ] Rename the 7 files in `docs/wiki/images/` to match content (§7 table); `git mv` via temp names to clear the collisions.
 - [ ] Fix `../images/` → `images/` in every page that embeds an image.
 - [ ] Every jamf-cli command string verified against §1; no pre-v1.16.1 version gates.
 - [ ] No page describes a §2-excluded (unwired) View.
@@ -656,10 +702,11 @@ A future writing session can work straight down this list.
    manual moved to the wiki, should the release zip also include a `CLI-WORKFLOW.md`
    (an export of wiki page 07) so offline CLI users still have the reference? Decide
    when writing wiki page 07.
-6. **Screenshot re-captures.** §7 needs the maintainer to (a) re-verify 5 existing
-   images against the v2.0 sidebar IA, (b) re-capture `schedules.png`, and (c) provide
-   one new App-Onboarding capture. The writing session is blocked on these for wiki
-   pages `02`, `03`, `05` — confirm who supplies them and when.
+6. **Two new screenshots.** §7 confirmed by visual review that all 7 existing captures
+   are v2.0-current — only their filenames are wrong, which PR-B fixes by renaming. Two
+   captures still do not exist and only the maintainer can produce them: an **App
+   Onboarding** step (wiki `02`) and the **Schedules** form (wiki `05`). The writing
+   session is blocked on these two for those pages — confirm who supplies them and when.
 
 ### Conflicts with the existing backlog
 
