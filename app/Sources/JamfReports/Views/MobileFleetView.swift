@@ -323,7 +323,7 @@ struct MobileFleetView: View {
                     }
                     .width(min: 100, ideal: 120)
                 }
-                .font(.system(size: 12))
+                .font(.callout)
                 if totalMobileDevices > devicesForTable.count {
                     Text("Generated reports include every mobile device.")
                         .font(.caption)
@@ -359,7 +359,7 @@ struct MobileFleetView: View {
                     }
                     .width(min: 80, ideal: 100)
                 }
-                .font(.system(size: 12))
+                .font(.callout)
             }
         }
     }

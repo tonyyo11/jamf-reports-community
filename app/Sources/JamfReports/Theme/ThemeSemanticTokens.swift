@@ -138,29 +138,34 @@ extension Theme.Text {
 extension Theme.Fonts {
 
     /// Large display title — section headings inside modals and wizards.
-    static let title: Font = .system(size: 15, weight: .semibold)
+    /// Scales with Dynamic Type off the `.title3` text style (15pt base).
+    static let title: Font = .system(.title3, weight: .semibold)
 
-    /// Standard body text — list rows, descriptions.
-    static let bodyText: Font = .system(size: 13)
+    /// Standard body text — list rows, descriptions. Scales off `.body` (13pt base).
+    static let bodyText: Font = .body
 
-    /// Small label — field labels, captions above controls.
-    static let label: Font = .system(size: 12)
+    /// Small label — field labels, captions above controls. Scales off `.callout` (12pt base).
+    static let label: Font = .callout
 
-    /// Fine caption — helper text, inline timestamps.
-    static let caption: Font = .system(size: 11)
+    /// Fine caption — helper text, inline timestamps. Scales off the `.caption`
+    /// text style with Dynamic Type.
+    static let caption: Font = .caption
 
     /// Eyebrow / kicker — uppercase tracked monospaced label above titles.
     static let kicker: Font = .system(.caption, design: .monospaced).weight(.semibold)
 
-    /// Display numeral for KPI values.
-    static let metric: Font = .system(size: 22, weight: .semibold, design: .serif)
+    /// Display numeral for KPI values. Scales off `.title` (22pt base).
+    /// Scales aggressively — consumers must size their container with
+    /// `.frame(minWidth:)`, never `.frame(width:)`, to avoid clipping at
+    /// large Dynamic Type sizes (see PR #118).
+    static let metric: Font = .system(.title, design: .serif, weight: .semibold)
 
     /// Default-size monospaced body. Tests reference this property form;
     /// production callers prefer the `mono(_:weight:)` function variant.
-    static let mono: Font = .system(size: 13, weight: .regular, design: .monospaced)
+    static let mono: Font = .system(.body, design: .monospaced)
 
     /// Caption-size monospaced. Used in inline timestamps, kicker badges.
-    static let monoCaption: Font = .system(size: 11, weight: .regular, design: .monospaced)
+    static let monoCaption: Font = .system(.caption, design: .monospaced)
 }
 
 // MARK: - Theme.Metrics semantic additions

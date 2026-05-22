@@ -105,7 +105,7 @@ struct PageHeader: View {
                     .foregroundStyle(Theme.Colors.fg)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 12.5))
+                        .font(.callout)
                         .foregroundStyle(Theme.Colors.fgMuted)
                 }
             }
@@ -376,7 +376,7 @@ struct SegmentedControl<Value: Hashable>: View {
                 } label: {
                     HStack(spacing: 5) {
                         if let icon = opt.icon { Image(systemName: icon).font(.system(size: 10, weight: .semibold)) }
-                        Text(opt.label).font(.system(size: 12, weight: .medium))
+                        Text(opt.label).font(.callout.weight(.medium))
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
@@ -614,7 +614,7 @@ struct PNPTextField: View {
             }
         }
         .textFieldStyle(.plain)
-        .font(mono ? Theme.Fonts.mono(12) : .system(size: 13))
+        .font(mono ? Theme.Fonts.mono(12) : .body)
         .foregroundStyle(Theme.Colors.fg)
         .padding(.horizontal, 10)
         .frame(height: 28)

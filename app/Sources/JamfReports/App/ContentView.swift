@@ -147,7 +147,7 @@ struct ContentView: View {
                 .foregroundStyle(toastColor(toast.style))
 
             Text(toast.message)
-                .font(.system(size: 13, weight: .medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg)
 
             Button {
