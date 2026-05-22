@@ -287,7 +287,7 @@ struct ExtensionAttributesView: View {
                 Text(String(format: "%.1f%%", coverage.coveragePct))
                     .font(Theme.Fonts.mono(11, weight: .semibold))
                     .foregroundStyle(coverageColor(for: coverage.coveragePct))
-                    .frame(width: 56, alignment: .trailing)
+                    .frame(minWidth: 56, alignment: .trailing)
                     .monospacedDigit()
             }
 

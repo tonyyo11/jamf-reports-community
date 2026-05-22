@@ -727,7 +727,7 @@ struct EditableNumberStepper: View {
                 .multilineTextAlignment(.trailing)
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Colors.fg2)
-                .frame(width: fieldWidth)
+                .frame(minWidth: fieldWidth)
                 .onChange(of: value) { _, newValue in
                     let clamped = max(range.lowerBound, min(range.upperBound, newValue))
                     if clamped != newValue { value = clamped }

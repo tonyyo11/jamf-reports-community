@@ -847,7 +847,9 @@ private struct AffectedBar: View {
                 .fill(fillColor)
                 .frame(width: value == 0 ? 0 : max(4, 80 * fraction), height: 16)
             Text("\(value)")
-                .font(Theme.Fonts.mono(11, weight: .semibold))
+                // Pinned: fixed 80×16 gauge — the numeral must not scale
+                // with Dynamic Type or it clips the bar.
+                .font(.custom("IBM Plex Mono", size: 11).weight(.semibold))
                 .foregroundStyle(Theme.Colors.fg)
                 .frame(width: 80, height: 16)
         }
