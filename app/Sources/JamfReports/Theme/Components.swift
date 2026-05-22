@@ -267,11 +267,15 @@ struct PNPButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                if let icon { Image(systemName: icon).font(.system(size: iconSize, weight: .semibold)) }
-                Text(title).font(.system(size: fontSize, weight: style == .gold ? .semibold : .medium))
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(fontStyle, weight: .semibold))
+                        .imageScale(.small)
+                }
+                Text(title).font(.system(fontStyle, weight: style == .gold ? .semibold : .medium))
             }
             .padding(.horizontal, hPad)
-            .frame(height: height)
+            .frame(minHeight: height)
             .foregroundStyle(fg)
             .background(bg, in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous))
             .overlay(
@@ -283,10 +287,11 @@ struct PNPButton: View {
         .accessibilityLabel(title)
     }
 
+    /// Minimum height — the button grows past this when Dynamic Type does.
     private var height: CGFloat { switch size { case .sm: 22; case .md: 28; case .lg: 36 } }
     private var hPad: CGFloat   { switch size { case .sm: 8;  case .md: 14; case .lg: 18 } }
-    private var fontSize: CGFloat { switch size { case .sm: 11.5; case .md: 13; case .lg: 13.5 } }
-    private var iconSize: CGFloat { switch size { case .sm: 10; case .md: 12; case .lg: 13 } }
+    /// Scalable label/icon text style — replaces the old pinned point sizes.
+    private var fontStyle: Font.TextStyle { switch size { case .sm: .callout; case .md, .lg: .body } }
 
     private var bg: Color {
         switch style {
