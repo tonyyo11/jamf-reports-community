@@ -258,7 +258,7 @@ struct GenerateSheet: View {
 
     private func tierBadge(for tier: TemplateDataTier) -> some View {
         Text(tier.rawValue.uppercased())
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .font(.system(.caption2, design: .monospaced).weight(.semibold))
             .foregroundStyle(Theme.Colors.goldBright)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
