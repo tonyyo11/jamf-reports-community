@@ -75,6 +75,9 @@ final class JamfCLIInstaller {
         let version: String?
         let source: InstallSource
         let brewPath: String?
+        /// True when the binary passed the codesign-fingerprint gate at discovery time.
+        /// False indicates the gate rejected the binary (missing or mismatched signature).
+        let codesignVerified: Bool
     }
 
     struct UpdateResult: Sendable {
@@ -237,23 +240,27 @@ final class JamfCLIInstaller {
         if let located = ExecutableLocator.locate("jamf-cli") {
             let source = installSource(for: located)
             let brewPath = source == .homebrew ? brew?.path : nil
+            let codesignVerified = CLIBridge.codesignGate(executable: located, onLine: { _ in }) == nil
             return Installation(
                 path: located.path,
                 resolvedPath: located.resolvingSymlinksInPath().path,
                 version: installedVersion(at: located),
                 source: source,
-                brewPath: brewPath
+                brewPath: brewPath,
+                codesignVerified: codesignVerified
             )
         }
 
         if let brew,
            let linked = homebrewLinkedJamfCLI(using: brew) {
+            let codesignVerified = CLIBridge.codesignGate(executable: linked, onLine: { _ in }) == nil
             return Installation(
                 path: linked.path,
                 resolvedPath: linked.resolvingSymlinksInPath().path,
                 version: installedVersion(at: linked),
                 source: .homebrew,
-                brewPath: brew.path
+                brewPath: brew.path,
+                codesignVerified: codesignVerified
             )
         }
         return nil

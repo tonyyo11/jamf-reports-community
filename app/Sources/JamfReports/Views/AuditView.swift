@@ -680,12 +680,21 @@ struct AuditView: View {
             findings = decoded
             lastAuditDate = current.modified
 
-            let previous = auditSnapshots.dropFirst().first
-                .flatMap { try? decoder.decode([AuditFinding].self, from: $0.data) } ?? []
             let currentKeys = Set(decoded.map(\.driftKey))
-            let previousKeys = Set(previous.map(\.driftKey))
-            newFindingKeys = auditSnapshots.count > 1 ? currentKeys.subtracting(previousKeys) : []
-            resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+            if let previousSnapshot = auditSnapshots.dropFirst().first {
+                do {
+                    let previous = try decoder.decode([AuditFinding].self, from: previousSnapshot.data)
+                    let previousKeys = Set(previous.map(\.driftKey))
+                    newFindingKeys = currentKeys.subtracting(previousKeys)
+                    resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+                } catch {
+                    AppLogger.ui.warning(
+                        "AuditView: previous snapshot decode failed — \(error, privacy: .private)"
+                    )
+                    // newFindingKeys and resolvedFindings are already reset above;
+                    // leave them empty rather than misreporting all current findings as new.
+                }
+            }
         }
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import OSLog
 
 // MARK: - WizardState
 
@@ -374,7 +375,10 @@ struct CustomizationWizard: View {
                 try await workspace.saveConfig()
                 onDismiss()
             } catch {
-                saveError = "Could not save config.yaml: \(error.localizedDescription)"
+                AppLogger.ui.error(
+                    "CustomizationWizard: config.yaml save failed — \(error, privacy: .private)"
+                )
+                saveError = "Could not save config.yaml — the workspace folder may not exist or may not be writable."
             }
         }
     }

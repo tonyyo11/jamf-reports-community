@@ -18,6 +18,9 @@ final class WorkspaceStore {
     var jamfCLIPath: String?
     var jamfCLIVersion: String?
     var jamfCLIInstallSource: String?
+    /// True when the located jamf-cli binary failed the codesign-fingerprint gate.
+    /// Surfaced as a distinct warning in Settings separate from the version-floor check.
+    var jamfCLIVerificationFailed: Bool = false
     var jamfCLIUpdateMessage: String?
     var jamfCLIUpdateAvailable: Bool = false
     var isUpdatingJamfCLI: Bool = false
@@ -130,6 +133,7 @@ final class WorkspaceStore {
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
         self.jamfCLIInstallSource = jamfCLI?.source.label
+        self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.launchAgentCleanupMessage = cleanup.message
         self.launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
     }
@@ -273,6 +277,7 @@ final class WorkspaceStore {
         jamfCLIPath = jamfCLI?.path
         jamfCLIVersion = jamfCLI?.version
         jamfCLIInstallSource = jamfCLI?.source.label
+        jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
     }
 
     func checkJamfCLIUpdate() async {

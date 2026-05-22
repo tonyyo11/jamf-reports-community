@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import OSLog
 
 /// Discovers `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist`
 /// files and parses them into `Schedule` model objects.
@@ -133,7 +134,16 @@ enum LaunchAgentService {
     /// Remove generated Jamf Reports LaunchAgents for a profile. Used when
     /// leaving demo mode so synthetic demo schedules cannot appear in live mode.
     static func removeAgents(profile: String) -> [String] {
-        guard ProfileService.isValid(profile) else { return [] }
+        guard ProfileService.isValid(profile) else {
+            // Dotted legacy profile names (e.g. "tenant.prod") contain a period and
+            // fail the current validator. Those plists cannot be matched by prefix and
+            // must be removed manually via `launchctl bootout` + `rm`.
+            AppLogger.schedule.warning(
+                // swiftlint:disable:next line_length
+                "LaunchAgentService.removeAgents: profile \(profile, privacy: .private) failed validation — dotted legacy profiles cannot be removed by this path and need manual launchctl bootout cleanup"
+            )
+            return []
+        }
         let prefix = "\(LaunchAgentWriter.labelPrefix).\(profile)."
         let urls = launchAgentEntries()
             .filter { $0.lastPathComponent.hasPrefix(prefix) }

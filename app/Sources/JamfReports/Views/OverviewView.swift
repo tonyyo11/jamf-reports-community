@@ -160,7 +160,10 @@ struct OverviewView: View {
         MigrationBanner(
             legacyWorkspaces: legacyWorkspaces,
             legacySchedules: legacySchedules,
-            onDismiss: {}
+            onDismiss: {
+                legacyWorkspaces = []
+                legacySchedules = []
+            }
         )
         .onAppear(perform: loadLegacyItems)
     }

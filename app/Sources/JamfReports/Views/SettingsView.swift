@@ -128,6 +128,9 @@ struct SettingsView: View {
         guard let path = workspace.jamfCLIPath else { return "Not found in /opt/homebrew/bin or /usr/local/bin" }
         let source = workspace.jamfCLIInstallSource ?? "Unknown source"
         let base = "\(workspace.jamfCLIVersion ?? "unknown") · \(source) · \(path)"
+        if workspace.jamfCLIVerificationFailed {
+            return "\(base)\nCodesign verification failed — binary may be tampered. Update or reinstall jamf-cli."
+        }
         if JamfCLIInstaller.isBelowMinimumSupported(workspace.jamfCLIVersion) {
             return "\(base)\nBelow minimum supported \(JamfCLIInstaller.minimumSupportedVersion) — Device Lookup payloads may be incomplete. Update recommended."
         }
