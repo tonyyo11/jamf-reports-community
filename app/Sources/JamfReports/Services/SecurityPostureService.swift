@@ -31,6 +31,12 @@ struct SecurityPostureService: Sendable {
             var id: String { osVersion }
         }
 
+        /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
+        /// threshold as TrendStore to align with the standard daily-schedule cadence.
+        var cacheSource: CacheSource {
+            CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
+        }
+
         /// Empty snapshot used when no data file exists for the active profile.
         /// Hides every KPI but renders an explanatory empty state in the view.
         static let empty = Snapshot(

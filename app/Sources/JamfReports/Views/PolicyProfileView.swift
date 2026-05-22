@@ -45,6 +45,13 @@ struct PolicyProfileView: View {
                     options: Tab.allCases.map { ($0, $0.label, $0.icon) }
                 )
 
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    StaleDataBanner(source: snapshot.cacheSource)
+                }
+
                 switch selectedTab {
                 case .policies:
                     if snapshot.summary == nil && snapshot.findings.isEmpty {
@@ -130,18 +137,18 @@ struct PolicyProfileView: View {
             PolicyFinding(severity: "warning", policy: "Application Restriction", policyId: "134", check: "Business Impact", detail: "Policy blocks productivity apps during work hours")
         ],
         profiles: [
-            ProfileStatusRow(id: AnyCodable(101), name: "Wi-Fi Corporate Network", category: "Network", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
-            ProfileStatusRow(id: AnyCodable(102), name: "Exchange Email Setup", category: "Email", site: "Default", managementStatus: "Pending", errorCount: AnyCodable(3)),
-            ProfileStatusRow(id: AnyCodable(103), name: "VPN Configuration", category: "Network", site: "Remote Office", managementStatus: "Installed", errorCount: AnyCodable(0)),
-            ProfileStatusRow(id: AnyCodable(104), name: "Certificate Authority", category: "Security", site: "Default", managementStatus: "Failed", errorCount: AnyCodable(15)),
-            ProfileStatusRow(id: AnyCodable(105), name: "Software Update Settings", category: "System", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
-            ProfileStatusRow(id: AnyCodable(106), name: "Security Baseline", category: "Security", site: "Default", managementStatus: "Pending", errorCount: AnyCodable(2)),
-            ProfileStatusRow(id: AnyCodable(107), name: "Dock Preferences", category: "Desktop", site: "Default", managementStatus: "Removed", errorCount: AnyCodable(8)),
-            ProfileStatusRow(id: AnyCodable(108), name: "Printer Configuration", category: "Printing", site: "Branch Office", managementStatus: "Installed", errorCount: AnyCodable(1)),
-            ProfileStatusRow(id: AnyCodable(109), name: "Chrome Enterprise", category: "Applications", site: "Default", managementStatus: "Failed", errorCount: AnyCodable(7)),
-            ProfileStatusRow(id: AnyCodable(110), name: "Login Window", category: "System", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
-            ProfileStatusRow(id: AnyCodable(111), name: "Time Zone Settings", category: "System", site: "Remote Office", managementStatus: "Pending", errorCount: AnyCodable(1)),
-            ProfileStatusRow(id: AnyCodable(112), name: "FileVault Encryption", category: "Security", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0))
+            ProfileStatusRow(profileId: AnyCodable(101), name: "Wi-Fi Corporate Network", category: "Network", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
+            ProfileStatusRow(profileId: AnyCodable(102), name: "Exchange Email Setup", category: "Email", site: "Default", managementStatus: "Pending", errorCount: AnyCodable(3)),
+            ProfileStatusRow(profileId: AnyCodable(103), name: "VPN Configuration", category: "Network", site: "Remote Office", managementStatus: "Installed", errorCount: AnyCodable(0)),
+            ProfileStatusRow(profileId: AnyCodable(104), name: "Certificate Authority", category: "Security", site: "Default", managementStatus: "Failed", errorCount: AnyCodable(15)),
+            ProfileStatusRow(profileId: AnyCodable(105), name: "Software Update Settings", category: "System", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
+            ProfileStatusRow(profileId: AnyCodable(106), name: "Security Baseline", category: "Security", site: "Default", managementStatus: "Pending", errorCount: AnyCodable(2)),
+            ProfileStatusRow(profileId: AnyCodable(107), name: "Dock Preferences", category: "Desktop", site: "Default", managementStatus: "Removed", errorCount: AnyCodable(8)),
+            ProfileStatusRow(profileId: AnyCodable(108), name: "Printer Configuration", category: "Printing", site: "Branch Office", managementStatus: "Installed", errorCount: AnyCodable(1)),
+            ProfileStatusRow(profileId: AnyCodable(109), name: "Chrome Enterprise", category: "Applications", site: "Default", managementStatus: "Failed", errorCount: AnyCodable(7)),
+            ProfileStatusRow(profileId: AnyCodable(110), name: "Login Window", category: "System", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
+            ProfileStatusRow(profileId: AnyCodable(111), name: "Time Zone Settings", category: "System", site: "Remote Office", managementStatus: "Pending", errorCount: AnyCodable(1)),
+            ProfileStatusRow(profileId: AnyCodable(112), name: "FileVault Encryption", category: "Security", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0))
         ],
         sourceFile: nil,
         snapshotDate: Date()
@@ -201,47 +208,38 @@ struct PolicyProfileView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Configuration Findings", trailingTag: snapshot.findings.count <= 100 ? nil : "\(min(100, snapshot.findings.count)) of \(snapshot.findings.count)")
-                VStack(alignment: .leading, spacing: 0) {
-                    DataTableHeader(columns: [
-                        DataTableColumn(title: "Severity", width: 90, alignment: .leading),
-                        DataTableColumn(title: "Policy", width: 220, alignment: .leading),
-                        DataTableColumn(title: "Check", width: 150, alignment: .leading),
-                        DataTableColumn(title: "Detail", width: nil, alignment: .leading)
-                    ])
-
-                    ForEach(Array(sortedFindings.enumerated()), id: \.offset) { _, finding in
-                        DataTableRow {
-                            Pill(
-                                text: finding.severity,
-                                tone: severityTone(for: finding.severity),
-                                icon: severityIcon(for: finding.severity)
-                            )
-                            .frame(width: 90, alignment: .leading)
-
-                            Spacer(minLength: 12)
-
-                            Text(finding.policy)
-                                .font(.callout.weight(.medium))
-                                .foregroundStyle(Theme.Colors.fg)
-                                .frame(width: 220, alignment: .leading)
-
-                            Spacer(minLength: 12)
-
-                            Text(finding.check)
-                                .font(.callout)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                                .frame(width: 150, alignment: .leading)
-
-                            Spacer(minLength: 12)
-
-                            Text(finding.detail)
-                                .font(.callout)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Policy finding, \(finding.severity) severity, \(finding.policy), \(finding.check), \(finding.detail)")
+                Table(sortedFindings) {
+                    TableColumn("Severity") { finding in
+                        Pill(
+                            text: finding.severity,
+                            tone: severityTone(for: finding.severity),
+                            icon: severityIcon(for: finding.severity)
+                        )
+                        .accessibilityLabel("\(finding.severity) severity")
                     }
+                    .width(min: 90, ideal: 90)
+
+                    TableColumn("Policy") { finding in
+                        Text(finding.policy)
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(Theme.Colors.fg)
+                            .accessibilityLabel("\(finding.policy), policy name")
+                    }
+                    .width(min: 180, ideal: 220)
+
+                    TableColumn("Check") { finding in
+                        Text(finding.check)
+                            .font(.callout)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    .width(min: 120, ideal: 150)
+
+                    TableColumn("Detail") { finding in
+                        Text(finding.detail)
+                            .font(.callout)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    .width(min: 150, ideal: 200)
                 }
                 .frame(minHeight: 200)
             }
@@ -322,69 +320,58 @@ struct PolicyProfileView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Profile Status")
-                VStack(alignment: .leading, spacing: 0) {
-                    DataTableHeader(columns: [
-                        DataTableColumn(title: "Name", width: 220, alignment: .leading),
-                        DataTableColumn(title: "Category", width: 120, alignment: .leading),
-                        DataTableColumn(title: "Site", width: 100, alignment: .leading),
-                        DataTableColumn(title: "Status", width: 120, alignment: .leading),
-                        DataTableColumn(title: "Errors", width: 80, alignment: .leading)
-                    ])
-
-                    ForEach(Array(snapshot.profiles.enumerated()), id: \.offset) { _, profile in
-                        DataTableRow {
-                            Text(profile.name ?? "Unknown Profile")
-                                .font(.callout.weight(.medium))
-                                .foregroundStyle(profileNameColor(for: profile))
-                                .frame(width: 220, alignment: .leading)
-
-                            Spacer(minLength: 12)
-
-                            Text(profile.category ?? "—")
-                                .font(.callout)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                                .frame(width: 120, alignment: .leading)
-
-                            Spacer(minLength: 12)
-
-                            Text(profile.site ?? "—")
-                                .font(.callout)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                                .frame(width: 100, alignment: .leading)
-
-                            Spacer(minLength: 12)
-
-                            if let status = profile.managementStatus {
-                                Pill(
-                                    text: status,
-                                    tone: profileStatusTone(for: status)
-                                )
-                                .frame(width: 120, alignment: .leading)
-                            } else {
-                                Text("Unknown")
-                                    .font(.callout)
-                                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                                    .frame(width: 120, alignment: .leading)
-                            }
-
-                            Spacer(minLength: 12)
-
-                            if let errorCount = profile.errorCount?.value as? Int {
-                                Text("\(errorCount)")
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(errorCount > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
-                                    .monospacedDigit()
-                                    .frame(width: 80, alignment: .leading)
-                            } else {
-                                Text("—")
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                                    .frame(width: 80, alignment: .leading)
-                            }
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Profile \(profile.name ?? "unknown"), status \(profile.managementStatus ?? "unknown"), \(profile.errorCount?.value as? Int ?? 0) errors")
+                Table(snapshot.profiles) {
+                    TableColumn("Name") { profile in
+                        Text(profile.name ?? "Unknown Profile")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(profileNameColor(for: profile))
+                            .accessibilityLabel("\(profile.name ?? "Unknown Profile"), profile name")
                     }
+                    .width(min: 180, ideal: 220)
+
+                    TableColumn("Category") { profile in
+                        Text(profile.category ?? "—")
+                            .font(.callout)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    .width(min: 100, ideal: 120)
+
+                    TableColumn("Site") { profile in
+                        Text(profile.site ?? "—")
+                            .font(.callout)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    .width(min: 80, ideal: 100)
+
+                    TableColumn("Status") { profile in
+                        if let status = profile.managementStatus {
+                            Pill(
+                                text: status,
+                                tone: profileStatusTone(for: status)
+                            )
+                            .accessibilityLabel("Status \(status)")
+                        } else {
+                            Text("Unknown")
+                                .font(.callout)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                    }
+                    .width(min: 100, ideal: 120)
+
+                    TableColumn("Errors") { profile in
+                        if let errorCount = profile.errorCount?.value as? Int {
+                            Text("\(errorCount)")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(errorCount > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
+                                .monospacedDigit()
+                                .accessibilityLabel("\(errorCount) error\(errorCount == 1 ? "" : "s")")
+                        } else {
+                            Text("—")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                    }
+                    .width(min: 60, ideal: 80)
                 }
                 .frame(minHeight: 200)
             }

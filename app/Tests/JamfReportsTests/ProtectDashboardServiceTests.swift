@@ -288,4 +288,74 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.failingInsights, 2, "Should count insights with totalFail > 0 (i2 and i3)")
         XCTAssertEqual(snapshot.insights.count, 4)
     }
+
+    // MARK: - CacheSource derivation
+
+    func testCacheSourceWithNilSnapshotDate() {
+        let snapshot = ProtectDashboardService.Snapshot(
+            isDetected: false,
+            overviewItems: [],
+            alerts: [],
+            computers: [],
+            insights: [],
+            totalComputers: 0,
+            webProtectionActiveCount: 0,
+            fullDiskAccessCount: 0,
+            connectedCount: 0,
+            criticalAlerts: 0,
+            highAlerts: 0,
+            mediumAlerts: 0,
+            lowAlerts: 0,
+            failingInsights: 0,
+            sourceFile: nil,
+            snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.cacheSource, .neverFetchedLive)
+    }
+
+    func testCacheSourceWithFreshSnapshotDate() {
+        let recent = Date(timeIntervalSinceNow: -1800) // 30 minutes ago
+        let snapshot = ProtectDashboardService.Snapshot(
+            isDetected: true,
+            overviewItems: [],
+            alerts: [],
+            computers: [],
+            insights: [],
+            totalComputers: 0,
+            webProtectionActiveCount: 0,
+            fullDiskAccessCount: 0,
+            connectedCount: 0,
+            criticalAlerts: 0,
+            highAlerts: 0,
+            mediumAlerts: 0,
+            lowAlerts: 0,
+            failingInsights: 0,
+            sourceFile: nil,
+            snapshotDate: recent
+        )
+        XCTAssertEqual(snapshot.cacheSource, .fresh)
+    }
+
+    func testCacheSourceWithStaleSnapshotDate() {
+        let stale = Date(timeIntervalSinceNow: -48 * 3600) // 48 hours ago
+        let snapshot = ProtectDashboardService.Snapshot(
+            isDetected: true,
+            overviewItems: [],
+            alerts: [],
+            computers: [],
+            insights: [],
+            totalComputers: 0,
+            webProtectionActiveCount: 0,
+            fullDiskAccessCount: 0,
+            connectedCount: 0,
+            criticalAlerts: 0,
+            highAlerts: 0,
+            mediumAlerts: 0,
+            lowAlerts: 0,
+            failingInsights: 0,
+            sourceFile: nil,
+            snapshotDate: stale
+        )
+        XCTAssertEqual(snapshot.cacheSource, .stale(at: stale))
+    }
 }

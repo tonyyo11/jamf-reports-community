@@ -120,12 +120,17 @@ struct PolicyStatusSummary: Decodable, Sendable {
     }
 }
 
-struct PolicyFinding: Decodable, Sendable {
+struct PolicyFinding: Decodable, Sendable, Identifiable {
     let severity: String
     let policy: String
     let policyId: String
     let check: String
     let detail: String
+
+    // Use a combination of policyId and check as unique identifier
+    var id: String {
+        "\(policyId)-\(check)"
+    }
 
     private enum CodingKeys: String, CodingKey {
         case severity, policy
@@ -236,7 +241,7 @@ struct UpdateFailuresReport: Decodable, Sendable {
     }
 }
 
-struct UpdateErrorDevice: Decodable, Sendable {
+struct UpdateErrorDevice: Decodable, Sendable, Identifiable {
     let name: String
     let serial: String
     let deviceType: String
@@ -245,6 +250,8 @@ struct UpdateErrorDevice: Decodable, Sendable {
     let status: String
     let productKey: String
     let updated: String
+
+    var id: String { serial }
 
     private enum CodingKeys: String, CodingKey {
         case name, serial
@@ -256,7 +263,7 @@ struct UpdateErrorDevice: Decodable, Sendable {
     }
 }
 
-struct UpdateFailedPlan: Decodable, Sendable {
+struct UpdateFailedPlan: Decodable, Sendable, Identifiable {
     let name: String
     let serial: String
     let deviceType: String
@@ -267,6 +274,8 @@ struct UpdateFailedPlan: Decodable, Sendable {
     let version: String
     let error: String
     let lastEvent: String
+
+    var id: String { serial }
 
     private enum CodingKeys: String, CodingKey {
         case name, serial
@@ -422,16 +431,28 @@ struct SmartGroupRow: Decodable, Sendable {
 // MARK: - Profile status (classic macOS profiles)
 // `jamf-cli pro classic-macos-profiles list --output json`
 
-struct ProfileStatusRow: Decodable, Sendable {
-    let id: AnyCodable?
+struct ProfileStatusRow: Decodable, Sendable, Identifiable {
+    let profileId: AnyCodable?
     let name: String?
     let category: String?
     let site: String?
     let managementStatus: String?
     let errorCount: AnyCodable?
 
+    // Use the existing profileId field or fallback to name
+    var id: String {
+        if let profileId = profileId?.value as? String {
+            return profileId
+        } else if let profileId = profileId?.value as? Int {
+            return String(profileId)
+        } else {
+            return name ?? UUID().uuidString
+        }
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case id, name, category, site
+        case profileId = "id"
+        case name, category, site
         case managementStatus = "management_status"
         case errorCount = "error_count"
     }

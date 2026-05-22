@@ -46,6 +46,23 @@ HTML instance report (Python CLI and macOS app):
   set no longer includes the `exceptiongroup`, `importlib-resources`,
   `pytz`, `typing-extensions`, and `zipp` backports that older Python
   versions required.
+- **Stale-data banner now appears on five more screens** (macOS app): the
+  Policies & Profiles, Compliance Posture, Security Posture, Mobile Fleet,
+  and Protect screens now show the cached-data banner — the same one the
+  Trends screen already displayed — when their snapshot is older than the
+  freshness window.
+- **Policy/Profile and Update tables rebuilt as native tables** (macOS
+  app): the config-findings and profile-status tables on the Policies &
+  Profiles screen and the failed-plans and error-devices tables on the
+  Updates screen now use SwiftUI's `Table`, giving consistent row chrome
+  and correct VoiceOver table navigation.
+- **Clearer Sources scope wording** (macOS app): the profile scope control
+  no longer describes "Full Admin" in terms that read like a server-side
+  Jamf privilege grant; the wording now states it unlocks destructive app
+  operations for the profile, stored locally.
+- **Mobile Fleet device count** (macOS app): the Mobile Devices section
+  header drops the count line when all devices are shown, matching the
+  other paginated tables.
 
 ### Fixed
 
@@ -55,6 +72,11 @@ HTML instance report (Python CLI and macOS app):
   unread chunk could be lost — collapsing a structured JSON response to a
   truncated or empty payload. It now resumes only once stdout EOF and
   process termination are both observed.
+- **Spurious matplotlib legend warning** (Python CLI): the device-state
+  trend chart called `legend()` on its single-snapshot bar path, where no
+  series carries a label, printing `UserWarning: No artists with labels
+  found to put in legend`. The legend is now drawn only on the multi-
+  snapshot path that has labelled series.
 
 ## [2.0.0] - 2026-05-20
 

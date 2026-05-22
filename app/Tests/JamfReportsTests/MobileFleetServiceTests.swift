@@ -215,4 +215,44 @@ final class MobileFleetServiceTests: XCTestCase {
         // Clean up
         try? FileManager.default.removeItem(at: tempURL)
     }
+
+    // MARK: - CacheSource derivation
+
+    func testCacheSourceWithNilSnapshotDate() {
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: false,
+            lightDevices: [],
+            richDevices: [],
+            profiles: [],
+            sourceFile: nil,
+            snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.cacheSource, .neverFetchedLive)
+    }
+
+    func testCacheSourceWithFreshSnapshotDate() {
+        let recent = Date(timeIntervalSinceNow: -1800) // 30 minutes ago
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true,
+            lightDevices: [],
+            richDevices: [],
+            profiles: [],
+            sourceFile: nil,
+            snapshotDate: recent
+        )
+        XCTAssertEqual(snapshot.cacheSource, .fresh)
+    }
+
+    func testCacheSourceWithStaleSnapshotDate() {
+        let stale = Date(timeIntervalSinceNow: -48 * 3600) // 48 hours ago
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true,
+            lightDevices: [],
+            richDevices: [],
+            profiles: [],
+            sourceFile: nil,
+            snapshotDate: stale
+        )
+        XCTAssertEqual(snapshot.cacheSource, .stale(at: stale))
+    }
 }

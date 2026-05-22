@@ -20,6 +20,13 @@ struct ProtectView: View {
                     lastModified: snapshot.snapshotDate
                 )
 
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    StaleDataBanner(source: snapshot.cacheSource)
+                }
+
                 if !snapshot.isDetected {
                     emptyState
                 } else {
@@ -817,22 +824,22 @@ private struct ProtectAlertsSeverityExport: View {
                     HStack(spacing: 8) {
                         Text(row.label)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color(hex: 0x111827))
+                            .foregroundStyle(Theme.Chart.textPrimary)
                         Spacer(minLength: 6)
                         Text("\(row.count)")
                             .font(.caption.monospaced().weight(.semibold))
-                            .foregroundStyle(Color(hex: 0x111827))
+                            .foregroundStyle(Theme.Chart.textPrimary)
                             .monospacedDigit()
                         Text(String(format: "%.1f%%", pct))
                             .font(.caption.monospaced())
-                            .foregroundStyle(Color(hex: 0x475569))
+                            .foregroundStyle(Theme.Chart.textSecondary)
                             .frame(width: 50, alignment: .trailing)
                             .monospacedDigit()
                     }
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Color(hex: 0xE2E8F0))
+                                .fill(Theme.Chart.borders)
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(row.color)
                                 .frame(width: max(2, geo.size.width * pct / 100))
@@ -846,7 +853,7 @@ private struct ProtectAlertsSeverityExport: View {
                     Spacer()
                     Text("Total: \(total) alert\(total == 1 ? "" : "s")")
                         .font(.caption.monospaced().weight(.semibold))
-                        .foregroundStyle(Color(hex: 0x475569))
+                        .foregroundStyle(Theme.Chart.textSecondary)
                 }
             }
         }

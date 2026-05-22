@@ -55,6 +55,12 @@ struct PolicyHealthService: Sendable {
             }.count
         }
 
+        /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
+        /// threshold as TrendStore to align with the standard daily-schedule cadence.
+        var cacheSource: CacheSource {
+            CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
+        }
+
         static let empty = Snapshot(
             summary: nil,
             findings: [],

@@ -559,7 +559,7 @@ enum LaunchAgentWriter {
         // M-01 fourth-site closure: refuse to launch even a path-identity-
         // matching jamf-cli that fails signature verification. Returns nil
         // when the gate accepts; non-nil (sentinel -1) on rejection.
-        return CLIBridge.codesignGate(executable: candidate, onLine: { _ in }) == nil
+        return CLIBridge.codesignGate(executable: candidate, onLine: CLIBridge.noOpOnLine) == nil
     }
 
     private static func setupCadence(from raw: String) throws -> CadenceOptions {

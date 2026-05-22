@@ -281,11 +281,10 @@ final class DeviceLookupIndexTests: XCTestCase {
 
     func testMobileParserFallsBackToIDForIdWhenMobileDeviceIdAbsent() throws {
         // Mobile parser tries `mobileDeviceId` first, then top-level `id`. The
-        // name fall-back chain is general.displayName → general.name →
-        // dict.displayName → rawID — it does NOT consult top-level `name`,
-        // so a record like `{"id": "42", "name": "X"}` gets indexed with
-        // name=="42". The serial fall-back is hardware.serialNumber →
-        // dict.serialNumber.
+        // name fall-back chain is: dict.name → general.displayName → general.name
+        // → dict.displayName → rawID. The serial fall-back is hardware.serialNumber
+        // → dict.serialNumber. This test exercises dict.displayName (not dict.name)
+        // so both branches are covered across the test suite.
         try writeSnapshot(
             subdir: "mobile-devices-list",
             filename: "mobile-devices-list.json",
@@ -304,6 +303,31 @@ final class DeviceLookupIndexTests: XCTestCase {
                        "name resolves from top-level displayName")
         XCTAssertEqual(index.candidates.first?.serial, "FLAT0001",
                        "serial resolves from top-level serialNumber")
+    }
+
+    func testMobileParserResolvesTopLevelNameFromFlatJamfCLIShape() throws {
+        // jamf-cli `mobile-devices-list` with default `--all=true` uses
+        // `selectTableColumns` which flattens `general.displayName` → top-level
+        // `name`. The parser must resolve `name` from `dict["name"]` first so
+        // the canonical output shape works without a `general` block present.
+        try writeSnapshot(
+            subdir: "mobile-devices-list",
+            filename: "mobile-devices-list.json",
+            json: [
+                ["id": "1", "name": "Device 83",
+                 "serialNumber": "CA44FE1260A3", "model": "iPhone 5 (CDMA)"]
+            ]
+        )
+        let index = DeviceLookupIndex()
+        index.load(profile: profileSlug)
+        XCTAssertEqual(index.candidates.count, 1)
+        XCTAssertEqual(index.candidates.first?.kind, .mobile)
+        XCTAssertEqual(index.candidates.first?.id, "1",
+                       "id must be resolved from top-level `id`")
+        XCTAssertEqual(index.candidates.first?.name, "Device 83",
+                       "name must be resolved from top-level `name` (flat jamf-cli shape)")
+        XCTAssertEqual(index.candidates.first?.serial, "CA44FE1260A3",
+                       "serial must be resolved from top-level `serialNumber`")
     }
 
     // MARK: - Error surface

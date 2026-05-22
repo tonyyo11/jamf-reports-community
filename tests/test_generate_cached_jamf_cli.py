@@ -7,7 +7,6 @@ import pytest
 
 
 @pytest.mark.integration
-@pytest.mark.filterwarnings("ignore:No artists with labels found to put in legend")
 def test_generate_from_committed_cached_jamf_cli_data(
     monkeypatch,
     config_factory,

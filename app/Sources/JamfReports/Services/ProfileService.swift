@@ -213,7 +213,7 @@ enum ProfileService {
         // Fall back to reading `~/.config/jamf-cli/config.yaml` directly —
         // the same recovery path used when the binary is absent or launch
         // fails. The user still sees their profiles; nothing un-trusted runs.
-        if CLIBridge.codesignGate(executable: binary, onLine: { _ in }) != nil {
+        if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
 

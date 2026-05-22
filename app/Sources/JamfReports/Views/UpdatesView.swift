@@ -449,66 +449,47 @@ struct UpdatesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Failed Plans", trailing: "\(snapshot.failedPlans.count) total")
-
-                VStack(spacing: 4) {
-                    DataTableHeader(columns: [
-                        DataTableColumn(title: "Device", width: 140, alignment: .leading),
-                        DataTableColumn(title: "Serial", width: 100, alignment: .leading),
-                        DataTableColumn(title: "OS Version", width: 100, alignment: .leading),
-                        DataTableColumn(title: "State", width: 138, alignment: .leading),
-                        DataTableColumn(title: "Action", width: 100, alignment: .leading),
-                        DataTableColumn(title: "Error", width: nil, alignment: .leading)
-                    ])
-
-                    Divider()
-
-                    ScrollView {
-                        LazyVStack(spacing: 2) {
-                            ForEach(Array(snapshot.failedPlans.prefix(50).enumerated()), id: \.offset) { _, plan in
-                                DataTableRow {
-                                    Text(plan.name)
-                                        .font(.footnote)
-                                        .foregroundStyle(Theme.Colors.fg2)
-                                        .frame(width: 140, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Mono(text: plan.serial, size: 11)
-                                        .frame(width: 100, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Mono(text: plan.osVersion, size: 11)
-                                        .frame(width: 100, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Pill(text: plan.state, tone: pillTone(for: plan.state))
-                                        .frame(width: 138, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Text(plan.action)
-                                        .font(.footnote)
-                                        .foregroundStyle(Theme.Colors.fg2)
-                                        .frame(width: 100, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Text(truncatedError(plan.error))
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .lineLimit(1)
-                                }
-                                .background(Color.white.opacity(0.03))
-                                .accessibilityElement(children: .combine)
-                                .accessibilityLabel("Failed plan for \(plan.name), state \(plan.state), error \(plan.error)")
-                            }
-                        }
+                Table(Array(snapshot.failedPlans.prefix(50))) {
+                    TableColumn("Device") { plan in
+                        Text(plan.name)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                            .accessibilityLabel("\(plan.name), device name")
                     }
-                    .frame(height: min(300, CGFloat(snapshot.failedPlans.prefix(50).count) * 28))
+                    .width(min: 120, ideal: 140)
+
+                    TableColumn("Serial") { plan in
+                        Mono(text: plan.serial, size: 11)
+                    }
+                    .width(min: 80, ideal: 100)
+
+                    TableColumn("OS Version") { plan in
+                        Mono(text: plan.osVersion, size: 11)
+                    }
+                    .width(min: 80, ideal: 100)
+
+                    TableColumn("State") { plan in
+                        Pill(text: plan.state, tone: pillTone(for: plan.state))
+                            .accessibilityLabel("State \(plan.state)")
+                    }
+                    .width(min: 118, ideal: 138)
+
+                    TableColumn("Action") { plan in
+                        Text(plan.action)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                    .width(min: 80, ideal: 100)
+
+                    TableColumn("Error") { plan in
+                        Text(truncatedError(plan.error))
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .lineLimit(1)
+                    }
+                    .width(min: 150, ideal: 200)
                 }
+                .frame(minHeight: 200)
 
                 if snapshot.failedPlans.count > 50 {
                     Text("+ \(snapshot.failedPlans.count - 50) more")
@@ -525,57 +506,39 @@ struct UpdatesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Error Devices", trailing: "\(snapshot.errorDevices.count) total")
-
-                VStack(spacing: 4) {
-                    DataTableHeader(columns: [
-                        DataTableColumn(title: "Device", width: 140, alignment: .leading),
-                        DataTableColumn(title: "Serial", width: 100, alignment: .leading),
-                        DataTableColumn(title: "Status", width: 100, alignment: .leading),
-                        DataTableColumn(title: "Product Key", width: 180, alignment: .leading),
-                        DataTableColumn(title: "Updated", width: nil, alignment: .leading)
-                    ])
-
-                    Divider()
-
-                    ScrollView {
-                        LazyVStack(spacing: 2) {
-                            ForEach(Array(snapshot.errorDevices.enumerated()), id: \.offset) { _, device in
-                                DataTableRow {
-                                    Text(device.name)
-                                        .font(.footnote)
-                                        .foregroundStyle(Theme.Colors.fg2)
-                                        .frame(width: 140, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Mono(text: device.serial, size: 11)
-                                        .frame(width: 100, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Pill(text: device.status, tone: .danger)
-                                        .frame(width: 100, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Mono(text: device.productKey, size: 10.5, color: Theme.Colors.fg2)
-                                        .frame(width: 180, alignment: .leading)
-
-                                    Spacer(minLength: 12)
-
-                                    Text(formatDate(device.updated))
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .background(Color.white.opacity(0.03))
-                                .accessibilityElement(children: .combine)
-                                .accessibilityLabel("Error device \(device.name), status \(device.status), product \(device.productKey)")
-                            }
-                        }
+                Table(snapshot.errorDevices) {
+                    TableColumn("Device") { device in
+                        Text(device.name)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                            .accessibilityLabel("\(device.name), device name")
                     }
-                    .frame(height: min(200, CGFloat(snapshot.errorDevices.count) * 28))
+                    .width(min: 120, ideal: 140)
+
+                    TableColumn("Serial") { device in
+                        Mono(text: device.serial, size: 11)
+                    }
+                    .width(min: 80, ideal: 100)
+
+                    TableColumn("Status") { device in
+                        Pill(text: device.status, tone: .danger)
+                            .accessibilityLabel("Status \(device.status)")
+                    }
+                    .width(min: 80, ideal: 100)
+
+                    TableColumn("Product Key") { device in
+                        Mono(text: device.productKey, size: 10.5, color: Theme.Colors.fg2)
+                    }
+                    .width(min: 150, ideal: 180)
+
+                    TableColumn("Updated") { device in
+                        Text(formatDate(device.updated))
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    .width(min: 100, ideal: 120)
                 }
+                .frame(minHeight: 150)
             }
         }
     }

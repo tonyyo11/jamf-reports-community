@@ -889,7 +889,7 @@ struct DevicesView: View {
         deviceDetail = nil
         deviceDetailState = .loading
 
-        guard let data = await CLIBridge().deviceDetail(profile: profile, deviceID: lookup) else {
+        guard let data = await CLIBridge().deviceDetailWithProvenance(profile: profile, deviceID: lookup)?.data else {
             if deviceDetailRequestKey == requestKey {
                 deviceDetailState = .unavailable("Device detail unavailable for \(lookup).")
             }

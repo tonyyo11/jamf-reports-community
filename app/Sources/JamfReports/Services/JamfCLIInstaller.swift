@@ -240,7 +240,7 @@ final class JamfCLIInstaller {
         if let located = ExecutableLocator.locate("jamf-cli") {
             let source = installSource(for: located)
             let brewPath = source == .homebrew ? brew?.path : nil
-            let codesignVerified = CLIBridge.codesignGate(executable: located, onLine: { _ in }) == nil
+            let codesignVerified = CLIBridge.codesignGate(executable: located, onLine: CLIBridge.noOpOnLine) == nil
             return Installation(
                 path: located.path,
                 resolvedPath: located.resolvingSymlinksInPath().path,
@@ -253,7 +253,7 @@ final class JamfCLIInstaller {
 
         if let brew,
            let linked = homebrewLinkedJamfCLI(using: brew) {
-            let codesignVerified = CLIBridge.codesignGate(executable: linked, onLine: { _ in }) == nil
+            let codesignVerified = CLIBridge.codesignGate(executable: linked, onLine: CLIBridge.noOpOnLine) == nil
             return Installation(
                 path: linked.path,
                 resolvedPath: linked.resolvingSymlinksInPath().path,
@@ -272,7 +272,7 @@ final class JamfCLIInstaller {
         // the upgrade path (`updateGitHubRelease`) already treats as a
         // signal to perform a fresh install via `installFromGitHub` —
         // so a rejected binary is replaced rather than re-executed.
-        if CLIBridge.codesignGate(executable: binary, onLine: { _ in }) != nil {
+        if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return nil
         }
 

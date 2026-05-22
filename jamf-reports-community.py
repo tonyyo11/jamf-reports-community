@@ -11937,11 +11937,11 @@ class ChartGenerator:
                 alpha=0.85,
             )
             ax.set_xlabel("Date")
+            ax.legend(loc="upper left", fontsize=9)
             self._format_date_axis(ax, ts.index)
 
         ax.set_title("Device State Trend Over Time", fontweight="bold")
         ax.set_ylabel("Number of Devices")
-        ax.legend(loc="upper left", fontsize=9)
         ax.grid(True, alpha=0.2)
         fig.tight_layout()
 
