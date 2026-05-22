@@ -108,7 +108,7 @@ struct OnboardingView: View {
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
             Text(headerSubtitle)
-                .font(.system(size: 14))
+                .font(.body)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .frame(maxWidth: 650, alignment: .leading)
         }
@@ -174,7 +174,7 @@ struct OnboardingView: View {
                         .foregroundStyle(flow.connectionValidated ? Theme.Colors.ok : Theme.Colors.goldBright)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Validate profile \(flow.profileName.trimmedForView)")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
                         Mono(text: "jamf-cli -p \(flow.profileName.trimmedForView) config validate", size: 11.5)
                     }
@@ -204,7 +204,7 @@ struct OnboardingView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("A workspace is a local, per-Jamf-instance home for config, snapshots, generated reports, automation logs, and CSV intake.")
-                        .font(.system(size: 15))
+                        .font(.title3)
                         .foregroundStyle(Theme.Colors.fg2)
                         .frame(maxWidth: 640, alignment: .leading)
                     HStack(spacing: 8) {
@@ -353,7 +353,7 @@ struct OnboardingView: View {
                             .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading, spacing: 4) {
                             Text("First Jamf Pro CSV export")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.body.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.fg)
                             Text("Policy: accepted locations are Documents, Downloads, and Desktop.")
                                 .font(.footnote)
@@ -413,7 +413,7 @@ struct OnboardingView: View {
                         .foregroundStyle(Theme.Colors.goldBright)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Run profile \(flow.profileName.trimmedForView)")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
                         Mono(text: "generate --profile \(flow.profileName.trimmedForView)", size: 11.5)
                     }
