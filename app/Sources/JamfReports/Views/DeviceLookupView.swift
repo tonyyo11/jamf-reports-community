@@ -401,7 +401,7 @@ struct DeviceLookupView: View {
                 state = .unavailable(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
                 return
             }
-            staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
+            staleSince = result.fromCache ? freshnessTimestamp(for: result.cacheURL) : nil
             do {
                 let decoded = try DeviceDetail.decode(from: result.data, lookupID: id)
                 detail = decoded
@@ -434,7 +434,7 @@ struct DeviceLookupView: View {
                 if let decoded = try? DeviceDetail.decode(from: result.data, lookupID: term) {
                     resolvedKind = .computer
                     detail = decoded
-                    staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
+                    staleSince = result.fromCache ? freshnessTimestamp(for: result.cacheURL) : nil
                     state = .loaded
                     return
                 }
@@ -446,7 +446,7 @@ struct DeviceLookupView: View {
                 if let decoded = try? DeviceDetail.decode(from: result.data, lookupID: term) {
                     resolvedKind = .mobile
                     detail = decoded
-                    staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
+                    staleSince = result.fromCache ? freshnessTimestamp(for: result.cacheURL) : nil
                     state = .loaded
                     return
                 }
@@ -457,13 +457,6 @@ struct DeviceLookupView: View {
                 "for computer and mobile both failed. The cache may be stale."
             state = .noMatchOfferRefresh(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
         }
-    }
-
-    /// Read the contentModificationDate of a cache file; returns nil on stat failure.
-    private func snapshotMTime(_ url: URL?) -> Date? {
-        guard let url else { return nil }
-        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
-        return values?.contentModificationDate
     }
 
     private func refreshIndex() {
@@ -523,6 +516,34 @@ struct DeviceLookupView: View {
 }
 
 // MARK: - FailLineCollector
+
+/// Returns the freshness timestamp for a device-detail cache URL (T-15 fix).
+///
+/// Prefers the per-cache `.meta` sidecar written by `CLIBridge.writeDeviceDetailFreshnessSidecar`
+/// (which holds `generated_at` as an ISO-8601 UTC string) over the filesystem mtime.
+/// The sidecar is app-written on every live-data refresh; an attacker who can only run
+/// `touch -t` cannot forge it without also crafting valid JSON content.
+///
+/// Falls back to `contentModificationDate` when the sidecar is absent (caches predating
+/// this change) or unparseable (truncated/corrupted write).
+///
+/// Internal access allows `@testable import` in DeviceDetailProvenanceTests.
+internal func freshnessTimestamp(for cacheURL: URL?) -> Date? {
+    guard let cacheURL else { return nil }
+    let sidecar = cacheURL.appendingPathExtension("meta")
+    if let raw = try? Data(contentsOf: sidecar),
+       let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: String],
+       let isoString = obj["generated_at"] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: isoString) {
+            return date
+        }
+    }
+    // Sidecar absent or unparseable — fall back to filesystem mtime.
+    let values = try? cacheURL.resourceValues(forKeys: [.contentModificationDateKey])
+    return values?.contentModificationDate
+}
 
 /// Thread-safe collector for `.fail`-level LogLines produced by `runDeviceDetailProcess`.
 /// Captured into the `@Sendable` `onLine` closure; read back on MainActor after the

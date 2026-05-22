@@ -705,9 +705,10 @@ final class CLIBridge {
     }
 
     /// Payload + provenance for a single-device detail fetch. `fromCache==true`
-    /// signals the live API call failed and we returned the last-known-good cache;
-    /// `cacheURL.contentModificationDate` is the snapshot's mtime (rendered as
-    /// "last fetched <relative time>" in the UI staleness banner).
+    /// signals the live API call failed and we returned the last-known-good cache.
+    /// When `fromCache==false` a `.meta` sidecar holding `generated_at` (ISO-8601
+    /// UTC) is written alongside the cache file; `freshnessTimestamp(for:)` in
+    /// DeviceLookupView prefers that sidecar over the attacker-`touch`-able mtime.
     struct DeviceDetailResult: Sendable {
         let data: Data
         let fromCache: Bool
@@ -798,16 +799,23 @@ final class CLIBridge {
                 do {
                     let data = try Data(contentsOf: partial)
                     if !data.isEmpty {
+                        // Remove both the stale cache and its freshness sidecar so a
+                        // forged-old-timestamp sidecar can't survive a live refresh.
                         try? FileManager.default.removeItem(at: cache)
+                        try? FileManager.default.removeItem(
+                            at: cache.appendingPathExtension("meta")
+                        )
                         do {
                             try FileManager.default.moveItem(at: partial, to: cache)
                             if let cached = try? Data(contentsOf: cache) {
+                                CLIBridge.writeDeviceDetailFreshnessSidecar(for: cache)
                                 return DeviceDetailResult(
                                     data: cached, fromCache: false, cacheURL: cache
                                 )
                             }
                         } catch {
                             try? data.write(to: cache, options: .atomic)
+                            CLIBridge.writeDeviceDetailFreshnessSidecar(for: cache)
                             return DeviceDetailResult(
                                 data: data, fromCache: false, cacheURL: cache
                             )
@@ -823,6 +831,36 @@ final class CLIBridge {
         }
         guard let data = try? Data(contentsOf: cache) else { return nil }
         return DeviceDetailResult(data: data, fromCache: true, cacheURL: cache)
+    }
+
+    /// Writes a freshness sidecar at `cache.appendingPathExtension("meta")` holding
+    /// `{"generated_at": "<ISO-8601 UTC>"}`. Called on every successful live-data write
+    /// so `freshnessTimestamp(for:)` in DeviceLookupView can prefer the app-written
+    /// timestamp over the attacker-`touch`-able filesystem mtime (T-15).
+    ///
+    /// - Non-blocking: failures are logged as warnings; the caller's return is unaffected.
+    /// - The caller is responsible for removing any stale `.meta` file before calling this
+    ///   (done in `singleDeviceDetail` alongside `removeItem(at: cache)`).
+    nonisolated static func writeDeviceDetailFreshnessSidecar(for cache: URL) {
+        let sidecar = cache.appendingPathExtension("meta")
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let isoString = formatter.string(from: Date())
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: ["generated_at": isoString]
+        ) else {
+            AppLogger.cli.warning(
+                "freshnessSidecar: could not serialize JSON for \(cache.lastPathComponent, privacy: .private)"
+            )
+            return
+        }
+        do {
+            try data.write(to: sidecar, options: .atomic)
+        } catch {
+            AppLogger.cli.warning(
+                "freshnessSidecar: write failed for \(sidecar.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+            )
+        }
     }
 
     nonisolated func diffBackups(

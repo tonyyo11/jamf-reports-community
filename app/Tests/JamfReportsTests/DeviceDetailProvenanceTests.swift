@@ -3,9 +3,16 @@ import XCTest
 @testable import JamfReports
 
 /// Coverage for `CLIBridge.DeviceDetailResult` provenance (`fromCache`) added by
-/// PR-7 Item 5. Exercises the cache-fallback path: when jamf-cli is absent (CI
-/// env), `singleDeviceDetail` skips the live call and returns the existing
-/// cache file with `fromCache: true`.
+/// PR-7 Item 5, and for the per-cache `.meta` freshness sidecar added by Epic #103
+/// Item 12 (T-15 mitigation).
+///
+/// Item 12 tests:
+/// - `testSidecarWriteProducesMetaFileWithParseableGeneratedAt` — verifies the helper
+///   writes a `.meta` sidecar with a valid ISO-8601 `generated_at` field.
+/// - `testFreshnessTimestampPrefersSidecar` — verifies `freshnessTimestamp(for:)` returns
+///   the sidecar timestamp when both sidecar and mtime are available.
+/// - `testFreshnessTimestampFallsBackToMtimeWhenSidecarAbsent` — no sidecar → mtime.
+/// - `testFreshnessTimestampFallsBackToMtimeWhenSidecarMalformed` — corrupt sidecar → mtime.
 final class DeviceDetailProvenanceTests: XCTestCase {
 
     nonisolated(unsafe) private var testRoot: URL!
@@ -110,6 +117,125 @@ final class DeviceDetailProvenanceTests: XCTestCase {
                 accuracy: 1.0
             )
         }
+    }
+
+    // MARK: - T-15 freshness sidecar (Epic #103 Item 12)
+
+    /// Verifies `CLIBridge.writeDeviceDetailFreshnessSidecar(for:)` creates a `.meta`
+    /// file alongside the cache with a parseable ISO-8601 `generated_at` timestamp.
+    func testSidecarWriteProducesMetaFileWithParseableGeneratedAt() throws {
+        let dir = try cacheDir(subdir: "devices")
+        let cacheURL = dir.appendingPathComponent("device-abc-0000000000000001.json")
+        try Data(#"{"id":1}"#.utf8).write(to: cacheURL)
+
+        let before = Date()
+        CLIBridge.writeDeviceDetailFreshnessSidecar(for: cacheURL)
+        let after = Date()
+
+        let sidecarURL = cacheURL.appendingPathExtension("meta")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sidecarURL.path),
+                      ".meta sidecar must exist after writeDeviceDetailFreshnessSidecar")
+
+        let raw = try Data(contentsOf: sidecarURL)
+        let obj = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: raw) as? [String: String],
+            "sidecar must decode as [String:String]"
+        )
+        let isoString = try XCTUnwrap(obj["generated_at"], "sidecar must have 'generated_at' key")
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let date = try XCTUnwrap(
+            formatter.date(from: isoString),
+            "generated_at '\(isoString)' must parse as ISO-8601"
+        )
+        XCTAssertGreaterThanOrEqual(date.timeIntervalSinceReferenceDate,
+                                    before.timeIntervalSinceReferenceDate - 1.0)
+        XCTAssertLessThanOrEqual(date.timeIntervalSinceReferenceDate,
+                                 after.timeIntervalSinceReferenceDate + 1.0)
+    }
+
+    /// Verifies `freshnessTimestamp(for:)` returns the sidecar's `generated_at`
+    /// timestamp when a valid `.meta` sidecar is present — even when the file's
+    /// mtime has been backdated by an attacker using `touch -t`.
+    func testFreshnessTimestampPrefersSidecar() throws {
+        let dir = try cacheDir(subdir: "devices")
+        let cacheURL = dir.appendingPathComponent("device-pref-sidecar.json")
+        try Data(#"{"id":2}"#.utf8).write(to: cacheURL)
+
+        // Backdate the file mtime so it differs clearly from the sidecar timestamp.
+        let backdatedMtime = Date().addingTimeInterval(-7200)
+        try FileManager.default.setAttributes(
+            [.modificationDate: backdatedMtime], ofItemAtPath: cacheURL.path
+        )
+
+        // Write a sidecar with a known, recent timestamp.
+        let sidecarTimestamp = Date().addingTimeInterval(-60)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let sidecarContent = try JSONSerialization.data(
+            withJSONObject: ["generated_at": formatter.string(from: sidecarTimestamp)]
+        )
+        let sidecarURL = cacheURL.appendingPathExtension("meta")
+        try sidecarContent.write(to: sidecarURL)
+
+        let result = freshnessTimestamp(for: cacheURL)
+        let resolved = try XCTUnwrap(result, "freshnessTimestamp must return a date")
+
+        // Must be closer to sidecarTimestamp than to the backdated mtime.
+        XCTAssertEqual(resolved.timeIntervalSinceReferenceDate,
+                       sidecarTimestamp.timeIntervalSinceReferenceDate,
+                       accuracy: 2.0,
+                       "freshnessTimestamp should return the sidecar timestamp, not the backdated mtime")
+    }
+
+    /// Verifies `freshnessTimestamp(for:)` falls back to the file mtime when no
+    /// `.meta` sidecar exists (caches written before Epic #103 Item 12).
+    func testFreshnessTimestampFallsBackToMtimeWhenSidecarAbsent() throws {
+        let dir = try cacheDir(subdir: "devices")
+        let cacheURL = dir.appendingPathComponent("device-no-sidecar.json")
+        try Data(#"{"id":3}"#.utf8).write(to: cacheURL)
+
+        let knownMtime = Date().addingTimeInterval(-1800)
+        try FileManager.default.setAttributes(
+            [.modificationDate: knownMtime], ofItemAtPath: cacheURL.path
+        )
+
+        // Confirm no sidecar exists.
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: cacheURL.appendingPathExtension("meta").path),
+            "pre-condition: no sidecar file"
+        )
+
+        let result = freshnessTimestamp(for: cacheURL)
+        let resolved = try XCTUnwrap(result, "freshnessTimestamp must return a date via mtime fallback")
+        XCTAssertEqual(resolved.timeIntervalSinceReferenceDate,
+                       knownMtime.timeIntervalSinceReferenceDate,
+                       accuracy: 1.0,
+                       "should fall back to filesystem mtime when sidecar absent")
+    }
+
+    /// Verifies `freshnessTimestamp(for:)` falls back to mtime when the `.meta`
+    /// sidecar exists but contains invalid JSON (truncated or corrupted write).
+    func testFreshnessTimestampFallsBackToMtimeWhenSidecarMalformed() throws {
+        let dir = try cacheDir(subdir: "devices")
+        let cacheURL = dir.appendingPathComponent("device-bad-sidecar.json")
+        try Data(#"{"id":4}"#.utf8).write(to: cacheURL)
+
+        let knownMtime = Date().addingTimeInterval(-900)
+        try FileManager.default.setAttributes(
+            [.modificationDate: knownMtime], ofItemAtPath: cacheURL.path
+        )
+
+        // Write a malformed sidecar (truncated JSON).
+        let sidecarURL = cacheURL.appendingPathExtension("meta")
+        try Data("{\"generated_at\":".utf8).write(to: sidecarURL)
+
+        let result = freshnessTimestamp(for: cacheURL)
+        let resolved = try XCTUnwrap(result, "freshnessTimestamp must return a date via mtime fallback")
+        XCTAssertEqual(resolved.timeIntervalSinceReferenceDate,
+                       knownMtime.timeIntervalSinceReferenceDate,
+                       accuracy: 1.0,
+                       "should fall back to filesystem mtime when sidecar is malformed")
     }
 
     // MARK: - DeviceDetailResult shape

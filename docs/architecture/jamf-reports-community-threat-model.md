@@ -351,14 +351,29 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Priority: LOW (ACCEPTED).** No fix proposed without an `fexecve`-style API.
 - **Documented:** if Apple ever exposes a verify-then-exec-from-handle API, revisit.
 
-### T-15. Run-log mtime attacker-controllable; PR-7 stale-data banner suppressible (NEW)
+### T-15. Run-log mtime attacker-controllable; PR-7 stale-data banner suppressible
 - **Goal:** Hide a stale-cache condition from the user by forging the snapshot file's mtime.
 - **Path:** A1 runs `touch -t` on the cached snapshot; `RelativeDateTimeFormatter` then reads the forged mtime; stale banner reports "fresh".
-- **Existing mitigations:** Codex 2026-05-13 review noted this; in BACKLOG (line 403) as CONSIDER.
-- **Likelihood:** Low (specific tool needed; assumes A1).
+- **Existing mitigations (updated Epic #103 / PR-7):**
+  - Per-cache `.meta` sidecar (`<cache>.json.meta`) written atomically by
+    `CLIBridge.writeDeviceDetailFreshnessSidecar` on every successful live-data refresh.
+    The sidecar holds `{"generated_at": "<ISO-8601 UTC>"}` and is removed before each
+    fresh write so a forged-old-timestamp sidecar cannot survive a live refresh.
+  - `freshnessTimestamp(for:)` in DeviceLookupView prefers the sidecar over mtime.
+    It falls back to `contentModificationDate` only when the sidecar is absent (caches
+    written before this fix) or unparseable (truncated write).
+  - The sidecar uses `.meta` extension (not `.json`) so it is invisible to all services
+    that scan `jamf-cli-data/` with `pathExtension == "json"` filters
+    (DeviceLookupIndex, CompliancePostureService, PolicyHealthService, PatchStatusService).
+    `SnapshotManifest` was intentionally not extended — an optional Decodable field with
+    no reader is unwired scaffolding; the device-detail cache is a Swift on-demand write,
+    never manifested.
+- **Residual:** An attacker with write access to both the cache file and its `.meta` sidecar
+  can rewrite both. This fix specifically defeats the metadata-only `touch -t` scenario;
+  it does not help if the attacker can craft valid JSON.
+- **Likelihood:** Low (specific tool needed; assumes A1 same-user write access).
 - **Impact:** Low (decision quality only).
-- **Priority: LOW.**
-- **Recommended mitigations:** Extend `SnapshotManifest` schema with `generated_at`; surface that to the stale banner instead of mtime. Tracked in BACKLOG.
+- **Priority: LOW (mitigated).**
 
 ### T-21. Tiered-collection state file forged to suppress a scheduled fetch (NEW)
 - **Goal:** Freeze the fleet data the app shows by making the PR-22 tiered-collection engine believe a report is fresh when it is not.
@@ -389,7 +404,7 @@ Open threats first, then those closed by PR-10..PR-12.
 | T-7 Secret + PII leakage via logs/bundle | LOW | 10-pattern LogRedactor Python ↔ Swift parity; diagnostic-bundle PII redaction hardened (username paths, seed-from-cache device names, extended PII keys) |
 | T-10 YAML parser abuse | LOW | `safe_load` only |
 | T-14 Codesign TOCTOU | LOW (ACCEPTED) | Foundation-API limited |
-| T-15 mtime-forged stale banner | LOW | BACKLOG |
+| T-15 mtime-forged stale banner | LOW | `.meta` sidecar defeats `touch -t` (Epic #103); content-editing attacker residual |
 | T-21 Tiered-collection state-file skip | LOW | Manifest v2 covers `state/*.last` |
 | **T-11** Manifest absence silent pass | **CLOSED (PR-10)** | `require_manifest` gate + AuditView "Unverified snapshot" card |
 | **T-12** summary.json outside manifest | **CLOSED (PR-11)** | Per-log + daily summary manifests; SHA-256 verified before trusting `status` |
