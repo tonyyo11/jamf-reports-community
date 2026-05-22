@@ -638,11 +638,12 @@ struct SectionHeader: View {
     var trailing: String? = nil  // Legacy single parameter, now maps to trailingTag
     var trailingTag: String? = nil
     var trailingValue: String? = nil
-    var size: CGFloat = 15
+    /// Scalable title text style — replaces the old pinned `size: CGFloat`.
+    var style: Font.TextStyle = .title3
 
     var body: some View {
         HStack {
-            Text(title).font(.system(size: size, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
+            Text(title).font(.system(style, weight: .semibold)).foregroundStyle(Theme.Colors.fg)
             Spacer()
 
             // Handle legacy trailing parameter
