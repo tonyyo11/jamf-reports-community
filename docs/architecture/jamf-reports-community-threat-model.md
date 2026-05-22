@@ -438,7 +438,7 @@ Open threats first, then those closed by PR-10..PR-12.
 Confirmed with user (2026-05-12, refreshed 2026-05-17, re-confirmed 2026-05-20):
 - **Single-admin laptop** deployment for current state — re-confirmed 2026-05-20. One trusted user per Mac, no co-resident accounts. Cross-user threats deprioritized.
 - Generated report distribution is **unknown / varies** — output-side injection threats (T-3, T-4) kept at LOW–MEDIUM.
-- **Public release in preparation** (confirmed 2026-05-20), not yet shipped. Distribution will be a notarized DMG **and** a PKG installer (PKG confirmed in scope — see T-17). The §11 annex stays forward-looking but is now near-term; T-16 / T-17 should be treated as imminent rather than hypothetical.
+- **Public release shipped** as v2.0.0 (2026-05-20). Distribution is a notarized DMG **and** a PKG installer (PKG confirmed in scope — see T-17). The §11 annex applies to the shipped artifacts; T-16 / T-17 are live concerns, not hypothetical.
 - The Developer ID signing certificate is an **individual** Apple Developer enrollment, not an organization. Recipient-Mac background-activity / Login Items prompts therefore show the individual developer's name. T-16 blast radius is one individual certificate on a single signing host.
 
 Material assumptions still in effect:
