@@ -10,7 +10,6 @@ import pytest
 
 
 @pytest.mark.integration
-@pytest.mark.filterwarnings("ignore:No artists with labels found to put in legend")
 def test_generate_writes_summary_json(config_factory, monkeypatch, tmp_path, jrc) -> None:
     """generate can emit a stable summary alongside normal console output."""
     config = config_factory("dummy.yaml")
@@ -352,7 +351,6 @@ def test_generate_failed_sheet_reports_status_partial(
 
 
 @pytest.mark.integration
-@pytest.mark.filterwarnings("ignore:No artists with labels found to put in legend")
 def test_generate_aggregates_failures_across_dashboards(
     config_factory,
     fixtures_root: Path,
