@@ -125,6 +125,27 @@ extension Theme {
         /// Foreground text on the danger (`.danger` style) button.
         static let dangerFG: Color = Color(hex: 0xFF453A)
     }
+
+    // MARK: Chart
+
+    /// Fixed chart colors for export views and consistent visual hierarchy.
+    /// These are not adaptive; they work against light backgrounds.
+    enum Chart {
+        /// Dark text on light chart backgrounds.
+        static let textPrimary    = Color(hex: 0x111827)
+        /// Medium gray text for chart axes and secondary labels.
+        static let textSecondary  = Color(hex: 0x475569)
+        /// Slate gray for supporting elements and muted content.
+        static let textTertiary   = Color(hex: 0x64748B)
+        /// Medium-light gray for chart grid lines and tick marks.
+        static let gridLines      = Color(hex: 0x94A3B8)
+        /// Light gray for chart borders and stroke outlines.
+        static let borders        = Color(hex: 0xE2E8F0)
+        /// Very light gray background for chart export surfaces.
+        static let backgroundLight = Color(hex: 0xF8FAFC)
+        /// Light teal accent (OnboardingView step indicators).
+        static let tealLight      = Color(hex: 0x6DC0C0)
+    }
 }
 
 extension Theme.Text {

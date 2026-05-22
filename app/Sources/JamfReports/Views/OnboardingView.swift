@@ -70,7 +70,7 @@ struct OnboardingView: View {
             if done {
                 Image(systemName: "checkmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Color(hex: 0x6DC0C0))
+                    .foregroundStyle(Theme.Chart.tealLight)
             } else {
                 Text("\(step.number)")
                     .font(Theme.Fonts.mono(10, weight: .semibold))
@@ -442,7 +442,7 @@ struct OnboardingView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "checkmark")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Color(hex: 0x6DC0C0))
+                            .foregroundStyle(Theme.Chart.tealLight)
                         Text(privilege).font(.caption).foregroundStyle(Theme.Colors.fg2)
                     }
                 }
@@ -583,7 +583,7 @@ struct OnboardingView: View {
             Text(text)
         }
         .font(.caption)
-        .foregroundStyle(ok ? Color(hex: 0x6DC0C0) : Theme.Colors.danger)
+        .foregroundStyle(ok ? Theme.Chart.tealLight : Theme.Colors.danger)
     }
 
     private func logViewer(title: String, lines: [CLIBridge.LogLine], exitCode: Int32?) -> some View {

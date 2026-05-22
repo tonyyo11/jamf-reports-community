@@ -550,10 +550,10 @@ private struct BarChartExportView: View {
                     VStack(alignment: .trailing, spacing: 5) {
                         Text("\(distribution.top.count)")
                             .font(.system(size: 28, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color(hex: 0xC9970A))
+                            .foregroundStyle(Theme.Colors.gold)
                         Text("distinct values shown")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color(hex: 0x64748B))
+                            .foregroundStyle(Theme.Chart.textTertiary)
                     }
                 )
             }
@@ -563,24 +563,24 @@ private struct BarChartExportView: View {
                     x: .value("Count", bar.count),
                     y: .value("Value", bar.value)
                 )
-                .foregroundStyle(Color(hex: 0xC9970A))
+                .foregroundStyle(Theme.Colors.gold)
                 .cornerRadius(3)
                 .annotation(position: .trailing, alignment: .leading, spacing: 6) {
                     Text("\(bar.count)")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color(hex: 0x111827))
+                        .foregroundStyle(Theme.Chart.textPrimary)
                 }
             }
             .chartXScale(domain: 0...(Double(maxCount) * 1.18))
             .chartXAxis {
                 AxisMarks(position: .bottom) { value in
-                    AxisGridLine().foregroundStyle(Color(hex: 0xE2E8F0))
-                    AxisTick().foregroundStyle(Color(hex: 0x94A3B8))
+                    AxisGridLine().foregroundStyle(Theme.Chart.borders)
+                    AxisTick().foregroundStyle(Theme.Chart.gridLines)
                     AxisValueLabel {
                         if let v = value.as(Int.self) {
                             Text("\(v)")
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color(hex: 0x475569))
+                                .foregroundStyle(Theme.Chart.textSecondary)
                         }
                     }
                 }
@@ -589,7 +589,7 @@ private struct BarChartExportView: View {
                 AxisMarks(position: .leading) { _ in
                     AxisValueLabel()
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color(hex: 0x111827))
+                        .foregroundStyle(Theme.Chart.textPrimary)
                 }
             }
             .chartPlotStyle { plotArea in
@@ -598,7 +598,7 @@ private struct BarChartExportView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color(hex: 0xE2E8F0), lineWidth: 1)
+                            .stroke(Theme.Chart.borders, lineWidth: 1)
                     )
             }
             .frame(height: 278)
@@ -613,22 +613,22 @@ private struct BarChartExportView: View {
                 Spacer()
                 Text("Source: ea-results · Rows: \(totalRowCount)")
                     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color(hex: 0x64748B))
+                    .foregroundStyle(Theme.Chart.textTertiary)
             }
         }
         .padding(24)
         .frame(width: 848, height: 448)
-        .background(Color(hex: 0xF8FAFC))
+        .background(Theme.Chart.backgroundLight)
     }
 
     private func exportStat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label.uppercased())
                 .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color(hex: 0x64748B))
+                .foregroundStyle(Theme.Chart.textTertiary)
             Text(value)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color(hex: 0x111827))
+                .foregroundStyle(Theme.Chart.textPrimary)
         }
     }
 }

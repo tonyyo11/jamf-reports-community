@@ -1112,7 +1112,7 @@ private struct ChartExportView: View {
 
             if let lastPoint {
                 RuleMark(x: .value("Latest", lastPoint.date))
-                    .foregroundStyle(Color(hex: 0x94A3B8).opacity(0.65))
+                    .foregroundStyle(Theme.Chart.gridLines.opacity(0.65))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 5]))
 
                 PointMark(
@@ -1124,7 +1124,7 @@ private struct ChartExportView: View {
                 .annotation(position: .top, alignment: .trailing, spacing: 8) {
                     Text(formatValue(lastPoint.value))
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(hex: 0x111827))
+                        .foregroundStyle(Theme.Chart.textPrimary)
                         .padding(.horizontal, 9).padding(.vertical, 5)
                         .background(Color.white)
                         .clipShape(RoundedRectangle(cornerRadius: 5))
@@ -1137,26 +1137,26 @@ private struct ChartExportView: View {
         .chartYScale(domain: yValueDomain)
         .chartXAxis {
             AxisMarks(values: tickDates) { value in
-                AxisGridLine().foregroundStyle(Color(hex: 0xE2E8F0))
-                AxisTick().foregroundStyle(Color(hex: 0x94A3B8))
+                AxisGridLine().foregroundStyle(Theme.Chart.borders)
+                AxisTick().foregroundStyle(Theme.Chart.gridLines)
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
                         Text(SummaryJSONParser.dateFormatter.string(from: date))
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color(hex: 0x475569))
+                            .foregroundStyle(Theme.Chart.textSecondary)
                     }
                 }
             }
         }
         .chartYAxis {
             AxisMarks(position: .leading) { value in
-                AxisGridLine().foregroundStyle(Color(hex: 0xE2E8F0))
-                AxisTick().foregroundStyle(Color(hex: 0x94A3B8))
+                AxisGridLine().foregroundStyle(Theme.Chart.borders)
+                AxisTick().foregroundStyle(Theme.Chart.gridLines)
                 AxisValueLabel {
                     if let y = value.as(Double.self) {
                         Text(formatAxisValue(y))
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color(hex: 0x475569))
+                            .foregroundStyle(Theme.Chart.textSecondary)
                     }
                 }
             }
@@ -1166,7 +1166,7 @@ private struct ChartExportView: View {
         .chartPlotStyle { plotArea in
             plotArea.background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: 0xE2E8F0), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.Chart.borders, lineWidth: 1))
         }
         .accessibilityHidden(true)
     }
