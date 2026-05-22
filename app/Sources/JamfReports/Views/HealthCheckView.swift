@@ -530,19 +530,26 @@ struct HealthCheckView: View {
             // post-await `nil` assignment and leave the status bar stuck on
             // a stale line. The flag is the single source of truth
             // for "the run is in progress" and onLine respects it.
-            let code = await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
-                Task { @MainActor in
-                    guard let workspace, self.isRunningAudit else { return }
-                    workspace.globalStatus = line.text
+            do {
+                let code = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
+                    Task { @MainActor in
+                        guard let workspace, self.isRunningAudit else { return }
+                        workspace.globalStatus = line.text
+                    }
                 }
-            }
-            isRunningAudit = false
-            workspace.globalStatus = nil
-            if code == 0 {
-                workspace.toast = Toast(message: "Health Check completed", style: .success)
-                await loadCached()
-            } else {
-                workspace.toast = Toast(message: "Audit failed · exit \(code)", style: .danger)
+                isRunningAudit = false
+                workspace.globalStatus = nil
+                if code == 0 {
+                    workspace.toast = Toast(message: "Health Check completed", style: .success)
+                    await loadCached()
+                } else {
+                    workspace.toast = Toast(message: "Audit failed · exit \(code)", style: .danger)
+                }
+            } catch {
+                isRunningAudit = false
+                workspace.globalStatus = nil
+                AppLogger.cli.error("audit failed: \(error, privacy: .private)")
+                workspace.toast = Toast(message: "Audit failed — \(error.localizedDescription)", style: .danger)
             }
         }
     }
@@ -552,19 +559,26 @@ struct HealthCheckView: View {
         workspace.globalStatus = "group-tools analyze · profile=\(workspace.profile)"
         Task {
             let profile = workspace.profile
-            let code = await bridge.groupHygiene(profile: profile) { [weak workspace] line in
-                Task { @MainActor in
-                    guard let workspace, self.isRunningHygiene else { return }
-                    workspace.globalStatus = line.text
+            do {
+                let code = try await bridge.groupHygiene(profile: profile) { [weak workspace] line in
+                    Task { @MainActor in
+                        guard let workspace, self.isRunningHygiene else { return }
+                        workspace.globalStatus = line.text
+                    }
                 }
-            }
-            isRunningHygiene = false
-            workspace.globalStatus = nil
-            if code == 0 {
-                workspace.toast = Toast(message: "Group Hygiene analysis completed", style: .success)
-                await loadCached()
-            } else {
-                workspace.toast = Toast(message: "Analysis failed · exit \(code)", style: .danger)
+                isRunningHygiene = false
+                workspace.globalStatus = nil
+                if code == 0 {
+                    workspace.toast = Toast(message: "Group Hygiene analysis completed", style: .success)
+                    await loadCached()
+                } else {
+                    workspace.toast = Toast(message: "Analysis failed · exit \(code)", style: .danger)
+                }
+            } catch {
+                isRunningHygiene = false
+                workspace.globalStatus = nil
+                AppLogger.cli.error("groupHygiene failed: \(error, privacy: .private)")
+                workspace.toast = Toast(message: "Analysis failed — \(error.localizedDescription)", style: .danger)
             }
         }
     }

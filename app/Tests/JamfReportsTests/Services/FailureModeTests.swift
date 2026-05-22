@@ -87,36 +87,55 @@ final class FailureModeTests: XCTestCase {
     func testValidateConnectionRejectsInvalidProfileSlug() async {
         let bridge = CLIBridge()
         let collector = LineCollector()
-        let exitCode = await bridge.validateConnection(profile: "../evil") { line in
-            collector.append(line)
+        do {
+            _ = try await bridge.validateConnection(profile: "../evil") { line in
+                collector.append(line)
+            }
+            XCTFail("validateConnection must throw for invalid profile slug")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .invalidProfile("../evil"), "Invalid slug must throw .invalidProfile")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
-        XCTAssertEqual(exitCode, -1, "Invalid slug must yield exit code -1")
         XCTAssertTrue(collector.hasFailLine, "A failure log line must be emitted for invalid profile")
     }
 
     func testValidateConnectionRejectsUppercaseSlug() async {
         let bridge = CLIBridge()
         let collector = LineCollector()
-        let exitCode = await bridge.validateConnection(profile: "Dummy") { line in
-            collector.append(line)
+        do {
+            _ = try await bridge.validateConnection(profile: "Dummy") { line in
+                collector.append(line)
+            }
+            XCTFail("validateConnection must throw for uppercase profile slug")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .invalidProfile("Dummy"))
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
-        XCTAssertEqual(exitCode, -1)
         XCTAssertTrue(collector.hasFailLine)
     }
 
-    // MARK: - CLIBridge.validateConnection: binary-absent case exits -1
+    // MARK: - CLIBridge.validateConnection: binary-absent case throws
 
-    func testValidateConnectionWhenJamfCLIAbsentExitsNegativeOne() async throws {
+    func testValidateConnectionWhenJamfCLIAbsentThrows() async throws {
         // Only meaningful on machines without jamf-cli. Skip otherwise.
         guard ExecutableLocator.locate("jamf-cli") == nil else {
             throw XCTSkip("jamf-cli is present — binary-absent path not exercisable")
         }
         let bridge = CLIBridge()
         let collector = LineCollector()
-        let exitCode = await bridge.validateConnection(profile: "dummy") { line in
-            collector.append(line)
+        do {
+            _ = try await bridge.validateConnection(profile: "dummy") { line in
+                collector.append(line)
+            }
+            XCTFail("validateConnection must throw when jamf-cli is absent")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .executableNotFound,
+                           "Missing binary must throw .executableNotFound")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
-        XCTAssertEqual(exitCode, -1, "Missing binary must return -1")
         XCTAssertTrue(collector.hasFailLine, "A failure log line must be emitted when binary absent")
     }
 
@@ -131,7 +150,10 @@ final class FailureModeTests: XCTestCase {
         let bridge = CLIBridge()
         let collector = LineCollector()
         let task = Task {
-            await bridge.run(
+            // try? is intentional: this test only verifies no deadlock occurs,
+            // not the error type. If the task is cancelled before the process
+            // starts, bridge.run may throw or return — either is acceptable.
+            _ = try? await bridge.run(
                 executable: sleepBin,
                 arguments: ["60"],
                 onLine: { line in collector.append(line) }

@@ -11,10 +11,16 @@ final class CLIBridgeBackupTests: XCTestCase {
     func test_backup_rejectsInvalidProfile() async {
         let bridge = CLIBridge()
         let collector = LineCollector()
-        let code = await bridge.backup(profile: "../etc/passwd", label: nil) { line in
-            collector.append(line)
+        do {
+            _ = try await bridge.backup(profile: "../etc/passwd", label: nil) { line in
+                collector.append(line)
+            }
+            XCTFail("backup must throw for an invalid profile slug")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .invalidProfile("../etc/passwd"), "backup must throw .invalidProfile")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
-        XCTAssertEqual(code, -1, "backup must reject an invalid profile slug")
         XCTAssertTrue(
             collector.lines.contains(where: { $0.text.contains("invalid profile name") }),
             "expected an [error] invalid profile name line; got: \(collector.lines.map(\.text))"
@@ -25,28 +31,43 @@ final class CLIBridgeBackupTests: XCTestCase {
     func test_backup_rejectsLeadingDashLabel() async {
         let bridge = CLIBridge()
         let collector = LineCollector()
-        let code = await bridge.backup(profile: "valid-profile", label: "--evil") { line in
-            collector.append(line)
+        do {
+            _ = try await bridge.backup(profile: "valid-profile", label: "--evil") { line in
+                collector.append(line)
+            }
+            XCTFail("backup must throw for a leading-dash label")
+        } catch let e as CLIBridgeError {
+            if case .invalidArgument = e { /* expected */ } else {
+                XCTFail("Expected .invalidArgument, got \(e)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
-        XCTAssertEqual(code, -1, "backup must reject a leading-dash label")
         XCTAssertTrue(
             collector.lines.contains(where: { $0.text.contains("may not start with '-'") }),
             "expected label rejection line; got: \(collector.lines.map(\.text))"
         )
     }
 
-    /// When jamf-cli is absent the backup() path must emit an error line and
-    /// return a non-zero code without hanging. Skipped when jamf-cli is installed.
+    /// When jamf-cli is absent the backup() path must throw `.executableNotFound`
+    /// and emit an error line. Skipped when jamf-cli is installed.
     func test_backup_emitsErrorWhenJamfCLIMissing() async throws {
         guard ExecutableLocator.locate("jamf-cli") == nil else {
             throw XCTSkip("jamf-cli is installed — cannot test the not-found path")
         }
         let bridge = CLIBridge()
         let collector = LineCollector()
-        let code = await bridge.backup(profile: "test-profile", label: nil) { line in
-            collector.append(line)
+        do {
+            _ = try await bridge.backup(profile: "test-profile", label: nil) { line in
+                collector.append(line)
+            }
+            XCTFail("backup must throw when jamf-cli is absent")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .executableNotFound,
+                           "backup must throw .executableNotFound when jamf-cli is absent")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
         }
-        XCTAssertNotEqual(code, 0, "backup must not succeed when jamf-cli is absent")
         XCTAssertFalse(collector.lines.isEmpty, "backup must emit at least one log line when jamf-cli is absent")
     }
 }

@@ -758,11 +758,19 @@ struct AuditView: View {
             // post-await `globalStatus = nil` and leave a stale status line.
             // Guarding on `isRunningAudit` makes the running flag the single
             // source of truth for "show CLI output."
-            let code = await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
-                Task { @MainActor in
-                    guard let workspace, self.isRunningAudit else { return }
-                    workspace.globalStatus = line.text
+            let code: Int32
+            do {
+                code = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
+                    Task { @MainActor in
+                        guard let workspace, self.isRunningAudit else { return }
+                        workspace.globalStatus = line.text
+                    }
                 }
+            } catch {
+                isRunningAudit = false
+                workspace.globalStatus = nil
+                workspace.toast = Toast(message: "Audit failed · \(error.localizedDescription)", style: .danger)
+                return
             }
             isRunningAudit = false
             workspace.globalStatus = nil
@@ -780,11 +788,19 @@ struct AuditView: View {
         workspace.globalStatus = "group-tools analyze · profile=\(workspace.profile)"
         Task {
             let profile = workspace.profile
-            let code = await bridge.groupHygiene(profile: profile) { [weak workspace] line in
-                Task { @MainActor in
-                    guard let workspace, self.isRunningHygiene else { return }
-                    workspace.globalStatus = line.text
+            let code: Int32
+            do {
+                code = try await bridge.groupHygiene(profile: profile) { [weak workspace] line in
+                    Task { @MainActor in
+                        guard let workspace, self.isRunningHygiene else { return }
+                        workspace.globalStatus = line.text
+                    }
                 }
+            } catch {
+                isRunningHygiene = false
+                workspace.globalStatus = nil
+                workspace.toast = Toast(message: "Analysis failed · \(error.localizedDescription)", style: .danger)
+                return
             }
             isRunningHygiene = false
             workspace.globalStatus = nil

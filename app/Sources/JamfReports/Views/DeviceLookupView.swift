@@ -468,7 +468,13 @@ struct DeviceLookupView: View {
             // than strictly necessary, but it goes through the audited
             // CLI bridge surface and keeps this screen from owning bespoke
             // jamf-cli invocation logic.
-            _ = await CLIBridge().collect(profile: profile) { _ in }
+            do {
+                _ = try await CLIBridge().collect(profile: profile) { _ in }
+            } catch {
+                AppLogger.cli.warning(
+                    "DeviceLookupView refreshIndex: collect threw — \(error.localizedDescription, privacy: .private)"
+                )
+            }
             index.load(profile: profile)
             refreshing = false
             // Auto-retry the original lookup against the freshly loaded index.

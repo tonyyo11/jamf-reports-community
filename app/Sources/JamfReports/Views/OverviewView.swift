@@ -271,36 +271,44 @@ struct OverviewView: View {
         workspace.globalStatus = "collect + generate · profile=\(workspace.profile)"
         let profile = workspace.profile
         // Status-bar race guard — see HealthCheckView.runAudit comment.
-        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
-            Task { @MainActor in
-                guard let workspace, self.isRunning else { return }
-                // PR-15: capture T-13 SHA-256 fingerprints from the live log
-                // so the success toast surfaces the same artifact-hash
-                // provenance the Generate sheet shows. Same `[ok] sha256:
-                // <64hex> <basename>` sentinel; parser reused from
-                // GenerateSheetState to avoid drift.
-                if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
-                    self.generatedHashes[parsed.filename] = parsed.hash
+        do {
+            let exit = try await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
+                Task { @MainActor in
+                    guard let workspace, self.isRunning else { return }
+                    // PR-15: capture T-13 SHA-256 fingerprints from the live log
+                    // so the success toast surfaces the same artifact-hash
+                    // provenance the Generate sheet shows. Same `[ok] sha256:
+                    // <64hex> <basename>` sentinel; parser reused from
+                    // GenerateSheetState to avoid drift.
+                    if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                        self.generatedHashes[parsed.filename] = parsed.hash
+                    }
+                    workspace.globalStatus = line.text
                 }
-                workspace.globalStatus = line.text
             }
-        }
-        isRunning = false
-        workspace.globalStatus = nil
+            isRunning = false
+            workspace.globalStatus = nil
 
-        if exit == 0 {
-            let suffix = firstFingerprintSummary()
-            let message = suffix.isEmpty
-                ? "Report generated successfully"
-                : "Report generated · \(suffix)"
-            workspace.toast = Toast(message: message, style: .success)
-            workspace.reloadFromDisk()
-            generatedHashes.removeAll()
-            if !workspace.demoMode {
-                trendStore.reload()
+            if exit == 0 {
+                let suffix = firstFingerprintSummary()
+                let message = suffix.isEmpty
+                    ? "Report generated successfully"
+                    : "Report generated · \(suffix)"
+                workspace.toast = Toast(message: message, style: .success)
+                workspace.reloadFromDisk()
+                generatedHashes.removeAll()
+                if !workspace.demoMode {
+                    trendStore.reload()
+                }
+            } else {
+                workspace.toast = Toast(message: "Generate failed · exit \(exit)", style: .danger)
+                generatedHashes.removeAll()
             }
-        } else {
-            workspace.toast = Toast(message: "Generate failed · exit \(exit)", style: .danger)
+        } catch {
+            isRunning = false
+            workspace.globalStatus = nil
+            AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
+            workspace.toast = Toast(message: "Generate failed — \(error.localizedDescription)", style: .danger)
             generatedHashes.removeAll()
         }
     }

@@ -304,8 +304,14 @@ private struct ColumnsTab: View {
         Task {
             checkStatus = "Running check…"
             let csvPath = newestCSVPath()
-            let exit = await cli.check(profile: workspace.profile, csvPath: csvPath) { line in
-                Task { @MainActor in checkStatus = line.text }
+            let exit: Int32
+            do {
+                exit = try await cli.check(profile: workspace.profile, csvPath: csvPath) { line in
+                    Task { @MainActor in checkStatus = line.text }
+                }
+            } catch {
+                checkStatus = "Check failed · \(error.localizedDescription)"
+                return
             }
             checkStatus = exit == 0 ? "Check passed · exit 0" : "Check failed · exit \(exit)"
         }

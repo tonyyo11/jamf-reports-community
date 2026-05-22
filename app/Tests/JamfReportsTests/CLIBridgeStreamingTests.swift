@@ -10,10 +10,10 @@ import XCTest
 /// (`pro scripts list --output json`) leaking into the live run-log popover.
 final class CLIBridgeStreamingTests: XCTestCase {
 
-    func testStdoutCapturedNotStreamed_StderrStreamedNotCaptured() async {
+    func testStdoutCapturedNotStreamed_StderrStreamedNotCaptured() async throws {
         let bridge = CLIBridge()
         let collector = LineCollector()
-        let (exit, data) = await bridge.runAndCapture(
+        let (exit, data) = try await bridge.runAndCapture(
             executable: URL(fileURLWithPath: "/bin/sh"),
             arguments: ["-c", "printf 'PAYLOAD-LINE-1\\nPAYLOAD-LINE-2\\n'; printf 'PROGRESS-LINE\\n' 1>&2"],
             onLine: { line in collector.append(line) }
@@ -43,13 +43,13 @@ final class CLIBridgeStreamingTests: XCTestCase {
         )
     }
 
-    func testStdoutPayloadIsBinarySafe() async {
+    func testStdoutPayloadIsBinarySafe() async throws {
         // A real-world `pro scripts list --output json` response is one massive
         // line of JSON with embedded escape sequences. Confirm it round-trips.
         let bridge = CLIBridge()
         let collector = LineCollector()
         let payload = #"{"scripts":[{"name":"FileVault","body":"echo \"hi\"\nexit 0"}]}"#
-        let (exit, data) = await bridge.runAndCapture(
+        let (exit, data) = try await bridge.runAndCapture(
             executable: URL(fileURLWithPath: "/bin/sh"),
             arguments: ["-c", "printf '%s' '\(payload)'"],
             onLine: { line in collector.append(line) }

@@ -140,9 +140,18 @@ final class RefreshCoordinator {
 
         // Backfill only the requested tier — a profile-switch refresh should
         // not pull every list endpoint and per-device scan (PR-22 T-9 tier set).
-        let exitCode = await bridge.collect(
-            profile: profile, tiers: [tier], onLine: { _ in }
-        )
+        let exitCode: Int32
+        do {
+            exitCode = try await bridge.collect(
+                profile: profile, tiers: [tier], onLine: { _ in }
+            )
+        } catch {
+            failureCounts[key, default: 0] += 1
+            AppLogger.cli.warning(
+                "Background refresh threw for \(profile)/\(tier.rawValue): \(error.localizedDescription, privacy: .private)"
+            )
+            return
+        }
 
         if exitCode == 0 {
             failureCounts[key] = 0

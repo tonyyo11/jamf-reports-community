@@ -246,7 +246,14 @@ final class WorkspaceStore {
         isInitializingWorkspace = true
         workspaceInitMessage = "Initializing workspace…"
         let bridge = CLIBridge()
-        let initExit = await bridge.initializeWorkspace(profile: profile) { _ in }
+        let initExit: Int32
+        do {
+            initExit = try await bridge.initializeWorkspace(profile: profile) { _ in }
+        } catch {
+            isInitializingWorkspace = false
+            workspaceInitMessage = "Workspace init failed · \(error.localizedDescription)"
+            return
+        }
         guard initExit == 0 else {
             isInitializingWorkspace = false
             workspaceInitMessage = "Workspace init failed · exit \(initExit)"
@@ -261,7 +268,14 @@ final class WorkspaceStore {
         }
 
         workspaceInitMessage = "Workspace initialized · collecting jamf-cli snapshots…"
-        let collectExit = await bridge.collect(profile: profile) { _ in }
+        let collectExit: Int32
+        do {
+            collectExit = try await bridge.collect(profile: profile) { _ in }
+        } catch {
+            isInitializingWorkspace = false
+            workspaceInitMessage = "Workspace initialized · collect failed · \(error.localizedDescription)"
+            return
+        }
         isInitializingWorkspace = false
         if collectExit == 0 {
             workspaceInitMessage = "Workspace initialized · cached snapshots ready"

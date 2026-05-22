@@ -146,15 +146,15 @@ final class CLIBridge {
         cwd: URL? = nil,
         environment: [String: String] = CLIBridge.environmentForJamfCLI(),
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         // M-01: re-verify jamf-cli signature before each spawn so a
         // post-onboarding binary swap on a user-writable path
         // (/opt/homebrew/bin) cannot receive credentials.
-        if let blocked = Self.codesignGate(executable: executable, onLine: onLine) {
-            return blocked
+        if let gateError = Self.codesignGate(executable: executable, onLine: onLine) {
+            throw gateError
         }
 
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Int32, Never>) in
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
@@ -196,7 +196,7 @@ final class CLIBridge {
                     "CLIBridge.run: process launch failed: \(error.localizedDescription, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
-                continuation.resume(returning: -1)
+                continuation.resume(throwing: CLIBridgeError.launchFailed(reason: error.localizedDescription))
             }
         }
     }
@@ -211,7 +211,7 @@ final class CLIBridge {
         cwd: URL? = nil,
         environment: [String: String] = CLIBridge.environmentForJamfCLI(),
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> (Int32, Data) {
+    ) async throws -> (Int32, Data) {
         final class DataBox: @unchecked Sendable {
             var data = Data()
             let lock = NSLock()
@@ -224,8 +224,8 @@ final class CLIBridge {
         let box = DataBox()
 
         // M-01: same gate as `run` — verify before spawn.
-        if let blocked = Self.codesignGate(executable: executable, onLine: onLine) {
-            return (blocked, Data())
+        if let gateError = Self.codesignGate(executable: executable, onLine: onLine) {
+            throw gateError
         }
 
         // Resumes the async continuation only once BOTH the stdout pipe has
@@ -239,9 +239,9 @@ final class CLIBridge {
             private var stdoutAtEOF = false
             private var exitCode: Int32?
             private var resumed = false
-            private let continuation: CheckedContinuation<Int32, Never>
+            private let continuation: CheckedContinuation<Int32, Error>
 
-            init(_ continuation: CheckedContinuation<Int32, Never>) {
+            init(_ continuation: CheckedContinuation<Int32, Error>) {
                 self.continuation = continuation
             }
 
@@ -249,15 +249,16 @@ final class CLIBridge {
 
             func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
 
-            /// Process never spawned — resume immediately, bypassing the EOF wait
-            /// (no child means the stdout pipe will never deliver EOF).
-            func failFast(_ code: Int32) {
+            /// Process never spawned — resume with a thrown error immediately,
+            /// bypassing the EOF wait (no child means the stdout pipe will never
+            /// deliver EOF).
+            func failWithLaunchError(_ error: CLIBridgeError) {
                 let shouldResume: Bool
                 lock.lock()
                 shouldResume = !resumed
                 if shouldResume { resumed = true }
                 lock.unlock()
-                if shouldResume { continuation.resume(returning: code) }
+                if shouldResume { continuation.resume(throwing: error) }
             }
 
             private func finish(_ mutate: (CaptureCompletion) -> Void) {
@@ -273,7 +274,7 @@ final class CLIBridge {
             }
         }
 
-        let code = await withCheckedContinuation { (continuation: CheckedContinuation<Int32, Never>) in
+        let code = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
             let completion = CaptureCompletion(continuation)
             let process = Process()
             process.executableURL = executable
@@ -324,7 +325,7 @@ final class CLIBridge {
                 onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
                 stdout.fileHandleForReading.readabilityHandler = nil
                 stderr.fileHandleForReading.readabilityHandler = nil
-                completion.failFast(-1)
+                completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
             }
         }
         return (code, box.data)
@@ -337,20 +338,24 @@ final class CLIBridge {
         template: any ReportTemplate = ExecutiveTemplate(),
         outputDir: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+    ) async throws -> Int32 {
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
+            throw CLIBridgeError.workspaceMissing(profile: profile)
+        }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
             AppLogger.cli.error("\(msg)")
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
+        guard let config = loadConfig(at: configURL, onLine: onLine) else {
+            throw CLIBridgeError.configLoadFailed(path: configURL.path)
+        }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
@@ -366,7 +371,7 @@ final class CLIBridge {
             } catch {
                 onLine(.init(timestamp: Date(), level: .fail,
                     text: "[error] could not create output directory: \(error.localizedDescription)"))
-                return -1
+                throw CLIBridgeError.workspaceMissing(profile: profile)
             }
         }
         do {
@@ -390,8 +395,9 @@ final class CLIBridge {
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] generate failed: \(error.localizedDescription)"))
-            tightenOnSuccess(-1, profile: profile)
-            return -1
+            // Engine-layer failure: no CLIBridgeError case — return 1 (real non-zero exit).
+            tightenOnSuccess(1, profile: profile)
+            return 1
         }
     }
 
@@ -454,23 +460,27 @@ final class CLIBridge {
         profile: String,
         csvPath: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
+            throw CLIBridgeError.workspaceMissing(profile: profile)
+        }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
             AppLogger.cli.error("\(msg)")
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
+        guard let config = loadConfig(at: configURL, onLine: onLine) else {
+            throw CLIBridgeError.configLoadFailed(path: configURL.path)
+        }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
@@ -485,7 +495,7 @@ final class CLIBridge {
             } catch {
                 onLine(.init(timestamp: Date(), level: .fail,
                     text: "[error] could not create output directory: \(error.localizedDescription)"))
-                return -1
+                throw CLIBridgeError.workspaceMissing(profile: profile)
             }
         }
         do {
@@ -512,8 +522,9 @@ final class CLIBridge {
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] school-generate failed: \(error.localizedDescription)"))
-            tightenOnSuccess(-1, profile: profile)
-            return -1
+            // Engine-layer failure: no CLIBridgeError case — return 1 (real non-zero exit).
+            tightenOnSuccess(1, profile: profile)
+            return 1
         }
     }
 
@@ -527,11 +538,13 @@ final class CLIBridge {
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
+            throw CLIBridgeError.workspaceMissing(profile: profile)
+        }
         // Honor the Settings "Skip expensive collections" toggle. UserDefaults
         // backs the @AppStorage in SettingsView, so this is a direct read.
         // Scheduled collects run from main.swift and pass skipExpensive=false
@@ -550,13 +563,13 @@ final class CLIBridge {
         } catch ReportEngineError.jamfCLINotFound {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] jamf-cli not found — install via Homebrew: brew install jamf-cli"))
-            tightenOnSuccess(-1, profile: profile)
-            return -1
+            throw CLIBridgeError.executableNotFound
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] collect failed: \(error.localizedDescription)"))
-            tightenOnSuccess(-1, profile: profile)
-            return -1
+            // Engine-layer failure: return 1 (real non-zero exit).
+            tightenOnSuccess(1, profile: profile)
+            return 1
         }
     }
 
@@ -564,15 +577,15 @@ final class CLIBridge {
         profile: String,
         csvPath: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         // Auth is checked inside collect(); skipping a separate probe here avoids calling
         // jamf-cli pro auth token twice for the combined collect+generate flow.
         onLine(.init(timestamp: Date(), level: .info, text: "[info] collecting jamf-cli snapshots for \(profile)"))
-        let collectExit = await collect(profile: profile, onLine: onLine)
+        let collectExit = try await collect(profile: profile, onLine: onLine)
         guard collectExit == 0 else { return collectExit }
 
         onLine(.init(timestamp: Date(), level: .info, text: "[info] generating report from cached snapshots"))
-        return await generate(profile: profile, csvPath: csvPath, onLine: onLine)
+        return try await generate(profile: profile, csvPath: csvPath, onLine: onLine)
     }
 
     // MARK: - jamf-cli exit codes (jamf-cli Error Handling & Exit Codes spec)
@@ -627,19 +640,19 @@ final class CLIBridge {
     nonisolated func validateConnection(
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
+            throw CLIBridgeError.invalidProfile(profile)
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
-            return -1
+            throw CLIBridgeError.executableNotFound
         }
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
-        return await run(
+        return try await run(
             executable: bin,
             arguments: ["-p", profile, "config", "validate"],
             environment: Self.environmentForJamfCLI(),
@@ -662,11 +675,22 @@ final class CLIBridge {
         // Subcommand: jamf-cli -p <profile> pro auth token --output json --no-input
         // Available since jamf-cli v1.9; older versions exit non-zero with "unknown command".
         let args = CLICommand.proAuthToken(profile: profile).argv
-        let (exitCode, data) = await runAndCapture(
-            executable: bin,
-            arguments: args,
-            environment: Self.environmentForJamfCLI()
-        ) { _ in }
+        let exitCode: Int32
+        let data: Data
+        do {
+            (exitCode, data) = try await runAndCapture(
+                executable: bin,
+                arguments: args,
+                environment: Self.environmentForJamfCLI()
+            ) { _ in }
+        } catch {
+            // tokenStatus is the auth prober — codesign rejection or launch failure
+            // here means we cannot confirm auth; treat as invalid/expired token.
+            AppLogger.cli.warning(
+                "tokenStatus: runAndCapture threw for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
+            )
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: "")
+        }
         let raw = String(data: data, encoding: .utf8) ?? ""
         guard exitCode == 0, !data.isEmpty else {
             return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: raw)
@@ -868,16 +892,16 @@ final class CLIBridge {
         left: URL,
         right: URL,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
+            throw CLIBridgeError.invalidProfile(profile)
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
-            return -1
+            throw CLIBridgeError.executableNotFound
         }
-        return await run(
+        return try await run(
             executable: bin,
             arguments: [
                 "-p", profile,
@@ -897,22 +921,26 @@ final class CLIBridge {
         outFile: String?,
         template: any ReportTemplate = ExecutiveTemplate(),
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
         // authGuard is intentionally omitted — stale/expired credentials do not prevent rendering.
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
+            throw CLIBridgeError.workspaceMissing(profile: profile)
+        }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
             AppLogger.cli.error("\(msg)")
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
+        guard let config = loadConfig(at: configURL, onLine: onLine) else {
+            throw CLIBridgeError.configLoadFailed(path: configURL.path)
+        }
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let outputURL: URL
         if let path = outFile {
@@ -932,7 +960,7 @@ final class CLIBridge {
             } catch {
                 onLine(.init(timestamp: Date(), level: .fail,
                     text: "[error] could not create output directory: \(error.localizedDescription)"))
-                return -1
+                throw CLIBridgeError.workspaceMissing(profile: profile)
             }
         }
         do {
@@ -950,8 +978,9 @@ final class CLIBridge {
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] html generation failed: \(error.localizedDescription)"))
-            tightenOnSuccess(-1, profile: profile)
-            return -1
+            // Engine-layer failure: return 1 (real non-zero exit).
+            tightenOnSuccess(1, profile: profile)
+            return 1
         }
     }
 
@@ -959,19 +988,23 @@ final class CLIBridge {
         profile: String,
         outFile: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else { return -1 }
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
+            throw CLIBridgeError.workspaceMissing(profile: profile)
+        }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
             AppLogger.cli.error("\(msg)")
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else { return -1 }
+        guard let config = loadConfig(at: configURL, onLine: onLine) else {
+            throw CLIBridgeError.configLoadFailed(path: configURL.path)
+        }
         let outputURL: URL
         if let path = outFile {
             outputURL = URL(fileURLWithPath: path)
@@ -993,8 +1026,9 @@ final class CLIBridge {
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] inventory-csv failed: \(error.localizedDescription)"))
-            tightenOnSuccess(-1, profile: profile)
-            return -1
+            // Engine-layer failure: return 1 (real non-zero exit).
+            tightenOnSuccess(1, profile: profile)
+            return 1
         }
     }
 
@@ -1002,33 +1036,33 @@ final class CLIBridge {
         profile: String,
         category: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         // B-02: defense-in-depth profile validation. Mirrors validateConnection.
         guard ProfileService.isValid(profile) else {
             AppLogger.cli.warning("audit: rejecting invalid profile name")
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
+            throw CLIBridgeError.invalidProfile(profile)
         }
         // B-03: refuse leading-dash category. Checked before auth so that the
         // rejection is deterministic and does not depend on auth state.
         if let category, category.hasPrefix("-") {
             AppLogger.cli.warning("audit: rejecting leading-dash category")
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] audit category may not start with '-'"))
-            return -1
+            throw CLIBridgeError.invalidArgument("audit category may not start with '-'")
         }
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
-            return -1
+            throw CLIBridgeError.executableNotFound
         }
         var args = ["-p", profile, "pro", "audit", "--output", "json", "--no-input"]
         if let category, !category.isEmpty {
             args.append(contentsOf: ["--checks", category])
         }
-        
-        let (code, data) = await runAndCapture(
+
+        let (code, data) = try await runAndCapture(
             executable: bin,
             arguments: args,
             environment: Self.environmentForJamfCLI(),
@@ -1044,22 +1078,22 @@ final class CLIBridge {
     func groupHygiene(
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         // B-02: defense-in-depth profile validation.
         guard ProfileService.isValid(profile) else {
             AppLogger.cli.warning("groupHygiene: rejecting invalid profile name")
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
+            throw CLIBridgeError.invalidProfile(profile)
         }
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
-            return -1
+            throw CLIBridgeError.executableNotFound
         }
         let args = ["-p", profile, "pro", "group-tools", "analyze", "--unused", "--output", "json", "--no-input"]
-        let (code, data) = await runAndCapture(
+        let (code, data) = try await runAndCapture(
             executable: bin,
             arguments: args,
             environment: Self.environmentForJamfCLI(),
@@ -1131,25 +1165,25 @@ final class CLIBridge {
         profile: String,
         label: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
+            throw CLIBridgeError.invalidProfile(profile)
         }
         // B-03: refuse leading-dash labels — would be re-interpreted as a flag by jamf-cli.
         let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmedLabel, trimmedLabel.hasPrefix("-") {
             AppLogger.cli.warning("backup: rejecting leading-dash label")
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] backup label may not start with '-'"))
-            return -1
+            throw CLIBridgeError.invalidArgument("backup label may not start with '-'")
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
-            return -1
+            throw CLIBridgeError.executableNotFound
         }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] no workspace for profile '\(profile)'"))
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let backupsRoot = workspace.appendingPathComponent("backups", isDirectory: true)
         let fm = FileManager.default
@@ -1159,14 +1193,14 @@ final class CLIBridge {
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not create backups directory: \(error.localizedDescription)"))
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
 
         // Create a temp dir inside the backups root so the atomic rename stays on-volume.
         let tempDir = backupsRoot.appendingPathComponent(".tmp-\(UUID().uuidString)", isDirectory: true)
         guard let validatedTemp = WorkspacePathGuard.validate(tempDir, under: workspace) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] backup temp path rejected by path guard"))
-            return -1
+            throw CLIBridgeError.invalidArgument("backup temp path rejected by path guard")
         }
         do {
             try fm.createDirectory(at: validatedTemp, withIntermediateDirectories: true,
@@ -1174,12 +1208,12 @@ final class CLIBridge {
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not create backup temp dir: \(error.localizedDescription)"))
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
 
         let args = ["-p", profile, "--no-input", "pro", "backup",
                     "--format", "json", "--output", validatedTemp.path]
-        let exit = await run(
+        let exit = try await run(
             executable: bin,
             arguments: args,
             environment: Self.environmentForJamfCLI(),
@@ -1214,7 +1248,7 @@ final class CLIBridge {
                     text: "[warn] backup temp dir could not be removed — delete manually: \(validatedTemp.lastPathComponent)"))
             }
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] backup final path rejected by path guard"))
-            return -1
+            throw CLIBridgeError.invalidArgument("backup final path rejected by path guard")
         }
 
         do {
@@ -1229,7 +1263,7 @@ final class CLIBridge {
             }
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not finalize backup directory: \(error.localizedDescription)"))
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
 
         // Write manifest.json so BackupLibrary can read label, date, and counts.
@@ -1280,23 +1314,23 @@ final class CLIBridge {
         return (fileCount, sizeBytes)
     }
 
-    func check(profile: String, csvPath: String?, onLine: @Sendable @escaping (LogLine) -> Void) async -> Int32 {
+    func check(profile: String, csvPath: String?, onLine: @Sendable @escaping (LogLine) -> Void) async throws -> Int32 {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
+            throw CLIBridgeError.invalidProfile(profile)
         }
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] no workspace for profile '\(profile)'"))
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: configURL.path) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] config.yaml not found — run workspace-init first"))
-            return -1
+            throw CLIBridgeError.configLoadFailed(path: configURL.path)
         }
         do {
             let config = try ConfigLoader.load(from: configURL)
@@ -1361,16 +1395,16 @@ final class CLIBridge {
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(error.localizedDescription)"))
-            return -1
+            throw CLIBridgeError.configLoadFailed(path: workspace.appendingPathComponent("config.yaml").path)
         }
     }
 
     func initializeWorkspace(
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         return 0
     }
@@ -1379,11 +1413,11 @@ final class CLIBridge {
         _ schedule: Schedule,
         load: Bool,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
-        if schedule.isMulti { return await setupMultiLaunchAgent(schedule, load: load, onLine: onLine) }
+    ) async throws -> Int32 {
+        if schedule.isMulti { return try await setupMultiLaunchAgent(schedule, load: load, onLine: onLine) }
 
         guard await ensureWorkspace(profile: schedule.profile, onLine: onLine) != nil else {
-            return -1
+            throw CLIBridgeError.workspaceMissing(profile: schedule.profile)
         }
 
         let plan: LaunchAgentWriter.SetupPlan
@@ -1391,7 +1425,7 @@ final class CLIBridge {
             plan = try LaunchAgentWriter.nativeSingleWrite(for: schedule, load: load)
         } catch {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
-            return -1
+            throw CLIBridgeError.launchFailed(reason: error.localizedDescription)
         }
 
         let action = load ? "writing and loading" : "writing disabled"
@@ -1412,18 +1446,18 @@ final class CLIBridge {
         _ schedule: Schedule,
         load: Bool,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard LaunchAgentWriter.label(for: schedule) != nil else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid schedule name for multi-profile label"))
-            return -1
+            throw CLIBridgeError.invalidArgument("invalid schedule name for multi-profile label")
         }
         guard ProfileService.isValid(schedule.profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi-profile schedules need a base workspace profile"))
-            return -1
+            throw CLIBridgeError.invalidProfile(schedule.profile)
         }
         guard let execURL = Bundle.main.executableURL else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] cannot resolve app executable path"))
-            return -1
+            throw CLIBridgeError.executableNotFound
         }
         do {
             let plan = try LaunchAgentWriter.nativeMultiWrite(
@@ -1446,7 +1480,7 @@ final class CLIBridge {
             return 0
         } catch {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
-            return -1
+            throw CLIBridgeError.launchFailed(reason: error.localizedDescription)
         }
     }
 
@@ -1454,14 +1488,14 @@ final class CLIBridge {
         target: MultiTarget,
         subcommand: [String],
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         // B-02: validate every profile name surfaced through the multi target.
         // `cliFlags` may emit `--profiles foo,bar` from a list scope; we cannot
         // trust those strings without re-validation.
         for profile in target.allProfileNames where !ProfileService.isValid(profile) {
             AppLogger.cli.warning("runMulti: rejecting invalid profile name in target")
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
+            throw CLIBridgeError.invalidProfile(profile)
         }
         // Auth guard: probe credentials before dispatching live API calls.
         // Uses the first profile in the target for the probe; multi-profile runs
@@ -1473,14 +1507,14 @@ final class CLIBridge {
         }
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
-            return -1
+            throw CLIBridgeError.executableNotFound
         }
         var args = ["multi"]
         args.append(contentsOf: target.cliFlags)
         if target.sequential { args.append("--sequential") }
         args.append("--")
         args.append(contentsOf: subcommand)
-        return await run(
+        return try await run(
             executable: bin,
             arguments: args,
             environment: Self.environmentForJamfCLI(),
@@ -1503,8 +1537,8 @@ final class CLIBridge {
 
     /// M-01: codesign verification gate invoked by `run` and
     /// `runAndCapture` before spawning a process. Returns `nil` when
-    /// the spawn should proceed, or a sentinel exit code (-1) when the
-    /// gate rejected the binary — in which case the caller MUST NOT
+    /// the spawn should proceed, or a `CLIBridgeError.codesignRejected`
+    /// when the gate rejected the binary — in which case the caller MUST NOT
     /// invoke `process.run()`.
     ///
     /// Scoped on basename: only binaries named `jamf-cli` are gated.
@@ -1518,7 +1552,7 @@ final class CLIBridge {
     nonisolated static func codesignGate(
         executable: URL,
         onLine: (LogLine) -> Void
-    ) -> Int32? {
+    ) -> CLIBridgeError? {
         guard executable.lastPathComponent == "jamf-cli" else {
             return nil
         }
@@ -1534,7 +1568,7 @@ final class CLIBridge {
                 level: .fail,
                 text: "[fatal] jamf-cli signature verification failed — refusing to launch \(executable.path)"
             ))
-            return -1
+            return .codesignRejected
         }
     }
 
@@ -1674,6 +1708,11 @@ func runDeviceDetailProcess(
                     timestamp: Date(), level: .fail,
                     text: "jamf-cli failed code-signature verification — the binary may be tampered or unsigned. Reinstall jamf-cli."
                 ))
+                // Codesign rejection: -1 is used here because runDeviceDetailProcess is a
+                // fire-and-forget helper (callers check `exit == 0` not the error type),
+                // and the singleDeviceDetail caller already surfaces the per-device
+                // diagnostic via onLine. The free function's signature stays Int32
+                // for backward compatibility with its test seam.
                 return -1
             }
         }
@@ -1710,6 +1749,7 @@ func runDeviceDetailProcess(
                 timestamp: Date(), level: .fail,
                 text: "jamf-cli could not be launched — check that jamf-cli is installed and the executable is intact."
             ))
+            // Launch failure: -1 is used for the same reason as above (Int32 signature, fire-and-forget).
             return -1
         }
     }.value

@@ -67,7 +67,7 @@ final class CLIBridgeAuthGuardTests: XCTestCase {
         let bridge = CLIBridge()
         let collector = LineCollector()
 
-        let code = await bridge.collect(profile: "jrc-test-no-such-profile-xyzzy") { line in
+        let code = try await bridge.collect(profile: "jrc-test-no-such-profile-xyzzy") { line in
             collector.append(line)
         }
 
@@ -92,7 +92,7 @@ final class CLIBridgeAuthGuardTests: XCTestCase {
         let bridge = CLIBridge()
         let collector = LineCollector()
 
-        let code = await bridge.collectThenGenerate(
+        let code = try await bridge.collectThenGenerate(
             profile: "jrc-test-no-such-profile-xyzzy",
             csvPath: nil
         ) { line in

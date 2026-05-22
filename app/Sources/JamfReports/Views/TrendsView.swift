@@ -857,24 +857,31 @@ struct TrendsView: View {
         isArchiving = true
         workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
         // Status-bar race guard — see HealthCheckView.runAudit comment.
-        let exit = await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspaceStore] line in
-            Task { @MainActor in
-                guard let workspaceStore, self.isArchiving else { return }
-                workspaceStore.globalStatus = line.text
+        do {
+            let exit = try await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspaceStore] line in
+                Task { @MainActor in
+                    guard let workspaceStore, self.isArchiving else { return }
+                    workspaceStore.globalStatus = line.text
+                }
             }
-        }
-        isArchiving = false
-        workspaceStore.globalStatus = nil
-        if exit == 0 {
-            workspaceStore.toast = Toast(message: "Archive generated successfully", style: .success)
-            withAnimation(.snappy) {
-                // Archive just wrote new files on the same profile — `load`
-                // would short-circuit and leave the chart stale. `reload()`
-                // forces the re-scan.
-                trendStore.reload()
+            isArchiving = false
+            workspaceStore.globalStatus = nil
+            if exit == 0 {
+                workspaceStore.toast = Toast(message: "Archive generated successfully", style: .success)
+                withAnimation(.snappy) {
+                    // Archive just wrote new files on the same profile — `load`
+                    // would short-circuit and leave the chart stale. `reload()`
+                    // forces the re-scan.
+                    trendStore.reload()
+                }
+            } else {
+                workspaceStore.toast = Toast(message: "Archive failed · exit \(exit)", style: .danger)
             }
-        } else {
-            workspaceStore.toast = Toast(message: "Archive failed · exit \(exit)", style: .danger)
+        } catch {
+            isArchiving = false
+            workspaceStore.globalStatus = nil
+            AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
+            workspaceStore.toast = Toast(message: "Archive failed — \(error.localizedDescription)", style: .danger)
         }
     }
 

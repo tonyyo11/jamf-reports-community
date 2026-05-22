@@ -299,8 +299,18 @@ struct SettingsView: View {
                 try? await Task.sleep(for: .seconds(10))
                 if !Task.isCancelled { testingTooLong = true }
             }
-            let exit = await bridge.validateConnection(profile: profileName) { line in
-                buf.append(line.text)
+            let exit: Int32
+            do {
+                exit = try await bridge.validateConnection(profile: profileName) { line in
+                    buf.append(line.text)
+                }
+            } catch {
+                timeoutTask.cancel()
+                testResults[profileName] = false
+                testErrors[profileName] = error.localizedDescription
+                testingProfile = nil
+                testingTooLong = false
+                return
             }
             timeoutTask.cancel()
             testResults[profileName] = exit == 0

@@ -30,24 +30,42 @@ final class CLIBridgeProfileValidationTests: XCTestCase {
     func test_audit_rejectsInvalidProfile() async {
         let bridge = CLIBridge()
         for profile in invalidProfiles {
-            let code = await bridge.audit(profile: profile, category: nil) { _ in }
-            XCTAssertEqual(code, -1, "audit must reject profile: \(profile)")
+            do {
+                _ = try await bridge.audit(profile: profile, category: nil) { _ in }
+                XCTFail("audit must throw for profile: \(profile)")
+            } catch let e as CLIBridgeError {
+                XCTAssertEqual(e, .invalidProfile(profile), "audit must throw .invalidProfile for: \(profile)")
+            } catch {
+                XCTFail("Unexpected error type for profile \(profile): \(error)")
+            }
         }
     }
 
     func test_groupHygiene_rejectsInvalidProfile() async {
         let bridge = CLIBridge()
         for profile in invalidProfiles {
-            let code = await bridge.groupHygiene(profile: profile) { _ in }
-            XCTAssertEqual(code, -1, "groupHygiene must reject profile: \(profile)")
+            do {
+                _ = try await bridge.groupHygiene(profile: profile) { _ in }
+                XCTFail("groupHygiene must throw for profile: \(profile)")
+            } catch let e as CLIBridgeError {
+                XCTAssertEqual(e, .invalidProfile(profile), "groupHygiene must throw .invalidProfile for: \(profile)")
+            } catch {
+                XCTFail("Unexpected error type for profile \(profile): \(error)")
+            }
         }
     }
 
     func test_runMulti_rejectsInvalidProfileInList() async {
         let bridge = CLIBridge()
         let target = MultiTarget(scope: .list(["good-profile", "--config=/etc/passwd"]))
-        let code = await bridge.runMulti(target: target, subcommand: ["pro", "collect"]) { _ in }
-        XCTAssertEqual(code, -1)
+        do {
+            _ = try await bridge.runMulti(target: target, subcommand: ["pro", "collect"]) { _ in }
+            XCTFail("runMulti must throw for an invalid profile in the list")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .invalidProfile("--config=/etc/passwd"))
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
     }
 
     func test_diffBackups_rejectsInvalidProfile() async {
@@ -55,8 +73,14 @@ final class CLIBridgeProfileValidationTests: XCTestCase {
         let lhs = URL(fileURLWithPath: "/tmp/a")
         let rhs = URL(fileURLWithPath: "/tmp/b")
         for profile in invalidProfiles {
-            let code = await bridge.diffBackups(profile: profile, left: lhs, right: rhs) { _ in }
-            XCTAssertEqual(code, -1, "diffBackups must reject profile: \(profile)")
+            do {
+                _ = try await bridge.diffBackups(profile: profile, left: lhs, right: rhs) { _ in }
+                XCTFail("diffBackups must throw for profile: \(profile)")
+            } catch let e as CLIBridgeError {
+                XCTAssertEqual(e, .invalidProfile(profile), "diffBackups must throw .invalidProfile for: \(profile)")
+            } catch {
+                XCTFail("Unexpected error type for profile \(profile): \(error)")
+            }
         }
     }
 
@@ -67,31 +91,51 @@ final class CLIBridgeProfileValidationTests: XCTestCase {
         // Use a valid profile so we get past B-02 and exercise the B-03 guard.
         // The default workspace will be missing in a fresh test env, but the
         // category check happens before workspace resolution.
-        let code = await bridge.audit(
-            profile: "valid-profile",
-            category: "--config=/etc/passwd"
-        ) { _ in }
-        XCTAssertEqual(code, -1, "audit must reject leading-dash category")
+        do {
+            _ = try await bridge.audit(
+                profile: "valid-profile",
+                category: "--config=/etc/passwd"
+            ) { _ in }
+            XCTFail("audit must throw for leading-dash category")
+        } catch let e as CLIBridgeError {
+            if case .invalidArgument = e { /* expected */ } else {
+                XCTFail("Expected .invalidArgument, got \(e)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
     }
 
     func test_backup_rejectsLeadingDashLabel() async {
         let bridge = CLIBridge()
         // Same as above — we need a valid profile to get past the path
         // resolution; the label check is independent.
-        let code = await bridge.backup(
-            profile: "valid-profile",
-            label: "--config=/etc/passwd"
-        ) { _ in }
-        // Either workspace setup fails (-1) or label guard fires (-1).
-        // Important assertion: never returns 0.
-        XCTAssertEqual(code, -1)
+        do {
+            _ = try await bridge.backup(
+                profile: "valid-profile",
+                label: "--config=/etc/passwd"
+            ) { _ in }
+            XCTFail("backup must throw for leading-dash label")
+        } catch let e as CLIBridgeError {
+            if case .invalidArgument = e { /* expected */ } else {
+                XCTFail("Expected .invalidArgument, got \(e)")
+            }
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
     }
 
     func test_runNow_rejectsInvalidProfile() async {
         let bridge = CLIBridge()
         for profile in invalidProfiles {
-            let code = await bridge.runNow(profile: profile, mode: .jamfCLIOnly) { _ in }
-            XCTAssertEqual(code, -1, "runNow must reject profile: '\(profile)'")
+            do {
+                _ = try await bridge.runNow(profile: profile, mode: .jamfCLIOnly) { _ in }
+                XCTFail("runNow must throw for profile: '\(profile)'")
+            } catch let e as CLIBridgeError {
+                XCTAssertEqual(e, .invalidProfile(profile), "runNow must throw .invalidProfile for: '\(profile)'")
+            } catch {
+                XCTFail("Unexpected error type for profile \(profile): \(error)")
+            }
         }
     }
 }

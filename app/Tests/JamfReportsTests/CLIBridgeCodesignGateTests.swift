@@ -50,12 +50,18 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
 
         let bridge = CLIBridge()
         let collector = LogLineCollector()
-        let exit = await bridge.run(
-            executable: fake,
-            arguments: ["--version"],
-            onLine: { line in collector.append(line) }
-        )
-        XCTAssertEqual(exit, -1, "Codesign gate must reject without spawning a process")
+        do {
+            _ = try await bridge.run(
+                executable: fake,
+                arguments: ["--version"],
+                onLine: { line in collector.append(line) }
+            )
+            XCTFail("Expected CLIBridgeError.codesignRejected to be thrown")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .codesignRejected, "Codesign gate must throw .codesignRejected without spawning a process")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
         let lines = collector.snapshot()
         let fatalLines = lines.filter { $0.level == CLIBridge.LogLevel.fail && $0.text.contains("signature") }
         XCTAssertFalse(fatalLines.isEmpty,
@@ -64,7 +70,7 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
 
     // MARK: - Gate skipped for non-jamf-cli executables
 
-    func testRunSkipsGateForNonJamfCLIExecutable() async {
+    func testRunSkipsGateForNonJamfCLIExecutable() async throws {
         // /bin/echo is signed by Apple (Team ID won't match Jamf's), but
         // the gate is keyed on basename == "jamf-cli" so /bin/echo must
         // be allowed to run.
@@ -74,7 +80,7 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
         }
 
         let bridge = CLIBridge()
-        let exit = await bridge.run(
+        let exit = try await bridge.run(
             executable: echoBin,
             arguments: ["hello-from-test"],
             onLine: { _ in }
@@ -84,12 +90,12 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
 
     // MARK: - S-02: environment default
 
-    func testEnvironmentDefaultIsRestricted() async {
+    func testEnvironmentDefaultIsRestricted() async throws {
         // /bin/sh -c "echo $PATH" — with the S-02 fix in place and no
         // explicit environment: argument, the child sees exactly the
         // PATH defined in environmentForJamfCLI().
         let bridge = CLIBridge()
-        let (exit, data) = await bridge.runAndCapture(
+        let (exit, data) = try await bridge.runAndCapture(
             executable: URL(fileURLWithPath: "/bin/sh"),
             arguments: ["-c", "printf %s \"$PATH\""],
             onLine: { _ in }
@@ -157,6 +163,9 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
             arguments: ["pro", "device", "1", "--output", "json"],
             outputDirectory: tempDir.appendingPathComponent("out", isDirectory: true)
         )
+        // runDeviceDetailProcess is a fire-and-forget helper with Int32 return signature
+        // (it's not converted to throws because it's used in a high-throughput per-device loop).
+        // The codesign rejection path still returns -1 for this function.
         XCTAssertEqual(exit, -1, "runDeviceDetailProcess must invoke the codesign gate before spawning jamf-cli")
     }
 
@@ -315,8 +324,14 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
 
         let capture = OSLogCapture.start()
         let bridge = CLIBridge()
-        let exit = await bridge.run(executable: fake, arguments: ["--version"], onLine: { _ in })
-        XCTAssertEqual(exit, -1, "Codesign gate must reject the unsigned binary")
+        do {
+            _ = try await bridge.run(executable: fake, arguments: ["--version"], onLine: { _ in })
+            XCTFail("Expected CLIBridgeError.codesignRejected to be thrown")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .codesignRejected, "Codesign gate must throw .codesignRejected")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
 
         // Give the unified-logging pipeline a moment to flush. If this ever
         // flakes under CI load, the fix is a short retry loop around

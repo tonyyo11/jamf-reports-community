@@ -947,11 +947,19 @@ struct ReportEngine: Sendable {
                 timestamp: Date(), level: .info,
                 text: "[info] collecting \(kind) for \(profile)"
             ))
-            let (exitCode, data) = await bridge.runAndCapture(
-                executable: bin, arguments: args,
-                environment: CLIBridge.environmentForJamfCLI(),
-                onLine: onLine
-            )
+            let captureResult: (Int32, Data)?
+            do {
+                captureResult = try await bridge.runAndCapture(
+                    executable: bin, arguments: args,
+                    environment: CLIBridge.environmentForJamfCLI(),
+                    onLine: onLine
+                )
+            } catch {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                captureResult = nil
+            }
+            guard let (exitCode, data) = captureResult else { continue }
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 // T-8: record success so the cadence boundary advances.
@@ -1246,11 +1254,19 @@ struct ReportEngine: Sendable {
         for (args, kind) in commands {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
-            let (exitCode, data) = await bridge.runAndCapture(
-                executable: bin, arguments: args,
-                environment: CLIBridge.environmentForJamfCLI(),
-                onLine: onLine
-            )
+            let schoolResult: (Int32, Data)?
+            do {
+                schoolResult = try await bridge.runAndCapture(
+                    executable: bin, arguments: args,
+                    environment: CLIBridge.environmentForJamfCLI(),
+                    onLine: onLine
+                )
+            } catch {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                schoolResult = nil
+            }
+            guard let (exitCode, data) = schoolResult else { continue }
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -1297,11 +1313,19 @@ struct ReportEngine: Sendable {
         for (args, kind) in commands {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
-            let (exitCode, data) = await bridge.runAndCapture(
-                executable: bin, arguments: args,
-                environment: CLIBridge.environmentForJamfCLI(),
-                onLine: onLine
-            )
+            let protectResult: (Int32, Data)?
+            do {
+                protectResult = try await bridge.runAndCapture(
+                    executable: bin, arguments: args,
+                    environment: CLIBridge.environmentForJamfCLI(),
+                    onLine: onLine
+                )
+            } catch {
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                protectResult = nil
+            }
+            guard let (exitCode, data) = protectResult else { continue }
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 onLine(.init(timestamp: Date(), level: .ok,
