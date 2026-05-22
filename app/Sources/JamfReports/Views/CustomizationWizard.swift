@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import OSLog
 
 // MARK: - WizardState
 
@@ -374,7 +375,10 @@ struct CustomizationWizard: View {
                 try await workspace.saveConfig()
                 onDismiss()
             } catch {
-                saveError = "Could not save config.yaml: \(error.localizedDescription)"
+                AppLogger.ui.error(
+                    "CustomizationWizard: config.yaml save failed — \(error, privacy: .private)"
+                )
+                saveError = "Could not save config.yaml — the workspace folder may not exist or may not be writable."
             }
         }
     }
@@ -632,8 +636,10 @@ private struct Step3EAsView: View {
                 state.availableEAs = try await bridge.listExtensionAttributes(profile: profile)
                 // eaLoadError stays nil — empty list shown via its own branch in the view.
             } catch {
-                state.eaLoadError = "Could not load Extension Attributes: "
-                    + "\(error.localizedDescription). "
+                AppLogger.ui.error(
+                    "CustomizationWizard: EA load failed — \(error, privacy: .private)"
+                )
+                state.eaLoadError = "Could not load Extension Attributes. "
                     + "Check that jamf-cli is authenticated."
             }
             state.isLoadingEAs = false

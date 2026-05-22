@@ -128,6 +128,9 @@ struct SettingsView: View {
         guard let path = workspace.jamfCLIPath else { return "Not found in /opt/homebrew/bin or /usr/local/bin" }
         let source = workspace.jamfCLIInstallSource ?? "Unknown source"
         let base = "\(workspace.jamfCLIVersion ?? "unknown") · \(source) · \(path)"
+        if workspace.jamfCLIVerificationFailed {
+            return "\(base)\nCodesign verification failed — binary may be tampered. Update or reinstall jamf-cli."
+        }
         if JamfCLIInstaller.isBelowMinimumSupported(workspace.jamfCLIVersion) {
             return "\(base)\nBelow minimum supported \(JamfCLIInstaller.minimumSupportedVersion) — Device Lookup payloads may be incomplete. Update recommended."
         }
@@ -296,8 +299,18 @@ struct SettingsView: View {
                 try? await Task.sleep(for: .seconds(10))
                 if !Task.isCancelled { testingTooLong = true }
             }
-            let exit = await bridge.validateConnection(profile: profileName) { line in
-                buf.append(line.text)
+            let exit: Int32
+            do {
+                exit = try await bridge.validateConnection(profile: profileName) { line in
+                    buf.append(line.text)
+                }
+            } catch {
+                timeoutTask.cancel()
+                testResults[profileName] = false
+                testErrors[profileName] = error.localizedDescription
+                testingProfile = nil
+                testingTooLong = false
+                return
             }
             timeoutTask.cancel()
             testResults[profileName] = exit == 0

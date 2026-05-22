@@ -997,8 +997,23 @@ extension HtmlReport {
             let b = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate) ?? .distantPast
             return a < b
-        }), let data = try? Data(contentsOf: newest) else { return [] }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+        }) else { return [] }
+        let data: Data
+        do {
+            data = try Data(contentsOf: newest)
+        } catch {
+            AppLogger.engine.warning(
+                "loadProtectJSON: could not read '\(newest.path, privacy: .private)' — \(error, privacy: .private)"
+            )
+            return []
+        }
+        guard let result = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+            AppLogger.engine.warning(
+                "loadProtectJSON: JSON parse failed for '\(newest.path, privacy: .private)'"
+            )
+            return []
+        }
+        return result
     }
 
     /// Load all Protect insight snapshot files, returning them in chronological order.
@@ -1021,8 +1036,23 @@ extension HtmlReport {
                 return a < b
             }
             .compactMap { url -> [String: Any]? in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let data: Data
+                do {
+                    data = try Data(contentsOf: url)
+                } catch {
+                    AppLogger.engine.warning(
+                        // swiftlint:disable:next line_length
+                        "loadProtectInsightSnapshots: could not read \(url.path, privacy: .private) — \(error, privacy: .private)"
+                    )
+                    return nil
+                }
+                guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                    AppLogger.engine.warning(
+                        "loadProtectInsightSnapshots: JSON parse failed for '\(url.path, privacy: .private)'"
+                    )
+                    return nil
+                }
+                return parsed
             }
     }
 

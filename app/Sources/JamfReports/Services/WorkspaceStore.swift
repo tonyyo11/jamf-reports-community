@@ -18,6 +18,9 @@ final class WorkspaceStore {
     var jamfCLIPath: String?
     var jamfCLIVersion: String?
     var jamfCLIInstallSource: String?
+    /// True when the located jamf-cli binary failed the codesign-fingerprint gate.
+    /// Surfaced as a distinct warning in Settings separate from the version-floor check.
+    var jamfCLIVerificationFailed: Bool = false
     var jamfCLIUpdateMessage: String?
     var jamfCLIUpdateAvailable: Bool = false
     var isUpdatingJamfCLI: Bool = false
@@ -130,6 +133,7 @@ final class WorkspaceStore {
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
         self.jamfCLIInstallSource = jamfCLI?.source.label
+        self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.launchAgentCleanupMessage = cleanup.message
         self.launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
     }
@@ -242,7 +246,14 @@ final class WorkspaceStore {
         isInitializingWorkspace = true
         workspaceInitMessage = "Initializing workspace…"
         let bridge = CLIBridge()
-        let initExit = await bridge.initializeWorkspace(profile: profile) { _ in }
+        let initExit: Int32
+        do {
+            initExit = try await bridge.initializeWorkspace(profile: profile) { _ in }
+        } catch {
+            isInitializingWorkspace = false
+            workspaceInitMessage = "Workspace init failed · \(error.localizedDescription)"
+            return
+        }
         guard initExit == 0 else {
             isInitializingWorkspace = false
             workspaceInitMessage = "Workspace init failed · exit \(initExit)"
@@ -257,7 +268,14 @@ final class WorkspaceStore {
         }
 
         workspaceInitMessage = "Workspace initialized · collecting jamf-cli snapshots…"
-        let collectExit = await bridge.collect(profile: profile) { _ in }
+        let collectExit: Int32
+        do {
+            collectExit = try await bridge.collect(profile: profile) { _ in }
+        } catch {
+            isInitializingWorkspace = false
+            workspaceInitMessage = "Workspace initialized · collect failed · \(error.localizedDescription)"
+            return
+        }
         isInitializingWorkspace = false
         if collectExit == 0 {
             workspaceInitMessage = "Workspace initialized · cached snapshots ready"
@@ -273,6 +291,7 @@ final class WorkspaceStore {
         jamfCLIPath = jamfCLI?.path
         jamfCLIVersion = jamfCLI?.version
         jamfCLIInstallSource = jamfCLI?.source.label
+        jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
     }
 
     func checkJamfCLIUpdate() async {

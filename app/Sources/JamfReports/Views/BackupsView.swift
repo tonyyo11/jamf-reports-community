@@ -322,8 +322,16 @@ struct BackupsView: View {
         errorMessage = nil
         isRunningBackup = true
         Task {
-            let exit = await bridge.backup(profile: profile, label: label.isEmpty ? nil : label) { line in
-                Task { @MainActor in backupOutput.append(line) }
+            let exit: Int32
+            do {
+                exit = try await bridge.backup(profile: profile, label: label.isEmpty ? nil : label) { line in
+                    Task { @MainActor in backupOutput.append(line) }
+                }
+            } catch {
+                backupExitCode = -1
+                isRunningBackup = false
+                errorMessage = "Backup failed: \(error.localizedDescription)"
+                return
             }
             backupExitCode = exit
             isRunningBackup = false
@@ -351,12 +359,20 @@ struct BackupsView: View {
         showingDiff = true
         isRunningDiff = true
         Task {
-            let exit = await bridge.diffBackups(
-                profile: workspace.profile,
-                left: backup.url,
-                right: latest.url
-            ) { line in
-                Task { @MainActor in diffOutput.append(line) }
+            let exit: Int32
+            do {
+                exit = try await bridge.diffBackups(
+                    profile: workspace.profile,
+                    left: backup.url,
+                    right: latest.url
+                ) { line in
+                    Task { @MainActor in diffOutput.append(line) }
+                }
+            } catch {
+                diffExitCode = -1
+                isRunningDiff = false
+                errorMessage = "Backup diff failed: \(error.localizedDescription)"
+                return
             }
             diffExitCode = exit
             isRunningDiff = false

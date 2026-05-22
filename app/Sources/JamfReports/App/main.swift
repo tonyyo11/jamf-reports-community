@@ -160,8 +160,19 @@ private func runCheck(profile: String) -> Int32 {
         print("[ok] jamf_cli.profile: \(cliProfile.isEmpty ? "(not set)" : cliProfile)")
         let dataDir = (try? WorkspacePaths.dataDir(for: profile)) ?? workspace
             .appendingPathComponent("jamf-cli-data")
-        let snapshotCount = (try? FileManager.default.contentsOfDirectory(atPath: dataDir.path))?.count ?? 0
-        print("[ok] cached snapshots in data_dir: \(snapshotCount)")
+        var isDir: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: dataDir.path, isDirectory: &isDir) {
+            print("[warn] data_dir does not exist yet (no collect run): \(dataDir.path)")
+        } else if !isDir.boolValue {
+            fputs("[warn] data_dir path exists but is not a directory: \(dataDir.path)\n", stderr)
+        } else {
+            do {
+                let snapshotCount = try FileManager.default.contentsOfDirectory(atPath: dataDir.path).count
+                print("[ok] cached snapshots in data_dir: \(snapshotCount)")
+            } catch {
+                fputs("[warn] could not read data_dir: \(error.localizedDescription)\n", stderr)
+            }
+        }
         return 0
     } catch {
         fputs("[error] \(error.localizedDescription)\n", stderr)

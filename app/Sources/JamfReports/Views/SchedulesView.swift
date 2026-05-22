@@ -545,10 +545,18 @@ struct SchedulesView: View {
         workspace.schedules[idx].enabled.toggle()
         let nowEnabled = workspace.schedules[idx].enabled
 
-        let exitCode = await bridge.setupLaunchAgent(
-            workspace.schedules[idx],
-            load: nowEnabled
-        ) { _ in }
+        let exitCode: Int32
+        do {
+            exitCode = try await bridge.setupLaunchAgent(
+                workspace.schedules[idx],
+                load: nowEnabled
+            ) { _ in }
+        } catch {
+            workspace.schedules[idx].enabled = original
+            writeError = "Could not update LaunchAgent \(agentLabel) · \(error.localizedDescription)"
+            showWriteError = true
+            return
+        }
 
         if exitCode != 0 {
             workspace.schedules[idx].enabled = original
@@ -579,7 +587,14 @@ struct SchedulesView: View {
 
     private func saveSchedule(_ form: ScheduleFormState) async {
         let schedule = form.toSchedule()
-        let exitCode = await bridge.setupLaunchAgent(schedule, load: schedule.enabled) { _ in }
+        let exitCode: Int32
+        do {
+            exitCode = try await bridge.setupLaunchAgent(schedule, load: schedule.enabled) { _ in }
+        } catch {
+            writeError = "Could not create LaunchAgent · \(error.localizedDescription)"
+            showWriteError = true
+            return
+        }
         if exitCode == 0 {
             workspace.reloadFromDisk()
         } else {

@@ -178,11 +178,25 @@ struct DefaultCLIExecutor: CLIExecutor {
         // We need stderr to classify auth/HTTP/network errors thrown by jamf-cli,
         // so accumulate it here rather than discarding it.
         let stderrBuffer = StderrAccumulator()
-        let (exitCode, data) = await bridge.runAndCapture(
-            executable: bin,
-            arguments: argv,
-            onLine: { line in stderrBuffer.append(line.text) }
-        )
+        let exitCode: Int32
+        let data: Data
+        do {
+            (exitCode, data) = try await bridge.runAndCapture(
+                executable: bin,
+                arguments: argv,
+                onLine: { line in stderrBuffer.append(line.text) }
+            )
+        } catch let bridgeError as CLIBridgeError {
+            let accumulated = stderrBuffer.snapshot()
+            let stderrText = accumulated.isEmpty
+                ? bridgeError.localizedDescription
+                : bridgeError.localizedDescription + "\n" + accumulated
+            throw CLIExecutorError.nonZeroExit(code: -1, stderr: stderrText)
+        } catch {
+            // Catch-all: if a future change causes runAndCapture to throw a
+            // non-CLIBridgeError type, convert it rather than propagate unknown.
+            throw CLIExecutorError.nonZeroExit(code: -1, stderr: error.localizedDescription)
+        }
         guard exitCode == 0 else {
             throw CLIExecutorError.nonZeroExit(code: exitCode, stderr: stderrBuffer.snapshot())
         }

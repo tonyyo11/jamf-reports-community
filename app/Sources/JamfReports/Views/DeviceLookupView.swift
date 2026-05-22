@@ -31,6 +31,10 @@ struct DeviceLookupView: View {
     /// to cached data (`CLIBridge.DeviceDetailResult.fromCache == true`); nil when
     /// the live API call succeeded. Drives the staleness banner above the result.
     @State private var staleSince: Date?
+    /// Set when a codesign-gate rejection or launch failure produces a user-actionable
+    /// diagnostic. Surfaced in the failure/not-found card message so the user sees
+    /// the real cause rather than the generic "cache may be stale" copy.
+    @State private var lookupDiagnostic: String?
     @FocusState private var searchFocused: Bool
 
     enum LookupState: Equatable {
@@ -373,23 +377,31 @@ struct DeviceLookupView: View {
         detail = nil
         resolvedKind = kind
         staleSince = nil
+        lookupDiagnostic = nil
 
         Task {
+            let collector = FailLineCollector()
             let result: CLIBridge.DeviceDetailResult?
             switch kind {
             case .computer:
-                result = await CLIBridge().deviceDetailWithProvenance(profile: profile, deviceID: id)
+                result = await CLIBridge().deviceDetailWithProvenance(
+                    profile: profile, deviceID: id, onLine: { line in collector.capture(line) }
+                )
             case .mobile:
-                result = await CLIBridge().mobileDeviceDetailWithProvenance(profile: profile, deviceID: id)
+                result = await CLIBridge().mobileDeviceDetailWithProvenance(
+                    profile: profile, deviceID: id, onLine: { line in collector.capture(line) }
+                )
             }
+            lookupDiagnostic = collector.firstFail()
             guard requestKey == key else { return }
             guard let result else {
-                state = .unavailable(
-                    "jamf-cli could not load the \(kind.displayLabel.lowercased()) detail for ID `\(id)` on profile `\(profile)`. Run `\(cliCommand(kind: kind, profile: profile, id: id))` in a terminal for the underlying error."
-                )
+                let base = "jamf-cli could not load the \(kind.displayLabel.lowercased()) detail " +
+                    "for ID `\(id)` on profile `\(profile)`. " +
+                    "Run `\(cliCommand(kind: kind, profile: profile, id: id))` in a terminal for the underlying error."
+                state = .unavailable(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
                 return
             }
-            staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
+            staleSince = result.fromCache ? freshnessTimestamp(for: result.cacheURL) : nil
             do {
                 let decoded = try DeviceDetail.decode(from: result.data, lookupID: id)
                 detail = decoded
@@ -410,41 +422,41 @@ struct DeviceLookupView: View {
         detail = nil
         resolvedKind = nil
         staleSince = nil
+        lookupDiagnostic = nil
 
         Task {
             let bridge = CLIBridge()
-            if let result = await bridge.deviceDetailWithProvenance(profile: profile, deviceID: term) {
+            let collector = FailLineCollector()
+            if let result = await bridge.deviceDetailWithProvenance(
+                profile: profile, deviceID: term, onLine: { line in collector.capture(line) }
+            ) {
                 guard requestKey == key else { return }
                 if let decoded = try? DeviceDetail.decode(from: result.data, lookupID: term) {
                     resolvedKind = .computer
                     detail = decoded
-                    staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
+                    staleSince = result.fromCache ? freshnessTimestamp(for: result.cacheURL) : nil
                     state = .loaded
                     return
                 }
             }
-            if let result = await bridge.mobileDeviceDetailWithProvenance(profile: profile, deviceID: term) {
+            if let result = await bridge.mobileDeviceDetailWithProvenance(
+                profile: profile, deviceID: term, onLine: { line in collector.capture(line) }
+            ) {
                 guard requestKey == key else { return }
                 if let decoded = try? DeviceDetail.decode(from: result.data, lookupID: term) {
                     resolvedKind = .mobile
                     detail = decoded
-                    staleSince = result.fromCache ? snapshotMTime(result.cacheURL) : nil
+                    staleSince = result.fromCache ? freshnessTimestamp(for: result.cacheURL) : nil
                     state = .loaded
                     return
                 }
             }
+            lookupDiagnostic = collector.firstFail()
             guard requestKey == key else { return }
-            state = .noMatchOfferRefresh(
-                "No cached match for `\(term)` on profile `\(profile)`, and direct ID lookups for computer and mobile both failed. The cache may be stale."
-            )
+            let base = "No cached match for `\(term)` on profile `\(profile)`, and direct ID lookups " +
+                "for computer and mobile both failed. The cache may be stale."
+            state = .noMatchOfferRefresh(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
         }
-    }
-
-    /// Read the contentModificationDate of a cache file; returns nil on stat failure.
-    private func snapshotMTime(_ url: URL?) -> Date? {
-        guard let url else { return nil }
-        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
-        return values?.contentModificationDate
     }
 
     private func refreshIndex() {
@@ -456,7 +468,13 @@ struct DeviceLookupView: View {
             // than strictly necessary, but it goes through the audited
             // CLI bridge surface and keeps this screen from owning bespoke
             // jamf-cli invocation logic.
-            _ = await CLIBridge().collect(profile: profile) { _ in }
+            do {
+                _ = try await CLIBridge().collect(profile: profile) { _ in }
+            } catch {
+                AppLogger.cli.warning(
+                    "DeviceLookupView refreshIndex: collect threw — \(error.localizedDescription, privacy: .private)"
+                )
+            }
             index.load(profile: profile)
             refreshing = false
             // Auto-retry the original lookup against the freshly loaded index.
@@ -500,5 +518,56 @@ struct DeviceLookupView: View {
             }
         }
         return nil
+    }
+}
+
+// MARK: - FailLineCollector
+
+/// Returns the freshness timestamp for a device-detail cache URL (T-15 fix).
+///
+/// Prefers the per-cache `.meta` sidecar written by `CLIBridge.writeDeviceDetailFreshnessSidecar`
+/// (which holds `generated_at` as an ISO-8601 UTC string) over the filesystem mtime.
+/// The sidecar is app-written on every live-data refresh; an attacker who can only run
+/// `touch -t` cannot forge it without also crafting valid JSON content.
+///
+/// Falls back to `contentModificationDate` when the sidecar is absent (caches predating
+/// this change) or unparseable (truncated/corrupted write).
+///
+/// Internal access allows `@testable import` in DeviceDetailProvenanceTests.
+internal func freshnessTimestamp(for cacheURL: URL?) -> Date? {
+    guard let cacheURL else { return nil }
+    let sidecar = cacheURL.appendingPathExtension("meta")
+    if let raw = try? Data(contentsOf: sidecar),
+       let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: String],
+       let isoString = obj["generated_at"] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: isoString) {
+            return date
+        }
+    }
+    // Sidecar absent or unparseable — fall back to filesystem mtime.
+    let values = try? cacheURL.resourceValues(forKeys: [.contentModificationDateKey])
+    return values?.contentModificationDate
+}
+
+/// Thread-safe collector for `.fail`-level LogLines produced by `runDeviceDetailProcess`.
+/// Captured into the `@Sendable` `onLine` closure; read back on MainActor after the
+/// await returns. Mirrors the `LogLineCollector` pattern from CLIBridgeCodesignGateTests.
+private final class FailLineCollector: @unchecked Sendable {
+    private var first: String?
+    private let lock = NSLock()
+
+    func capture(_ line: CLIBridge.LogLine) {
+        guard line.level == .fail else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        if first == nil { first = line.text }
+    }
+
+    func firstFail() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return first
     }
 }

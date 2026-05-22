@@ -680,12 +680,21 @@ struct AuditView: View {
             findings = decoded
             lastAuditDate = current.modified
 
-            let previous = auditSnapshots.dropFirst().first
-                .flatMap { try? decoder.decode([AuditFinding].self, from: $0.data) } ?? []
             let currentKeys = Set(decoded.map(\.driftKey))
-            let previousKeys = Set(previous.map(\.driftKey))
-            newFindingKeys = auditSnapshots.count > 1 ? currentKeys.subtracting(previousKeys) : []
-            resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+            if let previousSnapshot = auditSnapshots.dropFirst().first {
+                do {
+                    let previous = try decoder.decode([AuditFinding].self, from: previousSnapshot.data)
+                    let previousKeys = Set(previous.map(\.driftKey))
+                    newFindingKeys = currentKeys.subtracting(previousKeys)
+                    resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+                } catch {
+                    AppLogger.ui.warning(
+                        "AuditView: previous snapshot decode failed — \(error, privacy: .private)"
+                    )
+                    // newFindingKeys and resolvedFindings are already reset above;
+                    // leave them empty rather than misreporting all current findings as new.
+                }
+            }
         }
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
@@ -749,11 +758,19 @@ struct AuditView: View {
             // post-await `globalStatus = nil` and leave a stale status line.
             // Guarding on `isRunningAudit` makes the running flag the single
             // source of truth for "show CLI output."
-            let code = await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
-                Task { @MainActor in
-                    guard let workspace, self.isRunningAudit else { return }
-                    workspace.globalStatus = line.text
+            let code: Int32
+            do {
+                code = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
+                    Task { @MainActor in
+                        guard let workspace, self.isRunningAudit else { return }
+                        workspace.globalStatus = line.text
+                    }
                 }
+            } catch {
+                isRunningAudit = false
+                workspace.globalStatus = nil
+                workspace.toast = Toast(message: "Audit failed · \(error.localizedDescription)", style: .danger)
+                return
             }
             isRunningAudit = false
             workspace.globalStatus = nil
@@ -771,11 +788,19 @@ struct AuditView: View {
         workspace.globalStatus = "group-tools analyze · profile=\(workspace.profile)"
         Task {
             let profile = workspace.profile
-            let code = await bridge.groupHygiene(profile: profile) { [weak workspace] line in
-                Task { @MainActor in
-                    guard let workspace, self.isRunningHygiene else { return }
-                    workspace.globalStatus = line.text
+            let code: Int32
+            do {
+                code = try await bridge.groupHygiene(profile: profile) { [weak workspace] line in
+                    Task { @MainActor in
+                        guard let workspace, self.isRunningHygiene else { return }
+                        workspace.globalStatus = line.text
+                    }
                 }
+            } catch {
+                isRunningHygiene = false
+                workspace.globalStatus = nil
+                workspace.toast = Toast(message: "Analysis failed · \(error.localizedDescription)", style: .danger)
+                return
             }
             isRunningHygiene = false
             workspace.globalStatus = nil

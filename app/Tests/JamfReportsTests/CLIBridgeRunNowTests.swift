@@ -50,12 +50,17 @@ final class CLIBridgeRunNowTests: XCTestCase {
     func test_runNow_rejectsInvalidProfile() async {
         let bridge = CLIBridge()
         let collector = RunLineCollector()
-        let code = await bridge.runNow(
-            profile: "../evil",
-            mode: .jamfCLIFull
-        ) { line in collector.append(line) }
-
-        XCTAssertEqual(code, -1)
+        do {
+            _ = try await bridge.runNow(
+                profile: "../evil",
+                mode: .jamfCLIFull
+            ) { line in collector.append(line) }
+            XCTFail("runNow must throw for an invalid profile")
+        } catch let e as CLIBridgeError {
+            XCTAssertEqual(e, .invalidProfile("../evil"), "runNow must throw .invalidProfile")
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
         XCTAssertTrue(
             collector.lines.contains(where: { $0.text.contains("invalid profile name") }),
             "expected invalid profile error; got: \(collector.lines.map(\.text))"
@@ -75,19 +80,28 @@ final class CLIBridgeRunNowTests: XCTestCase {
 
         let bridge = CLIBridge()
         let collector = RunLineCollector()
-        let code = await bridge.runNow(profile: profile, mode: .jamfCLIFull) { line in
-            collector.append(line)
+        // Valid profile: must not throw .invalidProfile — any other throw or non-zero exit is acceptable.
+        do {
+            let code = try await bridge.runNow(profile: profile, mode: .jamfCLIFull) { line in
+                collector.append(line)
+            }
+            // The auth guard must have been reached; it emits either an auth failure or
+            // a jamf-cli not-found line.
+            let authLinePresent = collector.lines.contains(where: {
+                $0.text.contains("auth check failed") || $0.text.contains("jamf-cli not found")
+            })
+            XCTAssertTrue(authLinePresent,
+                          "expected auth guard line; got: \(collector.lines.map(\.text))")
+            _ = code  // non-zero is expected when jamf-cli is absent; we only assert the path was reached
+        } catch let e as CLIBridgeError {
+            // Only .invalidProfile would indicate the wrong code path was hit.
+            if case .invalidProfile = e {
+                XCTFail("runNow must not use the invalid-profile exit path for a valid profile; got \(e)")
+            }
+            // Any other CLIBridgeError (executableNotFound, workspaceMissing, etc.) is acceptable.
+        } catch {
+            // Non-CLIBridgeError throws are fine; they mean we passed profile validation.
         }
-
-        // The function should not return -1 (that's the invalid-profile path).
-        XCTAssertNotEqual(code, -1, "runNow must not use the invalid-profile exit path for a valid profile")
-        // The auth guard must have been reached; it emits either an auth failure or
-        // a jamf-cli not-found line.
-        let authLinePresent = collector.lines.contains(where: {
-            $0.text.contains("auth check failed") || $0.text.contains("jamf-cli not found")
-        })
-        XCTAssertTrue(authLinePresent,
-                      "expected auth guard line; got: \(collector.lines.map(\.text))")
     }
 
     // MARK: - newestCSV — inbox preferred over root
@@ -111,11 +125,16 @@ final class CLIBridgeRunNowTests: XCTestCase {
 
         let bridge = CLIBridge()
         let collector = RunLineCollector()
-        let code = await bridge.runNow(profile: profile, mode: .jamfCLIFull) { line in
-            collector.append(line)
-        }
+        do {
+            _ = try await bridge.runNow(profile: profile, mode: .jamfCLIFull) { line in
+                collector.append(line)
+            }
+        } catch let e as CLIBridgeError {
+            if case .invalidProfile = e {
+                XCTFail("runNow must not throw .invalidProfile for a valid profile; got \(e)")
+            }
+        } catch { /* non-CLIBridgeError throw is acceptable */ }
 
-        XCTAssertNotEqual(code, -1)
         let authLinePresent = collector.lines.contains(where: {
             $0.text.contains("auth check failed") || $0.text.contains("jamf-cli not found")
         })
@@ -146,11 +165,16 @@ final class CLIBridgeRunNowTests: XCTestCase {
 
         let bridge = CLIBridge()
         let collector = RunLineCollector()
-        let code = await bridge.runNow(profile: profile, mode: .jamfCLIFull) { line in
-            collector.append(line)
-        }
+        do {
+            _ = try await bridge.runNow(profile: profile, mode: .jamfCLIFull) { line in
+                collector.append(line)
+            }
+        } catch let e as CLIBridgeError {
+            if case .invalidProfile = e {
+                XCTFail("runNow must not throw .invalidProfile for a valid profile; got \(e)")
+            }
+        } catch { /* non-CLIBridgeError throw is acceptable */ }
 
-        XCTAssertNotEqual(code, -1)
         let authLinePresent = collector.lines.contains(where: {
             $0.text.contains("auth check failed") || $0.text.contains("jamf-cli not found")
         })
@@ -168,11 +192,16 @@ final class CLIBridgeRunNowTests: XCTestCase {
 
         let bridge = CLIBridge()
         let collector = RunLineCollector()
-        let code = await bridge.runNow(profile: profile, mode: .snapshotOnly) { line in
-            collector.append(line)
-        }
+        do {
+            _ = try await bridge.runNow(profile: profile, mode: .snapshotOnly) { line in
+                collector.append(line)
+            }
+        } catch let e as CLIBridgeError {
+            if case .invalidProfile = e {
+                XCTFail("runNow must not throw .invalidProfile for a valid profile; got \(e)")
+            }
+        } catch { /* non-CLIBridgeError throw is acceptable */ }
 
-        XCTAssertNotEqual(code, -1)
         let authLinePresent = collector.lines.contains(where: {
             $0.text.contains("auth check failed") || $0.text.contains("jamf-cli not found")
         })

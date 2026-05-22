@@ -259,14 +259,23 @@ struct ReportsView: View {
                 // so we can surface the truncated fingerprint in the toast.
                 let hashBox = HashBox()
                 // Status-bar race guard — see comment in HealthCheckView.runAudit.
-                let code = await bridge.generateHTML(profile: profile, outFile: outPath) { [weak workspace] line in
-                    if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
-                        Task { @MainActor in hashBox.value = parsed.hash }
+                let code: Int32
+                do {
+                    code = try await bridge.generateHTML(profile: profile, outFile: outPath) { [weak workspace] line in
+                        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                            Task { @MainActor in hashBox.value = parsed.hash }
+                        }
+                        Task { @MainActor in
+                            guard let workspace, self.isGeneratingHTML else { return }
+                            workspace.globalStatus = line.text
+                        }
                     }
-                    Task { @MainActor in
-                        guard let workspace, self.isGeneratingHTML else { return }
-                        workspace.globalStatus = line.text
-                    }
+                } catch {
+                    isGeneratingHTML = false
+                    workspace.globalStatus = nil
+                    workspace.toast = Toast(message: "HTML generation failed · \(error.localizedDescription)", style: .danger)
+                    reportError = "HTML generation failed: \(error.localizedDescription)"
+                    return
                 }
                 isGeneratingHTML = false
                 workspace.globalStatus = nil
@@ -304,11 +313,20 @@ struct ReportsView: View {
             workspace.globalStatus = "inventory-csv · profile=\(profile)"
             reportError = nil
             Task {
-                let code = await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { [weak workspace] line in
-                    Task { @MainActor in
-                        guard let workspace, self.isExportingCSV else { return }
-                        workspace.globalStatus = line.text
+                let code: Int32
+                do {
+                    code = try await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { [weak workspace] line in
+                        Task { @MainActor in
+                            guard let workspace, self.isExportingCSV else { return }
+                            workspace.globalStatus = line.text
+                        }
                     }
+                } catch {
+                    isExportingCSV = false
+                    workspace.globalStatus = nil
+                    workspace.toast = Toast(message: "CSV export failed · \(error.localizedDescription)", style: .danger)
+                    reportError = "Inventory CSV export failed: \(error.localizedDescription)"
+                    return
                 }
                 isExportingCSV = false
                 workspace.globalStatus = nil

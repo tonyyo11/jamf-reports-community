@@ -19,18 +19,18 @@ extension CLIBridge {
         mode: Schedule.RunMode,
         csvPath: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> Int32 {
+    ) async throws -> Int32 {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return -1
+            throw CLIBridgeError.invalidProfile(profile)
         }
         switch mode {
         case .snapshotOnly:
-            return await collect(profile: profile, onLine: onLine)
+            return try await collect(profile: profile, onLine: onLine)
         case .jamfCLIOnly:
-            return await generate(profile: profile, csvPath: nil, onLine: onLine)
+            return try await generate(profile: profile, csvPath: nil, onLine: onLine)
         case .jamfCLIFull:
-            return await collectThenGenerate(profile: profile, csvPath: nil, onLine: onLine)
+            return try await collectThenGenerate(profile: profile, csvPath: nil, onLine: onLine)
         case .csvAssisted:
             guard let csv = csvPath ?? Self.newestCSV(in: profile) else {
                 onLine(.init(
@@ -38,9 +38,9 @@ extension CLIBridge {
                     text: "[error] csv-assisted requires a CSV in csv-inbox/ — none found. " +
                           "Drop a Jamf Pro export there, or pick the Refresh + Generate mode instead."
                 ))
-                return -1
+                throw CLIBridgeError.csvMissing(profile: profile)
             }
-            return await collectThenGenerate(profile: profile, csvPath: csv.path, onLine: onLine)
+            return try await collectThenGenerate(profile: profile, csvPath: csv.path, onLine: onLine)
         }
     }
 

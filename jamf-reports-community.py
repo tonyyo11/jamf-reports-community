@@ -650,10 +650,17 @@ def _rewrite_snapshot_manifest(
 
     ``pinned`` lets the caller supply pre-computed hashes for files it just
     wrote — those entries are used verbatim instead of re-hashing from disk.
-    Pinning closes the collect-side TOCTOU race: an attacker who tampers with
-    a freshly-written file between rename and manifest rewrite would otherwise
-    poison the manifest with the attacker's hash. The just-written buffer's
-    hash is the source of truth for files it covers.
+    Pinning closes the collect-side TOCTOU race for the pinned files only: an
+    attacker who tampers with a freshly-written file between rename and manifest
+    rewrite would otherwise poison the manifest with the attacker's hash. The
+    just-written buffer's hash is the source of truth for files it covers.
+
+    Residual (threat model T-2, accepted): unpinned files already in the
+    directory — older retained snapshots, per-day summaries — are re-hashed
+    from disk, so an attacker who tampers one between two manifest writes has
+    that content blessed. Accepted because the manifest is unsigned (an A1
+    attacker can rewrite it wholesale anyway) and is a tamper-detection aid,
+    not prevention. See the T-2 residual note in the threat model.
 
     Failures are surfaced as a `[warn]` print and otherwise swallowed —
     snapshot writes must not be blocked by manifest hygiene.
@@ -2485,12 +2492,29 @@ def _emit_summary_json(
         try:
             existing = json.loads(summary_file.read_text(encoding="utf-8"))
             required_keys = {"date", "totalDevices", "source"}
-            if not all(k in existing for k in required_keys):
-                raise ValueError("missing required keys")
-        except Exception as exc:
+            if not isinstance(existing, dict):
+                raise ValueError("top-level JSON is not an object")
+            missing = required_keys - existing.keys()
+            if missing:
+                raise ValueError(f"missing required keys: {sorted(missing)}")
+        # Ordering: JSONDecodeError and UnicodeDecodeError are ValueError
+        # subclasses and must precede the bare ValueError arm. OSError is not a
+        # ValueError subclass — it shares the UnicodeDecodeError arm because both
+        # mean the file "could not be read".
+        except json.JSONDecodeError as exc:
             print(
-                f"  [warn] Existing summary {summary_file} is invalid "
+                f"  [warn] Existing summary {summary_file} is corrupt — not "
+                f"valid JSON ({exc}); regenerating"
+            )
+        except (OSError, UnicodeDecodeError) as exc:
+            print(
+                f"  [warn] Existing summary {summary_file} could not be read "
                 f"({exc}); regenerating"
+            )
+        except ValueError as exc:
+            print(
+                f"  [warn] Existing summary {summary_file} is valid JSON but "
+                f"incomplete ({exc}); regenerating"
             )
         else:
             print(
@@ -2511,9 +2535,10 @@ def _emit_summary_json(
     if total_devices == 0:
         return
 
-    # 1. FileVault
+    # 1. FileVault — None when no FileVault column is mapped so the Swift side
+    # treats it as a missing metric instead of plotting a false 0% floor.
     fv_col = csv_dash._col("filevault")
-    fv_pct = 0.0
+    fv_pct: Optional[float] = None
     if fv_col and fv_col in df.columns:
         compliant = df[fv_col].apply(lambda v: _security_control_is_compliant("filevault", v)).sum()
         fv_pct = (compliant / total_devices * 100.0)
@@ -2549,9 +2574,10 @@ def _emit_summary_json(
     if checkin_col and checkin_col in df.columns:
         stale_count = int(df[checkin_col].apply(lambda v: (_days_since(v) or 0) > stale_days if v else True).sum())
 
-    # 4. OS Current
+    # 4. OS Current — None when no OS column or no current-version EA is
+    # configured, mirroring the FileVault metric's missing-vs-zero handling.
     os_col = csv_dash._col("operating_system")
-    os_pct = 0.0
+    os_pct: Optional[float] = None
     current_os_versions = []
     for ea in config.custom_eas:
         if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
@@ -2562,8 +2588,10 @@ def _emit_summary_json(
         is_current = os_vals.apply(lambda v: any(v.startswith(cv) for cv in current_os_versions))
         os_pct = (is_current.sum() / total_devices * 100.0)
 
-    # 5. CrowdStrike
-    cs_pct = 0.0
+    # 5. CrowdStrike — None when no CrowdStrike agent is configured or its
+    # column is absent, so the trend chart skips the point rather than
+    # plotting a false 0% floor.
+    cs_pct: Optional[float] = None
     for agent in config.security_agents:
         if "crowdstrike" in str(agent.get("name", "")).lower():
             col = agent.get("column")
@@ -2598,12 +2626,15 @@ def _emit_summary_json(
     summary_data: dict[str, Any] = {
         "date": date_str,
         "totalDevices": int(total_devices),
-        "fileVaultPct": round(fv_pct, 1),
         "staleCount": int(stale_count),
-        "osCurrentPct": round(os_pct, 1),
-        "crowdstrikePct": round(cs_pct, 1),
         "source": "csv",
     }
+    if fv_pct is not None:
+        summary_data["fileVaultPct"] = round(fv_pct, 1)
+    if os_pct is not None:
+        summary_data["osCurrentPct"] = round(os_pct, 1)
+    if cs_pct is not None:
+        summary_data["crowdstrikePct"] = round(cs_pct, 1)
     if patch_pct is not None:
         summary_data["patchPct"] = round(patch_pct, 1)
     if comp_pct is not None:
@@ -2720,7 +2751,9 @@ def _build_summary_from_bridge(
         return None
 
     total_devices = 0
-    fv_pct = 0.0
+    # None when the metric is unmeasured so TrendStore skips the point rather
+    # than plotting a false 0% floor — mirrors the CSV path in _emit_summary_json.
+    fv_pct: Optional[float] = None
     try:
         sec = bridge.security_report() or []
         for entry in sec:
@@ -2735,7 +2768,10 @@ def _build_summary_from_bridge(
                     fv_pct = (encrypted / total_devices) * 100.0
                 break
     except Exception as exc:
-        print(f"  [warn] _build_summary_from_bridge: security_report failed — fv_pct defaulting to 0.0: {exc}")
+        print(
+            f"  [warn] _build_summary_from_bridge: security_report failed — "
+            f"fileVaultPct omitted (no data): {exc}"
+        )
 
     if total_devices == 0:
         try:
@@ -2754,7 +2790,7 @@ def _build_summary_from_bridge(
     except Exception as exc:
         print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
 
-    os_pct = 0.0
+    os_pct: Optional[float] = None
     current_os_versions: list[str] = []
     for ea in config.custom_eas:
         if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
@@ -2774,9 +2810,12 @@ def _build_summary_from_bridge(
             if total_devices:
                 os_pct = (current / total_devices) * 100.0
         except Exception as exc:
-            print(f"  [warn] _build_summary_from_bridge: inventory_summary (os adoption) failed — osCurrentPct defaulting to 0.0: {exc}")
+            print(
+                f"  [warn] _build_summary_from_bridge: inventory_summary "
+                f"(os adoption) failed — osCurrentPct omitted (no data): {exc}"
+            )
 
-    patch_pct = 0.0
+    patch_pct: Optional[float] = None
     try:
         patches = bridge.patch_status()
         if patches:
@@ -2791,17 +2830,24 @@ def _build_summary_from_bridge(
             if valid:
                 patch_pct = sum(valid) / len(valid)
     except Exception as exc:
-        print(f"  [warn] _build_summary_from_bridge: patch_status failed — patchPct defaulting to 0.0: {exc}")
+        print(
+            f"  [warn] _build_summary_from_bridge: patch_status failed — "
+            f"patchPct omitted (no data): {exc}"
+        )
 
-    return {
+    summary: dict[str, Any] = {
         "date": date_str,
         "totalDevices": int(total_devices),
-        "fileVaultPct": round(fv_pct, 1),
         "staleCount": int(stale_count),
-        "osCurrentPct": round(os_pct, 1),
-        "patchPct": round(patch_pct, 1),
         "source": "jamf-cli",
     }
+    if fv_pct is not None:
+        summary["fileVaultPct"] = round(fv_pct, 1)
+    if os_pct is not None:
+        summary["osCurrentPct"] = round(os_pct, 1)
+    if patch_pct is not None:
+        summary["patchPct"] = round(patch_pct, 1)
+    return summary
 
 
 def _percent_string_to_float(raw: Any) -> float:

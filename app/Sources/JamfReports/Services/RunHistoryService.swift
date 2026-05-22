@@ -103,12 +103,14 @@ enum RunHistoryService {
         // exports or the Runs UI. jamf-cli should not echo secrets, but a future
         // debug-mode flag or upstream regression could; the on-disk file is left
         // untouched so admins still have the raw record for investigation.
-        for raw in text.components(separatedBy: "\n") where !raw.isEmpty {
-            let redacted = LogRedactor.redact(raw)
+        // Redact the whole text in one pass so multi-line patterns (e.g. a bearer
+        // token split by a continuation line) are caught before splitting.
+        let redactedText = LogRedactor.redact(text)
+        for line in redactedText.components(separatedBy: "\n") where !line.isEmpty {
             lines.append(.init(
                 timestamp: Date(),
-                level: CLIBridge.LogLevel.from(line: redacted),
-                text: redacted
+                level: CLIBridge.LogLevel.from(line: line),
+                text: line
             ))
         }
         return lines

@@ -237,7 +237,12 @@ def test_emit_summary_returns_when_dataframe_empty(tmp_path, jrc) -> None:
 
 
 def test_emit_summary_csv_branch_skips_misconfigured_metrics(tmp_path, monkeypatch, jrc) -> None:
-    """Silent zero-fill when CrowdStrike or OS-current aren't configured at all."""
+    """Unmeasured metrics are omitted, not zero-filled.
+
+    When CrowdStrike or OS-current aren't configured at all, their keys are
+    absent from the summary JSON so the Swift TrendStore skips the point
+    rather than plotting a false 0% floor. Measured metrics stay present.
+    """
     pd = jrc.pd
     df = pd.DataFrame({
         "FileVault 2 Status": ["Encrypted", "Encrypted"],
@@ -246,7 +251,7 @@ def test_emit_summary_csv_branch_skips_misconfigured_metrics(tmp_path, monkeypat
     config = jrc.Config(jrc.Config._WORKSPACE_INIT_DEFAULTS_NAME)
     config._data["compliance"]["failures_count_column"] = "Failures"
     config._data["columns"]["filevault"] = "FileVault 2 Status"
-    # No security_agents and no version-type macos EA — these metrics stay at 0.
+    # No security_agents and no version-type macos EA — these metrics are omitted.
     csv_dash = _StubCSVDashboard(df, {"filevault": "FileVault 2 Status"})
 
     historical = tmp_path / "snapshots"
@@ -263,8 +268,65 @@ def test_emit_summary_csv_branch_skips_misconfigured_metrics(tmp_path, monkeypat
     payload = json.loads(
         (historical / "summaries" / "summary_2026-04-29.json").read_text(encoding="utf-8")
     )
-    assert payload["crowdstrikePct"] == 0.0
-    assert payload["osCurrentPct"] == 0.0
+    assert "crowdstrikePct" not in payload
+    assert "osCurrentPct" not in payload
     assert payload["fileVaultPct"] == 100.0
     # 1 of 2 has zero failures -> 50%
     assert payload["compliancePct"] == 50.0
+
+
+# ---------------------------------------------------------------------------
+# _emit_summary_json — existing-file validation (Finding 4: three-way split)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "bad_content,expected_phrase",
+    [
+        ("{not valid json", "corrupt — not valid JSON"),
+        (json.dumps({"date": "2026-04-29"}), "valid JSON but incomplete"),
+        (json.dumps(["date", "totalDevices", "source"]), "valid JSON but incomplete"),
+    ],
+    ids=["corrupt-json", "missing-required-key", "top-level-list"],
+)
+def test_emit_summary_regenerates_invalid_existing_file(
+    tmp_path, monkeypatch, jrc, capsys, bad_content, expected_phrase
+) -> None:
+    """An invalid same-day summary is reported with a cause-specific warn and regenerated.
+
+    The three failure branches (corrupt JSON, structurally-incomplete JSON,
+    non-object JSON) each emit a distinct message and fall through to rewrite
+    the file, rather than silently skipping on a bad existing summary.
+    """
+    pd = jrc.pd
+    df = pd.DataFrame({"FileVault 2 Status": ["Encrypted"]})
+    config = jrc.Config(jrc.Config._WORKSPACE_INIT_DEFAULTS_NAME)
+    config._data["columns"]["filevault"] = "FileVault 2 Status"
+    csv_dash = _StubCSVDashboard(df, {"filevault": "FileVault 2 Status"})
+
+    historical = tmp_path / "snapshots"
+    summaries_dir = historical / "summaries"
+    summaries_dir.mkdir(parents=True)
+    summary_path = summaries_dir / "summary_2026-04-29.json"
+    summary_path.write_text(bad_content, encoding="utf-8")
+
+    fixed_now = jrc.datetime(2026, 4, 29, 12, 0, 0)
+
+    class _FixedDateTime(jrc.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.replace(tzinfo=tz)
+
+    monkeypatch.setattr(jrc, "datetime", _FixedDateTime)
+
+    # force=False — the validation branch only runs when not forced.
+    jrc._emit_summary_json(config, csv_dash, None, str(historical))
+    captured = capsys.readouterr()
+
+    assert expected_phrase in captured.out
+    assert "regenerating" in captured.out
+    # The bad file was replaced with a valid, complete summary.
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["date"] == "2026-04-29"
+    assert payload["totalDevices"] == 1
+    assert payload["source"] == "csv"

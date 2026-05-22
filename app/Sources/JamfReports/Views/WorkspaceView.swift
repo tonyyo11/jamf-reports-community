@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 
 /// Top-level Workspace screen — consolidates Config, Customize, Sources, and Backups
 /// into a single tabbed container. A workspace-wide Compliance Framework picker lives
@@ -82,7 +83,10 @@ struct WorkspaceView: View {
                             do {
                                 try await workspace.saveConfig()
                             } catch {
-                                saveError = "Could not save config.yaml: \(error.localizedDescription)"
+                                AppLogger.ui.error(
+                                    "WorkspaceView: config.yaml save failed — \(error, privacy: .private)"
+                                )
+                                saveError = "Could not save config.yaml — the workspace folder may not exist or may not be writable."
                             }
                         }
                     } label: {

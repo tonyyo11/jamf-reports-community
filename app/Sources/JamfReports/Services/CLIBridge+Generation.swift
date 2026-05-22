@@ -3,15 +3,63 @@ import Foundation
 // Note: `GenerateOutputType` is defined in `Views/GenerateSheet.swift` because
 // it's primarily a UI-state concern. CLIBridge consumes it here.
 
-/// Errors thrown by `CLIBridge` methods.
-enum CLIBridgeError: Error, LocalizedError {
+/// Errors thrown by `CLIBridge` methods for app-internal pre-spawn failures.
+///
+/// These cases replace the `-1` sentinel that previously collapsed six distinct
+/// failure causes into an undifferentiated exit code. Real jamf-cli exit codes
+/// (1–6, with named constants on `CLIBridge`) are unaffected.
+///
+/// `errorDescription` is intentionally path-safe: no home directory, workspace
+/// path, or hostname is interpolated into the user-visible string. The full
+/// context is logged via `AppLogger` at the throw site.
+enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// The requested operation is not yet wired to a live jamf-cli command.
-    /// The associated string names the function and describes what needs to be implemented.
     case notImplemented(String)
+    /// jamf-cli's code signature failed verification — the binary may be tampered.
+    case codesignRejected
+    /// The process launch itself threw (e.g. `Process.run()` failed, bad executable path).
+    case launchFailed(reason: String)
+    /// The profile slug is invalid (fails `ProfileService.isValid`).
+    case invalidProfile(String)
+    /// The workspace directory does not exist for the given profile.
+    case workspaceMissing(profile: String)
+    /// `config.yaml` exists but could not be parsed.
+    case configLoadFailed(path: String)
+    /// `.csvAssisted` mode requires a CSV in `csv-inbox/` but none was found.
+    case csvMissing(profile: String)
+    /// jamf-cli executable was not found on the system.
+    case executableNotFound
+    /// An argument value is invalid (e.g. leading-dash injection risk).
+    case invalidArgument(String)
+    /// A required directory could not be created or a file move failed.
+    /// `path` is for private logging only — never interpolated into user-visible strings.
+    case directoryOperationFailed(path: String)
 
     var errorDescription: String? {
         switch self {
-        case .notImplemented(let detail): return "Not implemented: \(detail)"
+        case .notImplemented(let detail):
+            return "Not implemented: \(detail)"
+        case .codesignRejected:
+            return "jamf-cli signature verification failed — reinstall jamf-cli via Homebrew."
+        case .launchFailed:
+            // Reason omitted: may contain a system path or sandbox detail.
+            return "Could not launch jamf-cli — check that jamf-cli is installed and the executable is intact."
+        case .invalidProfile(let slug):
+            return "Invalid profile name '\(slug)'."
+        case .workspaceMissing(let profile):
+            return "Workspace not found for profile '\(profile)'."
+        case .configLoadFailed:
+            // Path omitted: may contain the home directory.
+            return "config.yaml could not be parsed — the file may be corrupt."
+        case .csvMissing(let profile):
+            return "csv-assisted mode requires a CSV in csv-inbox/ for profile '\(profile)' — none found."
+        case .executableNotFound:
+            return "jamf-cli not found — install via Homebrew: brew install jamf-cli"
+        case .invalidArgument(let detail):
+            return "Invalid argument: \(detail)"
+        case .directoryOperationFailed:
+            // Path omitted: may contain the home directory or workspace layout.
+            return "A required directory could not be created or moved — check available disk space and folder permissions."
         }
     }
 }
@@ -49,19 +97,19 @@ extension CLIBridge {
             types: types,
             collectFresh: collectFresh,
             onLine: onLine,
-            collect: { await self.collect(profile: profile, onLine: onLine) },
+            collect: { try await self.collect(profile: profile, onLine: onLine) },
             generateXLSX: {
                 if schoolMode {
-                    return await self.schoolGenerate(profile: profile, csvPath: nil, onLine: onLine)
+                    return try await self.schoolGenerate(profile: profile, csvPath: nil, onLine: onLine)
                 }
-                return await self.generate(
+                return try await self.generate(
                     profile: profile, csvPath: nil, template: template,
                     outputDir: outputDir, onLine: onLine
                 )
             },
             generateHTML: {
                 let outURL = self.htmlOutputURL(profile: profile, outputDir: outputDir)
-                return await self.generateHTML(
+                return try await self.generateHTML(
                     profile: profile, outFile: outURL.path, template: template, onLine: onLine
                 )
             },
@@ -83,9 +131,9 @@ extension CLIBridge {
         types: Set<GenerateOutputType>,
         collectFresh: Bool,
         onLine: @Sendable @escaping (LogLine) -> Void,
-        collect: () async -> Int32,
-        generateXLSX: () async -> Int32,
-        generateHTML: () async -> Int32,
+        collect: () async throws -> Int32,
+        generateXLSX: () async throws -> Int32,
+        generateHTML: () async throws -> Int32,
         tighten: () -> Void
     ) async -> GenerateAllResult {
         var result = GenerateAllResult()
@@ -96,7 +144,15 @@ extension CLIBridge {
         // Exit 6 = HTTP 429 — rate-limited; transient, safe to use cached data.
         // All other non-zero codes: warn and continue with cached data.
         if collectFresh {
-            let code = await collect()
+            let code: Int32
+            do {
+                code = try await collect()
+            } catch {
+                onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
+                    text: "[fatal] collect failed: \(error.localizedDescription)"))
+                result.failed.append((.xlsx, -1)) // -1: no process exit code (pre-spawn failure)
+                return result
+            }
             if code == CLIBridge.exitCodeUnauthorized {
                 result.failed.append((.xlsx, code))
                 return result
@@ -115,7 +171,15 @@ extension CLIBridge {
 
         // XLSX is the canonical workbook output.
         if types.contains(.xlsx) {
-            let code = await generateXLSX()
+            let code: Int32
+            do {
+                code = try await generateXLSX()
+            } catch {
+                onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
+                    text: "[fatal] generate failed: \(error.localizedDescription)"))
+                result.failed.append((.xlsx, -1)) // -1: no process exit code (pre-spawn failure)
+                return result
+            }
             if code == 0 {
                 result.succeeded.append(.xlsx)
             } else {
@@ -125,7 +189,15 @@ extension CLIBridge {
 
         // HTML executive summary.
         if types.contains(.html) {
-            let code = await generateHTML()
+            let code: Int32
+            do {
+                code = try await generateHTML()
+            } catch {
+                onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
+                    text: "[fatal] html generate failed: \(error.localizedDescription)"))
+                result.failed.append((.html, -1)) // -1: no process exit code (pre-spawn failure)
+                return result
+            }
             if code == 0 {
                 result.succeeded.append(.html)
             } else {

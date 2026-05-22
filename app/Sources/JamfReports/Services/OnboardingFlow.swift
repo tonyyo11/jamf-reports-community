@@ -291,8 +291,15 @@ final class OnboardingFlow {
         isValidatingConnection = true
         defer { isValidatingConnection = false }
 
-        let exit = await CLIBridge().validateConnection(profile: profile) { [weak self] line in
-            Task { @MainActor in self?.validationOutput.append(line) }
+        let exit: Int32
+        do {
+            exit = try await CLIBridge().validateConnection(profile: profile) { [weak self] line in
+                Task { @MainActor in self?.validationOutput.append(line) }
+            }
+        } catch {
+            validationExitCode = -1
+            lastError = error.localizedDescription
+            return
         }
 
         validationExitCode = exit
@@ -422,8 +429,15 @@ final class OnboardingFlow {
         isRunningFirstReport = true
         defer { isRunningFirstReport = false }
 
-        let exit = await bridge.generate(profile: profileName.trimmed, csvPath: nil) { [weak self] line in
-            Task { @MainActor in self?.firstReportOutput.append(line) }
+        let exit: Int32
+        do {
+            exit = try await bridge.generate(profile: profileName.trimmed, csvPath: nil) { [weak self] line in
+                Task { @MainActor in self?.firstReportOutput.append(line) }
+            }
+        } catch {
+            firstReportExitCode = -1
+            lastError = error.localizedDescription
+            return
         }
 
         firstReportExitCode = exit
