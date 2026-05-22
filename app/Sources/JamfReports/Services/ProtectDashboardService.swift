@@ -29,6 +29,12 @@ struct ProtectDashboardService: Sendable {
         let sourceFile: URL?
         let snapshotDate: Date?
 
+        /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
+        /// threshold as TrendStore to align with the standard daily-schedule cadence.
+        var cacheSource: CacheSource {
+            CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
+        }
+
         /// Empty state for when no protect data exists.
         static let empty = Snapshot(
             isDetected: false,

@@ -21,6 +21,13 @@ struct MobileFleetView: View {
                     lastModified: snapshot.snapshotDate
                 )
 
+                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+                // Suppressed in demo mode (the demo dataset is intentionally static and
+                // not user-perceivably "stale"). Renders nothing when source is .fresh.
+                if !workspace.demoMode {
+                    StaleDataBanner(source: snapshot.cacheSource)
+                }
+
                 if !snapshot.isDetected {
                     emptyState
                 } else {
@@ -274,7 +281,7 @@ struct MobileFleetView: View {
                     title: "Mobile Devices",
                     trailing: totalMobileDevices > devicesForTable.count
                         ? "\(devicesForTable.count) of \(totalMobileDevices) shown"
-                        : "Showing \(totalMobileDevices)"
+                        : nil
                 )
                 Table(devicesForTable) {
                     TableColumn("Name") { device in

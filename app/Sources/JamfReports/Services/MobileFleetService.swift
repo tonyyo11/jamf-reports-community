@@ -101,6 +101,12 @@ struct MobileFleetService: Sendable {
             return Array(sorted.prefix(10))
         }
 
+        /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
+        /// threshold as TrendStore to align with the standard daily-schedule cadence.
+        var cacheSource: CacheSource {
+            CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
+        }
+
         /// Empty snapshot used when no mobile device data exists.
         static let empty = Snapshot(
             isDetected: false,
