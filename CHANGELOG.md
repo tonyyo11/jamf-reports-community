@@ -16,11 +16,12 @@ macOS app:
 - Increase Contrast is now honored for secondary text on every screen. Previously
   only a few components responded, leaving below-AA contrast on the Config,
   Settings, and several other screens.
-- Dynamic Type: pinned font sizes were replaced with scalable text styles across
-  the app — the shared `Theme.Fonts` semantic token layer, plus the Config,
-  Settings, Policy & Profile, Protect, Trends, Fleet Overview, Onboarding, Mobile
-  Fleet, and Extension Attributes screens. Chart axis labels, table text, and KPI
-  numerals now scale with the system Larger Text setting.
+- Dynamic Type: the app's text now scales with the system Larger Text setting.
+  Pinned font sizes were replaced with scalable text styles across every screen,
+  the shared `Theme.Fonts` token layer, the IBM Plex Mono text used for
+  timestamps, table cells, and identifiers, and the shared button and
+  section-header components. Chart axis labels and KPI numerals scale too;
+  fixed-size graphical gauges stay pinned by design.
 - Reduce Motion now suppresses the settings toggle animation.
 - VoiceOver: decorative icons are hidden from the reader, charts expose
   descriptive labels, and live run status is announced as it updates.
