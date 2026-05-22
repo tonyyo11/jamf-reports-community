@@ -54,7 +54,7 @@ struct FleetOverviewView: View {
                     VStack(spacing: 8) {
                         ProgressView()
                         Text("Loading \(profile)…")
-                            .font(.system(size: 13))
+                            .font(.body)
                             .foregroundStyle(Theme.Colors.fg2)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -138,7 +138,7 @@ struct FleetOverviewView: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
             Text("Most recent summary across all profiles")
-                .font(.system(size: 11.5))
+                .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -157,7 +157,7 @@ struct FleetOverviewView: View {
             Toggle("Issues Only", isOn: $issuesOnly)
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .font(.system(size: 13, weight: .medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg2)
             Spacer()
         }
@@ -173,7 +173,7 @@ struct FleetOverviewView: View {
                             .font(.system(size: 32, weight: .light))
                             .foregroundStyle(Theme.Colors.teal)
                         Text("No profiles with issues — fleet looks healthy")
-                            .font(.system(size: 14))
+                            .font(.body)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                         PNPButton(title: "Show all profiles", icon: "list.bullet", size: .sm) {
                             issuesOnly = false
@@ -261,7 +261,7 @@ struct FleetOverviewView: View {
                             }
                         } else {
                             Text("Run a schedule or generate a report for this workspace to create its first summary.")
-                                .font(.system(size: 12.5))
+                                .font(.callout)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -270,7 +270,7 @@ struct FleetOverviewView: View {
 
                         HStack {
                             Text("Switch to this workspace and open the relevant surface.")
-                                .font(.system(size: 12.5))
+                                .font(.callout)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                             Spacer()
                             PNPButton(title: "Overview", icon: Tab.overview.sfSymbol, size: .sm) {
@@ -335,7 +335,7 @@ struct FleetOverviewView: View {
         VStack(spacing: 6) {
             Kicker(text: "No stability history yet")
             Text("Generate a report to start tracking trends")
-                .font(.system(size: 12.5))
+                .font(.callout)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
         }
         .frame(maxWidth: .infinity)
@@ -407,9 +407,9 @@ struct FleetOverviewView: View {
     private func profileMetricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
         HStack(spacing: 10) {
             Text(label)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.callout.weight(.medium))
                 .foregroundStyle(Theme.Colors.fg2)
-                .frame(width: 112, alignment: .leading)
+                .frame(minWidth: 112, alignment: .leading)
             GeometryReader { geo in
                 let normalized = max(0, min(value ?? 0, 100)) / 100
                 ZStack(alignment: .leading) {
@@ -553,7 +553,7 @@ private struct FleetProfileCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Kicker(text: "Profile")
                     Text(row.profile)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
                         .lineLimit(1)
                 }
@@ -592,7 +592,7 @@ private struct FleetProfileCard: View {
                     }
                 } else {
                     Text("Run a schedule or generate a report to create the first summary.")
-                        .font(.system(size: 12))
+                        .font(.callout)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -602,9 +602,9 @@ private struct FleetProfileCard: View {
     private func metricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.system(size: 11.5))
+                .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
-                .frame(width: 72, alignment: .leading)
+                .frame(minWidth: 72, alignment: .leading)
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.white.opacity(0.08))
                 Capsule()
