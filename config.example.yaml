@@ -422,6 +422,32 @@ platform:
 
 
 # =============================================================================
+# EXPERIMENTAL FEATURES
+# =============================================================================
+# Opt-in toggles for v2.1.0 preview features. These features depend on
+# capabilities that are not universally available (Platform API requires a
+# different jamf-cli auth method; Protect requires a configured Protect
+# tenant), so they ship off by default. Enabling a flag here is necessary
+# but not sufficient — each code path also runs a capability probe before
+# attempting any work, and silently skips if the probe fails.
+#
+# Community testing notes and feedback:
+# https://github.com/tonyyo11/jamf-reports-community/discussions
+
+experimental:
+  # Platform API features (compliance benchmarks, DDM blueprints).
+  # Requires a jamf-cli profile with `auth-method: platform`. Set up via:
+  #   jamf-cli config add-profile <name> --auth-method platform \
+  #     --url <gateway-url> --tenant-id <id>
+  platform_features_enabled: false
+
+  # Jamf Protect deep-dive features (per-device alert timeline, kill-chain
+  # stage breakdown). Requires a configured Jamf Protect tenant in your
+  # jamf-cli profile.
+  protect_features_enabled: false
+
+
+# =============================================================================
 # COMPLIANCE
 # =============================================================================
 # Tracks mSCP (macOS Security Compliance Project) audit results or any other
