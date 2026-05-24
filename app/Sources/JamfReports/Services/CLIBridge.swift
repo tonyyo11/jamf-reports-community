@@ -995,6 +995,66 @@ final class CLIBridge {
         }
     }
 
+    func generatePDF(
+        profile: String,
+        outFile: String,
+        template: any ReportTemplate = ExecutiveTemplate(),
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async throws -> Int32 {
+        // PDF generation reads only cached jamf-cli JSON snapshots; no live API calls.
+        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
+            throw CLIBridgeError.workspaceMissing(profile: profile)
+        }
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            throw CLIBridgeError.workspaceMissing(profile: profile)
+        }
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        guard let config = loadConfig(at: configURL, onLine: onLine) else {
+            throw CLIBridgeError.configLoadFailed(path: configURL.path)
+        }
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] could not resolve data_dir for \(profile)"))
+            throw CLIBridgeError.workspaceMissing(profile: profile)
+        }
+        let outputURL = URL(fileURLWithPath: outFile)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
+            do {
+                try fm.createDirectory(
+                    at: outputURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+            } catch {
+                let dirPath = outputURL.deletingLastPathComponent().path
+                AppLogger.cli.error(
+                    "generatePDF: could not create output dir: \(dirPath, privacy: .private) — \(error, privacy: .private)"
+                )
+                onLine(.init(timestamp: Date(), level: .fail,
+                    text: "[error] could not create output directory: \(error.localizedDescription)"))
+                throw CLIBridgeError.directoryOperationFailed(path: dirPath)
+            }
+        }
+        do {
+            try await ReportEngine.generatePDF(
+                config: config,
+                dataDir: dataDir,
+                outputURL: outputURL,
+                profileName: profile,
+                template: template
+            )
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] PDF report written: \(outputURL.lastPathComponent)"))
+            tightenOnSuccess(0, profile: profile)
+            return 0
+        } catch {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] pdf generation failed: \(error.localizedDescription)"))
+            tightenOnSuccess(1, profile: profile)
+            return 1
+        }
+    }
+
     func exportInventoryCSV(
         profile: String,
         outFile: String?,

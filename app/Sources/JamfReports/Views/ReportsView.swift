@@ -10,6 +10,7 @@ struct ReportsView: View {
     @State private var reportStats = ReportLibrary.Stats(count: 0, totalBytes: 0, archivedCount: 0)
     @State private var snapshotFamilies: [SnapshotFamily] = []
     @State private var isGeneratingHTML = false
+    @State private var isGeneratingPDF = false
     @State private var isExportingCSV = false
     @State private var reportError: String?
 
@@ -108,6 +109,7 @@ struct ReportsView: View {
                                 ("All", "All", nil),
                                 ("xlsx", "xlsx", nil),
                                 ("html", "html", nil),
+                                ("pdf", "pdf", nil),
                                 ("csv", "csv", nil),
                             ]
                         )
@@ -122,15 +124,25 @@ struct ReportsView: View {
                         ) {
                             generateHTMLReport()
                         }
-                        .disabled(workspace.demoMode || isGeneratingHTML || isExportingCSV)
+                        .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
                         .help(
                             workspace.demoMode
                             ? "Available in live mode only"
                             : "Generate a self-contained HTML instance report"
                         )
-                        PNPButton(title: "Export PDF", icon: "doc.richtext", style: .neutral) { }
-                            .disabled(true)
-                            .help("PDF export coming soon — XLSX and HTML are fully supported today")
+                        PNPButton(
+                            title: isGeneratingPDF ? "Generating..." : "Export PDF",
+                            icon: "doc.richtext",
+                            style: .neutral
+                        ) {
+                            generatePDFReport()
+                        }
+                        .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
+                        .help(
+                            workspace.demoMode
+                            ? "Available in live mode only"
+                            : "Render the HTML report to PDF via WKWebView"
+                        )
                         PNPButton(
                             title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
                             icon: "doc.text",
@@ -138,7 +150,7 @@ struct ReportsView: View {
                         ) {
                             runExportInventoryCSV()
                         }
-                        .disabled(workspace.demoMode || isGeneratingHTML || isExportingCSV)
+                        .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
                         .help(
                             workspace.demoMode
                             ? "Available in live mode only"
@@ -196,7 +208,7 @@ struct ReportsView: View {
             StatTile(
                 label: "Disk used",
                 value: FileDisplay.size(reportStats.totalBytes),
-                sub: "xlsx · html · csv"
+                sub: "xlsx · html · pdf · csv"
             )
             StatTile(
                 label: "Snapshots archived",
@@ -223,6 +235,7 @@ struct ReportsView: View {
         switch URL(fileURLWithPath: name).pathExtension.lowercased() {
         case "xlsx": "tablecells"
         case "html": "safari"
+        case "pdf": "doc.richtext"
         case "csv": "doc.text"
         default: "doc"
         }
@@ -293,6 +306,50 @@ struct ReportsView: View {
                 } else {
                     workspace.toast = Toast(message: "HTML generation failed · exit \(code)", style: .danger)
                     reportError = "HTML generation failed (exit \(code))"
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func generatePDFReport() {
+        let profile = workspace.profile
+        let dateStr = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "jamf_report_\(profile)_\(dateStr).pdf"
+        panel.allowedContentTypes = [.pdf]
+        panel.directoryURL = reportsDirectory
+        panel.begin { response in
+            guard response == .OK, let dest = panel.url else { return }
+            let outPath = dest.path
+            isGeneratingPDF = true
+            workspace.globalStatus = "pdf · profile=\(profile)"
+            reportError = nil
+            Task {
+                let code: Int32
+                do {
+                    code = try await bridge.generatePDF(profile: profile, outFile: outPath) { [weak workspace] line in
+                        Task { @MainActor in
+                            guard let workspace, self.isGeneratingPDF else { return }
+                            workspace.globalStatus = line.text
+                        }
+                    }
+                } catch {
+                    isGeneratingPDF = false
+                    workspace.globalStatus = nil
+                    workspace.toast = Toast(message: "PDF generation failed · \(error.localizedDescription)", style: .danger)
+                    reportError = "PDF generation failed: \(error.localizedDescription)"
+                    return
+                }
+                isGeneratingPDF = false
+                workspace.globalStatus = nil
+                if code == 0 {
+                    workspace.toast = Toast(message: "PDF report generated", style: .success)
+                    SystemActions.open(dest)
+                    reload()
+                } else {
+                    workspace.toast = Toast(message: "PDF generation failed · exit \(code)", style: .danger)
+                    reportError = "PDF generation failed (exit \(code))"
                 }
             }
         }
