@@ -15,6 +15,7 @@ final class ExperimentalFeatureService {
 
     /// Per-feature identifiers. Raw values are stable (used as
     /// `UserDefaults` storage tokens) — do not rename without a migration.
+    /// Raw values must not contain commas — the storage format is comma-delimited.
     enum Feature: String, CaseIterable, Sendable {
         case platformAPI = "platform-api"
         case protect = "protect-deep-dive"

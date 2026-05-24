@@ -4016,7 +4016,7 @@ class JamfCLIBridge:
             self._platform_auth_cache = False
             return False
         except Exception as exc:  # noqa: BLE001 - never raise from a capability probe
-            print(f"  [warn] jamf-cli config list probe failed: {exc}", file=sys.stderr)
+            print(f"  [warn] jamf-cli config list probe failed: {exc}")
             self._platform_auth_cache = False
             return False
 
