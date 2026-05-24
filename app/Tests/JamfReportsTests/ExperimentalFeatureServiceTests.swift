@@ -8,16 +8,16 @@ import XCTest
 @MainActor
 final class ExperimentalFeatureServiceTests: XCTestCase {
 
-    private var suiteName: String = ""
+    nonisolated(unsafe) private var suiteName: String = ""
 
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         suiteName = "experimental-features-tests-\(UUID().uuidString)"
     }
 
-    override func tearDown() {
+    override func tearDownWithError() throws {
         UserDefaults().removePersistentDomain(forName: suiteName)
-        super.tearDown()
+        try super.tearDownWithError()
     }
 
     private func makeDefaults() -> UserDefaults {
