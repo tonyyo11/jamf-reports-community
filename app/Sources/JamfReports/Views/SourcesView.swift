@@ -30,11 +30,7 @@ struct SourcesView: View {
     private let cliCommandDefinitions: [CLICommandDefinition] = [
         .init(label: "pro overview",                cacheNames: ["overview"]),
         .init(
-            label: "pro computers list",
-            cacheNames: ["computers-list", "computers_list"]
-        ),
-        .init(
-            label: "device security state (--section SECURITY)",
+            label: "pro computers list (incl. SECURITY section)",
             cacheNames: ["computers-list", "computers_list"]
         ),
         .init(label: "pro report ea-results --all", cacheNames: ["ea-results", "ea_results"]),

@@ -2299,6 +2299,11 @@ def _summarize_mobile_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
+_SECURITY_CONTROL_KEYS: tuple[str, ...] = (
+    "filevault", "sip", "firewall", "gatekeeper", "bootstrap_token",
+)
+
+
 def _security_control_is_compliant(logical: str, value: Any) -> bool:
     """Return True when a CSV value represents a compliant security control state."""
     normalized = _normalized_text(value)
@@ -7933,7 +7938,9 @@ class CoreDashboard:
                 name = f"Computer {identifier}"
             row = {
                 "name": name,
-                "serial": str(_first_value(flat, INVENTORY_FIELD_CANDIDATES["serial"]) or "").strip(),
+                "serial": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["serial"]) or ""
+                ).strip(),
                 "filevault": str(
                     _first_value(flat, INVENTORY_FIELD_CANDIDATES["filevault"]) or ""
                 ).strip(),
@@ -7949,7 +7956,7 @@ class CoreDashboard:
                     or ""
                 ).strip(),
             }
-            if any(row[key] for key in ("filevault", "sip", "firewall", "gatekeeper", "bootstrap_token")):
+            if any(row[key] for key in _SECURITY_CONTROL_KEYS):
                 rows.append(row)
 
         if not rows:
