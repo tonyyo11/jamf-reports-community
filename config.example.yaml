@@ -264,12 +264,17 @@ jamf_cli:
   #   profile-status          `pro report profile-status`
   #   update-status           `pro report update-status`
   #   update-device-failures  `pro report update-status --scan-failures`
+  #   device-security-state   drop the SECURITY section from `pro computers list`
+  #                           (skips Device Security State sheet; per-device
+  #                           FileVault/SIP/Firewall/Gatekeeper/Bootstrap signals
+  #                           become empty in DevicesView).
   #
   # Example: skip update-status and its scan-failures variant on a slow server.
   collect_skip: []
   # collect_skip:
   #   - update-status
   #   - update-device-failures
+  #   - device-security-state
 
 
 # ---------------------------------------------------------------------------

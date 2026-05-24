@@ -33,6 +33,10 @@ struct SourcesView: View {
             label: "pro computers list",
             cacheNames: ["computers-list", "computers_list"]
         ),
+        .init(
+            label: "device security state (--section SECURITY)",
+            cacheNames: ["computers-list", "computers_list"]
+        ),
         .init(label: "pro report ea-results --all", cacheNames: ["ea-results", "ea_results"]),
         .init(label: "pro report patch-status",     cacheNames: ["patch-status", "patch_status"]),
         .init(label: "pro report app-status",       cacheNames: ["app-status", "app_status"]),
