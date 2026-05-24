@@ -1006,6 +1006,9 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
+            onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
+            AppLogger.cli.error("\(msg)")
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
