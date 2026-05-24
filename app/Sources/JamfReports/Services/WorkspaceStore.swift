@@ -40,7 +40,14 @@ final class WorkspaceStore {
     /// async probe completes). Refreshed by `refreshAuthStatus()`.
     var authStatus: TokenStatus? = nil
     private var didAutoUpdateJamfCLI = false
-    private static let forceDemoModeKey = "com.jamfreports.forceDemoMode"
+    /// UserDefaults key for "user has explicitly chosen demo mode."
+    /// Persisted by `setDemoMode(_:)`; consulted by `init` and
+    /// `reloadFromDisk` to decide whether to enter demo on no-profiles.
+    /// Internal (not private) so tests can pin/clear the value in setUp;
+    /// `nonisolated` because it's a constant string with no actor-state
+    /// dependency, and tests need to read it from `tearDown` (which
+    /// XCTestCase requires to be non-MainActor-isolated).
+    nonisolated static let forceDemoModeKey = "com.jamfreports.forceDemoMode"
 
     /// True when the active profile has a `config.yaml` on disk under
     /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
@@ -118,7 +125,14 @@ final class WorkspaceStore {
         let cleanup = LaunchAgentService.cleanupLegacyAgents()
         let realProfiles = ProfileService.discoverLocal()
         let realSchedules = LaunchAgentService.list()
-        let isDemo = demoMode ?? realProfiles.isEmpty
+        // First-launch chooser: an empty real-profile list no longer implies
+        // demo mode. Only an explicit `demoMode:` override (tests) or the
+        // persisted `forceDemoModeKey` (user previously chose demo) enables
+        // it here. `ContentView` routes to `FirstLaunchChooserView` while
+        // both `profiles` is empty and `demoMode` is false so the user can
+        // make the call before any synthetic data is bound to the app state.
+        let userForcedDemo = UserDefaults.standard.bool(forKey: Self.forceDemoModeKey)
+        let isDemo = demoMode ?? userForcedDemo
 
         self.demoMode = isDemo
         self.org = isDemo ? DemoData.org : Self.org(for: realProfiles.first)
