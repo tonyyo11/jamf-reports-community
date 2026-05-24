@@ -80,58 +80,88 @@ struct MobileFleetView: View {
             : MobileFleetService.load(profile: workspace.profile)
     }
 
-    private static let demoSnapshot: MobileFleetService.Snapshot = {
-        // Create demo devices: 15 iPads, 10 iPhones. Vary ownership across the
-        // canonical Jamf Pro mobile enrollment enum so the breakdown card has
-        // something interesting to show in demo mode.
-        let ownershipTypes = [
-            "Institutional", "UserEnrollment",
-            "AccountDrivenUserEnrollment", "AccountDrivenDeviceEnrollment"
-        ]
-        let demoDevices = (1...25).map { i in
-            MobileDeviceInventoryItem(
-                mobileDeviceId: "\(1000 + i)",
-                deviceType: i <= 15 ? "iPad" : "iPhone",
-                general: MobileDeviceGeneral(
-                    displayName: "\(i <= 15 ? "iPad" : "iPhone")-Demo-\(String(format: "%03d", i))",
-                    serialNumber: "DEMO\(String(format: "%08d", 10000000 + i))",
-                    osVersion: ["18.2.1", "18.1.1", "17.6.1"][i % 3],
-                    managed: i % 10 != 0, supervised: i % 5 != 0,
-                    lastInventoryUpdateDate: "2025-01-\(String(format: "%02d", (i % 28) + 1))T12:00:00Z",
-                    deviceOwnershipType: ownershipTypes[i % ownershipTypes.count],
-                    activationLockEnabled: i % 6 != 0, passcodeCompliant: i % 8 != 0,
-                    dataProtectionEnabled: true, jailbreakDetected: "None",
-                    enrollmentMethodPrestage: i % 4 == 0
-                        ? MobileDevicePrestage(mobileDevicePrestageId: "\(i)", profileName: "Demo Prestage")
-                        : nil
-                ),
-                userAndLocation: MobileDeviceUserLocation(
-                    username: i % 5 == 0 ? nil : "user\(i)",
-                    emailAddress: i % 5 == 0 ? nil : "user\(i)@example.com",
-                    department: ["IT", "Sales", "Marketing"][i % 3],
-                    building: "Building \((i % 3) + 1)"
-                ),
-                applications: (0..<((i * 3) % 12)).map { idx in
-                    MobileDeviceApplication(
-                        identifier: "com.demo.app\(idx)",
-                        name: "Demo App \(idx)"
-                    )
-                }
-            )
-        }
+    private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
 
-        let demoProfiles = [
+    private static func makeDemoSnapshot() -> MobileFleetService.Snapshot {
+        let devices: [MobileDeviceInventoryItem] = (1...25).map(makeDemoDevice)
+        let profiles: [MobileConfigProfileRow] = makeDemoProfiles()
+        return MobileFleetService.Snapshot(
+            isDetected: true,
+            lightDevices: [],
+            richDevices: devices,
+            profiles: profiles,
+            sourceFile: nil,
+            snapshotDate: Date()
+        )
+    }
+
+    private static let demoOwnershipTypes: [String] = [
+        "Institutional", "UserEnrollment",
+        "AccountDrivenUserEnrollment", "AccountDrivenDeviceEnrollment",
+    ]
+
+    private static let demoOSVersions: [String] = ["18.2.1", "18.1.1", "17.6.1"]
+    private static let demoDepartments: [String] = ["IT", "Sales", "Marketing"]
+
+    private static func makeDemoDevice(index i: Int) -> MobileDeviceInventoryItem {
+        let isIPad = i <= 15
+        let kind = isIPad ? "iPad" : "iPhone"
+        let displayName = "\(kind)-Demo-\(String(format: "%03d", i))"
+        let serial = "DEMO\(String(format: "%08d", 10000000 + i))"
+        let lastUpdate = "2025-01-\(String(format: "%02d", (i % 28) + 1))T12:00:00Z"
+        let ownership = demoOwnershipTypes[i % demoOwnershipTypes.count]
+        let prestage: MobileDevicePrestage? = i % 4 == 0
+            ? MobileDevicePrestage(mobileDevicePrestageId: "\(i)", profileName: "Demo Prestage")
+            : nil
+        let general = MobileDeviceGeneral(
+            displayName: displayName,
+            serialNumber: serial,
+            osVersion: demoOSVersions[i % 3],
+            managed: i % 10 != 0,
+            supervised: i % 5 != 0,
+            lastInventoryUpdateDate: lastUpdate,
+            deviceOwnershipType: ownership,
+            activationLockEnabled: i % 6 != 0,
+            passcodeCompliant: i % 8 != 0,
+            dataProtectionEnabled: true,
+            jailbreakDetected: "None",
+            enrollmentMethodPrestage: prestage
+        )
+        let userLoc = MobileDeviceUserLocation(
+            username: i % 5 == 0 ? nil : "user\(i)",
+            emailAddress: i % 5 == 0 ? nil : "user\(i)@example.com",
+            department: demoDepartments[i % 3],
+            building: "Building \((i % 3) + 1)"
+        )
+        let apps: [MobileDeviceApplication] = (0..<((i * 3) % 12)).map { idx in
+            MobileDeviceApplication(identifier: "com.demo.app\(idx)", name: "Demo App \(idx)")
+        }
+        return MobileDeviceInventoryItem(
+            mobileDeviceId: "\(1000 + i)",
+            deviceType: kind,
+            general: general,
+            userAndLocation: userLoc,
+            applications: apps
+        )
+    }
+
+    private static func makeDemoProfiles() -> [MobileConfigProfileRow] {
+        let raw: [(String, String, String)] = [
             ("1", "Corporate WiFi", "Network"), ("2", "MDM Enrollment", "Device"),
             ("3", "Email Configuration", "Exchange"), ("4", "Security Baseline", "Security"),
             ("5", "App Restrictions", "Restrictions"), ("6", "VPN Access", "Network"),
-            ("7", "Compliance Policy", "Security"), ("8", "Certificate Authority", "Certificate")
-        ].map { MobileConfigProfileRow(id: AnyCodable($0.0), name: $0.1, category: $0.2, site: "Default", description: nil) }
-
-        return MobileFleetService.Snapshot(
-            isDetected: true, lightDevices: [], richDevices: demoDevices,
-            profiles: demoProfiles, sourceFile: nil, snapshotDate: Date()
-        )
-    }()
+            ("7", "Compliance Policy", "Security"), ("8", "Certificate Authority", "Certificate"),
+        ]
+        return raw.map { tuple in
+            MobileConfigProfileRow(
+                id: AnyCodable(tuple.0),
+                name: tuple.1,
+                category: tuple.2,
+                site: "Default",
+                description: nil
+            )
+        }
+    }
 
     // MARK: - Sections
 
