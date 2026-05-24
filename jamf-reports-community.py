@@ -319,6 +319,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "enabled": True,
         },
     },
+    # Opt-in toggles for v2.1.0 experimental features. Both default off; downstream
+    # report paths must gate on these AND on a positive capability probe so a user
+    # who flips the flag without the required jamf-cli setup gets no work done
+    # rather than a partial failure.
+    "experimental": {
+        "platform_features_enabled": False,
+        "protect_features_enabled": False,
+    },
     "school": {
         "dep_devices": {
             "enabled": True,
@@ -2354,6 +2362,24 @@ def _compliance_label(comp_cfg: dict[str, Any]) -> str:
     return str(comp_cfg.get("baseline_label", "Compliance")).strip() or "Compliance"
 
 
+def _platform_gate(config: "Config", bridge: Optional["JamfCLIBridge"]) -> bool:
+    """Return True only when Platform API features should run.
+
+    Both conditions must hold:
+      1. ``config['experimental']['platform_features_enabled']`` is True.
+      2. ``bridge`` is not None, ``bridge.is_available()`` is True, and
+         ``bridge.has_platform_auth()`` returns True.
+
+    Used as the conditional around any Platform API code path. Safe to call
+    when ``bridge`` is None — returns False.
+    """
+    if not bool(config.get("experimental", "platform_features_enabled", default=False)):
+        return False
+    if bridge is None or not bridge.is_available():
+        return False
+    return bridge.has_platform_auth()
+
+
 def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
     """Return warnings for columns that exist but are semantically suspicious."""
     warnings: list[str] = []
@@ -3938,6 +3964,8 @@ class JamfCLIBridge:
         self._last_source_info: dict[str, dict[str, Any]] = {}
         # When True, manifest mismatches raise rather than warn on cached reads.
         self._strict_manifest = bool(strict_manifest)
+        # Memoized capability probe — see has_platform_auth().
+        self._platform_auth_cache: Optional[bool] = None
 
     def _find_binary(self) -> Optional[str]:
         return _find_jamf_cli_binary()
@@ -3945,6 +3973,52 @@ class JamfCLIBridge:
     def is_available(self) -> bool:
         """Return True if jamf-cli binary is found and executable."""
         return self._binary is not None
+
+    def has_platform_auth(self) -> bool:
+        """Return True if the configured profile has auth-method: platform.
+
+        Calls `jamf-cli config list --output json` once and caches the result
+        for the bridge lifetime. Returns False (never raises) if jamf-cli is
+        absent, the call fails, the profile is not found, or auth-method is
+        anything other than 'platform'. The default profile (`default == true`
+        in the list) is resolved when `self._profile` is empty.
+        """
+        if self._platform_auth_cache is not None:
+            return self._platform_auth_cache
+        if not self.is_available():
+            self._platform_auth_cache = False
+            return False
+        try:
+            cmd = [self._binary, "config", "list", "--output", "json", "--no-input"]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
+            entries = json.loads(result.stdout or "[]")
+            if not isinstance(entries, list):
+                self._platform_auth_cache = False
+                return False
+            target = self._profile
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                name = str(entry.get("name", ""))
+                is_default = bool(entry.get("default", False))
+                matches = (name == target) if target else is_default
+                if matches:
+                    auth_method = str(entry.get("auth-method", "")).strip().lower()
+                    self._platform_auth_cache = (auth_method == "platform")
+                    return self._platform_auth_cache
+            self._platform_auth_cache = False
+            return False
+        except Exception as exc:  # noqa: BLE001 - never raise from a capability probe
+            print(f"  [warn] jamf-cli config list probe failed: {exc}", file=sys.stderr)
+            self._platform_auth_cache = False
+            return False
 
     def has_cached_data(
         self,

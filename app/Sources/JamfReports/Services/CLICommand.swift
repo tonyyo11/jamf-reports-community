@@ -20,6 +20,13 @@ enum CLICommand: Sendable, Equatable {
     /// `jamf-cli -p <profile> pro auth token --output json --no-input` (v1.9+).
     case proAuthToken(profile: String)
 
+    /// `jamf-cli config list --output json --no-input`.
+    ///
+    /// Profile-less by design — the command enumerates every configured
+    /// profile so we can read the `auth-method` field for capability probes
+    /// (e.g. PlatformCapabilityService).
+    case configList
+
     /// `jamf-cli -p <profile> school dep-devices list --output json` (v1.14+).
     case schoolDepDevicesList(profile: String)
 
@@ -59,7 +66,14 @@ enum CLICommand: Sendable, Equatable {
     /// Returns an empty array when the profile slug fails validation. All construction
     /// sites should already validate, so this is a defense-in-depth guard against
     /// path traversal via an unvalidated profile name reaching `Process.arguments`.
+    /// `.configList` is exempt — it carries no profile and does not pass `-p`.
     var argv: [String] {
+        switch self {
+        case .configList:
+            return ["config", "list", "--output", "json", "--no-input"]
+        default:
+            break
+        }
         guard ProfileService.isValid(profile) else {
             assertionFailure(
                 "CLICommand.argv called with invalid profile '\(profile)' " +
@@ -98,6 +112,11 @@ enum CLICommand: Sendable, Equatable {
             return args
         case .proSmartGroupVerifyTemplates(let profile):
             return ["-p", profile, "pro", "sg", "verify-templates", "--output", "json"]
+        case .configList:
+            // Unreachable — handled by the early switch above. Returning the
+            // canonical argv here keeps the switch exhaustive without forcing
+            // a fatalError that would punish a future regression with a crash.
+            return ["config", "list", "--output", "json", "--no-input"]
         }
     }
 
@@ -113,7 +132,7 @@ enum CLICommand: Sendable, Equatable {
     /// preview, apply) or for diagnostic commands (verify-templates).
     var snapshotKind: SnapshotKind? {
         switch self {
-        case .proAuthToken:
+        case .proAuthToken, .configList:
             return nil
         case .schoolDepDevicesList:
             return .schoolDepDevices
@@ -164,7 +183,14 @@ struct DefaultCLIExecutor: CLIExecutor {
 
     func execute(_ command: CLICommand) async throws -> Data {
         let profile = command.profile
-        guard ProfileService.isValid(profile) else {
+        // `.configList` is profile-less and must skip slug validation. Every
+        // other case carries a slug and must validate it before reaching argv.
+        let requiresProfile: Bool
+        switch command {
+        case .configList: requiresProfile = false
+        default:          requiresProfile = true
+        }
+        if requiresProfile, !ProfileService.isValid(profile) {
             throw CLIExecutorError.invalidProfile(profile)
         }
         let argv = command.argv
@@ -226,7 +252,9 @@ private final class StderrAccumulator: @unchecked Sendable {
 }
 
 extension CLICommand {
-    /// Profile slug embedded in the command. All current cases carry one.
+    /// Profile slug embedded in the command. Returns `""` for `.configList`,
+    /// which is profile-less by design — callers that branch on profile must
+    /// special-case it (see `DefaultCLIExecutor.execute`).
     var profile: String {
         switch self {
         case .proAuthToken(let profile),
@@ -239,6 +267,8 @@ extension CLICommand {
             return profile
         case .proSmartGroupApply(let profile, _, _, _, _, _):
             return profile
+        case .configList:
+            return ""
         }
     }
 }
