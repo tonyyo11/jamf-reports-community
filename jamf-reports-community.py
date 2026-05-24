@@ -16962,6 +16962,110 @@ def cmd_html(
     return out_path
 
 
+def _weasyprint_available() -> bool:
+    """Return True when the `weasyprint` package can be imported."""
+    import importlib.util
+    return importlib.util.find_spec("weasyprint") is not None
+
+
+def _render_pdf_with_weasyprint(html_path: Path, pdf_path: Path) -> None:
+    """Convert an HTML file to PDF using weasyprint."""
+    import importlib
+    weasyprint = importlib.import_module("weasyprint")
+    weasyprint.HTML(filename=str(html_path)).write_pdf(str(pdf_path))
+
+
+def cmd_pdf(
+    config: Config,
+    out_file: Optional[str],
+    no_open: bool = False,
+    summary_json: Optional[str] = None,
+    *,
+    strict_manifest: bool = False,
+) -> Path:
+    """Generate the HTML report and convert it to PDF.
+
+    Uses weasyprint when available. The macOS app uses native PDFKit instead
+    and does not depend on this command.
+
+    Args:
+        config: Loaded Config instance.
+        out_file: Destination .pdf path. Defaults to the output_dir from config.
+        no_open: When True, do not auto-open the file after writing.
+        summary_json: Optional path for an app-facing run summary JSON file.
+        strict_manifest: When True, abort on cached-snapshot SHA-256 mismatch.
+
+    Returns:
+        Path to the generated PDF report.
+    """
+    summary = _command_summary_base("pdf", config)
+    if not _weasyprint_available():
+        raise SystemExit(
+            "Error: pdf export requires weasyprint. Install via:\n"
+            "  pip install weasyprint\n"
+            "The macOS app uses native PDFKit and does not require this dependency."
+        )
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: pdf requires jamf_cli.enabled: true in config.yaml.")
+
+    output_cfg = config.output
+    timestamp_outputs = output_cfg.get("timestamp_outputs", True) is not False
+    run_stamp = _file_stamp()
+    if out_file:
+        out_path = _timestamped_output_path(
+            Path(out_file).expanduser(),
+            run_stamp,
+            timestamp_outputs,
+        )
+    else:
+        out_dir = config.resolve_path("output", "output_dir") or Path("Generated Reports")
+        out_path = _timestamped_output_path(
+            out_dir / "JamfReport.pdf",
+            run_stamp,
+            timestamp_outputs,
+        )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    bridge = _build_jamf_cli_bridge(config, save_output=True, strict_manifest=strict_manifest)
+    if not bridge.is_available():
+        print(
+            "  [warn] jamf-cli not found — will attempt to use cached data only.\n"
+            "         Install via: brew install Jamf-Concepts/tap/jamf-cli"
+        )
+    with tempfile.NamedTemporaryFile(
+        suffix=".html", delete=False, dir=str(out_path.parent)
+    ) as tmp:
+        tmp_html_path = Path(tmp.name)
+    try:
+        report = HtmlReport(config, bridge, tmp_html_path, no_open=True)
+        report.generate()
+        print(f"  Converting HTML to PDF via weasyprint: {out_path}")
+        _render_pdf_with_weasyprint(tmp_html_path, out_path)
+        print(f"  Written: {out_path}")
+    finally:
+        try:
+            tmp_html_path.unlink()
+        except OSError:
+            pass
+
+    if not no_open and sys.platform == "darwin":
+        subprocess.run(["open", str(out_path)], check=False)
+
+    summary.update(
+        {
+            "status": "ok",
+            "outputs": [_summary_file_entry("pdf", out_path)],
+            "inputs": {
+                "jamf_cli_data_dir": str(getattr(bridge, "_data_dir", "")),
+                "no_open": no_open,
+            },
+        }
+    )
+    _finish_command_summary(summary)
+    _write_summary_json(summary_json, summary)
+    return out_path
+
+
 def _collect_jamf_cli_commands(
     config: Config,
     bridge: JamfCLIBridge,
@@ -19540,7 +19644,7 @@ def _capability_commands() -> dict[str, list[str]]:
     """Return report-engine commands grouped for GUI routing."""
     return {
         "jamf_pro": [
-            "generate", "html", "collect", "inventory-csv", "export-reports",
+            "generate", "html", "pdf", "collect", "inventory-csv", "export-reports",
             "backup", "scaffold", "check", "device", "patch-managed",
         ],
         "jamf_school": [
@@ -19763,6 +19867,7 @@ def main() -> None:
             "Jamf Pro commands:\n"
             "  generate      Build the Excel report\n"
             "  html          Build a self-contained HTML status report for management\n"
+            "  pdf           Build the HTML report and convert it to PDF (requires weasyprint)\n"
             "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
             "  backup        Export Jamf Pro configuration objects to backups/\n"
@@ -19789,6 +19894,7 @@ def main() -> None:
         choices=[
             "generate",
             "html",
+            "pdf",
             "collect",
             "inventory-csv",
             "export-reports",
@@ -19964,7 +20070,7 @@ def main() -> None:
     parser.add_argument(
         "--no-open",
         action="store_true",
-        help="Do not auto-open the generated HTML file after writing (html command only)",
+        help="Do not auto-open the generated file after writing (html and pdf commands)",
     )
     parser.add_argument(
         "--output",
@@ -20165,6 +20271,13 @@ def main() -> None:
             )
         elif args.command == "html":
             cmd_html(
+                config, args.out_file,
+                no_open=args.no_open,
+                summary_json=args.summary_json,
+                strict_manifest=args.strict_manifest,
+            )
+        elif args.command == "pdf":
+            cmd_pdf(
                 config, args.out_file,
                 no_open=args.no_open,
                 summary_json=args.summary_json,

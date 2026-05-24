@@ -1,0 +1,334 @@
+{
+  "": {
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/primary.swiftdeps"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/App/ContentView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ContentView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ContentView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ContentView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/App/JamfReportsApp.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfReportsApp.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfReportsApp.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfReportsApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfReportsApp.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfReportsApp.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Models/DemoData.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DemoData.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DemoData.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DemoData~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DemoData.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DemoData.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Models/Models.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Models.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Models.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Models~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Models.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Models.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/CLIBridge+Run.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge+Run.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge+Run.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge+Run~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge+Run.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge+Run.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/CLIBridge.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CLIBridge.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/CSVInboxService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CSVInboxService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CSVInboxService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CSVInboxService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CSVInboxService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CSVInboxService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/ConfigService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/DeviceInventoryService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DeviceInventoryService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DeviceInventoryService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DeviceInventoryService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DeviceInventoryService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DeviceInventoryService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/JamfCLIInstaller.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfCLIInstaller.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfCLIInstaller.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfCLIInstaller~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfCLIInstaller.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfCLIInstaller.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/JamfProtectSnapshotService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectSnapshotService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectSnapshotService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectSnapshotService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectSnapshotService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectSnapshotService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/JamfSchoolSnapshotService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolSnapshotService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolSnapshotService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolSnapshotService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolSnapshotService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolSnapshotService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/LaunchAgentService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/LaunchAgentWriter.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentWriter.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentWriter.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentWriter~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentWriter.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/LaunchAgentWriter.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/OnboardingFlow.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingFlow.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingFlow.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingFlow~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingFlow.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingFlow.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/PlatformBenchmarkService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/ProfileService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ProfileService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ProfileService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ProfileService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ProfileService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ProfileService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/ReportLibrary.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportLibrary.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportLibrary.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportLibrary~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportLibrary.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportLibrary.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/RunHistoryService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunHistoryService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunHistoryService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunHistoryService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunHistoryService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunHistoryService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/SnapshotArchiveService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SnapshotArchiveService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SnapshotArchiveService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SnapshotArchiveService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SnapshotArchiveService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SnapshotArchiveService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/SummaryJSONParser.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SummaryJSONParser.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SummaryJSONParser.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SummaryJSONParser~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SummaryJSONParser.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SummaryJSONParser.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/SystemActions.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SystemActions.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SystemActions.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SystemActions~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SystemActions.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SystemActions.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/TrendStore.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendStore.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendStore.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendStore.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendStore.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/UnifiedHistoryService.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryService.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryService.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryService~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryService.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryService.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/WorkspaceStore.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/WorkspaceStore.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/WorkspaceStore.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/WorkspaceStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/WorkspaceStore.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/WorkspaceStore.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Services/YAMLCodec.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/YAMLCodec.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/YAMLCodec.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/YAMLCodec~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/YAMLCodec.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/YAMLCodec.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Theme/Components.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Components.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Components.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Components~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Components.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Components.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Theme/Theme.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Theme.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Theme.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Theme~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Theme.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Theme.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/BackupsView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/BackupsView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/BackupsView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/BackupsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/BackupsView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/BackupsView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/ConfigView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ConfigView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/CustomizeView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CustomizeView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CustomizeView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CustomizeView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CustomizeView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/CustomizeView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/DevicesView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DevicesView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DevicesView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DevicesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DevicesView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DevicesView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/JamfProtectStatusView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectStatusView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectStatusView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectStatusView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectStatusView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfProtectStatusView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/JamfSchoolStatusView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolStatusView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolStatusView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolStatusView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolStatusView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/JamfSchoolStatusView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/OnboardingView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OnboardingView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/OverviewView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OverviewView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OverviewView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OverviewView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OverviewView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/OverviewView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/PlatformBenchmarkView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/PlatformBenchmarkView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/ReportsView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportsView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportsView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportsView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/ReportsView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/RunsView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunsView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunsView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunsView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/RunsView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/SchedulesView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SchedulesView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SchedulesView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SchedulesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SchedulesView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SchedulesView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/SettingsView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SettingsView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SettingsView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SettingsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SettingsView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SettingsView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/Sidebar.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Sidebar.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Sidebar.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Sidebar~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Sidebar.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Sidebar.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/SourcesView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SourcesView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SourcesView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SourcesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SourcesView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/SourcesView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/Titlebar.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Titlebar.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Titlebar.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Titlebar~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Titlebar.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/Titlebar.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/TrendsView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendsView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendsView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendsView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/TrendsView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/Sources/JamfReports/Views/UnifiedHistoryView.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryView.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryView.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryView~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryView.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/UnifiedHistoryView.dia"
+  },
+  "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/DerivedSources/resource_bundle_accessor.swift": {
+    "dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/resource_bundle_accessor.d",
+    "object": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/resource_bundle_accessor.swift.o",
+    "swiftmodule": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/resource_bundle_accessor~partial.swiftmodule",
+    "swift-dependencies": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/resource_bundle_accessor.swiftdeps",
+    "diagnostics": "/Users/alyoung/Documents/GitHub/jamf-reports-community/app/.build/arm64-apple-macosx/debug/JamfReports.build/resource_bundle_accessor.dia"
+  }
+}
