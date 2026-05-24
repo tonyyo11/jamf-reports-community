@@ -2307,6 +2307,11 @@ def _summarize_mobile_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
+_SECURITY_CONTROL_KEYS: tuple[str, ...] = (
+    "filevault", "sip", "firewall", "gatekeeper", "bootstrap_token",
+)
+
+
 def _security_control_is_compliant(logical: str, value: Any) -> bool:
     """Return True when a CSV value represents a compliant security control state."""
     normalized = _normalized_text(value)
@@ -6453,6 +6458,7 @@ class CoreDashboard:
                 ("Audit Summary", self._write_audit),
                 ("Group Hygiene", self._write_group_analysis),
                 ("Security Posture", self._write_security),
+                ("Device Security State", self._write_device_security_state),
                 ("Device Compliance", self._write_device_compliance),
                 ("Check-in Health", self._write_checkin_health),
                 ("EA Coverage", self._write_ea_coverage),
@@ -7971,6 +7977,109 @@ class CoreDashboard:
                 _safe_write(ws, row, 1, cnt, self._fmts["cell"])
                 _safe_write(ws, row, 2, pct, _pct_format(self._fmts, pct))
                 row += 1
+
+    def _write_device_security_state(self) -> None:
+        """Write per-device security control state from cached computers-list JSON.
+
+        Sources the SECURITY section that `cmd_collect` fetches (see
+        `_inventory_computer_sections`). Raises RuntimeError when no device
+        carries any security value, which `write_all` maps to a `[skip]` so the
+        sheet is silently absent for tenants that opted out via
+        `jamf_cli.collect_skip: [device-security-state]`.
+        """
+        # Honour the same opt-out the collect path honours, so generate doesn't
+        # re-issue a heavy SECURITY fetch the operator explicitly skipped.
+        skip_types = {
+            s.strip().lower().replace("_", "-")
+            for s in _list_of_strings(self._config.jamf_cli.get("collect_skip", []))
+        }
+        sections = (
+            _inventory_computer_sections_without_security()
+            if "device-security-state" in skip_types
+            else _inventory_computer_sections()
+        )
+        raw = self._bridge.computers_list(sections)
+        items = _extract_items(raw)
+
+        rows: list[dict[str, str]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            flat = _flatten_record(item)
+            name = str(_first_value(flat, INVENTORY_FIELD_CANDIDATES["name"]) or "").strip()
+            identifier = str(_first_value(flat, INVENTORY_FIELD_CANDIDATES["id"]) or "").strip()
+            if not name and identifier:
+                name = f"Computer {identifier}"
+            row = {
+                "name": name,
+                "serial": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["serial"]) or ""
+                ).strip(),
+                "filevault": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["filevault"]) or ""
+                ).strip(),
+                "sip": str(_first_value(flat, INVENTORY_FIELD_CANDIDATES["sip"]) or "").strip(),
+                "firewall": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["firewall"]) or ""
+                ).strip(),
+                "gatekeeper": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["gatekeeper"]) or ""
+                ).strip(),
+                "bootstrap_token": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["bootstrap_token_escrowed"])
+                    or ""
+                ).strip(),
+            }
+            if any(row[key] for key in _SECURITY_CONTROL_KEYS):
+                rows.append(row)
+
+        if not rows:
+            raise RuntimeError(
+                "no device security state in cached data — enable SECURITY"
+                " inventory section or remove device-security-state from"
+                " jamf_cli.collect_skip"
+            )
+
+        ws = self._wb.add_worksheet("Device Security State")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_i = _write_sheet_header(
+            ws,
+            self._t("Device Security State"),
+            f"Source: cached jamf-cli pro computers list --section SECURITY | Generated: {ts}",
+            self._fmts,
+            ncols=7,
+        )
+        ws.set_column(0, 0, 32)
+        ws.set_column(1, 1, 18)
+        ws.set_column(2, 6, 16)
+
+        headers = ["Device Name", "Serial", "FileVault", "SIP", "Firewall",
+                   "Gatekeeper", "Bootstrap Token"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row_i, col_i, header, self._fmts["header"])
+        row_i += 1
+
+        rows.sort(key=lambda r: (r["name"] or "").lower())
+        controls: list[tuple[str, str]] = [
+            ("filevault", "filevault"),
+            ("sip", "sip"),
+            ("firewall", "firewall"),
+            ("gatekeeper", "gatekeeper"),
+            ("bootstrap_token", "bootstrap_token"),
+        ]
+        for record in rows:
+            _safe_write(ws, row_i, 0, record["name"], self._fmts["cell"])
+            _safe_write(ws, row_i, 1, record["serial"], self._fmts["cell"])
+            for col_offset, (logical, key) in enumerate(controls, start=2):
+                value = record[key]
+                if not value:
+                    cell_fmt = self._fmts["cell"]
+                elif _security_control_is_compliant(logical, value):
+                    cell_fmt = self._fmts["green"]
+                else:
+                    cell_fmt = self._fmts["red"]
+                _safe_write(ws, row_i, col_offset, value, cell_fmt)
+            row_i += 1
 
     def _write_audit(self) -> None:
         """Write health check findings from jamf-cli pro audit."""
@@ -16764,6 +16873,13 @@ def _collect_jamf_cli_commands(
 
     # Each entry: (human label, callable, report-type key).
     # An empty report-type key means the command is not skippable via collect_skip.
+    inventory_sections = (
+        _inventory_computer_sections_without_security()
+        if "device-security-state" in skip_types
+        else _inventory_computer_sections()
+    )
+    if "device-security-state" in skip_types:
+        print("  [skip] SECURITY inventory section: excluded by jamf_cli.collect_skip")
     candidates: list[tuple[str, Any, str]] = []
     if live_overview_allowed:
         candidates.append(("Fleet Overview", bridge.overview, ""))
@@ -16771,7 +16887,7 @@ def _collect_jamf_cli_commands(
         print("  [skip] Fleet Overview: live overview disabled in config")
     candidates.extend(
         [
-            ("Computer Inventory", lambda: bridge.computers_list(_inventory_computer_sections()), ""),
+            ("Computer Inventory", lambda: bridge.computers_list(inventory_sections), ""),
             ("Inventory Summary", bridge.inventory_summary, ""),
             ("Hardware Models", bridge.hardware_models, ""),
             ("Mobile Inventory", bridge.mobile_device_inventory_details, ""),
@@ -17200,6 +17316,11 @@ def _inventory_computer_sections() -> list[str]:
         "DISK_ENCRYPTION",
         "SECURITY",
     ]
+
+
+def _inventory_computer_sections_without_security() -> list[str]:
+    """Return inventory sections minus SECURITY for `device-security-state` opt-out."""
+    return [s for s in _inventory_computer_sections() if s != "SECURITY"]
 
 
 def _compact_error_text(exc: Exception, limit: int = 500) -> str:

@@ -361,6 +361,8 @@ struct DevicesView: View {
                         }
                     }
                     TableColumn("Patch") { device in patchPill(device) }
+                    TableColumn("Security") { device in securityIndicators(for: device) }
+                        .width(min: 70, ideal: 78, max: 90)
                     TableColumn("Risk") { device in riskPill(device.risk) }
                 }
                 .frame(minHeight: 430)
@@ -701,7 +703,7 @@ struct DevicesView: View {
 
     private func securitySection(for device: DeviceInventoryRecord) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Security")
+            SectionHeader(title: "Security State")
             VStack(spacing: 0) {
                 securityRow("FileVault", value: device.fileVault)
                 securityRow("SIP", value: device.sip)
@@ -805,6 +807,48 @@ struct DevicesView: View {
         if positives.contains(where: { v.contains($0) }) { return .teal }
         if negatives.contains(where: { v.contains($0) }) { return .danger }
         return .muted
+    }
+
+    // Per-control glyph row for the inventory table. Five tight icons:
+    // FV / SIP / FW / GK / BT. Reuses `securityTone` so the table and the
+    // detail panel agree on what counts as good/bad/unknown.
+    @ViewBuilder
+    private func securityIndicators(for device: DeviceInventoryRecord) -> some View {
+        let controls: [(String, String)] = [
+            ("FV", device.fileVault),
+            ("SIP", device.sip),
+            ("FW", device.firewall),
+            ("GK", device.gatekeeper),
+            ("BT", device.bootstrapToken),
+        ]
+        HStack(spacing: 3) {
+            ForEach(controls, id: \.0) { (label, value) in
+                securityGlyph(label: label, value: value)
+            }
+        }
+    }
+
+    private func securityGlyph(label: String, value: String) -> some View {
+        let tone = securityTone(for: value)
+        let symbol: String
+        let color: Color
+        switch tone {
+        case .teal:
+            symbol = "checkmark.circle.fill"
+            color = Theme.Colors.ok
+        case .danger:
+            symbol = "xmark.circle.fill"
+            color = Theme.Colors.danger
+        default:
+            symbol = "minus.circle"
+            color = Theme.Colors.fgMuted
+        }
+        let display = value.isEmpty ? "Not collected" : value
+        return Image(systemName: symbol)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(color)
+            .help("\(label): \(display)")
+            .accessibilityLabel("\(label) \(display)")
     }
 
     private func riskPill(_ risk: DeviceInventoryRecord.Risk) -> Pill {
