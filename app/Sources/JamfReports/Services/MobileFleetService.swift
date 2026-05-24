@@ -9,6 +9,12 @@ import Foundation
 /// sources exist — many tenants don't manage mobile devices.
 struct MobileFleetService: Sendable {
 
+    /// Slice kind used by the MobileFleetView supervision donut so the view
+    /// can pick a colour without leaking string literals.
+    enum SupervisionRole: Sendable {
+        case supervised, unsupervised, unmanaged
+    }
+
     /// Everything the MobileFleetView needs from mobile device snapshots.
     /// Provides both light and rich device data sources, with computed KPIs
     /// preferring rich data when available.
@@ -68,8 +74,72 @@ struct MobileFleetService: Sendable {
             richDevices.filter { $0.general?.managed == true }.count
         }
 
+        var unmanagedCount: Int {
+            richDevices.filter { $0.general?.managed == false }.count
+        }
+
         var supervisedCount: Int {
             richDevices.filter { $0.general?.supervised == true }.count
+        }
+
+        /// Bucket count of supervised / unsupervised / unmanaged devices for the
+        /// MobileFleetView supervision donut. Unmanaged dominates over
+        /// supervised: an unmanaged device's supervised flag may be stale, so
+        /// we surface it as the more actionable bucket.
+        var supervisionBreakdown: [(label: String, count: Int, role: SupervisionRole)] {
+            let unmanaged = unmanagedCount
+            let supervised = richDevices.filter {
+                $0.general?.managed == true && $0.general?.supervised == true
+            }.count
+            let unsupervised = richDevices.filter {
+                $0.general?.managed == true && $0.general?.supervised == false
+            }.count
+            return [
+                ("Supervised", supervised, .supervised),
+                ("Unsupervised", unsupervised, .unsupervised),
+                ("Unmanaged", unmanaged, .unmanaged),
+            ]
+        }
+
+        /// Per-method counts derived from `general.deviceOwnershipType`. Maps the
+        /// raw enum to a human label; falls back to the raw value for forward
+        /// compatibility when Jamf adds new methods. Sorted descending by count.
+        var enrollmentMethodDistribution: [(method: String, count: Int)] {
+            let raw = richDevices.compactMap { device -> String? in
+                guard let value = device.general?.deviceOwnershipType?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
+                else { return nil }
+                return Self.enrollmentMethodLabel(for: value)
+            }
+            let grouped = Dictionary(grouping: raw) { $0 }
+            return grouped
+                .map { (method: $0.key, count: $0.value.count) }
+                .sorted { lhs, rhs in
+                    if lhs.count != rhs.count { return lhs.count > rhs.count }
+                    return lhs.method < rhs.method
+                }
+        }
+
+        /// Number of managed apps reported for a rich device. Returns 0 when
+        /// the `applications` array is `nil` (jamf-cli wasn't asked for the
+        /// APPLICATIONS section) or empty.
+        func managedAppCount(for device: MobileDeviceInventoryItem) -> Int {
+            device.applications?.count ?? 0
+        }
+
+        /// Map a raw `deviceOwnershipType` value to a display label that matches
+        /// the Python side's `_mobile_enrollment_label`. Unknown values pass
+        /// through unchanged for forward compatibility.
+        static func enrollmentMethodLabel(for raw: String) -> String {
+            switch raw {
+            case "Institutional": return "ADE / Institutional"
+            case "UserEnrollment": return "User Enrollment"
+            case "AccountDrivenUserEnrollment": return "Account-Driven User Enrollment"
+            case "AccountDrivenDeviceEnrollment": return "Account-Driven Device Enrollment"
+            case "Personal": return "Personal / BYOD"
+            case "PersonalDeviceProfile": return "Personal Device Profile (legacy)"
+            default: return raw
+            }
         }
 
         var passcodeCompliantCount: Int {

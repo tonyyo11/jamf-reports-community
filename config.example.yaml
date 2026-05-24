@@ -256,8 +256,8 @@ jamf_cli:
   # Report types to skip during live collection (`jamf-reports-community collect`).
   # Use this on on-prem Jamf Pro instances where the expensive per-device queries
   # below stall the server or consume excessive API time. Underscores and hyphens
-  # are interchangeable ("update_status" == "update-status"). Only the four
-  # report types below honor this list — core inventory commands always run.
+  # are interchangeable ("update_status" == "update-status"). Only the report
+  # types below honor this list — core inventory commands always run.
   #
   # Supported values:
   #   patch-device-failures   `pro report patch-status --scan-failures`
@@ -268,6 +268,10 @@ jamf_cli:
   #                           (skips Device Security State sheet; per-device
   #                           FileVault/SIP/Firewall/Gatekeeper/Bootstrap signals
   #                           become empty in DevicesView).
+  #   mobile-details          skip `pro mobile-device-inventory-details list`
+  #                           (Mobile Inventory and Mobile Supervision Status
+  #                           sheets fall back to cached data or remain empty;
+  #                           Mobile Fleet KPIs in the app go blank).
   #
   # Example: skip update-status and its scan-failures variant on a slow server.
   collect_skip: []
@@ -275,6 +279,7 @@ jamf_cli:
   #   - update-status
   #   - update-device-failures
   #   - device-security-state
+  #   - mobile-details
 
 
 # ---------------------------------------------------------------------------
