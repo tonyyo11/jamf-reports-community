@@ -20,7 +20,7 @@ Before running a release, ensure your machine has:
 ```bash
 cd app
 
-RELEASE_VERSION=2.0.0 \
+RELEASE_VERSION=2.1.0 \
 DEVELOPER_ID_APP="Developer ID Application: Tony Young (XXXXXXXXXX)" \
 NOTARY_KEYCHAIN_PROFILE="apple-id-profile" \
 ./scripts/release.sh
@@ -35,7 +35,7 @@ After a successful release:
 ```
 app/build/
 ├── JamfReports.app           # Signed, notarized app bundle
-└── JamfReports-2.0.0.dmg     # Distribution DMG
+└── JamfReports-2.1.0.dmg     # Distribution DMG
 ```
 
 Upload the `.dmg` to GitHub Releases. The app has no built-in auto-updater —
@@ -49,7 +49,7 @@ download the latest build.
 Top-level orchestrator. Runs steps in order: build → sign → notarize → package.
 
 **Environment variables (all required):**
-- `RELEASE_VERSION` — Version string (e.g., `2.0.0`)
+- `RELEASE_VERSION` — Version string (e.g., `2.1.0`)
 - `DEVELOPER_ID_APP` — Developer ID identity name (e.g., `Developer ID Application: Tony Young (XXXXXXXXXX)`)
 - `NOTARY_KEYCHAIN_PROFILE` — Keychain profile name for notarization credentials
 

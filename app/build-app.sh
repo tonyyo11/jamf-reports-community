@@ -8,6 +8,18 @@ cd "$(dirname "$0")"
 
 CONFIG="${1:-release}"
 
+# Marketing version (CFBundleShortVersionString) — bumped per milestone.
+MARKETING_VERSION="${MARKETING_VERSION:-2.1.0}"
+
+# Build number (CFBundleVersion). When equal to MARKETING_VERSION the
+# downstream build-dmg.sh / build-pkg.sh treat the build as a public
+# release; when different they name the artifacts -betaN. Default derives
+# from git commit count so every dev build is uniquely identifiable.
+# For a clean release, invoke as:
+#   BUILD_NUMBER="${MARKETING_VERSION}" ./build-app.sh release
+BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 0)}"
+
+echo "→ version ${MARKETING_VERSION} build ${BUILD_NUMBER}"
 echo "→ swift build (${CONFIG})"
 if [[ "$CONFIG" == "release" ]]; then
   swift build -c release
@@ -73,7 +85,7 @@ if [[ -f "../jamf-reports-community.py" ]]; then
   cp "../jamf-reports-community.py" "$APP_OUT/Contents/Resources/jamf-reports-community.py"
 fi
 
-cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
+cat > "$APP_OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -95,12 +107,12 @@ cat > "$APP_OUT/Contents/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.0.0</string>
+    <string>${MARKETING_VERSION}</string>
     <!-- CFBundleVersion equals CFBundleShortVersionString for a release build.
          build-dmg.sh / build-pkg.sh treat a differing value as a beta and name
          the artifacts -betaN; keep the two in sync for a public release. -->
     <key>CFBundleVersion</key>
-    <string>2.0.0</string>
+    <string>${BUILD_NUMBER}</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
