@@ -82,10 +82,6 @@ struct MobileFleetService: Sendable {
             richDevices.filter { $0.general?.supervised == true }.count
         }
 
-        var unsupervisedCount: Int {
-            richDevices.filter { $0.general?.supervised == false }.count
-        }
-
         /// Bucket count of supervised / unsupervised / unmanaged devices for the
         /// MobileFleetView supervision donut. Unmanaged dominates over
         /// supervised: an unmanaged device's supervised flag may be stale, so

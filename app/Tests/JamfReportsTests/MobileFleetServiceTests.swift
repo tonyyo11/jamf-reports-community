@@ -339,7 +339,6 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.managedCount, 3)
         XCTAssertEqual(snapshot.unmanagedCount, 1)
         XCTAssertEqual(snapshot.supervisedCount, 2)
-        XCTAssertEqual(snapshot.unsupervisedCount, 2)
 
         let distribution = snapshot.enrollmentMethodDistribution
         // Sorted descending by count; Institutional has 2, the rest 1 each.
