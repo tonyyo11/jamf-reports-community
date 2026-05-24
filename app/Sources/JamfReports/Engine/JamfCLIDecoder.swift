@@ -519,9 +519,10 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
     let deviceType: String?
     let general: MobileDeviceGeneral?
     let userAndLocation: MobileDeviceUserLocation?
+    let applications: [MobileDeviceApplication]?
 
     private enum CodingKeys: String, CodingKey {
-        case mobileDeviceId, deviceType, general, userAndLocation
+        case mobileDeviceId, deviceType, general, userAndLocation, applications
     }
 }
 
@@ -537,6 +538,23 @@ struct MobileDeviceGeneral: Decodable, Sendable {
     let passcodeCompliant: Bool?
     let dataProtectionEnabled: Bool?
     let jailbreakDetected: String?
+    let enrollmentMethodPrestage: MobileDevicePrestage?
+}
+
+/// ADE prestage detail attached to mobile devices enrolled via Automated Device
+/// Enrollment. Decoded as `null` when the device wasn't ADE-enrolled.
+struct MobileDevicePrestage: Decodable, Sendable {
+    let mobileDevicePrestageId: String?
+    let profileName: String?
+}
+
+/// Single application entry from `mobile-device-inventory-details`. Only the
+/// fields the UI surfaces (count + display name) are decoded; the upstream
+/// schema carries more (version, managementStatus, size) but they're not
+/// needed yet.
+struct MobileDeviceApplication: Decodable, Sendable {
+    let identifier: String?
+    let name: String?
 }
 
 struct MobileDeviceUserLocation: Decodable, Sendable {

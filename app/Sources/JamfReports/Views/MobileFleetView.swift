@@ -10,6 +10,7 @@ struct MobileFleetView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: MobileFleetService.Snapshot = .empty
     @State private var hasLoaded = false
+    @State private var selectedDeviceID: String?
 
     var body: some View {
         ScrollView {
@@ -32,9 +33,14 @@ struct MobileFleetView: View {
                     emptyState
                 } else {
                     kpiGrid
+                    supervisionCard
+                    enrollmentMethodCard
                     complianceKpiGrid
                     osDistributionCard
                     devicesTable
+                    if let device = selectedRichDevice {
+                        deviceDetailCard(device)
+                    }
                     if !snapshot.profiles.isEmpty {
                         profilesTable
                     }
@@ -75,7 +81,13 @@ struct MobileFleetView: View {
     }
 
     private static let demoSnapshot: MobileFleetService.Snapshot = {
-        // Create demo devices: 15 iPads, 10 iPhones
+        // Create demo devices: 15 iPads, 10 iPhones. Vary ownership across the
+        // canonical Jamf Pro mobile enrollment enum so the breakdown card has
+        // something interesting to show in demo mode.
+        let ownershipTypes = [
+            "Institutional", "UserEnrollment",
+            "AccountDrivenUserEnrollment", "AccountDrivenDeviceEnrollment"
+        ]
         let demoDevices = (1...25).map { i in
             MobileDeviceInventoryItem(
                 mobileDeviceId: "\(1000 + i)",
@@ -86,16 +98,25 @@ struct MobileFleetView: View {
                     osVersion: ["18.2.1", "18.1.1", "17.6.1"][i % 3],
                     managed: i % 10 != 0, supervised: i % 5 != 0,
                     lastInventoryUpdateDate: "2025-01-\(String(format: "%02d", (i % 28) + 1))T12:00:00Z",
-                    deviceOwnershipType: i % 7 == 0 ? "Personal" : "Corporate",
+                    deviceOwnershipType: ownershipTypes[i % ownershipTypes.count],
                     activationLockEnabled: i % 6 != 0, passcodeCompliant: i % 8 != 0,
-                    dataProtectionEnabled: true, jailbreakDetected: "None"
+                    dataProtectionEnabled: true, jailbreakDetected: "None",
+                    enrollmentMethodPrestage: i % 4 == 0
+                        ? MobileDevicePrestage(mobileDevicePrestageId: "\(i)", profileName: "Demo Prestage")
+                        : nil
                 ),
                 userAndLocation: MobileDeviceUserLocation(
                     username: i % 5 == 0 ? nil : "user\(i)",
                     emailAddress: i % 5 == 0 ? nil : "user\(i)@example.com",
                     department: ["IT", "Sales", "Marketing"][i % 3],
                     building: "Building \((i % 3) + 1)"
-                )
+                ),
+                applications: (0..<((i * 3) % 12)).map { idx in
+                    MobileDeviceApplication(
+                        identifier: "com.demo.app\(idx)",
+                        name: "Demo App \(idx)"
+                    )
+                }
             )
         }
 
@@ -142,29 +163,6 @@ struct MobileFleetView: View {
                 value: "\(snapshot.iPhoneCount)",
                 sub: pctString(count: snapshot.iPhoneCount, total: snapshot.totalDevices)
             )
-            if snapshot.richDevices.isEmpty {
-                StatTile(
-                    label: "Managed",
-                    value: "—",
-                    sub: "Run inventory-details for KPIs"
-                )
-                StatTile(
-                    label: "Supervised",
-                    value: "—",
-                    sub: "Run inventory-details for KPIs"
-                )
-            } else {
-                StatTile(
-                    label: "Managed",
-                    value: String(format: "%.1f%%", pct(count: snapshot.managedCount, total: snapshot.totalDevices)),
-                    sub: "\(snapshot.managedCount) of \(snapshot.totalDevices)"
-                )
-                StatTile(
-                    label: "Supervised",
-                    value: String(format: "%.1f%%", pct(count: snapshot.supervisedCount, total: snapshot.totalDevices)),
-                    sub: "\(snapshot.supervisedCount) of \(snapshot.totalDevices)"
-                )
-            }
         }
     }
 
@@ -191,6 +189,138 @@ struct MobileFleetView: View {
             }
             .padding(.top, 8)
         }
+    }
+
+    @ViewBuilder
+    private var supervisionCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Supervision", trailing: "Managed posture")
+                if snapshot.richDevices.isEmpty {
+                    EmptyStateView(
+                        systemImage: "questionmark.circle",
+                        title: "Run inventory-details for KPIs",
+                        message: "Supervision and ownership signals come from `pro mobile-device-inventory-details list`."
+                    )
+                } else {
+                    HStack(alignment: .top, spacing: 28) {
+                        supervisionDonut
+                            .frame(width: 180, height: 180)
+                        supervisionLegend
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+
+    private var supervisionDonut: some View {
+        let breakdown = snapshot.supervisionBreakdown
+        return Chart(breakdown.filter { $0.count > 0 }, id: \.label) { slice in
+            SectorMark(
+                angle: .value("Count", slice.count),
+                innerRadius: .ratio(0.62),
+                angularInset: 1.6
+            )
+            .foregroundStyle(supervisionColor(for: slice.role))
+            .accessibilityLabel(slice.label)
+            .accessibilityValue("\(slice.count) devices")
+        }
+        .chartLegend(.hidden)
+        .accessibilityLabel("Mobile fleet supervision breakdown")
+    }
+
+    private var supervisionLegend: some View {
+        let total = snapshot.totalDevices
+        let breakdown = snapshot.supervisionBreakdown
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(breakdown, id: \.label) { slice in
+                let percentage = total > 0 ? Double(slice.count) / Double(total) * 100 : 0
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(supervisionColor(for: slice.role))
+                        .frame(width: 12, height: 12)
+                    Text(slice.label)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.Colors.fg)
+                    Spacer()
+                    Text("\(slice.count)")
+                        .font(Theme.Fonts.mono(12, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.fg2)
+                        .monospacedDigit()
+                    Text(String(format: "%.1f%%", percentage))
+                        .font(Theme.Fonts.mono(11))
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .frame(minWidth: 48, alignment: .trailing)
+                        .monospacedDigit()
+                }
+            }
+        }
+    }
+
+    private func supervisionColor(for role: MobileFleetService.SupervisionRole) -> Color {
+        switch role {
+        case .supervised: return Theme.Colors.goldBright
+        case .unsupervised: return Theme.Colors.warn
+        case .unmanaged: return Theme.Colors.hairlineStrong
+        }
+    }
+
+    @ViewBuilder
+    private var enrollmentMethodCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Enrollment Method")
+                if snapshot.richDevices.isEmpty {
+                    EmptyStateView(
+                        systemImage: "questionmark.circle",
+                        title: "Run inventory-details for KPIs",
+                        message: "Enrollment method comes from `general.deviceOwnershipType`."
+                    )
+                } else if snapshot.enrollmentMethodDistribution.isEmpty {
+                    Text("No enrollment method values reported by Jamf Pro for this fleet.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                } else {
+                    ForEach(snapshot.enrollmentMethodDistribution, id: \.method) { entry in
+                        enrollmentMethodRow(method: entry.method, count: entry.count)
+                    }
+                }
+            }
+        }
+    }
+
+    private func enrollmentMethodRow(method: String, count: Int) -> some View {
+        let total = snapshot.totalDevices
+        let percentage = total > 0 ? Double(count) / Double(total) * 100 : 0
+        return VStack(spacing: 4) {
+            HStack {
+                Text(method)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
+                Spacer()
+                Text("\(count) device\(count == 1 ? "" : "s")")
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                Text(String(format: "%.1f%%", percentage))
+                    .font(Theme.Fonts.mono(11, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.fg)
+                    .frame(minWidth: 48, alignment: .trailing)
+            }
+            GeometryReader { geo in
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Theme.Colors.hairlineStrong)
+                    .frame(height: 4)
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(Theme.Colors.goldBright)
+                            .frame(width: geo.size.width * (percentage / 100), height: 4)
+                    }
+            }
+            .frame(height: 4)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(method): \(count) devices, \(String(format: "%.0f", percentage)) percent")
     }
 
     @ViewBuilder
@@ -283,7 +413,7 @@ struct MobileFleetView: View {
                         ? "\(devicesForTable.count) of \(totalMobileDevices) shown"
                         : nil
                 )
-                Table(devicesForTable) {
+                Table(devicesForTable, selection: $selectedDeviceID) {
                     TableColumn("Name") { device in
                         Text(deviceDisplayName(device))
                             .font(.callout.weight(.medium))
@@ -337,6 +467,98 @@ struct MobileFleetView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
             }
+        }
+    }
+
+    private var selectedRichDevice: MobileDeviceInventoryItem? {
+        guard let id = selectedDeviceID, !snapshot.richDevices.isEmpty else { return nil }
+        return snapshot.richDevices.first { device in
+            let canonical: String
+            if let mobileID = device.mobileDeviceId {
+                canonical = mobileID
+            } else {
+                let serial = device.general?.serialNumber ?? "nil"
+                let name = device.general?.displayName ?? "nil"
+                canonical = "rich-\(serial)-\(name)"
+            }
+            return canonical == id
+        }
+    }
+
+    private func deviceDetailCard(_ device: MobileDeviceInventoryItem) -> some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        SectionHeader(title: device.general?.displayName ?? "Untitled Device")
+                        Mono(
+                            text: device.general?.serialNumber ?? "—",
+                            color: Theme.Colors.goldBright
+                        )
+                        .textSelection(.enabled)
+                    }
+                    Spacer()
+                    Pill(
+                        text: device.general?.supervised == true ? "Supervised" : "Unsupervised",
+                        tone: device.general?.supervised == true ? .teal : .warn
+                    )
+                }
+                deviceDetailSection("Management", rows: [
+                    ("Managed", boolLabel(device.general?.managed)),
+                    ("Supervised", boolLabel(device.general?.supervised)),
+                    ("Enrollment", enrollmentLabel(for: device)),
+                    ("Ownership", device.general?.deviceOwnershipType ?? ""),
+                ])
+                deviceDetailSection("Inventory", rows: [
+                    ("Type", device.deviceType ?? ""),
+                    ("OS", device.general?.osVersion ?? ""),
+                    ("Managed Apps", "\(snapshot.managedAppCount(for: device))"),
+                    ("User", device.userAndLocation?.username ?? ""),
+                    ("Department", device.userAndLocation?.department ?? ""),
+                ])
+            }
+            .textSelection(.enabled)
+        }
+    }
+
+    private func deviceDetailSection(_ title: String, rows: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: title)
+            VStack(spacing: 0) {
+                ForEach(rows.filter { !$0.1.isEmpty }, id: \.0) { row in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(row.0.uppercased())
+                            .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                            .tracking(1.0)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .frame(minWidth: 110, alignment: .leading)
+                        Text(row.1)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                            .lineLimit(2)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    private func enrollmentLabel(for device: MobileDeviceInventoryItem) -> String {
+        let raw = device.general?.deviceOwnershipType ?? ""
+        guard !raw.isEmpty else { return "" }
+        let base = MobileFleetService.Snapshot.enrollmentMethodLabel(for: raw)
+        if let prestage = device.general?.enrollmentMethodPrestage?.profileName, !prestage.isEmpty {
+            return "\(base) (Prestage: \(prestage))"
+        }
+        return base
+    }
+
+    private func boolLabel(_ value: Bool?) -> String {
+        switch value {
+        case .some(true): return "Yes"
+        case .some(false): return "No"
+        case .none: return ""
         }
     }
 

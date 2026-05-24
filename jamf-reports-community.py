@@ -1954,7 +1954,54 @@ MOBILE_INVENTORY_FIELD_CANDIDATES: dict[str, list[str]] = {
         "deviceOwnershipType",
         "general.deviceOwnershipType",
     ],
+    "prestage_profile": [
+        "general.enrollmentMethodPrestage.profileName",
+        "enrollmentMethodPrestage.profileName",
+    ],
 }
+
+
+# Human-readable label for the canonical Jamf Pro mobile enrollment method enum
+# (`deviceOwnershipType` from the Mobile Device Inventory API). Falls back to
+# the raw value (titlecased) when an unrecognised string appears so future
+# enum additions show up as-is rather than silently bucketing into "Other".
+MOBILE_ENROLLMENT_METHOD_LABELS: dict[str, str] = {
+    "institutional": "ADE / Institutional",
+    "userenrollment": "User Enrollment",
+    "accountdrivenuserenrollment": "Account-Driven User Enrollment",
+    "accountdrivendeviceenrollment": "Account-Driven Device Enrollment",
+    "personal": "Personal / BYOD",
+    "personaldeviceprofile": "Personal Device Profile (legacy)",
+}
+
+
+def _mobile_enrollment_label(raw_ownership: Any, prestage_profile: Any) -> str:
+    """Translate a Jamf Pro mobile ownership/prestage pair into a display label."""
+    text = str(raw_ownership or "").strip()
+    if not text:
+        return ""
+    key = text.lower().replace("_", "").replace("-", "").replace(" ", "")
+    base = MOBILE_ENROLLMENT_METHOD_LABELS.get(key, text)
+    profile = str(prestage_profile or "").strip()
+    if profile:
+        return f"{base} (Prestage: {profile})"
+    return base
+
+
+def _mobile_managed_app_count(item: Any) -> int:
+    """Return the count of items in a mobile device record's ``applications`` list.
+
+    The jamf-cli `mobile-device-inventory-details` response sets
+    ``applications`` to ``null`` when the APPLICATIONS section isn't requested
+    or the device returned no inventory for it. Treats anything non-list as
+    zero so the column stays well-formed across mixed-shape tenants.
+    """
+    if not isinstance(item, dict):
+        return 0
+    apps = item.get("applications")
+    if isinstance(apps, list):
+        return len(apps)
+    return 0
 
 MOBILE_PROFILE_FIELD_CANDIDATES: dict[str, list[str]] = {
     "id": ["id", "general.id"],
@@ -2244,6 +2291,11 @@ def _normalize_mobile_inventory_row(item: Any) -> dict[str, Any]:
             _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["jailbreak_status"])
         ).strip(),
         "Ownership": str(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["ownership"])).strip(),
+        "Enrollment Method": _mobile_enrollment_label(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["ownership"]),
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["prestage_profile"]),
+        ),
+        "Managed Apps": _mobile_managed_app_count(item),
     }
 
 
@@ -2276,6 +2328,7 @@ def _summarize_mobile_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "families": Counter(),
         "os_versions": Counter(),
         "models": Counter(),
+        "enrollment_methods": Counter(),
     }
     for row in rows:
         if row.get("Managed") == "Yes":
@@ -2304,6 +2357,9 @@ def _summarize_mobile_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
         model = str(row.get("Model", "")).strip()
         if model:
             summary["models"][model] += 1
+        enrollment = str(row.get("Enrollment Method", "")).strip()
+        if enrollment:
+            summary["enrollment_methods"][enrollment] += 1
     return summary
 
 
@@ -6455,6 +6511,7 @@ class CoreDashboard:
                 ("Inventory Summary", self._write_inventory_summary),
                 ("Hardware Models", self._write_hardware_models),
                 ("Mobile Inventory", self._write_mobile_inventory),
+                ("Mobile Supervision Status", self._write_mobile_supervision_status),
                 ("Audit Summary", self._write_audit),
                 ("Group Hygiene", self._write_group_analysis),
                 ("Security Posture", self._write_security),
@@ -7771,7 +7828,7 @@ class CoreDashboard:
             self._t("Mobile Inventory"),
             f"Source: {source_name} | Generated: {ts}",
             self._fmts,
-            ncols=20,
+            ncols=22,
         )
         summary_rows = [
             ("Total Mobile Devices", summary["total"]),
@@ -7793,7 +7850,7 @@ class CoreDashboard:
             _safe_write(ws, row, col_i, header, self._fmts["header"])
         row += 1
 
-        widths = [12, 26, 18, 14, 11, 11, 11, 24, 12, 18, 24, 18, 18, 22, 18, 16, 18, 18, 18, 14]
+        widths = [12, 26, 18, 14, 11, 11, 11, 24, 12, 18, 24, 18, 18, 22, 18, 16, 18, 18, 18, 14, 28, 14]
         for col_i, width in enumerate(widths):
             ws.set_column(col_i, col_i, width)
 
@@ -7813,6 +7870,61 @@ class CoreDashboard:
                 else:
                     _safe_write(ws, row, col_i, value, self._fmts["cell"])
             row += 1
+
+    def _write_mobile_supervision_status(self) -> None:
+        """Write supervised-vs-unsupervised counts grouped by device family.
+
+        Sourced from the same rich `mobile-device-inventory-details` cache the
+        Mobile Inventory sheet reads. Raises ``RuntimeError`` when no rows are
+        available so ``write_all`` skips the sheet on tenants that haven't run
+        ``mobile_device_inventory_details`` (or opted out via
+        ``jamf_cli.collect_skip: [mobile-details]``).
+        """
+        rows, source_name = self._mobile_inventory_rows()
+        if not rows:
+            raise RuntimeError("no mobile device inventory rows for supervision sheet")
+
+        # Group by device-family rather than Model so AppleTV/iPad/iPhone fall
+        # into a small fixed bucket set even with dozens of model identifiers.
+        per_family: dict[str, dict[str, int]] = {}
+        for row in rows:
+            family = str(row.get("Device Family", "")).strip() or "Unknown"
+            bucket = per_family.setdefault(family, {"total": 0, "supervised": 0, "unsupervised": 0})
+            bucket["total"] += 1
+            if row.get("Supervised") == "Yes":
+                bucket["supervised"] += 1
+            elif row.get("Supervised") == "No":
+                bucket["unsupervised"] += 1
+
+        ws = self._wb.add_worksheet("Mobile Supervision Status")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_i = _write_sheet_header(
+            ws,
+            self._t("Mobile Supervision Status"),
+            f"Source: {source_name} | Generated: {ts}",
+            self._fmts,
+            ncols=5,
+        )
+        ws.set_column(0, 0, 22)
+        ws.set_column(1, 4, 16)
+
+        headers = ["Device Family", "Total", "Supervised", "Unsupervised", "% Supervised"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row_i, col_i, header, self._fmts["header"])
+        row_i += 1
+
+        for family in sorted(per_family.keys()):
+            counts = per_family[family]
+            total = counts["total"]
+            supervised = counts["supervised"]
+            unsupervised = counts["unsupervised"]
+            pct = (supervised / total) if total > 0 else 0.0
+            _safe_write(ws, row_i, 0, family, self._fmts["cell"])
+            _safe_write(ws, row_i, 1, total, self._fmts["cell"])
+            _safe_write(ws, row_i, 2, supervised, self._fmts["cell"])
+            _safe_write(ws, row_i, 3, unsupervised, self._fmts["cell"])
+            _safe_write(ws, row_i, 4, pct, _pct_format(self._fmts, pct))
+            row_i += 1
 
     def _write_mobile_config_profiles(self) -> None:
         """Write mobile configuration profile visibility from jamf-cli."""
@@ -7989,10 +8101,7 @@ class CoreDashboard:
         """
         # Honour the same opt-out the collect path honours, so generate doesn't
         # re-issue a heavy SECURITY fetch the operator explicitly skipped.
-        skip_types = {
-            s.strip().lower().replace("_", "-")
-            for s in _list_of_strings(self._config.jamf_cli.get("collect_skip", []))
-        }
+        skip_types = _normalized_skip_types(self._config)
         sections = (
             _inventory_computer_sections_without_security()
             if "device-security-state" in skip_types
@@ -16866,10 +16975,7 @@ def _collect_jamf_cli_commands(
     skippable because they are required for the primary report sheets.
     """
     stale_days = int(config.thresholds.get("stale_device_days", 30))
-    skip_types: set[str] = {
-        s.strip().lower().replace("_", "-")
-        for s in _list_of_strings(config.jamf_cli.get("collect_skip", []))
-    }
+    skip_types = _normalized_skip_types(config)
 
     # Each entry: (human label, callable, report-type key).
     # An empty report-type key means the command is not skippable via collect_skip.
@@ -16890,7 +16996,7 @@ def _collect_jamf_cli_commands(
             ("Computer Inventory", lambda: bridge.computers_list(inventory_sections), ""),
             ("Inventory Summary", bridge.inventory_summary, ""),
             ("Hardware Models", bridge.hardware_models, ""),
-            ("Mobile Inventory", bridge.mobile_device_inventory_details, ""),
+            ("Mobile Inventory", bridge.mobile_device_inventory_details, "mobile-details"),
             ("Mobile Device List", bridge.mobile_devices_list, ""),
             ("Mobile Config Profiles", bridge.ios_profiles_list, ""),
             ("Security Posture", bridge.security_report, ""),
@@ -17321,6 +17427,19 @@ def _inventory_computer_sections() -> list[str]:
 def _inventory_computer_sections_without_security() -> list[str]:
     """Return inventory sections minus SECURITY for `device-security-state` opt-out."""
     return [s for s in _inventory_computer_sections() if s != "SECURITY"]
+
+
+def _normalized_skip_types(config: "Config") -> set[str]:
+    """Return ``jamf_cli.collect_skip`` values normalised to hyphen-form lower-case.
+
+    Underscores and hyphens are interchangeable in user config; this normalises
+    both spellings to the canonical hyphen form so callers can compare against
+    fixed string literals.
+    """
+    return {
+        s.strip().lower().replace("_", "-")
+        for s in _list_of_strings(config.jamf_cli.get("collect_skip", []))
+    }
 
 
 def _compact_error_text(exc: Exception, limit: int = 500) -> str:

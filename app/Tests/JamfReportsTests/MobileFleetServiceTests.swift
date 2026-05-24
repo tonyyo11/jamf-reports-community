@@ -255,4 +255,134 @@ final class MobileFleetServiceTests: XCTestCase {
         )
         XCTAssertEqual(snapshot.cacheSource, .stale(at: stale))
     }
+
+    // MARK: - Enrollment method + supervision (PR-3 surface)
+
+    func testEnrollmentMethodLabelMapsKnownEnums() {
+        XCTAssertEqual(
+            MobileFleetService.Snapshot.enrollmentMethodLabel(for: "Institutional"),
+            "ADE / Institutional"
+        )
+        XCTAssertEqual(
+            MobileFleetService.Snapshot.enrollmentMethodLabel(for: "UserEnrollment"),
+            "User Enrollment"
+        )
+        XCTAssertEqual(
+            MobileFleetService.Snapshot.enrollmentMethodLabel(for: "AccountDrivenUserEnrollment"),
+            "Account-Driven User Enrollment"
+        )
+        XCTAssertEqual(
+            MobileFleetService.Snapshot.enrollmentMethodLabel(for: "AccountDrivenDeviceEnrollment"),
+            "Account-Driven Device Enrollment"
+        )
+    }
+
+    func testEnrollmentMethodLabelPassesUnknownValueThrough() {
+        XCTAssertEqual(
+            MobileFleetService.Snapshot.enrollmentMethodLabel(for: "SomeNewServerEnum"),
+            "SomeNewServerEnum"
+        )
+    }
+
+    func testEnrollmentMethodDistributionAndSupervisionCounts() throws {
+        let inventoryJSON = """
+        [
+            {
+                "mobileDeviceId": "1",
+                "deviceType": "iPad",
+                "general": {
+                    "managed": true, "supervised": true,
+                    "deviceOwnershipType": "Institutional"
+                },
+                "applications": [
+                    {"identifier": "com.apple.x", "name": "X"},
+                    {"identifier": "com.apple.y", "name": "Y"}
+                ]
+            },
+            {
+                "mobileDeviceId": "2",
+                "deviceType": "iPad",
+                "general": {
+                    "managed": true, "supervised": false,
+                    "deviceOwnershipType": "Institutional"
+                }
+            },
+            {
+                "mobileDeviceId": "3",
+                "deviceType": "iPhone",
+                "general": {
+                    "managed": true, "supervised": true,
+                    "deviceOwnershipType": "UserEnrollment"
+                }
+            },
+            {
+                "mobileDeviceId": "4",
+                "deviceType": "iPhone",
+                "general": {
+                    "managed": false, "supervised": false,
+                    "deviceOwnershipType": "AccountDrivenUserEnrollment"
+                }
+            }
+        ]
+        """
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("test-mobile-enrollment.json")
+        try inventoryJSON.write(to: tempURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let snapshot = MobileFleetService.load(
+            listURL: nil,
+            inventoryURL: tempURL,
+            profilesURL: nil
+        )
+
+        XCTAssertEqual(snapshot.managedCount, 3)
+        XCTAssertEqual(snapshot.unmanagedCount, 1)
+        XCTAssertEqual(snapshot.supervisedCount, 2)
+        XCTAssertEqual(snapshot.unsupervisedCount, 2)
+
+        let distribution = snapshot.enrollmentMethodDistribution
+        // Sorted descending by count; Institutional has 2, the rest 1 each.
+        XCTAssertEqual(distribution.first?.method, "ADE / Institutional")
+        XCTAssertEqual(distribution.first?.count, 2)
+        XCTAssertEqual(distribution.count, 3)
+
+        let breakdown = snapshot.supervisionBreakdown
+        let supervised = breakdown.first { $0.role == .supervised }?.count
+        let unsupervised = breakdown.first { $0.role == .unsupervised }?.count
+        let unmanaged = breakdown.first { $0.role == .unmanaged }?.count
+        XCTAssertEqual(supervised, 2)
+        XCTAssertEqual(unsupervised, 1)
+        XCTAssertEqual(unmanaged, 1)
+
+        let firstDevice = snapshot.richDevices[0]
+        XCTAssertEqual(snapshot.managedAppCount(for: firstDevice), 2)
+        let secondDevice = snapshot.richDevices[1]
+        XCTAssertEqual(snapshot.managedAppCount(for: secondDevice), 0)
+    }
+
+    func testManagedAppCountReturnsZeroWhenApplicationsNull() throws {
+        let inventoryJSON = """
+        [
+            {
+                "mobileDeviceId": "1",
+                "deviceType": "iPad",
+                "general": {"managed": true, "supervised": true}
+            }
+        ]
+        """
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("test-mobile-null-apps.json")
+        try inventoryJSON.write(to: tempURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        let snapshot = MobileFleetService.load(
+            listURL: nil,
+            inventoryURL: tempURL,
+            profilesURL: nil
+        )
+        let device = try XCTUnwrap(snapshot.richDevices.first)
+        XCTAssertEqual(snapshot.managedAppCount(for: device), 0)
+        XCTAssertNil(device.applications)
+    }
 }
