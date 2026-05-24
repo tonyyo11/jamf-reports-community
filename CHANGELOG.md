@@ -36,8 +36,34 @@ HTML instance report (Python CLI and macOS app):
 - Fixed category disclosure buttons that did nothing when clicked — they were
   missing the aria-controls wiring the expand/collapse script depends on.
 
+### Added
+
+- **First-launch chooser** (macOS app): on a truly fresh install the app
+  now opens a "Welcome to Jamf Reports" screen with two side-by-side
+  cards — "Connect Jamf Pro" (runs the onboarding wizard) and "Try the
+  demo first" (loads synthetic data). Replaces the previous behaviour of
+  silently flipping into demo mode whenever no jamf-cli profiles
+  existed. The decision is persisted, so subsequent launches skip the
+  chooser. Existing users who never explicitly toggled demo mode will
+  see the chooser once on next launch.
+- **Skip the first report from onboarding** (macOS app): the final step
+  of the wizard now offers a "Skip & finish setup" affordance next to
+  the Run-now button. The workspace is already fully configured by the
+  time this step renders, so skipping is safe — reports can still be
+  generated later from the Reports tab.
+
 ### Changed
 
+- **"Add connection" in Settings opens the onboarding wizard** (macOS
+  app): the button under jamf-cli → Connections no longer opens Terminal
+  and copies a `jamf-cli config add-profile` command to the clipboard.
+  It now navigates straight to the onboarding flow inside the app so
+  every profile-add path uses the same GUI wizard.
+- **Overview is the new default landing tab** (macOS app): after
+  onboarding or on subsequent launches the app opens on Overview rather
+  than Trends. Trends only renders meaningful data after two scheduled
+  runs, so a freshly-onboarded workspace previously landed on a "No
+  trend data yet" screen.
 - **Minimum Python is now 3.11** (was 3.9). The Python CLI requires
   `pandas>=3.0`, and pandas 3.0 dropped support for Python 3.9 and 3.10.
   CI now tests Python 3.11, 3.12, and 3.13.

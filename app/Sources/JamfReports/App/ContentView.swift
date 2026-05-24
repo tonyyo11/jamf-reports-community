@@ -2,7 +2,18 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(WorkspaceStore.self) private var workspace
-    @State private var tab: Tab = .trends
+    /// Default landing tab once a workspace exists. Overview is the
+    /// app's home page — it surfaces every metric at a glance, while
+    /// Trends only renders after at least two scheduled runs (so a
+    /// freshly-onboarded workspace would otherwise land on an empty
+    /// "No trend data yet" screen).
+    @State private var tab: Tab = .overview
+    /// Tracks the chooser → OnboardingView handoff on a truly fresh
+    /// install (no profiles, no persisted demo preference). Transient
+    /// UI state — does not need to survive relaunch. If the user quits
+    /// the app mid-onboarding, the chooser shows again on next launch,
+    /// which is the right behaviour: they didn't commit to a path.
+    @State private var userPickedOnboarding = false
     @AppStorage("sidebarMode") private var sidebarModeRaw: String = SidebarMode.expanded.rawValue
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
 
@@ -12,9 +23,15 @@ struct ContentView: View {
 
     var body: some View {
         if workspace.profiles.isEmpty && !workspace.demoMode {
-            OnboardingView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.Colors.winBG.ignoresSafeArea())
+            if userPickedOnboarding {
+                OnboardingView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.Colors.winBG.ignoresSafeArea())
+            } else {
+                FirstLaunchChooserView(onStartOnboarding: { userPickedOnboarding = true })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.Colors.winBG.ignoresSafeArea())
+            }
         } else {
             shell
         }

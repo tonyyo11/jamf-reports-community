@@ -424,12 +424,69 @@ struct OnboardingView: View {
                 }
             }
 
+            skipFinishCard
+
             logViewer(
                 title: flow.isRunningFirstReport ? "Generate running" : "Generate output",
                 lines: flow.firstReportOutput,
                 exitCode: flow.firstReportExitCode
             )
         }
+    }
+
+    /// Secondary "Skip & finish setup" affordance on the First Report step.
+    ///
+    /// Surfaced as a sibling card under the Run card so the user sees an
+    /// explicit "safe to skip" message instead of having to abandon the
+    /// wizard. By the time this step renders the profile is registered,
+    /// validated, and `config.yaml` is on disk — so skipping the generate
+    /// run is safe; the user can run reports later from the Reports tab.
+    private var skipFinishCard: some View {
+        Card(padding: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "forward.end.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Skip the first run?")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                    Text("Your workspace is fully set up. Skip if the generate output below looks off — you can run reports later from the Reports tab.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                PNPButton(
+                    title: "Skip & finish setup",
+                    icon: "checkmark",
+                    style: .neutral,
+                    size: .md,
+                    action: { skipAndFinishOnboarding() }
+                )
+                .disabled(flow.isRunningFirstReport)
+            }
+        }
+    }
+
+    /// Dismiss onboarding without running a report.
+    ///
+    /// Works from all three entry points:
+    ///   - First-launch chooser → root OnboardingView: `reloadFromDisk` populates
+    ///     `workspace.profiles`, ContentView swaps in the shell, the default
+    ///     `tab = .trends` takes effect. The `.navigateToTab` post is a no-op
+    ///     here because the shell's listener isn't registered yet.
+    ///   - Settings "Add connection" → in-shell OnboardingView: the active tab
+    ///     is `.onboarding`; the `.navigateToTab(.overview)` post lands the
+    ///     user back on Overview where progress is visible.
+    ///   - Sidebar "Add workspace…" → same as Settings path above.
+    private func skipAndFinishOnboarding() {
+        workspaceStore.reloadFromDisk()
+        NotificationCenter.default.post(
+            name: .navigateToTab,
+            object: nil,
+            userInfo: ["tab": Tab.overview.rawValue]
+        )
     }
 
     private var privilegesBox: some View {

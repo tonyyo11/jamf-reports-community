@@ -5,13 +5,17 @@ report. This page walks through it and the workspace it creates.
 
 ## Reaching onboarding
 
-On first launch the app opens in **demo mode** — every screen is populated with the
-fictional "Meridian Health" tenant so you can explore without a connection. Demo mode is
-not a real workspace.
+On first launch the app opens a **Welcome chooser** with two cards:
 
-To set up a real tenant, open the **workspace switcher** at the bottom of the sidebar and
-choose **Add workspace…**. That starts the onboarding flow. (Demo mode can also be
-toggled from the app's menu.)
+- **Connect Jamf Pro** — starts the onboarding flow.
+- **Try the demo first** — loads the fictional "Meridian Health" tenant so you can explore
+  every screen before connecting anything. Demo mode is not a real workspace; switch back
+  to a real connection anytime from **Settings → jamf-cli → Demo mode**.
+
+After the initial choice the chooser does not reappear. To set up additional tenants
+later, open the **workspace switcher** at the bottom of the sidebar and choose **Add
+workspace…**, or click **Settings → jamf-cli → Connections → Add connection**. Both
+routes start the same onboarding flow.
 
 ## The seven-step flow
 
@@ -33,7 +37,8 @@ toggled from the app's menu.)
    **Skip for now** — the app writes a minimal config and works from `jamf-cli` data
    alone (see [Running without a CSV](#running-without-a-csv)).
 7. **First report** — the app generates a first report so the dashboards have data to
-   render.
+   render. If the output looks off you can **Skip & finish setup** — the workspace is
+   fully configured at this point and you can run reports later from the Reports tab.
 
 ![Onboarding — Connect to Jamf Pro](images/onboarding-authenticate.png)
 

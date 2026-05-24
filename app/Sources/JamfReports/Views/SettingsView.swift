@@ -32,7 +32,6 @@ struct SettingsView: View {
     @State private var testResults: [String: Bool] = [:]
     @State private var testErrors: [String: String] = [:]
     @State private var testingTooLong = false
-    @State private var addConnectionMessage: String? = nil
     @State private var tokenStatuses: [String: TokenStatus] = [:]
     @State private var loadingTokenProfiles: Set<String> = []
     @State private var diagnosticBundleMessage: String? = nil
@@ -220,30 +219,17 @@ struct SettingsView: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     PNPButton(title: "Add connection", icon: "plus", style: .gold, size: .sm) {
-                        let process = Process()
-                        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-                        process.arguments = ["-a", "Terminal", "-n"]
-                        do {
-                            try process.run()
-                            SystemActions.copyToClipboard("jamf-cli config add-profile")
-                            addConnectionMessage =
-                                "Command copied. Run it in the Terminal window that just opened."
-                        } catch {
-                            SystemActions.copyToClipboard("jamf-cli config add-profile")
-                            addConnectionMessage =
-                                "Command copied — could not open Terminal automatically. Run it manually."
-                        }
+                        NotificationCenter.default.post(
+                            name: .navigateToTab,
+                            object: nil,
+                            userInfo: ["tab": Tab.onboarding.rawValue]
+                        )
                     }
-                    .help("Opens a Terminal window and copies `jamf-cli config add-profile` to your clipboard.")
-                    Text("Opens Terminal and copies the auth command. Paste it in the Terminal window and follow the prompts.")
+                    .help("Opens the onboarding wizard so the GUI walks you through jamf-cli profile setup.")
+                    Text("Walks you through profile registration, workspace setup, and CSV mapping without leaving the app.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
-                    if let msg = addConnectionMessage {
-                        Text(msg)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
                 }
                 .padding(.top, 4)
             }
