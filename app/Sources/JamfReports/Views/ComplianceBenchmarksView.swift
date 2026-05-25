@@ -234,7 +234,6 @@ struct ComplianceBenchmarksView: View {
             executor: DefaultCLIExecutor(bridge: bridge)
         )
         if platformCapability == nil { platformCapability = service }
-        service.refresh()
         platformAvailable = await service.isAvailable(for: workspace.profile)
     }
 
