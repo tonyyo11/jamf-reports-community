@@ -63,6 +63,17 @@ HTML instance report (Python CLI and macOS app):
   the JSON manifest now includes an `experimental_features` section that
   lists the config keys, capability probes, and surfaces gated by each
   experimental flag. The text output adds a matching summary line.
+- **Jamf Protect Deep Dive [Experimental]** (Python CLI and macOS app):
+  opt-in deep-dive surfaces for tenants running Jamf Protect. Toggle
+  via Settings → Experimental Features (`experimental.protect_features_enabled`
+  in `config.yaml`). The Python CLI gains a "Protect Threat Overview"
+  workbook sheet (severity-sorted triage list) and a "Jamf Protect"
+  HTML report section (threat-event categories, severity distribution,
+  endpoint agent versions). The macOS app's Protect screen adds a
+  kill-chain stage breakdown, a per-device alert timeline, and an
+  endpoint agent version distribution chart, plus a locked empty state
+  and "Experimental" badge when the flag is off. All gated paths
+  silently skip when the flag is off or no Protect tenant is reachable.
 
 ### Changed
 

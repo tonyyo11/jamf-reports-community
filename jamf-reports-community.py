@@ -2464,6 +2464,27 @@ def _platform_runtime_enabled(
     return _platform_gate(config, bridge)
 
 
+def _protect_gate(
+    config: "Config", bridge: Optional["ProtectCLIBridge"]
+) -> bool:
+    """Return True only when v2.1.0 Protect deep-dive features should run.
+
+    Independent from `protect.enabled` (which gates the existing W22/W23
+    Protect sheets). This gate is for the v2.1.0 experimental deep-dive
+    additions (Protect Threat Overview sheet, enhanced HTML section).
+
+    Both conditions must hold:
+      1. ``config['experimental']['protect_features_enabled']`` is True.
+      2. ``bridge`` is not None, ``bridge.is_available()`` is True, and
+         ``bridge.is_protect_available()`` returns True.
+    """
+    if not bool(config.get("experimental", "protect_features_enabled", default=False)):
+        return False
+    if bridge is None or not bridge.is_available():
+        return False
+    return bridge.is_protect_available()
+
+
 def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
     """Return warnings for columns that exist but are semantically suspicious."""
     warnings: list[str] = []
@@ -6512,6 +6533,7 @@ class CoreDashboard:
                 sheets.append(("Protect Alerts", self._write_protect_alerts))
             if self._protect_insights_enabled():
                 sheets.append(("Protect Insights", self._write_protect_insights))
+        sheets.append(("Protect Threat Overview", self._write_protect_threat_overview))
         if self._platform_enabled():
             sheets.append(("Platform Blueprints", self._write_platform_blueprints))
             for bench in self._platform_benchmark_titles():
@@ -7416,6 +7438,47 @@ class CoreDashboard:
             rows,
             "No Protect insights reported.",
             sort_key="Label",
+        )
+
+    def _protect_deep_dive_enabled(self) -> bool:
+        """Return True when the v2.1.0 Protect deep-dive surfaces are enabled."""
+        return _protect_gate(self._config, self._protect_bridge)
+
+    def _write_protect_threat_overview(self) -> None:
+        # Experimental — v2.1.0. Triage-focused alert view sorted by severity.
+        """Write the Protect Threat Overview sheet (severity-sorted alert triage)."""
+        if not self._protect_deep_dive_enabled():
+            raise RuntimeError(
+                "disabled in config (set experimental.protect_features_enabled: true to opt in)"
+            )
+        alert_rows = self._protect_alert_detail_rows(self._protect_bridge.alerts_list())
+        severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+        rows = [
+            {
+                "Device": item.get("Computer", "") or item.get("Computer Serial", ""),
+                "Type": item.get("Event Type", ""),
+                "Severity": item.get("Severity", ""),
+                "Date": item.get("Created", ""),
+                "Status": item.get("Status", ""),
+                "Action Taken": item.get("Actions", ""),
+            }
+            for item in alert_rows
+        ]
+        rows.sort(key=lambda r: (
+            severity_rank.get(str(r.get("Severity", "")).lower(), 99),
+            str(r.get("Date", "")),
+        ))
+
+        headers = ["Device", "Type", "Severity", "Date", "Status", "Action Taken"]
+        widths = [(0, 28), (1, 26), (2, 12), (3, 22), (4, 14), (5, 28)]
+        self._write_protect_table_sheet(
+            "Protect Threat Overview",
+            "Protect Threat Overview",
+            "jamf-cli protect alerts list",
+            headers,
+            widths,
+            rows,
+            "No Protect threat alerts reported.",
         )
 
     def _write_platform_blueprints(self) -> None:
@@ -14170,6 +14233,15 @@ class HtmlReport:
         self._bridge = bridge
         self._out_file = out_file
         self._no_open = no_open
+        self._protect_bridge_cache: Optional["ProtectCLIBridge"] = None
+
+    @property
+    def _protect_bridge(self) -> "ProtectCLIBridge":
+        if self._protect_bridge_cache is None:
+            self._protect_bridge_cache = _build_protect_bridge(
+                self._config, save_output=False
+            )
+        return self._protect_bridge_cache
 
     def _history_file_path(self) -> str:
         """Return the resolved absolute path for the history JSON file.
@@ -14340,6 +14412,9 @@ class HtmlReport:
         _safe_fetch("sites", self._bridge.sites_list)
         _safe_fetch("buildings", self._bridge.buildings_list)
         _safe_fetch("departments", self._bridge.departments_list)
+        if _protect_gate(self._config, self._protect_bridge):
+            _safe_fetch("protect_alerts", self._protect_bridge.alerts_list)
+            _safe_fetch("protect_computers", self._protect_bridge.computers_list)
         data["_fetch_status"] = fetch_status
         return data
 
@@ -16178,6 +16253,62 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
 </div>"""
 
+    def _render_protect_section(self, data: dict[str, Any]) -> str:
+        """Render the experimental Jamf Protect deep-dive section.
+
+        Returns empty string when the v2.1.0 Protect gate is closed or no
+        Protect data was fetched. The gate is re-evaluated here (rather than
+        trusting upstream) so the section is fail-closed.
+        """
+        if not _protect_gate(self._config, self._protect_bridge):
+            return ""
+        alerts_raw = data.get("protect_alerts") or []
+        computers_raw = data.get("protect_computers") or []
+        alerts = _extract_items(alerts_raw)
+        computers = _extract_items(computers_raw)
+        if not alerts and not computers:
+            return ""
+
+        category_counts = Counter()
+        severity_counts = Counter()
+        version_counts: Counter[str] = Counter()
+
+        for alert in alerts:
+            if not isinstance(alert, dict):
+                continue
+            event_type = str(alert.get("eventType", "") or "").strip() or "Unknown"
+            category_counts[event_type] += 1
+            sev = str(alert.get("severity", "") or "").strip().lower() or "unknown"
+            severity_counts[sev] += 1
+
+        for computer in computers:
+            if not isinstance(computer, dict):
+                continue
+            version = (
+                str(computer.get("version", "") or "").strip()
+                or str(computer.get("signaturesVersion", "") or "").strip()
+                or "Unknown"
+            )
+            version_counts[version] += 1
+
+        return f"""
+  <div class="section-block">
+    <h2 class="section-block-title">
+      Jamf Protect
+      <span class="badge badge-dim" style="margin-left:8px">Experimental</span>
+    </h2>
+    <div class="section-block-subtitle">
+      Protect alert telemetry and endpoint agent posture. Requires a configured Protect tenant.
+    </div>
+
+    <h3 class="section-title">Threat Events by Category</h3>
+    <div class="grid grid-3">
+      {self._render_counter_table("Event Type", "Event Type", category_counts)}
+      {self._render_counter_table("Severity", "Severity", severity_counts)}
+      {self._render_counter_table("Agent Version", "Version", version_counts)}
+    </div>
+  </div>"""
+
     def _render_trends_section(self, trends: dict[str, Any]) -> str:
         """Render the HTML trend section when snapshot history is available."""
         cards = []
@@ -16889,6 +17020,8 @@ document.querySelectorAll('.tree-search').forEach((input) => {
 
     {self._render_mobile_inventory_table(mobile_rows, stale_days)}
   </div>
+
+  {self._render_protect_section(data)}
 
 </main>
 

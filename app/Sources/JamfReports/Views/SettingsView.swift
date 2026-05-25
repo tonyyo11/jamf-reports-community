@@ -1022,15 +1022,7 @@ struct SettingsView: View {
     }
 
     private var experimentalBadge: some View {
-        Text("Experimental")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(Theme.Colors.goldBright)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Theme.Colors.goldBright.opacity(0.4), lineWidth: 1)
-            )
+        ExperimentalBadge()
     }
 
     private var sidebarVisibilityCard: some View {

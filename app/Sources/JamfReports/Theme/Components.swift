@@ -701,6 +701,25 @@ struct StatusBar: View {
     }
 }
 
+// MARK: - Experimental Badge
+
+/// Small "Experimental" pill used on v2.1.0 deep-dive surfaces. Visual signal
+/// that the feature is beta — paired with a Settings toggle, not a hard gate.
+struct ExperimentalBadge: View {
+    var body: some View {
+        Text("Experimental")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Theme.Colors.goldBright)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Theme.Colors.goldBright.opacity(0.4), lineWidth: 1)
+            )
+            .accessibilityLabel("Experimental feature")
+    }
+}
+
 // MARK: - Editable Number Stepper
 
 /// A compact numeric input that pairs a free-text editable field with the

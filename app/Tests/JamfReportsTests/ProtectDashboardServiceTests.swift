@@ -358,4 +358,97 @@ final class ProtectDashboardServiceTests: XCTestCase {
         )
         XCTAssertEqual(snapshot.cacheSource, .stale(at: stale))
     }
+
+    // MARK: - Kill-chain bucketing (v2.1.0 deep-dive)
+
+    func testKillChainBucketsGroupsAlertsByEventType() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let alertsFile = tempDir.appendingPathComponent("alerts-kc-test.json")
+        let alertsJSON = """
+        [
+          {"uuid": "a1", "eventType": "Malware", "severity": "high"},
+          {"uuid": "a2", "eventType": "Malware", "severity": "high"},
+          {"uuid": "a3", "eventType": "Network", "severity": "medium"},
+          {"uuid": "a4", "eventType": "Policy", "severity": "low"},
+          {"uuid": "a5", "severity": "low"}
+        ]
+        """
+        try alertsJSON.write(to: alertsFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: alertsFile) }
+
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: alertsFile, computersURL: nil, insightsURL: nil
+        )
+        let buckets = ProtectDashboardService.killChainBuckets(snapshot.alerts)
+        XCTAssertEqual(buckets.count, 4)
+        XCTAssertEqual(buckets[0].stage, "Malware")
+        XCTAssertEqual(buckets[0].count, 2)
+        let unknown = buckets.first { $0.stage == "Unknown" }
+        XCTAssertEqual(unknown?.count, 1)
+    }
+
+    func testKillChainBucketsEmptyAlerts() {
+        XCTAssertTrue(ProtectDashboardService.killChainBuckets([]).isEmpty)
+    }
+
+    // MARK: - Agent version distribution
+
+    func testAgentVersionDistributionCountsAndSortsByCount() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let computersFile = tempDir.appendingPathComponent("computers-ver-test.json")
+        let computersJSON = """
+        [
+          {"uuid": "c1", "hostName": "h1", "version": "4.6.0"},
+          {"uuid": "c2", "hostName": "h2", "version": "4.6.0"},
+          {"uuid": "c3", "hostName": "h3", "version": "4.5.2"},
+          {"uuid": "c4", "hostName": "h4"}
+        ]
+        """
+        try computersJSON.write(to: computersFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: computersFile) }
+
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: nil, computersURL: computersFile, insightsURL: nil
+        )
+        let versions = ProtectDashboardService.agentVersionDistribution(snapshot.computers)
+        XCTAssertEqual(versions.count, 3)
+        XCTAssertEqual(versions[0].version, "4.6.0")
+        XCTAssertEqual(versions[0].count, 2)
+        let unknown = versions.first { $0.version == "Unknown" }
+        XCTAssertEqual(unknown?.count, 1)
+    }
+
+    func testAgentVersionDistributionEmpty() {
+        XCTAssertTrue(ProtectDashboardService.agentVersionDistribution([]).isEmpty)
+    }
+
+    // MARK: - Per-device alert timeline
+
+    func testAlertTimelineFiltersByHostnameCaseInsensitive() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let alertsFile = tempDir.appendingPathComponent("alerts-timeline-test.json")
+        let alertsJSON = """
+        [
+          {"uuid": "a1", "hostName": "Mac-001", "created": "2026-05-01T08:00:00Z"},
+          {"uuid": "a2", "hostName": "mac-001", "created": "2026-05-03T08:00:00Z"},
+          {"uuid": "a3", "hostName": "Mac-002", "created": "2026-05-02T08:00:00Z"}
+        ]
+        """
+        try alertsJSON.write(to: alertsFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: alertsFile) }
+
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: alertsFile, computersURL: nil, insightsURL: nil
+        )
+        let timeline = ProtectDashboardService.alertTimeline(for: "mac-001", in: snapshot.alerts)
+        XCTAssertEqual(timeline.count, 2)
+        XCTAssertEqual(timeline.first?.uuid, "a2")
+        XCTAssertEqual(timeline.last?.uuid, "a1")
+    }
+
+    func testAlertTimelineEmptyForUnknownDevice() {
+        XCTAssertTrue(
+            ProtectDashboardService.alertTimeline(for: "nonexistent", in: []).isEmpty
+        )
+    }
 }

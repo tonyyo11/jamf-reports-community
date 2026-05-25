@@ -747,6 +747,7 @@ struct ProtectComputerRow: Decodable, Sendable {
     let modelName: String?
     let osString: String?
     let planName: String?
+    let version: String?
     let webProtectionActive: Bool?
     let fullDiskAccess: Bool?
     let connectionStatus: String?
@@ -755,7 +756,7 @@ struct ProtectComputerRow: Decodable, Sendable {
     let insightsStatsFail: Int?
 
     private enum CodingKeys: String, CodingKey {
-        case uuid, hostName, serial, modelName, osString
+        case uuid, hostName, serial, modelName, osString, version
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
         case insightsStatsPass, insightsStatsFail
         case plan
@@ -768,6 +769,7 @@ struct ProtectComputerRow: Decodable, Sendable {
         serial = try c.decodeIfPresent(String.self, forKey: .serial)
         modelName = try c.decodeIfPresent(String.self, forKey: .modelName)
         osString = try c.decodeIfPresent(String.self, forKey: .osString)
+        version = try c.decodeIfPresent(String.self, forKey: .version)
         webProtectionActive = try c.decodeIfPresent(Bool.self, forKey: .webProtectionActive)
         fullDiskAccess = try c.decodeIfPresent(Bool.self, forKey: .fullDiskAccess)
         connectionStatus = try c.decodeIfPresent(String.self, forKey: .connectionStatus)
