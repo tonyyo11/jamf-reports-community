@@ -116,6 +116,7 @@ struct ContentView: View {
         case .complianceBenchmarks: ComplianceBenchmarksView()
         case .patch:             PatchView()
         case .updates:           UpdatesView()
+        case .ddmBlueprints:     DDMBlueprintView()
         case .policyProfile:     PolicyProfileView()
         case .extensionAttributes: ExtensionAttributesView()
         case .outreach:          OutreachView()
@@ -146,6 +147,7 @@ struct ContentView: View {
         case .complianceBenchmarks: "EXPERIMENTAL · PLATFORM API"
         case .patch:             "TITLES & FAILURES"
         case .updates:           "PLANS & FAILURES"
+        case .ddmBlueprints:     "EXPERIMENTAL · PLATFORM API"
         case .policyProfile:     "FINDINGS & STATUS"
         case .extensionAttributes: "COVERAGE & VALUES"
         case .outreach:          "STALE TIERS"

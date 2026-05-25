@@ -618,7 +618,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     case overview, fleet, devices, deviceLookup, trends, audit, reports, schedules, runs
     case config, customize, sources, backups, settings, onboarding
     case securityPosture, compliancePosture, complianceBenchmarks
-    case patch, updates
+    case patch, updates, ddmBlueprints
     case policyProfile, extensionAttributes
     case outreach, protectDashboard, mobileFleet
 
@@ -646,6 +646,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .complianceBenchmarks: "Compliance Benchmarks"
         case .patch:             "Patch Compliance"
         case .updates:           "OS Updates"
+        case .ddmBlueprints:     "DDM Blueprints"
         case .policyProfile:     "Policies & Profiles"
         case .extensionAttributes: "Extension Attributes"
         case .outreach:          "Offline Outreach"
@@ -676,6 +677,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .complianceBenchmarks: "list.bullet.clipboard"
         case .patch:             "shippingbox"
         case .updates:           "arrow.down.circle"
+        case .ddmBlueprints:     "doc.badge.gearshape.fill"
         case .policyProfile:     "doc.badge.gearshape"
         case .extensionAttributes: "tag.fill"
         case .outreach:          "envelope.badge"
@@ -707,7 +709,8 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .fleet, .deviceLookup, .trends, .audit, .reports,
              .schedules, .runs, .config, .customize, .backups,
              .securityPosture, .compliancePosture, .complianceBenchmarks,
-             .patch, .updates, .policyProfile, .extensionAttributes,
+             .patch, .updates, .ddmBlueprints,
+             .policyProfile, .extensionAttributes,
              .outreach, .protectDashboard, .mobileFleet:
             return false
         }
