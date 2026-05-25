@@ -78,10 +78,10 @@ struct ProtectDashboardService: Sendable {
             return .empty
         }
 
-        let overviewURL = findNewestJSON(in: dir.appendingPathComponent("protect-overview", isDirectory: true))
-        let alertsURL = findNewestJSON(in: dir.appendingPathComponent("protect-alerts", isDirectory: true))
-        let computersURL = findNewestJSON(in: dir.appendingPathComponent("protect-computers", isDirectory: true))
-        let insightsURL = findNewestJSON(in: dir.appendingPathComponent("protect-insights", isDirectory: true))
+        let overviewURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-overview", isDirectory: true))
+        let alertsURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-alerts", isDirectory: true))
+        let computersURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-computers", isDirectory: true))
+        let insightsURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-insights", isDirectory: true))
 
         return load(overviewURL: overviewURL, alertsURL: alertsURL, computersURL: computersURL, insightsURL: insightsURL)
     }
@@ -145,23 +145,6 @@ struct ProtectDashboardService: Sendable {
     }
 
     // MARK: - Internals
-
-    private static func findNewestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-
-        let jsonFiles = files.filter { $0.pathExtension == "json" }
-        return jsonFiles.max { lhs, rhs in
-            let lDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            let rDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            return lDate < rDate
-        }
-    }
 
     private static func loadOverview(
         from url: URL?, success: inout Bool

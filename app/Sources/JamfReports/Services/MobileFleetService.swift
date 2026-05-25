@@ -209,9 +209,9 @@ struct MobileFleetService: Sendable {
         let inventoryDir = dir.appendingPathComponent("mobile-device-inventory-details", isDirectory: true)
         let profilesDir = dir.appendingPathComponent("classic-ios-profiles", isDirectory: true)
 
-        let listURL = newestJSON(in: listDir)
-        let inventoryURL = newestJSON(in: inventoryDir)
-        let profilesURL = newestJSON(in: profilesDir)
+        let listURL = FileManager.newestJSONFile(in: listDir)
+        let inventoryURL = FileManager.newestJSONFile(in: inventoryDir)
+        let profilesURL = FileManager.newestJSONFile(in: profilesDir)
 
         return load(listURL: listURL, inventoryURL: inventoryURL, profilesURL: profilesURL)
     }
@@ -252,25 +252,6 @@ struct MobileFleetService: Sendable {
     }
 
     // MARK: - Internals
-
-    private static func newestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-        return files
-            .filter { $0.pathExtension == "json" }
-            .max { lhs, rhs in
-                let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                return l < r
-            }
-    }
 
     private static func loadDeviceList(_ url: URL) -> [MobileDeviceListRow]? {
         guard let data = try? Data(contentsOf: url),

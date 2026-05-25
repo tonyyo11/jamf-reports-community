@@ -108,8 +108,8 @@ struct ComplianceBenchmarksService: Sendable {
         }
         let rulesDir = dir.appendingPathComponent("compliance-rules", isDirectory: true)
         let devicesDir = dir.appendingPathComponent("compliance-devices", isDirectory: true)
-        let rulesURL = newestJSON(in: rulesDir)
-        let devicesURL = newestJSON(in: devicesDir)
+        let rulesURL = FileManager.newestJSONFile(in: rulesDir)
+        let devicesURL = FileManager.newestJSONFile(in: devicesDir)
         return load(rulesURL: rulesURL, devicesURL: devicesURL)
     }
 
@@ -165,25 +165,6 @@ struct ComplianceBenchmarksService: Sendable {
                 compliance: raw.compliance ?? ""
             )
         }
-    }
-
-    private static func newestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-        return files
-            .filter { $0.pathExtension == "json" }
-            .max { lhs, rhs in
-                let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
-                return l < r
-            }
     }
 
     private struct RawRule: Decodable {
