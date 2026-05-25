@@ -65,7 +65,7 @@ struct SecurityPostureService: Sendable {
             return .empty
         }
         let securityDir = dir.appendingPathComponent("security", isDirectory: true)
-        guard let newest = newestJSON(in: securityDir) else {
+        guard let newest = FileManager.newestJSONFile(in: securityDir) else {
             return .empty
         }
         return decode(at: newest) ?? .empty
@@ -83,24 +83,6 @@ struct SecurityPostureService: Sendable {
     }
 
     // MARK: - Internals
-
-    private static func newestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-        let json = files.filter { $0.pathExtension == "json" }
-        return json.max { lhs, rhs in
-            let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            return l < r
-        }
-    }
 
     private static func decode(at url: URL) -> Snapshot? {
         guard let data = try? Data(contentsOf: url) else { return nil }
