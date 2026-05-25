@@ -51,8 +51,30 @@ HTML instance report (Python CLI and macOS app):
   the Run-now button. The workspace is already fully configured by the
   time this step renders, so skipping is safe — reports can still be
   generated later from the Reports tab.
+- **Compliance Benchmarks dashboard** (macOS app, experimental — Platform API
+  required): new Posture-group screen browses cached
+  `pro report compliance-rules` and `compliance-devices` snapshots with a
+  pass/fail/unknown donut, per-rule failure bars, and a device table. The
+  screen renders a locked empty state with setup guidance when either
+  `experimental.platform_features_enabled` is off or the active jamf-cli
+  profile is not configured with `auth-method: platform`. Toggleable via
+  Settings → Sidebar Visibility.
+- **`capabilities` command exposes experimental gate metadata** (Python CLI):
+  the JSON manifest now includes an `experimental_features` section that
+  lists the config keys, capability probes, and surfaces gated by each
+  experimental flag. The text output adds a matching summary line.
 
 ### Changed
+
+- **Platform API features now require both `platform.enabled` and the
+  experimental gate** (Python CLI, macOS app): in v2.0 only
+  `platform.enabled: true` was required to write the Platform Blueprints,
+  Platform DDM Status, and benchmark compliance sheets. v2.1.0 also
+  requires `experimental.platform_features_enabled: true` AND a jamf-cli
+  profile with `auth-method: platform`. All three checks must pass; any
+  one failure logs `[skip] Platform API gate closed` and produces no
+  Platform sheets. Upgraders who relied on `platform.enabled: true` alone
+  must flip the experimental flag.
 
 - **"Add connection" in Settings opens the onboarding wizard** (macOS
   app): the button under jamf-cli → Connections no longer opens Terminal

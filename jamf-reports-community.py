@@ -2423,6 +2423,13 @@ def _compliance_label(comp_cfg: dict[str, Any]) -> str:
     return str(comp_cfg.get("baseline_label", "Compliance")).strip() or "Compliance"
 
 
+_PLATFORM_GATE_SKIP_MESSAGE = (
+    "Platform API gate closed (set platform.enabled: true,"
+    " experimental.platform_features_enabled: true,"
+    " and configure a jamf-cli profile with auth-method: platform)"
+)
+
+
 def _platform_gate(config: "Config", bridge: Optional["JamfCLIBridge"]) -> bool:
     """Return True only when Platform API features should run.
 
@@ -2439,6 +2446,22 @@ def _platform_gate(config: "Config", bridge: Optional["JamfCLIBridge"]) -> bool:
     if bridge is None or not bridge.is_available():
         return False
     return bridge.has_platform_auth()
+
+
+def _platform_runtime_enabled(
+    config: "Config", bridge: Optional["JamfCLIBridge"]
+) -> bool:
+    """Return True when Platform API report collection/generation should run.
+
+    Combines ``platform.enabled`` (legacy in-config toggle, kept for
+    backward compatibility) with the v2.1.0 experimental gate. Both must
+    be true. Replaces inline ``config.get("platform", "enabled")`` checks
+    in cmd_check / cmd_generate / cmd_collect / summary blocks so the
+    runtime answer matches what CoreDashboard writers will do.
+    """
+    if config.get("platform", "enabled", default=False) is not True:
+        return False
+    return _platform_gate(config, bridge)
 
 
 def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
@@ -6609,8 +6632,16 @@ class CoreDashboard:
         return self._config.get("protect", "enabled", default=False) is True
 
     def _platform_enabled(self) -> bool:
-        """Return True when preview Platform API reporting is enabled."""
-        return self._config.get("platform", "enabled", default=False) is True
+        """Return True when Platform API reporting should run.
+
+        Combines the legacy ``platform.enabled`` toggle with the v2.1.0
+        ``experimental.platform_features_enabled`` flag and a positive
+        capability probe (``has_platform_auth``). Both gates must hold —
+        flipping ``platform.enabled`` alone is no longer sufficient.
+        """
+        if self._config.get("platform", "enabled", default=False) is not True:
+            return False
+        return _platform_gate(self._config, self._bridge)
 
     def _platform_benchmark_titles(self) -> list[str]:
         """Return all configured Platform compliance benchmark titles.
@@ -7391,7 +7422,7 @@ class CoreDashboard:
         # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write a blueprint deployment summary from Platform API report data."""
         if not self._platform_enabled():
-            raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
+            raise RuntimeError(_PLATFORM_GATE_SKIP_MESSAGE)
 
         rows = self._platform_rows(self._bridge.blueprint_status())
         if not rows:
@@ -7461,6 +7492,8 @@ class CoreDashboard:
         Args:
             benchmark: Benchmark title passed to jamf-cli compliance-rules.
         """
+        if not self._platform_enabled():
+            raise RuntimeError(_PLATFORM_GATE_SKIP_MESSAGE)
         rows = self._platform_rows(self._bridge.compliance_rules(benchmark))
         if not rows:
             raise RuntimeError("jamf-cli compliance-rules returned no rows")
@@ -7558,6 +7591,8 @@ class CoreDashboard:
         Args:
             benchmark: Benchmark title passed to jamf-cli compliance-devices.
         """
+        if not self._platform_enabled():
+            raise RuntimeError(_PLATFORM_GATE_SKIP_MESSAGE)
         rows = self._platform_rows(self._bridge.compliance_devices(benchmark))
         if not rows:
             raise RuntimeError("jamf-cli compliance-devices returned no rows")
@@ -7644,7 +7679,7 @@ class CoreDashboard:
         # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write DDM declaration health from Platform API report data."""
         if not self._platform_enabled():
-            raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
+            raise RuntimeError(_PLATFORM_GATE_SKIP_MESSAGE)
 
         rows = self._platform_rows(self._bridge.ddm_status())
         if not rows:
@@ -13257,11 +13292,11 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
         return
     jamf_cli_cfg = config.jamf_cli
     protect_enabled = config.get("protect", "enabled", default=False) is True
-    platform_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
     live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
     bridge = _build_jamf_cli_bridge(config, save_output=False)
+    platform_enabled = _platform_runtime_enabled(config, bridge)
     print(f"  data dir: {bridge._data_dir}")
     if jamf_cli_profile:
         print(f"  profile: {jamf_cli_profile}")
@@ -13270,7 +13305,7 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     else:
         print("  live overview: disabled (cached overview only)")
     print(f"  protect reporting: {'enabled' if protect_enabled else 'disabled'}")
-    print(f"  platform reporting: {'enabled' if platform_enabled else 'disabled'}")
+    print(f"  platform reporting: {'enabled' if platform_enabled else 'gated off'}")
     if platform_enabled and platform_benchmarks:
         for bench in platform_benchmarks:
             print(f"  platform benchmark: {bench}")
@@ -13543,7 +13578,12 @@ def cmd_generate(
     jamf_cli_cfg = config.jamf_cli
     jamf_cli_enabled = _jamf_cli_enabled(config)
     protect_enabled = config.get("protect", "enabled", default=False) is True
-    platform_enabled = config.get("platform", "enabled", default=False) is True
+    # ``platform_cache_enabled`` controls whether ``has_cached_data`` considers
+    # platform JSON cache directories. Kept on the legacy ``platform.enabled``
+    # toggle so a tenant with cached platform data and the experimental flag
+    # off still recognizes the cache. The actual sheet writers gate via
+    # ``CoreDashboard._platform_enabled()`` (which honors ``_platform_gate``).
+    platform_cache_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
@@ -13552,15 +13592,17 @@ def cmd_generate(
     )
     bridge: Optional[JamfCLIBridge] = None
     jamf_cli_ready = False
+    platform_enabled = False
     if jamf_cli_enabled:
         bridge = _build_jamf_cli_bridge(
             config, save_output=True, strict_manifest=strict_manifest
         )
         jamf_cli_ready = bridge.is_available() or bridge.has_cached_data(
             include_protect=protect_enabled,
-            include_platform=platform_enabled,
+            include_platform=platform_cache_enabled,
             platform_benchmarks=platform_benchmarks,
         )
+        platform_enabled = _platform_runtime_enabled(config, bridge)
 
     if out_file:
         out_path = _timestamped_output_path(
@@ -17193,14 +17235,15 @@ def _collect_snapshots(
     jamf_cli_enabled = _jamf_cli_enabled(config)
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
     protect_enabled = config.get("protect", "enabled", default=False) is True
-    platform_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
     live_overview_allowed = jamf_cli_enabled and (
         config.jamf_cli.get("allow_live_overview", True) is True
     )
     bridge: Optional[JamfCLIBridge] = None
+    platform_enabled = False
     if jamf_cli_enabled:
         bridge = _build_jamf_cli_bridge(config, save_output=True, use_cached_data=False)
+        platform_enabled = _platform_runtime_enabled(config, bridge)
         print(f"  jamf-cli data dir: {bridge._data_dir}")
         if jamf_cli_profile:
             print(f"  jamf-cli profile: {jamf_cli_profile}")
@@ -17210,6 +17253,11 @@ def _collect_snapshots(
             print("  platform reporting: enabled (preview)")
             for bench in platform_benchmarks:
                 print(f"  platform benchmark: {bench}")
+        elif config.get("platform", "enabled", default=False) is True:
+            print(
+                "  [skip] platform reporting: experimental flag off or profile"
+                " lacks auth-method: platform"
+            )
     if jamf_cli_enabled and bridge is not None and bridge.is_available():
         commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed)
         if protect_enabled:
@@ -17322,6 +17370,9 @@ def cmd_collect(
                 "jamf_cli_data_dir": str(jamf_cli_dir) if jamf_cli_dir is not None else "",
                 "protect_enabled": config.get("protect", "enabled", default=False) is True,
                 "platform_enabled": config.get("platform", "enabled", default=False) is True,
+                "platform_runtime_enabled": _platform_runtime_enabled(
+                    config, _build_jamf_cli_bridge(config, save_output=False)
+                ) if _jamf_cli_enabled(config) else False,
             },
         }
     )
@@ -19826,6 +19877,27 @@ def _capabilities_manifest() -> dict[str, Any]:
         "status_surfaces": _capability_status_surfaces(pro, school, protect, platform),
         "historical_surfaces": _capability_historical_surfaces(pro),
         "config_sections": _capability_config_sections(),
+        "experimental_features": {
+            "platform_api": {
+                "config_keys": [
+                    "experimental.platform_features_enabled",
+                    "platform.enabled",
+                ],
+                "capability_probe": "jamf-cli config list --output json (auth-method == platform)",
+                "benchmarks_config_key": "platform.compliance_benchmarks",
+                "surfaces": [
+                    "Platform Blueprints (workbook sheet)",
+                    "Platform DDM Status (workbook sheet)",
+                    "Compliance Rules per benchmark (workbook sheet)",
+                    "Compliance Devices per benchmark (workbook sheet)",
+                    "Compliance Benchmarks (app screen)",
+                ],
+            },
+            "protect_deep_dive": {
+                "config_keys": ["experimental.protect_features_enabled"],
+                "capability_probe": "jamf-cli protect plans list",
+            },
+        },
         "known_gaps": [
             "JSON summaries are opt-in and do not yet expose per-sheet row counts.",
             "Jamf School has workbook output but no HTML or trend surface.",
@@ -19849,6 +19921,10 @@ def cmd_capabilities(output: str = "json") -> None:
         print("Historical surfaces:")
         for surface in manifest["historical_surfaces"]:
             print(f"  - {surface['id']}: {surface['label']}")
+        print("Experimental features (gated; default off):")
+        for feature_id, feature in manifest["experimental_features"].items():
+            keys = ", ".join(feature.get("config_keys", []))
+            print(f"  - {feature_id}: requires {keys}")
         return
     print(json.dumps(manifest, indent=2, sort_keys=True))
 

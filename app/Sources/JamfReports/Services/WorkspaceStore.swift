@@ -617,7 +617,7 @@ final class WorkspaceStore {
 enum Tab: String, CaseIterable, Identifiable, Hashable {
     case overview, fleet, devices, deviceLookup, trends, audit, reports, schedules, runs
     case config, customize, sources, backups, settings, onboarding
-    case securityPosture, compliancePosture
+    case securityPosture, compliancePosture, complianceBenchmarks
     case patch, updates
     case policyProfile, extensionAttributes
     case outreach, protectDashboard, mobileFleet
@@ -643,6 +643,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .onboarding:        "Onboarding"
         case .securityPosture:   "Security Posture"
         case .compliancePosture: "Compliance Posture"
+        case .complianceBenchmarks: "Compliance Benchmarks"
         case .patch:             "Patch Compliance"
         case .updates:           "OS Updates"
         case .policyProfile:     "Policies & Profiles"
@@ -672,6 +673,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .onboarding:        "wand.and.stars"
         case .securityPosture:   "lock.shield"
         case .compliancePosture: "checkmark.shield"
+        case .complianceBenchmarks: "list.bullet.clipboard"
         case .patch:             "shippingbox"
         case .updates:           "arrow.down.circle"
         case .policyProfile:     "doc.badge.gearshape"
@@ -704,7 +706,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
             return true
         case .fleet, .deviceLookup, .trends, .audit, .reports,
              .schedules, .runs, .config, .customize, .backups,
-             .securityPosture, .compliancePosture,
+             .securityPosture, .compliancePosture, .complianceBenchmarks,
              .patch, .updates, .policyProfile, .extensionAttributes,
              .outreach, .protectDashboard, .mobileFleet:
             return false

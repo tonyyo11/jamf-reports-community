@@ -415,7 +415,12 @@ protect:
 # "NIST 800-53r5 Moderate Devices".
 
 platform:
-  # Set true to enable the preview Platform API sheets.
+  # Set true to opt this profile into Platform API reports. Required, but
+  # not sufficient on its own — v2.1.0 also requires the experimental flag
+  # below (experimental.platform_features_enabled) AND a jamf-cli profile
+  # with auth-method: platform. All three checks must pass before any
+  # Platform sheet is written; a "[skip] Platform API gate closed" line
+  # surfaces in the run log if any check fails.
   enabled: false
   # List of benchmark titles for the Platform compliance sheets.
   # Each entry produces a Rules sheet and a Devices sheet.
@@ -426,7 +431,8 @@ platform:
   # Adds a "Platform Health" sheet with seven platform-specific findings
   # (undeployed blueprints, deployment failures, stale blueprints,
   # benchmark updates available, monitor-mode benchmarks, empty platform
-  # scope, devices with failed DDM declarations). Gated by platform.enabled.
+  # scope, devices with failed DDM declarations). Gated by platform.enabled
+  # plus the experimental Platform API gate.
   audit_platform:
     enabled: true
 
