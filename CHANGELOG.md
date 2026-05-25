@@ -59,6 +59,16 @@ HTML instance report (Python CLI and macOS app):
   `experimental.platform_features_enabled` is off or the active jamf-cli
   profile is not configured with `auth-method: platform`. Toggleable via
   Settings → Sidebar Visibility.
+- **DDM Blueprints dashboard** (macOS app, experimental — Platform API
+  required): new Operations-group screen browses cached
+  `pro report blueprint-status` and `ddm-status` snapshots. Surfaces a
+  blueprint adoption-rate donut with deployed / not-deployed / failing /
+  pending breakdown, a top-failures blueprint table, and a per-source
+  declaration table sorted by unsuccessful declarations. Locked empty
+  state with setup guidance is shown when either
+  `experimental.platform_features_enabled` is off or the active jamf-cli
+  profile is not configured with `auth-method: platform`. Toggleable via
+  Settings → Sidebar Visibility.
 - **`capabilities` command exposes experimental gate metadata** (Python CLI):
   the JSON manifest now includes an `experimental_features` section that
   lists the config keys, capability probes, and surfaces gated by each

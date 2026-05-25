@@ -1053,7 +1053,7 @@ struct SettingsView: View {
     private static let toggleableGroups: [(label: String, tabs: [Tab])] = [
         ("Reports",       [.fleet, .deviceLookup, .trends, .audit, .reports]),
         ("Posture",       [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
-        ("Operations",    [.patch, .updates, .policyProfile, .extensionAttributes]),
+        ("Operations",    [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
         ("Fleet",         [.mobileFleet, .protectDashboard]),
         ("Automation",    [.schedules, .runs]),
         ("Configuration", [.config, .customize, .backups])

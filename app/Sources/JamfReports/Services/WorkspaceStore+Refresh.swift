@@ -116,7 +116,7 @@ extension Tab {
         switch self {
         case .overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports,
              .securityPosture, .compliancePosture, .complianceBenchmarks,
-             .patch, .updates,
+             .patch, .updates, .ddmBlueprints,
              .policyProfile, .extensionAttributes,
              .outreach, .protectDashboard, .mobileFleet:
             return true
