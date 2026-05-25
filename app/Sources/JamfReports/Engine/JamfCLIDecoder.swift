@@ -721,7 +721,12 @@ struct ProtectAlertRow: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case uuid, created, severity, status, eventType
-        case hostName, serial
+        case hostName, serial, computer
+    }
+
+    private struct Computer: Decodable {
+        let hostName: String?
+        let serial: String?
     }
 
     init(from decoder: Decoder) throws {
@@ -731,9 +736,11 @@ struct ProtectAlertRow: Decodable, Sendable {
         severity = try c.decodeIfPresent(String.self, forKey: .severity)
         status = try c.decodeIfPresent(String.self, forKey: .status)
         eventType = try c.decodeIfPresent(String.self, forKey: .eventType)
-        // computer is a nested object; extract hostName/serial from flat fields or sub-object.
-        hostName = try c.decodeIfPresent(String.self, forKey: .hostName)
-        serial = try c.decodeIfPresent(String.self, forKey: .serial)
+        // Real Protect API nests host/serial under `computer`; older shapes use flat top-level
+        // keys. Prefer the nested values, fall back to flat for backward compatibility.
+        let nested = try c.decodeIfPresent(Computer.self, forKey: .computer)
+        hostName = try nested?.hostName ?? c.decodeIfPresent(String.self, forKey: .hostName)
+        serial = try nested?.serial ?? c.decodeIfPresent(String.self, forKey: .serial)
     }
 }
 

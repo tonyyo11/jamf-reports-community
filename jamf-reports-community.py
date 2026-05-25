@@ -6533,7 +6533,8 @@ class CoreDashboard:
                 sheets.append(("Protect Alerts", self._write_protect_alerts))
             if self._protect_insights_enabled():
                 sheets.append(("Protect Insights", self._write_protect_insights))
-        sheets.append(("Protect Threat Overview", self._write_protect_threat_overview))
+        if self._protect_deep_dive_enabled():
+            sheets.append(("Protect Threat Overview", self._write_protect_threat_overview))
         if self._platform_enabled():
             sheets.append(("Platform Blueprints", self._write_platform_blueprints))
             for bench in self._platform_benchmark_titles():
