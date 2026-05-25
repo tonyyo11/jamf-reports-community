@@ -256,6 +256,11 @@ struct DDMBlueprintView: View {
         if !platformAvailable {
             return "Your active jamf-cli profile does not use auth-method: platform. Add a platform-auth profile and switch this workspace to it."
         }
+        // Unreachable: decideLockState only returns .locked when one of the two
+        // conditions above fails. If both are true the caller renders the
+        // unlockedNoData state, not lockedCard. Keep a safe fallback in case
+        // future state-machine changes route a new .locked path here.
+        assertionFailure("lockReason called with both gates open — caller should render unlockedNoData")
         return "Platform API is enabled but no DDM data is available yet."
     }
 
