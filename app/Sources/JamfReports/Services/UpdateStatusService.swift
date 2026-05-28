@@ -55,7 +55,7 @@ struct UpdateStatusService: Sendable {
             return .empty
         }
         let updateDir = dir.appendingPathComponent("update-status", isDirectory: true)
-        guard let newest = newestJSON(in: updateDir) else {
+        guard let newest = FileManager.newestJSONFile(in: updateDir) else {
             return .empty
         }
         return load(from: newest) ?? .empty
@@ -81,24 +81,6 @@ struct UpdateStatusService: Sendable {
     }
 
     // MARK: - Internals
-
-    private static func newestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-        let json = files.filter { $0.pathExtension == "json" }
-        return json.max { lhs, rhs in
-            let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            return l < r
-        }
-    }
 
     private static func decode(failures: UpdateFailuresReport, url: URL) -> Snapshot {
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?

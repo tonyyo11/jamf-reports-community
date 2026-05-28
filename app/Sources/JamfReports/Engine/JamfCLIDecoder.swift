@@ -519,9 +519,10 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
     let deviceType: String?
     let general: MobileDeviceGeneral?
     let userAndLocation: MobileDeviceUserLocation?
+    let applications: [MobileDeviceApplication]?
 
     private enum CodingKeys: String, CodingKey {
-        case mobileDeviceId, deviceType, general, userAndLocation
+        case mobileDeviceId, deviceType, general, userAndLocation, applications
     }
 }
 
@@ -537,6 +538,23 @@ struct MobileDeviceGeneral: Decodable, Sendable {
     let passcodeCompliant: Bool?
     let dataProtectionEnabled: Bool?
     let jailbreakDetected: String?
+    let enrollmentMethodPrestage: MobileDevicePrestage?
+}
+
+/// ADE prestage detail attached to mobile devices enrolled via Automated Device
+/// Enrollment. Decoded as `null` when the device wasn't ADE-enrolled.
+struct MobileDevicePrestage: Decodable, Sendable {
+    let mobileDevicePrestageId: String?
+    let profileName: String?
+}
+
+/// Single application entry from `mobile-device-inventory-details`. Only the
+/// fields the UI surfaces (count + display name) are decoded; the upstream
+/// schema carries more (version, managementStatus, size) but they're not
+/// needed yet.
+struct MobileDeviceApplication: Decodable, Sendable {
+    let identifier: String?
+    let name: String?
 }
 
 struct MobileDeviceUserLocation: Decodable, Sendable {
@@ -703,7 +721,12 @@ struct ProtectAlertRow: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case uuid, created, severity, status, eventType
-        case hostName, serial
+        case hostName, serial, computer
+    }
+
+    private struct Computer: Decodable {
+        let hostName: String?
+        let serial: String?
     }
 
     init(from decoder: Decoder) throws {
@@ -713,9 +736,11 @@ struct ProtectAlertRow: Decodable, Sendable {
         severity = try c.decodeIfPresent(String.self, forKey: .severity)
         status = try c.decodeIfPresent(String.self, forKey: .status)
         eventType = try c.decodeIfPresent(String.self, forKey: .eventType)
-        // computer is a nested object; extract hostName/serial from flat fields or sub-object.
-        hostName = try c.decodeIfPresent(String.self, forKey: .hostName)
-        serial = try c.decodeIfPresent(String.self, forKey: .serial)
+        // Real Protect API nests host/serial under `computer`; older shapes use flat top-level
+        // keys. Prefer the nested values, fall back to flat for backward compatibility.
+        let nested = try c.decodeIfPresent(Computer.self, forKey: .computer)
+        hostName = try nested?.hostName ?? c.decodeIfPresent(String.self, forKey: .hostName)
+        serial = try nested?.serial ?? c.decodeIfPresent(String.self, forKey: .serial)
     }
 }
 
@@ -729,6 +754,7 @@ struct ProtectComputerRow: Decodable, Sendable {
     let modelName: String?
     let osString: String?
     let planName: String?
+    let version: String?
     let webProtectionActive: Bool?
     let fullDiskAccess: Bool?
     let connectionStatus: String?
@@ -737,7 +763,7 @@ struct ProtectComputerRow: Decodable, Sendable {
     let insightsStatsFail: Int?
 
     private enum CodingKeys: String, CodingKey {
-        case uuid, hostName, serial, modelName, osString
+        case uuid, hostName, serial, modelName, osString, version
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
         case insightsStatsPass, insightsStatsFail
         case plan
@@ -750,6 +776,7 @@ struct ProtectComputerRow: Decodable, Sendable {
         serial = try c.decodeIfPresent(String.self, forKey: .serial)
         modelName = try c.decodeIfPresent(String.self, forKey: .modelName)
         osString = try c.decodeIfPresent(String.self, forKey: .osString)
+        version = try c.decodeIfPresent(String.self, forKey: .version)
         webProtectionActive = try c.decodeIfPresent(Bool.self, forKey: .webProtectionActive)
         fullDiskAccess = try c.decodeIfPresent(Bool.self, forKey: .fullDiskAccess)
         connectionStatus = try c.decodeIfPresent(String.self, forKey: .connectionStatus)

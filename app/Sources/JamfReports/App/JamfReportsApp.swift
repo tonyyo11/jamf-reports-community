@@ -22,22 +22,10 @@ struct JamfReportsApp: App {
                 .frame(minWidth: Self.minSupportedWidth, minHeight: 760)
                 .preferredColorScheme(.dark)
                 .task {
-                    // `swift run` subprocesses launched from Terminal do not
-                    // always get foreground activation, so TextField never
-                    // becomes first responder and keystrokes drop while
-                    // clicks (which don't need key-window status) still
-                    // register. Launch Services-launched .app bundles
-                    // activate automatically.
-                    //
-                    // setActivationPolicy(.regular) is the key piece for the
-                    // SwiftPM-launched binary path — without an Info.plist
-                    // declaring LSUIElement=false, the launcher may infer
-                    // an inactive policy and `activate()` alone won't
-                    // promote it to foreground. `.regular` is the default
-                    // for bundled apps so this is a no-op there. The
-                    // makeKeyAndOrderFront on the first window covers
-                    // multi-window scenes where the activation lands but
-                    // the window isn't key.
+                    // `swift run` dev binaries don't auto-activate, so TextField
+                    // never becomes first responder and keystrokes drop. Promote
+                    // to `.regular` and key the first window. No-op for
+                    // Launch-Services-launched .app bundles.
                     NSApplication.shared.setActivationPolicy(.regular)
                     NSApplication.shared.activate(ignoringOtherApps: true)
                     NSApp.windows.first?.makeKeyAndOrderFront(nil)

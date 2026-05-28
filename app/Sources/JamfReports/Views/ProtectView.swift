@@ -9,6 +9,12 @@ struct ProtectView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: ProtectDashboardService.Snapshot = .empty
     @State private var hasLoaded = false
+    @State private var experimentalFeatures = ExperimentalFeatureService()
+    @State private var selectedTimelineDevice: String?
+
+    private var deepDiveEnabled: Bool {
+        experimentalFeatures.isEnabled(.protect)
+    }
 
     var body: some View {
         ScrollView {
@@ -17,7 +23,8 @@ struct ProtectView: View {
                     kicker: "Protect",
                     title: "Jamf Protect",
                     subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate
+                    lastModified: snapshot.snapshotDate,
+                    trailing: { AnyView(deepDiveEnabled ? AnyView(ExperimentalBadge()) : AnyView(EmptyView())) }
                 )
 
                 // Shared StaleDataBanner surfaces snapshot freshness above the main content.
@@ -27,6 +34,9 @@ struct ProtectView: View {
                     StaleDataBanner(source: snapshot.cacheSource)
                 }
 
+                if !deepDiveEnabled {
+                    lockedDeepDiveState
+                }
                 if !snapshot.isDetected {
                     emptyState
                 } else {
@@ -36,6 +46,15 @@ struct ProtectView: View {
                     if !snapshot.alerts.isEmpty || workspace.demoMode {
                         alertsBySeverityCard
                         recentAlertsCard
+                    }
+                    if deepDiveEnabled {
+                        if !snapshot.alerts.isEmpty || workspace.demoMode {
+                            killChainStageCard
+                            deviceTimelineCard
+                        }
+                        if !snapshot.computers.isEmpty || workspace.demoMode {
+                            agentVersionCard
+                        }
                     }
                     if !snapshot.computers.isEmpty || workspace.demoMode {
                         computersCard
@@ -159,6 +178,175 @@ struct ProtectView: View {
             )
         }
     }
+
+    private var lockedDeepDiveState: some View {
+        Card(padding: 20) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.shield")
+                        .font(.title3)
+                        .foregroundStyle(Theme.Colors.goldBright)
+                    Text("Experimental — Protect Deep Dive")
+                        .font(.headline)
+                        .foregroundStyle(Theme.Colors.fg)
+                }
+                Text("Kill-chain stage breakdown, per-device alert timeline, and endpoint agent version distribution.")
+                    .font(.callout)
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                Text("Requires a configured Jamf Protect tenant. Enable in Settings → Experimental Features.")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                if let url = ExperimentalFeatureService.Feature.protect.discussionURL {
+                    Link("Learn more \u{2192}", destination: url)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.gold)
+                }
+            }
+        }
+    }
+
+    private var killChainStageCard: some View {
+        let buckets = workspace.demoMode
+            ? Self.demoKillChainBuckets
+            : ProtectDashboardService.killChainBuckets(snapshot.alerts)
+        let total = buckets.reduce(0) { $0 + $1.count }
+        return Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Kill-Chain Stage")
+                if total == 0 {
+                    Text("No alert event types to bucket.")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                } else {
+                    VStack(spacing: 6) {
+                        ForEach(buckets.prefix(8), id: \.stage) { bucket in
+                            killChainBar(stage: bucket.stage, count: bucket.count, total: total)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func killChainBar(stage: String, count: Int, total: Int) -> some View {
+        let pct = total > 0 ? Double(count) / Double(total) * 100 : 0
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(stage)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
+                Spacer()
+                Text("\(count)")
+                    .font(.caption.monospaced().weight(.semibold))
+                    .foregroundStyle(Theme.Colors.fg2)
+                    .monospacedDigit()
+                Text(String(format: "%.0f%%", pct))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .frame(width: 48, alignment: .trailing)
+                    .monospacedDigit()
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Theme.Colors.hairline)
+                        .frame(height: 6)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Theme.Colors.goldBright)
+                        .frame(width: max(2, geometry.size.width * pct / 100), height: 6)
+                }
+            }
+            .frame(height: 6)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(stage): \(count) of \(total), \(Int(pct)) percent")
+    }
+
+    private var agentVersionCard: some View {
+        let versions = workspace.demoMode
+            ? Self.demoAgentVersions
+            : ProtectDashboardService.agentVersionDistribution(snapshot.computers)
+        let total = versions.reduce(0) { $0 + $1.count }
+        return Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Endpoint Agent Versions")
+                if total == 0 {
+                    Text("No Protect computers reporting agent version.")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                } else {
+                    VStack(spacing: 6) {
+                        ForEach(versions.prefix(8), id: \.version) { entry in
+                            killChainBar(stage: entry.version, count: entry.count, total: total)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var deviceTimelineCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Per-Device Alert Timeline")
+                let devices = uniqueDeviceIdentifiers
+                if devices.isEmpty {
+                    Text("No devices with alert history.")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                } else {
+                    Picker("Device", selection: Binding(
+                        get: { selectedTimelineDevice ?? devices.first ?? "" },
+                        set: { selectedTimelineDevice = $0 }
+                    )) {
+                        ForEach(devices, id: \.self) { device in
+                            Text(device).tag(device)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("Choose device for alert timeline")
+                    let device = selectedTimelineDevice ?? devices.first ?? ""
+                    let timeline = ProtectDashboardService.alertTimeline(
+                        for: device, in: snapshot.alerts
+                    )
+                    if timeline.isEmpty {
+                        Text("No alerts for \(device).")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(Array(timeline.enumerated()), id: \.offset) { index, alert in
+                                alertRow(alert, isLast: index == timeline.count - 1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var uniqueDeviceIdentifiers: [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for alert in snapshot.alerts {
+            let key = alert.hostName?.trimmingCharacters(in: .whitespaces)
+                ?? alert.serial?.trimmingCharacters(in: .whitespaces)
+                ?? ""
+            guard !key.isEmpty, !seen.contains(key.lowercased()) else { continue }
+            seen.insert(key.lowercased())
+            ordered.append(key)
+        }
+        return ordered.sorted()
+    }
+
+    private static let demoKillChainBuckets: [(stage: String, count: Int)] = [
+        ("Malware", 3), ("Suspicious Network", 2), ("Policy Violation", 1)
+    ]
+
+    private static let demoAgentVersions: [(version: String, count: Int)] = [
+        ("4.6.0", 8), ("4.5.2", 3), ("Unknown", 1)
+    ]
 
     private var kpiGrid: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)], spacing: 16) {

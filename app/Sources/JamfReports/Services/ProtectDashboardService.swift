@@ -78,10 +78,10 @@ struct ProtectDashboardService: Sendable {
             return .empty
         }
 
-        let overviewURL = findNewestJSON(in: dir.appendingPathComponent("protect-overview", isDirectory: true))
-        let alertsURL = findNewestJSON(in: dir.appendingPathComponent("protect-alerts", isDirectory: true))
-        let computersURL = findNewestJSON(in: dir.appendingPathComponent("protect-computers", isDirectory: true))
-        let insightsURL = findNewestJSON(in: dir.appendingPathComponent("protect-insights", isDirectory: true))
+        let overviewURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-overview", isDirectory: true))
+        let alertsURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-alerts", isDirectory: true))
+        let computersURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-computers", isDirectory: true))
+        let insightsURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-insights", isDirectory: true))
 
         return load(overviewURL: overviewURL, alertsURL: alertsURL, computersURL: computersURL, insightsURL: insightsURL)
     }
@@ -146,23 +146,6 @@ struct ProtectDashboardService: Sendable {
 
     // MARK: - Internals
 
-    private static func findNewestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-
-        let jsonFiles = files.filter { $0.pathExtension == "json" }
-        return jsonFiles.max { lhs, rhs in
-            let lDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            let rDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            return lDate < rDate
-        }
-    }
-
     private static func loadOverview(
         from url: URL?, success: inout Bool
     ) -> [ProtectOverviewItem] {
@@ -214,6 +197,64 @@ struct ProtectDashboardService: Sendable {
         guard let status else { return false }
         let normalized = status.lowercased().trimmingCharacters(in: .whitespaces)
         return Self.connectedStates.contains(normalized)
+    }
+
+    /// Group alerts by `eventType` for the deep-dive kill-chain donut.
+    /// The Protect SDK has no first-class `killChainStage` field — `eventType`
+    /// is the closest stable bucketing key without extending the alert model
+    /// to parse the unverified `analytics[].categories` shape.
+    /// Returns counts sorted descending by count, then alphabetically by key.
+    static func killChainBuckets(_ alerts: [ProtectAlertRow]) -> [(stage: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        for alert in alerts {
+            let stage = alert.eventType?.trimmingCharacters(in: .whitespaces) ?? ""
+            let key = stage.isEmpty ? "Unknown" : stage
+            counts[key, default: 0] += 1
+        }
+        return counts
+            .map { (stage: $0.key, count: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.stage < rhs.stage
+            }
+    }
+
+    /// Distribution of endpoint agent versions across the fleet.
+    /// Computers without a `version` field bucket under "Unknown" so the chart
+    /// still surfaces them — an unreported version is operationally meaningful.
+    /// Returns versions sorted descending by count, then by version string.
+    static func agentVersionDistribution(
+        _ computers: [ProtectComputerRow]
+    ) -> [(version: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        for computer in computers {
+            let version = computer.version?.trimmingCharacters(in: .whitespaces) ?? ""
+            let key = version.isEmpty ? "Unknown" : version
+            counts[key, default: 0] += 1
+        }
+        return counts
+            .map { (version: $0.key, count: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.version > rhs.version
+            }
+    }
+
+    /// Chronological alert timeline for a specific device, identified by
+    /// hostname OR serial (case-insensitive). Returned newest-first so the
+    /// detail panel renders the most recent event at the top.
+    static func alertTimeline(
+        for deviceIdentifier: String,
+        in alerts: [ProtectAlertRow]
+    ) -> [ProtectAlertRow] {
+        let needle = deviceIdentifier.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return [] }
+        let matching = alerts.filter { alert in
+            let host = alert.hostName?.lowercased() ?? ""
+            let serial = alert.serial?.lowercased() ?? ""
+            return host == needle || serial == needle
+        }
+        return matching.sorted { ($0.created ?? "") > ($1.created ?? "") }
     }
 
     /// Count alerts by severity level (case-insensitive).

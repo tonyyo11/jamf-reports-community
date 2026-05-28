@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-05-28
+
 ### Accessibility
 
 WCAG 2.2 Level AA fixes across the macOS app and the HTML instance report.
@@ -51,8 +53,51 @@ HTML instance report (Python CLI and macOS app):
   the Run-now button. The workspace is already fully configured by the
   time this step renders, so skipping is safe — reports can still be
   generated later from the Reports tab.
+- **Compliance Benchmarks dashboard** (macOS app, experimental — Platform API
+  required): new Posture-group screen browses cached
+  `pro report compliance-rules` and `compliance-devices` snapshots with a
+  pass/fail/unknown donut, per-rule failure bars, and a device table. The
+  screen renders a locked empty state with setup guidance when either
+  `experimental.platform_features_enabled` is off or the active jamf-cli
+  profile is not configured with `auth-method: platform`. Toggleable via
+  Settings → Sidebar Visibility.
+- **DDM Blueprints dashboard** (macOS app, experimental — Platform API
+  required): new Operations-group screen browses cached
+  `pro report blueprint-status` and `ddm-status` snapshots. Surfaces a
+  blueprint adoption-rate donut with deployed / not-deployed / failing /
+  pending breakdown, a top-failures blueprint table, and a per-source
+  declaration table sorted by unsuccessful declarations. Locked empty
+  state with setup guidance is shown when either
+  `experimental.platform_features_enabled` is off or the active jamf-cli
+  profile is not configured with `auth-method: platform`. Toggleable via
+  Settings → Sidebar Visibility.
+- **`capabilities` command exposes experimental gate metadata** (Python CLI):
+  the JSON manifest now includes an `experimental_features` section that
+  lists the config keys, capability probes, and surfaces gated by each
+  experimental flag. The text output adds a matching summary line.
+- **Jamf Protect Deep Dive [Experimental]** (Python CLI and macOS app):
+  opt-in deep-dive surfaces for tenants running Jamf Protect. Toggle
+  via Settings → Experimental Features (`experimental.protect_features_enabled`
+  in `config.yaml`). The Python CLI gains a "Protect Threat Overview"
+  workbook sheet (severity-sorted triage list) and a "Jamf Protect"
+  HTML report section (threat-event categories, severity distribution,
+  endpoint agent versions). The macOS app's Protect screen adds a
+  kill-chain stage breakdown, a per-device alert timeline, and an
+  endpoint agent version distribution chart, plus a locked empty state
+  and "Experimental" badge when the flag is off. All gated paths
+  silently skip when the flag is off or no Protect tenant is reachable.
 
 ### Changed
+
+- **Platform API features now require both `platform.enabled` and the
+  experimental gate** (Python CLI, macOS app): in v2.0 only
+  `platform.enabled: true` was required to write the Platform Blueprints,
+  Platform DDM Status, and benchmark compliance sheets. v2.1.0 also
+  requires `experimental.platform_features_enabled: true` AND a jamf-cli
+  profile with `auth-method: platform`. All three checks must pass; any
+  one failure logs `[skip] Platform API gate closed` and produces no
+  Platform sheets. Upgraders who relied on `platform.enabled: true` alone
+  must flip the experimental flag.
 
 - **"Add connection" in Settings opens the onboarding wizard** (macOS
   app): the button under jamf-cli → Connections no longer opens Terminal

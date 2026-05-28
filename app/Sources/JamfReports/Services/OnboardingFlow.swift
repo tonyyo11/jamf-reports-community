@@ -442,6 +442,7 @@ final class OnboardingFlow {
 
         firstReportExitCode = exit
         if exit == 0 {
+            UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)
             workspaceStore.reloadFromDisk()
         } else {
             lastError = "Generate exited \(exit) — check the log above."
