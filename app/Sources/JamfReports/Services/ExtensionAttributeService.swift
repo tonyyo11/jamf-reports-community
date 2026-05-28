@@ -93,8 +93,8 @@ struct ExtensionAttributeService: Sendable {
         let resultsDir = dir.appendingPathComponent("ea-results", isDirectory: true)
         let definitionsDir = dir.appendingPathComponent("computer-extension-attributes", isDirectory: true)
 
-        let resultsURL = newestJSON(in: resultsDir)
-        let definitionsURL = newestJSON(in: definitionsDir)
+        let resultsURL = FileManager.newestJSONFile(in: resultsDir)
+        let definitionsURL = FileManager.newestJSONFile(in: definitionsDir)
 
         return load(resultsURL: resultsURL, definitionsURL: definitionsURL) ?? .empty
     }
@@ -177,24 +177,6 @@ struct ExtensionAttributeService: Sendable {
     }
 
     // MARK: - Internals
-
-    private static func newestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-        let json = files.filter { $0.pathExtension == "json" }
-        return json.max { lhs, rhs in
-            let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            return l < r
-        }
-    }
 
     /// Per-EA accumulator. Sized once per distinct EA name (≤90 typical),
     /// independent of fleet size.

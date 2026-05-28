@@ -3,7 +3,7 @@
 # Produces: a signed, notarized .app and a distribution .dmg.
 #
 # Usage:
-#   RELEASE_VERSION=2.0.0 \
+#   RELEASE_VERSION=2.1.0 \
 #   DEVELOPER_ID_APP="Developer ID Application: Tony Young (XXXXXXXXXX)" \
 #   NOTARY_KEYCHAIN_PROFILE="apple-id-profile" \
 #   ./scripts/release.sh
@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 # Require all release variables upfront
-: "${RELEASE_VERSION:?RELEASE_VERSION env var not set (e.g. 2.0.0)}"
+: "${RELEASE_VERSION:?RELEASE_VERSION env var not set (e.g. 2.1.0)}"
 : "${DEVELOPER_ID_APP:?DEVELOPER_ID_APP env var not set (e.g. Developer ID Application: Tony Young (XXXXXXXXXX))}"
 : "${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE env var not set (notarytool keychain profile name)}"
 

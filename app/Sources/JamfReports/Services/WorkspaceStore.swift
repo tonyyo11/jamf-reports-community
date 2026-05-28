@@ -617,8 +617,8 @@ final class WorkspaceStore {
 enum Tab: String, CaseIterable, Identifiable, Hashable {
     case overview, fleet, devices, deviceLookup, trends, audit, reports, schedules, runs
     case config, customize, sources, backups, settings, onboarding
-    case securityPosture, compliancePosture
-    case patch, updates
+    case securityPosture, compliancePosture, complianceBenchmarks
+    case patch, updates, ddmBlueprints
     case policyProfile, extensionAttributes
     case outreach, protectDashboard, mobileFleet
 
@@ -643,8 +643,10 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .onboarding:        "Onboarding"
         case .securityPosture:   "Security Posture"
         case .compliancePosture: "Compliance Posture"
+        case .complianceBenchmarks: "Compliance Benchmarks"
         case .patch:             "Patch Compliance"
         case .updates:           "OS Updates"
+        case .ddmBlueprints:     "DDM Blueprints"
         case .policyProfile:     "Policies & Profiles"
         case .extensionAttributes: "Extension Attributes"
         case .outreach:          "Offline Outreach"
@@ -672,8 +674,10 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .onboarding:        "wand.and.stars"
         case .securityPosture:   "lock.shield"
         case .compliancePosture: "checkmark.shield"
+        case .complianceBenchmarks: "list.bullet.clipboard"
         case .patch:             "shippingbox"
         case .updates:           "arrow.down.circle"
+        case .ddmBlueprints:     "doc.badge.gearshape.fill"
         case .policyProfile:     "doc.badge.gearshape"
         case .extensionAttributes: "tag.fill"
         case .outreach:          "envelope.badge"
@@ -704,8 +708,9 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
             return true
         case .fleet, .deviceLookup, .trends, .audit, .reports,
              .schedules, .runs, .config, .customize, .backups,
-             .securityPosture, .compliancePosture,
-             .patch, .updates, .policyProfile, .extensionAttributes,
+             .securityPosture, .compliancePosture, .complianceBenchmarks,
+             .patch, .updates, .ddmBlueprints,
+             .policyProfile, .extensionAttributes,
              .outreach, .protectDashboard, .mobileFleet:
             return false
         }

@@ -319,6 +319,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "enabled": True,
         },
     },
+    # Opt-in toggles for v2.1.0 experimental features. Both default off; downstream
+    # report paths must gate on these AND on a positive capability probe so a user
+    # who flips the flag without the required jamf-cli setup gets no work done
+    # rather than a partial failure.
+    "experimental": {
+        "platform_features_enabled": False,
+        "protect_features_enabled": False,
+    },
     "school": {
         "dep_devices": {
             "enabled": True,
@@ -1946,7 +1954,54 @@ MOBILE_INVENTORY_FIELD_CANDIDATES: dict[str, list[str]] = {
         "deviceOwnershipType",
         "general.deviceOwnershipType",
     ],
+    "prestage_profile": [
+        "general.enrollmentMethodPrestage.profileName",
+        "enrollmentMethodPrestage.profileName",
+    ],
 }
+
+
+# Human-readable label for the canonical Jamf Pro mobile enrollment method enum
+# (`deviceOwnershipType` from the Mobile Device Inventory API). Falls back to
+# the raw value (titlecased) when an unrecognised string appears so future
+# enum additions show up as-is rather than silently bucketing into "Other".
+MOBILE_ENROLLMENT_METHOD_LABELS: dict[str, str] = {
+    "institutional": "ADE / Institutional",
+    "userenrollment": "User Enrollment",
+    "accountdrivenuserenrollment": "Account-Driven User Enrollment",
+    "accountdrivendeviceenrollment": "Account-Driven Device Enrollment",
+    "personal": "Personal / BYOD",
+    "personaldeviceprofile": "Personal Device Profile (legacy)",
+}
+
+
+def _mobile_enrollment_label(raw_ownership: Any, prestage_profile: Any) -> str:
+    """Translate a Jamf Pro mobile ownership/prestage pair into a display label."""
+    text = str(raw_ownership or "").strip()
+    if not text:
+        return ""
+    key = text.lower().replace("_", "").replace("-", "").replace(" ", "")
+    base = MOBILE_ENROLLMENT_METHOD_LABELS.get(key, text)
+    profile = str(prestage_profile or "").strip()
+    if profile:
+        return f"{base} (Prestage: {profile})"
+    return base
+
+
+def _mobile_managed_app_count(item: Any) -> int:
+    """Return the count of items in a mobile device record's ``applications`` list.
+
+    The jamf-cli `mobile-device-inventory-details` response sets
+    ``applications`` to ``null`` when the APPLICATIONS section isn't requested
+    or the device returned no inventory for it. Treats anything non-list as
+    zero so the column stays well-formed across mixed-shape tenants.
+    """
+    if not isinstance(item, dict):
+        return 0
+    apps = item.get("applications")
+    if isinstance(apps, list):
+        return len(apps)
+    return 0
 
 MOBILE_PROFILE_FIELD_CANDIDATES: dict[str, list[str]] = {
     "id": ["id", "general.id"],
@@ -2236,6 +2291,11 @@ def _normalize_mobile_inventory_row(item: Any) -> dict[str, Any]:
             _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["jailbreak_status"])
         ).strip(),
         "Ownership": str(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["ownership"])).strip(),
+        "Enrollment Method": _mobile_enrollment_label(
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["ownership"]),
+            _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["prestage_profile"]),
+        ),
+        "Managed Apps": _mobile_managed_app_count(item),
     }
 
 
@@ -2268,6 +2328,7 @@ def _summarize_mobile_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "families": Counter(),
         "os_versions": Counter(),
         "models": Counter(),
+        "enrollment_methods": Counter(),
     }
     for row in rows:
         if row.get("Managed") == "Yes":
@@ -2296,7 +2357,15 @@ def _summarize_mobile_inventory(rows: list[dict[str, Any]]) -> dict[str, Any]:
         model = str(row.get("Model", "")).strip()
         if model:
             summary["models"][model] += 1
+        enrollment = str(row.get("Enrollment Method", "")).strip()
+        if enrollment:
+            summary["enrollment_methods"][enrollment] += 1
     return summary
+
+
+_SECURITY_CONTROL_KEYS: tuple[str, ...] = (
+    "filevault", "sip", "firewall", "gatekeeper", "bootstrap_token",
+)
 
 
 def _security_control_is_compliant(logical: str, value: Any) -> bool:
@@ -2352,6 +2421,68 @@ def _security_control_is_compliant(logical: str, value: Any) -> bool:
 def _compliance_label(comp_cfg: dict[str, Any]) -> str:
     """Return the configured compliance label."""
     return str(comp_cfg.get("baseline_label", "Compliance")).strip() or "Compliance"
+
+
+_PLATFORM_GATE_SKIP_MESSAGE = (
+    "Platform API gate closed (set platform.enabled: true,"
+    " experimental.platform_features_enabled: true,"
+    " and configure a jamf-cli profile with auth-method: platform)"
+)
+
+
+def _platform_gate(config: "Config", bridge: Optional["JamfCLIBridge"]) -> bool:
+    """Return True only when Platform API features should run.
+
+    Both conditions must hold:
+      1. ``config['experimental']['platform_features_enabled']`` is True.
+      2. ``bridge`` is not None, ``bridge.is_available()`` is True, and
+         ``bridge.has_platform_auth()`` returns True.
+
+    Used as the conditional around any Platform API code path. Safe to call
+    when ``bridge`` is None — returns False.
+    """
+    if not bool(config.get("experimental", "platform_features_enabled", default=False)):
+        return False
+    if bridge is None or not bridge.is_available():
+        return False
+    return bridge.has_platform_auth()
+
+
+def _platform_runtime_enabled(
+    config: "Config", bridge: Optional["JamfCLIBridge"]
+) -> bool:
+    """Return True when Platform API report collection/generation should run.
+
+    Combines ``platform.enabled`` (legacy in-config toggle, kept for
+    backward compatibility) with the v2.1.0 experimental gate. Both must
+    be true. Replaces inline ``config.get("platform", "enabled")`` checks
+    in cmd_check / cmd_generate / cmd_collect / summary blocks so the
+    runtime answer matches what CoreDashboard writers will do.
+    """
+    if config.get("platform", "enabled", default=False) is not True:
+        return False
+    return _platform_gate(config, bridge)
+
+
+def _protect_gate(
+    config: "Config", bridge: Optional["ProtectCLIBridge"]
+) -> bool:
+    """Return True only when v2.1.0 Protect deep-dive features should run.
+
+    Independent from `protect.enabled` (which gates the existing W22/W23
+    Protect sheets). This gate is for the v2.1.0 experimental deep-dive
+    additions (Protect Threat Overview sheet, enhanced HTML section).
+
+    Both conditions must hold:
+      1. ``config['experimental']['protect_features_enabled']`` is True.
+      2. ``bridge`` is not None, ``bridge.is_available()`` is True, and
+         ``bridge.is_protect_available()`` returns True.
+    """
+    if not bool(config.get("experimental", "protect_features_enabled", default=False)):
+        return False
+    if bridge is None or not bridge.is_available():
+        return False
+    return bridge.is_protect_available()
 
 
 def _semantic_warnings(config: "Config", df: pd.DataFrame) -> list[str]:
@@ -3938,6 +4069,8 @@ class JamfCLIBridge:
         self._last_source_info: dict[str, dict[str, Any]] = {}
         # When True, manifest mismatches raise rather than warn on cached reads.
         self._strict_manifest = bool(strict_manifest)
+        # Memoized capability probe — see has_platform_auth().
+        self._platform_auth_cache: Optional[bool] = None
 
     def _find_binary(self) -> Optional[str]:
         return _find_jamf_cli_binary()
@@ -3945,6 +4078,52 @@ class JamfCLIBridge:
     def is_available(self) -> bool:
         """Return True if jamf-cli binary is found and executable."""
         return self._binary is not None
+
+    def has_platform_auth(self) -> bool:
+        """Return True if the configured profile has auth-method: platform.
+
+        Calls `jamf-cli config list --output json` once and caches the result
+        for the bridge lifetime. Returns False (never raises) if jamf-cli is
+        absent, the call fails, the profile is not found, or auth-method is
+        anything other than 'platform'. The default profile (`default == true`
+        in the list) is resolved when `self._profile` is empty.
+        """
+        if self._platform_auth_cache is not None:
+            return self._platform_auth_cache
+        if not self.is_available():
+            self._platform_auth_cache = False
+            return False
+        try:
+            cmd = [self._binary, "config", "list", "--output", "json", "--no-input"]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+                stdin=subprocess.DEVNULL,
+            )
+            entries = json.loads(result.stdout or "[]")
+            if not isinstance(entries, list):
+                self._platform_auth_cache = False
+                return False
+            target = self._profile
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                name = str(entry.get("name", ""))
+                is_default = bool(entry.get("default", False))
+                matches = (name == target) if target else is_default
+                if matches:
+                    auth_method = str(entry.get("auth-method", "")).strip().lower()
+                    self._platform_auth_cache = (auth_method == "platform")
+                    return self._platform_auth_cache
+            self._platform_auth_cache = False
+            return False
+        except Exception as exc:  # noqa: BLE001 - never raise from a capability probe
+            print(f"  [warn] jamf-cli config list probe failed: {exc}")
+            self._platform_auth_cache = False
+            return False
 
     def has_cached_data(
         self,
@@ -6354,6 +6533,8 @@ class CoreDashboard:
                 sheets.append(("Protect Alerts", self._write_protect_alerts))
             if self._protect_insights_enabled():
                 sheets.append(("Protect Insights", self._write_protect_insights))
+        if self._protect_deep_dive_enabled():
+            sheets.append(("Protect Threat Overview", self._write_protect_threat_overview))
         if self._platform_enabled():
             sheets.append(("Platform Blueprints", self._write_platform_blueprints))
             for bench in self._platform_benchmark_titles():
@@ -6376,9 +6557,11 @@ class CoreDashboard:
                 ("Inventory Summary", self._write_inventory_summary),
                 ("Hardware Models", self._write_hardware_models),
                 ("Mobile Inventory", self._write_mobile_inventory),
+                ("Mobile Supervision Status", self._write_mobile_supervision_status),
                 ("Audit Summary", self._write_audit),
                 ("Group Hygiene", self._write_group_analysis),
                 ("Security Posture", self._write_security),
+                ("Device Security State", self._write_device_security_state),
                 ("Device Compliance", self._write_device_compliance),
                 ("Check-in Health", self._write_checkin_health),
                 ("EA Coverage", self._write_ea_coverage),
@@ -6472,8 +6655,16 @@ class CoreDashboard:
         return self._config.get("protect", "enabled", default=False) is True
 
     def _platform_enabled(self) -> bool:
-        """Return True when preview Platform API reporting is enabled."""
-        return self._config.get("platform", "enabled", default=False) is True
+        """Return True when Platform API reporting should run.
+
+        Combines the legacy ``platform.enabled`` toggle with the v2.1.0
+        ``experimental.platform_features_enabled`` flag and a positive
+        capability probe (``has_platform_auth``). Both gates must hold —
+        flipping ``platform.enabled`` alone is no longer sufficient.
+        """
+        if self._config.get("platform", "enabled", default=False) is not True:
+            return False
+        return _platform_gate(self._config, self._bridge)
 
     def _platform_benchmark_titles(self) -> list[str]:
         """Return all configured Platform compliance benchmark titles.
@@ -7250,11 +7441,52 @@ class CoreDashboard:
             sort_key="Label",
         )
 
+    def _protect_deep_dive_enabled(self) -> bool:
+        """Return True when the v2.1.0 Protect deep-dive surfaces are enabled."""
+        return _protect_gate(self._config, self._protect_bridge)
+
+    def _write_protect_threat_overview(self) -> None:
+        # Experimental — v2.1.0. Triage-focused alert view sorted by severity.
+        """Write the Protect Threat Overview sheet (severity-sorted alert triage)."""
+        if not self._protect_deep_dive_enabled():
+            raise RuntimeError(
+                "disabled in config (set experimental.protect_features_enabled: true to opt in)"
+            )
+        alert_rows = self._protect_alert_detail_rows(self._protect_bridge.alerts_list())
+        severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+        rows = [
+            {
+                "Device": item.get("Computer", "") or item.get("Computer Serial", ""),
+                "Type": item.get("Event Type", ""),
+                "Severity": item.get("Severity", ""),
+                "Date": item.get("Created", ""),
+                "Status": item.get("Status", ""),
+                "Action Taken": item.get("Actions", ""),
+            }
+            for item in alert_rows
+        ]
+        rows.sort(key=lambda r: (
+            severity_rank.get(str(r.get("Severity", "")).lower(), 99),
+            str(r.get("Date", "")),
+        ))
+
+        headers = ["Device", "Type", "Severity", "Date", "Status", "Action Taken"]
+        widths = [(0, 28), (1, 26), (2, 12), (3, 22), (4, 14), (5, 28)]
+        self._write_protect_table_sheet(
+            "Protect Threat Overview",
+            "Protect Threat Overview",
+            "jamf-cli protect alerts list",
+            headers,
+            widths,
+            rows,
+            "No Protect threat alerts reported.",
+        )
+
     def _write_platform_blueprints(self) -> None:
         # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write a blueprint deployment summary from Platform API report data."""
         if not self._platform_enabled():
-            raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
+            raise RuntimeError(_PLATFORM_GATE_SKIP_MESSAGE)
 
         rows = self._platform_rows(self._bridge.blueprint_status())
         if not rows:
@@ -7324,6 +7556,8 @@ class CoreDashboard:
         Args:
             benchmark: Benchmark title passed to jamf-cli compliance-rules.
         """
+        if not self._platform_enabled():
+            raise RuntimeError(_PLATFORM_GATE_SKIP_MESSAGE)
         rows = self._platform_rows(self._bridge.compliance_rules(benchmark))
         if not rows:
             raise RuntimeError("jamf-cli compliance-rules returned no rows")
@@ -7421,6 +7655,8 @@ class CoreDashboard:
         Args:
             benchmark: Benchmark title passed to jamf-cli compliance-devices.
         """
+        if not self._platform_enabled():
+            raise RuntimeError(_PLATFORM_GATE_SKIP_MESSAGE)
         rows = self._platform_rows(self._bridge.compliance_devices(benchmark))
         if not rows:
             raise RuntimeError("jamf-cli compliance-devices returned no rows")
@@ -7507,7 +7743,7 @@ class CoreDashboard:
         # Experimental: Platform API was beta as of jamf-cli v1.14; field names may shift at GA.
         """Write DDM declaration health from Platform API report data."""
         if not self._platform_enabled():
-            raise RuntimeError("disabled in config (set platform.enabled: true to opt in)")
+            raise RuntimeError(_PLATFORM_GATE_SKIP_MESSAGE)
 
         rows = self._platform_rows(self._bridge.ddm_status())
         if not rows:
@@ -7691,7 +7927,7 @@ class CoreDashboard:
             self._t("Mobile Inventory"),
             f"Source: {source_name} | Generated: {ts}",
             self._fmts,
-            ncols=20,
+            ncols=22,
         )
         summary_rows = [
             ("Total Mobile Devices", summary["total"]),
@@ -7713,7 +7949,7 @@ class CoreDashboard:
             _safe_write(ws, row, col_i, header, self._fmts["header"])
         row += 1
 
-        widths = [12, 26, 18, 14, 11, 11, 11, 24, 12, 18, 24, 18, 18, 22, 18, 16, 18, 18, 18, 14]
+        widths = [12, 26, 18, 14, 11, 11, 11, 24, 12, 18, 24, 18, 18, 22, 18, 16, 18, 18, 18, 14, 28, 14]
         for col_i, width in enumerate(widths):
             ws.set_column(col_i, col_i, width)
 
@@ -7733,6 +7969,61 @@ class CoreDashboard:
                 else:
                     _safe_write(ws, row, col_i, value, self._fmts["cell"])
             row += 1
+
+    def _write_mobile_supervision_status(self) -> None:
+        """Write supervised-vs-unsupervised counts grouped by device family.
+
+        Sourced from the same rich `mobile-device-inventory-details` cache the
+        Mobile Inventory sheet reads. Raises ``RuntimeError`` when no rows are
+        available so ``write_all`` skips the sheet on tenants that haven't run
+        ``mobile_device_inventory_details`` (or opted out via
+        ``jamf_cli.collect_skip: [mobile-details]``).
+        """
+        rows, source_name = self._mobile_inventory_rows()
+        if not rows:
+            raise RuntimeError("no mobile device inventory rows for supervision sheet")
+
+        # Group by device-family rather than Model so AppleTV/iPad/iPhone fall
+        # into a small fixed bucket set even with dozens of model identifiers.
+        per_family: dict[str, dict[str, int]] = {}
+        for row in rows:
+            family = str(row.get("Device Family", "")).strip() or "Unknown"
+            bucket = per_family.setdefault(family, {"total": 0, "supervised": 0, "unsupervised": 0})
+            bucket["total"] += 1
+            if row.get("Supervised") == "Yes":
+                bucket["supervised"] += 1
+            elif row.get("Supervised") == "No":
+                bucket["unsupervised"] += 1
+
+        ws = self._wb.add_worksheet("Mobile Supervision Status")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_i = _write_sheet_header(
+            ws,
+            self._t("Mobile Supervision Status"),
+            f"Source: {source_name} | Generated: {ts}",
+            self._fmts,
+            ncols=5,
+        )
+        ws.set_column(0, 0, 22)
+        ws.set_column(1, 4, 16)
+
+        headers = ["Device Family", "Total", "Supervised", "Unsupervised", "% Supervised"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row_i, col_i, header, self._fmts["header"])
+        row_i += 1
+
+        for family in sorted(per_family.keys()):
+            counts = per_family[family]
+            total = counts["total"]
+            supervised = counts["supervised"]
+            unsupervised = counts["unsupervised"]
+            pct = (supervised / total) if total > 0 else 0.0
+            _safe_write(ws, row_i, 0, family, self._fmts["cell"])
+            _safe_write(ws, row_i, 1, total, self._fmts["cell"])
+            _safe_write(ws, row_i, 2, supervised, self._fmts["cell"])
+            _safe_write(ws, row_i, 3, unsupervised, self._fmts["cell"])
+            _safe_write(ws, row_i, 4, pct, _pct_format(self._fmts, pct))
+            row_i += 1
 
     def _write_mobile_config_profiles(self) -> None:
         """Write mobile configuration profile visibility from jamf-cli."""
@@ -7897,6 +8188,106 @@ class CoreDashboard:
                 _safe_write(ws, row, 1, cnt, self._fmts["cell"])
                 _safe_write(ws, row, 2, pct, _pct_format(self._fmts, pct))
                 row += 1
+
+    def _write_device_security_state(self) -> None:
+        """Write per-device security control state from cached computers-list JSON.
+
+        Sources the SECURITY section that `cmd_collect` fetches (see
+        `_inventory_computer_sections`). Raises RuntimeError when no device
+        carries any security value, which `write_all` maps to a `[skip]` so the
+        sheet is silently absent for tenants that opted out via
+        `jamf_cli.collect_skip: [device-security-state]`.
+        """
+        # Honour the same opt-out the collect path honours, so generate doesn't
+        # re-issue a heavy SECURITY fetch the operator explicitly skipped.
+        skip_types = _normalized_skip_types(self._config)
+        sections = (
+            _inventory_computer_sections_without_security()
+            if "device-security-state" in skip_types
+            else _inventory_computer_sections()
+        )
+        raw = self._bridge.computers_list(sections)
+        items = _extract_items(raw)
+
+        rows: list[dict[str, str]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            flat = _flatten_record(item)
+            name = str(_first_value(flat, INVENTORY_FIELD_CANDIDATES["name"]) or "").strip()
+            identifier = str(_first_value(flat, INVENTORY_FIELD_CANDIDATES["id"]) or "").strip()
+            if not name and identifier:
+                name = f"Computer {identifier}"
+            row = {
+                "name": name,
+                "serial": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["serial"]) or ""
+                ).strip(),
+                "filevault": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["filevault"]) or ""
+                ).strip(),
+                "sip": str(_first_value(flat, INVENTORY_FIELD_CANDIDATES["sip"]) or "").strip(),
+                "firewall": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["firewall"]) or ""
+                ).strip(),
+                "gatekeeper": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["gatekeeper"]) or ""
+                ).strip(),
+                "bootstrap_token": str(
+                    _first_value(flat, INVENTORY_FIELD_CANDIDATES["bootstrap_token_escrowed"])
+                    or ""
+                ).strip(),
+            }
+            if any(row[key] for key in _SECURITY_CONTROL_KEYS):
+                rows.append(row)
+
+        if not rows:
+            raise RuntimeError(
+                "no device security state in cached data — enable SECURITY"
+                " inventory section or remove device-security-state from"
+                " jamf_cli.collect_skip"
+            )
+
+        ws = self._wb.add_worksheet("Device Security State")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_i = _write_sheet_header(
+            ws,
+            self._t("Device Security State"),
+            f"Source: cached jamf-cli pro computers list --section SECURITY | Generated: {ts}",
+            self._fmts,
+            ncols=7,
+        )
+        ws.set_column(0, 0, 32)
+        ws.set_column(1, 1, 18)
+        ws.set_column(2, 6, 16)
+
+        headers = ["Device Name", "Serial", "FileVault", "SIP", "Firewall",
+                   "Gatekeeper", "Bootstrap Token"]
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row_i, col_i, header, self._fmts["header"])
+        row_i += 1
+
+        rows.sort(key=lambda r: (r["name"] or "").lower())
+        controls: list[tuple[str, str]] = [
+            ("filevault", "filevault"),
+            ("sip", "sip"),
+            ("firewall", "firewall"),
+            ("gatekeeper", "gatekeeper"),
+            ("bootstrap_token", "bootstrap_token"),
+        ]
+        for record in rows:
+            _safe_write(ws, row_i, 0, record["name"], self._fmts["cell"])
+            _safe_write(ws, row_i, 1, record["serial"], self._fmts["cell"])
+            for col_offset, (logical, key) in enumerate(controls, start=2):
+                value = record[key]
+                if not value:
+                    cell_fmt = self._fmts["cell"]
+                elif _security_control_is_compliant(logical, value):
+                    cell_fmt = self._fmts["green"]
+                else:
+                    cell_fmt = self._fmts["red"]
+                _safe_write(ws, row_i, col_offset, value, cell_fmt)
+            row_i += 1
 
     def _write_audit(self) -> None:
         """Write health check findings from jamf-cli pro audit."""
@@ -12965,11 +13356,11 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
         return
     jamf_cli_cfg = config.jamf_cli
     protect_enabled = config.get("protect", "enabled", default=False) is True
-    platform_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
     live_overview_allowed = jamf_cli_cfg.get("allow_live_overview", True) is True
     bridge = _build_jamf_cli_bridge(config, save_output=False)
+    platform_enabled = _platform_runtime_enabled(config, bridge)
     print(f"  data dir: {bridge._data_dir}")
     if jamf_cli_profile:
         print(f"  profile: {jamf_cli_profile}")
@@ -12978,7 +13369,7 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
     else:
         print("  live overview: disabled (cached overview only)")
     print(f"  protect reporting: {'enabled' if protect_enabled else 'disabled'}")
-    print(f"  platform reporting: {'enabled' if platform_enabled else 'disabled'}")
+    print(f"  platform reporting: {'enabled' if platform_enabled else 'gated off'}")
     if platform_enabled and platform_benchmarks:
         for bench in platform_benchmarks:
             print(f"  platform benchmark: {bench}")
@@ -13251,7 +13642,12 @@ def cmd_generate(
     jamf_cli_cfg = config.jamf_cli
     jamf_cli_enabled = _jamf_cli_enabled(config)
     protect_enabled = config.get("protect", "enabled", default=False) is True
-    platform_enabled = config.get("platform", "enabled", default=False) is True
+    # ``platform_cache_enabled`` controls whether ``has_cached_data`` considers
+    # platform JSON cache directories. Kept on the legacy ``platform.enabled``
+    # toggle so a tenant with cached platform data and the experimental flag
+    # off still recognizes the cache. The actual sheet writers gate via
+    # ``CoreDashboard._platform_enabled()`` (which honors ``_platform_gate``).
+    platform_cache_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
     jamf_cli_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
     jamf_cli_profile = str(jamf_cli_cfg.get("profile", "") or "").strip()
@@ -13260,15 +13656,17 @@ def cmd_generate(
     )
     bridge: Optional[JamfCLIBridge] = None
     jamf_cli_ready = False
+    platform_enabled = False
     if jamf_cli_enabled:
         bridge = _build_jamf_cli_bridge(
             config, save_output=True, strict_manifest=strict_manifest
         )
         jamf_cli_ready = bridge.is_available() or bridge.has_cached_data(
             include_protect=protect_enabled,
-            include_platform=platform_enabled,
+            include_platform=platform_cache_enabled,
             platform_benchmarks=platform_benchmarks,
         )
+        platform_enabled = _platform_runtime_enabled(config, bridge)
 
     if out_file:
         out_path = _timestamped_output_path(
@@ -13836,6 +14234,15 @@ class HtmlReport:
         self._bridge = bridge
         self._out_file = out_file
         self._no_open = no_open
+        self._protect_bridge_cache: Optional["ProtectCLIBridge"] = None
+
+    @property
+    def _protect_bridge(self) -> "ProtectCLIBridge":
+        if self._protect_bridge_cache is None:
+            self._protect_bridge_cache = _build_protect_bridge(
+                self._config, save_output=False
+            )
+        return self._protect_bridge_cache
 
     def _history_file_path(self) -> str:
         """Return the resolved absolute path for the history JSON file.
@@ -14006,6 +14413,9 @@ class HtmlReport:
         _safe_fetch("sites", self._bridge.sites_list)
         _safe_fetch("buildings", self._bridge.buildings_list)
         _safe_fetch("departments", self._bridge.departments_list)
+        if _protect_gate(self._config, self._protect_bridge):
+            _safe_fetch("protect_alerts", self._protect_bridge.alerts_list)
+            _safe_fetch("protect_computers", self._protect_bridge.computers_list)
         data["_fetch_status"] = fetch_status
         return data
 
@@ -15844,6 +16254,62 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </div>
 </div>"""
 
+    def _render_protect_section(self, data: dict[str, Any]) -> str:
+        """Render the experimental Jamf Protect deep-dive section.
+
+        Returns empty string when the v2.1.0 Protect gate is closed or no
+        Protect data was fetched. The gate is re-evaluated here (rather than
+        trusting upstream) so the section is fail-closed.
+        """
+        if not _protect_gate(self._config, self._protect_bridge):
+            return ""
+        alerts_raw = data.get("protect_alerts") or []
+        computers_raw = data.get("protect_computers") or []
+        alerts = _extract_items(alerts_raw)
+        computers = _extract_items(computers_raw)
+        if not alerts and not computers:
+            return ""
+
+        category_counts = Counter()
+        severity_counts = Counter()
+        version_counts: Counter[str] = Counter()
+
+        for alert in alerts:
+            if not isinstance(alert, dict):
+                continue
+            event_type = str(alert.get("eventType", "") or "").strip() or "Unknown"
+            category_counts[event_type] += 1
+            sev = str(alert.get("severity", "") or "").strip().lower() or "unknown"
+            severity_counts[sev] += 1
+
+        for computer in computers:
+            if not isinstance(computer, dict):
+                continue
+            version = (
+                str(computer.get("version", "") or "").strip()
+                or str(computer.get("signaturesVersion", "") or "").strip()
+                or "Unknown"
+            )
+            version_counts[version] += 1
+
+        return f"""
+  <div class="section-block">
+    <h2 class="section-block-title">
+      Jamf Protect
+      <span class="badge badge-dim" style="margin-left:8px">Experimental</span>
+    </h2>
+    <div class="section-block-subtitle">
+      Protect alert telemetry and endpoint agent posture. Requires a configured Protect tenant.
+    </div>
+
+    <h3 class="section-title">Threat Events by Category</h3>
+    <div class="grid grid-3">
+      {self._render_counter_table("Event Type", "Event Type", category_counts)}
+      {self._render_counter_table("Severity", "Severity", severity_counts)}
+      {self._render_counter_table("Agent Version", "Version", version_counts)}
+    </div>
+  </div>"""
+
     def _render_trends_section(self, trends: dict[str, Any]) -> str:
         """Render the HTML trend section when snapshot history is available."""
         cards = []
@@ -16556,6 +17022,8 @@ document.querySelectorAll('.tree-search').forEach((input) => {
     {self._render_mobile_inventory_table(mobile_rows, stale_days)}
   </div>
 
+  {self._render_protect_section(data)}
+
 </main>
 
 <footer class="footer">
@@ -16670,6 +17138,110 @@ def cmd_html(
     return out_path
 
 
+def _weasyprint_available() -> bool:
+    """Return True when the `weasyprint` package can be imported."""
+    import importlib.util
+    return importlib.util.find_spec("weasyprint") is not None
+
+
+def _render_pdf_with_weasyprint(html_path: Path, pdf_path: Path) -> None:
+    """Convert an HTML file to PDF using weasyprint."""
+    import importlib
+    weasyprint = importlib.import_module("weasyprint")
+    weasyprint.HTML(filename=str(html_path)).write_pdf(str(pdf_path))
+
+
+def cmd_pdf(
+    config: Config,
+    out_file: Optional[str],
+    no_open: bool = False,
+    summary_json: Optional[str] = None,
+    *,
+    strict_manifest: bool = False,
+) -> Path:
+    """Generate the HTML report and convert it to PDF.
+
+    Uses weasyprint when available. The macOS app uses native PDFKit instead
+    and does not depend on this command.
+
+    Args:
+        config: Loaded Config instance.
+        out_file: Destination .pdf path. Defaults to the output_dir from config.
+        no_open: When True, do not auto-open the file after writing.
+        summary_json: Optional path for an app-facing run summary JSON file.
+        strict_manifest: When True, abort on cached-snapshot SHA-256 mismatch.
+
+    Returns:
+        Path to the generated PDF report.
+    """
+    summary = _command_summary_base("pdf", config)
+    if not _weasyprint_available():
+        raise SystemExit(
+            "Error: pdf export requires weasyprint. Install via:\n"
+            "  pip install weasyprint\n"
+            "The macOS app uses native PDFKit and does not require this dependency."
+        )
+    if not _jamf_cli_enabled(config):
+        raise SystemExit("Error: pdf requires jamf_cli.enabled: true in config.yaml.")
+
+    output_cfg = config.output
+    timestamp_outputs = output_cfg.get("timestamp_outputs", True) is not False
+    run_stamp = _file_stamp()
+    if out_file:
+        out_path = _timestamped_output_path(
+            Path(out_file).expanduser(),
+            run_stamp,
+            timestamp_outputs,
+        )
+    else:
+        out_dir = config.resolve_path("output", "output_dir") or Path("Generated Reports")
+        out_path = _timestamped_output_path(
+            out_dir / "JamfReport.pdf",
+            run_stamp,
+            timestamp_outputs,
+        )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    bridge = _build_jamf_cli_bridge(config, save_output=True, strict_manifest=strict_manifest)
+    if not bridge.is_available():
+        print(
+            "  [warn] jamf-cli not found — will attempt to use cached data only.\n"
+            "         Install via: brew install Jamf-Concepts/tap/jamf-cli"
+        )
+    with tempfile.NamedTemporaryFile(
+        suffix=".html", delete=False, dir=str(out_path.parent)
+    ) as tmp:
+        tmp_html_path = Path(tmp.name)
+    try:
+        report = HtmlReport(config, bridge, tmp_html_path, no_open=True)
+        report.generate()
+        print(f"  Converting HTML to PDF via weasyprint: {out_path}")
+        _render_pdf_with_weasyprint(tmp_html_path, out_path)
+        print(f"  Written: {out_path}")
+    finally:
+        try:
+            tmp_html_path.unlink()
+        except OSError:
+            pass
+
+    if not no_open and sys.platform == "darwin":
+        subprocess.run(["open", str(out_path)], check=False)
+
+    summary.update(
+        {
+            "status": "ok",
+            "outputs": [_summary_file_entry("pdf", out_path)],
+            "inputs": {
+                "jamf_cli_data_dir": str(getattr(bridge, "_data_dir", "")),
+                "no_open": no_open,
+            },
+        }
+    )
+    _finish_command_summary(summary)
+    _write_summary_json(summary_json, summary)
+    return out_path
+
+
 def _collect_jamf_cli_commands(
     config: Config,
     bridge: JamfCLIBridge,
@@ -16683,13 +17255,17 @@ def _collect_jamf_cli_commands(
     skippable because they are required for the primary report sheets.
     """
     stale_days = int(config.thresholds.get("stale_device_days", 30))
-    skip_types: set[str] = {
-        s.strip().lower().replace("_", "-")
-        for s in _list_of_strings(config.jamf_cli.get("collect_skip", []))
-    }
+    skip_types = _normalized_skip_types(config)
 
     # Each entry: (human label, callable, report-type key).
     # An empty report-type key means the command is not skippable via collect_skip.
+    inventory_sections = (
+        _inventory_computer_sections_without_security()
+        if "device-security-state" in skip_types
+        else _inventory_computer_sections()
+    )
+    if "device-security-state" in skip_types:
+        print("  [skip] SECURITY inventory section: excluded by jamf_cli.collect_skip")
     candidates: list[tuple[str, Any, str]] = []
     if live_overview_allowed:
         candidates.append(("Fleet Overview", bridge.overview, ""))
@@ -16697,10 +17273,10 @@ def _collect_jamf_cli_commands(
         print("  [skip] Fleet Overview: live overview disabled in config")
     candidates.extend(
         [
-            ("Computer Inventory", lambda: bridge.computers_list(_inventory_computer_sections()), ""),
+            ("Computer Inventory", lambda: bridge.computers_list(inventory_sections), ""),
             ("Inventory Summary", bridge.inventory_summary, ""),
             ("Hardware Models", bridge.hardware_models, ""),
-            ("Mobile Inventory", bridge.mobile_device_inventory_details, ""),
+            ("Mobile Inventory", bridge.mobile_device_inventory_details, "mobile-details"),
             ("Mobile Device List", bridge.mobile_devices_list, ""),
             ("Mobile Config Profiles", bridge.ios_profiles_list, ""),
             ("Security Posture", bridge.security_report, ""),
@@ -16793,14 +17369,15 @@ def _collect_snapshots(
     jamf_cli_enabled = _jamf_cli_enabled(config)
     jamf_cli_profile = str(config.jamf_cli.get("profile", "") or "").strip()
     protect_enabled = config.get("protect", "enabled", default=False) is True
-    platform_enabled = config.get("platform", "enabled", default=False) is True
     platform_benchmarks = _platform_benchmark_titles(config)
     live_overview_allowed = jamf_cli_enabled and (
         config.jamf_cli.get("allow_live_overview", True) is True
     )
     bridge: Optional[JamfCLIBridge] = None
+    platform_enabled = False
     if jamf_cli_enabled:
         bridge = _build_jamf_cli_bridge(config, save_output=True, use_cached_data=False)
+        platform_enabled = _platform_runtime_enabled(config, bridge)
         print(f"  jamf-cli data dir: {bridge._data_dir}")
         if jamf_cli_profile:
             print(f"  jamf-cli profile: {jamf_cli_profile}")
@@ -16810,6 +17387,11 @@ def _collect_snapshots(
             print("  platform reporting: enabled (preview)")
             for bench in platform_benchmarks:
                 print(f"  platform benchmark: {bench}")
+        elif config.get("platform", "enabled", default=False) is True:
+            print(
+                "  [skip] platform reporting: experimental flag off or profile"
+                " lacks auth-method: platform"
+            )
     if jamf_cli_enabled and bridge is not None and bridge.is_available():
         commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed)
         if protect_enabled:
@@ -16922,6 +17504,9 @@ def cmd_collect(
                 "jamf_cli_data_dir": str(jamf_cli_dir) if jamf_cli_dir is not None else "",
                 "protect_enabled": config.get("protect", "enabled", default=False) is True,
                 "platform_enabled": config.get("platform", "enabled", default=False) is True,
+                "platform_runtime_enabled": _platform_runtime_enabled(
+                    config, _build_jamf_cli_bridge(config, save_output=False)
+                ) if _jamf_cli_enabled(config) else False,
             },
         }
     )
@@ -17126,6 +17711,24 @@ def _inventory_computer_sections() -> list[str]:
         "DISK_ENCRYPTION",
         "SECURITY",
     ]
+
+
+def _inventory_computer_sections_without_security() -> list[str]:
+    """Return inventory sections minus SECURITY for `device-security-state` opt-out."""
+    return [s for s in _inventory_computer_sections() if s != "SECURITY"]
+
+
+def _normalized_skip_types(config: "Config") -> set[str]:
+    """Return ``jamf_cli.collect_skip`` values normalised to hyphen-form lower-case.
+
+    Underscores and hyphens are interchangeable in user config; this normalises
+    both spellings to the canonical hyphen form so callers can compare against
+    fixed string literals.
+    """
+    return {
+        s.strip().lower().replace("_", "-")
+        for s in _list_of_strings(config.jamf_cli.get("collect_skip", []))
+    }
 
 
 def _compact_error_text(exc: Exception, limit: int = 500) -> str:
@@ -19226,7 +19829,7 @@ def _capability_commands() -> dict[str, list[str]]:
     """Return report-engine commands grouped for GUI routing."""
     return {
         "jamf_pro": [
-            "generate", "html", "collect", "inventory-csv", "export-reports",
+            "generate", "html", "pdf", "collect", "inventory-csv", "export-reports",
             "backup", "scaffold", "check", "device", "patch-managed",
         ],
         "jamf_school": [
@@ -19408,6 +20011,27 @@ def _capabilities_manifest() -> dict[str, Any]:
         "status_surfaces": _capability_status_surfaces(pro, school, protect, platform),
         "historical_surfaces": _capability_historical_surfaces(pro),
         "config_sections": _capability_config_sections(),
+        "experimental_features": {
+            "platform_api": {
+                "config_keys": [
+                    "experimental.platform_features_enabled",
+                    "platform.enabled",
+                ],
+                "capability_probe": "jamf-cli config list --output json (auth-method == platform)",
+                "benchmarks_config_key": "platform.compliance_benchmarks",
+                "surfaces": [
+                    "Platform Blueprints (workbook sheet)",
+                    "Platform DDM Status (workbook sheet)",
+                    "Compliance Rules per benchmark (workbook sheet)",
+                    "Compliance Devices per benchmark (workbook sheet)",
+                    "Compliance Benchmarks (app screen)",
+                ],
+            },
+            "protect_deep_dive": {
+                "config_keys": ["experimental.protect_features_enabled"],
+                "capability_probe": "jamf-cli protect plans list",
+            },
+        },
         "known_gaps": [
             "JSON summaries are opt-in and do not yet expose per-sheet row counts.",
             "Jamf School has workbook output but no HTML or trend surface.",
@@ -19431,6 +20055,10 @@ def cmd_capabilities(output: str = "json") -> None:
         print("Historical surfaces:")
         for surface in manifest["historical_surfaces"]:
             print(f"  - {surface['id']}: {surface['label']}")
+        print("Experimental features (gated; default off):")
+        for feature_id, feature in manifest["experimental_features"].items():
+            keys = ", ".join(feature.get("config_keys", []))
+            print(f"  - {feature_id}: requires {keys}")
         return
     print(json.dumps(manifest, indent=2, sort_keys=True))
 
@@ -19449,6 +20077,7 @@ def main() -> None:
             "Jamf Pro commands:\n"
             "  generate      Build the Excel report\n"
             "  html          Build a self-contained HTML status report for management\n"
+            "  pdf           Build the HTML report and convert it to PDF (requires weasyprint)\n"
             "  collect       Save jamf-cli snapshots and optional CSV history\n"
             "  inventory-csv Export a wide CSV from jamf-cli inventory plus EAs\n"
             "  backup        Export Jamf Pro configuration objects to backups/\n"
@@ -19475,6 +20104,7 @@ def main() -> None:
         choices=[
             "generate",
             "html",
+            "pdf",
             "collect",
             "inventory-csv",
             "export-reports",
@@ -19650,7 +20280,7 @@ def main() -> None:
     parser.add_argument(
         "--no-open",
         action="store_true",
-        help="Do not auto-open the generated HTML file after writing (html command only)",
+        help="Do not auto-open the generated file after writing (html and pdf commands)",
     )
     parser.add_argument(
         "--output",
@@ -19851,6 +20481,13 @@ def main() -> None:
             )
         elif args.command == "html":
             cmd_html(
+                config, args.out_file,
+                no_open=args.no_open,
+                summary_json=args.summary_json,
+                strict_manifest=args.strict_manifest,
+            )
+        elif args.command == "pdf":
+            cmd_pdf(
                 config, args.out_file,
                 no_open=args.no_open,
                 summary_json=args.summary_json,

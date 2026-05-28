@@ -28,13 +28,6 @@ struct FirstLaunchChooserView: View {
     /// the rest of the app needs to observe.
     let onStartOnboarding: () -> Void
 
-    /// Enables demo mode through the existing `setDemoMode(true)` path so the
-    /// `forceDemoModeKey` is written and the auto-demo branch on subsequent
-    /// launches skips the chooser.
-    private func tryDemo() {
-        workspace.setDemoMode(true)
-    }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
@@ -95,7 +88,7 @@ struct FirstLaunchChooserView: View {
                 cta: "Use demo data",
                 ctaIcon: "play.fill",
                 ctaStyle: .neutral,
-                action: tryDemo
+                action: { workspace.setDemoMode(true) }
             )
         }
     }

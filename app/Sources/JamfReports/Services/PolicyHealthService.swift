@@ -92,8 +92,8 @@ struct PolicyHealthService: Sendable {
         let policyDir = dir.appendingPathComponent("policy-status", isDirectory: true)
         let profileDir = dir.appendingPathComponent("profile-status", isDirectory: true)
 
-        let policyURL = newestJSON(in: policyDir)
-        let profileURL = newestJSON(in: profileDir)
+        let policyURL = FileManager.newestJSONFile(in: policyDir)
+        let profileURL = FileManager.newestJSONFile(in: profileDir)
 
         return load(policyURL: policyURL, profileURL: profileURL) ?? .empty
     }
@@ -148,21 +148,4 @@ struct PolicyHealthService: Sendable {
 
     // MARK: - Internals
 
-    private static func newestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-        let json = files.filter { $0.pathExtension == "json" }
-        return json.max { lhs, rhs in
-            let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            return l < r
-        }
-    }
 }

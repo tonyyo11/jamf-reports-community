@@ -84,11 +84,11 @@ struct PatchStatusService: Sendable {
         let patchDir = dir.appendingPathComponent("patch-status", isDirectory: true)
         let failuresDir = dir.appendingPathComponent("patch-device-failures", isDirectory: true)
 
-        guard let titlesURL = newestJSON(in: patchDir) else {
+        guard let titlesURL = FileManager.newestJSONFile(in: patchDir) else {
             return .empty
         }
 
-        let failuresURL = newestJSON(in: failuresDir)
+        let failuresURL = FileManager.newestJSONFile(in: failuresDir)
         return load(from: titlesURL, failuresURL: failuresURL) ?? .empty
     }
 
@@ -126,24 +126,6 @@ struct PatchStatusService: Sendable {
     }
 
     // MARK: - Internals
-
-    private static func newestJSON(in dir: URL) -> URL? {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dir.path) else { return nil }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return nil }
-        let json = files.filter { $0.pathExtension == "json" }
-        return json.max { lhs, rhs in
-            let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            return l < r
-        }
-    }
 
     /// Parse "83%" into 83.0, "100%" into 100.0, etc.
     /// Returns 0 on any parse failure since compliance percentage is decorative

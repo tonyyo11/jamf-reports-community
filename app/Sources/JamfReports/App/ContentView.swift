@@ -113,8 +113,10 @@ struct ContentView: View {
         case .onboarding:        OnboardingView()
         case .securityPosture:   SecurityPostureView()
         case .compliancePosture: CompliancePostureView()
+        case .complianceBenchmarks: ComplianceBenchmarksView()
         case .patch:             PatchView()
         case .updates:           UpdatesView()
+        case .ddmBlueprints:     DDMBlueprintView()
         case .policyProfile:     PolicyProfileView()
         case .extensionAttributes: ExtensionAttributesView()
         case .outreach:          OutreachView()
@@ -142,8 +144,10 @@ struct ContentView: View {
         case .reports:           nil
         case .securityPosture:   "SCORE & CONTROLS"
         case .compliancePosture: "BANDS & GAPS"
+        case .complianceBenchmarks: "EXPERIMENTAL · PLATFORM API"
         case .patch:             "TITLES & FAILURES"
         case .updates:           "PLANS & FAILURES"
+        case .ddmBlueprints:     "EXPERIMENTAL · PLATFORM API"
         case .policyProfile:     "FINDINGS & STATUS"
         case .extensionAttributes: "COVERAGE & VALUES"
         case .outreach:          "STALE TIERS"

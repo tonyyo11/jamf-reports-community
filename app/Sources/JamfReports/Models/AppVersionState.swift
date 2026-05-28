@@ -8,7 +8,7 @@ struct AppVersionState {
     // so tests (which have no app bundle) still compile and behave correctly.
     static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "2.0.0"
+            ?? "2.1.0"
     }
 
     private static let defaultsKey = "lastSeenAppVersion"

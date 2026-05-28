@@ -14,10 +14,19 @@ import xlsxwriter
 # ---------------------------------------------------------------------------
 
 def _make_core_dashboard(jrc, tmp_path, bridge_data: dict):
-    """Build a CoreDashboard backed by a mock bridge returning bridge_data."""
+    """Build a CoreDashboard backed by a mock bridge returning bridge_data.
+
+    Opts the config into Platform API so writers gated by ``_platform_gate``
+    actually run during the test. Mock bridge is stubbed truthy for
+    ``is_available`` and ``has_platform_auth`` for the same reason.
+    """
     config = jrc.Config(jrc.Config._WORKSPACE_INIT_DEFAULTS_NAME)
+    config._data["platform"]["enabled"] = True
+    config._data.setdefault("experimental", {})["platform_features_enabled"] = True
 
     bridge = MagicMock()
+    bridge.is_available.return_value = True
+    bridge.has_platform_auth.return_value = True
     for attr, value in bridge_data.items():
         getattr(bridge, attr).return_value = value
 

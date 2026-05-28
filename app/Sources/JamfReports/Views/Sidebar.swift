@@ -26,8 +26,8 @@ struct Sidebar: View {
 
     private let groups: [NavGroup] = [
         .init(group: "REPORTS", items: [.overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports]),
-        .init(group: "POSTURE", items: [.securityPosture, .compliancePosture, .outreach]),
-        .init(group: "OPERATIONS", items: [.patch, .updates, .policyProfile, .extensionAttributes]),
+        .init(group: "POSTURE", items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
+        .init(group: "OPERATIONS", items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
         .init(group: "FLEET", items: [.mobileFleet, .protectDashboard]),
         .init(group: "AUTOMATION", items: [.schedules, .runs]),
         .init(group: "CONFIGURATION", items: [.config, .customize, .sources, .backups]),
