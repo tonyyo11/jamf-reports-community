@@ -115,7 +115,8 @@ extension Tab {
     var isDataDriven: Bool {
         switch self {
         case .overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports,
-             .securityPosture, .compliancePosture, .patch, .updates,
+             .securityPosture, .compliancePosture, .complianceBenchmarks,
+             .patch, .updates, .ddmBlueprints,
              .policyProfile, .extensionAttributes,
              .outreach, .protectDashboard, .mobileFleet:
             return true

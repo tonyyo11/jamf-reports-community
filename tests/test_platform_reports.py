@@ -38,12 +38,22 @@ def _load(path: Path) -> Any:
 
 
 def _make_dashboard(jrc, tmp_path: Path, bridge_data: dict, platform_enabled: bool = True):
-    """Build a CoreDashboard backed by a mock bridge."""
+    """Build a CoreDashboard backed by a mock bridge.
+
+    The bridge mock is stubbed so ``_platform_gate`` (called from
+    ``CoreDashboard._platform_enabled``) returns ``True`` whenever
+    ``platform_enabled=True`` — the gate now requires both
+    ``platform.enabled`` and ``experimental.platform_features_enabled``,
+    plus a positive ``has_platform_auth`` probe.
+    """
     config = jrc.Config(jrc.Config._WORKSPACE_INIT_DEFAULTS_NAME)
     config._data["platform"]["enabled"] = platform_enabled
     config._data["platform"]["compliance_benchmarks"] = [BENCHMARK]
+    config._data.setdefault("experimental", {})["platform_features_enabled"] = platform_enabled
 
     bridge = MagicMock()
+    bridge.is_available.return_value = True
+    bridge.has_platform_auth.return_value = True
     for attr, value in bridge_data.items():
         if isinstance(value, Exception):
             getattr(bridge, attr).side_effect = value
@@ -319,7 +329,7 @@ def test_platform_disabled_blueprints_raises(jrc, tmp_path) -> None:
     dashboard, wb, wb_path = _make_dashboard(
         jrc, tmp_path, {"blueprint_status": rows}, platform_enabled=False
     )
-    with pytest.raises(RuntimeError, match="disabled in config"):
+    with pytest.raises(RuntimeError, match="Platform API gate closed"):
         dashboard._write_platform_blueprints()
     wb.close()
 
@@ -330,7 +340,7 @@ def test_platform_disabled_ddm_raises(jrc, tmp_path) -> None:
     dashboard, wb, wb_path = _make_dashboard(
         jrc, tmp_path, {"ddm_status": rows}, platform_enabled=False
     )
-    with pytest.raises(RuntimeError, match="disabled in config"):
+    with pytest.raises(RuntimeError, match="Platform API gate closed"):
         dashboard._write_platform_ddm_status()
     wb.close()
 

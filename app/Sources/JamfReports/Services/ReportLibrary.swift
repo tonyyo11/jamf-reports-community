@@ -33,7 +33,7 @@ enum FileDisplay {
 
 struct ReportLibrary {
     private let fileManager = FileManager.default
-    private let allowedExtensions: Set<String> = ["xlsx", "html", "csv"]
+    private let allowedExtensions: Set<String> = ["xlsx", "html", "pdf", "csv"]
     private let maxCentralDirectoryBytes: UInt64 = 5 * 1024 * 1024
 
     struct Stats: Sendable {

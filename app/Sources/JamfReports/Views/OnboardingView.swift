@@ -387,7 +387,7 @@ struct OnboardingView: View {
             logViewer(
                 title: csvLogViewerTitle,
                 lines: flow.csvOutput,
-                exitCode: csvLogViewerExitCode
+                exitCode: (flow.csvScaffolded || flow.csvMappingSkipped) ? 0 : nil
             )
         }
     }
@@ -397,11 +397,6 @@ struct OnboardingView: View {
         if flow.isSkippingCSVMapping { return "Workspace init running" }
         if flow.csvMappingSkipped { return "Workspace init output" }
         return "Scaffold output"
-    }
-
-    private var csvLogViewerExitCode: Int32? {
-        if flow.csvScaffolded || flow.csvMappingSkipped { return 0 }
-        return nil
     }
 
     private var firstReportStep: some View {
@@ -474,13 +469,16 @@ struct OnboardingView: View {
     /// Works from all three entry points:
     ///   - First-launch chooser → root OnboardingView: `reloadFromDisk` populates
     ///     `workspace.profiles`, ContentView swaps in the shell, the default
-    ///     `tab = .trends` takes effect. The `.navigateToTab` post is a no-op
+    ///     `tab = .overview` takes effect. The `.navigateToTab` post is a no-op
     ///     here because the shell's listener isn't registered yet.
     ///   - Settings "Add connection" → in-shell OnboardingView: the active tab
     ///     is `.onboarding`; the `.navigateToTab(.overview)` post lands the
     ///     user back on Overview where progress is visible.
     ///   - Sidebar "Add workspace…" → same as Settings path above.
     private func skipAndFinishOnboarding() {
+        // Clear any first-launch demo preference so reloadFromDisk picks up
+        // the newly-created real profile instead of staying in demo mode.
+        UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)
         workspaceStore.reloadFromDisk()
         NotificationCenter.default.post(
             name: .navigateToTab,

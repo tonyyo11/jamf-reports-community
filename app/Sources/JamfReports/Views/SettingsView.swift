@@ -28,6 +28,11 @@ struct SettingsView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("autoUpdateJamfCLI") private var autoUpdate = false
+    @State private var bridge = CLIBridge()
+    @State private var experimentalFeatures = ExperimentalFeatureService()
+    @State private var platformCapability: PlatformCapabilityService? = nil
+    @State private var platformCapabilityAvailable = false
+    @State private var experimentalExpanded = false
     @State private var testingProfile: String? = nil
     @State private var testResults: [String: Bool] = [:]
     @State private var testErrors: [String: String] = [:]
@@ -68,6 +73,7 @@ struct SettingsView: View {
                 performanceCard
                 diagnosticsCard
                 sidebarVisibilityCard
+                experimentalFeaturesCard
                 aboutCard
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -84,7 +90,24 @@ struct SettingsView: View {
             testResults = [:]
             loadCadencePreset()
             await loadTokenStatuses()
+            await probePlatformCapability()
         }
+    }
+
+    /// Refresh the platform-auth capability flag for the active profile.
+    /// Drives whether the Platform API toggle in `experimentalFeaturesCard`
+    /// can be enabled. Skipped in demo mode (no real CLI to probe).
+    private func probePlatformCapability() async {
+        guard !workspace.demoMode, !workspace.profile.isEmpty else {
+            platformCapabilityAvailable = false
+            return
+        }
+        let service = platformCapability ?? PlatformCapabilityService(
+            executor: DefaultCLIExecutor(bridge: bridge)
+        )
+        if platformCapability == nil { platformCapability = service }
+        service.refresh()
+        platformCapabilityAvailable = await service.isAvailable(for: workspace.profile)
     }
 
     private var cliCard: some View {
@@ -929,6 +952,79 @@ struct SettingsView: View {
         s.replacingOccurrences(of: "'", with: "'\\''")
     }
 
+    // MARK: - Experimental features
+
+    /// Collapsible section listing v2.1.0 opt-in preview features. Each
+    /// feature has a toggle, a description, a capability note (if relevant),
+    /// and a discussion link. Disabled by default so an admin can't enable a
+    /// feature they don't have the prerequisites for (e.g. Platform API
+    /// without a `platform` auth-method profile).
+    private var experimentalFeaturesCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                DisclosureGroup(isExpanded: $experimentalExpanded) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(ExperimentalFeatureService.Feature.allCases, id: \.self) { feature in
+                            experimentalFeatureRow(feature)
+                            if feature != ExperimentalFeatureService.Feature.allCases.last {
+                                Divider().background(Theme.Hairline.standard)
+                            }
+                        }
+                    }
+                    .padding(.top, 10)
+                } label: {
+                    SectionHeader(title: "Experimental Features")
+                }
+                .accessibilityHint("Opt-in toggles for v2.1.0 preview features")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Experimental features")
+    }
+
+    private func experimentalFeatureRow(
+        _ feature: ExperimentalFeatureService.Feature
+    ) -> some View {
+        let isPlatform = (feature == .platformAPI)
+        let isDisabled = isPlatform && !platformCapabilityAvailable
+        let disabledTooltip = "Requires a jamf-cli profile with auth-method: platform. "
+            + "Run `jamf-cli config list` to see your current profile's auth method."
+        let toggleBinding = Binding<Bool>(
+            get: { experimentalFeatures.isEnabled(feature) },
+            set: { experimentalFeatures.setEnabled(feature, $0) }
+        )
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(feature.displayName)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Theme.Text.primary)
+                experimentalBadge
+                Spacer()
+                PNPToggle(isOn: toggleBinding, label: "\(feature.displayName) toggle")
+                    .disabled(isDisabled)
+                    .help(isDisabled ? disabledTooltip : "")
+            }
+            Text(feature.description)
+                .font(.caption.monospaced())
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+            if isPlatform {
+                Text("Requires a jamf-cli profile with auth-method: platform.")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            if let url = feature.discussionURL {
+                Link("Learn more \u{2192}", destination: url)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.gold)
+            }
+        }
+    }
+
+    private var experimentalBadge: some View {
+        ExperimentalBadge()
+    }
+
     private var sidebarVisibilityCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
@@ -956,8 +1052,8 @@ struct SettingsView: View {
 
     private static let toggleableGroups: [(label: String, tabs: [Tab])] = [
         ("Reports",       [.fleet, .deviceLookup, .trends, .audit, .reports]),
-        ("Posture",       [.securityPosture, .compliancePosture, .outreach]),
-        ("Operations",    [.patch, .updates, .policyProfile, .extensionAttributes]),
+        ("Posture",       [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
+        ("Operations",    [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
         ("Fleet",         [.mobileFleet, .protectDashboard]),
         ("Automation",    [.schedules, .runs]),
         ("Configuration", [.config, .customize, .backups])

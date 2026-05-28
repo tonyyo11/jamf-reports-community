@@ -256,20 +256,30 @@ jamf_cli:
   # Report types to skip during live collection (`jamf-reports-community collect`).
   # Use this on on-prem Jamf Pro instances where the expensive per-device queries
   # below stall the server or consume excessive API time. Underscores and hyphens
-  # are interchangeable ("update_status" == "update-status"). Only the four
-  # report types below honor this list — core inventory commands always run.
+  # are interchangeable ("update_status" == "update-status"). Only the report
+  # types below honor this list — core inventory commands always run.
   #
   # Supported values:
   #   patch-device-failures   `pro report patch-status --scan-failures`
   #   profile-status          `pro report profile-status`
   #   update-status           `pro report update-status`
   #   update-device-failures  `pro report update-status --scan-failures`
+  #   device-security-state   drop the SECURITY section from `pro computers list`
+  #                           (skips Device Security State sheet; per-device
+  #                           FileVault/SIP/Firewall/Gatekeeper/Bootstrap signals
+  #                           become empty in DevicesView).
+  #   mobile-details          skip `pro mobile-device-inventory-details list`
+  #                           (Mobile Inventory and Mobile Supervision Status
+  #                           sheets fall back to cached data or remain empty;
+  #                           Mobile Fleet KPIs in the app go blank).
   #
   # Example: skip update-status and its scan-failures variant on a slow server.
   collect_skip: []
   # collect_skip:
   #   - update-status
   #   - update-device-failures
+  #   - device-security-state
+  #   - mobile-details
 
 
 # ---------------------------------------------------------------------------
@@ -405,7 +415,12 @@ protect:
 # "NIST 800-53r5 Moderate Devices".
 
 platform:
-  # Set true to enable the preview Platform API sheets.
+  # Set true to opt this profile into Platform API reports. Required, but
+  # not sufficient on its own — v2.1.0 also requires the experimental flag
+  # below (experimental.platform_features_enabled) AND a jamf-cli profile
+  # with auth-method: platform. All three checks must pass before any
+  # Platform sheet is written; a "[skip] Platform API gate closed" line
+  # surfaces in the run log if any check fails.
   enabled: false
   # List of benchmark titles for the Platform compliance sheets.
   # Each entry produces a Rules sheet and a Devices sheet.
@@ -416,9 +431,36 @@ platform:
   # Adds a "Platform Health" sheet with seven platform-specific findings
   # (undeployed blueprints, deployment failures, stale blueprints,
   # benchmark updates available, monitor-mode benchmarks, empty platform
-  # scope, devices with failed DDM declarations). Gated by platform.enabled.
+  # scope, devices with failed DDM declarations). Gated by platform.enabled
+  # plus the experimental Platform API gate.
   audit_platform:
     enabled: true
+
+
+# =============================================================================
+# EXPERIMENTAL FEATURES
+# =============================================================================
+# Opt-in toggles for v2.1.0 preview features. These features depend on
+# capabilities that are not universally available (Platform API requires a
+# different jamf-cli auth method; Protect requires a configured Protect
+# tenant), so they ship off by default. Enabling a flag here is necessary
+# but not sufficient — each code path also runs a capability probe before
+# attempting any work, and silently skips if the probe fails.
+#
+# Community testing notes and feedback:
+# https://github.com/tonyyo11/jamf-reports-community/discussions
+
+experimental:
+  # Platform API features (compliance benchmarks, DDM blueprints).
+  # Requires a jamf-cli profile with `auth-method: platform`. Set up via:
+  #   jamf-cli config add-profile <name> --auth-method platform \
+  #     --url <gateway-url> --tenant-id <id>
+  platform_features_enabled: false
+
+  # Jamf Protect deep-dive features (per-device alert timeline, kill-chain
+  # stage breakdown). Requires a configured Jamf Protect tenant in your
+  # jamf-cli profile.
+  protect_features_enabled: false
 
 
 # =============================================================================
