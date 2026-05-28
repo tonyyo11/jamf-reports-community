@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-05-28
+
 ### Accessibility
 
 WCAG 2.2 Level AA fixes across the macOS app and the HTML instance report.
