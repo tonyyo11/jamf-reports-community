@@ -7,6 +7,7 @@ Each epic is a checklist intended to be worked off as a focused release:
 - [Epic: Test coverage hardening](https://github.com/tonyyo11/jamf-reports-community/issues/102)
 - [Epic: Security & silent-failure hardening](https://github.com/tonyyo11/jamf-reports-community/issues/103)
 - [Epic: Code hygiene & refactors](https://github.com/tonyyo11/jamf-reports-community/issues/104)
+- [Epic: jamf-cli upstream compatibility & capability tracking](https://github.com/tonyyo11/jamf-reports-community/issues/147)
 
 ## Process
 
