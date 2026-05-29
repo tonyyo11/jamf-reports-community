@@ -197,6 +197,40 @@ final class PatchStatusServiceTests: XCTestCase {
                       "A '+' value in any column must be tab-prefixed")
     }
 
+    // MARK: - CacheSource derivation
+
+    func testCacheSourceWithNilSnapshotDate() {
+        let snapshot = PatchStatusService.Snapshot(
+            titles: [],
+            failures: [],
+            sourceFile: nil,
+            snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.cacheSource, .neverFetchedLive)
+    }
+
+    func testCacheSourceWithFreshSnapshotDate() {
+        let recent = Date(timeIntervalSinceNow: -1800) // 30 minutes ago
+        let snapshot = PatchStatusService.Snapshot(
+            titles: [],
+            failures: [],
+            sourceFile: nil,
+            snapshotDate: recent
+        )
+        XCTAssertEqual(snapshot.cacheSource, .fresh)
+    }
+
+    func testCacheSourceWithStaleSnapshotDate() {
+        let stale = Date(timeIntervalSinceNow: -48 * 3600) // 48 hours ago
+        let snapshot = PatchStatusService.Snapshot(
+            titles: [],
+            failures: [],
+            sourceFile: nil,
+            snapshotDate: stale
+        )
+        XCTAssertEqual(snapshot.cacheSource, .stale(at: stale))
+    }
+
     func testFailuresOnlyWithoutTitles() throws {
         // Test that we can handle missing failures file gracefully
         let titlesJSON = """

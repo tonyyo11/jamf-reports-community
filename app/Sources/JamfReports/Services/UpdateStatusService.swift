@@ -35,6 +35,12 @@ struct UpdateStatusService: Sendable {
             var id: String { label }
         }
 
+        /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
+        /// threshold as TrendStore to align with the standard daily-schedule cadence.
+        var cacheSource: CacheSource {
+            CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
+        }
+
         /// Empty snapshot used when no data file exists for the active profile.
         static let empty = Snapshot(
             total: 0,

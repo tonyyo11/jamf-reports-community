@@ -187,6 +187,52 @@ final class UpdateStatusServiceTests: XCTestCase {
         XCTAssertNil(snapshot)
     }
 
+    // MARK: - CacheSource derivation
+
+    func testCacheSourceWithNilSnapshotDate() {
+        let snapshot = UpdateStatusService.Snapshot(
+            total: 0,
+            planTotal: 0,
+            statusBreakdown: [],
+            planStateBreakdown: [],
+            errorDevices: [],
+            failedPlans: [],
+            sourceFile: nil,
+            snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.cacheSource, .neverFetchedLive)
+    }
+
+    func testCacheSourceWithFreshSnapshotDate() {
+        let recent = Date(timeIntervalSinceNow: -1800) // 30 minutes ago
+        let snapshot = UpdateStatusService.Snapshot(
+            total: 0,
+            planTotal: 0,
+            statusBreakdown: [],
+            planStateBreakdown: [],
+            errorDevices: [],
+            failedPlans: [],
+            sourceFile: nil,
+            snapshotDate: recent
+        )
+        XCTAssertEqual(snapshot.cacheSource, .fresh)
+    }
+
+    func testCacheSourceWithStaleSnapshotDate() {
+        let stale = Date(timeIntervalSinceNow: -48 * 3600) // 48 hours ago
+        let snapshot = UpdateStatusService.Snapshot(
+            total: 0,
+            planTotal: 0,
+            statusBreakdown: [],
+            planStateBreakdown: [],
+            errorDevices: [],
+            failedPlans: [],
+            sourceFile: nil,
+            snapshotDate: stale
+        )
+        XCTAssertEqual(snapshot.cacheSource, .stale(at: stale))
+    }
+
     func testUpdateStatusServiceReturnsEmptyForMissingFile() throws {
         let snapshot = UpdateStatusService.load(profile: "nonexistent-profile")
         XCTAssertEqual(snapshot, .empty)
