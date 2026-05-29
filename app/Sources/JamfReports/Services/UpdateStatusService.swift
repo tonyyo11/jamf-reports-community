@@ -26,6 +26,7 @@ struct UpdateStatusService: Sendable {
                 && lhs.errorDevices.count == rhs.errorDevices.count
                 && lhs.failedPlans.count == rhs.failedPlans.count
                 && lhs.sourceFile == rhs.sourceFile
+                && lhs.snapshotDate == rhs.snapshotDate
         }
 
         struct Slice: Sendable, Equatable, Identifiable {

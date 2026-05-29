@@ -233,6 +233,30 @@ final class UpdateStatusServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.cacheSource, .stale(at: stale))
     }
 
+    // MARK: - Snapshot equality
+
+    /// `==` must include `snapshotDate`: two snapshots identical except for the
+    /// date drive different `cacheSource` states, so equality that ignored the
+    /// date would suppress a stale->fresh banner flip.
+    func testSnapshotEqualityDistinguishesSnapshotDate() {
+        func make(_ date: Date?) -> UpdateStatusService.Snapshot {
+            UpdateStatusService.Snapshot(
+                total: 1,
+                planTotal: 1,
+                statusBreakdown: [],
+                planStateBreakdown: [],
+                errorDevices: [],
+                failedPlans: [],
+                sourceFile: nil,
+                snapshotDate: date
+            )
+        }
+        let fresh = Date(timeIntervalSinceNow: -1800)
+        let stale = Date(timeIntervalSinceNow: -48 * 3600)
+        XCTAssertNotEqual(make(fresh), make(stale))
+        XCTAssertEqual(make(fresh), make(fresh))
+    }
+
     func testUpdateStatusServiceReturnsEmptyForMissingFile() throws {
         let snapshot = UpdateStatusService.load(profile: "nonexistent-profile")
         XCTAssertEqual(snapshot, .empty)
