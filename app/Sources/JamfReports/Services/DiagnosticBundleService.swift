@@ -102,7 +102,8 @@ final class DiagnosticRedactor {
         self.hostnameURLRE = Self.mustCompile(
             #"(https?://)([a-z0-9][a-z0-9\-\.]{1,253}\.[a-z]{2,63})\b"#, [.caseInsensitive])
         self.hostnameBareRE = Self.mustCompile(
-            #"\b([a-z0-9][a-z0-9\-]{0,62}\.(?:jamfcloud\.com|jamfcloud\.io))\b"#, [.caseInsensitive])
+            #"\b([a-z0-9][a-z0-9\-]{0,62}\.(?:jamfcloud\.com|jamfcloud\.io))\b"#,
+            [.caseInsensitive])
         self.emailRE = Self.mustCompile(
             #"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"#)
         self.serialRE = Self.mustCompile(#"\b[B-DF-HJ-NP-TV-Z0-9]{10,12}\b"#)
@@ -210,27 +211,32 @@ final class DiagnosticRedactor {
             harvest(obj, into: &sets)
         }
         let total = sets.values.reduce(0) { $0 + $1.count }
-        for (category, values) in sets {
-            let literals = values.filter { $0.count >= Self.minSeedLen }
-                .sorted { $0.count > $1.count }
-                .prefix(Self.maxSeedPerCategory)
-            guard !literals.isEmpty else { continue }
-            let pattern = literals.map { NSRegularExpression.escapedPattern(for: $0) }
-                .joined(separator: "|")
-            do {
-                seededRegexes[category] = try NSRegularExpression(pattern: pattern)
-            } catch {
-                // Seeding only augments free-text redaction; key-based and regex
-                // PII/credential redaction are unaffected. Log so the rare
-                // (length-limit) gap is observable rather than silent.
-                AppLogger.engine.warning(
-                    "DiagnosticRedactor: seed regex compile failed for \(category, privacy: .public)")
-            }
-        }
+        for (category, values) in sets { compileSeededRegex(category, from: values) }
         return total
     }
 
     // MARK: - Internals
+
+    /// Compile one category's harvested literals into an alternation regex and
+    /// store it. Extracted from `seedFromWorkspace` to keep that method's
+    /// complexity within the project ceiling.
+    private func compileSeededRegex(_ category: String, from values: Set<String>) {
+        let literals = values.filter { $0.count >= Self.minSeedLen }
+            .sorted { $0.count > $1.count }
+            .prefix(Self.maxSeedPerCategory)
+        guard !literals.isEmpty else { return }
+        let pattern = literals.map { NSRegularExpression.escapedPattern(for: $0) }
+            .joined(separator: "|")
+        do {
+            seededRegexes[category] = try NSRegularExpression(pattern: pattern)
+        } catch {
+            // Seeding only augments free-text redaction; key-based and regex
+            // PII/credential redaction are unaffected. Log so the rare
+            // (length-limit) gap is observable rather than silent.
+            AppLogger.engine.warning(
+                "DiagnosticRedactor: seed compile failed for \(category, privacy: .public)")
+        }
+    }
 
     private func placeholder(_ kind: String, _ value: String) -> String {
         let cacheKey = "\(kind)\u{0}\(value)"
@@ -305,6 +311,8 @@ final class DiagnosticRedactor {
         add(#"("refresh_token"\s*:\s*")[^"]+(")"#, "$1REDACTED_REFRESH_TOKEN$2", ci: false)
         add(#"(password\s*[:=]\s*["']?)([^"'\s,}]{1,})(["']?)"#, "$1REDACTED_PASSWORD$3")
         add(#"(api_?key\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#, "$1REDACTED_API_KEY$3")
+        // Single regex token; splitting the literal would obscure the pattern.
+        // swiftlint:disable:next line_length
         add(#"((?:\w*token\w*|\bpat|\w*private_key\w*)\s*[:=]\s*["']?)(?!REDACTED)([^"'\s,}]{8,})(["']?)"#,
             "$1REDACTED_TOKEN$3")
         add(#"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]{8,}"#, "$1REDACTED_BASIC_CREDENTIAL")
@@ -454,7 +462,8 @@ enum DiagnosticBundleService {
         days: Int, now: Date
     ) -> [ManifestEntry] {
         let fm = FileManager.default
-        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
+        let keys: [URLResourceKey] =
+            [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
         guard let enumerator = fm.enumerator(at: logsDir, includingPropertiesForKeys: keys) else {
             return []
         }
@@ -479,7 +488,8 @@ enum DiagnosticBundleService {
                 entries.append(.skipped(path: arcname, reason: "could not stage log"))
                 continue
             }
-            entries.append(.file(path: arcname, size: content.utf8.count, redacted: redactor != nil))
+            entries.append(
+                .file(path: arcname, size: content.utf8.count, redacted: redactor != nil))
         }
         return entries
     }
@@ -515,6 +525,8 @@ enum DiagnosticBundleService {
                 entries.append(.skipped(path: arcname, reason: "could not stage summary"))
                 continue
             }
+            // size omitted to match the Python summaries manifest entry, which
+            // records only path + redacted.
             entries.append(ManifestEntry(
                 path: arcname, size: nil, redacted: redactor != nil, skipped: nil, reason: nil))
         }

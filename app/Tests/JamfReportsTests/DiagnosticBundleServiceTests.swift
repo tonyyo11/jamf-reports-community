@@ -95,6 +95,7 @@ final class DiagnosticBundleServiceTests: XCTestCase {
 
     func testDifferentInstancesDifferentPlaceholders() {
         // Per-instance random salt → digests must differ (matches Python).
+        // Collision probability is ~1/2^32 per run — not a real flake concern.
         let a = DiagnosticRedactor().redactText("C02CDFGHJK")
         let b = DiagnosticRedactor().redactText("C02CDFGHJK")
         XCTAssertNotEqual(a, b)
@@ -270,7 +271,7 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertThrowsError(try DiagnosticBundleService.generate(profile: "Bad Name!"))
     }
 
-    func testSymlinkedConfigAndSummaryAreSkipped() throws {
+    func testSymlinkedInputsAreSkipped() throws {
         let fm = FileManager.default
         let workspace = try makeWorkspace()
         defer { try? fm.removeItem(at: workspace.root) }
@@ -286,6 +287,9 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         try fm.createSymbolicLink(
             at: workspace.sources.summariesDir.appendingPathComponent("summary_2026-06-01.json"),
             withDestinationURL: secretFile)
+        try fm.createSymbolicLink(
+            at: workspace.sources.logsDir.appendingPathComponent("linked.log"),
+            withDestinationURL: secretFile)
 
         let staging = try makeTempDir()
         defer { try? fm.removeItem(at: staging) }
@@ -294,12 +298,39 @@ final class DiagnosticBundleServiceTests: XCTestCase {
             redactor: DiagnosticRedactor(), options: .init(), now: Date())
 
         XCTAssertFalse(fm.fileExists(atPath: staging.appendingPathComponent("config.yaml").path))
+        XCTAssertFalse(fm.fileExists(atPath: staging.appendingPathComponent("logs/linked.log").path))
         for name in try fileSet(under: staging) {
             let content =
                 (try? String(contentsOf: staging.appendingPathComponent(name), encoding: .utf8)) ?? ""
             XCTAssertFalse(content.contains("SUPERSECRETVALUE"), "leaked via \(name)")
         }
         XCTAssertTrue(entries.contains { $0.path == "config.yaml" && $0.skipped == true })
+    }
+
+    func testNoRedactOptionMarksManifestDisabledAndPreservesRawContent() throws {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace.root) }
+        let outputDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: outputDir) }
+
+        var options = DiagnosticBundleOptions()
+        options.redact = false
+        let zip = try DiagnosticBundleService.buildBundle(
+            sources: workspace.sources, outputDir: outputDir,
+            profileSlug: "test", options: options, now: Date())
+
+        let extracted = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: extracted) }
+        try unzip(zip, into: extracted)
+        let log = try String(
+            contentsOf: extracted.appendingPathComponent("logs/run.log"), encoding: .utf8)
+        XCTAssertTrue(log.contains("leakvalue123"), "no-redact must preserve raw content")
+
+        let manifest = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: Data(contentsOf: extracted.appendingPathComponent("manifest.json")))
+            as? [String: Any])
+        let policy = try XCTUnwrap(manifest["redaction_policy"] as? [String: Any])
+        XCTAssertEqual(policy["enabled"] as? Bool, false)
     }
 
     // MARK: - Fixtures
