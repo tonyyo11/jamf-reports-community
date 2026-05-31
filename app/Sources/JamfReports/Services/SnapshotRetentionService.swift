@@ -49,10 +49,7 @@ enum SnapshotRetentionService {
             throw RetentionError.invalidProfile(profile)
         }
 
-        let workspaceURL = ProfileService.workspacesRoot()
-            .appendingPathComponent(profile, isDirectory: true)
-        let dataDir = workspaceURL
-            .appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let dataDir = try WorkspacePaths.dataDir(for: profile)
 
         let fm = FileManager.default
         guard fm.fileExists(atPath: dataDir.path) else { return 0 }

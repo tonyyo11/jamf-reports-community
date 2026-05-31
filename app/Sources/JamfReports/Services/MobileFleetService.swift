@@ -222,9 +222,14 @@ struct MobileFleetService: Sendable {
             return .empty
         }
 
-        let lightDevices = listURL.flatMap(loadDeviceList) ?? []
-        let richDevices = inventoryURL.flatMap(loadDeviceInventory) ?? []
-        let profiles = profilesURL.flatMap(loadProfiles) ?? []
+        // Track whether at least one loader decoded a non-nil result. A readable
+        // empty file counts as "detected" (mirrors ProtectDashboardService). A URL
+        // that is present but whose data cannot be decoded is a decode failure and
+        // is logged; it does NOT count as detected.
+        var readSomething = false
+        let lightDevices = loadDeviceList(from: listURL, success: &readSomething)
+        let richDevices = loadDeviceInventory(from: inventoryURL, success: &readSomething)
+        let profiles = loadProfiles(from: profilesURL, success: &readSomething)
 
         // Determine source file and date from the most recent of the three
         let sourceFiles = [listURL, inventoryURL, profilesURL].compactMap { $0 }
@@ -242,7 +247,7 @@ struct MobileFleetService: Sendable {
         }
 
         return Snapshot(
-            isDetected: true,
+            isDetected: readSomething,
             lightDevices: lightDevices,
             richDevices: richDevices,
             profiles: profiles,
@@ -253,29 +258,51 @@ struct MobileFleetService: Sendable {
 
     // MARK: - Internals
 
-    private static func loadDeviceList(_ url: URL) -> [MobileDeviceListRow]? {
-        guard let data = try? Data(contentsOf: url),
-              let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data)
-        else { return nil }
+    private static func loadDeviceList(
+        from url: URL?, success: inout Bool
+    ) -> [MobileDeviceListRow] {
+        guard let url,
+              let data = try? Data(contentsOf: url)
+        else { return [] }
+        guard let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) else {
+            AppLogger.engine.warning(
+                "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
+        success = true
         return devices
     }
 
-    private static func loadDeviceInventory(_ url: URL) -> [MobileDeviceInventoryItem]? {
-        guard let data = try? Data(contentsOf: url),
-              let devices = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
-        else { return nil }
+    private static func loadDeviceInventory(
+        from url: URL?, success: inout Bool
+    ) -> [MobileDeviceInventoryItem] {
+        guard let url,
+              let data = try? Data(contentsOf: url)
+        else { return [] }
+        guard let devices = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data) else {
+            AppLogger.engine.warning(
+                "MobileFleetService: failed to decode mobile-device-inventory-details at \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
+        success = true
         return devices
     }
 
-    private static func loadProfiles(_ url: URL) -> [MobileConfigProfileRow]? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-
-        // Try direct array decode first
+    private static func loadProfiles(
+        from url: URL?, success: inout Bool
+    ) -> [MobileConfigProfileRow] {
+        guard let url,
+              let data = try? Data(contentsOf: url)
+        else { return [] }
         if let profiles = try? JSONDecoder().decode([MobileConfigProfileRow].self, from: data) {
+            success = true
             return profiles
         }
-
-        // Fall back to any envelope structure
-        return nil
+        AppLogger.engine.warning(
+            "MobileFleetService: failed to decode classic-ios-profiles at \(url.lastPathComponent, privacy: .public)"
+        )
+        return []
     }
 }
