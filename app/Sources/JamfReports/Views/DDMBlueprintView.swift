@@ -24,20 +24,12 @@ struct DDMBlueprintView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                DDMBlueprintView.header()
-                if !workspace.demoMode && lockState == .unlockedWithData {
-                    StaleDataBanner(source: snapshot.cacheSource)
-                }
-                content
+        PageScaffold {
+            DDMBlueprintView.header()
+            if !workspace.demoMode && lockState == .unlockedWithData {
+                StaleDataBanner(source: snapshot.cacheSource)
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
+            content
         }
         .tint(Theme.Colors.goldBright)
         .task(id: workspace.profile) {

@@ -100,29 +100,23 @@ struct TrendsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if !workspaceStore.demoMode && trendStore.isEmpty {
-                    emptyState
-                } else {
-                    heroHeader
-                    // PR-13: shared StaleDataBanner surfaces freshness above
-                    // the hero chart. Suppressed in demo mode (the demo
-                    // dataset is intentionally static and not user-perceivably
-                    // "stale"). Renders nothing when source is .fresh.
-                    if !workspaceStore.demoMode {
-                        StaleDataBanner(source: trendStore.cacheSource)
-                    }
-                    metricPicker
-                    heroChart
-                    comparisonRow
-                    snapshotArchive
+        PageScaffold(spacing: 16) {
+            if !workspaceStore.demoMode && trendStore.isEmpty {
+                emptyState
+            } else {
+                heroHeader
+                // PR-13: shared StaleDataBanner surfaces freshness above
+                // the hero chart. Suppressed in demo mode (the demo
+                // dataset is intentionally static and not user-perceivably
+                // "stale"). Renders nothing when source is .fresh.
+                if !workspaceStore.demoMode {
+                    StaleDataBanner(source: trendStore.cacheSource)
                 }
+                metricPicker
+                heroChart
+                comparisonRow
+                snapshotArchive
             }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
         }
         .onAppear {
             if let preferred = TrendRange(rawValue: defaultTrendRangeRaw), preferred != range {

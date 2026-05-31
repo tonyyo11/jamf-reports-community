@@ -46,28 +46,20 @@ struct ConfigView: View {
     @State private var triggerColumnsCheck = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                SegmentedControl(
-                    selection: $tab,
-                    options: ConfigTab.allCases.map { ($0, $0.label, $0.icon) }
-                )
-                if let err = workspace.configError {
-                    Text(err)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Colors.danger)
-                        .padding(.horizontal, 4)
-                        .accessibilityLabel("Configuration error: \(err)")
-                }
-                tabContent
+        PageScaffold(spacing: 16) {
+            header
+            SegmentedControl(
+                selection: $tab,
+                options: ConfigTab.allCases.map { ($0, $0.label, $0.icon) }
+            )
+            if let err = workspace.configError {
+                Text(err)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.danger)
+                    .padding(.horizontal, 4)
+                    .accessibilityLabel("Configuration error: \(err)")
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
+            tabContent
         }
         .task(id: workspace.profile) {
             do {

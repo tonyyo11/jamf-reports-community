@@ -47,16 +47,10 @@ struct DeviceLookupView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                searchCard
-                resultCard
-            }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
+        PageScaffold {
+            header
+            searchCard
+            resultCard
         }
         .onAppear {
             searchFocused = true

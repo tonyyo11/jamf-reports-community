@@ -31,63 +31,57 @@ struct ReportsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                Card(padding: 0) {
-                    if reports.isEmpty {
-                        emptyState
-                    } else if filteredReports.isEmpty {
-                        noFilterMatches
-                    } else {
-                        Table(filteredReports, selection: $selectedReports) {
-                            TableColumn("Filename") { r in
-                                HStack(spacing: 8) {
-                                    Image(systemName: icon(for: r.name))
-                                        .foregroundStyle(Theme.Colors.gold)
-                                        .font(.system(size: 11))
-                                        .accessibilityHidden(true)
-                                    Mono(text: r.name, color: Theme.Colors.fg)
-                                }
-                                .accessibilityLabel(
-                                    "\(r.name), \(r.sheets) sheet\(r.sheets == 1 ? "" : "s"), \(r.size)"
-                                )
+        PageScaffold(spacing: 16) {
+            header
+            Card(padding: 0) {
+                if reports.isEmpty {
+                    emptyState
+                } else if filteredReports.isEmpty {
+                    noFilterMatches
+                } else {
+                    Table(filteredReports, selection: $selectedReports) {
+                        TableColumn("Filename") { r in
+                            HStack(spacing: 8) {
+                                Image(systemName: icon(for: r.name))
+                                    .foregroundStyle(Theme.Colors.gold)
+                                    .font(.system(size: 11))
+                                    .accessibilityHidden(true)
+                                Mono(text: r.name, color: Theme.Colors.fg)
                             }
-                            TableColumn("Source schedule") { r in
-                                Text(r.source).font(.footnote)
-                            }
-                            TableColumn("Sheets") { r in Mono(text: "\(r.sheets)") }
-                            TableColumn("Devices") { r in Mono(text: "\(r.devices)") }
-                            TableColumn("Size") { r in Mono(text: r.size) }
-                            TableColumn("Generated") { r in Mono(text: r.date) }
+                            .accessibilityLabel(
+                                "\(r.name), \(r.sheets) sheet\(r.sheets == 1 ? "" : "s"), \(r.size)"
+                            )
                         }
-                        .frame(minHeight: 360)
-                        .scrollContentBackground(.hidden)
-                        .contextMenu(forSelectionType: Report.ID.self) { selection in
-                            if let reportID = selection.first,
-                               let url = ReportLibrary().url(
-                                profile: workspace.profile,
-                                reportName: reportID
-                               ) {
-                                Button("Reveal in Finder") {
-                                    SystemActions.reveal(url)
-                                }
-                                Button("Open") {
-                                    SystemActions.open(url)
-                                }
-                                Button("Copy path") {
-                                    SystemActions.copyToClipboard(url.path)
-                                }
+                        TableColumn("Source schedule") { r in
+                            Text(r.source).font(.footnote)
+                        }
+                        TableColumn("Sheets") { r in Mono(text: "\(r.sheets)") }
+                        TableColumn("Devices") { r in Mono(text: "\(r.devices)") }
+                        TableColumn("Size") { r in Mono(text: r.size) }
+                        TableColumn("Generated") { r in Mono(text: r.date) }
+                    }
+                    .frame(minHeight: 360)
+                    .scrollContentBackground(.hidden)
+                    .contextMenu(forSelectionType: Report.ID.self) { selection in
+                        if let reportID = selection.first,
+                           let url = ReportLibrary().url(
+                            profile: workspace.profile,
+                            reportName: reportID
+                           ) {
+                            Button("Reveal in Finder") {
+                                SystemActions.reveal(url)
+                            }
+                            Button("Open") {
+                                SystemActions.open(url)
+                            }
+                            Button("Copy path") {
+                                SystemActions.copyToClipboard(url.path)
                             }
                         }
                     }
                 }
-                summary
             }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
+            summary
         }
         .onAppear(perform: reload)
         .onChange(of: workspace.profile) { _, _ in reload() }

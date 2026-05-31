@@ -58,86 +58,80 @@ struct HealthCheckView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
+        PageScaffold {
+            header
 
-                HStack(spacing: 16) {
-                    SegmentedControl(
-                        selection: Binding(
-                            get: { selectedTab == 0 ? "Audit" : "Hygiene" },
-                            set: { selectedTab = ($0 == "Audit" ? 0 : 1) }
-                        ),
-                        options: [
-                            ("Audit", "Health Check", "shield.checkered"),
-                            ("Hygiene", "Group Hygiene", "wand.and.stars")
-                        ]
-                    )
-                    .accessibilityLabel("View: \(selectedTab == 0 ? "Health Check" : "Group Hygiene")")
-                    .help("Switch between Health Check audit findings and Computer Group Hygiene analysis")
-
-                    if selectedTab == 0 {
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.fgMuted)
-                            TextField("Search findings", text: $query)
-                                .textFieldStyle(.plain)
-                                .font(.callout)
-                                .foregroundStyle(Theme.Colors.fg)
-                                .focused($isSearchFocused)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(width: 240, height: 28)
-                        .background(
-                            Color(nsColor: .textBackgroundColor),
-                            in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
-                                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
-                        )
-                    }
-
-                    Spacer()
-                }
-
-                if let cacheDecodeError, selectedTab == 0 {
-                    HStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.Colors.warn)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Audit cache could not be loaded")
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(Theme.Colors.fg)
-                            Text("\(cacheDecodeError). Re-run the audit to rebuild.")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.Colors.fg2)
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        Theme.Colors.warn.opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: 6)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(Theme.Colors.warn.opacity(0.3), lineWidth: 0.5)
-                    )
-                }
+            HStack(spacing: 16) {
+                SegmentedControl(
+                    selection: Binding(
+                        get: { selectedTab == 0 ? "Audit" : "Hygiene" },
+                        set: { selectedTab = ($0 == "Audit" ? 0 : 1) }
+                    ),
+                    options: [
+                        ("Audit", "Health Check", "shield.checkered"),
+                        ("Hygiene", "Group Hygiene", "wand.and.stars")
+                    ]
+                )
+                .accessibilityLabel("View: \(selectedTab == 0 ? "Health Check" : "Group Hygiene")")
+                .help("Switch between Health Check audit findings and Computer Group Hygiene analysis")
 
                 if selectedTab == 0 {
-                    auditSection
-                } else {
-                    hygieneSection
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                        TextField("Search findings", text: $query)
+                            .textFieldStyle(.plain)
+                            .font(.callout)
+                            .foregroundStyle(Theme.Colors.fg)
+                            .focused($isSearchFocused)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(width: 240, height: 28)
+                    .background(
+                        Color(nsColor: .textBackgroundColor),
+                        in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
+                            .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                    )
                 }
+
+                Spacer()
             }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
+
+            if let cacheDecodeError, selectedTab == 0 {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.warn)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Audit cache could not be loaded")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.fg)
+                        Text("\(cacheDecodeError). Re-run the audit to rebuild.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    Theme.Colors.warn.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: 6)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Theme.Colors.warn.opacity(0.3), lineWidth: 0.5)
+                )
+            }
+
+            if selectedTab == 0 {
+                auditSection
+            } else {
+                hygieneSection
+            }
         }
         .task(id: workspace.profile) {
             await loadCached()
