@@ -120,55 +120,45 @@ final class CapabilityService {
 
     /// Extracts the set of `pro` subcommand names from `jamf-cli pro --help` output.
     ///
-    /// Anchors on the `Available Commands:` header so that `Usage:`, `Examples:`,
-    /// and the long description before it are ignored. Stops collecting at the first
-    /// line matching `^Flags:` (cobra convention). Each command line in the block
-    /// has the form `  <name>  <description>` — two or more leading spaces, then
-    /// the name (non-whitespace), then more whitespace, then description.
+    /// Real `jamf-cli pro --help` uses named category headers (`Core Commands:`,
+    /// `Computer Management:`, etc.) rather than a single `Available Commands:` block.
+    /// Category headers are non-indented and colon-terminated; command rows are
+    /// indented with exactly two spaces. The `Flags:`/`Global Flags:` headers
+    /// terminate the command section.
+    ///
+    /// Capture rule: a line is a command row iff it starts with exactly two spaces,
+    /// the first token (name) is followed by two or more spaces (description separator),
+    /// and the name is not "help" (cobra synthetic). This discriminates against the
+    /// `Usage:` line (`  jamf-cli pro [command]`) because "jamf-cli" is followed by
+    /// only one space, not two.
     ///
     /// `nonisolated static` so tests can call it synchronously.
     nonisolated static func parseAvailableCommands(from helpText: String) -> Set<String> {
         var result: Set<String> = []
-        var inCommandsBlock = false
 
         for line in helpText.split(separator: "\n", omittingEmptySubsequences: false) {
             let raw = String(line)
 
-            // Enter the commands block when we see the header.
-            if !inCommandsBlock {
-                if raw.trimmingCharacters(in: .whitespaces) == "Available Commands:" {
-                    inCommandsBlock = true
-                }
-                continue
-            }
-
-            // Exit on the Flags: section header (or any non-indented non-empty line
-            // that follows the commands block, which cobra uses for subsequent sections).
+            // Stop at the flags section — nothing after it is a command.
             if raw.hasPrefix("Flags:") || raw.hasPrefix("Global Flags:") {
                 break
             }
 
-            // cobra command lines are indented by exactly two spaces, then the name,
-            // then two or more spaces, then the description. Skip blank lines.
-            guard raw.hasPrefix("  "), !raw.trimmingCharacters(in: .whitespaces).isEmpty else {
-                // A blank line or non-indented line between sections — keep scanning;
-                // cobra sometimes emits a blank line before "Flags:".
-                if !raw.trimmingCharacters(in: .whitespaces).isEmpty {
-                    // Non-empty non-indented line after commands block = new section.
-                    break
-                }
-                continue
-            }
+            // Command rows start with exactly two spaces (not more).
+            // Lines indented more (flag values, continuation text) are skipped.
+            guard raw.hasPrefix("  "), !raw.hasPrefix("   ") else { continue }
 
-            // Drop the leading two spaces, then split on whitespace to get the name.
-            let trimmed = String(raw.dropFirst(2))
-            if let name = trimmed.split(whereSeparator: \.isWhitespace).first {
-                let cmd = String(name)
-                // Cobra emits "help" as a synthetic command — skip it.
-                if cmd != "help" {
-                    result.insert(cmd)
-                }
-            }
+            // After stripping the two-space indent, split on whitespace.
+            // A valid command row is: <name><2+ spaces><description>.
+            // The name contains no whitespace; it must be followed by at least
+            // two spaces so that the Usage line `  jamf-cli pro [command]` is
+            // excluded ("jamf-cli" is followed by one space, not two).
+            let body = String(raw.dropFirst(2))
+            guard let spaceRange = body.range(of: "  ") else { continue }
+            let name = String(body[body.startIndex..<spaceRange.lowerBound])
+            guard !name.isEmpty, !name.contains(" "), name != "help" else { continue }
+
+            result.insert(name)
         }
 
         return result
