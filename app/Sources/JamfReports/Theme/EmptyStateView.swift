@@ -12,6 +12,16 @@ struct EmptyStateView: View {
 
     @Environment(\.colorSchemeContrast) private var contrast
 
+    /// Internal accessibility label text for testing
+    internal var accessibilityLabelText: String {
+        [title, message, commands.joined(separator: ", ")].filter { !$0.isEmpty }.joined(separator: ". ")
+    }
+
+    /// Internal accessibility hint text for testing
+    internal var accessibilityHintText: String {
+        primaryAction != nil ? "Activate to \(primaryAction?.label ?? "")" : ""
+    }
+
     init(
         icon: Image? = nil,
         title: String,
@@ -86,8 +96,8 @@ struct EmptyStateView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title). \(message)")
-        .accessibilityHint(primaryAction != nil ? "Double-tap to \(primaryAction?.label ?? "")" : "")
+        .accessibilityLabel(accessibilityLabelText)
+        .accessibilityHint(accessibilityHintText)
     }
 }
 

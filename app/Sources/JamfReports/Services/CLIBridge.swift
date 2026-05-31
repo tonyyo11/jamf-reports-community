@@ -206,64 +206,88 @@ final class CLIBridge {
             }
         }
 
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
-            let completion = RunCompletion(continuation)
-            let process = Process()
-            process.executableURL = executable
-            process.arguments = arguments
-            if let cwd { process.currentDirectoryURL = cwd }
-            process.environment = environment
+        // Lock-protected box so the task-cancellation handler's terminate() call
+        // never races against the continuation body's set() call. onCancel fires
+        // concurrently on whatever thread cancels the Task — there is no
+        // happens-before between the operation and onCancel closures.
+        // Terminating a not-yet-launched process is a documented no-op, so the
+        // already-cancelled-at-entry case is safe: onCancel fires first (reads
+        // nil), body spawns, process runs to completion normally. A belt-and-
+        // suspenders isCancelled check after run() catches that edge and terminates.
+        final class ProcessBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var process: Process?
+            func set(_ p: Process) { lock.lock(); process = p; lock.unlock() }
+            func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
+        }
+        let box = ProcessBox()
 
-            let stdout = Pipe()
-            let stderr = Pipe()
-            process.standardOutput = stdout
-            process.standardError = stderr
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
+                let completion = RunCompletion(continuation)
+                let process = Process()
+                box.set(process)
+                process.executableURL = executable
+                process.arguments = arguments
+                if let cwd { process.currentDirectoryURL = cwd }
+                process.environment = environment
 
-            stdout.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty {
-                    handle.readabilityHandler = nil
-                    completion.markStdoutEOF()
-                    return
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
+
+                stdout.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if data.isEmpty {
+                        handle.readabilityHandler = nil
+                        completion.markStdoutEOF()
+                        return
+                    }
+                    guard let s = String(data: data, encoding: .utf8) else { return }
+                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
+                        onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
+                    }
                 }
-                guard let s = String(data: data, encoding: .utf8) else { return }
-                for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                    onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
+                stderr.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if data.isEmpty {
+                        handle.readabilityHandler = nil
+                        completion.markStderrEOF()
+                        return
+                    }
+                    guard let s = String(data: data, encoding: .utf8) else { return }
+                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
+                        onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
+                    }
+                }
+
+                process.terminationHandler = { proc in
+                    completion.markTerminated(proc.terminationStatus)
+                }
+
+                do {
+                    try process.run()
+                    // Belt-and-suspenders: if cancellation arrived before run()
+                    // (onCancel fired first, read nil, returned without terminating),
+                    // terminate the now-running process ourselves.
+                    if Task.isCancelled { process.terminate() }
+                } catch {
+                    // C-11: mirror to OSLog so post-mortem forensics see launch
+                    // failures even when the in-app stream is gone.
+                    AppLogger.cli.error(
+                        "CLIBridge.run: process launch failed: \(error.localizedDescription, privacy: .private)"
+                    )
+                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
+                    stdout.fileHandleForReading.readabilityHandler = nil
+                    stderr.fileHandleForReading.readabilityHandler = nil
+                    completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
                 }
             }
-            stderr.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty {
-                    handle.readabilityHandler = nil
-                    completion.markStderrEOF()
-                    return
-                }
-                guard let s = String(data: data, encoding: .utf8) else { return }
-                for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                    onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
-                }
-            }
-
-            process.terminationHandler = { proc in
-                completion.markTerminated(proc.terminationStatus)
-            }
-
-            do {
-                try process.run()
-            } catch {
-                // C-11: mirror to OSLog so post-mortem forensics see launch
-                // failures even when the in-app stream is gone.
-                AppLogger.cli.error(
-                    "CLIBridge.run: process launch failed: \(error.localizedDescription, privacy: .private)"
-                )
-                onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
-                stdout.fileHandleForReading.readabilityHandler = nil
-                stderr.fileHandleForReading.readabilityHandler = nil
-                completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
-            }
+        } onCancel: {
+            box.terminate()
         }
     }
-
     /// Run an arbitrary command, streaming each line through `onLine` and returning
     /// the collected stdout + the process exit code.
     ///
@@ -337,59 +361,74 @@ final class CLIBridge {
             }
         }
 
-        let code = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
-            let completion = CaptureCompletion(continuation)
-            let process = Process()
-            process.executableURL = executable
-            process.arguments = arguments
-            if let cwd { process.currentDirectoryURL = cwd }
-            process.environment = environment
+        // Locked process box for task-cancellation — same pattern as run().
+        final class ProcessBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var process: Process?
+            func set(_ p: Process) { lock.lock(); process = p; lock.unlock() }
+            func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
+        }
+        let processBox = ProcessBox()
 
-            let stdout = Pipe()
-            let stderr = Pipe()
-            process.standardOutput = stdout
-            process.standardError = stderr
+        let code = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
+                let completion = CaptureCompletion(continuation)
+                let process = Process()
+                processBox.set(process)
+                process.executableURL = executable
+                process.arguments = arguments
+                if let cwd { process.currentDirectoryURL = cwd }
+                process.environment = environment
 
-            stdout.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if data.isEmpty {
-                    // Empty delivery == EOF: the child closed its stdout write end,
-                    // and every preceding non-empty chunk has already been appended
-                    // (a DispatchSource delivers in order). Capture is now complete.
-                    handle.readabilityHandler = nil
-                    completion.markStdoutEOF()
-                    return
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
+
+                stdout.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if data.isEmpty {
+                        // Empty delivery == EOF: the child closed its stdout write end,
+                        // and every preceding non-empty chunk has already been appended
+                        // (a DispatchSource delivers in order). Capture is now complete.
+                        handle.readabilityHandler = nil
+                        completion.markStdoutEOF()
+                        return
+                    }
+                    // stdout is the structured payload (typically JSON) consumed by the
+                    // report engine — do NOT stream it to onLine, only capture it. Progress
+                    // messages from jamf-cli arrive on stderr and are streamed below.
+                    box.append(data)
                 }
-                // stdout is the structured payload (typically JSON) consumed by the
-                // report engine — do NOT stream it to onLine, only capture it. Progress
-                // messages from jamf-cli arrive on stderr and are streamed below.
-                box.append(data)
-            }
-            stderr.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
-                for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                    onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
+                stderr.fileHandleForReading.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+                    for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
+                        onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
+                    }
+                }
+
+                process.terminationHandler = { proc in
+                    stderr.fileHandleForReading.readabilityHandler = nil
+                    completion.markTerminated(proc.terminationStatus)
+                }
+
+                do {
+                    try process.run()
+                    if Task.isCancelled { process.terminate() }
+                } catch {
+                    // C-11: mirror to OSLog — see `run()` above.
+                    AppLogger.cli.error(
+                        "CLIBridge.runAndCapture: process launch failed: \(error.localizedDescription, privacy: .private)"
+                    )
+                    onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
+                    stdout.fileHandleForReading.readabilityHandler = nil
+                    stderr.fileHandleForReading.readabilityHandler = nil
+                    completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
                 }
             }
-
-            process.terminationHandler = { proc in
-                stderr.fileHandleForReading.readabilityHandler = nil
-                completion.markTerminated(proc.terminationStatus)
-            }
-
-            do {
-                try process.run()
-            } catch {
-                // C-11: mirror to OSLog — see `run()` above.
-                AppLogger.cli.error(
-                    "CLIBridge.runAndCapture: process launch failed: \(error.localizedDescription, privacy: .private)"
-                )
-                onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
-                stdout.fileHandleForReading.readabilityHandler = nil
-                stderr.fileHandleForReading.readabilityHandler = nil
-                completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
-            }
+        } onCancel: {
+            processBox.terminate()
         }
         return (code, box.data)
     }
@@ -1867,12 +1906,36 @@ func runDeviceDetailProcess(
             process.standardOutput = FileHandle.nullDevice
             let stderrPipe = Pipe()
             process.standardError = stderrPipe
+            // Drain stderr via readabilityHandler before waitUntilExit to prevent
+            // a pipe-buffer deadlock when the child writes >~64 KB before exiting.
+            // NSLock.lock()/unlock() is @available(*, noasync) — it cannot be called
+            // directly in an async function body. Wrapping all lock/unlock pairs inside
+            // synchronous methods on the class is the standard workaround used throughout
+            // this file (DataBox, RunCompletion, ProcessBox) and is safe because
+            // the `@available(*, noasync)` restriction does not propagate through a
+            // synchronous call boundary.
+            final class StderrBuffer: @unchecked Sendable {
+                private let lock = NSLock()
+                private var data = Data()
+                func append(_ chunk: Data) { lock.lock(); data.append(chunk); lock.unlock() }
+                func snapshot() -> Data { lock.lock(); defer { lock.unlock() }; return data }
+            }
+            let buf = StderrBuffer()
+            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                guard !chunk.isEmpty else {
+                    handle.readabilityHandler = nil
+                    return
+                }
+                buf.append(chunk)
+            }
             try process.run()
             process.waitUntilExit()
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
             let code = process.terminationStatus
             if code != 0 {
-                let data = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                if let msg = String(data: data, encoding: .utf8),
+                let errData = buf.snapshot()
+                if let msg = String(data: errData, encoding: .utf8),
                    !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     AppLogger.cli.warning(
                         "runDeviceDetailProcess exit \(code): \(msg, privacy: .private)"

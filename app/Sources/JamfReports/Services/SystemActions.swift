@@ -25,10 +25,21 @@ enum SystemActions {
         return true
     }
 
+    /// Returns true when `url` should be opened directly via `NSWorkspace.open`
+    /// without going through the file allow-list. Only `https` and `http` qualify;
+    /// the caller also requires a non-empty host before actually opening.
+    ///
+    /// Extracted as a pure helper so tests can assert scheme-acceptance decisions
+    /// without triggering real browser launches.
+    static func isBrowserOpenable(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "https" || scheme == "http"
+    }
+
     /// Open a file with the default application or a URL in the default browser.
     static func open(_ url: URL) {
-        if let scheme = url.scheme?.lowercased(), scheme == "https" {
-            // Reject non-https schemes disguised as URL components (javascript:, data:, file:).
+        if isBrowserOpenable(url) {
+            // Reject non-http(s) schemes disguised as URL components (javascript:, data:, file:).
             guard let host = url.host, !host.isEmpty else { return }
             NSWorkspace.shared.open(url)
             return

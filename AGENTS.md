@@ -97,7 +97,7 @@ reference the SHA of the commit being revised.
 
 ### Python CLI Engine
 
-The entire Python implementation lives in `jamf-reports-community.py` (~20,550 lines). There
+The entire Python implementation lives in `jamf-reports-community.py` (~20,500 lines). There
 are no other Python files. Do not create additional modules — keep it single-file.
 
 ### Classes
@@ -873,7 +873,7 @@ jamf-reports-community/
 │   │   ├── Models/             # Data models + DemoData
 │   │   ├── Services/           # Business logic, CLIBridge, workspace management
 │   │   ├── Theme/              # Design tokens, shared components
-│   │   └── Views/              # 27 SwiftUI screens + shared components
+│   │   └── Views/              # 39 SwiftUI screens + shared components
 │   └── Tests/JamfReportsTests/ # Swift XCTest suite
 └── .gitignore                  # Excludes config.yaml, Generated Reports/, jamf-cli-data/
 ```

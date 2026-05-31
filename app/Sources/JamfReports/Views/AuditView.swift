@@ -813,12 +813,15 @@ private struct CompactMetricTile: View {
     let value: String
     let tone: Pill.Tone
 
+    // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
+    @ScaledMetric(relativeTo: .title) private var metricSize: CGFloat = 24
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Kicker(text: label)
                 Text(value)
-                    .font(Theme.Fonts.serif(24, weight: .bold))
+                    .font(Theme.Fonts.serif(metricSize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()
             }

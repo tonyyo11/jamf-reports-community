@@ -1331,6 +1331,11 @@ def _latest_report_family_file(
             header_cols = header_df.columns.tolist()
         except Exception:
             header_cols = []
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            # File vanished between glob and stat (concurrent run/cleanup); skip it.
+            continue
         preferred_hits = sum(1 for term in preferred_terms if term in path.name.casefold())
         header_primary, header_secondary = _report_family_header_score(
             config, family_name, header_cols,
@@ -1339,10 +1344,13 @@ def _latest_report_family_file(
             header_primary,
             preferred_hits,
             header_secondary,
-            path.stat().st_mtime,
+            mtime,
             path.name,
         )
         scored.append((key, path))
+
+    if not scored:
+        return None, note
 
     best = max(scored, key=lambda item: item[0])[1]
     return best, f"Using report_families.{family_name}: {best.name}"
@@ -3542,6 +3550,21 @@ class LogRedactor:
             ),
             r"\1REDACTED_API_KEY\3",
         ),
+        # Generic `*token*`/`pat`/`*private_key*` config keys in free text (log
+        # echoes of YAML/JSON the `_SENSITIVE_JSON_KEYS` walk can't reach because
+        # the key name is custom, e.g. `session_token`, `gh_pat`). Matches the
+        # key-value sibling form and redacts only the value (8-char floor avoids
+        # mangling the literal word "token" in prose). The `(?!REDACTED)` guard
+        # keeps this from clobbering a value an earlier pattern (e.g. JWT/Bearer)
+        # already replaced. Parity with Swift LogRedactor.
+        (
+            re.compile(
+                r'((?:\w*token\w*|\bpat|\w*private_key\w*)\s*[:=]\s*["\']?)'
+                r'(?!REDACTED)([^"\'\s,\}]{8,})(["\']?)',
+                re.IGNORECASE,
+            ),
+            r"\1REDACTED_TOKEN\3",
+        ),
         # HTTP Basic auth headers (security-reviewer S-1).
         (
             re.compile(r"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]{8,}", re.IGNORECASE),
@@ -4834,8 +4857,8 @@ class JamfCLIBridge:
                     title, data = future.result()
                     if title and data:
                         summaries[title] = data
-                except Exception:
-                    pass
+                except Exception as exc:
+                    print(f"  [warn] patch-summary fetch failed for one title: {exc}")
 
         self._set_source_info("patch-summaries", "live")
         if self._save:
@@ -15957,7 +15980,8 @@ document.querySelectorAll('.tree-search').forEach((input) => {
                 f'style="height:28px;margin-right:10px;vertical-align:middle;'
                 f'border-radius:4px">'
             )
-        except Exception:
+        except (OSError, ValueError) as exc:
+            print(f"  [warn] Could not embed logo '{logo_path}': {exc}")
             return ""
 
     def _render_stat_card(
@@ -18251,6 +18275,14 @@ def cmd_export_reports(
 
         ts = today.strftime("%Y-%m-%dT%H_%M_%S")
         filename = str(defn.get("filename", f"{name}_{ts}.csv")).replace("{ts}", ts)
+        # Strip any path components so a malformed config `filename` (e.g.
+        # "../../x.csv") cannot write outside output_dir. Path(...).name yields
+        # "." or ".." for bare-dotdot inputs (e.g. "../../"), which still escape,
+        # so reject those explicitly.
+        filename = Path(filename).name
+        if not filename or filename in {".", ".."}:
+            print(f"  [warn] {name}: 'filename' resolved to empty — skipping")
+            continue
         out_path = output_dir / filename
 
         # Apply row filter
@@ -19360,7 +19392,11 @@ def _bundle_collect_logs(
         return
     cutoff = datetime.now().timestamp() - (days * 86400)
     for log_path in sorted(logs_dir.rglob("*")):
-        if not log_path.is_file() or log_path.stat().st_mtime < cutoff:
+        # Skip symlinks: a link in logs/ pointing outside the workspace would
+        # otherwise be followed by is_file()/read_text() and bundled.
+        if log_path.is_symlink() or not log_path.is_file():
+            continue
+        if log_path.stat().st_mtime < cutoff:
             continue
         rel = log_path.relative_to(logs_dir)
         arcname = f"logs/{rel.as_posix()}"
@@ -19480,6 +19516,7 @@ def _bundle_collect_workspace_tree(
 
 
 def _bundle_collect_versions(
+    redactor: Optional[LogRedactor],
     zip_file: zipfile.ZipFile,
     manifest_files: list[dict[str, Any]],
 ) -> None:
@@ -19503,6 +19540,8 @@ def _bundle_collect_versions(
         "platform": platform.platform(),
         "bundle_schema_version": _BUNDLE_SCHEMA_VERSION,
     }
+    if redactor is not None:
+        versions = redactor.redact_json(versions)
     content = json.dumps(versions, indent=2, sort_keys=True)
     zip_file.writestr("versions.json", content)
     manifest_files.append({"path": "versions.json", "size": len(content)})
@@ -19586,7 +19625,7 @@ def cmd_diagnostic_bundle(
         _bundle_collect_summaries(workspace, summary_limit, redactor, zf, manifest_files)
         _bundle_collect_config(config, redactor, zf, manifest_files)
         _bundle_collect_workspace_tree(workspace, redactor, zf, manifest_files)
-        _bundle_collect_versions(zf, manifest_files)
+        _bundle_collect_versions(redactor, zf, manifest_files)
 
         manifest = {
             "schema_version": _BUNDLE_SCHEMA_VERSION,

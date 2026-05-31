@@ -296,15 +296,23 @@ final class JamfCLIInstaller {
         process.standardOutput = stdout
         process.standardError = stderr
 
+        // Drain concurrently to avoid pipe-buffer deadlock on large --version output.
+        let stdoutDrainer = ProcessPipeDrainer(pipe: stdout)
+        let stderrDrainer = ProcessPipeDrainer(pipe: stderr)
+        stdoutDrainer.start()
+        stderrDrainer.start()
+
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
+            stdoutDrainer.cancel()
+            stderrDrainer.cancel()
             return nil
         }
 
-        let out = stdout.fileHandleForReading.readDataToEndOfFile()
-        let err = stderr.fileHandleForReading.readDataToEndOfFile()
+        let out = stdoutDrainer.finish()
+        let err = stderrDrainer.finish()
         let text = [
             String(data: out, encoding: .utf8),
             String(data: err, encoding: .utf8),
@@ -1047,17 +1055,30 @@ final class JamfCLIInstaller {
         process.standardOutput = stdout
         process.standardError = stderr
 
+        // Drain pipes concurrently via readabilityHandler before waitUntilExit
+        // to prevent a deadlock when the child writes more than the kernel pipe
+        // buffer (~64 KB) before exiting. waitUntilExit after readDataToEndOfFile
+        // is safe once the pipes are drained.
+        let stdoutDrainer = ProcessPipeDrainer(pipe: stdout)
+        let stderrDrainer = ProcessPipeDrainer(pipe: stderr)
+        stdoutDrainer.start()
+        stderrDrainer.start()
+
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
+            stdoutDrainer.cancel()
+            stderrDrainer.cancel()
             return CommandResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
         }
 
+        let outData = stdoutDrainer.finish()
+        let errData = stderrDrainer.finish()
         return CommandResult(
             exitCode: process.terminationStatus,
-            stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
-            stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            stdout: String(data: outData, encoding: .utf8) ?? "",
+            stderr: String(data: errData, encoding: .utf8) ?? ""
         )
     }
 

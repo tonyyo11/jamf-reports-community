@@ -5,6 +5,10 @@ struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
+
+    // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
+    @ScaledMetric(relativeTo: .title) private var summaryKPISize: CGFloat = 22
+    @ScaledMetric(relativeTo: .title) private var deviceCountSize: CGFloat = 26
     @State private var bridge = CLIBridge()
     @State private var trendStore = TrendStore()
     @State private var isRunning = false
@@ -213,7 +217,7 @@ struct OverviewView: View {
         VStack(alignment: .leading, spacing: 5) {
             Kicker(text: label, tone: ok ? .teal : .muted)
             Text(value)
-                .font(Theme.Fonts.serif(22, weight: .bold))
+                .font(Theme.Fonts.serif(summaryKPISize, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .lineLimit(2)
             Mono(text: sub, size: 10.5, color: Theme.Text.tertiary(contrast))
@@ -488,7 +492,7 @@ struct OverviewView: View {
         .overlay(
             VStack(spacing: 2) {
                 Text("73%")
-                    .font(Theme.Fonts.serif(26, weight: .bold))
+                    .font(Theme.Fonts.serif(deviceCountSize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                 Kicker(text: "On Current")
             }
@@ -1058,6 +1062,9 @@ struct AgentCardView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var isHovering = false
 
+    // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
+    @ScaledMetric(relativeTo: .title) private var summaryKPISize: CGFloat = 22
+
     var body: some View {
         let pct = agent.pct
         let isAtRisk = pct < 80
@@ -1070,7 +1077,7 @@ struct AgentCardView: View {
             Text(agent.name).font(.footnote.weight(.semibold))
                 .foregroundStyle(Theme.Colors.fg)
             Text("\(String(format: "%.1f", pct))%")
-                .font(Theme.Fonts.serif(22, weight: .bold))
+                .font(Theme.Fonts.serif(summaryKPISize, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .monospacedDigit()
             HStack(spacing: 6) {

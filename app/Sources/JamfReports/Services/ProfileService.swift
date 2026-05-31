@@ -189,9 +189,12 @@ enum ProfileService {
         guard resolved.deletingLastPathComponent().standardizedFileURL.path == root.path else {
             throw CleanupError.outsideWorkspaceRoot(url)
         }
-        guard FileManager.default.fileExists(atPath: url.path) else { return false }
-        try FileManager.default.removeItem(at: url)
-        return true
+        do {
+            try FileManager.default.removeItem(at: url)
+            return true
+        } catch let error as NSError where error.code == NSFileNoSuchFileError {
+            return false
+        }
     }
 
     /// Lists profiles from `jamf-cli config list`. The

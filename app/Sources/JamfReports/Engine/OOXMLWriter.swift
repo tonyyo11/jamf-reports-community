@@ -692,7 +692,11 @@ final class Workbook: @unchecked Sendable {
         case .int(let i):
             return "<c r=\"\(ref)\" s=\"\(styleIdx)\"><v>\(i)</v></c>"
         case .double(let d):
-            return "<c r=\"\(ref)\" s=\"\(styleIdx)\"><v>\(d)</v></c>"
+            // Guard at the render site in addition to CellValue.safe construction.
+            // A CellValue.double created directly (bypassing .safe) could still carry
+            // NaN/inf and produce invalid SpreadsheetML.
+            let safe = d.isFinite ? d : 0.0
+            return "<c r=\"\(ref)\" s=\"\(styleIdx)\"><v>\(safe)</v></c>"
         case .bool(let b):
             return "<c r=\"\(ref)\" t=\"b\" s=\"\(styleIdx)\"><v>\(b ? 1 : 0)</v></c>"
         }

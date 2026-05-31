@@ -193,4 +193,40 @@ final class AccessibilitySweepTests: XCTestCase {
         XCTAssertTrue(ax.summary?.contains("Tahoe") ?? false)
         XCTAssertTrue(ax.summary?.contains("Sonoma") ?? false)
     }
+
+    // MARK: - v2.1.1 Accessibility Fixes
+
+    /// EmptyStateView must include command text in VoiceOver label (addresses issue #101)
+    func testEmptyStateViewIncludesCommandsInAccessibilityLabel() {
+        let emptyState = EmptyStateView(
+            title: "No compliance snapshot yet",
+            message: "Run jamf-cli to populate this screen.",
+            commands: ["jamf-cli pro report security", "jamf-cli pro report patch-status"]
+        )
+
+        // The accessibility label should combine title, message, and commands
+        let expectedComponents = ["No compliance snapshot yet", "Run jamf-cli to populate this screen", "jamf-cli pro report security, jamf-cli pro report patch-status"]
+        let fullLabel = emptyState.accessibilityLabelText
+
+        for component in expectedComponents {
+            XCTAssertTrue(fullLabel.contains(component),
+                         "Accessibility label should include: \(component)")
+        }
+    }
+
+    /// EmptyStateView accessibility hint should use "Activate to" phrasing on macOS (addresses issue #101)
+    func testEmptyStateViewUsesProperMacOSAccessibilityHint() {
+        let emptyState = EmptyStateView(
+            title: "No reports yet",
+            message: "Generate your first report",
+            primaryAction: EmptyStateAction(label: "Generate Report") { }
+        )
+
+        // Should use "Activate to" not "Double-tap to" on macOS
+        let hint = emptyState.accessibilityHintText
+        XCTAssertTrue(hint.contains("Activate to"),
+                     "Accessibility hint should use 'Activate to' for macOS")
+        XCTAssertFalse(hint.contains("Double-tap"),
+                      "Accessibility hint should not use iOS 'Double-tap' phrasing on macOS")
+    }
 }

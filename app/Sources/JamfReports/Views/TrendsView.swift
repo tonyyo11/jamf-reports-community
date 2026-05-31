@@ -8,6 +8,9 @@ struct TrendsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
+
+    // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
+    @ScaledMetric(relativeTo: .largeTitle) private var heroMetricSize: CGFloat = 44
     @State private var trendStore = TrendStore()
     @State private var bridge = CLIBridge()
     @State private var metric: TrendSeries.Metric = .stability
@@ -304,7 +307,7 @@ struct TrendsView: View {
                         Kicker(text: metric.displayLabel)
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Text("\(Int(displayVal.rounded()))\(metric.unit)")
-                                .font(Theme.Fonts.serif(44, weight: .bold))
+                                .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
                                 .foregroundStyle(Theme.Colors.fg)
                                 .monospacedDigit()
                                 .contentTransition(.numericText(countsDown: delta < 0))
