@@ -121,55 +121,49 @@ struct AuditView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
+        PageScaffold {
+            header
 
-                HStack(spacing: 16) {
-                    SegmentedControl(
-                        selection: Binding(
-                            get: { selectedTab == 0 ? "Audit" : "Hygiene" },
-                            set: { selectedTab = ($0 == "Audit" ? 0 : 1) }
-                        ),
-                        options: [
-                            ("Audit", "Health Audit", "shield.checkered"),
-                            ("Hygiene", "Group Hygiene", "wand.and.stars")
-                        ]
-                    )
-
-                    if selectedTab == 0 {
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.fgMuted)
-                            TextField("Search findings", text: $query)
-                                .textFieldStyle(.plain)
-                                .font(.callout)
-                                .foregroundStyle(Theme.Colors.fg)
-                                .focused($isSearchFocused)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(width: 240, height: 28)
-                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
-                        )
-                    }
-
-                    Spacer()
-                }
+            HStack(spacing: 16) {
+                SegmentedControl(
+                    selection: Binding(
+                        get: { selectedTab == 0 ? "Audit" : "Hygiene" },
+                        set: { selectedTab = ($0 == "Audit" ? 0 : 1) }
+                    ),
+                    options: [
+                        ("Audit", "Health Audit", "shield.checkered"),
+                        ("Hygiene", "Group Hygiene", "wand.and.stars")
+                    ]
+                )
 
                 if selectedTab == 0 {
-                    auditSection
-                } else {
-                    hygieneSection
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                        TextField("Search findings", text: $query)
+                            .textFieldStyle(.plain)
+                            .font(.callout)
+                            .foregroundStyle(Theme.Colors.fg)
+                            .focused($isSearchFocused)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(width: 240, height: 28)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+                    )
                 }
+
+                Spacer()
             }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
+
+            if selectedTab == 0 {
+                auditSection
+            } else {
+                hygieneSection
+            }
         }
         .task(id: workspace.profile) {
             await loadCached()

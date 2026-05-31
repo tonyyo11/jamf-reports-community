@@ -12,21 +12,22 @@ struct PageScaffoldTests {
     @Test func scaffoldInstantiatesWithTextContent() {
         let view = PageScaffold {
             Text("Header")
-        } content: {
             Text("Body content")
         }
-        // If PageScaffold's initialiser or body property compiles and executes,
-        // the view tree construction succeeds.
-        _ = view
+        // If PageScaffold's initialiser and body compile and execute, the view
+        // tree construction succeeds.
+        _ = view.body
     }
 
-    @Test func scaffoldInstantiatesWithEmptyViews() {
-        let view = PageScaffold {
-            EmptyView()
-        } content: {
-            EmptyView()
+    @Test func scaffoldAcceptsCustomSpacing() {
+        let view = PageScaffold(spacing: 14) {
+            Text("Body content")
         }
-        _ = view
+        _ = view.body
+    }
+
+    @Test func minSupportedWidthIsStable() {
+        #expect(PageScaffold<EmptyView>.minSupportedWidth == 640)
     }
 
     @Test func metricsTokensUsedByScaffoldExist() {

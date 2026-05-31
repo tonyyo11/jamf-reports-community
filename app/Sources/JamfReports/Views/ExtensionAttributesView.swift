@@ -28,31 +28,23 @@ struct ExtensionAttributesView: View {
     private static let largeFleetRowThreshold = 25_000
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(
-                    kicker: "Inventory",
-                    title: "Extension Attributes",
-                    subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate
-                )
-                if snapshot.totalEAs == 0 {
-                    emptyState
-                } else {
-                    kpiGrid
-                    coverageCard
-                    if let selectedEA, !selectedEA.isEmpty {
-                        valueDistributionCard(for: selectedEA)
-                    }
-                    definitionsCard
+        PageScaffold {
+            PageHeader(
+                kicker: "Inventory",
+                title: "Extension Attributes",
+                subtitle: subtitle,
+                lastModified: snapshot.snapshotDate
+            )
+            if snapshot.totalEAs == 0 {
+                emptyState
+            } else {
+                kpiGrid
+                coverageCard
+                if let selectedEA, !selectedEA.isEmpty {
+                    valueDistributionCard(for: selectedEA)
                 }
+                definitionsCard
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)

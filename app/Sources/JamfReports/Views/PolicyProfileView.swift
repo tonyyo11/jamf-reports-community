@@ -31,52 +31,44 @@ struct PolicyProfileView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(
-                    kicker: "Operations",
-                    title: "Policy & Profile Health",
-                    subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate
-                )
+        PageScaffold {
+            PageHeader(
+                kicker: "Operations",
+                title: "Policy & Profile Health",
+                subtitle: subtitle,
+                lastModified: snapshot.snapshotDate
+            )
 
-                SegmentedControl(
-                    selection: $selectedTab,
-                    options: Tab.allCases.map { ($0, $0.label, $0.icon) }
-                )
+            SegmentedControl(
+                selection: $selectedTab,
+                options: Tab.allCases.map { ($0, $0.label, $0.icon) }
+            )
 
-                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-                // Suppressed in demo mode (the demo dataset is intentionally static and
-                // not user-perceivably "stale"). Renders nothing when source is .fresh.
-                if !workspace.demoMode {
-                    StaleDataBanner(source: snapshot.cacheSource)
+            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+            // Suppressed in demo mode (the demo dataset is intentionally static and
+            // not user-perceivably "stale"). Renders nothing when source is .fresh.
+            if !workspace.demoMode {
+                StaleDataBanner(source: snapshot.cacheSource)
+            }
+
+            switch selectedTab {
+            case .policies:
+                if snapshot.summary == nil && snapshot.findings.isEmpty {
+                    policyEmptyState
+                } else {
+                    policyKpiGrid
+                    if !snapshot.findings.isEmpty {
+                        findingsCard
+                    }
                 }
-
-                switch selectedTab {
-                case .policies:
-                    if snapshot.summary == nil && snapshot.findings.isEmpty {
-                        policyEmptyState
-                    } else {
-                        policyKpiGrid
-                        if !snapshot.findings.isEmpty {
-                            findingsCard
-                        }
-                    }
-                case .profiles:
-                    if snapshot.profiles.isEmpty {
-                        profileEmptyState
-                    } else {
-                        profileKpiGrid
-                        profileStatusCard
-                    }
+            case .profiles:
+                if snapshot.profiles.isEmpty {
+                    profileEmptyState
+                } else {
+                    profileKpiGrid
+                    profileStatusCard
                 }
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
