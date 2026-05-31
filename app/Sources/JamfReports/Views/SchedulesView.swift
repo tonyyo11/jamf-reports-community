@@ -48,24 +48,18 @@ struct SchedulesView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                if let message = workspace.launchAgentCleanupMessage {
-                    legacyCleanupBanner(message)
-                }
-                if !workspace.launchAgentStaleLabels.isEmpty {
-                    staleExecutableBanner(workspace.launchAgentStaleLabels)
-                }
-                profileFilterStrip
-                nextUpCallout
-                schedulesTable
-                runModesExplainer
+        PageScaffold(spacing: 14) {
+            header
+            if let message = workspace.launchAgentCleanupMessage {
+                legacyCleanupBanner(message)
             }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
+            if !workspace.launchAgentStaleLabels.isEmpty {
+                staleExecutableBanner(workspace.launchAgentStaleLabels)
+            }
+            profileFilterStrip
+            nextUpCallout
+            schedulesTable
+            runModesExplainer
         }
         .searchable(text: $query, placement: .toolbar, prompt: "Filter by name, profile, cadence, or mode")
         .sheet(isPresented: $showNewSchedule) {

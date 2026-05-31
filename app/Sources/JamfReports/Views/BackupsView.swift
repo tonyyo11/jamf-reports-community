@@ -42,18 +42,12 @@ struct BackupsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                summary
-                errorBanner
-                backupsTable
-                logCard
-            }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
+        PageScaffold(spacing: 16) {
+            header
+            summary
+            errorBanner
+            backupsTable
+            logCard
         }
         .sheet(isPresented: $showingDiff) {
             diffSheet
