@@ -5,6 +5,8 @@ struct FleetOverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorSchemeContrast) private var contrast
+
+    // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
     @State private var rows: [FleetProfileOverview] = []
     @State private var isLoading = false
     @State private var issuesOnly: Bool = false
@@ -514,6 +516,7 @@ private struct StabilityTrendPoint: Identifiable, Sendable {
 }
 
 private struct FleetProfileCard: View {
+    @ScaledMetric(relativeTo: .largeTitle) private var percentSize: CGFloat = 30
     let row: FleetProfileOverview
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -569,7 +572,7 @@ private struct FleetProfileCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Kicker(text: "Devices")
                         Text(row.summary.map { "\($0.totalDevices)" } ?? "--")
-                            .font(Theme.Fonts.serif(30, weight: .bold))
+                            .font(Theme.Fonts.serif(percentSize, weight: .bold))
                             .foregroundStyle(Theme.Colors.fg)
                             .monospacedDigit()
                     }

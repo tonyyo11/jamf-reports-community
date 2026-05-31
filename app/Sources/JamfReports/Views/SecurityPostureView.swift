@@ -8,6 +8,9 @@ import Charts
 struct SecurityPostureView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
+
+    // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
+    @ScaledMetric(relativeTo: .title) private var actionTileSize: CGFloat = 22
     @State private var snapshot: SecurityPostureService.Snapshot = .empty
     @State private var hasLoaded = false
     /// User-configurable weight overrides edited in ConfigView → Scoring tab.
@@ -313,7 +316,7 @@ struct SecurityPostureView: View {
             HStack(spacing: 6) {
                 Pill(text: level, tone: tone)
                 Text("\(count)")
-                    .font(Theme.Fonts.serif(22, weight: .bold))
+                    .font(Theme.Fonts.serif(actionTileSize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()
             }
@@ -436,6 +439,9 @@ private struct ScoreRing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
 
+    // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
+    @ScaledMetric(relativeTo: .largeTitle) private var scoreDisplaySize: CGFloat = 32
+
     var body: some View {
         ZStack {
             Circle()
@@ -450,7 +456,7 @@ private struct ScoreRing: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.5), value: score.value)
             VStack(spacing: 2) {
                 Text(displayValue)
-                    .font(Theme.Fonts.serif(32, weight: .bold))
+                    .font(Theme.Fonts.serif(scoreDisplaySize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
                     .monospacedDigit()
                 Text("of 100")

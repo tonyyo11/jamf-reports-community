@@ -302,6 +302,11 @@ struct ExtensionAttributesView: View {
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(coverage.eaName) extension attribute coverage, \(String(format: "%.1f", coverage.coveragePct)) percent, \(coverage.populatedDevices) of \(coverage.totalDevices) devices")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "View distribution") {
+            selectedEA = coverage.eaName
+        }
+        .focusable()
     }
 
     private func coverageColor(for pct: Double) -> Color {
