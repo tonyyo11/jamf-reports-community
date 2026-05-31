@@ -373,6 +373,19 @@ struct SchedulesView: View {
                 TableColumn("Schedule") { s in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(s.name).font(.callout.weight(.semibold))
+                        Text(s.plainLanguageSummary)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.secondary)
+                        if s.needsMigrationNudge {
+                            HStack(spacing: 4) {
+                                Image(systemName: "info.circle")
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.Colors.info)
+                                Text("Re-save to migrate")
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.Colors.info)
+                            }
+                        }
                         Mono(text: labelText(for: s), size: 10.5)
                     }
                 }
