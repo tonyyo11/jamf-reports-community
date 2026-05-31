@@ -778,6 +778,9 @@ struct ReportEngine: Sendable {
         "sites",
         "buildings",
         "departments",
+        "advanced-mobile-device-searches",
+        "classic-computer-groups",
+        "classic-mobile-device-groups",
     ]
 
     /// Fetch jamf-cli snapshots for `profile`, filtered by:
@@ -882,6 +885,12 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "sites", "list", "--output", "json"], "sites"),
             (["-p", profile, "pro", "buildings", "list", "--output", "json"], "buildings"),
             (["-p", profile, "pro", "departments", "list", "--output", "json"], "departments"),
+            (["-p", profile, "pro", "advanced-mobile-device-searches", "list", "--output", "json"],
+             "advanced-mobile-device-searches"),
+            (["-p", profile, "pro", "classic-computer-groups", "list", "--output", "json"],
+             "classic-computer-groups"),
+            (["-p", profile, "pro", "classic-mobile-device-groups", "list", "--output", "json"],
+             "classic-mobile-device-groups"),
         ]
 
         let plannedCommands: [(args: [String], kind: String)]

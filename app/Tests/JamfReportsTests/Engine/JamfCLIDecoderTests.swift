@@ -730,6 +730,118 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].enabled, true)
     }
 
+    // MARK: - AdvancedMobileSearchEnvelope / AdvancedMobileSearchRow
+
+    func testAdvancedMobileSearchEnvelopeDecoding() throws {
+        let json = """
+        {
+          "totalCount": 2,
+          "results": [
+            {
+              "id": "211",
+              "name": "iPads – No Passcode",
+              "criteria": [
+                {"name": "Model", "priority": 0, "andOr": "and", "searchType": "like",
+                 "value": "iPad", "openingParen": false, "closingParen": false}
+              ],
+              "displayFields": ["Device Name", "Serial Number"],
+              "siteId": "-1"
+            },
+            {
+              "id": "212",
+              "name": "iPhones – Unmanaged",
+              "criteria": [],
+              "displayFields": [],
+              "siteId": "3"
+            }
+          ]
+        }
+        """
+        let envelope = try JSONDecoder().decode(
+            AdvancedMobileSearchEnvelope.self, from: Data(json.utf8))
+        XCTAssertEqual(envelope.totalCount, 2)
+        XCTAssertEqual(envelope.results.count, 2)
+        XCTAssertEqual(envelope.results[0].id, "211")
+        XCTAssertEqual(envelope.results[0].name, "iPads – No Passcode")
+        XCTAssertEqual(envelope.results[0].criteria?.count, 1)
+        XCTAssertEqual(envelope.results[0].criteria?[0].name, "Model")
+        XCTAssertEqual(envelope.results[0].criteria?[0].value, "iPad")
+        XCTAssertEqual(envelope.results[0].displayFields?.count, 2)
+        XCTAssertEqual(envelope.results[0].siteId, "-1")
+        XCTAssertEqual(envelope.results[1].id, "212")
+        XCTAssertEqual(envelope.results[1].criteria?.count, 0)
+    }
+
+    func testAdvancedMobileSearchEnvelopeEmptyResults() throws {
+        let json = #"{"totalCount": 0, "results": []}"#
+        let envelope = try JSONDecoder().decode(
+            AdvancedMobileSearchEnvelope.self, from: Data(json.utf8))
+        XCTAssertEqual(envelope.totalCount, 0)
+        XCTAssertTrue(envelope.results.isEmpty)
+    }
+
+    func testAdvancedMobileSearchRowMissingOptionalFields() throws {
+        // Minimal row — only name present. Should decode without throwing.
+        let json = #"{"totalCount": 1, "results": [{"name": "Minimal Search"}]}"#
+        let envelope = try JSONDecoder().decode(
+            AdvancedMobileSearchEnvelope.self, from: Data(json.utf8))
+        XCTAssertEqual(envelope.results[0].name, "Minimal Search")
+        XCTAssertNil(envelope.results[0].id)
+        XCTAssertNil(envelope.results[0].criteria)
+        XCTAssertNil(envelope.results[0].displayFields)
+        XCTAssertNil(envelope.results[0].siteId)
+    }
+
+    // MARK: - ClassicGroupRow
+
+    func testClassicGroupRowDecodingSmartGroup() throws {
+        let json = """
+        [{"id": 42, "is_smart": true, "name": "Smart – All Managed Macs"}]
+        """
+        let groups = try JSONDecoder().decode([ClassicGroupRow].self, from: Data(json.utf8))
+        XCTAssertEqual(groups[0].id, 42)
+        XCTAssertTrue(groups[0].isSmart)
+        XCTAssertEqual(groups[0].name, "Smart – All Managed Macs")
+    }
+
+    func testClassicGroupRowDecodingStaticGroup() throws {
+        let json = """
+        [{"id": 7, "is_smart": false, "name": "Static – Lab Devices"}]
+        """
+        let groups = try JSONDecoder().decode([ClassicGroupRow].self, from: Data(json.utf8))
+        XCTAssertEqual(groups[0].id, 7)
+        XCTAssertFalse(groups[0].isSmart)
+        XCTAssertEqual(groups[0].name, "Static – Lab Devices")
+    }
+
+    func testClassicGroupRowMissingIsSmartDefaultsToFalse() throws {
+        // Missing is_smart must not throw — defaults to false (static group).
+        let json = #"[{"id": 99, "name": "Unnamed Group"}]"#
+        let groups = try JSONDecoder().decode([ClassicGroupRow].self, from: Data(json.utf8))
+        XCTAssertEqual(groups[0].id, 99)
+        XCTAssertFalse(groups[0].isSmart, "missing is_smart must default to false")
+    }
+
+    func testClassicGroupRowEmptyArray() throws {
+        let groups = try JSONDecoder().decode([ClassicGroupRow].self, from: Data("[]".utf8))
+        XCTAssertTrue(groups.isEmpty)
+    }
+
+    func testClassicGroupRowMixedSmartStatic() throws {
+        let json = """
+        [
+          {"id": 1, "is_smart": true,  "name": "Smart Group A"},
+          {"id": 2, "is_smart": false, "name": "Static Group B"},
+          {"id": 3,                    "name": "No Flag Group"}
+        ]
+        """
+        let groups = try JSONDecoder().decode([ClassicGroupRow].self, from: Data(json.utf8))
+        XCTAssertEqual(groups.count, 3)
+        XCTAssertTrue(groups[0].isSmart)
+        XCTAssertFalse(groups[1].isSmart)
+        XCTAssertFalse(groups[2].isSmart, "absent flag must default to false")
+    }
+
     // MARK: - Helper
 
     private var fixturesDir: URL {

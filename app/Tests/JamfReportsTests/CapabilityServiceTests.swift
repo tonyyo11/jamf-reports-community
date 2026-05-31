@@ -179,14 +179,19 @@ Power Commands:
   report                        Generate operational reports and analytics
 
 Computer Management:
-  computer-extension-attributes  Manage computer-extension-attributes
-  computer-groups-smart-groups   Manage computer-groups-smart-groups
+  computer-extension-attributes          Manage computer-extension-attributes
+  computer-groups-smart-groups           Manage computer-groups-smart-groups
+  classic-computer-groups                Manage classic (Jamf Pro legacy) computer groups
+  classic-mobile-device-groups           Manage classic (Jamf Pro legacy) mobile device groups
+
+Mobile Management:
+  advanced-mobile-device-searches        Manage advanced mobile device searches
 
 Scripts & Policies:
-  scripts                       Manage scripts
+  scripts                               Manage scripts
 
 Distribution & JCDS:
-  packages                      Manage packages
+  packages                              Manage packages
 
 Other Commands:
   help                          Help about any command
