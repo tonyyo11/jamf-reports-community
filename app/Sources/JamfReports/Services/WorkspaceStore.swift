@@ -720,6 +720,37 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
             return false
         }
     }
+
+    /// A labeled group of tabs as they appear in the sidebar.
+    /// Shared by `Sidebar` (rendering) and keyboard-nav helpers (ordering).
+    struct NavGroup: Sendable {
+        let label: String
+        let items: [Tab]
+    }
+
+    /// Canonical sidebar navigation groups. `Sidebar` renders these directly;
+    /// `sidebarOrder` is derived from them so the two cannot diverge.
+    /// `.onboarding` is intentionally absent: the sidebar never lists it.
+    static let navGroups: [NavGroup] = [
+        .init(label: "REPORTS",
+              items: [.overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports]),
+        .init(label: "POSTURE",
+              items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
+        .init(label: "OPERATIONS",
+              items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
+        .init(label: "FLEET",
+              items: [.mobileFleet, .protectDashboard]),
+        .init(label: "AUTOMATION",
+              items: [.schedules, .runs]),
+        .init(label: "CONFIGURATION",
+              items: [.config, .customize, .sources, .backups]),
+        .init(label: "SYSTEM",
+              items: [.settings]),
+    ]
+
+    /// Flat ordered list of tabs for Cmd-[ / Cmd-] navigation.
+    /// Derived from `navGroups` so sidebar rendering and nav order stay in sync.
+    static let sidebarOrder: [Tab] = navGroups.flatMap(\.items)
 }
 
 // MARK: - Tab visibility
@@ -777,6 +808,40 @@ struct TabVisibility: Sendable, Equatable {
     func serialize() -> String {
         hidden.map(\.rawValue).sorted().joined(separator: ",")
     }
+}
+
+// MARK: - Keyboard navigation helpers
+
+/// Returns the next visible tab after `current` in `Tab.sidebarOrder`, filtered
+/// by `visibility`, wrapping at the end of the list.
+///
+/// - If `current` is not in the ordered list (e.g. `.onboarding`), returns the
+///   first visible tab in sidebar order.
+/// - Returns `nil` when `visibility` hides every tab in the ordered list
+///   (impossible via the public API since core tabs cannot be hidden).
+func nextVisibleTab(from current: Tab, in visibility: TabVisibility) -> Tab? {
+    let ordered = Tab.sidebarOrder.filter { visibility.isVisible($0) }
+    guard !ordered.isEmpty else { return nil }
+    guard let idx = ordered.firstIndex(of: current) else { return ordered.first }
+    return ordered[(idx + 1) % ordered.count]
+}
+
+/// Returns the previous visible tab before `current` in `Tab.sidebarOrder`,
+/// filtered by `visibility`, wrapping at the start of the list.
+///
+/// - If `current` is not in the ordered list, returns the first visible tab.
+/// - Returns `nil` when `visibility` hides every tab in the ordered list.
+func previousVisibleTab(from current: Tab, in visibility: TabVisibility) -> Tab? {
+    let ordered = Tab.sidebarOrder.filter { visibility.isVisible($0) }
+    guard !ordered.isEmpty else { return nil }
+    guard let idx = ordered.firstIndex(of: current) else { return ordered.first }
+    return ordered[(idx + ordered.count - 1) % ordered.count]
+}
+
+/// Returns the profile at the given zero-based index, or `nil` when out of range.
+func profileAt(index: Int, in profiles: [JamfCLIProfile]) -> JamfCLIProfile? {
+    guard profiles.indices.contains(index) else { return nil }
+    return profiles[index]
 }
 
 /// Sidebar collapse state. Persisted via `@AppStorage`. Standard macOS shortcut

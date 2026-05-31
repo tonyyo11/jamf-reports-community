@@ -15,6 +15,9 @@ struct SourcesView: View {
     @State private var showElevateScopeConfirm = false
     @State private var pendingScopeProfile: String?
     @State private var scopeRefreshTrigger = 0
+    @State private var capabilitySnapshot: CLICapabilitySnapshot?
+    @State private var capabilityService: CapabilityService?
+    @State private var cliBridge = CLIBridge()
 
     private struct CLICommand: Identifiable {
         let id = UUID()
@@ -75,6 +78,7 @@ struct SourcesView: View {
                 cliCard
                 csvCard
             }
+            capabilityCard
             familiesCard
         }
         .onAppear {
@@ -82,6 +86,7 @@ struct SourcesView: View {
             inboxWatcher.start(profile: workspace.profile) {
                 reload()
             }
+            reloadCapabilities()
         }
         .onChange(of: workspace.profile) { _, _ in
             pendingClearFile = nil
@@ -91,6 +96,7 @@ struct SourcesView: View {
             inboxWatcher.start(profile: workspace.profile) {
                 reload()
             }
+            reloadCapabilities()
         }
         .onDisappear {
             inboxWatcher.stop()
@@ -261,6 +267,58 @@ struct SourcesView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Capability matrix
+
+    /// Capability matrix card. DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
+    private var capabilityCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "checklist").foregroundStyle(Theme.Colors.tealBright)
+                        .font(.system(size: 16))
+                    SectionHeader(title: "jamf-cli · command matrix")
+                    Spacer()
+                    if capabilitySnapshot == nil {
+                        Pill(text: "probing…", tone: .muted)
+                    } else if let ver = capabilitySnapshot?.version {
+                        Pill(text: "v\(ver)", tone: .muted)
+                    } else if capabilitySnapshot?.availability.isEmpty == true {
+                        Pill(text: "not installed", tone: .warn)
+                    } else {
+                        Pill(text: "version unknown", tone: .muted)
+                    }
+                }
+
+                if let snap = capabilitySnapshot {
+                    VStack(spacing: 0) {
+                        let commands = CapabilityService.trackedCommands
+                        ForEach(Array(commands.enumerated()), id: \.offset) { idx, cmd in
+                            let status = snap.availability[cmd] ?? .blocked
+                            HStack {
+                                Mono(text: "pro \(cmd)", color: Theme.Text.secondary)
+                                Spacer()
+                                Pill(
+                                    text: status == .available ? "available" : "blocked",
+                                    tone: status == .available ? .teal : .warn
+                                )
+                            }
+                            .padding(.vertical, 6)
+                            if idx < commands.count - 1 {
+                                Divider().background(Theme.Hairline.standard)
+                            }
+                        }
+                    }
+                } else {
+                    Text("Checking installed commands…")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .padding(.vertical, 10)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private var familiesCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
@@ -361,6 +419,16 @@ struct SourcesView: View {
         } catch {
             clearError = error.localizedDescription
             showClearError = true
+        }
+    }
+
+    private func reloadCapabilities() {
+        capabilitySnapshot = nil
+        let executor = DefaultCLIExecutor(bridge: cliBridge)
+        let service = CapabilityService(executor: executor)
+        capabilityService = service
+        Task {
+            capabilitySnapshot = await service.snapshot()
         }
     }
 

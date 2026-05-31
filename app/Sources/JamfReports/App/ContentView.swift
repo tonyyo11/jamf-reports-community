@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var userPickedOnboarding = false
     @AppStorage("sidebarMode") private var sidebarModeRaw: String = SidebarMode.expanded.rawValue
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
+    @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
 
     private var sidebarMode: SidebarMode {
         get { SidebarMode(rawValue: sidebarModeRaw) ?? .expanded }
@@ -78,6 +79,14 @@ struct ContentView: View {
             if let raw = note.userInfo?["tab"] as? String, let newTab = Tab(rawValue: raw) {
                 tab = newTab
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToPreviousTab)) { _ in
+            let visibility = TabVisibility.parse(hiddenTabsRaw)
+            if let dest = previousVisibleTab(from: tab, in: visibility) { tab = dest }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToNextTab)) { _ in
+            let visibility = TabVisibility.parse(hiddenTabsRaw)
+            if let dest = nextVisibleTab(from: tab, in: visibility) { tab = dest }
         }
         .task {
             await workspace.autoUpdateJamfCLIIfNeeded()

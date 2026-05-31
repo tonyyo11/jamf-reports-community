@@ -10,6 +10,18 @@ final class CLICommandTests: XCTestCase {
 
     // MARK: - argv
 
+    func testProHelpArgv() {
+        XCTAssertEqual(CLICommand.proHelp.argv, ["pro", "--help"])
+    }
+
+    func testProHelpProfileIsEmpty() {
+        XCTAssertEqual(CLICommand.proHelp.profile, "")
+    }
+
+    func testProHelpSnapshotKindIsNil() {
+        XCTAssertNil(CLICommand.proHelp.snapshotKind)
+    }
+
     func testProAuthTokenArgv() {
         let command = CLICommand.proAuthToken(profile: "harbor")
         XCTAssertEqual(

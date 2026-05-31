@@ -159,26 +159,30 @@ struct SchedulesView: View {
 
     private var profileFilterStrip: some View {
         HStack(spacing: 8) {
-            Kicker(text: "JAMF-CLI PROFILE").padding(.trailing, 4)
-            Button {
-                profileFilter = "All"
-            } label: {
-                Pill(text: "All · \(workspace.schedules.count)", tone: profileFilter == "All" ? .gold : .muted)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Show all profiles, \(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s")")
-            ForEach(workspace.profiles) { p in
-                let count = workspace.schedules.filter { $0.profile == p.name }.count
-                Button {
-                    profileFilter = p.name
-                } label: {
-                    Pill(text: "\(p.name) · \(count)", tone: profileFilter == p.name ? .gold : .muted)
-                        .opacity(count > 0 ? 1 : 0.5)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Kicker(text: "JAMF-CLI PROFILE").padding(.trailing, 4)
+                    Button {
+                        profileFilter = "All"
+                    } label: {
+                        Pill(text: "All · \(workspace.schedules.count)", tone: profileFilter == "All" ? .gold : .muted)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Show all profiles, \(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s")")
+                    ForEach(workspace.profiles) { p in
+                        let count = workspace.schedules.filter { $0.profile == p.name }.count
+                        Button {
+                            profileFilter = p.name
+                        } label: {
+                            Pill(text: "\(p.name) · \(count)", tone: profileFilter == p.name ? .gold : .muted)
+                                .opacity(count > 0 ? 1 : 0.5)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Filter by \(p.name), \(count) schedule\(count == 1 ? "" : "s")")
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Filter by \(p.name), \(count) schedule\(count == 1 ? "" : "s")")
             }
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
             PNPButton(title: "Add profile", icon: "plus", size: .sm) {
                 NotificationCenter.default.post(
                     name: .navigateToTab,
@@ -373,6 +377,19 @@ struct SchedulesView: View {
                 TableColumn("Schedule") { s in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(s.name).font(.callout.weight(.semibold))
+                        Text(s.plainLanguageSummary)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.secondary)
+                        if s.needsMigrationNudge {
+                            HStack(spacing: 4) {
+                                Image(systemName: "info.circle")
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.Colors.info)
+                                Text("Re-save to migrate")
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.Colors.info)
+                            }
+                        }
                         Mono(text: labelText(for: s), size: 10.5)
                     }
                 }
