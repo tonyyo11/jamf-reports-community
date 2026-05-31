@@ -52,6 +52,9 @@ final class CapabilityService {
         "scripts",
         "packages",
         "computer-extension-attributes",
+        "advanced-mobile-device-searches",
+        "classic-computer-groups",
+        "classic-mobile-device-groups",
     ]
 
     private var cached: CLICapabilitySnapshot?

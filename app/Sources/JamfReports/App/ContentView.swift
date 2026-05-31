@@ -131,6 +131,7 @@ struct ContentView: View {
         case .outreach:          OutreachView()
         case .protectDashboard:  ProtectView()
         case .mobileFleet:       MobileFleetView()
+        case .groupInventory:    GroupsView()
         }
     }
 
@@ -162,6 +163,7 @@ struct ContentView: View {
         case .outreach:          "STALE TIERS"
         case .protectDashboard:  "ALERTS & AGENTS"
         case .mobileFleet:       "IOS · IPADOS"
+        case .groupInventory:    "CLASSIC API"
         }
     }
 

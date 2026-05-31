@@ -498,6 +498,62 @@ struct AuditItem: Decodable, Sendable {
     let value: AnyCodable?
 }
 
+// MARK: - Advanced mobile device searches
+// `jamf-cli pro advanced-mobile-device-searches list --output json`
+// Shape: { "totalCount": N, "results": [ { "id": "211"(String), "name": String,
+//   "criteria": [...], "displayFields": [String], "siteId": "-1"(String) } ] }
+
+struct AdvancedMobileSearchCriterion: Decodable, Sendable {
+    let name: String?
+    let priority: Int?
+    let andOr: String?
+    let searchType: String?
+    let value: String?
+    let openingParen: Bool?
+    let closingParen: Bool?
+}
+
+struct AdvancedMobileSearchRow: Decodable, Sendable {
+    let id: String?
+    let name: String?
+    let criteria: [AdvancedMobileSearchCriterion]?
+    let displayFields: [String]?
+    let siteId: String?
+}
+
+/// Top-level envelope for `advanced-mobile-device-searches list --output json`.
+/// Unwrap via `.results` before passing rows to consumers.
+struct AdvancedMobileSearchEnvelope: Decodable, Sendable {
+    let totalCount: Int?
+    let results: [AdvancedMobileSearchRow]
+}
+
+// MARK: - Classic computer groups / classic mobile device groups
+// `jamf-cli pro classic-computer-groups list --output json`
+// `jamf-cli pro classic-mobile-device-groups list --output json`
+// Shape (Classic API, snake_case, flat array): [ { "id": Int, "is_smart": Bool, "name": String } ]
+// `is_smart` is optional in the wire shape; absent → treat as false (static group).
+
+struct ClassicGroupRow: Decodable, Sendable {
+    let id: Int?
+    let isSmart: Bool
+    let name: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case isSmart = "is_smart"
+        case name
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(Int.self, forKey: .id)
+        // Treat missing is_smart as false (static group) for forward-compat.
+        isSmart = try container.decodeIfPresent(Bool.self, forKey: .isSmart) ?? false
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+    }
+}
+
 // MARK: - Group hygiene (group-tools analyze)
 
 struct GroupAnalysisRow: Decodable, Sendable {

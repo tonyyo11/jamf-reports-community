@@ -115,10 +115,13 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "policies":                       .inventory,
         "scripts":                        .inventory,
         "packages":                       .inventory,
-        "smart-computer-groups":          .inventory,
-        "sites":                          .inventory,
-        "buildings":                      .inventory,
-        "departments":                    .inventory,
+        "smart-computer-groups":              .inventory,
+        "sites":                              .inventory,
+        "buildings":                          .inventory,
+        "departments":                        .inventory,
+        "advanced-mobile-device-searches":    .inventory,
+        "classic-computer-groups":            .inventory,
+        "classic-mobile-device-groups":       .inventory,
 
         // Scan — per-device / server-expensive
         "patch-device-failures":          .scan,

@@ -110,7 +110,7 @@ are no other Python files. Do not create additional modules — keep it single-f
 | `ColumnMapper` | Resolves logical field names → CSV column names. `.get(field)` returns name or None. `.extract(row, field)` returns cell value or `""` |
 | `JamfCLIBridge` | Subprocess wrapper for jamf-cli pro/protect commands. Saves JSON output to `jamf-cli-data/`. Optional — gracefully no-ops if jamf-cli is absent. Supports `profile` for multi-tenant use. Falls back to latest cached JSON when live calls fail (`use_cached_data=True`). |
 | `SchoolCLIBridge` | Subclass of `JamfCLIBridge` for `jamf-cli school` commands. Same caching/fallback infrastructure. Methods: `overview`, `devices_list`, `device_groups_list`, `users_list`, `groups_list`, `classes_list`, `apps_list`, `profiles_list`, `locations_list`. |
-| `CoreDashboard` | Generates sheets from jamf-cli data: Fleet Overview, Mobile Fleet Summary, Inventory Summary, Mobile Inventory, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, Mobile Config Profiles, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures. No CSV required. |
+| `CoreDashboard` | Generates sheets from jamf-cli data: Fleet Overview, Mobile Fleet Summary, Inventory Summary, Mobile Inventory, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, Mobile Config Profiles, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures, Smart Groups, Advanced Mobile Searches, Computer Group Inventory, Mobile Device Groups. No CSV required. |
 | `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Generates: Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance, plus one sheet per `custom_eas` entry. |
 | `SchoolDashboard` | Generates sheets from Jamf School data (jamf-cli school or CSV export). Sheets: Device Inventory, OS Versions, Device Status, Stale Devices (CSV-driven); School Overview, Device Groups, Users, Classes, Apps, Profiles, Locations (bridge-driven). |
 | `SchoolColumnMapper` | Resolves `school_columns` config field names → Jamf School CSV column names. Same interface as `ColumnMapper`. |
@@ -707,6 +707,31 @@ Used by `JamfCLIBridge.update_device_failures()` → CoreDashboard "Update Failu
 API-expensive: fetches full computer and mobile inventory plus per-plan events in parallel.
 v1.7 server-side now drops devices Jamf considers stale before returning the failure list,
 so totals match the live console rather than including never-checked-in records.
+
+**`pro advanced-mobile-device-searches list --output json`** (v1.18)
+```json
+{"totalCount": N,
+ "results": [{"id": "211", "name": "...",
+              "criteria": [{"name": "...", "priority": 0, "andOr": "and",
+                            "searchType": "...", "value": "...",
+                            "openingParen": false, "closingParen": false}],
+              "displayFields": ["..."], "siteId": "-1"}]}
+```
+
+A `{totalCount, results}` envelope (not a bare array). `id`/`siteId` are strings; `siteId`
+`-1` means "All Sites". Used by `JamfCLIBridge.advanced_mobile_device_searches_list()` →
+CoreDashboard "Advanced Mobile Searches" sheet.
+
+**`pro classic-computer-groups list --output json`** / **`pro classic-mobile-device-groups list --output json`** (v1.18)
+```json
+[{"id": 1, "is_smart": true, "name": "..."}]
+```
+
+Classic API: a flat array with snake_case `is_smart` (absent → treated as static). Returns
+BOTH smart and static groups — the static-group visibility the modern smart-groups API omits.
+Used by `JamfCLIBridge.classic_computer_groups_list()` → CoreDashboard "Computer Group
+Inventory" sheet and `JamfCLIBridge.classic_mobile_device_groups_list()` → "Mobile Device
+Groups" sheet.
 
 ---
 

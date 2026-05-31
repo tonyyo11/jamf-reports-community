@@ -625,7 +625,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
     case securityPosture, compliancePosture, complianceBenchmarks
     case patch, updates, ddmBlueprints
     case policyProfile, extensionAttributes
-    case outreach, protectDashboard, mobileFleet
+    case outreach, protectDashboard, mobileFleet, groupInventory
 
     var id: String { rawValue }
 
@@ -657,6 +657,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .outreach:          "Offline Outreach"
         case .protectDashboard:  "Jamf Protect"
         case .mobileFleet:       "Mobile Fleet"
+        case .groupInventory:    "Groups & Searches"
         }
     }
 
@@ -688,6 +689,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .outreach:          "envelope.badge"
         case .protectDashboard:  "shield.lefthalf.filled"
         case .mobileFleet:       "ipad"
+        case .groupInventory:    "rectangle.3.group"
         }
     }
 
@@ -716,7 +718,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
              .securityPosture, .compliancePosture, .complianceBenchmarks,
              .patch, .updates, .ddmBlueprints,
              .policyProfile, .extensionAttributes,
-             .outreach, .protectDashboard, .mobileFleet:
+             .outreach, .protectDashboard, .mobileFleet, .groupInventory:
             return false
         }
     }
@@ -739,7 +741,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         .init(label: "OPERATIONS",
               items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
         .init(label: "FLEET",
-              items: [.mobileFleet, .protectDashboard]),
+              items: [.mobileFleet, .protectDashboard, .groupInventory]),
         .init(label: "AUTOMATION",
               items: [.schedules, .runs]),
         .init(label: "CONFIGURATION",

@@ -5350,6 +5350,33 @@ class JamfCLIBridge:
             ["smart-computer-groups", "smart_computer_groups"],
         )
 
+    def advanced_mobile_device_searches_list(self) -> Any:
+        """Fetch advanced mobile-device (saved) searches from jamf-cli.
+
+        Returns the ``{totalCount, results}`` envelope as parsed JSON.
+        """
+        return self._run_and_save(
+            "advanced-mobile-device-searches",
+            ["pro", "advanced-mobile-device-searches", "list"],
+            ["advanced-mobile-device-searches"],
+        )
+
+    def classic_computer_groups_list(self) -> Any:
+        """Fetch the Classic-API computer group list (smart + static)."""
+        return self._run_and_save(
+            "classic-computer-groups",
+            ["pro", "classic-computer-groups", "list"],
+            ["classic-computer-groups"],
+        )
+
+    def classic_mobile_device_groups_list(self) -> Any:
+        """Fetch the Classic-API mobile-device group list (smart + static)."""
+        return self._run_and_save(
+            "classic-mobile-device-groups",
+            ["pro", "classic-mobile-device-groups", "list"],
+            ["classic-mobile-device-groups"],
+        )
+
     def scripts_list(self) -> Any:
         """Fetch the script list from jamf-cli pro scripts list."""
         return self._run_and_save(
@@ -6840,6 +6867,9 @@ class CoreDashboard:
                 ("Update Status", self._write_update_status),
                 ("Update Failures", self._write_update_failures),
                 ("Smart Groups", self._write_smart_groups),
+                ("Computer Group Inventory", self._write_computer_group_inventory),
+                ("Mobile Device Groups", self._write_mobile_device_groups),
+                ("Advanced Mobile Searches", self._write_advanced_mobile_searches),
                 ("Package Lifecycle", self._write_package_lifecycle),
             ]
         )
@@ -10210,6 +10240,150 @@ class CoreDashboard:
 
         ws.set_column(0, 0, 40)
         ws.set_column(1, 6, 16)
+
+    def _write_advanced_mobile_searches(self) -> None:
+        """Write an Advanced Mobile Searches sheet from saved-search data.
+
+        Columns: Search Name | Criteria Count | Display Fields Count | Site.
+        Handles the ``{totalCount, results}`` envelope and an empty ``results``
+        list (renders the header with zero data rows). ``siteId`` of ``-1``
+        renders as ``All Sites``.
+
+        Raises:
+            RuntimeError: When the bridge returns no usable envelope.
+        """
+        raw = self._bridge.advanced_mobile_device_searches_list()
+        if not isinstance(raw, dict):
+            raise RuntimeError("advanced-mobile-device-searches returned no data")
+        results = raw.get("results")
+        if not isinstance(results, list):
+            results = []
+
+        ws = self._wb.add_worksheet("Advanced Mobile Searches")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            "Advanced Mobile Searches",
+            f"Source: jamf-cli pro advanced-mobile-device-searches list | Generated: {ts}",
+            self._fmts,
+            ncols=4,
+        )
+        headers = ["Search Name", "Criteria Count", "Display Fields Count", "Site"]
+        for col_i, h in enumerate(headers):
+            _safe_write(ws, row, col_i, h, self._fmts["header"])
+        row += 1
+
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            criteria = item.get("criteria")
+            display_fields = item.get("displayFields")
+            site_id = str(item.get("siteId", "")).strip()
+            site = "All Sites" if site_id in ("", "-1") else site_id
+            _safe_write(ws, row, 0, item.get("name", ""), self._fmts["cell"])
+            _safe_write(
+                ws, row, 1,
+                len(criteria) if isinstance(criteria, list) else 0,
+                self._fmts["cell"],
+            )
+            _safe_write(
+                ws, row, 2,
+                len(display_fields) if isinstance(display_fields, list) else 0,
+                self._fmts["cell"],
+            )
+            _safe_write(ws, row, 3, site, self._fmts["cell"])
+            row += 1
+
+        ws.set_column(0, 0, 40)
+        ws.set_column(1, 3, 20)
+
+    def _write_computer_group_inventory(self) -> None:
+        """Write a Computer Group Inventory sheet (smart + static) from data.
+
+        Source: jamf-cli ``pro classic-computer-groups list`` (Classic API,
+        flat snake_case array). Surfaces static groups in addition to the smart
+        groups already covered by the modern Smart Groups sheet.
+
+        Columns: Group Name | Type | ID. Prefixed by a summary line giving the
+        total, smart, and static counts.
+
+        Raises:
+            RuntimeError: When the bridge returns a non-list payload.
+        """
+        raw = self._bridge.classic_computer_groups_list()
+        self._write_classic_group_inventory(
+            raw,
+            "Computer Group Inventory",
+            "jamf-cli pro classic-computer-groups list",
+        )
+
+    def _write_mobile_device_groups(self) -> None:
+        """Write a Mobile Device Groups sheet (smart + static) from data.
+
+        Source: jamf-cli ``pro classic-mobile-device-groups list`` (Classic API,
+        flat snake_case array). Same layout as Computer Group Inventory.
+
+        Raises:
+            RuntimeError: When the bridge returns a non-list payload.
+        """
+        raw = self._bridge.classic_mobile_device_groups_list()
+        self._write_classic_group_inventory(
+            raw,
+            "Mobile Device Groups",
+            "jamf-cli pro classic-mobile-device-groups list",
+        )
+
+    def _write_classic_group_inventory(
+        self, raw: Any, sheet_name: str, source_label: str
+    ) -> None:
+        """Render a Classic-API group inventory sheet (smart + static).
+
+        Args:
+            raw: Parsed JSON — expected to be a flat list of group dicts each
+                with ``name`` and ``is_smart`` keys.
+            sheet_name: Worksheet name to add.
+            source_label: Human-readable source command for the subtitle.
+
+        Raises:
+            RuntimeError: When ``raw`` is not a list.
+        """
+        if not isinstance(raw, list):
+            raise RuntimeError(f"{source_label} returned no data")
+
+        groups = [item for item in raw if isinstance(item, dict)]
+        smart_count = sum(1 for item in groups if bool(item.get("is_smart")))
+        static_count = len(groups) - smart_count
+
+        ws = self._wb.add_worksheet(sheet_name)
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            sheet_name,
+            f"Source: {source_label} | Generated: {ts}",
+            self._fmts,
+            ncols=3,
+        )
+        _safe_write(
+            ws, row, 0,
+            f"Total: {len(groups)}  |  Smart: {smart_count}  |  Static: {static_count}",
+            self._fmts["cell"],
+        )
+        row += 1
+
+        headers = ["Group Name", "Type", "ID"]
+        for col_i, h in enumerate(headers):
+            _safe_write(ws, row, col_i, h, self._fmts["header"])
+        row += 1
+
+        for item in sorted(groups, key=lambda g: str(g.get("name", "")).casefold()):
+            is_smart = bool(item.get("is_smart"))
+            _safe_write(ws, row, 0, item.get("name", ""), self._fmts["cell"])
+            _safe_write(ws, row, 1, "Smart" if is_smart else "Static", self._fmts["cell"])
+            _safe_write(ws, row, 2, item.get("id", ""), self._fmts["cell"])
+            row += 1
+
+        ws.set_column(0, 0, 40)
+        ws.set_column(1, 2, 16)
 
     def _write_package_lifecycle(self) -> None:
         """Write a Package Lifecycle sheet from jamf-cli package inventory data.
@@ -17714,6 +17888,9 @@ def _collect_jamf_cli_commands(
             ("Update Failures", bridge.update_device_failures, "update-device-failures"),
             ("Group Inventory", bridge.groups, ""),
             ("Smart Computer Groups", bridge.smart_groups_list, ""),
+            ("Computer Group Inventory", bridge.classic_computer_groups_list, ""),
+            ("Mobile Device Groups", bridge.classic_mobile_device_groups_list, ""),
+            ("Advanced Mobile Searches", bridge.advanced_mobile_device_searches_list, ""),
             ("Package Lifecycle", bridge.packages, ""),
             ("Classic Policies", bridge.classic_policies_list, ""),
             ("macOS Config Profiles", bridge.macos_profiles_list, ""),
@@ -20420,6 +20597,9 @@ def _capability_status_surfaces(
         _capability("update-status", "Managed Software Update Status", pro, ["jamf_cli"]),
         _capability("update-failures", "Managed Software Update Failures", pro, ["jamf_cli"]),
         _capability("smart-groups", "Smart Groups", pro, ["jamf_cli"]),
+        _capability("computer-group-inventory", "Computer Group Inventory", pro, ["jamf_cli"]),
+        _capability("mobile-device-groups", "Mobile Device Groups", pro, ["jamf_cli"]),
+        _capability("advanced-mobile-searches", "Advanced Mobile Searches", pro, ["jamf_cli"]),
         _capability("package-lifecycle", "Package Lifecycle", pro, ["jamf_cli"]),
         _capability("csv-device-inventory", "CSV Device Inventory", pro, ["csv"]),
         _capability("csv-stale-devices", "CSV Stale Devices", pro, ["csv"]),
@@ -20490,6 +20670,9 @@ _JAMF_CLI_REQUIRED_COMMANDS = (
     "overview",
     "report",
     "computer-groups-smart-groups",
+    "advanced-mobile-device-searches",
+    "classic-computer-groups",
+    "classic-mobile-device-groups",
     "scripts",
     "packages",
     "computer-extension-attributes",

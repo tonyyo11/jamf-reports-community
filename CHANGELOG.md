@@ -45,6 +45,12 @@ versions in this repository map to git tags.
   `--no-version-check` on automated runs so older binaries keep working, surfaces
   the spec API version in Settings, and raises the minimum supported jamf-cli to
   1.18.0.
+- Group & search reporting (jamf-cli 1.18): three new workbook sheets — "Advanced
+  Mobile Searches", "Computer Group Inventory" (smart and static groups, adding the
+  static-group visibility the modern smart-groups API omits), and "Mobile Device
+  Groups" — plus a toggleable "Groups & Searches" tab in the app. Each is gated on
+  the command being present in your installed jamf-cli, so older binaries degrade
+  gracefully.
 
 ### Changed
 
