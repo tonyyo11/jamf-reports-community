@@ -19,22 +19,16 @@ struct RunsView: View {
     }()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                if runs.isEmpty {
-                    emptyState
-                } else {
-                    HStack(alignment: .top, spacing: 14) {
-                        runsList.frame(width: 260)
-                        logViewer
-                    }
+        PageScaffold(spacing: 14) {
+            header
+            if runs.isEmpty {
+                emptyState
+            } else {
+                HStack(alignment: .top, spacing: 14) {
+                    runsList.frame(width: 260)
+                    logViewer
                 }
             }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
         }
         .task(id: workspace.profile) { reload() }
         .alert("Export Failed", isPresented: $showExportError) {

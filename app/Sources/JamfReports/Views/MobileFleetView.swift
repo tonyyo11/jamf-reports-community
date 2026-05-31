@@ -13,45 +13,37 @@ struct MobileFleetView: View {
     @State private var selectedDeviceID: String?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(
-                    kicker: "Mobile",
-                    title: "Mobile Fleet",
-                    subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate
-                )
+        PageScaffold {
+            PageHeader(
+                kicker: "Mobile",
+                title: "Mobile Fleet",
+                subtitle: subtitle,
+                lastModified: snapshot.snapshotDate
+            )
 
-                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-                // Suppressed in demo mode (the demo dataset is intentionally static and
-                // not user-perceivably "stale"). Renders nothing when source is .fresh.
-                if !workspace.demoMode {
-                    StaleDataBanner(source: snapshot.cacheSource)
+            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+            // Suppressed in demo mode (the demo dataset is intentionally static and
+            // not user-perceivably "stale"). Renders nothing when source is .fresh.
+            if !workspace.demoMode {
+                StaleDataBanner(source: snapshot.cacheSource)
+            }
+
+            if !snapshot.isDetected {
+                emptyState
+            } else {
+                kpiGrid
+                supervisionCard
+                enrollmentMethodCard
+                complianceKpiGrid
+                osDistributionCard
+                devicesTable
+                if let device = selectedRichDevice {
+                    deviceDetailCard(device)
                 }
-
-                if !snapshot.isDetected {
-                    emptyState
-                } else {
-                    kpiGrid
-                    supervisionCard
-                    enrollmentMethodCard
-                    complianceKpiGrid
-                    osDistributionCard
-                    devicesTable
-                    if let device = selectedRichDevice {
-                        deviceDetailCard(device)
-                    }
-                    if !snapshot.profiles.isEmpty {
-                        profilesTable
-                    }
+                if !snapshot.profiles.isEmpty {
+                    profilesTable
                 }
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)

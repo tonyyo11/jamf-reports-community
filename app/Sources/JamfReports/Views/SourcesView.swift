@@ -54,34 +54,28 @@ struct SourcesView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                header
-                
-                if let error = resolutionError {
-                    HStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.Colors.danger)
-                        Text(error)
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(Theme.Colors.danger)
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(Theme.Colors.danger.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
+        PageScaffold(spacing: 14) {
+            header
 
-                HStack(alignment: .top, spacing: 14) {
-                    cliCard
-                    csvCard
+            if let error = resolutionError {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.danger)
+                    Text(error)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.Colors.danger)
+                    Spacer()
                 }
-                familiesCard
+                .padding(12)
+                .background(Theme.Colors.danger.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
-            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                leading: Theme.Metrics.pagePadH,
-                                bottom: Theme.Metrics.pagePadBottom,
-                                trailing: Theme.Metrics.pagePadH))
+
+            HStack(alignment: .top, spacing: 14) {
+                cliCard
+                csvCard
+            }
+            familiesCard
         }
         .onAppear {
             reload()

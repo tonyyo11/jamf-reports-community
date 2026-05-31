@@ -17,59 +17,51 @@ struct ProtectView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(
-                    kicker: "Protect",
-                    title: "Jamf Protect",
-                    subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate,
-                    trailing: { AnyView(deepDiveEnabled ? AnyView(ExperimentalBadge()) : AnyView(EmptyView())) }
-                )
+        PageScaffold {
+            PageHeader(
+                kicker: "Protect",
+                title: "Jamf Protect",
+                subtitle: subtitle,
+                lastModified: snapshot.snapshotDate,
+                trailing: { AnyView(deepDiveEnabled ? AnyView(ExperimentalBadge()) : AnyView(EmptyView())) }
+            )
 
-                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-                // Suppressed in demo mode (the demo dataset is intentionally static and
-                // not user-perceivably "stale"). Renders nothing when source is .fresh.
-                if !workspace.demoMode {
-                    StaleDataBanner(source: snapshot.cacheSource)
-                }
+            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+            // Suppressed in demo mode (the demo dataset is intentionally static and
+            // not user-perceivably "stale"). Renders nothing when source is .fresh.
+            if !workspace.demoMode {
+                StaleDataBanner(source: snapshot.cacheSource)
+            }
 
-                if !deepDiveEnabled {
-                    lockedDeepDiveState
+            if !deepDiveEnabled {
+                lockedDeepDiveState
+            }
+            if !snapshot.isDetected {
+                emptyState
+            } else {
+                if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty || !snapshot.insights.isEmpty || workspace.demoMode {
+                    kpiGrid
                 }
-                if !snapshot.isDetected {
-                    emptyState
-                } else {
-                    if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty || !snapshot.insights.isEmpty || workspace.demoMode {
-                        kpiGrid
-                    }
+                if !snapshot.alerts.isEmpty || workspace.demoMode {
+                    alertsBySeverityCard
+                    recentAlertsCard
+                }
+                if deepDiveEnabled {
                     if !snapshot.alerts.isEmpty || workspace.demoMode {
-                        alertsBySeverityCard
-                        recentAlertsCard
-                    }
-                    if deepDiveEnabled {
-                        if !snapshot.alerts.isEmpty || workspace.demoMode {
-                            killChainStageCard
-                            deviceTimelineCard
-                        }
-                        if !snapshot.computers.isEmpty || workspace.demoMode {
-                            agentVersionCard
-                        }
+                        killChainStageCard
+                        deviceTimelineCard
                     }
                     if !snapshot.computers.isEmpty || workspace.demoMode {
-                        computersCard
-                    }
-                    if !snapshot.insights.isEmpty || workspace.demoMode {
-                        insightsCard
+                        agentVersionCard
                     }
                 }
+                if !snapshot.computers.isEmpty || workspace.demoMode {
+                    computersCard
+                }
+                if !snapshot.insights.isEmpty || workspace.demoMode {
+                    insightsCard
+                }
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
