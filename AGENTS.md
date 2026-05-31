@@ -705,6 +705,31 @@ API-expensive: fetches full computer and mobile inventory plus per-plan events i
 v1.7 server-side now drops devices Jamf considers stale before returning the failure list,
 so totals match the live console rather than including never-checked-in records.
 
+**`pro advanced-mobile-device-searches list --output json`** (v1.18)
+```json
+{"totalCount": N,
+ "results": [{"id": "211", "name": "...",
+              "criteria": [{"name": "...", "priority": 0, "andOr": "and",
+                            "searchType": "...", "value": "...",
+                            "openingParen": false, "closingParen": false}],
+              "displayFields": ["..."], "siteId": "-1"}]}
+```
+
+A `{totalCount, results}` envelope (not a bare array). `id`/`siteId` are strings; `siteId`
+`-1` means "All Sites". Used by `JamfCLIBridge.advanced_mobile_device_searches_list()` →
+CoreDashboard "Advanced Mobile Searches" sheet.
+
+**`pro classic-computer-groups list --output json`** / **`pro classic-mobile-device-groups list --output json`** (v1.18)
+```json
+[{"id": 1, "is_smart": true, "name": "..."}]
+```
+
+Classic API: a flat array with snake_case `is_smart` (absent → treated as static). Returns
+BOTH smart and static groups — the static-group visibility the modern smart-groups API omits.
+Used by `JamfCLIBridge.classic_computer_groups_list()` → CoreDashboard "Computer Group
+Inventory" sheet and `JamfCLIBridge.classic_mobile_device_groups_list()` → "Mobile Device
+Groups" sheet.
+
 ---
 
 ## Code Conventions
