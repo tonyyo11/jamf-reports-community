@@ -23,7 +23,7 @@ import SwiftUI
 struct PageScaffold<Content: View>: View {
     /// Narrowest content width the dashboards are expected to render at without
     /// clipping. Layout changes touching this component should be verified here.
-    static var minSupportedWidth: CGFloat { 640 }
+    nonisolated static var minSupportedWidth: CGFloat { 640 }
 
     private let spacing: CGFloat
     private let content: Content
