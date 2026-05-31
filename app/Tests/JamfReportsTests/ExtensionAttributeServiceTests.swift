@@ -313,6 +313,43 @@ final class ExtensionAttributeServiceTests: XCTestCase {
                        "Every EA with populated values must have a distribution entry")
     }
 
+    // MARK: - CacheSource tests
+
+    func testCacheSourceNil() throws {
+        let snapshot = ExtensionAttributeService.Snapshot.empty
+        XCTAssertEqual(snapshot.cacheSource, .neverFetchedLive)
+    }
+
+    func testCacheSourceFresh() throws {
+        let freshDate = Date().addingTimeInterval(-1800) // 30 minutes ago
+        let snapshot = ExtensionAttributeService.Snapshot(
+            definitions: [],
+            coverage: [],
+            totalDevices: 0,
+            totalEAs: 0,
+            totalRowCount: 0,
+            valueDistributions: [],
+            sourceFile: nil,
+            snapshotDate: freshDate
+        )
+        XCTAssertEqual(snapshot.cacheSource, .fresh)
+    }
+
+    func testCacheSourceStale() throws {
+        let staleDate = Date().addingTimeInterval(-2 * 24 * 3600) // 2 days ago
+        let snapshot = ExtensionAttributeService.Snapshot(
+            definitions: [],
+            coverage: [],
+            totalDevices: 0,
+            totalEAs: 0,
+            totalRowCount: 0,
+            valueDistributions: [],
+            sourceFile: nil,
+            snapshotDate: staleDate
+        )
+        XCTAssertEqual(snapshot.cacheSource, .stale(at: staleDate))
+    }
+
     // MARK: - Test utilities
 
     private func writeTempFile(content: String, suffix: String) -> URL {

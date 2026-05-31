@@ -124,6 +124,13 @@ struct AuditView: View {
         PageScaffold {
             header
 
+            if !workspace.demoMode {
+                let auditCacheSource = CacheSource.from(snapshotDate: lastAuditDate, withinHours: 36)
+                let hygieneCacheSource = CacheSource.from(snapshotDate: lastHygieneDate, withinHours: 36)
+                let activeSource = selectedTab == 0 ? auditCacheSource : hygieneCacheSource
+                StaleDataBanner(source: activeSource)
+            }
+
             HStack(spacing: 16) {
                 SegmentedControl(
                     selection: Binding(

@@ -168,4 +168,134 @@ final class StaleDeviceServiceTests: XCTestCase {
         XCTAssertEqual(offlineDevices[1].name, "Device-1") // 45 days
         XCTAssertEqual(offlineDevices[2].name, "Device-3") // 35 days
     }
+
+    // MARK: - cacheSource tests
+
+    func testCacheSourceNilDataCollectedDateIsNeverFetched() {
+        let snapshot = StaleDeviceService.snapshot(from: [], dataCollectedDate: nil)
+        XCTAssertEqual(snapshot.cacheSource, .neverFetchedLive)
+    }
+
+    func testCacheSourceFreshWithinWindow() {
+        let recent = Date().addingTimeInterval(-3600) // 1 hour ago
+        let snapshot = StaleDeviceService.snapshot(from: [], dataCollectedDate: recent)
+        XCTAssertEqual(snapshot.cacheSource, .fresh)
+    }
+
+    func testCacheSourceStaleOutsideWindow() {
+        let old = Date().addingTimeInterval(-37 * 3600) // 37 hours ago — beyond 36h window
+        let snapshot = StaleDeviceService.snapshot(from: [], dataCollectedDate: old)
+        if case .stale(let at) = snapshot.cacheSource {
+            XCTAssertEqual(at.timeIntervalSince1970, old.timeIntervalSince1970, accuracy: 1)
+        } else {
+            XCTFail("Expected .stale, got \(snapshot.cacheSource)")
+        }
+    }
+
+    func testCacheSourceUsesDataCollectedDateNotSnapshotDate() {
+        // snapshotDate is most-recent device contact — 3 days ago; that should
+        // NOT drive the banner. dataCollectedDate is fresh (1 hour ago).
+        var record = DeviceInventoryRecord.empty(id: "r", source: "test")
+        record.daysSinceContact = 72
+        record.lastContact = ISO8601DateFormatter().string(
+            from: Date().addingTimeInterval(-72 * 3600)
+        )
+        let freshCollect = Date().addingTimeInterval(-3600)
+        let snapshot = StaleDeviceService.snapshot(from: [record], dataCollectedDate: freshCollect)
+        // snapshotDate reflects device activity (3 days back), but cacheSource
+        // must be .fresh because the *collection* is only 1 hour old.
+        XCTAssertEqual(snapshot.cacheSource, .fresh,
+            "cacheSource must use dataCollectedDate, not snapshotDate")
+    }
+
+    // MARK: - outreachCSV tests
+
+    func testOutreachCSVHeaderColumns() {
+        let csv = StaleDeviceService.outreachCSV(.empty)
+        let firstLine = csv.split(separator: "\n", omittingEmptySubsequences: false)[0]
+        XCTAssertEqual(
+            String(firstLine),
+            "Device Name,Serial,Username,Email,Last Check-in,Stale Tier"
+        )
+    }
+
+    func testOutreachCSVEmptySnapshotYieldsHeaderOnly() {
+        let csv = StaleDeviceService.outreachCSV(.empty)
+        XCTAssertEqual(csv, StaleDeviceService.outreachCSVHeader + "\n")
+    }
+
+    func testOutreachCSVContainsAllTiers() {
+        var offline = DeviceInventoryRecord.empty(id: "o1", source: "test")
+        offline.name = "Offline-Mac"
+        offline.serial = "SER001"
+        offline.user = "jdoe"
+        offline.email = "jdoe@example.com"
+        offline.lastContact = "2024-01-01"
+        offline.daysSinceContact = 60
+
+        var dormant = DeviceInventoryRecord.empty(id: "d1", source: "test")
+        dormant.name = "Dormant-Mac"
+        dormant.serial = "SER002"
+        dormant.daysSinceContact = 200
+
+        let snapshot = StaleDeviceService.snapshot(from: [offline, dormant])
+        let csv = StaleDeviceService.outreachCSV(snapshot)
+        XCTAssertTrue(csv.contains("Offline-Mac"), "offline tier device must appear")
+        XCTAssertTrue(csv.contains("Dormant-Mac"), "dormant tier device must appear")
+        XCTAssertTrue(csv.contains("Offline"), "Offline tier label must appear")
+        XCTAssertTrue(csv.contains("Dormant"), "Dormant tier label must appear")
+    }
+
+    func testOutreachCSVRowColumnCount() {
+        var record = DeviceInventoryRecord.empty(id: "r1", source: "test")
+        record.name = "Test-Mac"
+        record.serial = "SERIAL01"
+        record.user = "alice"
+        record.email = "alice@example.com"
+        record.lastContact = "2024-03-15"
+        record.daysSinceContact = 45 // offline tier
+
+        let csv = StaleDeviceService.outreachCSV(StaleDeviceService.snapshot(from: [record]))
+        let lines = csv.split(separator: "\n", omittingEmptySubsequences: false)
+        // header + 1 data row
+        XCTAssertGreaterThanOrEqual(lines.count, 2)
+        let dataLine = String(lines[1])
+        // 6 columns → 5 commas (unquoted, no commas in values)
+        let commaCount = dataLine.filter { $0 == "," }.count
+        XCTAssertEqual(commaCount, 5, "Each data row must have exactly 6 columns")
+    }
+
+    func testOutreachCSVNeutralizesFormulaInjection() {
+        var record = DeviceInventoryRecord.empty(id: "evil", source: "test")
+        record.name = "=HYPERLINK(\"http://evil\",\"x\")"
+        record.serial = "+SER001"
+        record.user = "@jdoe"
+        record.email = "-admin@example.com"
+        record.daysSinceContact = 60
+
+        let csv = StaleDeviceService.outreachCSV(StaleDeviceService.snapshot(from: [record]))
+        XCTAssertTrue(csv.contains("\t=HYPERLINK"),
+                      "Leading '=' must be tab-prefixed")
+        XCTAssertTrue(csv.contains("\t+SER001"),
+                      "Leading '+' must be tab-prefixed")
+        XCTAssertTrue(csv.contains("\t@jdoe"),
+                      "Leading '@' must be tab-prefixed")
+        XCTAssertTrue(csv.contains("\t-admin"),
+                      "Leading '-' must be tab-prefixed")
+    }
+
+    func testOutreachCSVQuotesFieldsContainingCommas() {
+        var record = DeviceInventoryRecord.empty(id: "comma", source: "test")
+        record.name = "Mac, Lab 01"
+        record.daysSinceContact = 45
+
+        let csv = StaleDeviceService.outreachCSV(StaleDeviceService.snapshot(from: [record]))
+        XCTAssertTrue(csv.contains("\"Mac, Lab 01\""),
+                      "A device name with a comma must be RFC 4180 quoted")
+    }
+
+    func testOutreachCSVTrailingNewline() {
+        let csv = StaleDeviceService.outreachCSV(.empty)
+        XCTAssertTrue(csv.hasSuffix("\n"), "CSV output must end with a trailing newline")
+    }
 }

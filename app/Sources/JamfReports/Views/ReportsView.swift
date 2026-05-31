@@ -13,6 +13,11 @@ struct ReportsView: View {
     @State private var isGeneratingPDF = false
     @State private var isExportingCSV = false
     @State private var reportError: String?
+    @State private var searchText = ""
+    @State private var profileFilter: String? = nil
+    @State private var availableProfiles: [String] = []
+    @State private var showQuickLook = false
+    @State private var quickLookURL: URL? = nil
 
     private var reportsDirectory: URL {
         let workspace = ProfileService.workspaceURL(for: workspace.profile)
@@ -22,12 +27,55 @@ struct ReportsView: View {
     }
 
     private var filteredReports: [Report] {
-        guard filter != "All" else { return reports }
-        return reports.filter { $0.name.lowercased().hasSuffix(".\(filter.lowercased())") }
+        let typeFiltered: [Report]
+        if filter == "All" {
+            typeFiltered = reports
+        } else {
+            typeFiltered = reports.filter { $0.name.lowercased().hasSuffix(".\(filter.lowercased())") }
+        }
+
+        return Self.filteredReports(
+            reports: typeFiltered,
+            searchText: searchText,
+            profileFilter: profileFilter
+        )
     }
 
     private var snapshotCount: Int {
         snapshotFamilies.reduce(0) { $0 + $1.snapshotCount }
+    }
+
+    /// Pure filter function for testing. Filters reports by search text and profile.
+    /// Search matches report name and source (case-insensitive). Profile filter matches
+    /// profile tokens in the filename (case-insensitive).
+    static func filteredReports(
+        reports: [Report],
+        searchText: String,
+        profileFilter: String?
+    ) -> [Report] {
+        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedProfile = profileFilter?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return reports.filter { report in
+            // Search filter: match name or source (case-insensitive)
+            let searchMatch: Bool
+            if trimmedSearch.isEmpty {
+                searchMatch = true
+            } else {
+                let searchableText = "\(report.name) \(report.source)".lowercased()
+                searchMatch = searchableText.contains(trimmedSearch.lowercased())
+            }
+
+            // Profile filter: match profile token in filename (case-insensitive)
+            let profileMatch: Bool
+            if let profile = trimmedProfile, !profile.isEmpty {
+                profileMatch = report.name.lowercased().contains(profile.lowercased())
+            } else {
+                profileMatch = true
+            }
+
+            return searchMatch && profileMatch
+        }
     }
 
     var body: some View {
@@ -83,6 +131,33 @@ struct ReportsView: View {
             }
             summary
         }
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Search reports...")
+        .sheet(isPresented: $showQuickLook) {
+            NavigationStack {
+                if let url = quickLookURL {
+                    QuickLookPreview(url: url)
+                        .navigationTitle("Preview")
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { showQuickLook = false }
+                            }
+                        }
+                } else {
+                    Text("Preview not available")
+                        .foregroundStyle(.secondary)
+                        .navigationTitle("Preview")
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { showQuickLook = false }
+                            }
+                        }
+                }
+            }
+        }
+        .onKeyPress(.space) {
+            handleSpaceKeyPress()
+            return .handled
+        }
         .onAppear(perform: reload)
         .onChange(of: workspace.profile) { _, _ in reload() }
     }
@@ -107,6 +182,34 @@ struct ReportsView: View {
                                 ("csv", "csv", nil),
                             ]
                         )
+
+                        Menu {
+                            Button("All Profiles") {
+                                profileFilter = nil
+                            }
+                            if !availableProfiles.isEmpty {
+                                Divider()
+                                ForEach(availableProfiles, id: \.self) { profile in
+                                    Button(profile) {
+                                        profileFilter = profile
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(profileFilter ?? "All Profiles")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.Colors.fg)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(Theme.Colors.fgMuted)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Theme.Colors.winBG2, in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        .help("Filter reports by profile")
+
                         PNPButton(title: "Reveal in Finder", icon: "folder") {
                             SystemActions.openFolder(reportsDirectory)
                         }
@@ -223,6 +326,7 @@ struct ReportsView: View {
         reportStats = library.stats(profile: workspace.profile)
         snapshotFamilies = SnapshotArchiveService().families(profile: workspace.profile)
         selectedReports = selectedReports.intersection(Set(reports.map(\.id)))
+        updateAvailableProfiles()
     }
 
     private func icon(for name: String) -> String {
@@ -391,6 +495,44 @@ struct ReportsView: View {
                 }
             }
         }
+    }
+
+    private func handleSpaceKeyPress() {
+        guard let selectedReport = selectedReports.first,
+              let url = ReportLibrary().url(profile: workspace.profile, reportName: selectedReport) else {
+            return
+        }
+        quickLookURL = url
+        showQuickLook = true
+    }
+
+    private func updateAvailableProfiles() {
+        let profileTokens = Set(reports.compactMap { report in
+            extractProfileFromFilename(report.name)
+        })
+        availableProfiles = Array(profileTokens).sorted()
+    }
+
+    private func extractProfileFromFilename(_ filename: String) -> String? {
+        // Extract profile token from filename patterns like "jamf_report_PROFILE_date.ext"
+        // or "compliance_PROFILE_date.ext"
+        let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
+        let components = stem.split(separator: "_")
+
+        // Look for profile token after the report type
+        if components.count >= 3 {
+            let reportType = String(components[0])
+            if ["jamf", "compliance", "mobile", "inventory", "school"].contains(reportType.lowercased()) {
+                let profileCandidate = String(components[1])
+                // Filter out date-like patterns (numbers only or date patterns)
+                if !profileCandidate.allSatisfy({ $0.isNumber }) &&
+                   !profileCandidate.contains("-") {
+                    return profileCandidate
+                }
+            }
+        }
+
+        return nil
     }
 }
 

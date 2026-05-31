@@ -28,6 +28,10 @@ struct OutreachView: View {
                 subtitle: subtitle,
                 lastModified: snapshot.snapshotDate
             )
+            // DRAFT — needs visual verification at PageScaffold.minSupportedWidth
+            if !workspace.demoMode {
+                StaleDataBanner(source: snapshot.cacheSource)
+            }
             if snapshot.totalDevices == 0 {
                 emptyState
             } else {
@@ -208,6 +212,15 @@ struct OutreachView: View {
                     action: copyTableCSV
                 )
 
+                // DRAFT — needs visual verification at PageScaffold.minSupportedWidth
+                PNPButton(
+                    title: "Export CSV",
+                    icon: "square.and.arrow.up",
+                    style: .neutral,
+                    action: exportOutreachCSV
+                )
+                .help("Export all stale devices across every tier to a CSV in the workspace")
+
                 // Smart-group creation appears only when jamf-cli's `pro sg`
                 // namespace is available AND the active tier carries 90+-day
                 // devices (the stale-checkin template's hardcoded threshold).
@@ -323,6 +336,7 @@ struct OutreachView: View {
         copy(text: emailString, then: "Copied \(emails.count) emails")
     }
 
+    // TODO: copyTableCSV/escapeCSV lacks formula-injection neutralization — tracked in backlog.
     private func copyTableCSV() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
         var csv = "Name,Serial,Email,Department,Days Since Check-in\n"
@@ -335,6 +349,38 @@ struct OutreachView: View {
             csv += "\(name),\(serial),\(email),\(dept),\(days)\n"
         }
         copy(text: csv, then: "Copied table data")
+    }
+
+    /// Export all stale-device records (every tier) as a CSV into the workspace's
+    /// output directory, then reveal the file in Finder. Gated on the allow-list
+    /// via `SystemActions.reveal` — writes only inside `~/Jamf-Reports/<profile>/`.
+    private func exportOutreachCSV() {
+        guard let outputDir = try? WorkspacePaths.outputDir(for: workspace.profile) else {
+            workspace.toast = Toast(
+                message: "Could not resolve output directory for profile \(workspace.profile).",
+                style: .danger
+            )
+            return
+        }
+        let filename = "outreach-stale-devices-\(workspace.profile).csv"
+        let fileURL = outputDir.appendingPathComponent(filename)
+        do {
+            try FileManager.default.createDirectory(
+                at: outputDir, withIntermediateDirectories: true
+            )
+            let csv = StaleDeviceService.outreachCSV(snapshot)
+            try csv.write(to: fileURL, atomically: true, encoding: .utf8)
+            workspace.toast = Toast(
+                message: "Exported \(snapshot.totalDevices) devices to \(filename)",
+                style: .success
+            )
+            SystemActions.reveal(fileURL)
+        } catch {
+            workspace.toast = Toast(
+                message: "Could not export CSV: \(error.localizedDescription)",
+                style: .danger
+            )
+        }
     }
 
     private func copy(text: String, then confirmation: String) {
