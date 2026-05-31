@@ -131,7 +131,7 @@ struct ReportsView: View {
             }
             summary
         }
-        .searchable(text: $searchText, prompt: "Search reports...")
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Search reports...")
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
                 if let url = quickLookURL {
