@@ -232,11 +232,11 @@ def mock_workspace(tmp_path: Path) -> Path:
     """Build a minimal workspace with logs, a summary, and a config."""
     workspace = tmp_path / "ws"
     (workspace / "automation" / "logs").mkdir(parents=True)
-    (workspace / "snapshots" / "computers" / "summaries").mkdir(parents=True)
+    (workspace / "snapshots" / "summaries").mkdir(parents=True)
     (workspace / "automation" / "logs" / "run1.log").write_text(
         'Auth header: Bearer abcdef1234567890superlongtokenvalue\n'
     )
-    (workspace / "snapshots" / "computers" / "summaries" / "summary_2026-05-15.json").write_text(
+    (workspace / "snapshots" / "summaries" / "summary_2026-05-15.json").write_text(
         json.dumps({"date": "2026-05-15", "totalDevices": 100, "serialNumber": "C02XL3FRJHD2"})
     )
     (workspace / "config.yaml").write_text(
@@ -343,6 +343,32 @@ def test_bundle_log_lookback_filters_old_files(jrc, mock_workspace, tmp_path):
         names = set(zf.namelist())
     assert "logs/run1.log" in names
     assert "logs/old.log" not in names
+
+
+def test_bundle_collects_summaries_from_configured_historical_dir(jrc, tmp_path):
+    """Summaries must be read from the resolved ``charts.historical_csv_dir``,
+    not a hardcoded ``snapshots/computers/summaries`` path. Uses a distinct
+    directory name so the assertion discriminates config-honoring from a
+    hardcoded fallback."""
+    workspace = tmp_path / "ws-histdir"
+    (workspace / "automation" / "logs").mkdir(parents=True)
+    summaries_dir = workspace / "histsnaps" / "summaries"
+    summaries_dir.mkdir(parents=True)
+    (summaries_dir / "summary_2026-05-20.json").write_text(
+        json.dumps({"date": "2026-05-20", "totalDevices": 7, "serialNumber": "C02XL3FRJHD2"})
+    )
+    (workspace / "config.yaml").write_text(
+        'jamf_cli:\n  profile: "histdir"\ncharts:\n  historical_csv_dir: "histsnaps"\n'
+    )
+    config = jrc.Config(str(workspace / "config.yaml"))
+    output = tmp_path / "bundle.zip"
+    jrc.cmd_diagnostic_bundle(config, output_path=output)
+    with zipfile.ZipFile(output) as zf:
+        names = set(zf.namelist())
+        summary = json.loads(zf.read("summaries/summary_2026-05-20.json"))
+    assert "summaries/summary_2026-05-20.json" in names
+    assert summary["totalDevices"] == 7
+    assert summary["serialNumber"].startswith("serial-")
 
 
 # ---------------------------------------------------------------------------

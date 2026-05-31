@@ -2818,7 +2818,7 @@ def _emit_per_log_summary_json(
 ) -> None:
     """Emit a per-LaunchAgent-run status JSON for Swift partial-status checks.
 
-    Writes ``snapshots/computers/summaries/summary_<log_filename>.json``
+    Writes ``<historical_csv_dir>/summaries/summary_<log_filename>.json``
     with a minimal payload containing the run's ``status`` field. The Swift
     ``RunHistoryService.isPartialRun`` and
     ``LaunchAgentService.checkSummaryFileForPartialStatus`` use this file as
@@ -2868,7 +2868,7 @@ def _atomic_write_summary(summary_file: Path, summaries_dir: Path, data: dict[st
 
     PR-11 / threat-model T-12: after the write succeeds, rewrite the sibling
     `manifest.json` with the SHA-256 of the just-written payload pinned. This
-    extends PR-7's manifest discipline to the `snapshots/computers/summaries/`
+    extends PR-7's manifest discipline to the `<historical_csv_dir>/summaries/`
     tree so the Swift app can verify summary integrity (e.g.
     `RunHistoryService.isPartialRun`'s `status` field).
     """
@@ -19709,14 +19709,31 @@ def _bundle_collect_logs(
 
 
 def _bundle_collect_summaries(
+    config: Config,
     workspace: Path,
     limit: int,
     redactor: Optional[LogRedactor],
     zip_file: zipfile.ZipFile,
     manifest_files: list[dict[str, Any]],
 ) -> None:
-    """Add the N most recent summary_*.json files to the zip."""
-    summaries_dir = workspace / "snapshots" / "computers" / "summaries"
+    """Add the N most recent summary_*.json files to the zip.
+
+    Reads from the resolved historical summaries directory
+    (``<charts.historical_csv_dir>/summaries``) so the bundle matches where
+    the summary writers actually emit their files. Falls back to
+    ``<workspace>/snapshots/summaries`` when ``historical_csv_dir`` is unset.
+
+    Limitation: only the ``charts.historical_csv_dir`` tier is consulted.
+    Summaries written under a per-``report_family`` ``historical_dir`` or a
+    ``--historical-csv-dir`` CLI override (used by ``generate``/``collect``)
+    live elsewhere and are not included — the bundle targets the default
+    trend-summary location.
+    """
+    historical_dir = config.resolve_path("charts", "historical_csv_dir", default="snapshots")
+    if historical_dir is not None:
+        summaries_dir = historical_dir / "summaries"
+    else:
+        summaries_dir = workspace / "snapshots" / "summaries"
     if not summaries_dir.exists():
         return
     summaries = sorted(
@@ -19915,7 +19932,7 @@ def cmd_diagnostic_bundle(
     manifest_files: list[dict[str, Any]] = []
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
         _bundle_collect_logs(workspace, days, redactor, zf, manifest_files)
-        _bundle_collect_summaries(workspace, summary_limit, redactor, zf, manifest_files)
+        _bundle_collect_summaries(config, workspace, summary_limit, redactor, zf, manifest_files)
         _bundle_collect_config(config, redactor, zf, manifest_files)
         _bundle_collect_workspace_tree(workspace, redactor, zf, manifest_files)
         _bundle_collect_versions(redactor, zf, manifest_files)

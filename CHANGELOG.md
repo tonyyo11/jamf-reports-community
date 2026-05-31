@@ -9,6 +9,14 @@ versions in this repository map to git tags.
 
 ### Added
 
+- In-app diagnostic bundle: Settings → Diagnostics gains a "Generate diagnostic
+  bundle now" button that builds the redacted diagnostic zip natively (no
+  Terminal, no bundled-script execution) under
+  `~/Jamf-Reports/<profile>/diagnostics/` and reveals it in Finder. Redaction
+  matches the Python `diagnostic-bundle` command: credentials are always
+  redacted, and hostnames/serials/emails/device names/usernames are replaced
+  with stable `<kind>-<hash>` placeholders (random per bundle). The existing
+  "Copy Diagnostic Command" clipboard flow is unchanged.
 - Executive Summary: the Excel workbook now leads with an "Executive Summary"
   sheet, and the HTML instance report opens with a matching top card row. Both
   show headline fleet KPIs — total devices, a weighted security score
@@ -46,6 +54,11 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- `diagnostic-bundle` now collects trend summaries from the configured
+  `charts.historical_csv_dir`/summaries directory (where they are actually
+  written) instead of a hardcoded `snapshots/computers/summaries` path that
+  did not exist — the Python bundle previously included zero summaries in most
+  deployments. Brings it to parity with the native in-app bundle.
 - Hardened several silent-failure and security paths: diagnostic-bundle token
   redaction, export-CSV path-traversal and formula-injection neutralization,
   LaunchAgent task cancellation, and corrupt-snapshot logging.
