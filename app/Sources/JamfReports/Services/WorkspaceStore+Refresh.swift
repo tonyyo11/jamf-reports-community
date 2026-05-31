@@ -118,7 +118,7 @@ extension Tab {
              .securityPosture, .compliancePosture, .complianceBenchmarks,
              .patch, .updates, .ddmBlueprints,
              .policyProfile, .extensionAttributes,
-             .outreach, .protectDashboard, .mobileFleet:
+             .outreach, .protectDashboard, .mobileFleet, .groupInventory:
             return true
         case .schedules, .runs, .config, .customize, .sources, .backups, .settings, .onboarding:
             return false
