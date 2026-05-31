@@ -55,7 +55,7 @@ config, schedules, and generated reports, switchable from the sidebar.
 
 ### Requirements and install
 
-macOS 14 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) v1.16.1+ is
+macOS 14 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) v1.18.0+ is
 optional — it powers live collection, but the app also works from CSV exports and cached
 snapshots.
 

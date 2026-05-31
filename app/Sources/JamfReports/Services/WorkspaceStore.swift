@@ -21,6 +21,9 @@ final class WorkspaceStore {
     /// True when the located jamf-cli binary failed the codesign-fingerprint gate.
     /// Surfaced as a distinct warning in Settings separate from the version-floor check.
     var jamfCLIVerificationFailed: Bool = false
+    /// The `specProVersion` field from `jamf-cli version -o json` (v1.18.0+).
+    /// nil when the probe failed; "unknown" when offline; a version string when connected.
+    var jamfCLISpecProVersion: String?
     var jamfCLIUpdateMessage: String?
     var jamfCLIUpdateAvailable: Bool = false
     var isUpdatingJamfCLI: Bool = false
@@ -148,6 +151,7 @@ final class WorkspaceStore {
         self.jamfCLIVersion = jamfCLI?.version
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
+        self.jamfCLISpecProVersion = jamfCLI?.specProVersion
         self.launchAgentCleanupMessage = cleanup.message
         self.launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
     }
@@ -306,6 +310,7 @@ final class WorkspaceStore {
         jamfCLIVersion = jamfCLI?.version
         jamfCLIInstallSource = jamfCLI?.source.label
         jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
+        jamfCLISpecProVersion = jamfCLI?.specProVersion
     }
 
     func checkJamfCLIUpdate() async {

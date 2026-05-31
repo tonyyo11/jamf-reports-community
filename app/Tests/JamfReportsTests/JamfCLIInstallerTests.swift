@@ -98,18 +98,22 @@ final class JamfCLIInstallerTests: XCTestCase {
         XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("1.14.0"))
         XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("1.15.0"))
         XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("1.16.0"))
+        XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("1.16.1"),
+                      "1.16.1 is below the new floor 1.18.0")
+        XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("1.17.9"))
         XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("v1.14.0"))
     }
 
     func test_isBelowMinimumSupported_acceptsCurrentAndNewer() {
-        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.16.1"))
-        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.16.2"))
-        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.16.10"),
-                       "1.16.10 is above the floor 1.16.1")
-        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.17.0"))
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.18.0"),
+                       "1.18.0 is the floor — should not flag")
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.18.1"))
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.18.10"),
+                       "1.18.10 is above the floor 1.18.0")
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.19.0"))
         XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("2.0.0"),
-                       "2.0.0 is above the floor 1.16.1")
-        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("v1.16.1"))
+                       "2.0.0 is above the floor 1.18.0")
+        XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("v1.18.0"))
     }
 
     func test_isBelowMinimumSupported_returnsFalseOnUnknownInput() {
@@ -117,6 +121,31 @@ final class JamfCLIInstallerTests: XCTestCase {
         XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported(nil))
         XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported(""))
         XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("garbage"))
+    }
+
+    // MARK: - specProVersion
+
+    // The success path (valid JSON from a real signed binary) cannot be faked in unit tests
+    // without a live jamf-cli binary that passes the codesign gate. The tests below cover
+    // the reachable nil paths instead: codesign rejection, non-executable path, and
+    // non-zero exit (old binary that doesn't recognise `version -o json`).
+
+    func test_specProVersion_returnsNilForNonExecutablePath() throws {
+        // A plain file fails `CLIBridge.codesignGate` -> specProVersion returns nil without
+        // attempting to spawn a process.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-specpro-test-\(UUID().uuidString)")
+        try Data("not a mach-o".utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        let result = JamfCLIInstaller.specProVersion(at: url)
+        XCTAssertNil(result, "codesign gate must reject an unsigned file and return nil")
+    }
+
+    func test_specProVersion_returnsNilForMissingPath() {
+        // A URL pointing to a non-existent file also fails the codesign gate.
+        let url = URL(fileURLWithPath: "/tmp/jrc-does-not-exist-\(UUID().uuidString)")
+        XCTAssertNil(JamfCLIInstaller.specProVersion(at: url))
     }
 
     // MARK: - Helpers

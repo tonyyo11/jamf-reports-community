@@ -1546,6 +1546,31 @@ def _load_workspace_seed_config(seed_config_path: Optional[str]) -> tuple["Confi
     return Config("__workspace_init_defaults__.yaml"), "DEFAULT_CONFIG"
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    """Parse a dotted version string into an int tuple for comparison.
+
+    Splits on '.', taking the leading integer of each component (so '1.18.0'
+    and '1.18.0-rc1' both yield (1, 18, 0)). Non-numeric components become 0.
+    """
+    parts: list[int] = []
+    for component in version.strip().split("."):
+        match = re.match(r"\d+", component)
+        parts.append(int(match.group(0)) if match else 0)
+    return tuple(parts)
+
+
+def _supports_quiet_flags(version: Optional[str]) -> bool:
+    """Return True when the jamf-cli version supports --no-hints/--no-version-check.
+
+    These flags landed in jamf-cli 1.18.0. Default-off when the version is
+    unknown/undetectable: appending unknown flags to a <=1.17 binary makes it
+    exit non-zero, which would silently fall back to stale cache.
+    """
+    if not version:
+        return False
+    return _version_tuple(version) >= (1, 18, 0)
+
+
 def _find_jamf_cli_binary() -> Optional[str]:
     """Return the best available jamf-cli binary path."""
     env_override = os.environ.get("JAMFCLI_PATH", "")
@@ -4076,6 +4101,12 @@ class JamfCLIBridge:
         self._strict_manifest = bool(strict_manifest)
         # Memoized capability probe — see has_platform_auth().
         self._platform_auth_cache: Optional[bool] = None
+        # Memoized jamf-cli version probe — see detected_version().
+        # `_version_probed` distinguishes "not yet probed" from "probed,
+        # undetectable" (cached value None); without it every _run would
+        # re-spawn the version subprocess on the hot path.
+        self._version_cache: Optional[str] = None
+        self._version_probed: bool = False
 
     def _find_binary(self) -> Optional[str]:
         return _find_jamf_cli_binary()
@@ -4083,6 +4114,38 @@ class JamfCLIBridge:
     def is_available(self) -> bool:
         """Return True if jamf-cli binary is found and executable."""
         return self._binary is not None
+
+    def detected_version(self) -> Optional[str]:
+        """Return the installed jamf-cli version string, or None if undetectable.
+
+        Runs `jamf-cli version -o json` once and caches the `version` field for
+        the bridge lifetime. Built as a standalone argv (not via `_run`) so it
+        never recurses or injects the very flags it gates. Resilient: returns
+        None on a missing binary, spawn failure, timeout, non-zero exit, or
+        unparseable output.
+        """
+        if self._version_probed:
+            return self._version_cache
+        self._version_probed = True
+        if not self.is_available():
+            return None
+        try:
+            result = subprocess.run(
+                [self._binary, "version", "-o", "json"],
+                capture_output=True, text=True, timeout=10,
+                check=False, stdin=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0:
+            return None
+        try:
+            payload = json.loads(result.stdout or "")
+            version = payload.get("version")
+        except (json.JSONDecodeError, AttributeError):
+            return None
+        self._version_cache = version if isinstance(version, str) else None
+        return self._version_cache
 
     def has_platform_auth(self) -> bool:
         """Return True if the configured profile has auth-method: platform.
@@ -4377,6 +4440,13 @@ class JamfCLIBridge:
             cmd.extend(["-p", self._profile])
 
         cmd.extend(["--output", "json", "--no-input"])
+        # Suppress the per-command tenant-version warning and advisory hints
+        # added in jamf-cli 1.18 so they never pollute captured JSON output.
+        # Gated on the detected version: these flags are unknown to <=1.17,
+        # where appending them would make the call exit non-zero and silently
+        # fall back to stale cache. Default-off when the version is unknown.
+        if _supports_quiet_flags(self.detected_version()):
+            cmd.extend(["--no-hints", "--no-version-check"])
         cmd.extend(args)
         effective_timeout = self._command_timeout if timeout is None else max(1, int(timeout))
         try:
@@ -5253,7 +5323,7 @@ class JamfCLIBridge:
         """Fetch the smart computer group list from jamf-cli."""
         return self._run_and_save(
             "smart-computer-groups",
-            ["pro", "smart-computer-groups", "list"],
+            ["pro", "computer-groups-smart-groups", "list"],
             ["smart-computer-groups", "smart_computer_groups"],
         )
 
@@ -20062,6 +20132,77 @@ def _capability_config_sections() -> list[str]:
     ]
 
 
+# Representative curated SUBSET (6 of ~20) of the `pro <cmd>` commands the
+# bridges invoke — not exhaustive. Each is checked against the parsed
+# `pro --help` command set as a smoke signal; a green matrix does NOT mean
+# every command the app uses is present. Expand deliberately if a new probe
+# target is needed.
+_JAMF_CLI_REQUIRED_COMMANDS = (
+    "overview",
+    "report",
+    "computer-groups-smart-groups",
+    "scripts",
+    "packages",
+    "computer-extension-attributes",
+)
+
+
+def _parse_jamf_cli_pro_commands(binary: str) -> set[str]:
+    """Return the set of available `pro` subcommands from `jamf-cli pro --help`.
+
+    Cobra lists commands under category headers as ``  <name>  <description>``
+    (two leading spaces, a lowercase token, whitespace, then a description),
+    all appearing before the ``Flags:`` section. Returns an empty set on any
+    spawn failure, timeout, or non-zero exit.
+    """
+    try:
+        result = subprocess.run(
+            [binary, "pro", "--help"], capture_output=True, text=True,
+            timeout=10, check=False, stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    if result.returncode != 0:
+        return set()
+    commands: set[str] = set()
+    line_re = re.compile(r"^  ([a-z][a-z0-9-]*)\s{2,}\S")
+    for line in (result.stdout or "").splitlines():
+        if line.strip() == "Flags:":
+            break
+        match = line_re.match(line)
+        if match:
+            commands.add(match.group(1))
+    return commands
+
+
+def _capability_jamf_cli_matrix() -> dict[str, Any]:
+    """Probe the installed jamf-cli for version + required-command availability.
+
+    Shells out to ``jamf-cli --version`` and parses ``jamf-cli pro --help`` to
+    learn which subcommands exist, then reports available/blocked for the
+    commands the app depends on. Gracefully no-ops (``available: false``, empty
+    ``namespaces``) when jamf-cli is absent so the GUI Sources screen never
+    blocks on a missing binary.
+    """
+    binary = _find_jamf_cli_binary()
+    if binary is None:
+        return {"available": False, "version": None, "namespaces": {}}
+    version: Optional[str] = None
+    try:
+        result = subprocess.run(
+            [binary, "--version"], capture_output=True, text=True,
+            timeout=10, check=False, stdin=subprocess.DEVNULL,
+        )
+        if result.returncode == 0:
+            text = (result.stdout or result.stderr or "").strip()
+            version = text.splitlines()[0] if text else None
+    except (OSError, subprocess.TimeoutExpired):
+        version = None
+    available = _parse_jamf_cli_pro_commands(binary)
+    matrix = {cmd: cmd in available for cmd in _JAMF_CLI_REQUIRED_COMMANDS}
+    return {"available": True, "version": version, "namespaces": matrix}
+
+
 def _capabilities_manifest() -> dict[str, Any]:
     """Return a stable manifest of reporting capabilities for GUI clients."""
     pro = ["jamf_pro"]
@@ -20076,6 +20217,7 @@ def _capabilities_manifest() -> dict[str, Any]:
         "report_surfaces": _capability_report_surfaces(pro, school, protect, platform),
         "status_surfaces": _capability_status_surfaces(pro, school, protect, platform),
         "historical_surfaces": _capability_historical_surfaces(pro),
+        "jamf_cli_runtime": _capability_jamf_cli_matrix(),
         "config_sections": _capability_config_sections(),
         "experimental_features": {
             "platform_api": {
@@ -20125,6 +20267,13 @@ def cmd_capabilities(output: str = "json") -> None:
         for feature_id, feature in manifest["experimental_features"].items():
             keys = ", ".join(feature.get("config_keys", []))
             print(f"  - {feature_id}: requires {keys}")
+        runtime = manifest["jamf_cli_runtime"]
+        if not runtime["available"]:
+            print("jamf-cli runtime: not detected")
+        else:
+            print(f"jamf-cli runtime: {runtime['version'] or 'unknown version'}")
+            for namespace, ok in sorted(runtime["namespaces"].items()):
+                print(f"  - {namespace}: {'available' if ok else 'blocked'}")
         return
     print(json.dumps(manifest, indent=2, sort_keys=True))
 

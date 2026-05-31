@@ -153,7 +153,13 @@ struct SettingsView: View {
     private var jamfCLISubtitle: String {
         guard let path = workspace.jamfCLIPath else { return "Not found in /opt/homebrew/bin or /usr/local/bin" }
         let source = workspace.jamfCLIInstallSource ?? "Unknown source"
-        let base = "\(workspace.jamfCLIVersion ?? "unknown") · \(source) · \(path)"
+        let versionLabel: String
+        if let spec = workspace.jamfCLISpecProVersion, spec != "unknown" {
+            versionLabel = "\(workspace.jamfCLIVersion ?? "unknown") (spec \(spec))"
+        } else {
+            versionLabel = workspace.jamfCLIVersion ?? "unknown"
+        }
+        let base = "\(versionLabel) · \(source) · \(path)"
         if workspace.jamfCLIVerificationFailed {
             return "\(base)\nCodesign verification failed — binary may be tampered. Update or reinstall jamf-cli."
         }

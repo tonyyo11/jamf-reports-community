@@ -623,9 +623,9 @@ To add a new type:
 
 ---
 
-## jamf-cli JSON Shapes (v1.16.1)
+## jamf-cli JSON Shapes (v1.18.0)
 
-CoreDashboard parses these exact shapes. Minimum supported jamf-cli is **v1.16.1**.
+CoreDashboard parses these exact shapes. Minimum supported jamf-cli is **v1.18.0**.
 Older versions are not supported — older fallback branches were removed in W21 (patch-status
 `installed/total` shape). The `update-status` older shape is preserved pending live
 verification against a tenant with active update plans.
