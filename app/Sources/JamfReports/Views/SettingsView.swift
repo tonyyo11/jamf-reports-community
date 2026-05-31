@@ -41,6 +41,7 @@ struct SettingsView: View {
     @State private var tokenStatuses: [String: TokenStatus] = [:]
     @State private var loadingTokenProfiles: Set<String> = []
     @State private var diagnosticBundleMessage: String? = nil
+    @State private var isGeneratingBundle = false
     // Legacy v3.5 history import (LegacyHistoryImporter).
     @State private var legacyImportMessage: String? = nil
     @State private var isImportingLegacyHistory = false
@@ -845,6 +846,30 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 8) {
+                    if isGeneratingBundle {
+                        ProgressView().controlSize(.small)
+                        Text("Generating bundle…")
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    } else {
+                        PNPButton(
+                            title: "Generate diagnostic bundle now",
+                            icon: "archivebox",
+                            size: .sm
+                        ) {
+                            generateDiagnosticBundleNow()
+                        }
+                        .disabled(workspace.profile.isEmpty)
+                        .help(
+                            "Build the redacted diagnostic zip in this profile's workspace and " +
+                            "reveal it in Finder. Runs entirely in-app — no Terminal needed."
+                        )
+                        .accessibilityHint(
+                            "Generates a redacted diagnostic bundle and reveals it in Finder.")
+                    }
+                }
+
+                HStack(spacing: 8) {
                     PNPButton(title: "Copy Diagnostic Command", icon: "doc.on.clipboard", size: .sm) {
                         runDiagnosticBundle()
                     }
@@ -1007,6 +1032,34 @@ struct SettingsView: View {
             diagnosticBundleMessage =
                 "Command copied — could not open Terminal automatically. " +
                 "Paste it into a Terminal window manually."
+        }
+    }
+
+    /// Generate the diagnostic bundle natively (no bundled-script execution) and
+    /// reveal it in Finder. The redaction/zip work runs off the main actor in a
+    /// detached task; `DiagnosticBundleService.generate` is a `nonisolated`
+    /// static func and its inputs/outputs (`String`, `URL`) are `Sendable`.
+    private func generateDiagnosticBundleNow() {
+        let profile = workspace.profile
+        guard !profile.isEmpty else {
+            diagnosticBundleMessage = "Select a workspace profile first."
+            return
+        }
+        isGeneratingBundle = true
+        diagnosticBundleMessage = nil
+        Task {
+            do {
+                let url = try await Task.detached(priority: .userInitiated) {
+                    try DiagnosticBundleService.generate(profile: profile)
+                }.value
+                SystemActions.reveal(url)
+                diagnosticBundleMessage =
+                    "Bundle written to \(url.lastPathComponent) and revealed in Finder."
+            } catch {
+                diagnosticBundleMessage =
+                    "Bundle generation failed: \(error.localizedDescription)"
+            }
+            isGeneratingBundle = false
         }
     }
 

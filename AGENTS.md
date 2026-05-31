@@ -36,8 +36,10 @@ for any report-generation path. **One narrow exception:** `jamf-reports-communit
 copied into `Contents/Resources/` by `build-app.sh` solely so the Settings → "Copy
 Diagnostic Command" flow can emit an absolute-path command that works regardless of the
 user's Terminal cwd (PR-19). The app itself never executes the bundled script — it only
-puts an absolute path into the clipboard. Long-term plan: port `diagnostic-bundle` to
-native Swift and drop the bundled copy.
+puts an absolute path into the clipboard. The native port of `diagnostic-bundle` now
+exists (`DiagnosticBundleService`) and powers the in-app "Generate diagnostic bundle now"
+button; the bundled Python copy is retained only for the "Copy Diagnostic Command"
+clipboard flow. Long-term plan: migrate that clipboard flow too and drop the bundled copy.
 It is a SwiftPM project (`app/Package.swift`), not a hand-rolled `.xcodeproj`.
 
 Target audience: Mac/iPad admins at any organization running Jamf Pro or Jamf School.
@@ -476,6 +478,7 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `ProtectDashboardService` | Reads `protect-overview/` + `protect-alerts/` + `protect-computers/` + `protect-insights/`. `isDetected` flag is true when at least one file decoded successfully (even to an empty array) — distinguishes "tenant doesn't run Protect" from "tenant runs Protect, just no current data". |
 | `MobileFleetService` | Reads `mobile-devices-list/` (light) + `mobile-device-inventory-details/` (rich) + `classic-ios-profiles/`. Surfaces iOS/iPadOS KPIs, OS distribution, compliance signals. |
 | `LegacyHistoryImporter` | One-shot import from v3.5's `fleet_health_metrics_history.json` into the workspace's summaries dir. Translates snake_case + yyyyMMdd → camelCase + yyyy-MM-dd; idempotent unless overwriteExisting=true. Triggered from SettingsView. |
+| `DiagnosticBundleService` | Native port of Python `cmd_diagnostic_bundle`. Stages recent logs, last-N summaries, redacted config, a workspace tree, and version metadata into a zip under `~/Jamf-Reports/<profile>/diagnostics/` (an allow-listed dir, so `SystemActions.reveal` accepts it). Never executes the bundled script. `DiagnosticRedactor` reproduces the Python redaction behavior: always-on credential patterns, exact-key JSON redaction, and HMAC-SHA256 `<kind>-<8hex>` PII placeholders (per-instance random salt — stable within one bundle only, by design). Powers SettingsView's "Generate diagnostic bundle now". |
 
 **Tab visibility model.** Every non-core sidebar tab is toggleable via SettingsView → Sidebar Visibility. Backed by `@AppStorage("hiddenTabs")` parsed/serialized through `TabVisibility`. Core tabs (`Tab.isCoreTab` — Overview, Devices, Sources, Settings, Onboarding) are filtered out at the toggle UI level and protected at the model level (toggling a core tab is a no-op). Sidebar groups with all-hidden contents auto-collapse so the layout never shows orphan headers. Visibility is a per-user UX preference, not workspace-bound.
 

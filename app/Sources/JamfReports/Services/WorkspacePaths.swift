@@ -108,6 +108,19 @@ enum WorkspacePaths {
             .appendingPathComponent("logs", isDirectory: true)
     }
 
+    /// `<workspace>/diagnostics` — output directory for native diagnostic
+    /// bundles produced by `DiagnosticBundleService`.
+    ///
+    /// Lives under the profile workspace (an `SystemActions` allowed parent) so
+    /// the generated zip can be revealed in Finder without widening the path
+    /// allow-list. Fixed by convention (not a config knob), so no YAML parsing.
+    static func diagnosticsDir(for profile: String) throws -> URL {
+        guard let workspace = workspaceRoot(for: profile) else {
+            throw PathError.invalidProfile(profile)
+        }
+        return workspace.appendingPathComponent("diagnostics", isDirectory: true)
+    }
+
     // MARK: - Internals
 
     enum PathError: Error, LocalizedError {
