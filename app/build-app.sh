@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 CONFIG="${1:-release}"
 
 # Marketing version (CFBundleShortVersionString) — bumped per milestone.
-MARKETING_VERSION="${MARKETING_VERSION:-2.1.0}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.1.1}"
 
 # Build number (CFBundleVersion). When equal to MARKETING_VERSION the
 # downstream build-dmg.sh / build-pkg.sh treat the build as a public
