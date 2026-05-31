@@ -183,14 +183,21 @@ struct SummaryJSONParser {
         guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
             return []
         }
-        
+
         let summaries = files
             .filter { $0.lastPathComponent.hasPrefix("summary_") && $0.pathExtension == "json" }
             .compactMap { url -> DailySummary? in
-                try? parse(url)
+                do {
+                    return try parse(url)
+                } catch {
+                    AppLogger.engine.warning(
+                        "SummaryJSONParser: skipping corrupt summary \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    )
+                    return nil
+                }
             }
             .sorted { $0.date < $1.date }
-        
+
         return summaries
     }
 }
