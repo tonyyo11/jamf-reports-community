@@ -7,6 +7,7 @@ import Foundation
 /// can resolve a template's `includedSheets` against the write-plan.
 enum SheetID: String, Sendable, CaseIterable {
     // Framing / exec-priority
+    case executiveSummary    = "Executive Summary"
     case cover               = "Cover"
     case compliancePosture   = "Compliance Posture"
     case fleetOverview       = "Fleet Overview"
