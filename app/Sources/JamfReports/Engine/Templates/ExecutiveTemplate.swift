@@ -17,6 +17,7 @@ struct ExecutiveTemplate: ReportTemplate {
 
     var includedSheets: [SheetID] {
         [
+            .executiveSummary,
             .cover,
             .compliancePosture,
             .fleetOverview,

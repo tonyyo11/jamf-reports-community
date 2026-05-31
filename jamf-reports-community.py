@@ -6346,6 +6346,161 @@ class SchoolCLIBridge(JamfCLIBridge):
 
 
 # ---------------------------------------------------------------------------
+# Executive Summary aggregation
+# ---------------------------------------------------------------------------
+
+# Weights mirror the app's SecurityScoreCalculator for the three controls
+# derivable from core jamf-cli data (FileVault, SIP, Firewall — each 15 in
+# that spec). The other weighted factors (CrowdStrike, mSCP, XProtect, CVE,
+# Secure Boot) need data this report does not fetch, so they are absent from
+# the denominator and the score renormalizes over present controls — the same
+# "drop missing, renormalize" behaviour the GUI applies. Gatekeeper is shown
+# as a KPI but is NOT in the GUI weight table, so it is excluded from the
+# score to stay consistent with the Swift sheet. These are the GUI's default
+# weights; the Python sheet does not read the GUI's configurable ScoringConfig.
+_EXEC_SCORE_WEIGHTS: dict[str, float] = {
+    "filevault": 15.0,
+    "sip": 15.0,
+    "firewall": 15.0,
+}
+
+
+def _exec_security_metrics(security_raw: Any) -> dict[str, Any]:
+    """Extract total devices and control percentages from a security report.
+
+    Args:
+        security_raw: Raw ``pro report security`` output (a mixed list with a
+            ``{"section": "summary", "data": {...}}`` entry), or anything else.
+
+    Returns:
+        Dict with ``total_devices`` (int) and a ``controls`` dict mapping each
+        control key to ``{"pct": float|None, "compliant": int|None}``. ``pct``
+        is a 0.0-1.0 ratio, ``None`` when the control is unmeasured (no data).
+    """
+    items = security_raw if isinstance(security_raw, list) else []
+    summary = next(
+        (
+            i.get("data", {})
+            for i in items
+            if isinstance(i, dict) and i.get("section") == "summary"
+        ),
+        {},
+    )
+    total = _to_int(summary.get("total_devices", 0))
+    controls: dict[str, dict[str, Any]] = {}
+    keys = {
+        "filevault": "filevault_encrypted",
+        "sip": "sip_enabled",
+        "firewall": "firewall_enabled",
+        "gatekeeper": "gatekeeper_enabled",
+    }
+    for name, count_key in keys.items():
+        pct = _parse_percent(summary.get(f"{count_key}_pct"))
+        compliant: Optional[int] = None
+        if pct is None and total > 0 and summary.get(count_key) not in (None, ""):
+            compliant = _to_int(summary.get(count_key))
+            pct = compliant / total
+        elif pct is not None and total > 0:
+            compliant = round(pct * total)
+        controls[name] = {"pct": pct, "compliant": compliant}
+    return {"total_devices": total, "controls": controls}
+
+
+def _exec_patch_compliance(patch_raw: Any) -> Optional[float]:
+    """Return fleet patch compliance as on-latest installs over total installs.
+
+    This is a fleet-wide ratio (``sum(on_latest) / sum(total)``), distinct from
+    the Patch Summary Dashboard's per-title mean completion. Returns ``None``
+    when no patch titles are present so the row can be omitted rather than
+    rendering a misleading 0%.
+    """
+    titles = patch_raw if isinstance(patch_raw, list) else []
+    on_latest = 0
+    total = 0
+    for item in titles:
+        if not isinstance(item, dict):
+            continue
+        item_total = _to_int(item.get("total", 0))
+        if "installed" in item:  # pre-v1.4 shape: installed/total
+            primary = _to_int(item.get("installed", 0))
+        else:
+            primary = _to_int(item.get("on_latest", 0))
+            if item_total == 0:
+                item_total = primary + _to_int(item.get("on_other", 0))
+        on_latest += primary
+        total += item_total
+    return on_latest / total if total > 0 else None
+
+
+def _exec_security_score(controls: dict[str, dict[str, Any]]) -> Optional[float]:
+    """Compute a weighted security score over present FV/SIP/Firewall controls.
+
+    Drops any control whose ``pct`` is ``None`` from both numerator and
+    denominator, then renormalizes — so a tenant missing one control still
+    gets a comparable 0.0-1.0 score. Returns ``None`` when no weighted control
+    has data.
+    """
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for name, weight in _EXEC_SCORE_WEIGHTS.items():
+        pct = controls.get(name, {}).get("pct")
+        if pct is None:
+            continue
+        weighted_sum += pct * weight
+        weight_total += weight
+    return weighted_sum / weight_total if weight_total > 0 else None
+
+
+def _executive_summary_metrics(
+    security_raw: Any,
+    patch_raw: Any,
+    compliance_raw: Any,
+) -> dict[str, Any]:
+    """Aggregate headline fleet KPIs from already-fetched jamf-cli data.
+
+    Pure function: no jamf-cli calls, no I/O. Both the xlsx Executive Summary
+    sheet and the HTML summary card row consume this so the two outputs cannot
+    drift. Every metric degrades to ``None`` (or 0 for counts) when its source
+    is absent, so callers render only what is present.
+
+    Args:
+        security_raw: Raw ``pro report security`` output.
+        patch_raw: Raw ``pro report patch-status`` output.
+        compliance_raw: Raw ``pro report device-compliance`` rows (each row a
+            dict with a truthy ``stale`` flag for inactive devices).
+
+    Returns:
+        Dict with ``total_devices`` (int), ``controls`` (per-control pct dict),
+        ``patch_compliance`` (float|None), ``stale_count`` (int|None),
+        ``active_count`` (int|None), and ``security_score`` (float|None).
+    """
+    sec = _exec_security_metrics(security_raw)
+    total = sec["total_devices"]
+    controls = sec["controls"]
+
+    comp_rows = compliance_raw if isinstance(compliance_raw, list) else None
+    stale_count: Optional[int] = None
+    active_count: Optional[int] = None
+    if comp_rows is not None:
+        compliance_total = len(comp_rows)
+        stale_count = sum(
+            1 for r in comp_rows if isinstance(r, dict) and _to_bool(r.get("stale"))
+        )
+        active_count = compliance_total - stale_count
+        if total == 0:
+            total = compliance_total
+
+    return {
+        "total_devices": total,
+        "controls": controls,
+        "patch_compliance": _exec_patch_compliance(patch_raw),
+        "stale_count": stale_count,
+        "active_count": active_count,
+        "security_score": _exec_security_score(controls),
+    }
+
+
+# ---------------------------------------------------------------------------
 # CoreDashboard
 # ---------------------------------------------------------------------------
 
@@ -6625,7 +6780,10 @@ class CoreDashboard:
 
     def sheet_plan(self) -> list[tuple[str, Any]]:
         """Return the ordered core workbook sheet plan."""
-        sheets = [("Fleet Overview", self._write_overview)]
+        sheets: list[tuple[str, Any]] = [
+            ("Executive Summary", self._write_executive_summary),
+            ("Fleet Overview", self._write_overview),
+        ]
         if self._protect_enabled():
             sheets.append(("Protect Overview", self._write_protect_overview))
             if self._protect_plans_enabled():
@@ -6721,6 +6879,82 @@ class CoreDashboard:
                 failures.append({"sheet": name, "error": error_label})
                 print(f"  [fail] {name}: unexpected error — {error_label}")
         return written, failures
+
+    def _exec_metrics(self) -> dict[str, Any]:
+        """Fetch the three sources defensively and aggregate exec KPIs.
+
+        Each source is fetched in its own try/except so a single failing or
+        absent report degrades that metric to ``None`` rather than aborting the
+        whole sheet — Executive Summary renders what is present.
+        """
+        def _safe(fetch: Any) -> Any:
+            try:
+                return fetch()
+            except Exception as exc:  # absent report or unexpected JSON shape
+                print(f"  [warn] Executive Summary: {getattr(fetch, '__name__', fetch)} — {exc}")
+                return None
+
+        stale_days = int(self._config.thresholds.get("stale_device_days", 30))
+        return _executive_summary_metrics(
+            _safe(self._bridge.security_report),
+            _safe(self._bridge.patch_status),
+            _safe(lambda: self._bridge.device_compliance(stale_days)),
+        )
+
+    def _write_executive_summary(self) -> None:
+        """Write the Executive Summary sheet: headline fleet KPIs first.
+
+        Pure aggregation of data the workbook already fetches (security,
+        patch-status, device-compliance). Rows whose source is absent are
+        omitted so a partial jamf-cli run still produces a useful summary.
+        """
+        m = self._exec_metrics()
+        ws = self._wb.add_worksheet("Executive Summary")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row = _write_sheet_header(
+            ws,
+            self._t("Executive Summary"),
+            f"Source: jamf-cli security + patch-status + device-compliance | Generated: {ts}",
+            self._fmts,
+            ncols=2,
+        )
+        ws.set_column(0, 0, 32)
+        ws.set_column(1, 1, 18)
+        _safe_write(ws, row, 0, "Metric", self._fmts["header"])
+        _safe_write(ws, row, 1, "Value", self._fmts["header"])
+        row += 1
+        first_data_row = row
+
+        def _num(label: str, value: Optional[int]) -> None:
+            nonlocal row
+            if value is None:
+                return
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, value, self._fmts["cell"])
+            row += 1
+
+        def _pct(label: str, value: Optional[float]) -> None:
+            nonlocal row
+            if value is None:
+                return
+            _safe_write(ws, row, 0, label, self._fmts["cell"])
+            _safe_write(ws, row, 1, value, _pct_format(self._fmts, value))
+            row += 1
+
+        controls = m["controls"]
+        _num("Total Devices", m["total_devices"] or None)
+        _pct("Security Score", m["security_score"])
+        _pct("FileVault %", controls["filevault"]["pct"])
+        _pct("SIP %", controls["sip"]["pct"])
+        _pct("Firewall %", controls["firewall"]["pct"])
+        _pct("Gatekeeper %", controls["gatekeeper"]["pct"])
+        _pct("Patch Fleet Compliance %", m["patch_compliance"])
+        _num("Active Devices", m["active_count"])
+        _num("Stale Devices", m["stale_count"])
+
+        if row == first_data_row:  # no metric rows written — every source absent
+            _safe_write(ws, row, 0, "No jamf-cli data available", self._fmts["cell"])
+            _safe_write(ws, row, 1, "", self._fmts["cell"])
 
     def _write_overview(self) -> None:
         ws = self._wb.add_worksheet("Fleet Overview")
@@ -15984,6 +16218,55 @@ document.querySelectorAll('.tree-search').forEach((input) => {
             print(f"  [warn] Could not embed logo '{logo_path}': {exc}")
             return ""
 
+    def _render_executive_summary(self, security: Any) -> str:
+        """Render the top Executive Summary card row of headline fleet KPIs.
+
+        Pure aggregation of the already-fetched ``security`` report — no new
+        jamf-cli calls, no new dependency. Routes through the shared
+        ``_exec_security_metrics`` so the Security Score, percentages, and the
+        count-based fallback (used when the report omits ``*_pct`` keys, the
+        documented v1.16.1 shape) match the xlsx Executive Summary sheet
+        exactly. FileVault/SIP/Firewall are weighted into the score; Gatekeeper
+        is shown but unscored, mirroring the app's SecurityScoreCalculator.
+
+        Args:
+            security: Raw ``pro report security`` output (the same list passed
+                to the security-posture renderers).
+
+        Returns:
+            An HTML section block, or an empty string when no KPI has data.
+        """
+        sec = _exec_security_metrics(security)
+        controls = sec["controls"]
+        score = _exec_security_score(controls)
+        total = sec["total_devices"]
+        if score is None and total <= 0:
+            return ""
+
+        def _kpi(label: str, name: str) -> str:
+            pct = controls.get(name, {}).get("pct")
+            value = f"{pct * 100:.1f}%" if pct is not None else "N/A"
+            return self._render_stat_card(label, value)
+
+        score_value = f"{score * 100:.0f}%" if score is not None else "N/A"
+        total_value = str(total) if total > 0 else "N/A"
+        return f"""
+  <div class="section-block">
+    <h2 class="section-block-title">Executive Summary</h2>
+    <div class="section-block-subtitle">
+      Headline fleet KPIs at a glance — security posture and device coverage.
+    </div>
+    <div class="grid grid-6" style="margin-top:16px">
+      {self._render_stat_card("Total Devices", total_value)}
+      {self._render_stat_card("Security Score", score_value)}
+      {_kpi("FileVault", "filevault")}
+      {_kpi("SIP", "sip")}
+      {_kpi("Firewall", "firewall")}
+      {_kpi("Gatekeeper", "gatekeeper")}
+    </div>
+  </div>
+"""
+
     def _render_stat_card(
         self,
         label: str,
@@ -16893,10 +17176,20 @@ document.querySelectorAll('.tree-search').forEach((input) => {
         sso_jamf = self._ov(ov, "Jamf SSO")
         ade_instances = self._ov(ov, "DEP Instances")
 
-        fv_pct = self._to_float(self._sec(sec, "filevault_encrypted_pct"))
-        gk_pct = self._to_float(self._sec(sec, "gatekeeper_enabled_pct"))
-        sip_pct = self._to_float(self._sec(sec, "sip_enabled_pct"))
-        fw_pct = self._to_float(self._sec(sec, "firewall_enabled_pct"))
+        # Derive posture percentages through the shared aggregator so the
+        # macOS Fleet sec-bars and the Executive Summary card agree on every
+        # security-report shape — including the documented counts-only shape
+        # that omits *_pct keys (the aggregator falls back to compliant/total).
+        _sec_controls = _exec_security_metrics(sec)["controls"]
+
+        def _ctl_pct(name: str) -> float:
+            pct = _sec_controls.get(name, {}).get("pct")
+            return pct * 100.0 if pct is not None else 0.0
+
+        fv_pct = _ctl_pct("filevault")
+        gk_pct = _ctl_pct("gatekeeper")
+        sip_pct = _ctl_pct("sip")
+        fw_pct = _ctl_pct("firewall")
         total_scanned = self._sec(sec, "total_devices")
         os_labels, os_counts = self._os_chart_data(sec)
         flagged = self._flagged_devices(sec)
@@ -17004,7 +17297,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
 </header>
 
 <main class="page" id="main-content">
-
+{self._render_executive_summary(sec)}
   <div class="section-block">
     <h2 class="section-block-title">Overall Server Health</h2>
     <div class="section-block-subtitle">

@@ -54,7 +54,8 @@ struct CoreDashboard: Sendable {
     /// in `jamf-reports-community.py` to keep both implementations in sync.
     var sheetPlan: [(name: String, write: () throws -> Void)] {
         [
-            // --- Framing / exec-priority (sheets 1–7) ---
+            // --- Framing / exec-priority (sheets 1–8) ---
+            ("Executive Summary", writeExecutiveSummary),
             ("Cover", writeCoverSheet),
             ("Compliance Posture", writeCompliancePosture),
             ("Fleet Overview", writeOverview),
@@ -1786,9 +1787,189 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    // MARK: - Executive Summary sheet
+
+    /// Aggregated fleet KPIs collected from cached snapshots. Every field is optional;
+    /// nil means the source snapshot was absent — rendered as "—" in the sheet.
+    struct ExecutiveSummaryMetrics: Sendable {
+        var totalDevices: Int?
+        var managedCount: Int?
+        var securityScore: Double?
+        var securityGrade: SecurityScore.Grade?
+        var patchFleetCompliancePct: Double?
+        var fileVaultPct: Double?
+        var sipPct: Double?
+        var firewallPct: Double?
+        var recentCount: Int?
+        var offlineCount: Int?
+        var inactiveCount: Int?
+        var dormantCount: Int?
+        var actionItemsP0: Int?
+        var actionItemsP1: Int?
+    }
+
+    /// Assemble `ExecutiveSummaryMetrics` from the cached jamf-cli snapshots in `dataDir`.
+    /// Delegates to three focused helpers, each targeting one snapshot source.
+    private func buildExecutiveMetrics() -> ExecutiveSummaryMetrics {
+        var m = ExecutiveSummaryMetrics()
+        applySecurityMetrics(to: &m)
+        applyPatchMetric(to: &m)
+        applyStaleAndManaged(to: &m)
+        return m
+    }
+
+    /// Populate security-derived fields from the cached `security` snapshot.
+    private func applySecurityMetrics(to m: inout ExecutiveSummaryMetrics) {
+        guard let items = loadLatestTyped(names: ["security"],
+                                          as: [SecurityReportItem].self) else { return }
+        for item in items {
+            guard case .summary(let s) = item else { continue }
+            let total = s.data.totalDevices ?? 0
+            m.totalDevices = total
+            applySecurityControlPcts(to: &m, data: s.data, total: total)
+            applySecurityScoreAndActions(to: &m, data: s.data, total: total)
+            break
+        }
+    }
+
+    /// Populate per-control coverage percentages from a security summary.
+    private func applySecurityControlPcts(
+        to m: inout ExecutiveSummaryMetrics,
+        data: SecuritySummaryData,
+        total: Int
+    ) {
+        guard total > 0 else { return }
+        m.fileVaultPct = data.fileVaultEncrypted.map { Double($0) / Double(total) * 100 }
+        m.sipPct = data.sipEnabled.map { Double($0) / Double(total) * 100 }
+        m.firewallPct = data.firewallEnabled.map { Double($0) / Double(total) * 100 }
+    }
+
+    /// Compute the weighted security score, grade, and P0/P1 action item counts.
+    private func applySecurityScoreAndActions(
+        to m: inout ExecutiveSummaryMetrics,
+        data: SecuritySummaryData,
+        total: Int
+    ) {
+        var counts: [SecurityScore.Metric: Int] = [:]
+        if let n = data.fileVaultEncrypted { counts[.fileVault] = n }
+        if let n = data.sipEnabled { counts[.sip] = n }
+        if let n = data.firewallEnabled { counts[.firewall] = n }
+        if !counts.isEmpty && total > 0 {
+            let score = SecurityScoreCalculator.score(
+                input: .init(totalDevices: total, compliantCounts: counts)
+            )
+            if !score.available.isEmpty {
+                m.securityScore = score.value
+                m.securityGrade = score.grade
+            }
+        }
+        if let n = data.fileVaultEncrypted { m.actionItemsP0 = total - n }
+        if let n = data.gatekeeperEnabled { m.actionItemsP1 = total - n }
+    }
+
+    /// Populate patch compliance % from the cached `patch-status` snapshot.
+    private func applyPatchMetric(to m: inout ExecutiveSummaryMetrics) {
+        guard let rows = loadLatestTyped(names: ["patch-status", "patch_status"],
+                                          as: [PatchStatusRow].self),
+              !rows.isEmpty else { return }
+        let snap = PatchStatusService.Snapshot(
+            titles: rows, failures: [], sourceFile: nil, snapshotDate: nil
+        )
+        m.patchFleetCompliancePct = snap.fleetCompliancePct
+    }
+
+    /// Populate managed count + stale tier buckets from the cached `device-compliance` snapshot.
+    /// Uses `days_since_contact` (or legacy `days_since_checkin`) directly — avoids constructing
+    /// `DeviceInventoryRecord` objects, which have a different shape than the JSON source.
+    private func applyStaleAndManaged(to m: inout ExecutiveSummaryMetrics) {
+        guard let raw = try? loadLatestJSON(names: ["device-compliance", "device_compliance"]),
+              let items = raw as? [[String: Any]], !items.isEmpty else { return }
+        m.managedCount = items.filter { asBool($0["managed"]) == true }.count
+        var tierCounts: [StaleDeviceService.Tier: Int] = [:]
+        for tier in StaleDeviceService.Tier.allCases { tierCounts[tier] = 0 }
+        for item in items {
+            let days = asInt(item["days_since_contact"]) ?? asInt(item["days_since_checkin"])
+            tierCounts[StaleDeviceService.Tier.tier(for: days), default: 0] += 1
+        }
+        m.recentCount = tierCounts[.recent]
+        m.offlineCount = tierCounts[.offline]
+        m.inactiveCount = tierCounts[.inactive]
+        m.dormantCount = tierCounts[.dormant]
+    }
+
+    /// Pure render helper: write metric rows from `metrics` into `ws`.
+    /// Emits "—" for any nil field. Extracted for testability — test exercises
+    /// this directly without touching the snapshot loader.
+    func renderExecutiveSummaryRows(into ws: Worksheet, metrics m: ExecutiveSummaryMetrics) {
+        var row = ws.writeSheetHeader(
+            title: t("Executive Summary"),
+            subtitle: "Fleet KPIs · Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            ncols: 2
+        )
+        ws.setColumnWidth(0, 0, 36)
+        ws.setColumnWidth(1, 1, 24)
+
+        let dash = "—"
+        let scoreLabel: String = {
+            guard let v = m.securityScore, let g = m.securityGrade else { return dash }
+            return String(format: "%.1f", v) + " / 100 (\(g.rawValue))"
+        }()
+
+        func fmtPct(_ d: Double?) -> String {
+            guard let d else { return dash }
+            return String(format: "%.1f%%", d)
+        }
+        func fmtInt(_ n: Int?) -> String {
+            guard let n else { return dash }
+            return "\(n)"
+        }
+
+        let metricRows: [(String, String)] = [
+            ("Security Score", scoreLabel),
+            ("Total Devices", fmtInt(m.totalDevices)),
+            ("Managed Devices", fmtInt(m.managedCount)),
+            ("Patch Fleet Compliance", fmtPct(m.patchFleetCompliancePct)),
+            ("FileVault Coverage", fmtPct(m.fileVaultPct)),
+            ("SIP Coverage", fmtPct(m.sipPct)),
+            ("Firewall Coverage", fmtPct(m.firewallPct)),
+            ("Stale — Recent (0–30d)", fmtInt(m.recentCount)),
+            ("Stale — Offline (31–90d)", fmtInt(m.offlineCount)),
+            ("Stale — Inactive (91–180d)", fmtInt(m.inactiveCount)),
+            ("Stale — Dormant (180d+)", fmtInt(m.dormantCount)),
+            ("P0 Action Items (FV/SIP/FW gaps)", fmtInt(m.actionItemsP0)),
+            ("P1 Action Items (Gatekeeper gaps)", fmtInt(m.actionItemsP1)),
+        ]
+
+        ws.write("Metric", row: row, col: 0, format: .header)
+        ws.write("Value", row: row, col: 1, format: .header)
+        row += 1
+
+        for (label, value) in metricRows {
+            ws.write(label, row: row, col: 0, format: .cell)
+            ws.write(value, row: row, col: 1, format: .cell)
+            row += 1
+        }
+    }
+
+    /// Sheet 1: fleet KPIs aggregated from cached snapshots. Gracefully omits
+    /// any metric whose source snapshot is absent. Throws `SheetSkippable` only
+    /// when no source data is available at all.
+    func writeExecutiveSummary() throws {
+        let metrics = buildExecutiveMetrics()
+        let hasAnyData = metrics.totalDevices != nil
+            || metrics.patchFleetCompliancePct != nil
+            || metrics.recentCount != nil
+        guard hasAnyData else {
+            throw CoreDashboardError.noCachedData(names: ["security", "patch-status",
+                                                           "device-compliance"])
+        }
+        let ws = workbook.addSheet("Executive Summary")
+        renderExecutiveSummaryRows(into: ws, metrics: metrics)
+    }
+
     // MARK: - Cover sheet
 
-    /// Sheet 1: workbook manifest and generation metadata.
+    /// Sheet 2: workbook manifest and generation metadata.
     /// Self-documents every sheet so a first-time reader knows what to click.
     func writeCoverSheet() throws {
         let ws = workbook.addSheet("Cover")
@@ -1829,17 +2010,20 @@ struct CoreDashboard: Sendable {
         ws.write("How to read this workbook", row: row, col: 0, format: .header)
         row += 1
         let guidance: [String] = [
-            "Sheet 2 (Compliance Posture) — Single-page executive summary: compliance %, "
+            "Sheet 1 (Executive Summary) — Fleet-level KPIs at a glance: security score, "
+                + "patch compliance, stale device tiers, and key control coverage.",
+            "Sheet 2 (Cover) — This sheet — workbook guide and sheet manifest.",
+            "Sheet 3 (Compliance Posture) — Single-page executive summary: compliance %, "
                 + "security controls, patch coverage, and RAG status.",
-            "Sheet 3 (Fleet Overview) — Total enrolled devices, mobile counts, OS breakdown.",
-            "Sheet 4 (Security Posture) — FileVault, SIP, Gatekeeper, Firewall percentages.",
-            "Sheet 5 (Patch Compliance) — Per-title patch coverage, latest version vs. installed.",
-            "Sheet 6 (Device Compliance) — Per-device compliance and days since check-in.",
-            "Sheet 7 (Audit Summary) — jamf-cli health findings (critical, warning, info).",
-            "Sheets 8–11 — Inventory and hardware detail (computers and mobile).",
-            "Sheets 12–20 — Configuration health: policies, profiles, apps, software, EAs.",
-            "Sheets 21–27 — Device health, patch failures, update failures, smart groups.",
-            "Sheets 28–35 — Platform compliance, DDM, and Jamf Protect (optional; "
+            "Sheet 4 (Fleet Overview) — Total enrolled devices, mobile counts, OS breakdown.",
+            "Sheet 5 (Security Posture) — FileVault, SIP, Gatekeeper, Firewall percentages.",
+            "Sheet 6 (Patch Compliance) — Per-title patch coverage, latest version vs. installed.",
+            "Sheet 7 (Device Compliance) — Per-device compliance and days since check-in.",
+            "Sheet 8 (Audit Summary) — jamf-cli health findings (critical, warning, info).",
+            "Sheets 9–12 — Inventory and hardware detail (computers and mobile).",
+            "Sheets 13–21 — Configuration health: policies, profiles, apps, software, EAs.",
+            "Sheets 22–28 — Device health, patch failures, update failures, smart groups.",
+            "Sheets 29–36 — Platform compliance, DDM, and Jamf Protect (optional; "
                 + "shown only when data is available).",
         ]
         for line in guidance {
@@ -1863,6 +2047,8 @@ struct CoreDashboard: Sendable {
     /// One-line description for every sheet name in the plan.
     private func sheetManifestDescriptions() -> [String: String] {
         [
+            "Executive Summary": "Fleet KPIs at a glance: security score + band, fleet size, "
+                + "patch compliance %, key control coverage, and stale device tiers.",
             "Cover": "This sheet — workbook guide and sheet manifest.",
             "Compliance Posture": "Executive summary: compliance %, security controls, "
                 + "patch coverage, RAG-coded.",

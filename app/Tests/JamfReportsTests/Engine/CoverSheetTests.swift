@@ -26,22 +26,33 @@ final class CoverSheetTests: XCTestCase {
         XCTAssertNoThrow(try dash.writeCoverSheet())
     }
 
-    // MARK: - Cover is the first sheet in sheetPlan
+    // MARK: - Executive Summary is the first sheet in sheetPlan
 
-    func testCoverIsFirstSheetInPlan() {
+    func testExecutiveSummaryIsFirstSheetInPlan() {
         let dash = makeDashboard()
-        XCTAssertEqual(dash.sheetPlan.first?.name, "Cover")
+        XCTAssertEqual(dash.sheetPlan.first?.name, "Executive Summary")
     }
 
-    // MARK: - Compliance Posture is the second sheet
+    // MARK: - Cover is the second sheet in sheetPlan
 
-    func testCompliancePostureIsSecondInPlan() {
+    func testCoverIsSecondSheetInPlan() {
         let dash = makeDashboard()
         guard dash.sheetPlan.count >= 2 else {
             XCTFail("sheetPlan has fewer than 2 entries")
             return
         }
-        XCTAssertEqual(dash.sheetPlan[1].name, "Compliance Posture")
+        XCTAssertEqual(dash.sheetPlan[1].name, "Cover")
+    }
+
+    // MARK: - Compliance Posture is the third sheet
+
+    func testCompliancePostureIsThirdInPlan() {
+        let dash = makeDashboard()
+        guard dash.sheetPlan.count >= 3 else {
+            XCTFail("sheetPlan has fewer than 3 entries")
+            return
+        }
+        XCTAssertEqual(dash.sheetPlan[2].name, "Compliance Posture")
     }
 
     // MARK: - Manifest entry count matches sheet plan
@@ -58,7 +69,7 @@ final class CoverSheetTests: XCTestCase {
         // planCount is the expected manifest row count — we trust it matches since
         // writeCoverSheet iterates sheetPlan directly.
         XCTAssertGreaterThan(planCount, 30,
-                             "sheetPlan should have at least 34 entries (Cover + 33 others)")
+                             "sheetPlan should have at least 35 entries (Executive Summary + Cover + 33 others)")
     }
 
     // MARK: - Cover renders with writeAll (no selection filter)
@@ -82,8 +93,10 @@ final class CoverSheetTests: XCTestCase {
     func testExecPrioritySheetOrder() {
         let dash = makeDashboard()
         let names = dash.sheetPlan.map(\.name)
-        // First seven sheets must be exec-priority in specified order.
-        let expectedTop7 = [
+        // First eight sheets must be exec-priority in specified order.
+        // Executive Summary was added as sheet 1 in v2.1.1.
+        let expectedTop8 = [
+            "Executive Summary",
             "Cover",
             "Compliance Posture",
             "Fleet Overview",
@@ -92,7 +105,7 @@ final class CoverSheetTests: XCTestCase {
             "Device Compliance",
             "Audit Summary",
         ]
-        let actualTop7 = Array(names.prefix(7))
-        XCTAssertEqual(actualTop7, expectedTop7)
+        let actualTop8 = Array(names.prefix(8))
+        XCTAssertEqual(actualTop8, expectedTop8)
     }
 }

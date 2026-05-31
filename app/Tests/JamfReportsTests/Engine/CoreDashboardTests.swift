@@ -291,7 +291,7 @@ final class CoreDashboardTests: XCTestCase {
         // New framing sheets prepended; ordering updated per user-research findings.
         let expected = [
             // Framing / exec-priority
-            "Cover", "Compliance Posture",
+            "Executive Summary", "Cover", "Compliance Posture",
             "Fleet Overview", "Security Posture", "Patch Compliance",
             "Device Compliance", "Audit Summary",
             // Inventory & hardware

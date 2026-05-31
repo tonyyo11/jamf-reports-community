@@ -7,6 +7,17 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- Executive Summary: the Excel workbook now leads with an "Executive Summary"
+  sheet, and the HTML instance report opens with a matching top card row. Both
+  show headline fleet KPIs — total devices, a weighted security score
+  (FileVault/SIP/Firewall), FileVault/SIP/Firewall/Gatekeeper percentages,
+  fleet patch compliance, and active/stale device counts. These are pure
+  aggregations of data the report already fetches (no new jamf-cli calls); rows
+  whose source is absent are omitted so partial-data runs still produce a useful
+  summary.
+
 ## [2.1.0] - 2026-05-28
 
 ### Accessibility
