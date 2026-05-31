@@ -4769,9 +4769,14 @@ class JamfCLIBridge:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 final_path = out_dir / f"patch-summaries_{_now_ts()}.json"
                 tmp_path = final_path.with_suffix(".partial")
-                with open(tmp_path, "w", encoding="utf-8") as fh:
-                    json.dump(summaries, fh, indent=2)
+                payload = json.dumps(summaries, indent=2).encode("utf-8")
+                with open(tmp_path, "wb") as fh:
+                    fh.write(payload)
                 tmp_path.rename(final_path)
+                _rewrite_snapshot_manifest(
+                    out_dir,
+                    pinned={final_path.name: hashlib.sha256(payload).hexdigest()},
+                )
             except OSError as exc:
                 print(f"  [warn] Could not save patch-summaries snapshot: {exc}")
         return summaries
@@ -13565,6 +13570,8 @@ def _post_teams_notification(
                 print(f"  [warn] Teams webhook returned HTTP {resp.status}; notification may not appear.")
     except urllib.error.URLError as exc:
         print(f"  [warn] Teams webhook notification failed: {exc}")
+    except Exception as exc:  # best-effort notify must never abort the run
+        print(f"  [warn] Teams webhook notification error: {exc}")
 
 
 def cmd_generate(
@@ -18670,6 +18677,10 @@ def cmd_launchagent_run(
                 html_path = cmd_html(config, None, no_open=True)
                 status["html_report_path"] = str(html_path)
         elif mode == "csv-assisted":
+            if selected_csv is None:
+                raise SystemExit(
+                    "Error: csv-assisted mode requires a CSV in the inbox; none found."
+                )
             _collect_snapshots(config, None, historical_csv_dir)
             if generate_inventory_csv:
                 inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
