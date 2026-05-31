@@ -10,7 +10,6 @@ Covers the behavioral fixes that are unit-testable without a live jamf-cli:
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import pandas as pd
@@ -277,3 +276,179 @@ def test_school_csv_load_raises_system_exit_on_unreadable_csv(
         assert hasattr(df, "columns")
     except SystemExit:
         pass  # expected
+
+
+# ---------------------------------------------------------------------------
+# (e) LogRedactor.redact_text redacts free-text custom *token* / pat keys
+# ---------------------------------------------------------------------------
+
+
+def test_redactor_redacts_freetext_custom_token_key(jrc) -> None:
+    """A custom `*_token` key echoed in a log line must have its value redacted."""
+    redactor = jrc.LogRedactor()
+    out = redactor.redact_text("gh_session_token=ghs_opaqueSecret1234567890")
+    assert "ghs_opaqueSecret1234567890" not in out
+    assert "REDACTED_TOKEN" in out
+
+
+def test_redactor_redacts_freetext_pat_assignment(jrc) -> None:
+    """A free-text `pat:` assignment must be redacted."""
+    redactor = jrc.LogRedactor()
+    out = redactor.redact_text("pat: ghp_personalAccessToken1234")
+    assert "ghp_personalAccessToken1234" not in out
+    assert "REDACTED_TOKEN" in out
+
+
+def test_redactor_does_not_mangle_token_word_in_prose(jrc) -> None:
+    """The literal word 'token' in prose (no key-value form) must survive."""
+    redactor = jrc.LogRedactor()
+    out = redactor.redact_text("fetching token from cache")
+    assert out == "fetching token from cache"
+
+
+# ---------------------------------------------------------------------------
+# (f) cmd_export_reports neutralizes path traversal in the config filename
+# ---------------------------------------------------------------------------
+
+
+def _make_export_config(jrc, tmp_path: Path, filename: str) -> tuple:
+    """Build a minimal Config + inventory CSV exercising one export_reports entry."""
+    out_dir = tmp_path / "exports"
+    out_dir.mkdir()
+    inv = tmp_path / "inventory.csv"
+    pd.DataFrame({"Computer Name": ["mac-1"], "Serial": ["ABC"]}).to_csv(
+        inv, index=False, encoding="utf-8-sig"
+    )
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "export_reports:\n"
+        "  - name: traversal\n"
+        "    schedule: daily\n"
+        f"    output_dir: '{out_dir}'\n"
+        f"    filename: '{filename}'\n",
+        encoding="utf-8",
+    )
+    return jrc.Config(str(cfg_path)), inv, out_dir
+
+
+def test_export_reports_strips_path_traversal_from_filename(jrc, tmp_path: Path) -> None:
+    """A `../../escape.csv` filename must be written inside output_dir, not above it."""
+    config, inv, out_dir = _make_export_config(jrc, tmp_path, "../../escape.csv")
+    written = jrc.cmd_export_reports(config, inv, force=True)
+
+    assert len(written) == 1
+    # Output must land inside output_dir with the basename only.
+    assert written[0] == out_dir / "escape.csv"
+    assert written[0].exists()
+    # Nothing escaped above output_dir.
+    assert not (tmp_path / "escape.csv").exists()
+
+
+def test_export_reports_rejects_bare_dotdot_filename(jrc, tmp_path: Path) -> None:
+    """A bare `../../` filename (Path.name == '..') must be rejected, not written."""
+    config, inv, out_dir = _make_export_config(jrc, tmp_path, "../../")
+    written = jrc.cmd_export_reports(config, inv, force=True)
+
+    # The entry is skipped — nothing written.
+    assert written == []
+    # No CSV escaped into the parent of output_dir (tmp_path) beyond the input.
+    escaped = [p.name for p in tmp_path.iterdir()
+               if p.suffix == ".csv" and p.name != "inventory.csv"]
+    assert escaped == []
+
+
+def test_export_reports_keeps_plain_filename(jrc, tmp_path: Path) -> None:
+    """A normal filename is unaffected by the sanitizer."""
+    config, inv, out_dir = _make_export_config(jrc, tmp_path, "report.csv")
+    written = jrc.cmd_export_reports(config, inv, force=True)
+    assert written == [out_dir / "report.csv"]
+    assert (out_dir / "report.csv").exists()
+
+
+# ---------------------------------------------------------------------------
+# (g) _bundle_collect_versions runs version strings through the redactor
+# ---------------------------------------------------------------------------
+
+
+def test_bundle_versions_redacts_secret_shaped_version_string(
+    jrc, tmp_path: Path, monkeypatch
+) -> None:
+    """A secret-shaped jamf-cli version banner must be redacted in versions.json."""
+    import types
+    import zipfile
+
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.fakeSignature1234"
+
+    def _fake_run(*_a, **_k):
+        return types.SimpleNamespace(returncode=0, stdout=jwt, stderr="")
+
+    monkeypatch.setattr(jrc.subprocess, "run", _fake_run)
+    # platform.platform() shells out under some locales; stub it so the global
+    # subprocess.run patch above doesn't break it (it is not under test here).
+    monkeypatch.setattr(jrc.platform, "platform", lambda: "test-platform")
+
+    zip_path = tmp_path / "b.zip"
+    manifest: list = []
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        jrc._bundle_collect_versions(jrc.LogRedactor(), zf, manifest)
+
+    with zipfile.ZipFile(zip_path) as zf:
+        content = zf.read("versions.json").decode("utf-8")
+
+    assert jwt not in content
+    assert "REDACTED_JWT" in content
+
+
+def test_bundle_versions_no_redactor_preserves_raw(jrc, tmp_path: Path, monkeypatch) -> None:
+    """With redactor=None (--no-redact) the raw version string is preserved."""
+    import types
+    import zipfile
+
+    banner = "jamf-cli 1.16.1"
+
+    def _fake_run(*_a, **_k):
+        return types.SimpleNamespace(returncode=0, stdout=banner, stderr="")
+
+    monkeypatch.setattr(jrc.subprocess, "run", _fake_run)
+    monkeypatch.setattr(jrc.platform, "platform", lambda: "test-platform")
+
+    zip_path = tmp_path / "b.zip"
+    manifest: list = []
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        jrc._bundle_collect_versions(None, zf, manifest)
+
+    with zipfile.ZipFile(zip_path) as zf:
+        content = zf.read("versions.json").decode("utf-8")
+    assert banner in content
+
+
+# ---------------------------------------------------------------------------
+# (h) _bundle_collect_logs skips symlinks (no out-of-workspace inclusion)
+# ---------------------------------------------------------------------------
+
+
+def test_bundle_logs_skips_symlink_to_outside_file(jrc, tmp_path: Path) -> None:
+    """A symlink in logs/ pointing at a file outside the workspace must not be bundled."""
+    import zipfile
+
+    workspace = tmp_path / "ws"
+    logs_dir = workspace / "automation" / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "real.log").write_text("normal log line")
+
+    outside = tmp_path / "outside_secret.txt"
+    outside.write_text("SENSITIVE-OUTSIDE-DATA")
+    (logs_dir / "leak.log").symlink_to(outside)
+
+    zip_path = tmp_path / "b.zip"
+    manifest: list = []
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        jrc._bundle_collect_logs(workspace, 7, None, zf, manifest)
+
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        joined = "".join(zf.read(n).decode("utf-8") for n in names)
+
+    assert "logs/real.log" in names
+    assert "logs/leak.log" not in names
+    assert "SENSITIVE-OUTSIDE-DATA" not in joined
