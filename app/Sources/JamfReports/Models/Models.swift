@@ -217,7 +217,7 @@ struct FailingRule: Identifiable, Sendable {
 
 // MARK: - Reports
 
-struct Report: Identifiable, Sendable {
+struct Report: Identifiable, Sendable, Equatable {
     var id: String { name }
     let name: String
     let size: String
