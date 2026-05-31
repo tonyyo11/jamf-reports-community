@@ -21,29 +21,21 @@ struct OutreachView: View {
     @State private var bridge = CLIBridge()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(
-                    kicker: "Posture",
-                    title: "Offline Outreach",
-                    subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate
-                )
-                if snapshot.totalDevices == 0 {
-                    emptyState
-                } else {
-                    tierKPIGrid
-                    tierSelector
-                    actionBar
-                    devicesTable
-                }
+        PageScaffold {
+            PageHeader(
+                kicker: "Posture",
+                title: "Offline Outreach",
+                subtitle: subtitle,
+                lastModified: snapshot.snapshotDate
+            )
+            if snapshot.totalDevices == 0 {
+                emptyState
+            } else {
+                tierKPIGrid
+                tierSelector
+                actionBar
+                devicesTable
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)

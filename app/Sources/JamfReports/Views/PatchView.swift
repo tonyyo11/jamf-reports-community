@@ -12,36 +12,28 @@ struct PatchView: View {
     @State private var hasLoaded = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(
-                    kicker: "Operations",
-                    title: "Patch Compliance",
-                    subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate
-                )
-                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-                // Suppressed in demo mode (the demo dataset is intentionally static and
-                // not user-perceivably "stale"). Renders nothing when source is .fresh.
-                if !workspace.demoMode {
-                    StaleDataBanner(source: snapshot.cacheSource)
-                }
-                if snapshot.totalTitles == 0 {
-                    emptyState
-                } else {
-                    kpiGrid
-                    patchTitlesCard
-                    if !snapshot.failures.isEmpty {
-                        recentFailuresCard
-                    }
+        PageScaffold {
+            PageHeader(
+                kicker: "Operations",
+                title: "Patch Compliance",
+                subtitle: subtitle,
+                lastModified: snapshot.snapshotDate
+            )
+            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+            // Suppressed in demo mode (the demo dataset is intentionally static and
+            // not user-perceivably "stale"). Renders nothing when source is .fresh.
+            if !workspace.demoMode {
+                StaleDataBanner(source: snapshot.cacheSource)
+            }
+            if snapshot.totalTitles == 0 {
+                emptyState
+            } else {
+                kpiGrid
+                patchTitlesCard
+                if !snapshot.failures.isEmpty {
+                    recentFailuresCard
                 }
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)

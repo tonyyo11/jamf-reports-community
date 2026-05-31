@@ -28,43 +28,35 @@ struct UpdatesView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(
-                    kicker: "Operations",
-                    title: "OS Updates",
-                    subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate
-                )
-                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-                // Suppressed in demo mode (the demo dataset is intentionally static and
-                // not user-perceivably "stale"). Renders nothing when source is .fresh.
-                if !workspace.demoMode {
-                    StaleDataBanner(source: snapshot.cacheSource)
+        PageScaffold {
+            PageHeader(
+                kicker: "Operations",
+                title: "OS Updates",
+                subtitle: subtitle,
+                lastModified: snapshot.snapshotDate
+            )
+            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+            // Suppressed in demo mode (the demo dataset is intentionally static and
+            // not user-perceivably "stale"). Renders nothing when source is .fresh.
+            if !workspace.demoMode {
+                StaleDataBanner(source: snapshot.cacheSource)
+            }
+            if snapshot.total == 0 {
+                emptyState
+            } else {
+                kpiGrid
+                if !updateTemplates.isEmpty {
+                    smartGroupActionBar
                 }
-                if snapshot.total == 0 {
-                    emptyState
-                } else {
-                    kpiGrid
-                    if !updateTemplates.isEmpty {
-                        smartGroupActionBar
-                    }
-                    planStateCard
-                    statusSummaryCard
-                    if !snapshot.failedPlans.isEmpty {
-                        failedPlansCard
-                    }
-                    if !snapshot.errorDevices.isEmpty {
-                        errorDevicesCard
-                    }
+                planStateCard
+                statusSummaryCard
+                if !snapshot.failedPlans.isEmpty {
+                    failedPlansCard
+                }
+                if !snapshot.errorDevices.isEmpty {
+                    errorDevicesCard
                 }
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)

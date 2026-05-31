@@ -30,40 +30,32 @@ struct SecurityPostureView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PageHeader(
-                    kicker: "Posture",
-                    title: "Security Posture",
-                    subtitle: subtitle,
-                    lastModified: snapshot.snapshotDate
-                )
+        PageScaffold {
+            PageHeader(
+                kicker: "Posture",
+                title: "Security Posture",
+                subtitle: subtitle,
+                lastModified: snapshot.snapshotDate
+            )
 
-                // Shared StaleDataBanner surfaces snapshot freshness above the main content.
-                // Suppressed in demo mode (the demo dataset is intentionally static and
-                // not user-perceivably "stale"). Renders nothing when source is .fresh.
-                if !workspace.demoMode {
-                    StaleDataBanner(source: snapshot.cacheSource)
-                }
-
-                if snapshot.totalDevices == 0 {
-                    emptyState
-                } else {
-                    heroScoreCard
-                    kpiGrid
-                    if !encryptionTemplates.isEmpty {
-                        encryptionSmartGroupBar
-                    }
-                    actionItemsCard
-                    osDistributionCard
-                }
+            // Shared StaleDataBanner surfaces snapshot freshness above the main content.
+            // Suppressed in demo mode (the demo dataset is intentionally static and
+            // not user-perceivably "stale"). Renders nothing when source is .fresh.
+            if !workspace.demoMode {
+                StaleDataBanner(source: snapshot.cacheSource)
             }
-            .padding(EdgeInsets(
-                top: Theme.Metrics.pagePadTop,
-                leading: Theme.Metrics.pagePadH,
-                bottom: Theme.Metrics.pagePadBottom,
-                trailing: Theme.Metrics.pagePadH
-            ))
+
+            if snapshot.totalDevices == 0 {
+                emptyState
+            } else {
+                heroScoreCard
+                kpiGrid
+                if !encryptionTemplates.isEmpty {
+                    encryptionSmartGroupBar
+                }
+                actionItemsCard
+                osDistributionCard
+            }
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
