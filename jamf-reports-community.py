@@ -3546,6 +3546,11 @@ class LogRedactor:
         "api_key",
         "apikey",
         "authorization",
+        "token",
+        "bearer_token",
+        "session_token",
+        "pat",
+        "private_key",
     }
 
     # JSON keys whose value should be hash-placeholder'd when the corresponding
@@ -8132,7 +8137,12 @@ class CoreDashboard:
         raw = self._bridge.security_report()
         items = raw if isinstance(raw, list) else []
         summary = next(
-            (i.get("data", i) for i in items if i.get("section") == "summary"), {}
+            (
+                i.get("data", i)
+                for i in items
+                if isinstance(i, dict) and i.get("section") == "summary"
+            ),
+            {},
         )
         total = _to_int(summary.get("total_devices", 0))
         # Normalize and merge: Jamf may return "14.6" and "14.6.0" as separate rows.
@@ -8320,6 +8330,8 @@ class CoreDashboard:
         row += 1
 
         for item in items:
+            if not isinstance(item, dict):
+                continue
             severity = str(item.get("severity", "")).upper()
             fmt = self._fmts["cell"]
             if severity == "CRITICAL":
@@ -8432,6 +8444,8 @@ class CoreDashboard:
             return
 
         for item in items:
+            if not isinstance(item, dict):
+                continue
             _safe_write(ws, row, 0, item.get("name", ""), self._fmts["cell"])
             _safe_write(ws, row, 1, item.get("type", ""), self._fmts["cell"])
             _safe_write(ws, row, 2, item.get("id", ""), self._fmts["cell"])
@@ -9330,7 +9344,7 @@ class CoreDashboard:
                 raw_dt = str(summary.get("releaseDate") or "").strip()
                 if raw_dt:
                     release_dates[title_name] = raw_dt[:10]  # ISO 8601 → "YYYY-MM-DD"
-        except Exception:
+        except RuntimeError:
             pass
         release_date_available = bool(release_dates)
 
@@ -9351,7 +9365,7 @@ class CoreDashboard:
                 active_count = sum(1 for r in dc_list if not _to_bool(r.get("stale")))
                 active_ratio = active_count / total_enrolled if total_enrolled > 0 else 0.0
                 adj_available = True
-        except Exception:
+        except RuntimeError:
             pass
 
         base_cols = 7 if release_date_available else 6
@@ -9390,6 +9404,8 @@ class CoreDashboard:
         adj_start_col = compliance_col + 1
 
         for item in titles:
+            if not isinstance(item, dict):
+                continue
             total = _to_int(item.get("total", 0))
             primary = _to_int(item.get("on_latest", 0))
             secondary = _to_int(item.get("on_other", 0))
@@ -10721,7 +10737,7 @@ class CSVDashboard:
         handler(ws, row_i, col, ea)
 
     def _ea_boolean(self, ws: Any, row_i: int, col: str, ea: dict) -> None:
-        true_val = ea.get("true_value", "Yes").lower()
+        true_val = str(ea.get("true_value") or "Yes").lower()
         series = self._df[col].str.strip().str.lower()
         non_blank = series[series != ""]
         passed = int((non_blank == true_val).sum())
@@ -10755,14 +10771,15 @@ class CSVDashboard:
 
     def _ea_percentage(self, ws: Any, row_i: int, col: str, ea: dict) -> None:
         warn = float(
-            ea.get("warning_threshold", self._config.thresholds.get("warning_disk_percent", 80))
+            ea.get("warning_threshold") or self._config.thresholds.get("warning_disk_percent", 80)
         )
         crit = float(
-            ea.get("critical_threshold", self._config.thresholds.get("critical_disk_percent", 90))
+            ea.get("critical_threshold") or self._config.thresholds.get("critical_disk_percent", 90)
         )
         nums = pd.to_numeric(self._df[col].str.replace("%", "", regex=False), errors="coerce")
         critical_df = self._df[nums >= crit]
         warning_df = self._df[(nums >= warn) & (nums < crit)]
+        blank_count = int(nums.isna().sum())
         for label, sub_df in [("Critical (>= {:.0f}%)".format(crit), critical_df),
                                ("Warning ({:.0f}% - {:.0f}%)".format(warn, crit), warning_df)]:
             _safe_write(ws, row_i, 0, label, self._fmts["header"])
@@ -10772,6 +10789,10 @@ class CSVDashboard:
                 _safe_write(ws, row_i, 0, self._device_name(dr), self._fmts["cell"])
                 _safe_write(ws, row_i, 1, str(dr[col]), self._fmts["cell"])
                 row_i += 1
+            row_i += 1
+        if blank_count > 0:
+            _safe_write(ws, row_i, 0, "Blank / Unparseable", self._fmts["yellow"])
+            _safe_write(ws, row_i, 1, blank_count, self._fmts["yellow"])
             row_i += 1
 
     def _ea_version(self, ws: Any, row_i: int, col: str, ea: dict) -> None:
@@ -10820,8 +10841,9 @@ class CSVDashboard:
 
     def _ea_date(self, ws: Any, row_i: int, col: str, ea: dict) -> None:
         ea_name = ea.get("name", col)
-        warn_days = int(ea.get("warning_days",
-                                self._config.thresholds.get("cert_warning_days", 90)))
+        warn_days = int(
+            ea.get("warning_days") or self._config.thresholds.get("cert_warning_days", 90)
+        )
         _safe_write(ws, row_i, 0, "Device", self._fmts["header"])
         _safe_write(ws, row_i, 1, "Date Value", self._fmts["header"])
         _safe_write(ws, row_i, 2, "Days Until Expiry", self._fmts["header"])
@@ -10865,12 +10887,15 @@ def _school_csv_load(csv_path: str) -> "pd.DataFrame":
         DataFrame with original column names preserved.
     """
     path = Path(csv_path)
-    with open(path, encoding="utf-8-sig", errors="replace") as fh:
-        sample = fh.read(4096)
-    delimiter = ";" if sample.count(";") > sample.count(",") else ","
-    df = pd.read_csv(path, sep=delimiter, dtype=str, encoding="utf-8-sig",
-                     encoding_errors="replace")
-    df.fillna("", inplace=True)
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:
+            sample = fh.read(4096)
+        delimiter = ";" if sample.count(";") > sample.count(",") else ","
+        df = pd.read_csv(path, sep=delimiter, dtype=str, encoding="utf-8-sig",
+                         encoding_errors="replace")
+        df.fillna("", inplace=True)
+    except Exception as exc:
+        raise SystemExit(f"Error: could not read school CSV '{csv_path}': {exc}") from exc
     return df
 
 
@@ -14292,7 +14317,7 @@ class HtmlReport:
                 continue
             raw_ver = str(item.get("os_version", ""))
             ver = self._normalise_version(raw_ver)
-            count = int(item.get("count", 0))
+            count = _to_int(item.get("count", 0))
             if ver:
                 versions.append({"v": ver, "c": count})
 
@@ -17831,6 +17856,36 @@ def _archive_inventory_output(config: Config, out_path: Path, keep_latest_runs: 
         print(f"  Archived {len(archived_paths)} older inventory export(s) to {archive_dir}")
 
 
+def _csv_injection_safe(df: "pd.DataFrame") -> "pd.DataFrame":
+    """Return a copy of df with formula-injection neutralized in string columns.
+
+    Cells whose stripped value starts with ``=``, ``+``, ``-``, or ``@`` are
+    prefixed with a single quote so spreadsheet applications treat them as
+    literal text rather than formulas.  Numeric columns are left untouched.
+    Mirrors the trigger character set used by ``_safe_write`` for xlsx output.
+
+    Args:
+        df: Input DataFrame (may contain any mix of dtypes).
+
+    Returns:
+        A shallow copy with string-column cells sanitized.
+    """
+    _INJECTION_CHARS = {"=", "+", "-", "@"}
+
+    def _neutralize(val: Any) -> Any:
+        if not isinstance(val, str):
+            return val
+        stripped = val.lstrip()
+        if stripped and stripped[0] in _INJECTION_CHARS:
+            return "'" + val
+        return val
+
+    safe = df.copy()
+    for col in safe.select_dtypes(include=["object"]).columns:
+        safe[col] = safe[col].map(_neutralize)
+    return safe
+
+
 def _write_inventory_csv_atomic(df: pd.DataFrame, out_path: Path) -> None:
     """Write an inventory CSV via a temporary file in the destination directory."""
     temp_path: Optional[Path] = None
@@ -17842,7 +17897,7 @@ def _write_inventory_csv_atomic(df: pd.DataFrame, out_path: Path) -> None:
             delete=False,
         ) as temp_file:
             temp_path = Path(temp_file.name)
-        df.to_csv(temp_path, index=False, encoding="utf-8-sig")
+        _csv_injection_safe(df).to_csv(temp_path, index=False, encoding="utf-8-sig")
         temp_path.replace(out_path)
     except Exception as exc:
         if temp_path is not None:
@@ -18167,7 +18222,7 @@ def cmd_export_reports(
         else:
             out_df = filtered.reset_index(drop=True)
 
-        out_df.to_csv(out_path, index=False, encoding="utf-8-sig")
+        _csv_injection_safe(out_df).to_csv(out_path, index=False, encoding="utf-8-sig")
         print(f"  [ok] {name}: {len(out_df)} rows -> {out_path.name}")
         _export_mark_done(config, name)
         written.append(out_path)
