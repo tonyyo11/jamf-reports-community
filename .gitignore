@@ -29,6 +29,7 @@ __pycache__/
 
 # Internal planning docs / Claude Code session state
 .claude/
+.serena/
 Community Edition Recap.rtf
 
 # Report files

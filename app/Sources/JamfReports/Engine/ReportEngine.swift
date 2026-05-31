@@ -877,7 +877,7 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "policies", "list", "--output", "json"], "policies"),
             (["-p", profile, "pro", "scripts", "list", "--output", "json"], "scripts"),
             (["-p", profile, "pro", "packages", "list", "--output", "json"], "packages"),
-            (["-p", profile, "pro", "smart-computer-groups", "list", "--output", "json"],
+            (["-p", profile, "pro", "computer-groups-smart-groups", "list", "--output", "json"],
              "smart-computer-groups"),
             (["-p", profile, "pro", "sites", "list", "--output", "json"], "sites"),
             (["-p", profile, "pro", "buildings", "list", "--output", "json"], "buildings"),
@@ -909,6 +909,17 @@ struct ReportEngine: Sendable {
         let stateStore: StateFileStore? = (try? workspacePaths.stateDir(for: profile))
             .map(StateFileStore.init(directory:))
         let collectStart = Date()
+
+        // Gate --no-hints/--no-version-check on the installed binary being >= 1.18.0.
+        // These flags are 1.18-only; passing them to an older binary produces exit 1
+        // (unknown flag) and silently skips every snapshot. Default-off when version
+        // detection fails (nil) — safer than risking unknown flags on an old binary.
+        // Scope: pro namespace only. school/protect namespace flag support is unverified;
+        // those collect paths are left unmodified until confirmed via `school --help`.
+        let detectedVersion = JamfCLIInstaller.installedVersion(at: bin)
+        let supportsQuietFlags = detectedVersion.map {
+            !JamfCLIInstaller.isBelowMinimumSupported($0)
+        } ?? false
 
         let bridge = CLIBridge()
         var didFetchPrior = false
@@ -949,8 +960,16 @@ struct ReportEngine: Sendable {
             ))
             let captureResult: (Int32, Data)?
             do {
+                // --no-hints suppresses interactive usage tips; --no-version-check
+                // suppresses the "new version available" banner that jamf-cli 1.18+
+                // emits on stderr. Both keep Runs-screen output signal-to-noise clean
+                // during automated collects. Only appended when the binary is >= 1.18.0
+                // (see `supportsQuietFlags` gate above the loop).
+                let invokeArgs = supportsQuietFlags
+                    ? args + ["--no-hints", "--no-version-check"]
+                    : args
                 captureResult = try await bridge.runAndCapture(
-                    executable: bin, arguments: args,
+                    executable: bin, arguments: invokeArgs,
                     environment: CLIBridge.environmentForJamfCLI(),
                     onLine: onLine
                 )

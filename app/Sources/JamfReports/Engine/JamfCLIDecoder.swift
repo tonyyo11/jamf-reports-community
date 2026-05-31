@@ -413,7 +413,8 @@ struct AppStatusRow: Decodable, Sendable {
 }
 
 // MARK: - Smart groups
-// `jamf-cli pro smart-computer-groups list --output json`
+// `jamf-cli pro computer-groups-smart-groups list --output json`
+// (`smart-computer-groups` is a retained alias; snapshot key remains "smart-computer-groups")
 
 struct SmartGroupRow: Decodable, Sendable {
     let id: AnyCodable?

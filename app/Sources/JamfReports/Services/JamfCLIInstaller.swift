@@ -78,6 +78,10 @@ final class JamfCLIInstaller {
         /// True when the binary passed the codesign-fingerprint gate at discovery time.
         /// False indicates the gate rejected the binary (missing or mismatched signature).
         let codesignVerified: Bool
+        /// The `specProVersion` field from `jamf-cli version -o json` (v1.18.0+).
+        /// "unknown" when offline or the binary predates 1.18. nil when the probe failed
+        /// entirely (codesign rejected, process launch error, JSON undecodable).
+        let specProVersion: String?
     }
 
     struct UpdateResult: Sendable {
@@ -164,12 +168,15 @@ final class JamfCLIInstaller {
     /// - 2026-05-08: 1.16.1 — to pick up the `pro device <id>` platform-
     ///   section nil-guard (PR #185) which fixes partial DeviceDetail decodes
     ///   when scope/deploymentState/target are nil.
-    static let minimumSupportedVersion: String = "1.16.1"
+    /// - 2026-05-31: 1.18.0 — canonical `computer-groups-smart-groups` subcommand
+    ///   + `--no-hints`/`--no-version-check` flags + `specProVersion` in
+    ///   `jamf-cli version -o json`.
+    nonisolated static let minimumSupportedVersion: String = "1.18.0"
 
     /// Returns true when `installedVersion` is below `minimumSupportedVersion`.
     /// Returns false if the installed version is unknown/unparseable so we
     /// don't nag users when version detection itself failed.
-    static func isBelowMinimumSupported(_ installedVersion: String?) -> Bool {
+    nonisolated static func isBelowMinimumSupported(_ installedVersion: String?) -> Bool {
         guard let installedVersion,
               !versionParts(installedVersion).isEmpty else { return false }
         return compareVersions(installedVersion, minimumSupportedVersion) == .orderedAscending
@@ -247,7 +254,8 @@ final class JamfCLIInstaller {
                 version: installedVersion(at: located),
                 source: source,
                 brewPath: brewPath,
-                codesignVerified: codesignVerified
+                codesignVerified: codesignVerified,
+                specProVersion: specProVersion(at: located)
             )
         }
 
@@ -260,13 +268,14 @@ final class JamfCLIInstaller {
                 version: installedVersion(at: linked),
                 source: .homebrew,
                 brewPath: brew.path,
-                codesignVerified: codesignVerified
+                codesignVerified: codesignVerified,
+                specProVersion: specProVersion(at: linked)
             )
         }
         return nil
     }
 
-    static func installedVersion(at binary: URL) -> String? {
+    nonisolated static func installedVersion(at binary: URL) -> String? {
         // M-01: refuse to spawn a tampered jamf-cli even for `--version`.
         // Returning nil drops the discovered version to "unknown", which
         // the upgrade path (`updateGitHubRelease`) already treats as a
@@ -304,6 +313,56 @@ final class JamfCLIInstaller {
         .joined(separator: "\n")
 
         return parseVersion(from: text)
+    }
+
+    /// Fetches the `specProVersion` field from `jamf-cli version -o json` (added in v1.18.0).
+    ///
+    /// Returns "unknown" when the binary reports it has no live tenant connection.
+    /// Returns nil when the codesign gate rejects the binary, the process fails to
+    /// launch, or the output cannot be decoded — so callers can distinguish
+    /// "probe skipped/errored" from "probe ran but field is absent/unknown".
+    ///
+    /// Kept synchronous (matching `installedVersion(at:)`) so call sites in
+    /// `currentInstallation()` do not need an async context. Safe on any thread;
+    /// `Process` spawns a child process and `waitUntilExit` blocks the caller thread.
+    static func specProVersion(at binary: URL) -> String? {
+        if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
+            return nil
+        }
+
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = ["version", "-o", "json"]
+        process.environment = CLIBridge.environmentForJamfCLI()
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else { return nil }
+
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        guard !data.isEmpty else { return nil }
+
+        // `jamf-cli version -o json` shape (v1.18.0+):
+        //   { "version": "1.18.0", "specProVersion": "1.18.0" | "unknown" }
+        // Older binaries may not support `-o json` and return non-zero — guarded above.
+        // The field itself may be absent on future binary-only builds; treat as nil.
+        struct VersionPayload: Decodable {
+            let specProVersion: String?
+        }
+        guard let payload = try? JSONDecoder().decode(VersionPayload.self, from: data) else {
+            return nil
+        }
+        return payload.specProVersion
     }
 
     /// Default install location for the direct-download path. `~/.local/bin/`
@@ -948,7 +1007,7 @@ final class JamfCLIInstaller {
         }
     }
 
-    private static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
+    private nonisolated static func compareVersions(_ lhs: String, _ rhs: String) -> ComparisonResult {
         let left = versionParts(lhs)
         let right = versionParts(rhs)
         let count = max(left.count, right.count)
@@ -961,7 +1020,7 @@ final class JamfCLIInstaller {
         return .orderedSame
     }
 
-    private static func versionParts(_ version: String) -> [Int] {
+    private nonisolated static func versionParts(_ version: String) -> [Int] {
         version
             .trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
             .split { !$0.isNumber }
@@ -1054,7 +1113,7 @@ final class JamfCLIInstaller {
         return text.split(separator: "\n").prefix(3).joined(separator: " ")
     }
 
-    private static func parseVersion(from text: String) -> String? {
+    private nonisolated static func parseVersion(from text: String) -> String? {
         let pattern = #"\d+(?:\.\d+)+(?:[-+][A-Za-z0-9.]+)?"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
