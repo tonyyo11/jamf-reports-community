@@ -54,6 +54,11 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- `diagnostic-bundle` now collects trend summaries from the configured
+  `charts.historical_csv_dir`/summaries directory (where they are actually
+  written) instead of a hardcoded `snapshots/computers/summaries` path that
+  did not exist — the Python bundle previously included zero summaries in most
+  deployments. Brings it to parity with the native in-app bundle.
 - Hardened several silent-failure and security paths: diagnostic-bundle token
   redaction, export-CSV path-traversal and formula-injection neutralization,
   LaunchAgent task cancellation, and corrupt-snapshot logging.
