@@ -43,7 +43,7 @@ no conversion needed.
 
 ```bash
 # Auto-detect column mappings from a sample CSV
-python3 jamf-reports-community.py school-scaffold --csv school_export.csv --out-file config.yaml
+python3 jamf-reports-community.py school-scaffold --csv school_export.csv --out config.yaml
 
 # Validate the school_columns mapping
 python3 jamf-reports-community.py school-check --config config.yaml --csv school_export.csv

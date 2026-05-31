@@ -130,7 +130,13 @@ config change.
 
 ## Platform API (opt-in)
 
-Set `platform.enabled: true` to add the preview Jamf Platform API sheets (blueprint and
-DDM status, plus benchmark-specific compliance sheets when `platform.compliance_benchmarks`
-is non-empty). This depends on the selected `jamf-cli` profile having working Platform
-Gateway authentication.
+As of v2.1.0, three conditions must all be true to enable the Platform API sheets
+(blueprint status, DDM status, and benchmark-specific compliance sheets):
+
+1. `platform.enabled: true` in `config.yaml`
+2. `experimental.platform_features_enabled: true` in `config.yaml`
+3. The active `jamf-cli` profile must be configured with `auth-method: platform`
+
+Setting `platform.enabled: true` alone is no longer sufficient — the experimental gate
+and the platform-auth profile are also required. The `capabilities` command reports
+whether the gate is open for the current profile.

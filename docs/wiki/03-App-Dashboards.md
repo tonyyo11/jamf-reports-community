@@ -36,6 +36,10 @@ does not issue new API calls. Data is refreshed by collection (see
   SIP, firewall, Gatekeeper), prioritized action items, and an OS-version donut.
 - **Compliance Posture** — a compliance-band distribution donut (Pass / Low / Med-Low /
   Medium / High / No Data), control-coverage gaps, and a per-OS breakdown.
+- **Compliance Benchmarks** — per-benchmark compliance rates and device counts from the
+  Jamf Platform API. Experimental; requires `platform.enabled: true`,
+  `experimental.platform_features_enabled: true`, and a platform-auth jamf-cli profile.
+  Shows a locked state when the Platform API gate is closed.
 - **Offline Outreach** — stale devices bucketed into outreach tiers (31–90 / 91–180 /
   180+ days) with a one-click clipboard mail-merge of the affected users.
 
@@ -47,6 +51,10 @@ does not issue new API calls. Data is refreshed by collection (see
   CSV and PNG.
 - **OS Updates** — managed software-update plan state, failed plans, and devices in an
   error state.
+- **DDM Blueprints** — Declarative Device Management blueprint deployment status and
+  declaration details from the Jamf Platform API. Experimental; requires the same three
+  Platform API gates as Compliance Benchmarks above. Shows a locked state when the gate
+  is closed.
 - **Policies & Profiles** — a two-tab screen: policy configuration findings, and
   configuration-profile deployment status.
 - **Extension Attributes** — per-EA coverage (percent of fleet populated) and top-value

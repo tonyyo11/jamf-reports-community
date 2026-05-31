@@ -97,7 +97,7 @@ reference the SHA of the commit being revised.
 
 ### Python CLI Engine
 
-The entire Python implementation lives in `jamf-reports-community.py` (~13,600 lines). There
+The entire Python implementation lives in `jamf-reports-community.py` (~20,550 lines). There
 are no other Python files. Do not create additional modules — keep it single-file.
 
 ### Classes
@@ -113,7 +113,7 @@ are no other Python files. Do not create additional modules — keep it single-f
 | `SchoolDashboard` | Generates sheets from Jamf School data (jamf-cli school or CSV export). Sheets: Device Inventory, OS Versions, Device Status, Stale Devices (CSV-driven); School Overview, Device Groups, Users, Classes, Apps, Profiles, Locations (bridge-driven). |
 | `SchoolColumnMapper` | Resolves `school_columns` config field names → Jamf School CSV column names. Same interface as `ColumnMapper`. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
-| `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources (policies, profiles, scripts, packages, smart groups, org data). Uses Chart.js from CDN; no new Python dependencies. |
+| `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources (policies, profiles, scripts, packages, smart groups, org data). Uses inline SVG charts; self-contained, no CDN dependency, no new Python dependencies. |
 
 ### Key top-level functions
 
@@ -213,7 +213,7 @@ python3 jamf-reports-community.py school-check    [--config config.yaml]
 **`html`** — generate a self-contained HTML instance report intended for management
 review. Fetches: overview, security posture, policies, profiles, scripts, packages,
 smart groups, categories, ADE instances, and org data (sites, buildings, departments).
-Writes a single `.html` file with embedded Chart.js charts and a dark-mode toggle.
+Writes a single `.html` file with inline SVG charts and a dark-mode toggle. Self-contained; no CDN dependency.
 Auto-opens in the default browser unless `--no-open` is passed.
 HTML design is adapted from [@DevliegereM](https://github.com/DevliegereM).
 
@@ -527,7 +527,7 @@ Named constants in `CLIBridge`. Reference: jamf-cli Error Handling & Exit Codes 
 
 The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data.
 
-#### Key views (27 screens plus utilities, 9 dashboards from v3.5-port wave)
+#### Key views (39 Swift view files as of v2.1.0; tables last synced at v2.0 — see Views/ and Services/ for the current set)
 
 Core: `Sidebar`, `Titlebar`, `OverviewView`, `FleetOverviewView`, `DevicesView`,
 `DeviceLookupView`, `TrendsView`, `ReportsView`, `BackupsView`, `SchedulesView`,

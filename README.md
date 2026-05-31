@@ -80,11 +80,14 @@ scripted automation where a GUI is not available.
 Common commands:
 
 ```
-python3 jamf-reports-community.py generate   # build the Excel workbook
-python3 jamf-reports-community.py html       # build a self-contained HTML report
-python3 jamf-reports-community.py collect    # refresh jamf-cli snapshots for offline runs
-python3 jamf-reports-community.py scaffold   # generate a starter config.yaml from a CSV
-python3 jamf-reports-community.py check      # validate config.yaml against a CSV
+python3 jamf-reports-community.py generate              # build the Excel workbook
+python3 jamf-reports-community.py html                  # build a self-contained HTML report
+python3 jamf-reports-community.py collect               # refresh jamf-cli snapshots for offline runs
+python3 jamf-reports-community.py scaffold              # generate a starter config.yaml from a CSV
+python3 jamf-reports-community.py check                 # validate config.yaml against a CSV
+python3 jamf-reports-community.py export-reports        # write filtered CSV slices per config
+python3 jamf-reports-community.py patch-managed         # bulk set managed/unmanaged state via REST API
+python3 jamf-reports-community.py multi-launchagent-run # run collect+generate across multiple profiles
 ```
 
 Jamf School has a parallel command set (`school-generate`, `school-collect`, …). The
