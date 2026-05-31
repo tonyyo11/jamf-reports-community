@@ -161,7 +161,53 @@ final class CLIBridge {
             throw gateError
         }
 
+        // Gate the continuation resume on BOTH stdout EOF and stderr EOF in addition
+        // to process termination. Resuming in terminationHandler alone races the final
+        // readabilityHandler deliveries — they run on different GCD queues, so under
+        // load the last stdout/stderr chunk can drop from the live Runs feed (same race
+        // fixed in runAndCapture via CaptureCompletion).
+        final class RunCompletion: @unchecked Sendable {
+            private let lock = NSLock()
+            private var stdoutAtEOF = false
+            private var stderrAtEOF = false
+            private var exitCode: Int32?
+            private var resumed = false
+            private let continuation: CheckedContinuation<Int32, Error>
+
+            init(_ continuation: CheckedContinuation<Int32, Error>) {
+                self.continuation = continuation
+            }
+
+            func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
+            func markStderrEOF() { finish { $0.stderrAtEOF = true } }
+            func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
+
+            /// Process never spawned — resume with a thrown error immediately,
+            /// bypassing the EOF wait (no child means pipes never deliver EOF).
+            func failWithLaunchError(_ error: CLIBridgeError) {
+                let shouldResume: Bool
+                lock.lock()
+                shouldResume = !resumed
+                if shouldResume { resumed = true }
+                lock.unlock()
+                if shouldResume { continuation.resume(throwing: error) }
+            }
+
+            private func finish(_ mutate: (RunCompletion) -> Void) {
+                var pending: Int32?
+                lock.lock()
+                mutate(self)
+                if !resumed, stdoutAtEOF, stderrAtEOF, let exitCode {
+                    resumed = true
+                    pending = exitCode
+                }
+                lock.unlock()
+                if let pending { continuation.resume(returning: pending) }
+            }
+        }
+
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
+            let completion = RunCompletion(continuation)
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
@@ -175,23 +221,31 @@ final class CLIBridge {
 
             stdout.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
-                guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    completion.markStdoutEOF()
+                    return
+                }
+                guard let s = String(data: data, encoding: .utf8) else { return }
                 for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
                     onLine(.init(timestamp: Date(), level: LogLevel.from(line: String(line)), text: String(line)))
                 }
             }
             stderr.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
-                guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    completion.markStderrEOF()
+                    return
+                }
+                guard let s = String(data: data, encoding: .utf8) else { return }
                 for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
                     onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
                 }
             }
 
             process.terminationHandler = { proc in
-                stdout.fileHandleForReading.readabilityHandler = nil
-                stderr.fileHandleForReading.readabilityHandler = nil
-                continuation.resume(returning: proc.terminationStatus)
+                completion.markTerminated(proc.terminationStatus)
             }
 
             do {
@@ -203,7 +257,9 @@ final class CLIBridge {
                     "CLIBridge.run: process launch failed: \(error.localizedDescription, privacy: .private)"
                 )
                 onLine(.init(timestamp: Date(), level: .fail, text: "[fatal] \(error.localizedDescription)"))
-                continuation.resume(throwing: CLIBridgeError.launchFailed(reason: error.localizedDescription))
+                stdout.fileHandleForReading.readabilityHandler = nil
+                stderr.fileHandleForReading.readabilityHandler = nil
+                completion.failWithLaunchError(.launchFailed(reason: error.localizedDescription))
             }
         }
     }

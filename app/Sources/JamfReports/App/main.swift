@@ -27,6 +27,21 @@ private func scheduledRunSingle(
         return 1
     }
 
+    // Rotate run-history logs at the start of each scheduled invocation so
+    // logs in <workspace>/automation/logs/ don't grow unbounded.
+    // Best-effort: rotation failure must not abort the run.
+    if let logsDir = try? WorkspacePaths.runHistoryDir(for: profile) {
+        let fm = FileManager.default
+        let entries = (try? fm.contentsOfDirectory(
+            at: logsDir,
+            includingPropertiesForKeys: nil,
+            options: .skipsHiddenFiles
+        )) ?? []
+        for entry in entries where entry.pathExtension == "log" {
+            try? LaunchAgentLogRotator.rotateIfNeeded(logURL: entry)
+        }
+    }
+
     let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
         if verbose || line.level != .info {
             print(line.text)
@@ -65,6 +80,10 @@ private func scheduledRunSingle(
                 tiers: resolvedTiers,
                 onLine: onLine
             )
+            // Tighten permissions on collected snapshots immediately after
+            // collect, before generate, so a crash or early exit still
+            // leaves collected files at 0600. Mirrors the GUI's tightenOnSuccess.
+            await WorkspacePermissionHardener.tighten(profile: profile)
         }
         // snapshot-only stops after collect; summary.json is already written.
         if mode == .snapshotOnly {
@@ -79,6 +98,8 @@ private func scheduledRunSingle(
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
         try await engine.generate(csvURL: resolvedCSV, outputURL: outputURL)
         print("[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)")
+        // Tighten permissions on generated report and any newly written files.
+        await WorkspacePermissionHardener.tighten(profile: profile)
         return 0
     } catch {
         fputs("[error] '\(profile)': \(error.localizedDescription)\n", stderr)

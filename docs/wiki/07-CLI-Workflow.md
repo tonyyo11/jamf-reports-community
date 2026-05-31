@@ -43,15 +43,31 @@ python3 jamf-reports-community.py <command> [options]
 | `check` | Validate `config.yaml` against a CSV and jamf-cli auth |
 | `generate` | Build the Excel workbook |
 | `html` | Build a self-contained HTML instance report |
+| `pdf` | Build a PDF instance report (same content as `html`) |
 | `collect` | Refresh jamf-cli JSON snapshots; optionally archive a CSV |
 | `inventory-csv` | Export a wide inventory CSV from jamf-cli |
+| `export-reports` | Generate filtered CSV slices per the `export_reports:` config section |
 | `backup` | Snapshot Jamf Pro configuration objects |
 | `workspace-init` | Create a per-profile workspace skeleton |
 | `launchagent-setup` | Create a scheduled LaunchAgent job |
+| `launchagent-run` | Entry point invoked by a LaunchAgent; runs collect+generate per `--mode` |
+| `multi-launchagent-run` | Run one collect+generate cycle across multiple profiles in parallel |
+| `device` | Print a structured device-detail view by computer ID or serial (`--id`) |
+| `patch-managed` | Bulk set managed/unmanaged state on computers via the REST API |
 | `diagnostic-bundle` | Bundle redacted diagnostics for sharing |
 | `capabilities` | Print a machine-readable capability manifest |
 
 Jamf School has a parallel set — see [Jamf School](08-Jamf-School).
+
+Key supplemental flags (apply to the commands noted):
+
+| Flag | Applies to | Purpose |
+|---|---|---|
+| `--notify WEBHOOK_URL` | `generate`, `launchagent-setup`, `launchagent-run`, `multi-launchagent-run` | Post an Adaptive Card to a Teams webhook after the run |
+| `--force-summary` | `generate` | Overwrite today's trend summary JSON even if it already exists |
+| `--strict-manifest` | `generate`, `html`, `pdf` | Abort (not warn) on SHA-256 snapshot verification failure |
+| `--csv-extra CSV_PATH` | `generate` | Merge an additional CSV into the main export (repeatable) |
+| `--keep-usernames` | `diagnostic-bundle` | Preserve raw usernames in the bundle (default redacts) |
 
 All config-managed paths resolve relative to `config.yaml`, not your shell's working
 directory, so a self-contained reporting workspace is portable.
@@ -123,8 +139,8 @@ demand. See [Scheduling & Automation](05-Scheduling-and-Automation) for `launcha
 python3 jamf-reports-community.py html --config config.yaml --out-file report.html
 ```
 
-`html` writes a single self-contained file with embedded Chart.js charts and a dark-mode
-toggle. With `html.track_history: true` in `config.yaml`, each run appends an OS-version
+`html` writes a single self-contained file with inline SVG charts and a dark-mode toggle.
+No CDN dependency — the file opens correctly offline. With `html.track_history: true` in `config.yaml`, each run appends an OS-version
 snapshot to a history file; once two or more snapshots exist, a macOS adoption timeline
 appears in the report.
 

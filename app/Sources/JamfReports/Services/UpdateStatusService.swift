@@ -26,6 +26,7 @@ struct UpdateStatusService: Sendable {
                 && lhs.errorDevices.count == rhs.errorDevices.count
                 && lhs.failedPlans.count == rhs.failedPlans.count
                 && lhs.sourceFile == rhs.sourceFile
+                && lhs.snapshotDate == rhs.snapshotDate
         }
 
         struct Slice: Sendable, Equatable, Identifiable {
@@ -33,6 +34,12 @@ struct UpdateStatusService: Sendable {
             let count: Int
             let colorHex: UInt32
             var id: String { label }
+        }
+
+        /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
+        /// threshold as TrendStore to align with the standard daily-schedule cadence.
+        var cacheSource: CacheSource {
+            CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
         }
 
         /// Empty snapshot used when no data file exists for the active profile.

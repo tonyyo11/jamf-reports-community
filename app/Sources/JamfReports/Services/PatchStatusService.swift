@@ -24,28 +24,30 @@ struct PatchStatusService: Sendable {
             titles.count
         }
 
-        /// Titles with compliance >= 90%
+        /// Titles where on_latest / total >= 90%. Titles with total == 0 are excluded
+        /// (no devices enrolled for that patch title — neither compliant nor failing).
         var compliantTitleCount: Int {
-            titles.filter { parseCompliancePct($0.compliancePct) >= 90.0 }.count
+            titles.filter { title in
+                title.total > 0 && Double(title.onLatest) / Double(title.total) * 100.0 >= 90.0
+            }.count
         }
 
-        /// Titles with compliance < 50%
+        /// Titles where on_latest / total < 50%. Titles with total == 0 are excluded.
         var failingTitleCount: Int {
-            titles.filter { parseCompliancePct($0.compliancePct) < 50.0 }.count
+            titles.filter { title in
+                title.total > 0 && Double(title.onLatest) / Double(title.total) * 100.0 < 50.0
+            }.count
         }
 
-        /// Fleet-wide compliance percentage, weighted by device count per title.
-        /// Returns 0 if no titles or all titles have zero devices.
+        /// Fleet-wide compliance percentage: sum(on_latest) / sum(total) * 100.
+        /// Titles with total == 0 contribute nothing to either numerator or denominator.
+        /// Returns 0 when there are no titles or no devices across all titles.
         var fleetCompliancePct: Double {
             guard !titles.isEmpty else { return 0 }
             let totalDevices = titles.reduce(0) { $0 + $1.total }
             guard totalDevices > 0 else { return 0 }
-
-            let weightedSum = titles.reduce(0.0) { sum, title in
-                let pct = parseCompliancePct(title.compliancePct)
-                return sum + (Double(title.total) * pct)
-            }
-            return weightedSum / Double(totalDevices)
+            let totalOnLatest = titles.reduce(0) { $0 + $1.onLatest }
+            return Double(totalOnLatest) / Double(totalDevices) * 100.0
         }
 
         /// Number of devices with patch failures, grouped by policy name.
@@ -56,6 +58,12 @@ struct PatchStatusService: Sendable {
         /// Total unique devices that have at least one patch failure.
         var devicesWithFailures: Int {
             Set(failures.map(\.deviceId)).count
+        }
+
+        /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
+        /// threshold as TrendStore to align with the standard daily-schedule cadence.
+        var cacheSource: CacheSource {
+            CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
         }
 
         static let empty = Snapshot(
