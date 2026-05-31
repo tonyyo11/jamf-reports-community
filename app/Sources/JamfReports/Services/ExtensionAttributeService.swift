@@ -30,6 +30,10 @@ struct ExtensionAttributeService: Sendable {
         let sourceFile: URL?
         let snapshotDate: Date?
 
+        var cacheSource: CacheSource {
+            CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
+        }
+
         struct Coverage: Sendable, Equatable, Identifiable {
             let eaName: String
             let definitionId: String?

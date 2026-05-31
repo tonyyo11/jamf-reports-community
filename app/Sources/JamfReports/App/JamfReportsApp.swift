@@ -43,6 +43,36 @@ struct JamfReportsApp: App {
                 .keyboardShortcut("0", modifiers: .command)
             }
 
+            // Cmd-[ / Cmd-] navigate to the previous/next visible sidebar tab.
+            // Destination is computed in ContentView (which owns `tab` and reads
+            // `@AppStorage("hiddenTabs")`); these buttons just fire notifications.
+            CommandGroup(after: .sidebar) {
+                Button("Previous Tab") {
+                    NotificationCenter.default.post(name: .navigateToPreviousTab, object: nil)
+                }
+                .keyboardShortcut("[", modifiers: .command)
+
+                Button("Next Tab") {
+                    NotificationCenter.default.post(name: .navigateToNextTab, object: nil)
+                }
+                .keyboardShortcut("]", modifiers: .command)
+            }
+
+            // Cmd-1..9 switch to the corresponding workspace profile by index.
+            // Profile order matches the workspace chip menu. Out-of-range indices
+            // are no-ops. Guard skips a redundant switch to the active profile.
+            CommandGroup(after: .sidebar) {
+                ForEach(1...9, id: \.self) { n in
+                    Button("Switch to Profile \(n)") {
+                        if let p = profileAt(index: n - 1, in: workspace.profiles),
+                           p.name != workspace.profile {
+                            workspace.setProfile(p.name)
+                        }
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(n)")), modifiers: .command)
+                }
+            }
+
             CommandGroup(after: .newItem) {
                 Button("Refresh") {
                     NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
@@ -78,6 +108,8 @@ struct JamfReportsApp: App {
 extension Notification.Name {
     static let cycleSidebar = Notification.Name("JamfReports.cycleSidebar")
     static let navigateToTab = Notification.Name("JamfReports.navigateToTab")
+    static let navigateToPreviousTab = Notification.Name("JamfReports.navigateToPreviousTab")
+    static let navigateToNextTab = Notification.Name("JamfReports.navigateToNextTab")
     static let refreshActiveTab = Notification.Name("JamfReports.refreshActiveTab")
     static let focusSearch = Notification.Name("JamfReports.focusSearch")
     static let popToRootNavigation = Notification.Name("JamfReports.popToRootNavigation")

@@ -27,6 +27,14 @@ enum CLICommand: Sendable, Equatable {
     /// (e.g. PlatformCapabilityService).
     case configList
 
+    /// `jamf-cli pro --help`.
+    ///
+    /// Profile-less — used by `CapabilityService` to parse the `Available Commands:`
+    /// block and derive which `pro` subcommands the installed binary supports.
+    /// Exits 0 with help text to stdout on cobra-based CLIs; treated as empty
+    /// capability set if the executor throws.
+    case proHelp
+
     /// `jamf-cli -p <profile> school dep-devices list --output json` (v1.14+).
     case schoolDepDevicesList(profile: String)
 
@@ -71,6 +79,8 @@ enum CLICommand: Sendable, Equatable {
         switch self {
         case .configList:
             return ["config", "list", "--output", "json", "--no-input"]
+        case .proHelp:
+            return ["pro", "--help"]
         default:
             break
         }
@@ -117,6 +127,9 @@ enum CLICommand: Sendable, Equatable {
             // canonical argv here keeps the switch exhaustive without forcing
             // a fatalError that would punish a future regression with a crash.
             return ["config", "list", "--output", "json", "--no-input"]
+        case .proHelp:
+            // Unreachable — handled by the early switch above.
+            return ["pro", "--help"]
         }
     }
 
@@ -132,7 +145,7 @@ enum CLICommand: Sendable, Equatable {
     /// preview, apply) or for diagnostic commands (verify-templates).
     var snapshotKind: SnapshotKind? {
         switch self {
-        case .proAuthToken, .configList:
+        case .proAuthToken, .configList, .proHelp:
             return nil
         case .schoolDepDevicesList:
             return .schoolDepDevices
@@ -187,8 +200,8 @@ struct DefaultCLIExecutor: CLIExecutor {
         // other case carries a slug and must validate it before reaching argv.
         let requiresProfile: Bool
         switch command {
-        case .configList: requiresProfile = false
-        default:          requiresProfile = true
+        case .configList, .proHelp: requiresProfile = false
+        default:                    requiresProfile = true
         }
         if requiresProfile, !ProfileService.isValid(profile) {
             throw CLIExecutorError.invalidProfile(profile)
@@ -267,7 +280,7 @@ extension CLICommand {
             return profile
         case .proSmartGroupApply(let profile, _, _, _, _, _):
             return profile
-        case .configList:
+        case .configList, .proHelp:
             return ""
         }
     }

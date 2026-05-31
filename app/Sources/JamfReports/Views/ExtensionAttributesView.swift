@@ -35,6 +35,9 @@ struct ExtensionAttributesView: View {
                 subtitle: subtitle,
                 lastModified: snapshot.snapshotDate
             )
+            if !workspace.demoMode {
+                StaleDataBanner(source: snapshot.cacheSource)
+            }
             if snapshot.totalEAs == 0 {
                 emptyState
             } else {

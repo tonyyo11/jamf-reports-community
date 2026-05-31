@@ -19,28 +19,13 @@ struct Sidebar: View {
     @FocusState private var chipFocused: Bool
     @State private var hoveredItem: Tab? = nil
 
-    private struct NavGroup {
-        let group: String
-        let items: [Tab]
-    }
-
-    private let groups: [NavGroup] = [
-        .init(group: "REPORTS", items: [.overview, .fleet, .devices, .deviceLookup, .trends, .audit, .reports]),
-        .init(group: "POSTURE", items: [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
-        .init(group: "OPERATIONS", items: [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
-        .init(group: "FLEET", items: [.mobileFleet, .protectDashboard]),
-        .init(group: "AUTOMATION", items: [.schedules, .runs]),
-        .init(group: "CONFIGURATION", items: [.config, .customize, .sources, .backups]),
-        .init(group: "SYSTEM", items: [.settings]),
-    ]
-
     /// Groups filtered by user visibility. Empty groups are dropped entirely.
-    private var visibleGroups: [NavGroup] {
+    private var visibleGroups: [Tab.NavGroup] {
         let visibility = TabVisibility.parse(hiddenTabsRaw)
-        return groups.compactMap { group in
+        return Tab.navGroups.compactMap { group in
             let visible = group.items.filter { visibility.isVisible($0) }
             guard !visible.isEmpty else { return nil }
-            return NavGroup(group: group.group, items: visible)
+            return Tab.NavGroup(label: group.label, items: visible)
         }
     }
 
@@ -75,7 +60,7 @@ struct Sidebar: View {
     @ViewBuilder
     private var navStack: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(visibleGroups, id: \.group) { group in
+            ForEach(visibleGroups, id: \.label) { group in
                 navSection(group)
             }
         }
@@ -129,10 +114,10 @@ struct Sidebar: View {
     // MARK: Nav section
 
     @ViewBuilder
-    private func navSection(_ group: NavGroup) -> some View {
+    private func navSection(_ group: Tab.NavGroup) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if mode != .compact {
-                Text(group.group)
+                Text(group.label)
                     .font(Theme.Fonts.mono(10, weight: .semibold))
                     .tracking(1.2)
                     .foregroundStyle(Theme.Text.tertiary(contrast))

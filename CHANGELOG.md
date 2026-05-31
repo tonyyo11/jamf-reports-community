@@ -17,6 +17,40 @@ versions in this repository map to git tags.
   aggregations of data the report already fetches (no new jamf-cli calls); rows
   whose source is absent are omitted so partial-data runs still produce a useful
   summary.
+- jamf-cli capability matrix: the Data Sources screen shows which jamf-cli
+  commands the app relies on are present in your installed version, parsed from
+  `jamf-cli pro --help`. The `capabilities` CLI command gains a matching
+  `jamf_cli_runtime` section.
+- Stale-device outreach CSV: Offline Outreach can export a formula-injection-safe
+  mail-merge CSV (device, serial, user, email, last check-in, tier).
+- Generated reports: a toolbar search field, a profile/tenant filter, and
+  Space-bar Quick Look on the Generated screen.
+- Schedules: each row shows a plain-language summary of its run mode and cadence,
+  plus a "Re-save to migrate" nudge for pre-PR-20 LaunchAgents whose meaning
+  changed at PR-21.
+- Keyboard navigation: Cmd-1..9 switch jamf-cli profiles; Cmd-[ / Cmd-] move
+  between visible sidebar tabs.
+- The stale-data freshness banner now also appears on the Extension Attributes,
+  Audit, and Health Check dashboards.
+- jamf-cli 1.18 support: adopts the `computer-groups-smart-groups` command rename
+  (on-disk snapshot keys unchanged), version-gates `--no-hints` /
+  `--no-version-check` on automated runs so older binaries keep working, surfaces
+  the spec API version in Settings, and raises the minimum supported jamf-cli to
+  1.18.0.
+
+### Changed
+
+- Accessibility: empty-state actions are announced to VoiceOver, Extension
+  Attribute rows are keyboard- and VoiceOver-reachable, and serif KPI numerals
+  scale with Dynamic Type.
+
+### Fixed
+
+- Hardened several silent-failure and security paths: diagnostic-bundle token
+  redaction, export-CSV path-traversal and formula-injection neutralization,
+  LaunchAgent task cancellation, and corrupt-snapshot logging.
+- The Schedules profile filter no longer overflows and overlaps the warning
+  banner at narrow window widths.
 
 ## [2.1.0] - 2026-05-28
 
