@@ -14939,15 +14939,6 @@ class HtmlReport:
         _safe_fetch("macos_profiles", self._bridge.macos_profiles_list)
         _safe_fetch("ios_profiles", self._bridge.ios_profiles_list)
         _safe_fetch("smart_groups", self._bridge.smart_groups_list)
-        _safe_fetch(
-            "advanced_mobile_searches",
-            self._bridge.advanced_mobile_device_searches_list,
-        )
-        _safe_fetch("classic_computer_groups", self._bridge.classic_computer_groups_list)
-        _safe_fetch(
-            "classic_mobile_device_groups",
-            self._bridge.classic_mobile_device_groups_list,
-        )
         _safe_fetch("scripts", self._bridge.scripts_list)
         _safe_fetch("packages", self._bridge.packages_list)
         _safe_fetch("categories", self._bridge.categories_list)

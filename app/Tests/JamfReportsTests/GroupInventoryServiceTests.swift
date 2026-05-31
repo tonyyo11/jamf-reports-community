@@ -47,7 +47,9 @@ final class GroupInventoryServiceTests: XCTestCase {
         XCTAssertTrue(snap.isDetected)
     }
 
-    func testLoadAdvancedSearchesEmptyEnvelopeResultsNotDetected() throws {
+    /// A successfully-decoded empty envelope means collect ran — isDetected must be true
+    /// even when results is empty. Distinguishes "never collected" from "collected, zero results".
+    func testLoadAdvancedSearchesEmptyEnvelopeStillDetected() throws {
         let json = #"{"totalCount": 0, "results": []}"#
         let url = try writeTmp(json, name: "searches-empty")
         defer { remove(url) }
@@ -55,7 +57,7 @@ final class GroupInventoryServiceTests: XCTestCase {
         let snap = GroupInventoryService.load(
             searchesURL: url, computerGroupsURL: nil, mobileGroupsURL: nil)
         XCTAssertEqual(snap.advancedSearchCount, 0)
-        XCTAssertFalse(snap.isDetected)
+        XCTAssertTrue(snap.isDetected)
     }
 
     // MARK: - load — classic computer groups
@@ -81,14 +83,15 @@ final class GroupInventoryServiceTests: XCTestCase {
         XCTAssertTrue(snap.isDetected)
     }
 
-    func testLoadClassicComputerGroupsEmptyArray() throws {
+    /// A successfully-decoded empty array means collect ran — isDetected must be true.
+    func testLoadClassicComputerGroupsEmptyArrayStillDetected() throws {
         let url = try writeTmp("[]", name: "computer-groups-empty")
         defer { remove(url) }
 
         let snap = GroupInventoryService.load(
             searchesURL: nil, computerGroupsURL: url, mobileGroupsURL: nil)
         XCTAssertEqual(snap.classicComputerGroupCount, 0)
-        XCTAssertFalse(snap.isDetected)
+        XCTAssertTrue(snap.isDetected)
     }
 
     // MARK: - load — classic mobile device groups
@@ -162,6 +165,24 @@ final class GroupInventoryServiceTests: XCTestCase {
         XCTAssertFalse(empty.isDetected)
         XCTAssertNil(empty.sourceFile)
         XCTAssertNil(empty.snapshotDate)
+    }
+
+    /// Snapshot decoded to all-empty arrays: isDetected=true (collect ran).
+    /// Snapshot.empty (no files): isDetected=false (collect never ran).
+    /// The two must be distinguishable so GroupsView shows the right empty state.
+    func testDecodedEmptyArraysIsDetectedVsNeverCollected() throws {
+        let allEmptyJSON = #"{"totalCount": 0, "results": []}"#
+        let url = try writeTmp(allEmptyJSON, name: "detected-empty")
+        defer { remove(url) }
+
+        let decoded = GroupInventoryService.load(
+            searchesURL: url, computerGroupsURL: nil, mobileGroupsURL: nil)
+        XCTAssertTrue(decoded.isDetected, "decoded empty result must be detected")
+        XCTAssertTrue(decoded.decodedAnySource)
+
+        let neverCollected = GroupInventoryService.Snapshot.empty
+        XCTAssertFalse(neverCollected.isDetected, ".empty must not be detected")
+        XCTAssertFalse(neverCollected.decodedAnySource)
     }
 
     // MARK: - Equatable

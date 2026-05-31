@@ -18,6 +18,10 @@ struct GroupInventoryService: Sendable {
         let advancedMobileSearches: [AdvancedMobileSearchRow]
         let classicComputerGroups: [ClassicGroupRow]
         let classicMobileGroups: [ClassicGroupRow]
+        /// True when at least one source file decoded successfully, even to an empty array.
+        /// Mirrors `ProtectDashboardService.Snapshot.isDetected` semantics: distinguishes
+        /// "collect ran but found nothing" from "collect has never run."
+        let decodedAnySource: Bool
         let sourceFile: URL?
         let snapshotDate: Date?
 
@@ -38,17 +42,15 @@ struct GroupInventoryService: Sendable {
             CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
         }
 
-        /// Whether any of the three sources decoded a non-empty result.
-        var isDetected: Bool {
-            !advancedMobileSearches.isEmpty ||
-            !classicComputerGroups.isEmpty ||
-            !classicMobileGroups.isEmpty
-        }
+        /// True when at least one source decoded successfully (even to an empty array).
+        /// False only when no snapshots exist (collect has never run for this profile).
+        var isDetected: Bool { decodedAnySource }
 
         static let empty = Snapshot(
             advancedMobileSearches: [],
             classicComputerGroups: [],
             classicMobileGroups: [],
+            decodedAnySource: false,
             sourceFile: nil,
             snapshotDate: nil
         )
@@ -57,6 +59,7 @@ struct GroupInventoryService: Sendable {
             lhs.advancedMobileSearches.count == rhs.advancedMobileSearches.count &&
             lhs.classicComputerGroups.count == rhs.classicComputerGroups.count &&
             lhs.classicMobileGroups.count == rhs.classicMobileGroups.count &&
+            lhs.decodedAnySource == rhs.decodedAnySource &&
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate
         }
@@ -121,6 +124,7 @@ struct GroupInventoryService: Sendable {
             advancedMobileSearches: searches,
             classicComputerGroups: computerGroups,
             classicMobileGroups: mobileGroups,
+            decodedAnySource: readSomething,
             sourceFile: sourceFile,
             snapshotDate: snapshotDate
         )

@@ -71,6 +71,15 @@ struct GroupsView: View {
         snapshot = GroupInventoryService.load(profile: workspace.profile)
     }
 
+    /// Maps Jamf's siteId to a display label, matching the Python sheet convention:
+    /// `-1` and empty / nil both represent "All Sites" (no site restriction).
+    private func siteLabel(_ siteId: String?) -> String {
+        switch siteId {
+        case nil, "", "-1": return "All Sites"
+        case let id?: return id
+        }
+    }
+
     // MARK: - Views
 
     private var emptyState: some View {
@@ -218,7 +227,7 @@ struct GroupsView: View {
                     .width(min: 80, ideal: 100)
 
                     TableColumn("Site") { wrapper in
-                        Text(wrapper.search.siteId ?? "—")
+                        Text(siteLabel(wrapper.search.siteId))
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
