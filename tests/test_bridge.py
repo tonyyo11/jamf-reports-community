@@ -559,3 +559,36 @@ def test_patch_summaries_fetches_configs_and_parses_release_dates(fixtures_root,
     assert result["Jamf Self Service for macOS"].get("releaseDate") is not None
     assert "Mozilla Firefox" in result
     assert result["Mozilla Firefox"].get("releaseDate") is not None
+
+
+def test_patch_summaries_pins_saved_snapshot_in_manifest(tmp_path, jrc) -> None:
+    """The persisted patch-summaries cache must carry a manifest entry so that
+    --strict-manifest tamper-detection covers it (parity with _run_and_save)."""
+    import hashlib
+    import json
+
+    bridge = jrc.JamfCLIBridge(
+        save_output=True,
+        data_dir=str(tmp_path),
+        profile="",
+        use_cached_data=False,
+    )
+
+    def fake_run(args, timeout=None):
+        if args[:3] == ["pro", "patch-software-title-configurations", "list"]:
+            return [{"id": "1", "displayName": "Firefox"}]
+        if args[:3] == ["pro", "patch-software-title-configurations", "patch-summary"]:
+            return {"title": "Firefox", "releaseDate": "2026-01-01"}
+        raise AssertionError(f"unexpected args: {args}")
+
+    bridge._run = fake_run  # type: ignore[assignment]
+
+    result = bridge.patch_summaries()
+    assert result == {"Firefox": {"title": "Firefox", "releaseDate": "2026-01-01"}}
+
+    out_dir = tmp_path / "patch-summaries"
+    snapshots = list(out_dir.glob("patch-summaries_*.json"))
+    assert len(snapshots) == 1
+    snap = snapshots[0]
+    manifest = json.loads((out_dir / jrc.SNAPSHOT_MANIFEST_FILENAME).read_text())
+    assert manifest["files"][snap.name] == hashlib.sha256(snap.read_bytes()).hexdigest()
