@@ -1052,9 +1052,11 @@ struct SettingsView: View {
                 let url = try await Task.detached(priority: .userInitiated) {
                     try DiagnosticBundleService.generate(profile: profile)
                 }.value
-                SystemActions.reveal(url)
-                diagnosticBundleMessage =
-                    "Bundle written to \(url.lastPathComponent) and revealed in Finder."
+                let revealed = SystemActions.reveal(url)
+                diagnosticBundleMessage = revealed
+                    ? "Bundle written to \(url.lastPathComponent) and revealed in Finder."
+                    : "Bundle written to \(url.lastPathComponent) in this profile's " +
+                      "diagnostics folder (Finder reveal was blocked)."
             } catch {
                 diagnosticBundleMessage =
                     "Bundle generation failed: \(error.localizedDescription)"

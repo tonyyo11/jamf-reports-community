@@ -270,6 +270,38 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertThrowsError(try DiagnosticBundleService.generate(profile: "Bad Name!"))
     }
 
+    func testSymlinkedConfigAndSummaryAreSkipped() throws {
+        let fm = FileManager.default
+        let workspace = try makeWorkspace()
+        defer { try? fm.removeItem(at: workspace.root) }
+        // External file holding a secret under a key the redactor does NOT know,
+        // so if it leaked through a symlink it would be visible verbatim.
+        let external = try makeTempDir()
+        defer { try? fm.removeItem(at: external) }
+        let secretFile = external.appendingPathComponent("leak.txt")
+        try "weird_key: SUPERSECRETVALUE".write(to: secretFile, atomically: true, encoding: .utf8)
+
+        try fm.removeItem(at: workspace.sources.configURL)
+        try fm.createSymbolicLink(at: workspace.sources.configURL, withDestinationURL: secretFile)
+        try fm.createSymbolicLink(
+            at: workspace.sources.summariesDir.appendingPathComponent("summary_2026-06-01.json"),
+            withDestinationURL: secretFile)
+
+        let staging = try makeTempDir()
+        defer { try? fm.removeItem(at: staging) }
+        let entries = try DiagnosticBundleService.stageFiles(
+            sources: workspace.sources, into: staging,
+            redactor: DiagnosticRedactor(), options: .init(), now: Date())
+
+        XCTAssertFalse(fm.fileExists(atPath: staging.appendingPathComponent("config.yaml").path))
+        for name in try fileSet(under: staging) {
+            let content =
+                (try? String(contentsOf: staging.appendingPathComponent(name), encoding: .utf8)) ?? ""
+            XCTAssertFalse(content.contains("SUPERSECRETVALUE"), "leaked via \(name)")
+        }
+        XCTAssertTrue(entries.contains { $0.path == "config.yaml" && $0.skipped == true })
+    }
+
     // MARK: - Fixtures
 
     private func makeTempDir() throws -> URL {

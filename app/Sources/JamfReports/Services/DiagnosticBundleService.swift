@@ -217,8 +217,14 @@ final class DiagnosticRedactor {
             guard !literals.isEmpty else { continue }
             let pattern = literals.map { NSRegularExpression.escapedPattern(for: $0) }
                 .joined(separator: "|")
-            if let re = try? NSRegularExpression(pattern: pattern) {
-                seededRegexes[category] = re
+            do {
+                seededRegexes[category] = try NSRegularExpression(pattern: pattern)
+            } catch {
+                // Seeding only augments free-text redaction; key-based and regex
+                // PII/credential redaction are unaffected. Log so the rare
+                // (length-limit) gap is observable rather than silent.
+                AppLogger.engine.warning(
+                    "DiagnosticRedactor: seed regex compile failed for \(category, privacy: .public)")
             }
         }
         return total
@@ -392,7 +398,11 @@ enum DiagnosticBundleService {
         let fm = FileManager.default
         try fm.createDirectory(at: outputDir, withIntermediateDirectories: true)
         let stamp = timestamp(now)
-        let staging = outputDir.appendingPathComponent(".staging-\(stamp)", isDirectory: true)
+        // Random suffix so a second app instance's defer-cleanup can't wipe this
+        // run's staging mid-write if two bundles start in the same clock second.
+        let token = String(format: "%08x", UInt32.random(in: 0...UInt32.max))
+        let staging = outputDir.appendingPathComponent(
+            ".staging-\(stamp)-\(token)", isDirectory: true)
         try? fm.removeItem(at: staging)
         try fm.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: staging) }
@@ -489,6 +499,10 @@ enum DiagnosticBundleService {
         var entries: [ManifestEntry] = []
         for url in summaries {
             let arcname = "summaries/\(url.lastPathComponent)"
+            if isSymlink(url) {
+                entries.append(.skipped(path: arcname, reason: "symlink — skipped"))
+                continue
+            }
             guard let data = try? Data(contentsOf: url),
                   let obj = try? JSONSerialization.jsonObject(with: data) else {
                 entries.append(.skipped(path: arcname, reason: "could not parse summary"))
@@ -511,6 +525,9 @@ enum DiagnosticBundleService {
         from configURL: URL, into staging: URL, redactor: DiagnosticRedactor?
     ) throws -> [ManifestEntry] {
         guard FileManager.default.fileExists(atPath: configURL.path) else { return [] }
+        if isSymlink(configURL) {
+            return [.skipped(path: "config.yaml", reason: "symlink — skipped")]
+        }
         guard let data = try? Data(contentsOf: configURL) else {
             return [.skipped(path: "config.yaml", reason: "could not read config")]
         }
@@ -622,6 +639,16 @@ enum DiagnosticBundleService {
             .contentModificationDate ?? .distantPast
     }
 
+    /// True when `url` is itself a symlink. Collectors skip symlinks so a planted
+    /// link cannot pull an out-of-workspace file into the shared bundle. Uses
+    /// `attributesOfItem` (lstat — never follows) so it is reliable on a freshly
+    /// constructed URL; `URL.resourceValues(.isSymbolicLinkKey)` follows the link
+    /// unless the value was pre-fetched by a directory enumerator.
+    private static func isSymlink(_ url: URL) -> Bool {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes?[.type] as? FileAttributeType) == .typeSymbolicLink
+    }
+
     /// Build a depth-capped indented tree. Line 1 is the workspace basename
     /// only — never an absolute path. Files are sorted; dirs sorted for
     /// determinism. Mirrors the Python `_bundle_collect_workspace_tree` shape.
@@ -657,7 +684,7 @@ enum DiagnosticBundleService {
     private static func jamfCLIVersion() -> String {
         let candidates = ["/opt/homebrew/bin/jamf-cli", "/usr/local/bin/jamf-cli"]
         for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
-            let result = runProcess(path, ["--version"])
+            let result = runProcess(path, ["--version"], timeout: 10)
             guard result.code == 0 else { continue }
             let text = result.stdout.isEmpty ? result.stderr : result.stdout
             if let first = text.split(separator: "\n").first {
@@ -703,7 +730,7 @@ enum DiagnosticBundleService {
     }
 
     private static func runProcess(
-        _ executable: String, _ arguments: [String]
+        _ executable: String, _ arguments: [String], timeout: TimeInterval = 30
     ) -> (code: Int32, stdout: String, stderr: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -717,12 +744,26 @@ enum DiagnosticBundleService {
         } catch {
             return (-1, "", error.localizedDescription)
         }
+        // Watchdog: terminate a wedged child so the bundle can't hang the UI
+        // indefinitely (the pipe read below blocks until the process exits).
+        let box = ProcessBox(process)
+        let watchdog = DispatchWorkItem { if box.process.isRunning { box.process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
         let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
         let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        watchdog.cancel()
         return (
             process.terminationStatus,
             String(decoding: outData, as: UTF8.self),
             String(decoding: errData, as: UTF8.self))
     }
+}
+
+/// Carries a `Process` into the timeout watchdog closure. `Process.terminate()`
+/// and `isRunning` are documented thread-safe, so unchecked-Sendable is sound —
+/// mirrors the `TextLineBuffer` pattern used elsewhere in the app.
+private final class ProcessBox: @unchecked Sendable {
+    let process: Process
+    init(_ process: Process) { self.process = process }
 }
