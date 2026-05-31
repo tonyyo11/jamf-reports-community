@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "is_smart": true,
+    "name": "All Managed Clients"
+  },
+  {
+    "id": 2,
+    "is_smart": true,
+    "name": "All Managed Servers"
+  },
+  {
+    "id": 67,
+    "is_smart": false,
+    "name": "3PL AMR Security Profile - 2.0 60 Minute Screensaver"
+  },
+  {
+    "id": 76,
+    "is_smart": false,
+    "name": "All Clients: Automated Policy Exclusion"
+  }
+]
