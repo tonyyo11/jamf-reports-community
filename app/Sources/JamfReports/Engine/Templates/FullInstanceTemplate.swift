@@ -49,6 +49,10 @@ struct FullInstanceTemplate: ReportTemplate {
             .updateStatus,
             .updateFailures,
             .smartGroups,
+            .patchSummaryDashboard,
+            // Device security & supervision detail
+            .deviceSecurityState,
+            .mobileSupervisionStatus,
             // Platform / DDM
             .complianceDevices,
             .complianceRules,
@@ -59,6 +63,8 @@ struct FullInstanceTemplate: ReportTemplate {
             .protectAlerts,
             .protectComputers,
             .protectInsights,
+            .protectPlans,
+            .protectThreatOverview,
         ]
     }
 
@@ -82,6 +88,8 @@ struct FullInstanceTemplate: ReportTemplate {
             .buildingBreakdown,
             .departmentBreakdown,
             .agentHealth,
+            .timeline,
+            .cleanupAnalysis,
             .auditEvidence,
             .exceptionList,
             .protectAlerts,
