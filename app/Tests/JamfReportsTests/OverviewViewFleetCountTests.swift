@@ -92,8 +92,8 @@ final class OverviewViewFleetCountTests: XCTestCase {
     // MARK: - Failing-rules subtitle
 
     func testFailingRulesSubtitleUsesProvidedFleetCount() {
-        let subtitle = failingRulesSubtitle(baseline: "NIST 800-53r5 Moderate", fleetCount: 100)
-        XCTAssertEqual(subtitle, "NIST 800-53r5 Moderate · across 100 active devices")
+        let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", fleetCount: 100)
+        XCTAssertEqual(subtitle, "Compliance Benchmark · across 100 active devices")
         XCTAssertFalse(subtitle.contains("502"),
                        "Subtitle must reflect the live fleet count, not a stale 502")
     }
@@ -129,8 +129,8 @@ final class OverviewViewFleetCountTests: XCTestCase {
     }
 
     func testFailingRulesSubtitleDropsAcrossClauseWhenFleetUnknown() {
-        let subtitle = failingRulesSubtitle(baseline: "NIST 800-53r5 Moderate", fleetCount: 0)
-        XCTAssertEqual(subtitle, "NIST 800-53r5 Moderate",
+        let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", fleetCount: 0)
+        XCTAssertEqual(subtitle, "Compliance Benchmark",
                        "fleetCount=0 must render the baseline alone, not 'across 0 active devices'")
     }
 }

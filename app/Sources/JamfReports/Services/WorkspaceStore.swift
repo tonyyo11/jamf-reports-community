@@ -42,6 +42,11 @@ final class WorkspaceStore {
     /// checked (e.g. demo mode, or immediately after a profile switch before the
     /// async probe completes). Refreshed by `refreshAuthStatus()`.
     var authStatus: TokenStatus? = nil
+    /// Per-profile run-in-progress flags to prevent concurrent collection/generation.
+    /// Checked by `generateAll`/`collectThenGenerate`/`runNow` before starting.
+    /// Note: only guards against concurrent GUI runs; LaunchAgent runs are a separate
+    /// process and would require an on-disk lock file (not implemented).
+    private var runInProgressFlags: [String: Bool] = [:]
     private var didAutoUpdateJamfCLI = false
     /// UserDefaults key for "user has explicitly chosen demo mode."
     /// Persisted by `setDemoMode(_:)`; consulted by `init` and
@@ -87,6 +92,16 @@ final class WorkspaceStore {
 
     /// True when configState has been edited since the last save or load.
     var hasUnsavedChanges: Bool { _savedState != nil && configState != _savedState }
+
+    /// The configured compliance benchmark label for display in UI.
+    /// Prefers `compliance.baseline_label` when non-empty; falls back to the first
+    /// `platform.compliance_benchmarks` entry when set; otherwise nil (caller
+    /// should use a generic fallback like "Compliance Benchmark").
+    var complianceBenchmarkLabel: String? {
+        let label = configState.baselineLabel.trimmingCharacters(in: .whitespaces)
+        if !label.isEmpty { return label }
+        return configState.complianceBenchmarks.first(where: { !$0.isEmpty })
+    }
 
     // MARK: Column label / required metadata
 
@@ -612,6 +627,29 @@ final class WorkspaceStore {
             apiClient: profile?.authMethod ?? "",
             workspaceRoot: "~/Jamf-Reports/\(name)"
         )
+    }
+
+    // MARK: - Concurrent run guard
+
+    /// Check if a generate/collect run is already in progress for the given profile.
+    /// Returns true if another run is active, false if it's safe to proceed.
+    func isRunInProgress(for profile: String) -> Bool {
+        return runInProgressFlags[profile] == true
+    }
+
+    /// Mark a profile as having a run in progress. Should be called before starting
+    /// any generate/collect operation. Returns true if the flag was successfully set,
+    /// false if another run was already in progress.
+    func setRunInProgress(for profile: String) -> Bool {
+        guard !isRunInProgress(for: profile) else { return false }
+        runInProgressFlags[profile] = true
+        return true
+    }
+
+    /// Clear the run-in-progress flag for a profile. Should be called when a run
+    /// completes, regardless of success or failure.
+    func clearRunInProgress(for profile: String) {
+        runInProgressFlags[profile] = false
     }
 }
 

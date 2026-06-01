@@ -39,6 +39,10 @@ enum SheetID: String, Sendable, CaseIterable {
     case updateStatus        = "Update Status"
     case updateFailures      = "Update Failures"
     case smartGroups         = "Smart Groups"
+    case patchSummaryDashboard = "Patch Summary Dashboard"
+    // Device security & supervision detail
+    case deviceSecurityState = "Device Security State"
+    case mobileSupervisionStatus = "Mobile Supervision Status"
     // Platform / DDM
     case complianceDevices   = "Compliance Devices"
     case complianceRules     = "Compliance Rules"
@@ -49,6 +53,8 @@ enum SheetID: String, Sendable, CaseIterable {
     case protectAlerts       = "Protect Alerts"
     case protectComputers    = "Protect Computers"
     case protectInsights     = "Protect Insights"
+    case protectPlans        = "Protect Plans"
+    case protectThreatOverview = "Protect Threat Overview"
 }
 
 /// Logical HTML section identifiers.
@@ -76,6 +82,8 @@ enum SectionID: String, Sendable, CaseIterable {
     case buildingBreakdown = "building_breakdown"
     case departmentBreakdown = "department_breakdown"
     case execSummary     = "exec_summary"
+    case cleanupAnalysis = "cleanup_analysis"
+    case timeline        = "timeline"
 }
 
 /// PDF pagination strategy hint.

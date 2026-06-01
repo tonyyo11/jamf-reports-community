@@ -336,8 +336,14 @@ final class DiagnosticBundleServiceTests: XCTestCase {
     // MARK: - Fixtures
 
     private func makeTempDir() throws -> URL {
+        // Use only the first 8 chars of the UUID. The redactor's serial-number
+        // heuristic matches 10-12 char consonant/digit runs, and a full UUID's
+        // final segment (12 hex chars) matches it whenever it contains no A/E
+        // (~20% of runs) — the workspace root name then gets redacted inside
+        // workspace_tree.txt and the tree assertions fail flakily. An 8-char
+        // suffix can never match the {10,12} quantifier.
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("diagbundle-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("diagbundle-\(UUID().uuidString.prefix(8))", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

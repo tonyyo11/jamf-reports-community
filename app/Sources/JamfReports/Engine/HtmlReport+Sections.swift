@@ -160,8 +160,7 @@ extension HtmlReport {
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
 
         let stale = computersInventory.filter { item -> Bool in
-            let raw = item["last_check_in"] as? String
-                ?? item["last_contact"] as? String ?? ""
+            let raw = inventoryLastContact(item)
             let days = daysAgo(from: raw)
             return days >= staleDays
         }
@@ -177,21 +176,15 @@ extension HtmlReport {
         }
 
         let sorted = stale.sorted { lhsItem, rhsItem -> Bool in
-            let lRaw = lhsItem["last_check_in"] as? String
-                ?? lhsItem["last_contact"] as? String ?? ""
-            let rRaw = rhsItem["last_check_in"] as? String
-                ?? rhsItem["last_contact"] as? String ?? ""
-            return daysAgo(from: lRaw) > daysAgo(from: rRaw)
+            daysAgo(from: inventoryLastContact(lhsItem)) >
+                daysAgo(from: inventoryLastContact(rhsItem))
         }
 
         let tableRows = sorted.prefix(100).map { item -> [String] in
-            let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
-            let serial = item["serial_number"] as? String
-                ?? item["serial"] as? String ?? ""
-            let user = item["username"] as? String
-                ?? item["last_logged_in_user"] as? String ?? "—"
-            let raw = item["last_check_in"] as? String
-                ?? item["last_contact"] as? String ?? ""
+            let name = inventoryName(item)
+            let serial = inventorySerial(item)
+            let user = inventoryUsername(item)
+            let raw = inventoryLastContact(item)
             let days = daysAgo(from: raw)
             let daysLabel = days >= 0 ? "\(days)" : "—"
             return [name, serial, user, daysLabel]
@@ -473,14 +466,11 @@ extension HtmlReport {
         }
 
         let tableRows = computersInventory.prefix(100).map { item -> [String] in
-            let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
-            let serial = item["serial_number"] as? String
-                ?? item["serial"] as? String ?? ""
-            let asset = item["asset_tag"] as? String ?? "—"
-            let dept = item["department"] as? String
-                ?? item["departmentName"] as? String ?? "—"
-            let building = item["building"] as? String
-                ?? item["buildingName"] as? String ?? "—"
+            let name = inventoryName(item)
+            let serial = inventorySerial(item)
+            let asset = inventoryAssetTag(item)
+            let dept = inventoryDepartment(item)
+            let building = inventoryBuilding(item)
             return [name, serial, asset, dept, building]
         }
 
@@ -507,7 +497,7 @@ extension HtmlReport {
         let f = HtmlSectionFormatters.self
 
         let withWarranty = computersInventory.filter { item -> Bool in
-            let raw = item["warranty_expires"] as? String ?? ""
+            let raw = inventoryWarrantyExpires(item)
             return !raw.trimmingCharacters(in: .whitespaces).isEmpty
         }
 
@@ -526,10 +516,9 @@ extension HtmlReport {
             let name: String; let serial: String; let expires: String; let daysLeft: Int
         }
         let rows: [WarrantyRow] = withWarranty.map { item in
-            let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
-            let serial = item["serial_number"] as? String
-                ?? item["serial"] as? String ?? ""
-            let raw = item["warranty_expires"] as? String ?? ""
+            let name = inventoryName(item)
+            let serial = inventorySerial(item)
+            let raw = inventoryWarrantyExpires(item)
             let days = daysUntil(raw)
             return WarrantyRow(name: name, serial: serial, expires: raw, daysLeft: days)
         }
@@ -575,9 +564,8 @@ extension HtmlReport {
         let f = HtmlSectionFormatters.self
 
         let withDate = computersInventory.compactMap { item -> (String, String)? in
-            let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
-            let raw = item["purchase_date"] as? String
-                ?? item["purchaseDate"] as? String ?? ""
+            let name = inventoryName(item)
+            let raw = inventoryPurchaseDate(item)
             guard !raw.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
             return (name, raw)
         }
@@ -674,10 +662,20 @@ extension HtmlReport {
 
         var counts: [String: Int] = [:]
         for item in computersInventory {
-            var value = item[field] as? String ?? ""
-            if value.isEmpty {
-                for fb in fallbackFields {
-                    if let v = item[fb] as? String, !v.isEmpty { value = v; break }
+            // Use dedicated accessors for building/department to handle nested shape.
+            var value: String
+            if field == "building" {
+                value = inventoryBuilding(item)
+                if value == "—" { value = "" }
+            } else if field == "department" {
+                value = inventoryDepartment(item)
+                if value == "—" { value = "" }
+            } else {
+                value = item[field] as? String ?? ""
+                if value.isEmpty {
+                    for fb in fallbackFields {
+                        if let v = item[fb] as? String, !v.isEmpty { value = v; break }
+                    }
                 }
             }
             let key = value.isEmpty ? "(unassigned)" : value
@@ -928,11 +926,10 @@ extension HtmlReport {
             var unknown = 0
 
             for device in computersInventory {
-                guard let raw = device[agent.column] as? String else {
+                let raw = inventoryEAValue(device, column: agent.column)
+                if raw.isEmpty {
                     unknown += 1
-                    continue
-                }
-                if raw.lowercased().contains(agent.connectedValue.lowercased()) {
+                } else if raw.lowercased().contains(agent.connectedValue.lowercased()) {
                     installed += 1
                 } else {
                     missing += 1
@@ -1056,6 +1053,537 @@ extension HtmlReport {
             }
     }
 
+    // MARK: - 15. cleanupAnalysis
+
+    /// Jamf instance hygiene: disabled policies, unscoped policies/profiles,
+    /// unused packages, and unused scripts.
+    ///
+    /// Requires per-policy detail fields (`general.enabled`, `scope.*`,
+    /// `package_configuration.packages`, `scripts`) that are only present when
+    /// jamf-cli collects individual policy detail records. The flat
+    /// `classic-policies` list snapshot (id + name only) cannot satisfy these
+    /// requirements. When no detail fields are found, the section renders an
+    /// honest "detail not available" note rather than incorrect "none found" results.
+    func buildCleanupAnalysis(
+        classicPolicies: [[String: Any]],
+        classicProfiles: [[String: Any]],
+        packages: [[String: Any]],
+        scripts: [[String: Any]]
+    ) -> String {
+        let f = HtmlSectionFormatters.self
+
+        // Detect whether any record carries the per-policy detail fields needed.
+        let hasDetailFields = classicPolicies.contains { policy in
+            policy["general"] != nil || policy["scope"] != nil
+                || policy["package_configuration"] != nil
+                || policy["scripts"] != nil
+        }
+        let hasProfileDetailFields = classicProfiles.contains { profile in
+            profile["general"] != nil || profile["scope"] != nil
+        }
+
+        // When no detail is present the section must say so honestly.
+        guard hasDetailFields || hasProfileDetailFields else {
+            let policyNote = classicPolicies.isEmpty
+                ? "No classic-policies snapshot available."
+                : "classic-policies snapshot has \(classicPolicies.count) " +
+                  "record\(classicPolicies.count == 1 ? "" : "s") (id + name only) — " +
+                  "per-policy detail required for enabled/scope/package/script analysis " +
+                  "is not present in this snapshot."
+            return """
+            <section class="content-section" id="cleanup-analysis">
+              <h2>Cleanup Analysis</h2>
+              \(f.emptyState(policyNote +
+                " Run jamf-cli pro collect to refresh, or check that per-policy detail " +
+                "collection is enabled."))
+            </section>
+            """
+        }
+
+        let disabled = cleanupDisabledPolicies(classicPolicies)
+        let unscopedPolicies = cleanupUnscopedPolicies(classicPolicies)
+        let unscopedProfiles = cleanupUnscopedProfiles(classicProfiles)
+        let unusedPackages = cleanupUnusedPackages(packages, policies: classicPolicies)
+        let unusedScripts = cleanupUnusedScripts(scripts, policies: classicPolicies)
+
+        // Each category gets its own presence flag so a pane never renders
+        // "None found — good!" when its specific detail type is absent, even
+        // when other detail types are present on the same policy records.
+        let hasPolicyGeneralDetail = classicPolicies.contains { $0["general"] != nil }
+        let hasPackageDetail = classicPolicies.contains { $0["package_configuration"] != nil }
+        let hasScriptDetail = classicPolicies.contains { $0["scripts"] != nil }
+
+        let categories: [(String, String, [String], Bool)] = [
+            ("Disabled Policies",  "disabled-policies",   disabled,         hasPolicyGeneralDetail),
+            ("Unscoped Policies",  "unscoped-policies",   unscopedPolicies, hasPolicyGeneralDetail),
+            ("Unscoped Profiles",  "unscoped-profiles",   unscopedProfiles, hasProfileDetailFields),
+            ("Unused Packages",    "unused-packages",     unusedPackages,   hasPackageDetail),
+            ("Unused Scripts",     "unused-scripts",      unusedScripts,    hasScriptDetail),
+        ]
+
+        let tabs = categories.enumerated().map { idx, tuple -> String in
+            let (label, tabID, items, hasData) = tuple
+            let badge = hasData ? "\(items.count)" : "?"
+            let activeAttr = idx == 0 ? " active" : ""
+            return """
+            <button type="button"
+              class="cleanup-tab\(activeAttr)"
+              id="ctab-\(f.escapeHTML(tabID))"
+              role="tab"
+              aria-controls="cpane-\(f.escapeHTML(tabID))"
+              aria-selected="\(idx == 0 ? "true" : "false")"
+              tabindex="\(idx == 0 ? "0" : "-1")"
+              data-target="cpane-\(f.escapeHTML(tabID))">
+              \(f.escapeHTML(label))
+              <span class="cleanup-badge">\(f.escapeHTML(badge))</span>
+            </button>
+            """
+        }.joined(separator: "\n")
+
+        let panes = categories.enumerated().map { idx, tuple -> String in
+            let (_, tabID, items, hasData) = tuple
+            let activeAttr = idx == 0 ? " active" : ""
+            let body: String
+            if !hasData {
+                body = f.emptyState(
+                    "Per-policy/profile detail not present in this snapshot."
+                )
+            } else if items.isEmpty {
+                body = "<p class=\"cleanup-ok\">None found — good!</p>"
+            } else {
+                body = f.renderList(items: items)
+            }
+            return """
+            <div class="cleanup-pane\(activeAttr)"
+              id="cpane-\(f.escapeHTML(tabID))"
+              role="tabpanel"
+              aria-labelledby="ctab-\(f.escapeHTML(tabID))"
+              tabindex="0">
+              \(body)
+            </div>
+            """
+        }.joined(separator: "\n")
+
+        let detailNote: String
+        let policiesWithDetail = classicPolicies.filter { $0["general"] != nil }.count
+        let profilesWithDetail = classicProfiles.filter { $0["general"] != nil }.count
+        if policiesWithDetail > 0 || profilesWithDetail > 0 {
+            detailNote = "Based on \(policiesWithDetail) " +
+                "polic\(policiesWithDetail == 1 ? "y" : "ies") and " +
+                "\(profilesWithDetail) profile\(profilesWithDetail == 1 ? "" : "s") " +
+                "with cached detail."
+        } else {
+            detailNote = ""
+        }
+
+        return """
+        <section class="content-section" id="cleanup-analysis">
+          <h2>Cleanup Analysis</h2>
+          \(detailNote.isEmpty ? "" : "<p class=\"cleanup-note\">\(f.escapeHTML(detailNote))</p>")
+          <div class="cleanup-tabs" role="tablist" aria-label="Cleanup categories">
+            \(tabs)
+          </div>
+          \(panes)
+        </section>
+        """
+    }
+
+    // MARK: Cleanup helpers — field-presence aware
+
+    /// Names of disabled policies (requires `general.enabled` field).
+    func cleanupDisabledPolicies(_ policies: [[String: Any]]) -> [String] {
+        policies.compactMap { policy -> String? in
+            guard let general = policy["general"] as? [String: Any] else { return nil }
+            guard general["enabled"] as? Bool == false else { return nil }
+            return general["name"] as? String ?? policy["name"] as? String
+        }.sorted()
+    }
+
+    /// Names of enabled policies with no scope targets (requires `general` + `scope`).
+    func cleanupUnscopedPolicies(_ policies: [[String: Any]]) -> [String] {
+        policies.compactMap { policy -> String? in
+            guard let general = policy["general"] as? [String: Any] else { return nil }
+            // Skip disabled policies — they are reported separately.
+            if general["enabled"] as? Bool == false { return nil }
+            guard let scope = policy["scope"] as? [String: Any] else { return nil }
+            // "All Computers" scoped policies are not unscoped.
+            if scope["all_computers"] as? Bool == true { return nil }
+            let computers = (scope["computers"] as? [[String: Any]])?.isEmpty != false
+            let groups = (scope["computer_groups"] as? [[String: Any]])?.isEmpty != false
+            let buildings = (scope["buildings"] as? [[String: Any]])?.isEmpty != false
+            let departments = (scope["departments"] as? [[String: Any]])?.isEmpty != false
+            guard computers && groups && buildings && departments else { return nil }
+            return general["name"] as? String ?? policy["name"] as? String
+        }.sorted()
+    }
+
+    /// Names of macOS config profiles with no scope targets (requires `general` + `scope`).
+    func cleanupUnscopedProfiles(_ profiles: [[String: Any]]) -> [String] {
+        profiles.compactMap { profile -> String? in
+            guard let scope = profile["scope"] as? [String: Any] else { return nil }
+            if scope["all_computers"] as? Bool == true { return nil }
+            let computers = (scope["computers"] as? [[String: Any]])?.isEmpty != false
+            let groups = (scope["computer_groups"] as? [[String: Any]])?.isEmpty != false
+            let buildings = (scope["buildings"] as? [[String: Any]])?.isEmpty != false
+            let departments = (scope["departments"] as? [[String: Any]])?.isEmpty != false
+            guard computers && groups && buildings && departments else { return nil }
+            let general = profile["general"] as? [String: Any]
+            return general?["name"] as? String ?? profile["name"] as? String
+        }.sorted()
+    }
+
+    /// Package names not referenced in any policy's `package_configuration`.
+    ///
+    /// Returns an empty array when no policy carries `package_configuration` data — this
+    /// prevents falsely reporting every package as unused when detail is absent.
+    func cleanupUnusedPackages(
+        _ packages: [[String: Any]],
+        policies: [[String: Any]]
+    ) -> [String] {
+        let referencedIDs: Set<String> = {
+            var ids: Set<String> = []
+            for policy in policies {
+                guard let pkgCfg = policy["package_configuration"] as? [String: Any],
+                      let pkgs = pkgCfg["packages"] as? [[String: Any]] else { continue }
+                for pkg in pkgs {
+                    let idStr = pkg["id"].map { "\($0)" } ?? ""
+                    if !idStr.isEmpty { ids.insert(idStr) }
+                }
+            }
+            return ids
+        }()
+        // When no policy carries package_configuration, we have no evidence to
+        // determine which packages are unused — return empty rather than all.
+        let hasPackageDetail = policies.contains { $0["package_configuration"] != nil }
+        guard hasPackageDetail else { return [] }
+        return packages.compactMap { pkg -> String? in
+            let idStr = pkg["id"].map { "\($0)" } ?? ""
+            let name = pkg["packageName"] as? String ?? pkg["name"] as? String ?? ""
+            guard !idStr.isEmpty, !name.isEmpty, !referencedIDs.contains(idStr) else {
+                return nil
+            }
+            return name
+        }.sorted()
+    }
+
+    /// Script names not referenced in any policy's `scripts` list.
+    ///
+    /// Returns an empty array when no policy carries script reference data — this
+    /// prevents falsely reporting every script as unused when detail is absent.
+    func cleanupUnusedScripts(
+        _ scripts: [[String: Any]],
+        policies: [[String: Any]]
+    ) -> [String] {
+        let referencedIDs: Set<String> = {
+            var ids: Set<String> = []
+            for policy in policies {
+                guard let scriptsList = policy["scripts"] as? [[String: Any]] else { continue }
+                for scr in scriptsList {
+                    let idStr = scr["id"].map { "\($0)" } ?? ""
+                    if !idStr.isEmpty { ids.insert(idStr) }
+                }
+            }
+            return ids
+        }()
+        let hasScriptDetail = policies.contains { $0["scripts"] != nil }
+        guard hasScriptDetail else { return [] }
+        return scripts.compactMap { scr -> String? in
+            let idStr = scr["id"].map { "\($0)" } ?? ""
+            let name = scr["name"] as? String ?? ""
+            guard !idStr.isEmpty, !name.isEmpty, !referencedIDs.contains(idStr) else {
+                return nil
+            }
+            return name
+        }.sorted()
+    }
+
+    // MARK: - 16. timeline
+
+    /// OS adoption and security metric trends from workspace `summary_*.json` snapshots.
+    ///
+    /// Reads from `<dataDir>/../snapshots/summaries/summary_*.json` — the same
+    /// directory `TrendStore` reads, but parsed independently (Engine layer must not
+    /// depend on Services). Plots available scalar series: total devices,
+    /// FileVault %, SIP %, and compliance %.
+    ///
+    /// Note: Python's `_render_timeline_section` renders per-OS-version lines from a
+    /// `{ts, versions:[{v,c}]}` history file. Summary snapshots carry only aggregate
+    /// scalars (no per-version counts), so per-version trend lines cannot be reproduced
+    /// from this data source; scalar metric trends are rendered instead.
+    func buildTimelineSection() -> String {
+        let f = HtmlSectionFormatters.self
+        let (summaries, skipped) = loadSummarySnapshots()
+        let skippedNote = skipped > 0
+            ? "<p class=\"timeline-warn\">\(skipped) snapshot file\(skipped == 1 ? "" : "s") could not be parsed.</p>"
+            : ""
+
+        guard !summaries.isEmpty else {
+            return HtmlSectionFormatters.emptySection(
+                title: "Historical Trends",
+                dataKind: "snapshots/summaries/summary_*.json"
+            ) + skippedNote
+        }
+
+        // Build the trend table rows (date + key metrics), newest last.
+        let tableRows: [[String]] = summaries.map { s in
+            let fvStr = s.fileVaultPct.map { String(format: "%.1f%%", $0) } ?? "—"
+            let sipStr = s.sipPct.map { String(format: "%.1f%%", $0) } ?? "—"
+            let compStr = s.compliancePct.map { String(format: "%.1f%%", $0) } ?? "—"
+            return [
+                f.escapeHTML(s.date),
+                f.escapeHTML("\(s.totalDevices)"),
+                f.escapeHTML(fvStr),
+                f.escapeHTML(sipStr),
+                f.escapeHTML(compStr),
+            ]
+        }
+
+        let tableHTML = f.renderTable(
+            headers: ["Date", "Total Devices", "FileVault", "SIP", "Compliance"],
+            rows: tableRows
+        )
+
+        if summaries.count == 1 {
+            return """
+            <section class="content-section" id="timeline">
+              <h2>Historical Trends</h2>
+              <p class="empty-note">Only 1 snapshot available — collect more runs to see trends.</p>
+              \(skippedNote)
+              \(tableHTML)
+            </section>
+            """
+        }
+
+        let svgHTML = renderTimelineSVG(summaries: summaries)
+
+        return """
+        <section class="content-section" id="timeline">
+          <h2>Historical Trends</h2>
+          <p class="timeline-note">\(f.escapeHTML("\(summaries.count) snapshot\(summaries.count == 1 ? "" : "s")")) &middot; metrics from workspace summaries</p>
+          \(skippedNote)
+          \(svgHTML)
+          \(tableHTML)
+        </section>
+        """
+    }
+
+    // MARK: Timeline helpers
+
+    /// Minimal summary snapshot — only the fields needed for trend rendering.
+    struct SummarySnapshot: Sendable {
+        let date: String
+        let totalDevices: Int
+        let fileVaultPct: Double?
+        let sipPct: Double?
+        let compliancePct: Double?
+    }
+
+    /// Load and parse `summary_*.json` files from `<dataDir>/../snapshots/summaries/`.
+    ///
+    /// Parses only the scalar fields needed for timeline rendering. Accepts both
+    /// camelCase (Swift/Python-emitted) and snake_case key spellings for each field.
+    /// Returns entries sorted oldest-first by date string (ISO format sorts correctly).
+    /// The `skipped` count reports files that were present but could not be decoded.
+    func loadSummarySnapshots() -> (snapshots: [SummarySnapshot], skipped: Int) {
+        let summariesDir = dataDir
+            .deletingLastPathComponent()
+            .appendingPathComponent("snapshots/summaries", isDirectory: true)
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(
+            at: summariesDir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return ([], 0) }
+
+        let candidates = files
+            .filter { $0.lastPathComponent.hasPrefix("summary_") && $0.pathExtension == "json" }
+
+        var skipped = 0
+        var snapshots: [SummarySnapshot] = []
+        for url in candidates {
+            guard let data = try? Data(contentsOf: url),
+                  let obj = try? JSONSerialization.jsonObject(with: data),
+                  let dict = obj as? [String: Any],
+                  let date = dict["date"] as? String
+            else { skipped += 1; continue }
+
+            // Accept both camelCase (current Swift + Python writers) and snake_case
+            // (defensive: hand-authored or third-party summaries). Both writers emit camelCase.
+            func intVal(_ camel: String, _ snake: String) -> Int? {
+                if let n = dict[camel] as? Int { return n }
+                if let d = dict[camel] as? Double { return Int(d) }
+                if let n = dict[snake] as? Int { return n }
+                if let d = dict[snake] as? Double { return Int(d) }
+                return nil
+            }
+            func dblVal(_ camel: String, _ snake: String) -> Double? {
+                if let n = dict[camel] as? Double { return n }
+                if let n = dict[camel] as? Int { return Double(n) }
+                if let n = dict[snake] as? Double { return n }
+                if let n = dict[snake] as? Int { return Double(n) }
+                return nil
+            }
+
+            guard let total = intVal("totalDevices", "total_devices") else {
+                skipped += 1; continue
+            }
+            snapshots.append(SummarySnapshot(
+                date: date,
+                totalDevices: total,
+                fileVaultPct: dblVal("fileVaultPct", "filevault_pct"),
+                sipPct:       dblVal("sipPct",       "sip_pct"),
+                compliancePct: dblVal("compliancePct", "compliance_pct")
+            ))
+        }
+
+        if skipped > 0 {
+            AppLogger.engine.warning(
+                "loadSummarySnapshots: \(skipped, privacy: .public) snapshot file(s) could not be parsed and were skipped"
+            )
+        }
+
+        return (snapshots: snapshots.sorted { $0.date < $1.date }, skipped: skipped)
+    }
+
+    /// Render an inline SVG multi-series line chart for summary trends.
+    ///
+    /// Plots up to 3 percentage series (FileVault, SIP, Compliance) on a 0–100 scale
+    /// on the left y-axis. Total devices is omitted from the SVG to keep the y-axis
+    /// coherent; it appears in the accompanying table.
+    func renderTimelineSVG(summaries: [SummarySnapshot]) -> String {
+        guard summaries.count >= 2 else {
+            return "<p class=\"empty-note\">Not enough data for a trend chart.</p>"
+        }
+
+        let svgW: Double = 620
+        let svgH: Double = 200
+        let leftPad: Double = 48
+        let topPad: Double = 16
+        let rightPad: Double = 16
+        let bottomPad: Double = 36
+        let plotW = svgW - leftPad - rightPad
+        let plotH = svgH - topPad - bottomPad
+        let n = summaries.count
+
+        func xPos(_ i: Int) -> Double {
+            leftPad + Double(i) / Double(n - 1) * plotW
+        }
+        func yPos(_ pct: Double) -> Double {
+            // y-axis is 0-100 (percent scale)
+            topPad + plotH - (min(max(pct, 0), 100) / 100.0) * plotH
+        }
+
+        // Series definitions: (label, color, values)
+        let f = HtmlSectionFormatters.self
+        typealias Series = (label: String, color: String, values: [Double?])
+        let allSeries: [Series] = [
+            ("FileVault %", "#2D5EA2", summaries.map { $0.fileVaultPct }),
+            ("SIP %",       "#43A047", summaries.map { $0.sipPct }),
+            ("Compliance %", "#E65100", summaries.map { $0.compliancePct }),
+        ]
+        // Only include series that have at least one non-nil value.
+        let activeSeries = allSeries.filter { $0.values.contains(where: { $0 != nil }) }
+
+        // Y-axis grid lines (0, 25, 50, 75, 100)
+        var gridLines = ""
+        for tick in stride(from: 0, through: 100, by: 25) {
+            let yCoord = yPos(Double(tick))
+            let label = "\(tick)%"
+            gridLines += """
+            <line x1="\(String(format: "%.1f", leftPad))" \
+            y1="\(String(format: "%.1f", yCoord))" \
+            x2="\(String(format: "%.1f", svgW - rightPad))" \
+            y2="\(String(format: "%.1f", yCoord))" \
+            stroke="var(--border)" stroke-width="1"/>
+            <text x="\(String(format: "%.1f", leftPad - 4))" \
+            y="\(String(format: "%.1f", yCoord + 4))" \
+            text-anchor="end" \
+            style="font-size:9px;fill:var(--subtext)">\(f.escapeHTML(label))</text>
+            """
+        }
+
+        // X-axis labels (show at most 6)
+        var xLabels = ""
+        let labelStep = max(1, n / 6)
+        for i in 0 ..< n {
+            guard i % labelStep == 0 || i == n - 1 else { continue }
+            let xCoord = xPos(i)
+            let dateLabel = String(summaries[i].date.prefix(10))
+            xLabels += """
+            <text x="\(String(format: "%.1f", xCoord))" \
+            y="\(String(format: "%.1f", svgH - 4))" \
+            text-anchor="middle" \
+            style="font-size:9px;fill:var(--subtext)">\(f.escapeHTML(dateLabel))</text>
+            """
+        }
+
+        // Render each series as a polyline + dots
+        var seriesHTML = ""
+        for series in activeSeries {
+            // Build point list; skip nil values by breaking the polyline.
+            var segments: [[Int]] = []
+            var current: [Int] = []
+            for i in 0 ..< n {
+                if series.values[i] != nil {
+                    current.append(i)
+                } else {
+                    if current.count >= 2 { segments.append(current) }
+                    current = []
+                }
+            }
+            if current.count >= 2 { segments.append(current) }
+
+            for segment in segments {
+                let points = segment.map { i -> String in
+                    let val = series.values[i]!
+                    return "\(String(format: "%.1f", xPos(i))),\(String(format: "%.1f", yPos(val)))"
+                }.joined(separator: " ")
+                seriesHTML += """
+                <polyline fill="none" stroke="\(series.color)" stroke-width="2"
+                  stroke-linejoin="round" points="\(points)"/>
+                """
+            }
+            // Dots for all non-nil points
+            for i in 0 ..< n {
+                guard let val = series.values[i] else { continue }
+                seriesHTML += """
+                <circle cx="\(String(format: "%.1f", xPos(i)))" \
+                cy="\(String(format: "%.1f", yPos(val)))" \
+                r="3" fill="\(series.color)" aria-label="\(f.escapeHTML(series.label)): \(String(format: "%.1f", val))%"/>
+                """
+            }
+        }
+
+        // Legend
+        let legendItems = activeSeries.map { series -> String in
+            """
+            <g>
+              <rect x="0" y="-6" width="14" height="6" fill="\(series.color)"/>
+              <text x="18" y="0" style="font-size:10px;fill:var(--text)">\(f.escapeHTML(series.label))</text>
+            </g>
+            """
+        }
+        var legendX: Double = leftPad
+        let legendY = topPad + plotH + bottomPad - 4
+        var legendHTML = ""
+        for item in legendItems {
+            legendHTML += "<g transform=\"translate(\(String(format: "%.0f", legendX)),\(String(format: "%.0f", legendY)))\">"
+            legendHTML += item
+            legendHTML += "</g>"
+            legendX += 130
+        }
+
+        return """
+        <svg viewBox="0 0 \(Int(svgW)) \(Int(svgH))" class="history-svg"
+          role="img" aria-label="Historical metric trends">
+          \(gridLines)
+          \(seriesHTML)
+          \(xLabels)
+          \(legendHTML)
+        </svg>
+        """
+    }
+
     // MARK: - Anchor helpers
 
     /// Produce a stable HTML `id`-safe slug from a device name.
@@ -1113,7 +1641,7 @@ extension HtmlReport {
 
 extension HtmlReport {
 
-    /// Register all 14 new renderers into the section map produced by `buildSectionMap`.
+    /// Register all 16 section renderers into the section map produced by `buildSectionMap`.
     ///
     /// Called from `buildSectionMap` after the original 9 entries are populated.
     /// Returns a dictionary that merges into the base map.
@@ -1124,7 +1652,11 @@ extension HtmlReport {
         patchFailures: [[String: Any]],
         updateFailures: [[String: Any]],
         computersInventory: [[String: Any]],
-        auditFindings: [[String: Any]]
+        auditFindings: [[String: Any]],
+        classicPolicies: [[String: Any]] = [],
+        classicProfiles: [[String: Any]] = [],
+        packages: [[String: Any]] = [],
+        scripts: [[String: Any]] = []
     ) -> [SectionID: String] {
         let secSummary = security.first { $0["section"] as? String == "summary" }
         let secData = secSummary?["data"] as? [String: Any] ?? [:]
@@ -1177,6 +1709,13 @@ extension HtmlReport {
             .protectAlerts: buildProtectAlerts(protectDataDir: protectDir),
             .insightsDrift: buildInsightsDrift(protectDataDir: protectDir),
             .agentHealth: buildAgentHealth(computersInventory: computersInventory),
+            .cleanupAnalysis: buildCleanupAnalysis(
+                classicPolicies: classicPolicies,
+                classicProfiles: classicProfiles,
+                packages: packages,
+                scripts: scripts
+            ),
+            .timeline: buildTimelineSection(),
         ]
     }
 

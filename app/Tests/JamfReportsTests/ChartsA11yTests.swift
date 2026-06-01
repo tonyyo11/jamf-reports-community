@@ -43,9 +43,10 @@ final class ChartsA11yTests: XCTestCase {
 
     func testMultilineComparisonLabel() {
         // The multi-metric comparison chart names all metrics it contains.
+        // "NIST" was removed — the label now uses the generic "Compliance" token.
         let label = TrendsView.multilineComparisonChartLabel.lowercased()
         XCTAssertTrue(label.contains("filevault"), "Must mention FileVault")
-        XCTAssertTrue(label.contains("nist"), "Must mention NIST")
+        XCTAssertTrue(label.contains("compliance"), "Must mention Compliance")
         XCTAssertTrue(label.contains("macos"), "Must mention macOS")
     }
 
@@ -158,7 +159,7 @@ final class ChartsA11yTests: XCTestCase {
         ]
         let seriesList: [MultiLineChartDescriptor.Series] = [
             .init(name: "FileVault",   dates: dates, values: [90.0, 92.0]),
-            .init(name: "NIST Compliance", dates: dates, values: [75.0, 78.0]),
+            .init(name: "Compliance", dates: dates, values: [75.0, 78.0]),
             .init(name: "macOS Currency",  dates: dates, values: [60.0, 65.0]),
         ]
         let descriptor = MultiLineChartDescriptor(

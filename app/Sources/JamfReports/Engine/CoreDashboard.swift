@@ -92,11 +92,17 @@ struct CoreDashboard: Sendable {
             ("Compliance Rules", writeComplianceRules),
             ("DDM Status", writeDDMStatus),
             ("Blueprint Status", writeBlueprintStatus),
-            // --- Protect (sheets 32–35, optional) ---
+            // --- Protect (sheets 32–39, optional) ---
             ("Protect Overview", writeProtectOverview),
             ("Protect Alerts", writeProtectAlerts),
             ("Protect Computers", writeProtectComputers),
             ("Protect Insights", writeProtectInsights),
+            ("Protect Plans", writeProtectPlans),
+            ("Protect Threat Overview", writeProtectThreatOverview),
+            // --- Parity / detail sheets (sheets 38–40) ---
+            ("Patch Summary Dashboard", writePatchSummaryDashboard),
+            ("Device Security State", writeDeviceSecurityState),
+            ("Mobile Supervision Status", writeMobileSupervisionStatus),
         ]
     }
 
@@ -1787,6 +1793,504 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    // MARK: - Protect Plans
+    // Source: `jamf-cli protect plans list --output json` (gated on protect data present).
+
+    func writeProtectPlans() throws {
+        let raw = try loadLatestJSON(names: ["protect-plans"])
+        let items: [[String: Any]]
+        if let arr = raw as? [[String: Any]] {
+            items = arr
+        } else if let dict = raw as? [String: Any],
+                  let nodes = dict["nodes"] as? [[String: Any]] {
+            items = nodes
+        } else {
+            throw CoreDashboardError.noCachedData(names: ["protect-plans"])
+        }
+        guard !items.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["protect-plans"])
+        }
+
+        let ws = workbook.addSheet("Protect Plans")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(title: t("Protect Plans"),
+                                      subtitle: "Generated: \(ts)", ncols: 14)
+        ws.setColumnWidth(0, 0, 28)
+        ws.setColumnWidth(1, 1, 36)
+        ws.setColumnWidth(2, 2, 40)
+        ws.setColumnWidth(3, 4, 20)
+        ws.setColumnWidth(5, 5, 12)
+        ws.setColumnWidth(6, 6, 12)
+        ws.setColumnWidth(7, 7, 22)
+        ws.setColumnWidth(8, 8, 14)
+        ws.setColumnWidth(9, 9, 60)
+        ws.setColumnWidth(10, 10, 32)
+        ws.setColumnWidth(11, 11, 32)
+        ws.setColumnWidth(12, 13, 14)
+
+        let hdrs = ["Plan Name", "UUID", "Description", "Created", "Updated",
+                    "Log Level", "Auto Update", "Threat Prevention Strategy",
+                    "Profile Version", "Custom Engine Config", "Exception Sets",
+                    "Analytic Sets", "Telemetry", "Telemetry V2"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+
+        let sorted = items.sorted {
+            let a = ($0["name"] as? String ?? "").lowercased()
+            let b = ($1["name"] as? String ?? "").lowercased()
+            return a < b
+        }
+        for item in sorted {
+            let cec = item["customEngineConfig"] as? [String: Any]
+            let cecSummary: String
+            if let cec, !cec.isEmpty {
+                cecSummary = cec.keys.sorted().joined(separator: ", ")
+            } else {
+                cecSummary = ""
+            }
+            let exceptionSets = formatNamedList(item["exceptionSets"])
+            let analyticSets = formatAnalyticSets(item["analyticSets"])
+            let autoUpdate = boolToYesNo(item["autoUpdate"])
+            let telemetry = boolToYesNo(item["telemetry"])
+            let telemetryV2 = boolToYesNo(item["telemetryV2"])
+            let profileVersion = item["profileVersion"].flatMap { asInt($0) }
+                .map { "\($0)" } ?? ""
+            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["uuid"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(item["description"] as? String ?? "", row: row, col: 2, format: .cell)
+            ws.write(item["created"] as? String ?? "", row: row, col: 3, format: .cell)
+            ws.write(item["updated"] as? String ?? "", row: row, col: 4, format: .cell)
+            ws.write(item["logLevel"] as? String ?? "", row: row, col: 5, format: .cell)
+            ws.write(autoUpdate, row: row, col: 6, format: .cell)
+            ws.write(item["threatPreventionStrategy"] as? String ?? "", row: row, col: 7, format: .cell)
+            ws.write(profileVersion, row: row, col: 8, format: .cell)
+            ws.write(cecSummary, row: row, col: 9, format: .cell)
+            ws.write(exceptionSets, row: row, col: 10, format: .cell)
+            ws.write(analyticSets, row: row, col: 11, format: .cell)
+            ws.write(telemetry, row: row, col: 12, format: .cell)
+            ws.write(telemetryV2, row: row, col: 13, format: .cell)
+            row += 1
+        }
+    }
+
+    // MARK: - Protect Threat Overview
+    // Source: `jamf-cli protect alerts list --output json` (gated on protect data present).
+    // Severity-sorted triage view of protect alerts.
+
+    func writeProtectThreatOverview() throws {
+        let raw = try loadLatestJSON(names: ["protect-alerts"])
+        let items = (raw as? [[String: Any]]) ?? []
+        guard !items.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["protect-alerts"])
+        }
+
+        let severityRank: [String: Int] = [
+            "critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4,
+        ]
+        let rows = items.map { item -> [String: String] in
+            let computer = item["computer"] as? [String: Any]
+            let host = computer?["hostName"] as? String
+                ?? item["hostName"] as? String ?? ""
+            let actions = extractActionsString(item["actions"])
+            return [
+                "Device": host,
+                "Type": item["eventType"] as? String ?? "",
+                "Severity": item["severity"] as? String ?? "",
+                "Date": item["created"] as? String ?? "",
+                "Status": item["status"] as? String ?? "",
+                "Action Taken": actions,
+            ]
+        }.sorted { a, b in
+            let ra = severityRank[(a["Severity"] ?? "").lowercased()] ?? 99
+            let rb = severityRank[(b["Severity"] ?? "").lowercased()] ?? 99
+            if ra != rb { return ra < rb }
+            return (a["Date"] ?? "") < (b["Date"] ?? "")
+        }
+
+        let ws = workbook.addSheet("Protect Threat Overview")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(title: t("Protect Threat Overview"),
+                                      subtitle: "Generated: \(ts)", ncols: 6)
+        ws.setColumnWidth(0, 0, 28)
+        ws.setColumnWidth(1, 1, 26)
+        ws.setColumnWidth(2, 2, 12)
+        ws.setColumnWidth(3, 3, 22)
+        ws.setColumnWidth(4, 4, 14)
+        ws.setColumnWidth(5, 5, 28)
+
+        let hdrs = ["Device", "Type", "Severity", "Date", "Status", "Action Taken"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+
+        for r in rows {
+            let severity = (r["Severity"] ?? "").lowercased()
+            let fmt: CellFormat = (severity == "critical" || severity == "high") ? .red
+                : severity == "medium" ? .yellow : .cell
+            ws.write(r["Device"] ?? "", row: row, col: 0, format: .cell)
+            ws.write(r["Type"] ?? "", row: row, col: 1, format: .cell)
+            ws.write(r["Severity"] ?? "", row: row, col: 2, format: fmt)
+            ws.write(r["Date"] ?? "", row: row, col: 3, format: .cell)
+            ws.write(r["Status"] ?? "", row: row, col: 4, format: .cell)
+            ws.write(r["Action Taken"] ?? "", row: row, col: 5, format: .cell)
+            row += 1
+        }
+    }
+
+    // MARK: - Patch Summary Dashboard
+    // Source: patch-status + device-compliance snapshots.
+
+    func writePatchSummaryDashboard() throws {
+        guard let patchItems = loadLatestTyped(
+            names: ["patch-status", "patch_status"],
+            as: [PatchStatusRow].self
+        ), !patchItems.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["patch-status"])
+        }
+
+        let rawDC = try? loadLatestJSON(names: ["device-compliance", "device_compliance"])
+        let dcList = (rawDC as? [[String: Any]]) ?? []
+        guard !dcList.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["device-compliance"])
+        }
+
+        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        let totalEnrolled = dcList.count
+        let activeCount = dcList.filter { !(asBool($0["stale"]) ?? false) }.count
+        let inactiveCount = totalEnrolled - activeCount
+        let activeRatio = totalEnrolled > 0 ? Double(activeCount) / Double(totalEnrolled) : 0.0
+
+        struct PatchRow {
+            let title: String
+            let latest: String
+            let adjTotal: Int
+            let adjSecondary: Int
+            let adjPct: Double
+        }
+
+        let patchRows: [PatchRow] = patchItems.compactMap { item in
+            let total = item.total
+            let primary = item.onLatest
+            let adjTotal = total > 0 ? Int((Double(total) * activeRatio).rounded()) : 0
+            let adjPrimary = min(
+                primary > 0 ? Int((Double(primary) * activeRatio).rounded()) : 0,
+                adjTotal
+            )
+            let adjPct = adjTotal > 0 ? Double(adjPrimary) / Double(adjTotal) : 0.0
+            return PatchRow(
+                title: item.title,
+                latest: item.latest,
+                adjTotal: adjTotal,
+                adjSecondary: max(adjTotal - adjPrimary, 0),
+                adjPct: adjPct
+            )
+        }
+
+        let totalTitles = patchRows.count
+        let avgPct = totalTitles > 0
+            ? patchRows.reduce(0.0) { $0 + $1.adjPct } / Double(totalTitles)
+            : 0.0
+        let excellent = patchRows.filter { $0.adjPct >= 0.95 }.count
+        let good = patchRows.filter { $0.adjPct >= 0.80 && $0.adjPct < 0.95 }.count
+        let warning = patchRows.filter { $0.adjPct >= 0.50 && $0.adjPct < 0.80 }.count
+        let critical = patchRows.filter { $0.adjPct < 0.50 }.count
+        let top10 = patchRows.sorted { $0.adjPct < $1.adjPct }.prefix(10)
+
+        let ws = workbook.addSheet("Patch Summary Dashboard")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(
+            title: t("Patch Summary Dashboard"),
+            subtitle: "Source: patch-status + device-compliance | Active window: \(staleDays) days | Generated: \(ts)",
+            ncols: 9
+        )
+        ws.setColumnWidth(0, 0, 32)
+        ws.setColumnWidth(1, 1, 20)
+
+        // Fleet Overview section
+        ws.write("FLEET OVERVIEW", row: row, col: 0, format: .header)
+        row += 1
+        for (label, value) in [("Total Devices", totalEnrolled), ("Active Devices", activeCount),
+                                ("Inactive Devices", inactiveCount)] {
+            ws.write(label, row: row, col: 0, format: .cell)
+            ws.write(value, row: row, col: 1, format: .cell)
+            row += 1
+        }
+        let activeRatioPct = String(format: "%.1f%%", activeRatio * 100)
+        ws.write("Active Device Ratio", row: row, col: 0, format: .cell)
+        ws.write(activeRatioPct, row: row, col: 1, format: .cell)
+        row += 2
+
+        // Patch Statistics section
+        ws.write("PATCH STATISTICS", row: row, col: 0, format: .header)
+        row += 1
+        ws.write("Total Patch Titles", row: row, col: 0, format: .cell)
+        ws.write(totalTitles, row: row, col: 1, format: .cell)
+        row += 1
+        let avgPctStr = String(format: "%.1f%%", avgPct * 100)
+        ws.write("Average Completion (Adjusted)", row: row, col: 0, format: .cell)
+        ws.write(avgPctStr, row: row, col: 1, format: .cell)
+        row += 1
+        ws.write("Fully Compliant (\u{2265}95%)", row: row, col: 0, format: .cell)
+        ws.write(excellent, row: row, col: 1, format: .cell)
+        row += 1
+        ws.write("High Risk (<50%)", row: row, col: 0, format: .cell)
+        ws.write(critical, row: row, col: 1, format: .cell)
+        row += 2
+
+        // Compliance Distribution section
+        ws.write("COMPLIANCE DISTRIBUTION", row: row, col: 0, format: .header)
+        row += 1
+        for h in ["Status", "Completion Range", "Titles"] {
+            let col = ["Status", "Completion Range", "Titles"].firstIndex(of: h)!
+            ws.write(h, row: row, col: col, format: .header)
+        }
+        row += 1
+        let tiers: [(String, String, Int)] = [
+            ("Excellent (\u{2265}95%)", "\u{2265}95%", excellent),
+            ("Good (80\u{2013}95%)", "80\u{2013}95%", good),
+            ("Warning (50\u{2013}80%)", "50\u{2013}80%", warning),
+            ("Critical (<50%)", "<50%", critical),
+        ]
+        for (label, rng, count) in tiers {
+            ws.write(label, row: row, col: 0, format: .cell)
+            ws.write(rng, row: row, col: 1, format: .cell)
+            ws.write(count, row: row, col: 2, format: .cell)
+            row += 1
+        }
+        row += 1
+
+        // Top 10 Critical Patches section
+        ws.setColumnWidth(0, 0, 44)
+        ws.setColumnWidth(1, 3, 22)
+        ws.write("TOP 10 CRITICAL PATCHES (Lowest Adjusted Completion)", row: row, col: 0,
+                 format: .header)
+        row += 1
+        let top10Hdrs = ["Title", "Latest Version", "Adjusted Completion %", "Out of Date (Adj)"]
+        for (col, h) in top10Hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+        for pr in top10 {
+            let adjPctStr = String(format: "%.1f%%", pr.adjPct * 100)
+            ws.write(pr.title, row: row, col: 0, format: .cell)
+            ws.write(pr.latest, row: row, col: 1, format: .cell)
+            ws.write(adjPctStr, row: row, col: 2, format: colorForPctString(adjPctStr))
+            ws.write(pr.adjSecondary, row: row, col: 3, format: .cell)
+            row += 1
+        }
+    }
+
+    // MARK: - Device Security State
+    // Source: computers snapshot (SECURITY + diskEncryption sections).
+
+    func writeDeviceSecurityState() throws {
+        let raw = try? loadLatestJSON(names: ["computers", "computers-list", "computers_list"])
+        let items = (raw as? [[String: Any]]) ?? []
+        guard !items.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["computers"])
+        }
+
+        struct DeviceSecurityRow {
+            let name: String
+            let serial: String
+            let fileVault: String
+            let sip: String
+            let firewall: String
+            let gatekeeper: String
+            let bootstrapToken: String
+        }
+
+        let rows: [DeviceSecurityRow] = items.compactMap { item in
+            guard let general = item["general"] as? [String: Any] else { return nil }
+            let name = general["name"] as? String ?? ""
+            let serial = (item["hardware"] as? [String: Any])?["serialNumber"] as? String ?? ""
+
+            let diskEncryption = item["diskEncryption"] as? [String: Any]
+            let fileVaultEnabled = diskEncryption?["fileVault2Enabled"] as? Bool
+            let bootDetails = diskEncryption?["bootPartitionEncryptionDetails"] as? [String: Any]
+            let fvState = bootDetails?["partitionFileVault2State"] as? String
+            let fileVaultStr: String
+            if let state = fvState, !state.isEmpty {
+                fileVaultStr = state
+            } else if let enabled = fileVaultEnabled {
+                fileVaultStr = enabled ? "ENCRYPTED" : "UNENCRYPTED"
+            } else {
+                fileVaultStr = ""
+            }
+
+            let security = item["security"] as? [String: Any]
+            let sipStr = security?["sipStatus"] as? String ?? ""
+            let firewallRaw = security?["firewallEnabled"]
+            let firewallStr: String
+            if let b = asBool(firewallRaw) { firewallStr = b ? "ENABLED" : "DISABLED" }
+            else { firewallStr = "" }
+            let gatekeeperStr = security?["gatekeeperStatus"] as? String ?? ""
+            let btRaw = security?["bootstrapTokenEscrowed"]
+            let bootstrapStr: String
+            if let b = asBool(btRaw) { bootstrapStr = b ? "ESCROWED" : "NOT ESCROWED" }
+            else { bootstrapStr = "" }
+
+            let hasAny = !fileVaultStr.isEmpty || !sipStr.isEmpty || !firewallStr.isEmpty
+                || !gatekeeperStr.isEmpty || !bootstrapStr.isEmpty
+            guard hasAny else { return nil }
+            return DeviceSecurityRow(name: name, serial: serial, fileVault: fileVaultStr,
+                                     sip: sipStr, firewall: firewallStr, gatekeeper: gatekeeperStr,
+                                     bootstrapToken: bootstrapStr)
+        }
+
+        guard !rows.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["computers"])
+        }
+
+        let ws = workbook.addSheet("Device Security State")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(
+            title: t("Device Security State"),
+            subtitle: "Source: computers (security sections) | Generated: \(ts)",
+            ncols: 7
+        )
+        ws.setColumnWidth(0, 0, 32)
+        ws.setColumnWidth(1, 1, 18)
+        ws.setColumnWidth(2, 6, 16)
+
+        let hdrs = ["Device Name", "Serial", "FileVault", "SIP", "Firewall",
+                    "Gatekeeper", "Bootstrap Token"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+
+        let sorted = rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
+        for r in sorted {
+            ws.write(r.name, row: row, col: 0, format: .cell)
+            ws.write(r.serial, row: row, col: 1, format: .cell)
+            ws.write(r.fileVault, row: row, col: 2, format: securityControlFormat("filevault", r.fileVault))
+            ws.write(r.sip, row: row, col: 3, format: securityControlFormat("sip", r.sip))
+            ws.write(r.firewall, row: row, col: 4, format: securityControlFormat("firewall", r.firewall))
+            ws.write(r.gatekeeper, row: row, col: 5,
+                     format: securityControlFormat("gatekeeper", r.gatekeeper))
+            ws.write(r.bootstrapToken, row: row, col: 6,
+                     format: securityControlFormat("bootstrap_token", r.bootstrapToken))
+            row += 1
+        }
+    }
+
+    /// Returns green/red/neutral based on whether a security control value is compliant.
+    /// Mirrors Python `_security_control_is_compliant` logic.
+    private func securityControlFormat(_ control: String, _ value: String) -> CellFormat {
+        guard !value.isEmpty else { return .cell }
+        let v = value.uppercased()
+        let compliant: Bool
+        switch control {
+        case "filevault":
+            compliant = v == "ENCRYPTED" || v.contains("ENCRYPT")
+        case "sip":
+            compliant = v == "ENABLED" || v.contains("ENABLE") || v == "ACTIVE"
+        case "firewall":
+            compliant = v == "ENABLED" || v == "TRUE" || v == "YES"
+        case "gatekeeper":
+            // APP_STORE or APP_STORE_AND_IDENTIFIED_DEVELOPERS are compliant
+            compliant = v.contains("APP_STORE") || v == "ENABLED" || v == "ACTIVE"
+        case "bootstrap_token":
+            compliant = v == "ESCROWED"
+        default:
+            return .cell
+        }
+        return compliant ? .green : .red
+    }
+
+    // MARK: - Mobile Supervision Status
+    // Source: mobile-device-inventory-details (or mobile-devices-list) snapshot.
+    // Per-family aggregate of supervised/unsupervised counts.
+
+    func writeMobileSupervisionStatus() throws {
+        let mobileRows = normalizeMobileInventory()
+        guard !mobileRows.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+        }
+
+        var perFamily: [String: (total: Int, supervised: Int, unsupervised: Int)] = [:]
+        for r in mobileRows {
+            let family = (r["Device Family"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let key = family.isEmpty ? "Unknown" : family
+            var bucket = perFamily[key] ?? (total: 0, supervised: 0, unsupervised: 0)
+            bucket.total += 1
+            if (r["Supervised"] as? String) == "Yes" { bucket.supervised += 1 }
+            else if (r["Supervised"] as? String) == "No" { bucket.unsupervised += 1 }
+            perFamily[key] = bucket
+        }
+
+        let ws = workbook.addSheet("Mobile Supervision Status")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(title: t("Mobile Supervision Status"),
+                                      subtitle: "Generated: \(ts)", ncols: 5)
+        ws.setColumnWidth(0, 0, 22)
+        ws.setColumnWidth(1, 4, 16)
+
+        let hdrs = ["Device Family", "Total", "Supervised", "Unsupervised", "% Supervised"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+
+        for family in perFamily.keys.sorted() {
+            let counts = perFamily[family]!
+            let pct = counts.total > 0
+                ? String(format: "%.1f%%", Double(counts.supervised) / Double(counts.total) * 100)
+                : "0.0%"
+            ws.write(family, row: row, col: 0, format: .cell)
+            ws.write(counts.total, row: row, col: 1, format: .cell)
+            ws.write(counts.supervised, row: row, col: 2, format: .cell)
+            ws.write(counts.unsupervised, row: row, col: 3, format: .cell)
+            ws.write(pct, row: row, col: 4, format: .cell)
+            row += 1
+        }
+    }
+
+    // MARK: - Protect Plans / Threat Overview helpers
+
+    /// Format a list of named objects or bare strings into a comma-joined string.
+    /// Handles both `[{name: "foo"}]` and `["foo"]` element shapes.
+    private func formatNamedList(_ value: Any?) -> String {
+        guard let arr = value as? [Any] else { return "" }
+        let names = arr.compactMap { elem -> String? in
+            if let dict = elem as? [String: Any], let name = dict["name"] as? String {
+                return name
+            }
+            if let s = elem as? String { return s }
+            return nil
+        }
+        return names.joined(separator: ", ")
+    }
+
+    /// Format analytic sets (shape: `[{analyticSet: {name: "foo"}}]` or `[{name: "foo"}]`).
+    private func formatAnalyticSets(_ value: Any?) -> String {
+        guard let arr = value as? [Any] else { return "" }
+        let names = arr.compactMap { elem -> String? in
+            if let dict = elem as? [String: Any] {
+                if let nested = dict["analyticSet"] as? [String: Any],
+                   let name = nested["name"] as? String { return name }
+                if let name = dict["name"] as? String { return name }
+            }
+            if let s = elem as? String { return s }
+            return nil
+        }
+        return names.joined(separator: ", ")
+    }
+
+    /// Convert a Bool/Int/String value to "Yes" / "No" / "".
+    private func boolToYesNo(_ value: Any?) -> String {
+        guard let b = asBool(value) else { return "" }
+        return b ? "Yes" : "No"
+    }
+
+    /// Extract actions into a comma-joined string.
+    /// Handles both `[{name: "Quarantine"}]` and `["Notify"]` element shapes.
+    private func extractActionsString(_ value: Any?) -> String {
+        guard let arr = value as? [Any] else { return "" }
+        let names = arr.compactMap { elem -> String? in
+            if let dict = elem as? [String: Any], let name = dict["name"] as? String {
+                return name
+            }
+            if let s = elem as? String { return s }
+            return nil
+        }
+        return names.joined(separator: ", ")
+    }
+
     // MARK: - Executive Summary sheet
 
     /// Aggregated fleet KPIs collected from cached snapshots. Every field is optional;
@@ -2117,7 +2621,7 @@ struct CoreDashboard: Sendable {
     func writeCompliancePosture() throws {
         let ws = workbook.addSheet("Compliance Posture")
         let ts = ISO8601DateFormatter().string(from: Date())
-        let framework = config.compliance?.resolvedFramework ?? "NIST 800-53 Moderate"
+        let framework = config.compliance?.resolvedFramework ?? "Compliance Benchmark"
         var row = ws.writeSheetHeader(title: t("Compliance Posture"),
                                       subtitle: "Generated: \(ts)", ncols: 3)
         ws.setColumnWidth(0, 0, 36)

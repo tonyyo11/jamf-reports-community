@@ -6,11 +6,9 @@ final class GenerateSheetStateTests: XCTestCase {
 
     // MARK: - Default state
 
-    func testDefaultSelectedTypesAreXLSXAndHTML() {
+    func testDefaultSelectedTypesAreXLSXOnly() {
         let state = GenerateSheetState()
-        XCTAssertTrue(state.selectedTypes.contains(.xlsx))
-        XCTAssertTrue(state.selectedTypes.contains(.html))
-        XCTAssertFalse(state.selectedTypes.contains(.pdf))
+        XCTAssertEqual(state.selectedTypes, [.xlsx], "Default selection should be XLSX only")
     }
 
     func testDefaultCollectFreshIsTrue() {
@@ -147,5 +145,6 @@ final class GenerateSheetStateTests: XCTestCase {
         XCTAssertEqual(GenerateOutputType.xlsx.rawValue, "XLSX")
         XCTAssertEqual(GenerateOutputType.html.rawValue, "HTML")
         XCTAssertEqual(GenerateOutputType.pdf.rawValue,  "PDF")
+        XCTAssertEqual(GenerateOutputType.csv.rawValue,  "CSV")
     }
 }

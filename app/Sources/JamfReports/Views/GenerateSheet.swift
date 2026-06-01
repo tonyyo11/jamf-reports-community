@@ -8,12 +8,14 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
     case xlsx = "XLSX"
     case html = "HTML"
     case pdf  = "PDF"
+    case csv  = "CSV"
 
     var description: String {
         switch self {
         case .xlsx: "Full data, all sheets"
         case .html: "Executive summary, browser"
         case .pdf:  "Paginated audit artifact"
+        case .csv:  "Wide inventory export"
         }
     }
 
@@ -22,6 +24,7 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
         case .xlsx: "tablecells"
         case .html: "safari"
         case .pdf:  "doc.richtext"
+        case .csv:  "doc.plaintext"
         }
     }
 }
@@ -33,7 +36,7 @@ enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
 @MainActor
 @Observable
 final class GenerateSheetState {
-    var selectedTypes: Set<GenerateOutputType> = [.xlsx, .html]
+    var selectedTypes: Set<GenerateOutputType> = [.xlsx]
     var collectFresh: Bool = true
     var customOutputDir: URL? = nil
     var folderPickerError: String? = nil
@@ -51,7 +54,7 @@ final class GenerateSheetState {
 
     /// Identifier of the currently selected report template.
     /// Persisted for the sheet's lifetime; falls back to Executive on next open.
-    var selectedTemplateID: String = ExecutiveTemplate().identifier
+    var selectedTemplateID: String = FullInstanceTemplate().identifier
 
     /// The resolved template for the current selection. Always a known template —
     /// unknown identifiers fall back to Executive via `TemplateResolver`.
@@ -200,9 +203,49 @@ struct GenerateSheet: View {
     private var formatsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             FieldLabel(label: "Output formats")
-            ForEach(GenerateOutputType.allCases.filter { $0 != .pdf }, id: \.self) { type in
+            ForEach(GenerateOutputType.allCases, id: \.self) { type in
                 formatRow(type)
             }
+
+            if !state.selectedTypes.isEmpty {
+                artifactsSummary
+            }
+        }
+    }
+
+    private var artifactsSummary: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("What will be written")
+                .font(Theme.Fonts.caption.weight(.medium))
+                .foregroundStyle(Theme.Text.secondary)
+                .padding(.top, 6)
+
+            ForEach(Array(state.selectedTypes.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { type in
+                Text("• \(artifactDescription(for: type))")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+
+            if state.collectFresh {
+                Text("• summary.json (Trends snapshot)")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+        }
+        .padding(.leading, 4)
+    }
+
+    private func artifactDescription(for type: GenerateOutputType) -> String {
+        let timestamp = "report_\(profile)_<date>"
+        switch type {
+        case .xlsx:
+            return "\(timestamp).xlsx + integrity sidecar (.sha256, manifest)"
+        case .html:
+            return "\(timestamp).html + integrity sidecar (.sha256, manifest)"
+        case .pdf:
+            return "\(timestamp).pdf + integrity sidecar (.sha256, manifest)"
+        case .csv:
+            return "automation_inventory_\(profile)_<date>.csv"
         }
     }
 
@@ -584,8 +627,18 @@ struct GenerateSheet: View {
     }
 
     private func runGenerate() async {
+        guard workspace.setRunInProgress(for: profile) else {
+            state.errorMessage = "Another run is already in progress for profile '\(profile)' — skipped"
+            return
+        }
+
         state.reset()
         state.isRunning = true
+        defer {
+            workspace.clearRunInProgress(for: profile)
+            state.isRunning = false
+        }
+
         var count = 0
         let outputDir: URL? = state.customOutputDir
         let isSchool = state.resolvedTemplate.identifier == SchoolTemplate().identifier
@@ -603,7 +656,6 @@ struct GenerateSheet: View {
                     state.appendLine(line)
                 }
             }
-            state.isRunning = false
             if result.failed.isEmpty {
                 count = result.succeeded.count
                 state.completedCount = count
@@ -627,7 +679,6 @@ struct GenerateSheet: View {
             }
         }
 
-        state.isRunning = false
         if result.failed.isEmpty {
             count = result.succeeded.count
             state.completedCount = count

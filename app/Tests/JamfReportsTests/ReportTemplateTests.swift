@@ -15,6 +15,7 @@ final class ReportTemplateTests: XCTestCase {
 
     private var allTemplates: [any ReportTemplate] {
         [
+            FullInstanceTemplate(),
             ExecutiveTemplate(),
             OperationalTemplate(),
             ComplianceTemplate(),
@@ -229,5 +230,42 @@ final class ReportTemplateTests: XCTestCase {
         for id in SectionID.allCases {
             XCTAssertFalse(id.rawValue.isEmpty, "SectionID.\(id) must have a non-empty rawValue")
         }
+    }
+
+    // MARK: - FullInstanceTemplate
+
+    func testFullInstanceTemplateIdentifier() {
+        XCTAssertEqual(FullInstanceTemplate().identifier, "full-instance")
+    }
+
+    func testFullInstanceTemplateResolves() {
+        let template = TemplateResolver.resolve(identifier: "full-instance")
+        XCTAssertEqual(template.identifier, "full-instance")
+        XCTAssertTrue(template is FullInstanceTemplate)
+    }
+
+    /// Every SectionID must appear in FullInstanceTemplate.htmlSections so new
+    /// sections can never be silently omitted from the full report.
+    func testFullInstanceTemplateHtmlSectionsCoversAllSectionIDs() {
+        let templateSections = Set(FullInstanceTemplate().htmlSections)
+        let allSections = Set(SectionID.allCases)
+        let missing = allSections.subtracting(templateSections)
+        XCTAssertTrue(
+            missing.isEmpty,
+            "FullInstanceTemplate.htmlSections is missing SectionIDs: " +
+            "\(missing.map(\.rawValue).sorted().joined(separator: ", "))"
+        )
+    }
+
+    func testFullInstanceTemplateScheduleIsFull() {
+        XCTAssertEqual(FullInstanceTemplate().recommendedSchedule, .full)
+    }
+
+    func testFullInstanceTemplateIsFirstInResolver() {
+        XCTAssertEqual(
+            TemplateResolver.allTemplates.first?.identifier,
+            "full-instance",
+            "FullInstanceTemplate must be the first template in TemplateResolver.allTemplates"
+        )
     }
 }

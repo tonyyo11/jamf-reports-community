@@ -437,7 +437,7 @@ struct ProtectView: View {
             title: "Alerts by Severity",
             subtitle: "Jamf Protect",
             footnote: "Source: jamf-cli protect alerts · \(total) alert\(total == 1 ? "" : "s")",
-            suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity")
+            suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile)
         ) {
             ProtectAlertsSeverityExport(critical: critical, high: high, medium: medium, low: low)
         }

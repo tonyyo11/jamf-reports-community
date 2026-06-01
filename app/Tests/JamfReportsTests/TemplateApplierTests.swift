@@ -222,6 +222,10 @@ final class TemplateApplierTests: XCTestCase {
             "asset",
             "security-posture",
             "school",
+            // full-instance intentionally uses TemplateApplier's default
+            // branches (balanced thresholds, no EA keyword filtering) — it
+            // includes every sheet/section, so no template-specific tuning.
+            "full-instance",
         ]
         XCTAssertEqual(
             shipping, explicitlyCovered,

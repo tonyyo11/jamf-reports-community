@@ -857,7 +857,7 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .stability:     return "Stability Index"
             case .activeDevices: return "Active Devices"
-            case .compliance:    return "NIST 800-53r5 Moderate"
+            case .compliance:    return "Compliance Benchmark"
             case .fileVault:     return "FileVault Encryption"
             case .osCurrent:     return "On Current macOS"
             case .crowdstrike:   return "CrowdStrike Installed"
@@ -865,6 +865,14 @@ struct TrendSeries: Identifiable, Sendable {
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
             }
+        }
+
+        /// Returns the compliance-specific label when `benchmarkLabel` is set and
+        /// non-empty; otherwise returns the metric's static `displayLabel`.
+        /// Only `.compliance` is overridable — other metrics are not affected.
+        func displayLabel(benchmarkLabel: String?) -> String {
+            if case .compliance = self, let b = benchmarkLabel, !b.isEmpty { return b }
+            return displayLabel
         }
         var unit: String {
             switch self {

@@ -305,10 +305,14 @@ final class CoreDashboardTests: XCTestCase {
             "Check-in Health", "Active Devices", "Group Hygiene",
             // Update & patch details
             "Patch Failures", "Update Status", "Update Failures", "Smart Groups",
+            "Patch Summary Dashboard",
+            // Device security & supervision detail
+            "Device Security State", "Mobile Supervision Status",
             // Platform / DDM (optional)
             "Compliance Devices", "Compliance Rules", "DDM Status", "Blueprint Status",
             // Protect (optional)
             "Protect Overview", "Protect Alerts", "Protect Computers", "Protect Insights",
+            "Protect Plans", "Protect Threat Overview",
         ]
         for name in expected {
             XCTAssertTrue(names.contains(name), "Sheet plan missing: \(name)")

@@ -11,6 +11,8 @@ struct AppToolbar: ToolbarContent {
     @State private var hoveringChip = false
     @State private var isShowingChipPopover = false
     @State private var isShowingAdminConfirmation = false
+    @State private var lastRefreshPosted: Date = .distantPast
+    @State private var isRefreshDisabled = false
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .principal) {
@@ -174,12 +176,25 @@ struct AppToolbar: ToolbarContent {
 
     private var refreshButton: some View {
         Button {
+            let now = Date()
+            guard now.timeIntervalSince(lastRefreshPosted) >= 2.0 else { return }
+
+            lastRefreshPosted = now
+            isRefreshDisabled = true
+
+            // Brief disabled state to provide visual feedback
+            Task {
+                try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                isRefreshDisabled = false
+            }
+
             NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
         } label: {
-            Image(systemName: "arrow.clockwise")
+            Image(systemName: isRefreshDisabled ? "hourglass" : "arrow.clockwise")
                 .font(.system(size: 13, weight: .medium))
         }
         .buttonStyle(.borderedProminent)
+        .disabled(isRefreshDisabled)
         .help("Refresh current view")
         .accessibilityLabel("Refresh")
     }

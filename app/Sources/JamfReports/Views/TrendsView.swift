@@ -312,10 +312,6 @@ struct TrendsView: View {
                                 .monospacedDigit()
                                 .contentTransition(.numericText(countsDown: delta < 0))
                                 .animation(.snappy(duration: 0.35), value: displayVal)
-                                .shadow(
-                                    color: Color(hex: metric.colorHex).opacity(0.3),
-                                    radius: 20
-                                )
 
                             if selectedPoint == nil {
                                 HStack(spacing: 4) {
@@ -353,7 +349,7 @@ struct TrendsView: View {
                             AreaMark(x: .value("Date", point.date),
                                      y: .value(metric.displayLabel, point.value))
                                 .foregroundStyle(LinearGradient(
-                                    colors: [Color(hex: metric.colorHex).opacity(0.35),
+                                    colors: [Color(hex: metric.colorHex).opacity(0.14),
                                              Color(hex: metric.colorHex).opacity(0.0)],
                                     startPoint: .top, endPoint: .bottom
                                 ))
@@ -363,6 +359,17 @@ struct TrendsView: View {
                                 .foregroundStyle(Color(hex: metric.colorHex))
                                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                                 .interpolationMethod(.monotone)
+
+                            // Always-visible data point dots
+                            PointMark(x: .value("Date", point.date),
+                                      y: .value(metric.displayLabel, point.value))
+                                .foregroundStyle(Color.white)
+                                .symbolSize(36)
+                                .annotation(position: .overlay) {
+                                    Circle()
+                                        .stroke(Color(hex: metric.colorHex), lineWidth: 2.2)
+                                        .frame(width: 8, height: 8)
+                                }
                         }
 
                         if let selectedPoint {
@@ -493,7 +500,7 @@ struct TrendsView: View {
                 multilineComparisonChart
                 HStack(spacing: 14) {
                     legendDot(color: Theme.Colors.ok, label: "FileVault")
-                    legendDot(color: Theme.Colors.gold, label: "NIST")
+                    legendDot(color: Theme.Colors.gold, label: workspaceStore.complianceBenchmarkLabel ?? "Compliance")
                     legendDot(color: Theme.Colors.info, label: "macOS")
                 }
             }
@@ -590,7 +597,7 @@ struct TrendsView: View {
             if let domain = chartDomain {
                 Chart {
                     series("FileVault", color: Theme.Colors.ok, points: points(for: .fileVault))
-                    series("NIST", color: Theme.Colors.gold, points: points(for: .compliance))
+                    series(workspaceStore.complianceBenchmarkLabel ?? "Compliance", color: Theme.Colors.gold, points: points(for: .compliance))
                     series("macOS Current", color: Theme.Colors.info, points: points(for: .osCurrent))
                 }
                 .chartXScale(domain: domain)
@@ -614,7 +621,7 @@ struct TrendsView: View {
                         .init(name: "FileVault",
                               dates: points(for: .fileVault).map(\.date),
                               values: points(for: .fileVault).map(\.value)),
-                        .init(name: "NIST Compliance",
+                        .init(name: workspaceStore.complianceBenchmarkLabel ?? "Compliance",
                               dates: points(for: .compliance).map(\.date),
                               values: points(for: .compliance).map(\.value)),
                         .init(name: "macOS Current",
@@ -706,6 +713,18 @@ struct TrendsView: View {
             .foregroundStyle(color)
             .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
             .interpolationMethod(.catmullRom)
+
+            PointMark(
+                x: .value("Date", point.date),
+                y: .value(name, point.value)
+            )
+            .foregroundStyle(Color.white)
+            .symbolSize(24)
+            .annotation(position: .overlay) {
+                Circle()
+                    .stroke(color, lineWidth: 1.8)
+                    .frame(width: 6, height: 6)
+            }
         }
     }
 
@@ -904,7 +923,7 @@ struct TrendsView: View {
         let exportResult = DashboardChartExport.run(
             title: m.displayLabel,
             subtitle: subtitle,
-            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel)
+            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel, profile: workspaceStore.profile)
         ) { ChartExportView(trendPoints: pts, metric: m, domain: dom) }
 
         if case .failure(let error) = exportResult {
@@ -924,8 +943,9 @@ struct TrendsView: View {
     nonisolated static let complianceTrendChartLabel = "Compliance trend"
 
     /// VoiceOver container label for the multi-metric comparison chart.
+    /// Static — cannot read workspace config; uses generic label.
     nonisolated static let multilineComparisonChartLabel =
-        "Multi-metric comparison: FileVault, NIST compliance, macOS currency"
+        "Multi-metric comparison: FileVault, Compliance, macOS currency"
 }
 
 
@@ -1079,8 +1099,8 @@ private struct ChartExportView: View {
                     y: .value(metric.displayLabel, point.value)
                 )
                 .foregroundStyle(LinearGradient(
-                    colors: [Color(hex: metric.colorHex).opacity(0.26),
-                             Color(hex: metric.colorHex).opacity(0.03)],
+                    colors: [Color(hex: metric.colorHex).opacity(0.12),
+                             Color(hex: metric.colorHex).opacity(0.0)],
                     startPoint: .top, endPoint: .bottom
                 ))
                 .interpolationMethod(.catmullRom)

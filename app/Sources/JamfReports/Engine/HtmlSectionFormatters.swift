@@ -168,6 +168,24 @@ enum HtmlSectionFormatters {
         "<p class=\"empty\">\(escapeHTML(reason))</p>"
     }
 
+    /// Render a placeholder `<section>` block for sections whose required snapshot
+    /// is absent. Used as the return value from section builders when data is missing,
+    /// so the generated report always shows every requested section rather than
+    /// silently omitting it.
+    ///
+    /// - Parameters:
+    ///   - title: Human-readable section heading (HTML-escaped before output).
+    ///   - dataKind: The snapshot kind name the section needs, e.g. `"patch-device-failures"`.
+    nonisolated static func emptySection(title: String, dataKind: String) -> String {
+        """
+        <section class="content-section empty-section">
+          <h2>\(escapeHTML(title))</h2>
+          <p class="empty-note">No data available — run Collect to fetch \
+        '\(escapeHTML(dataKind))' from Jamf Pro.</p>
+        </section>
+        """
+    }
+
     // MARK: - CSS additions
 
     /// CSS snippet appended to `HtmlReport.buildCSS` for new section elements.
@@ -209,5 +227,21 @@ enum HtmlSectionFormatters {
                       border-radius: 3px; overflow: hidden; }
     .cohort-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
     .cohort-bar-n   { min-width: 3rem; text-align: right; }
+    /* Cleanup Analysis tab strip */
+    .cleanup-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem;
+                    border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+    .cleanup-tab { background: none; border: 1px solid var(--border); border-radius: 6px 6px 0 0;
+                   padding: 0.35rem 0.75rem; font-size: 0.85rem; cursor: pointer; color: var(--text); }
+    .cleanup-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .cleanup-badge { display: inline-block; background: var(--bg); color: var(--subtext);
+                     font-size: 0.72rem; border-radius: 10px; padding: 0 0.4em;
+                     margin-left: 0.3em; }
+    .cleanup-tab.active .cleanup-badge { background: rgba(255,255,255,0.25); color: #fff; }
+    .cleanup-pane { display: none; }
+    .cleanup-pane.active { display: block; }
+    .cleanup-note { font-size: 0.8rem; color: var(--subtext); margin-bottom: 0.5rem; }
+    .cleanup-ok { color: var(--green); font-size: 0.9rem; padding: 0.4rem 0; }
+    /* Timeline section */
+    .timeline-note { font-size: 0.8rem; color: var(--subtext); margin-bottom: 0.75rem; }
     """
 }

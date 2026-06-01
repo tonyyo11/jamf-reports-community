@@ -122,6 +122,10 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "advanced-mobile-device-searches":    .inventory,
         "classic-computer-groups":            .inventory,
         "classic-mobile-device-groups":       .inventory,
+        "categories":                         .inventory,
+        "classic-ios-profiles":               .inventory,
+        "device-enrollment-instances":        .inventory,
+        "mobile-device-inventory-details":    .inventory,
 
         // Scan — per-device / server-expensive
         "patch-device-failures":          .scan,

@@ -146,8 +146,19 @@ struct HtmlReport: Sendable {
     ) async throws -> String {
         let sectionMap = try await buildSectionMap(outputURL: outputURL, profileName: profileName)
 
+        // De-duplicate rendered fragments: when two SectionIDs map to the same HTML
+        // block (e.g. .kpiTiles/.fleetSummary/.securityTiles all share tilesHTML, and
+        // .osAdoptionChart/.patchBar share chartsHTML), emitting the same block twice
+        // would produce duplicate canvas IDs that break Chart.js. Track which fragment
+        // strings have already been emitted; identical aliases render as a comment.
+        var emittedFragments: Set<String> = []
         let bodyParts = sections.map { id -> String in
             if let fragment = sectionMap[id] {
+                let fragmentKey = fragment
+                if emittedFragments.contains(fragmentKey) {
+                    return "<!-- section: \(id.rawValue) aliased to earlier section -->"
+                }
+                emittedFragments.insert(fragmentKey)
                 return fragment
             }
             // Unimplemented section: emit comment, not silence.
@@ -245,13 +256,17 @@ struct HtmlReport: Sendable {
         let softwareInstalls = loadJSON(kind: "software-installs") as? [[String: Any]] ?? []
         let eaDefs = loadJSON(kind: "computer-extension-attributes") as? [[String: Any]] ?? []
         let deviceCompliance = loadJSON(kind: "device-compliance") as? [[String: Any]] ?? []
-        let computersInventory = loadJSON(kind: "computers-inventory") as? [[String: Any]] ?? []
-        let classicPolicies = loadJSONList(kinds: ["classic-policies"])
-        let smartGroups = loadJSONList(kinds: ["computer-smart-groups", "smart-groups"])
+        let computersInventory = loadJSONList(kinds: ["computers", "computers-inventory"])
+        let classicPolicies = loadJSONList(kinds: ["policies", "classic-policies"])
+        let smartGroups = loadJSONList(kinds: [
+            "smart-computer-groups", "computer-smart-groups", "smart-groups",
+        ])
         let scripts = loadJSONList(kinds: ["scripts"])
         let packages = loadJSONList(kinds: ["packages"])
         let categories = loadJSONList(kinds: ["categories"])
-        let deviceEnrollments = loadJSONList(kinds: ["classic-device-enrollments", "device-enrollments"])
+        let deviceEnrollments = loadJSONList(kinds: [
+            "device-enrollment-instances", "classic-device-enrollments", "device-enrollments",
+        ])
         let sites = loadJSONList(kinds: ["sites"])
         let buildings = loadJSONList(kinds: ["buildings"])
         let departments = loadJSONList(kinds: ["departments"])
@@ -312,8 +327,8 @@ struct HtmlReport: Sendable {
         </div>
         """
 
-        let patchFailures = loadJSONList(kinds: ["patch-failures"])
-        let updateFailures = loadJSONList(kinds: ["update-failures"])
+        let patchFailures = loadJSONList(kinds: ["patch-device-failures", "patch-failures"])
+        let updateFailures = loadJSONList(kinds: ["update-device-failures", "update-failures"])
         let auditFindings = loadJSONList(kinds: ["audit-findings", "audit"])
 
         let baseMap: [SectionID: String] = [
@@ -335,7 +350,11 @@ struct HtmlReport: Sendable {
             patchFailures: patchFailures,
             updateFailures: updateFailures,
             computersInventory: computersInventory,
-            auditFindings: auditFindings
+            auditFindings: auditFindings,
+            classicPolicies: classicPolicies,
+            classicProfiles: profiles,
+            packages: packages,
+            scripts: scripts
         )
 
         return baseMap.merging(newEntries) { existing, _ in existing }
@@ -352,15 +371,19 @@ struct HtmlReport: Sendable {
         let softwareInstalls = loadJSON(kind: "software-installs") as? [[String: Any]] ?? []
         let eaDefs = loadJSON(kind: "computer-extension-attributes") as? [[String: Any]] ?? []
         let deviceCompliance = loadJSON(kind: "device-compliance") as? [[String: Any]] ?? []
-        let computersInventory = loadJSON(kind: "computers-inventory") as? [[String: Any]] ?? []
+        let computersInventory = loadJSONList(kinds: ["computers", "computers-inventory"])
 
         // New sections: load from cached snapshots (live fetch only if absent)
-        let classicPolicies = loadJSONList(kinds: ["classic-policies"])
-        let smartGroups = loadJSONList(kinds: ["computer-smart-groups", "smart-groups"])
+        let classicPolicies = loadJSONList(kinds: ["policies", "classic-policies"])
+        let smartGroups = loadJSONList(kinds: [
+            "smart-computer-groups", "computer-smart-groups", "smart-groups",
+        ])
         let scripts = loadJSONList(kinds: ["scripts"])
         let packages = loadJSONList(kinds: ["packages"])
         let categories = loadJSONList(kinds: ["categories"])
-        let deviceEnrollments = loadJSONList(kinds: ["classic-device-enrollments", "device-enrollments"])
+        let deviceEnrollments = loadJSONList(kinds: [
+            "device-enrollment-instances", "classic-device-enrollments", "device-enrollments",
+        ])
         let sites = loadJSONList(kinds: ["sites"])
         let buildings = loadJSONList(kinds: ["buildings"])
         let departments = loadJSONList(kinds: ["departments"])
@@ -582,10 +605,11 @@ struct HtmlReport: Sendable {
         deviceCompliance: [[String: Any]],
         computersInventory: [[String: Any]]
     ) -> String {
-        // Build a serial → inventory lookup for enriching check-in dates and serials
+        // Build a name → inventory lookup for enriching check-in dates and serials
         var inventoryByName: [String: [String: Any]] = [:]
         for inv in computersInventory {
-            if let name = inv["name"] as? String { inventoryByName[name] = inv }
+            let name = inventoryName(inv)
+            if !name.isEmpty { inventoryByName[name] = inv }
         }
 
         let failing = deviceCompliance.filter { item -> Bool in
@@ -599,18 +623,29 @@ struct HtmlReport: Sendable {
             let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
             let failureCount = asInt(item["failure_count"]) ?? asInt(item["failures_count"]) ?? 0
 
-            // Serial: prefer compliance snapshot, fall back to inventory lookup
-            let serial = item["serial_number"] as? String
-                ?? item["serial"] as? String
-                ?? inventoryByName[name]?["serial_number"] as? String
-                ?? ""
+            // Serial: prefer compliance snapshot, fall back to inventory lookup (handles nested shape)
+            let serial: String
+            if let s = item["serial_number"] as? String, !s.isEmpty {
+                serial = s
+            } else if let s = item["serial"] as? String, !s.isEmpty {
+                serial = s
+            } else if let inv = inventoryByName[name] {
+                serial = inventorySerial(inv)
+            } else {
+                serial = ""
+            }
 
             // Days since last check-in
-            let rawCheckin = item["last_check_in"] as? String
-                ?? item["last_contact"] as? String
-                ?? inventoryByName[name]?["last_check_in"] as? String
-                ?? inventoryByName[name]?["last_contact"] as? String
-                ?? ""
+            let rawCheckin: String
+            if let s = item["last_check_in"] as? String, !s.isEmpty {
+                rawCheckin = s
+            } else if let s = item["last_contact"] as? String, !s.isEmpty {
+                rawCheckin = s
+            } else if let inv = inventoryByName[name] {
+                rawCheckin = inventoryLastContact(inv)
+            } else {
+                rawCheckin = ""
+            }
             let daysSinceCheckin = daysAgo(from: rawCheckin)
 
             // Top failure: first entry in failures list
@@ -937,7 +972,9 @@ struct HtmlReport: Sendable {
     }
 
     private func buildPolicyHealthSection(_ policyStatus: [[String: Any]]) -> String {
-        guard let first = policyStatus.first else { return "" }
+        guard let first = policyStatus.first else {
+            return HtmlSectionFormatters.emptySection(title: "Policy Health", dataKind: "policy-status")
+        }
         let summary = first["summary"] as? [String: Any] ?? [:]
         let findings = first["config_findings"] as? [[String: Any]] ?? []
 
@@ -983,7 +1020,11 @@ struct HtmlReport: Sendable {
     }
 
     private func buildProfileStatusSection(_ profiles: [[String: Any]]) -> String {
-        guard !profiles.isEmpty else { return "" }
+        guard !profiles.isEmpty else {
+            return HtmlSectionFormatters.emptySection(
+                title: "Profile Status", dataKind: "profile-status"
+            )
+        }
         let rows = profiles.prefix(100).map { p -> String in
             let errors = asInt(p["error_count"]) ?? 0
             let cls = errors > 0 ? "class=\"row-warn\"" : ""
@@ -1060,7 +1101,9 @@ struct HtmlReport: Sendable {
 
     /// Render a table of classic policies (name + category, up to 200 rows).
     func buildPoliciesTable(_ policies: [[String: Any]]) -> String {
-        guard !policies.isEmpty else { return "" }
+        guard !policies.isEmpty else {
+            return HtmlSectionFormatters.emptySection(title: "Policies", dataKind: "policies")
+        }
         let rows = policies.prefix(200).map { p -> String in
             let name = p["name"] as? String ?? ""
             let cat = categoryName(from: p["category"])
@@ -1087,7 +1130,11 @@ struct HtmlReport: Sendable {
 
     /// Render a table of computer smart groups (name + criteria count).
     func buildSmartGroupsTable(_ groups: [[String: Any]]) -> String {
-        guard !groups.isEmpty else { return "" }
+        guard !groups.isEmpty else {
+            return HtmlSectionFormatters.emptySection(
+                title: "Smart Groups", dataKind: "smart-computer-groups"
+            )
+        }
         let rows = groups.prefix(200).map { g -> String in
             let name = g["name"] as? String ?? ""
             let criteria = (g["criteria"] as? [[String: Any]])?.count
@@ -1112,7 +1159,9 @@ struct HtmlReport: Sendable {
 
     /// Render a table of scripts (name + category, up to 200 rows).
     func buildScriptsTable(_ scripts: [[String: Any]]) -> String {
-        guard !scripts.isEmpty else { return "" }
+        guard !scripts.isEmpty else {
+            return HtmlSectionFormatters.emptySection(title: "Scripts", dataKind: "scripts")
+        }
         let rows = scripts.prefix(200).map { s -> String in
             let name = s["name"] as? String ?? s["displayName"] as? String ?? ""
             let cat = categoryName(from: s["category"])
@@ -1136,7 +1185,9 @@ struct HtmlReport: Sendable {
 
     /// Render a table of packages (name + category, up to 200 rows).
     func buildPackagesTable(_ packages: [[String: Any]]) -> String {
-        guard !packages.isEmpty else { return "" }
+        guard !packages.isEmpty else {
+            return HtmlSectionFormatters.emptySection(title: "Packages", dataKind: "packages")
+        }
         let rows = packages.prefix(200).map { p -> String in
             let name = p["name"] as? String ?? p["fileName"] as? String ?? ""
             let cat = categoryName(from: p["category"])
@@ -1160,7 +1211,9 @@ struct HtmlReport: Sendable {
 
     /// Render a table of categories (name only, up to 200 rows).
     func buildCategoriesTable(_ categories: [[String: Any]]) -> String {
-        guard !categories.isEmpty else { return "" }
+        guard !categories.isEmpty else {
+            return HtmlSectionFormatters.emptySection(title: "Categories", dataKind: "categories")
+        }
         let rows = categories.prefix(200).map { c -> String in
             let name = c["name"] as? String ?? ""
             let priority = c["priority"].map { "\($0)" } ?? ""
@@ -1472,6 +1525,11 @@ struct HtmlReport: Sendable {
         .appendix-section { border-top: 2px dashed var(--border); padding-top: 1.5rem;
                             margin-top: 2rem; }
         .appendix-section > h2 { color: var(--subtext); font-size: 1rem; }
+        /* Empty section placeholder */
+        .empty-section { border: 1px dashed var(--border); border-radius: 8px;
+                         padding: 1rem 1.5rem; background: var(--bg2); }
+        .empty-note { color: var(--subtext); font-size: 0.85rem; font-style: italic;
+                      margin-top: 0.4rem; }
         /* Finding #6: device deep-link anchors */
         .device-link { color: inherit; text-decoration: underline dotted; }
         .device-anchor { display: block; visibility: hidden; height: 0; }
@@ -1520,7 +1578,7 @@ struct HtmlReport: Sendable {
 
     // MARK: - JavaScript
 
-    private func buildScript() -> String {
+    func buildScript() -> String {
         """
         <script>
         (function() {
@@ -1538,6 +1596,34 @@ struct HtmlReport: Sendable {
           const btn = document.querySelector('.theme-toggle');
           if (btn) btn.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
         }
+        // Cleanup Analysis tab navigation.
+        // Buttons have class="cleanup-tab" and data-target="cpane-<id>".
+        // Panes have id="cpane-<id>" and class="cleanup-pane [active]".
+        document.addEventListener('click', function(e) {
+          var btn = e.target.closest('.cleanup-tab');
+          if (!btn) return;
+          var container = btn.closest('.cleanup-tabs');
+          if (!container) return;
+          // Deactivate all sibling tabs.
+          container.querySelectorAll('.cleanup-tab').forEach(function(t) {
+            t.classList.remove('active');
+            t.setAttribute('aria-selected', 'false');
+            t.setAttribute('tabindex', '-1');
+          });
+          // Activate the clicked tab.
+          btn.classList.add('active');
+          btn.setAttribute('aria-selected', 'true');
+          btn.setAttribute('tabindex', '0');
+          // Deactivate all panes in the same section, then activate the target.
+          var section = btn.closest('section');
+          if (section) {
+            section.querySelectorAll('.cleanup-pane').forEach(function(p) {
+              p.classList.remove('active');
+            });
+            var target = document.getElementById(btn.getAttribute('data-target'));
+            if (target) target.classList.add('active');
+          }
+        });
         </script>
         """
     }
@@ -1665,6 +1751,125 @@ struct HtmlReport: Sendable {
         fmt.dateStyle = .medium
         fmt.timeStyle = .short
         return fmt.string(from: Date())
+    }
+
+    // MARK: - Inventory field accessors
+
+    /// Extract device name from a jamf-cli `computers list` record.
+    ///
+    /// Handles both the nested `{general: {name: …}}` shape produced by
+    /// `jamf-cli pro computers list --output json` and the flat `{name: …}` shape
+    /// that older snapshots or other sources may emit.
+    func inventoryName(_ item: [String: Any]) -> String {
+        if let general = item["general"] as? [String: Any],
+           let name = general["name"] as? String, !name.isEmpty {
+            return name
+        }
+        return item["name"] as? String ?? item["device_name"] as? String ?? ""
+    }
+
+    /// Extract serial number from a `computers list` record.
+    func inventorySerial(_ item: [String: Any]) -> String {
+        if let hardware = item["hardware"] as? [String: Any],
+           let serial = hardware["serialNumber"] as? String, !serial.isEmpty {
+            return serial
+        }
+        return item["serial_number"] as? String ?? item["serial"] as? String ?? ""
+    }
+
+    /// Extract last contact/check-in time string from a `computers list` record.
+    func inventoryLastContact(_ item: [String: Any]) -> String {
+        if let general = item["general"] as? [String: Any] {
+            if let ts = general["lastContactTime"] as? String, !ts.isEmpty { return ts }
+            if let ts = general["reportDate"] as? String, !ts.isEmpty { return ts }
+        }
+        return item["last_check_in"] as? String ?? item["last_contact"] as? String ?? ""
+    }
+
+    /// Extract asset tag from a `computers list` record.
+    func inventoryAssetTag(_ item: [String: Any]) -> String {
+        if let general = item["general"] as? [String: Any],
+           let tag = general["assetTag"] as? String, !tag.isEmpty {
+            return tag
+        }
+        return item["asset_tag"] as? String ?? "—"
+    }
+
+    /// Extract department name from a `computers list` record.
+    func inventoryDepartment(_ item: [String: Any]) -> String {
+        if let ual = item["userAndLocation"] as? [String: Any] {
+            if let dept = ual["department"] as? String, !dept.isEmpty { return dept }
+            if let dept = ual["departmentName"] as? String, !dept.isEmpty { return dept }
+        }
+        if let dept = item["department"] as? String, !dept.isEmpty { return dept }
+        if let dept = item["departmentName"] as? String, !dept.isEmpty { return dept }
+        return "—"
+    }
+
+    /// Extract building name from a `computers list` record.
+    func inventoryBuilding(_ item: [String: Any]) -> String {
+        if let ual = item["userAndLocation"] as? [String: Any] {
+            if let bld = ual["building"] as? String, !bld.isEmpty { return bld }
+            if let bld = ual["buildingName"] as? String, !bld.isEmpty { return bld }
+        }
+        if let bld = item["building"] as? String, !bld.isEmpty { return bld }
+        if let bld = item["buildingName"] as? String, !bld.isEmpty { return bld }
+        return "—"
+    }
+
+    /// Extract primary username from a `computers list` record.
+    func inventoryUsername(_ item: [String: Any]) -> String {
+        if let ual = item["userAndLocation"] as? [String: Any] {
+            if let user = ual["username"] as? String, !user.isEmpty { return user }
+            if let user = ual["email"] as? String, !user.isEmpty { return user }
+        }
+        if let user = item["username"] as? String, !user.isEmpty { return user }
+        if let user = item["last_logged_in_user"] as? String, !user.isEmpty { return user }
+        return "—"
+    }
+
+    /// Extract a warranty expiry date string from a `computers list` record.
+    func inventoryWarrantyExpires(_ item: [String: Any]) -> String {
+        if let purchasing = item["purchasing"] as? [String: Any] {
+            if let w = purchasing["warrantyExpirationDate"] as? String, !w.isEmpty { return w }
+            if let w = purchasing["warranty_expires"] as? String, !w.isEmpty { return w }
+        }
+        return item["warranty_expires"] as? String ?? ""
+    }
+
+    /// Extract purchase date string from a `computers list` record.
+    func inventoryPurchaseDate(_ item: [String: Any]) -> String {
+        if let purchasing = item["purchasing"] as? [String: Any] {
+            if let d = purchasing["purchaseDate"] as? String, !d.isEmpty { return d }
+            if let d = purchasing["purchase_date"] as? String, !d.isEmpty { return d }
+        }
+        return item["purchase_date"] as? String ?? item["purchaseDate"] as? String ?? ""
+    }
+
+    /// Extract a named EA column value from a `computers list` record.
+    ///
+    /// `computers list` stores extension attributes as `extensionAttributes` in `general`
+    /// or as a top-level array. Returns the matched value or `""`.
+    func inventoryEAValue(_ item: [String: Any], column: String) -> String {
+        // Primary: flat string at the column key (legacy / inventory-csv shape)
+        if let v = item[column] as? String { return v }
+        // Search extensionAttributes arrays (both top-level and in general)
+        let sources: [Any?] = [
+            item["extensionAttributes"],
+            (item["general"] as? [String: Any])?["extensionAttributes"],
+        ]
+        for source in sources {
+            guard let arr = source as? [[String: Any]] else { continue }
+            for ea in arr {
+                let name = ea["name"] as? String ?? ""
+                guard name == column else { continue }
+                if let values = ea["values"] as? [String], let first = values.first {
+                    return first
+                }
+                if let value = ea["value"] as? String { return value }
+            }
+        }
+        return ""
     }
 
     /// Extract a category name from a jamf-cli category field (string or dict).

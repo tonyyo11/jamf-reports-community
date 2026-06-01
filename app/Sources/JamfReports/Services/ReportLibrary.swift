@@ -35,6 +35,8 @@ struct ReportLibrary {
     private let fileManager = FileManager.default
     private let allowedExtensions: Set<String> = ["xlsx", "html", "pdf", "csv"]
     private let maxCentralDirectoryBytes: UInt64 = 5 * 1024 * 1024
+    // Compiled once for all deviceCountFromSummary calls.
+    private static let timestampRegex = try? NSRegularExpression(pattern: #"(\d{4}-\d{2}-\d{2})"#)
 
     struct Stats: Sendable {
         let count: Int
@@ -186,7 +188,7 @@ struct ReportLibrary {
             date: FileDisplay.date(metadata.mtime),
             source: inferredSource(from: name, profile: profile),
             sheets: url.pathExtension.lowercased() == "xlsx" ? worksheetCount(in: url) : 0,
-            devices: 0
+            devices: deviceCount(from: url, profile: profile)
         )
         return (report, metadata.mtime)
     }
@@ -256,6 +258,52 @@ struct ReportLibrary {
             return 0
         }
         return countWorksheetEntries(in: centralDirectory)
+    }
+
+    private func deviceCount(from url: URL, profile: String) -> Int {
+        // For xlsx files, try to read device count from associated summary.json
+        if url.pathExtension.lowercased() == "xlsx" {
+            if let count = deviceCountFromSummary(reportURL: url, profile: profile) {
+                return count
+            }
+        }
+
+        // For CSV files, we can't easily determine row count without reading the entire file
+        // For HTML/PDF files, the device count isn't easily derivable
+        // Return 0 for these cases rather than doing expensive parsing
+        return 0
+    }
+
+    /// Try to find the device count from a summary.json file that corresponds to this report.
+    /// Returns nil if no summary can be found or parsed.
+    private func deviceCountFromSummary(reportURL: URL, profile: String) -> Int? {
+        // Extract timestamp from report filename (e.g., "jamf_report_demo_2024-05-29_143022.xlsx")
+        let filename = reportURL.lastPathComponent
+        let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
+
+        // Look for timestamp pattern YYYY-MM-DD in the filename
+        guard let regex = Self.timestampRegex,
+              let match = regex.firstMatch(in: stem, range: NSRange(stem.startIndex..., in: stem)),
+              let range = Range(match.range(at: 1), in: stem) else {
+            return nil
+        }
+
+        let dateString = String(stem[range])
+
+        // Try to find corresponding summary_YYYY-MM-DD.json
+        guard let summariesDir = try? WorkspacePaths.summariesDir(for: profile) else {
+            return nil
+        }
+
+        let summaryURL = summariesDir.appendingPathComponent("summary_\(dateString).json")
+        guard FileManager.default.fileExists(atPath: summaryURL.path),
+              let data = try? Data(contentsOf: summaryURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let totalDevices = json["totalDevices"] as? Int else {
+            return nil
+        }
+
+        return totalDevices
     }
 
     private func hasZipMagic(_ url: URL) -> Bool {

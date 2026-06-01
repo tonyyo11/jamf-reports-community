@@ -371,7 +371,7 @@ struct SecurityPostureView: View {
             title: "macOS Version Distribution",
             subtitle: "Security Posture",
             footnote: "Source: pro report security · \(total) devices",
-            suggestedFilename: DashboardChartExport.filename(for: "macos-version-distribution")
+            suggestedFilename: DashboardChartExport.filename(for: "macos-version-distribution", profile: workspace.profile)
         ) {
             SecurityPostureOSDonutExport(rows: rows, totalDevices: total)
         }

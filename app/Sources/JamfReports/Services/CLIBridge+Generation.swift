@@ -90,12 +90,13 @@ extension CLIBridge {
         outputDir: URL?,
         profile: String,
         schoolMode: Bool = false,
-        template: any ReportTemplate = ExecutiveTemplate(),
+        template: any ReportTemplate = FullInstanceTemplate(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> GenerateAllResult {
         await Self.runGenerateAll(
             types: types,
             collectFresh: collectFresh,
+            profile: profile,
             onLine: onLine,
             collect: { try await self.collect(profile: profile, onLine: onLine) },
             generateXLSX: {
@@ -113,6 +114,17 @@ extension CLIBridge {
                     profile: profile, outFile: outURL.path, template: template, onLine: onLine
                 )
             },
+            generatePDF: {
+                let outURL = self.pdfOutputURL(profile: profile, outputDir: outputDir)
+                return try await self.generatePDF(
+                    profile: profile, outFile: outURL.path, template: template, onLine: onLine
+                )
+            },
+            generateCSV: {
+                return try await self.exportInventoryCSV(
+                    profile: profile, outFile: nil, onLine: onLine
+                )
+            },
             tighten: { WorkspacePermissionHardener.tighten(profile: profile) }
         )
     }
@@ -123,6 +135,11 @@ extension CLIBridge {
     /// stubs returning synthetic exit codes to exercise the collect-fallback
     /// (exit 3/5/6) and partial-success branches without a live jamf-cli.
     ///
+    /// Contract: every type in `types` ends up in exactly one of
+    /// `result.succeeded` or `result.failed`. A collect failure records ALL
+    /// requested types as failed; a generator throw records that type as failed
+    /// and execution continues to the next format.
+    ///
     /// `CLIBridge` is `final` and its generator methods are intentionally not
     /// behind the `CLICommand`/`CLIExecutor` protocol (ADR-W21 Hybrid scope), so
     /// this closure seam is the minimal injection point — it changes no method
@@ -130,12 +147,21 @@ extension CLIBridge {
     static func runGenerateAll(
         types: Set<GenerateOutputType>,
         collectFresh: Bool,
+        profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void,
         collect: () async throws -> Int32,
         generateXLSX: () async throws -> Int32,
         generateHTML: () async throws -> Int32,
-        tighten: () -> Void
+        generatePDF: () async throws -> Int32,
+        generateCSV: () async throws -> Int32,
+        tighten: () -> Void,
+        cacheAge: (() async -> String)? = nil
     ) async -> GenerateAllResult {
+        // Cache-age lookup is injectable so tests can exercise both the
+        // warn-and-proceed (cache exists) and fatal (no cache) branches
+        // without touching the real filesystem. Empty string = no cache.
+        let resolveCacheAge: () async -> String =
+            cacheAge ?? { await Self.describeCacheAge(for: profile) }
         var result = GenerateAllResult()
 
         // Collect fresh snapshots first if requested.
@@ -150,64 +176,114 @@ extension CLIBridge {
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] collect failed: \(error.localizedDescription)"))
-                result.failed.append((.xlsx, -1)) // -1: no process exit code (pre-spawn failure)
+                // -1: no process exit code (pre-spawn failure). All requested types fail.
+                for t in types { result.failed.append((t, -1)) }
                 return result
             }
             if code == CLIBridge.exitCodeUnauthorized {
-                result.failed.append((.xlsx, code))
+                for t in types { result.failed.append((t, code)) }
                 return result
             }
             if code == CLIBridge.exitCodePermissionDenied {
-                onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
-                    text: "[warn] collect permission denied (exit 5) — account may lack API read privileges; using cached data"))
+                let cacheAge = await resolveCacheAge()
+                if cacheAge.isEmpty {
+                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
+                        text: "[fatal] collect permission denied (exit 5) and no cached data available"))
+                    for t in types { result.failed.append((t, code)) }
+                    return result
+                } else {
+                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
+                        text: "[warn] collect permission denied (exit 5) — generating from cached data that is \(cacheAge)"))
+                }
             } else if code == CLIBridge.exitCodeRateLimited {
-                onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
-                    text: "[warn] collect rate-limited (exit 6) — server throttling; using cached data"))
+                let cacheAge = await resolveCacheAge()
+                if cacheAge.isEmpty {
+                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
+                        text: "[fatal] collect rate-limited (exit 6) and no cached data available"))
+                    for t in types { result.failed.append((t, code)) }
+                    return result
+                } else {
+                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
+                        text: "[warn] collect rate-limited (exit 6) — generating from cached data that is \(cacheAge)"))
+                }
             } else if code != 0 {
-                onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
-                    text: "[warn] collect exited \(code); proceeding with cached data"))
+                let cacheAge = await resolveCacheAge()
+                if cacheAge.isEmpty {
+                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
+                        text: "[fatal] collect failed (exit \(code)) and no cached data available"))
+                    for t in types { result.failed.append((t, code)) }
+                    return result
+                } else {
+                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
+                        text: "[warn] collect exited \(code); proceeding with cached data that is \(cacheAge)"))
+                }
             }
         }
 
         // XLSX is the canonical workbook output.
         if types.contains(.xlsx) {
-            let code: Int32
             do {
-                code = try await generateXLSX()
+                let code = try await generateXLSX()
+                if code == 0 {
+                    result.succeeded.append(.xlsx)
+                } else {
+                    result.failed.append((.xlsx, code))
+                }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] generate failed: \(error.localizedDescription)"))
                 result.failed.append((.xlsx, -1)) // -1: no process exit code (pre-spawn failure)
-                return result
-            }
-            if code == 0 {
-                result.succeeded.append(.xlsx)
-            } else {
-                result.failed.append((.xlsx, code))
+                // Continue to next format — do not return.
             }
         }
 
         // HTML executive summary.
         if types.contains(.html) {
-            let code: Int32
             do {
-                code = try await generateHTML()
+                let code = try await generateHTML()
+                if code == 0 {
+                    result.succeeded.append(.html)
+                } else {
+                    result.failed.append((.html, code))
+                }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] html generate failed: \(error.localizedDescription)"))
                 result.failed.append((.html, -1)) // -1: no process exit code (pre-spawn failure)
-                return result
-            }
-            if code == 0 {
-                result.succeeded.append(.html)
-            } else {
-                result.failed.append((.html, code))
             }
         }
 
-        // PDF — not yet wired; UI disables the button. Skip silently so callers
-        // that still pass .pdf don't trigger the stub and confuse the result.
-        // TODO: wire PDFExporter when PDF generation is complete.
+        // PDF paginated report.
+        if types.contains(.pdf) {
+            do {
+                let code = try await generatePDF()
+                if code == 0 {
+                    result.succeeded.append(.pdf)
+                } else {
+                    result.failed.append((.pdf, code))
+                }
+            } catch {
+                onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
+                    text: "[fatal] pdf generate failed: \(error.localizedDescription)"))
+                result.failed.append((.pdf, -1)) // -1: no process exit code (pre-spawn failure)
+            }
+        }
+
+        // CSV inventory export.
+        if types.contains(.csv) {
+            do {
+                let code = try await generateCSV()
+                if code == 0 {
+                    result.succeeded.append(.csv)
+                } else {
+                    result.failed.append((.csv, code))
+                }
+            } catch {
+                onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
+                    text: "[fatal] csv export failed: \(error.localizedDescription)"))
+                result.failed.append((.csv, -1)) // -1: no process exit code (pre-spawn failure)
+            }
+        }
 
         // Tighten permissions on files written above (C-01/C-03/C-04). All paths
         // (ReportEngine XLSX, native HTML, PDF) are now Swift; each respects the
@@ -252,10 +328,77 @@ extension CLIBridge {
         return dir.appendingPathComponent("\(stem).html")
     }
 
+    @MainActor
+    private func pdfOutputURL(profile: String, outputDir: URL?) -> URL {
+        let dir: URL
+        if let outputDir {
+            dir = outputDir
+        } else if let workspace = ProfileService.workspaceURL(for: profile) {
+            dir = workspace.appendingPathComponent("Generated Reports", isDirectory: true)
+        } else {
+            dir = FileManager.default.temporaryDirectory
+        }
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            AppLogger.cli.warning("pdfOutputURL: could not create output directory \(dir.path): \(error)")
+        }
+        let stem = "jamf_report_\(profile)_\(htmlTimestamp())"
+        return dir.appendingPathComponent("\(stem).pdf")
+    }
+
     private nonisolated func htmlTimestamp() -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd_HHmmss"
         return f.string(from: Date())
+    }
+
+    /// Describes the age of the newest cached snapshot for the given profile.
+    /// Returns an empty string if no cached data exists at all.
+    private static func describeCacheAge(for profile: String) async -> String {
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            return ""
+        }
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: dataDir,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return ""
+        }
+
+        var newestDate: Date?
+        while let item = enumerator.nextObject() {
+            guard let fileURL = item as? URL else { continue }
+            guard let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
+                  values.isRegularFile == true,
+                  let mtime = values.contentModificationDate else {
+                continue
+            }
+
+            if let current = newestDate {
+                if mtime > current {
+                    newestDate = mtime
+                }
+            } else {
+                newestDate = mtime
+            }
+        }
+
+        guard let newestDate else {
+            return ""  // Empty string signals no cached data
+        }
+
+        let ageSeconds = Date().timeIntervalSince(newestDate)
+        let ageDays = ageSeconds / (24 * 3600)
+
+        if ageDays >= 1 {
+            return String(format: "%.1f days old", ageDays)
+        } else {
+            let ageHours = ageSeconds / 3600
+            return String(format: "%.1f hours old", ageHours)
+        }
     }
 
 }

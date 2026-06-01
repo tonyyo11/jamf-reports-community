@@ -43,7 +43,7 @@ struct ReportEngine: Sendable {
     func generate(
         csvURL: URL?,
         outputURL: URL,
-        template: any ReportTemplate = ExecutiveTemplate(),
+        template: any ReportTemplate = FullInstanceTemplate(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
         // PR-10 / threat-model T-11: strict-mode pre-flight. Abort before any
@@ -781,6 +781,10 @@ struct ReportEngine: Sendable {
         "advanced-mobile-device-searches",
         "classic-computer-groups",
         "classic-mobile-device-groups",
+        "categories",
+        "classic-ios-profiles",
+        "device-enrollment-instances",
+        "mobile-device-inventory-details",
     ]
 
     /// Fetch jamf-cli snapshots for `profile`, filtered by:
@@ -891,6 +895,14 @@ struct ReportEngine: Sendable {
              "classic-computer-groups"),
             (["-p", profile, "pro", "classic-mobile-device-groups", "list", "--output", "json"],
              "classic-mobile-device-groups"),
+            (["-p", profile, "pro", "categories", "list", "--output", "json"],
+             "categories"),
+            (["-p", profile, "pro", "classic-mobile-config-profiles", "list", "--output", "json"],
+             "classic-ios-profiles"),
+            (["-p", profile, "pro", "device-enrollment-instances", "list", "--output", "json"],
+             "device-enrollment-instances"),
+            (["-p", profile, "pro", "mobile-device-inventory-details", "list", "--output", "json"],
+             "mobile-device-inventory-details"),
         ]
 
         let plannedCommands: [(args: [String], kind: String)]
@@ -1125,13 +1137,13 @@ struct ReportEngine: Sendable {
     ///   - dataDir: Directory containing cached jamf-cli JSON snapshots.
     ///   - outputURL: Destination `.html` file path.
     ///   - template: The `ReportTemplate` controlling which HTML sections are included.
-    ///               Defaults to `ExecutiveTemplate()` for backward compatibility.
+    ///               Defaults to `FullInstanceTemplate()`.
     @discardableResult
     static func generateHTML(
         config: ReportConfig,
         dataDir: URL,
         outputURL: URL,
-        template: any ReportTemplate = ExecutiveTemplate(),
+        template: any ReportTemplate = FullInstanceTemplate(),
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> String {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to HTML
@@ -1181,7 +1193,7 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         outputURL: URL,
         profileName: String = "",
-        template: any ReportTemplate = ExecutiveTemplate()
+        template: any ReportTemplate = FullInstanceTemplate()
     ) async throws {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to PDF
         // generation too. PDF is built on top of HTML; the underlying snapshot
@@ -1335,6 +1347,7 @@ struct ReportEngine: Sendable {
             (["-p", profile, "protect", "alerts", "list", "--output", "json"], "protect-alerts"),
             (["-p", profile, "protect", "computers", "list", "--output", "json"], "protect-computers"),
             (["-p", profile, "protect", "insights", "list", "--output", "json"], "protect-insights"),
+            (["-p", profile, "protect", "plans", "list", "--output", "json"], "protect-plans"),
         ]
 
         let bridge = CLIBridge()

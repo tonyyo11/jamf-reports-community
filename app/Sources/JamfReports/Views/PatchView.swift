@@ -314,7 +314,7 @@ struct PatchView: View {
         DashboardChartExport.run(
             title: "Patch Titles",
             subtitle: "Fleet patch compliance summary",
-            suggestedFilename: "patch-titles-table-\(workspace.profile)"
+            suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile)
         ) {
             PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
         }
