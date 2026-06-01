@@ -350,7 +350,11 @@ struct HtmlReport: Sendable {
             patchFailures: patchFailures,
             updateFailures: updateFailures,
             computersInventory: computersInventory,
-            auditFindings: auditFindings
+            auditFindings: auditFindings,
+            classicPolicies: classicPolicies,
+            classicProfiles: profiles,
+            packages: packages,
+            scripts: scripts
         )
 
         return baseMap.merging(newEntries) { existing, _ in existing }

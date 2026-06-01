@@ -227,5 +227,21 @@ enum HtmlSectionFormatters {
                       border-radius: 3px; overflow: hidden; }
     .cohort-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
     .cohort-bar-n   { min-width: 3rem; text-align: right; }
+    /* Cleanup Analysis tab strip */
+    .cleanup-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem;
+                    border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+    .cleanup-tab { background: none; border: 1px solid var(--border); border-radius: 6px 6px 0 0;
+                   padding: 0.35rem 0.75rem; font-size: 0.85rem; cursor: pointer; color: var(--text); }
+    .cleanup-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .cleanup-badge { display: inline-block; background: var(--bg); color: var(--subtext);
+                     font-size: 0.72rem; border-radius: 10px; padding: 0 0.4em;
+                     margin-left: 0.3em; }
+    .cleanup-tab.active .cleanup-badge { background: rgba(255,255,255,0.25); color: #fff; }
+    .cleanup-pane { display: none; }
+    .cleanup-pane.active { display: block; }
+    .cleanup-note { font-size: 0.8rem; color: var(--subtext); margin-bottom: 0.5rem; }
+    .cleanup-ok { color: var(--green); font-size: 0.9rem; padding: 0.4rem 0; }
+    /* Timeline section */
+    .timeline-note { font-size: 0.8rem; color: var(--subtext); margin-bottom: 0.75rem; }
     """
 }
