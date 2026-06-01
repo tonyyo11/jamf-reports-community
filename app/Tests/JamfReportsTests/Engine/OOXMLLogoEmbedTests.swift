@@ -222,4 +222,69 @@ final class OOXMLLogoEmbedTests: XCTestCase {
         let archive = try XCTUnwrap(Archive(url: xlsxURL, accessMode: .read))
         XCTAssertNil(archive["xl/media/image1.png"])
     }
+
+    // MARK: - Content type declaration for image parts
+
+    /// Read a ZIP entry's contents as a UTF-8 string.
+    private func entryText(_ archive: Archive, _ path: String) throws -> String {
+        let entry = try XCTUnwrap(archive[path], "\(path) must exist in the archive")
+        var data = Data()
+        _ = try archive.extract(entry) { data.append($0) }
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
+    }
+
+    /// OPC requires every package part to carry a content type. A workbook with
+    /// embedded PNGs must declare the png extension Default — without it Excel
+    /// reports "We found a problem with some content" and offers to repair the
+    /// file (stripping the chart images). Regression test for that exact bug.
+    func testImageWorkbookDeclaresPNGContentType() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let logoURL = tmpDir.appendingPathComponent("logo.png")
+        try validPNGData.write(to: logoURL)
+
+        let config = makeConfig(logoPath: logoURL.path)
+        let wb = Workbook()
+        let dashboard = try XCTUnwrap(
+            CSVDashboard(config: config, csvData: minimalCSVData(), workbook: wb)
+        )
+        dashboard.writeAll()
+
+        let xlsxURL = tmpDir.appendingPathComponent("out.xlsx")
+        try wb.write(to: xlsxURL)
+
+        let archive = try XCTUnwrap(Archive(url: xlsxURL, accessMode: .read))
+        XCTAssertNotNil(archive["xl/media/image1.png"], "precondition: image must be embedded")
+        let contentTypes = try entryText(archive, "[Content_Types].xml")
+        XCTAssertTrue(
+            contentTypes.contains(#"<Default Extension="png" ContentType="image/png"/>"#),
+            "image parts require a png content-type Default; got: \(contentTypes)"
+        )
+    }
+
+    /// A workbook with no embedded images must not declare image content types.
+    func testImageFreeWorkbookOmitsPNGContentType() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let config = makeConfig(logoPath: nil)
+        let wb = Workbook()
+        let dashboard = try XCTUnwrap(
+            CSVDashboard(config: config, csvData: minimalCSVData(), workbook: wb)
+        )
+        dashboard.writeAll()
+
+        let xlsxURL = tmpDir.appendingPathComponent("out.xlsx")
+        try wb.write(to: xlsxURL)
+
+        let archive = try XCTUnwrap(Archive(url: xlsxURL, accessMode: .read))
+        let contentTypes = try entryText(archive, "[Content_Types].xml")
+        XCTAssertFalse(contentTypes.contains(#"Extension="png""#),
+                       "no images embedded — png Default must not be declared")
+    }
 }

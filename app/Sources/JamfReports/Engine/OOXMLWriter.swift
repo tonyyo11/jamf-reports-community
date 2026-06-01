@@ -412,6 +412,19 @@ final class Workbook: @unchecked Sendable {
             "<Override PartName=\"/xl/sharedStrings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml\"/>",
             "<Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/>",
         ]
+        // OPC requires every package part to have a declared content type.
+        // Image parts under xl/media/ are covered by extension Defaults; without
+        // these, Excel reports the workbook as damaged and offers to repair it
+        // (stripping the embedded chart images). openpyxl tolerates the omission,
+        // so only Excel surfaces the bug.
+        let embeddedExtensions = Set(
+            sheets.flatMap(\.imageEmbeds).map { imageExtension($0.filename) }
+        )
+        for ext in embeddedExtensions.sorted() {
+            parts.append(
+                "<Default Extension=\"\(ext)\" ContentType=\"\(imageContentType(ext))\"/>"
+            )
+        }
         for (idx, ws) in sheets.enumerated() {
             parts.append("<Override PartName=\"/xl/worksheets/sheet\(idx+1).xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>")
             if !ws.imageEmbeds.isEmpty {
@@ -420,6 +433,17 @@ final class Workbook: @unchecked Sendable {
         }
         parts.append("</Types>")
         return parts.joined()
+    }
+
+    /// MIME content type for an embedded image extension (already normalized
+    /// by `imageExtension`). `jpg` and `jpeg` are both `image/jpeg`.
+    private func imageContentType(_ ext: String) -> String {
+        switch ext {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "bmp": return "image/bmp"
+        default: return "image/png"
+        }
     }
 
     private func rootRelsXML() -> String {
