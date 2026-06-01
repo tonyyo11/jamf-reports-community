@@ -1,5 +1,33 @@
 import Foundation
 
+// MARK: - Report output types
+
+/// The set of report formats the unified Generate sheet can produce.
+enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
+    case xlsx = "XLSX"
+    case html = "HTML"
+    case pdf  = "PDF"
+    case csv  = "CSV"
+
+    var description: String {
+        switch self {
+        case .xlsx: "Full data, all sheets"
+        case .html: "Executive summary, browser"
+        case .pdf:  "Paginated audit artifact"
+        case .csv:  "Wide inventory export"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .xlsx: "tablecells"
+        case .html: "safari"
+        case .pdf:  "doc.richtext"
+        case .csv:  "doc.plaintext"
+        }
+    }
+}
+
 // MARK: - Workspace / org
 
 struct Org: Sendable {
@@ -224,7 +252,9 @@ struct Report: Identifiable, Sendable, Equatable {
     let date: String
     let source: String
     let sheets: Int
-    let devices: Int
+    /// Device count sourced from the matching summary.json. Nil when the summary
+    /// is absent, the filename carries no date, or totalDevices is non-numeric.
+    let devices: Int?
 }
 
 struct BackupRecord: Identifiable, Sendable, Hashable {

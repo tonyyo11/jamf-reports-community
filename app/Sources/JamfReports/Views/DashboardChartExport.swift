@@ -142,7 +142,7 @@ enum DashboardChartExport {
 
     /// Sanitize an arbitrary string into a safe filename component. Replaces
     /// any character outside `[A-Za-z0-9._-]` with a hyphen, collapses runs
-    /// of consecutive hyphens, and strips leading/trailing hyphens.
+    /// of consecutive hyphens, and strips leading/trailing hyphens and dots.
     private static func sanitize(_ raw: String) -> String {
         var result = raw.unicodeScalars.map { scalar in
             let c = Character(scalar)
@@ -151,12 +151,12 @@ enum DashboardChartExport {
             }
             return "-"
         }.joined()
-        // Collapse repeated hyphens.
-        while result.contains("--") {
-            result = result.replacingOccurrences(of: "--", with: "-")
-        }
-        // Trim leading/trailing hyphens.
-        result = result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        // Collapse repeated hyphens in one pass via regex (O(n) vs prior O(n²) loop).
+        result = result.replacingOccurrences(of: "-{2,}", with: "-", options: .regularExpression)
+        // Trim leading/trailing hyphens and dots.
+        // Leading dots make files hidden on the filesystem; leading/trailing ".."
+        // is visually confusing (no traversal risk here — slashes are already gone).
+        result = result.trimmingCharacters(in: CharacterSet(charactersIn: "-."))
         return result
     }
 

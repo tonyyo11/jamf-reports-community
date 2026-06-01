@@ -1,33 +1,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Output type
-
-/// The set of report formats the unified Generate sheet can produce.
-enum GenerateOutputType: String, CaseIterable, Hashable, Sendable {
-    case xlsx = "XLSX"
-    case html = "HTML"
-    case pdf  = "PDF"
-    case csv  = "CSV"
-
-    var description: String {
-        switch self {
-        case .xlsx: "Full data, all sheets"
-        case .html: "Executive summary, browser"
-        case .pdf:  "Paginated audit artifact"
-        case .csv:  "Wide inventory export"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .xlsx: "tablecells"
-        case .html: "safari"
-        case .pdf:  "doc.richtext"
-        case .csv:  "doc.plaintext"
-        }
-    }
-}
+// GenerateOutputType is defined in Models/Models.swift.
 
 // MARK: - Sheet state (extracted for testability)
 
@@ -111,6 +85,33 @@ final class GenerateSheetState {
         completedFiles = []
         errorMessage = nil
         generatedHashes = [:]
+    }
+
+    /// Summarise a `GenerateAllResult` into the count and optional error message
+    /// the UI should display. Three cases:
+    /// - All succeed  → `(succeeded.count, nil)`
+    /// - Partial      → `(succeeded.count, "Generated X, Y; Z failed (exit N)")`
+    /// - All fail     → `(0, "Generation failed (…). Check the log above.")`
+    ///
+    /// `nonisolated` — the function is pure over its input; callers from any
+    /// actor context can invoke it.
+    nonisolated static func summarize(_ result: GenerateAllResult) -> (count: Int, message: String?) {
+        if result.failed.isEmpty {
+            return (result.succeeded.count, nil)
+        }
+        if result.succeeded.isEmpty {
+            let codes = result.failed
+                .map { "\($0.type.rawValue): exit \($0.exitCode)" }
+                .joined(separator: ", ")
+            return (0, "Generation failed (\(codes)). Check the log above.")
+        }
+        // Partial: some succeeded, some failed.
+        let succeededLabel = result.succeeded.map(\.rawValue).sorted().joined(separator: ", ")
+        let failedLabel = result.failed
+            .map { "\($0.type.rawValue) (exit \($0.exitCode))" }
+            .joined(separator: ", ")
+        return (result.succeeded.count,
+                "Generated \(succeededLabel); \(failedLabel) failed. Check the log above.")
     }
 }
 
@@ -639,7 +640,6 @@ struct GenerateSheet: View {
             state.isRunning = false
         }
 
-        var count = 0
         let outputDir: URL? = state.customOutputDir
         let isSchool = state.resolvedTemplate.identifier == SchoolTemplate().identifier
 
@@ -656,14 +656,9 @@ struct GenerateSheet: View {
                     state.appendLine(line)
                 }
             }
-            if result.failed.isEmpty {
-                count = result.succeeded.count
-                state.completedCount = count
-            } else {
-                let codes = result.failed.map { "\($0.type.rawValue): exit \($0.exitCode)" }
-                    .joined(separator: ", ")
-                state.errorMessage = "Generation failed (\(codes)). Check the log above."
-            }
+            let summary = GenerateSheetState.summarize(result)
+            state.completedCount = summary.count
+            state.errorMessage = summary.message
             return
         }
 
@@ -679,14 +674,9 @@ struct GenerateSheet: View {
             }
         }
 
-        if result.failed.isEmpty {
-            count = result.succeeded.count
-            state.completedCount = count
-        } else {
-            let codes = result.failed.map { "\($0.type.rawValue): exit \($0.exitCode)" }
-                .joined(separator: ", ")
-            state.errorMessage = "Generation failed (\(codes)). Check the log above."
-        }
+        let summary = GenerateSheetState.summarize(result)
+        state.completedCount = summary.count
+        state.errorMessage = summary.message
     }
 }
 

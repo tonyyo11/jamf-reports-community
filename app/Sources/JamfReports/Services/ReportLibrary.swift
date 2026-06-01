@@ -260,28 +260,33 @@ struct ReportLibrary {
         return countWorksheetEntries(in: centralDirectory)
     }
 
-    private func deviceCount(from url: URL, profile: String) -> Int {
-        // For xlsx files, try to read device count from associated summary.json
-        if url.pathExtension.lowercased() == "xlsx" {
-            if let count = deviceCountFromSummary(reportURL: url, profile: profile) {
-                return count
-            }
-        }
-
-        // For CSV files, we can't easily determine row count without reading the entire file
-        // For HTML/PDF files, the device count isn't easily derivable
-        // Return 0 for these cases rather than doing expensive parsing
-        return 0
+    /// Returns the device count from the associated summary.json when available,
+    /// nil when the summary is absent, the filename carries no date stamp, or
+    /// totalDevices is non-numeric. Non-xlsx files always return nil.
+    private func deviceCount(from url: URL, profile: String) -> Int? {
+        guard url.pathExtension.lowercased() == "xlsx" else { return nil }
+        return deviceCountFromSummary(reportURL: url, profile: profile)
     }
 
     /// Try to find the device count from a summary.json file that corresponds to this report.
     /// Returns nil if no summary can be found or parsed.
     private func deviceCountFromSummary(reportURL: URL, profile: String) -> Int? {
-        // Extract timestamp from report filename (e.g., "jamf_report_demo_2024-05-29_143022.xlsx")
+        guard let summariesDir = try? WorkspacePaths.summariesDir(for: profile) else {
+            return nil
+        }
+        return deviceCount(forReportURL: reportURL, summariesDir: summariesDir)
+    }
+
+    /// Testable core: looks up the device count given the report URL and summaries directory.
+    ///
+    /// Extracts the `YYYY-MM-DD` date from `reportURL`'s filename, finds the matching
+    /// `summary_<date>.json` in `summariesDir`, and returns `totalDevices`.
+    /// Returns nil when the filename has no date, the summary is absent, or
+    /// `totalDevices` is missing / non-numeric.
+    func deviceCount(forReportURL reportURL: URL, summariesDir: URL) -> Int? {
         let filename = reportURL.lastPathComponent
         let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
 
-        // Look for timestamp pattern YYYY-MM-DD in the filename
         guard let regex = Self.timestampRegex,
               let match = regex.firstMatch(in: stem, range: NSRange(stem.startIndex..., in: stem)),
               let range = Range(match.range(at: 1), in: stem) else {
@@ -289,21 +294,17 @@ struct ReportLibrary {
         }
 
         let dateString = String(stem[range])
-
-        // Try to find corresponding summary_YYYY-MM-DD.json
-        guard let summariesDir = try? WorkspacePaths.summariesDir(for: profile) else {
-            return nil
-        }
-
         let summaryURL = summariesDir.appendingPathComponent("summary_\(dateString).json")
+
         guard FileManager.default.fileExists(atPath: summaryURL.path),
               let data = try? Data(contentsOf: summaryURL),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let totalDevices = json["totalDevices"] as? Int else {
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
 
-        return totalDevices
+        // JSON numbers may deserialize as Int or Double depending on the serializer.
+        return (json["totalDevices"] as? Int)
+            ?? (json["totalDevices"] as? Double).map(Int.init)
     }
 
     private func hasZipMagic(_ url: URL) -> Bool {

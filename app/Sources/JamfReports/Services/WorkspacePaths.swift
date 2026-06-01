@@ -11,6 +11,11 @@ import Foundation
 /// full YAML parser.
 enum WorkspacePaths {
 
+    /// The conventional subdirectory name for generated report output.
+    /// Used by `CLIBridge+Generation` to construct HTML and PDF output paths
+    /// without duplicating the literal.
+    static let generatedReportsDirName = "Generated Reports"
+
     /// `<workspace>/Generated Reports` by default; honors `output.output_dir`.
     static func outputDir(for profile: String) throws -> URL {
         guard let workspace = workspaceRoot(for: profile) else {

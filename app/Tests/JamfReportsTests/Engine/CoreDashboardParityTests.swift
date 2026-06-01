@@ -139,6 +139,31 @@ final class CoreDashboardParityTests: XCTestCase {
         }
     }
 
+    func testWritePatchSummaryDashboardCorruptDeviceComplianceFails() throws {
+        // A corrupt (non-JSON) device-compliance snapshot must surface as a failure
+        // ("[fail]"), not a skip ("[skip] no cached data"). Regression for Item 3.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let patchJSON = """
+        [{"title":"Firefox","id":"1","on_latest":80,"on_other":10,"total":90,
+          "latest":"130.0","compliance_pct":"89%"}]
+        """
+        try seedJSON(patchJSON, kind: "patch-status", in: dir)
+        // Seed a corrupt (non-JSON) bytes file for device-compliance.
+        let dcDir = dir.appendingPathComponent("device-compliance", isDirectory: true)
+        try FileManager.default.createDirectory(at: dcDir, withIntermediateDirectories: true)
+        try "NOT VALID JSON {{{".write(
+            to: dcDir.appendingPathComponent("device-compliance.json"),
+            atomically: true, encoding: .utf8
+        )
+
+        let dash = makeDashboard(dataDir: dir)
+        XCTAssertThrowsError(try dash.writePatchSummaryDashboard()) { error in
+            XCTAssertFalse(error is SheetSkippable,
+                           "Corrupt cache must route to [fail], not [skip]; got: \(error)")
+        }
+    }
+
     func testWritePatchSummaryDashboardWithFixture() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -195,6 +220,25 @@ final class CoreDashboardParityTests: XCTestCase {
                 XCTFail("Expected CoreDashboardError.noCachedData, got \(error)")
                 return
             }
+        }
+    }
+
+    func testWriteDeviceSecurityStateCorruptSnapshotFails() throws {
+        // A corrupt (non-JSON) computers snapshot must surface as a failure
+        // ("[fail]"), not a skip ("[skip] no cached data"). Regression for Item 3.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let computersDir = dir.appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
+        try "NOT VALID JSON {{{".write(
+            to: computersDir.appendingPathComponent("computers.json"),
+            atomically: true, encoding: .utf8
+        )
+
+        let dash = makeDashboard(dataDir: dir)
+        XCTAssertThrowsError(try dash.writeDeviceSecurityState()) { error in
+            XCTAssertFalse(error is SheetSkippable,
+                           "Corrupt cache must route to [fail], not [skip]; got: \(error)")
         }
     }
 

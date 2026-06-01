@@ -104,7 +104,7 @@ struct ReportsView: View {
                             Text(r.source).font(.footnote)
                         }
                         TableColumn("Sheets") { r in Mono(text: "\(r.sheets)") }
-                        TableColumn("Devices") { r in Mono(text: "\(r.devices)") }
+                        TableColumn("Devices") { r in Mono(text: r.devices.map { "\($0)" } ?? "—") }
                         TableColumn("Size") { r in Mono(text: r.size) }
                         TableColumn("Generated") { r in Mono(text: r.date) }
                     }

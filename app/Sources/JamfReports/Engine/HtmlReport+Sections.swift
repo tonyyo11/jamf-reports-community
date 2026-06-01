@@ -1534,8 +1534,8 @@ extension HtmlReport {
             if current.count >= 2 { segments.append(current) }
 
             for segment in segments {
-                let points = segment.map { i -> String in
-                    let val = series.values[i]!
+                let points = segment.compactMap { i -> String? in
+                    guard let val = series.values[i] else { return nil }
                     return "\(String(format: "%.1f", xPos(i))),\(String(format: "%.1f", yPos(val)))"
                 }.joined(separator: " ")
                 seriesHTML += """

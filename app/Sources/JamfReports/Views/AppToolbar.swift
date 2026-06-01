@@ -1,5 +1,26 @@
 import SwiftUI
 
+/// Enforces a minimum interval between successive refresh actions.
+///
+/// Holds no view state — callers store it in `@State`. Call `shouldFire(now:)`
+/// on every tap; the mutating semantics ensure `lastFired` is only updated when
+/// the call is allowed through.
+struct RefreshDebouncer {
+    let interval: TimeInterval
+    private(set) var lastFired: Date?
+
+    /// Returns `true` and records `now` as the last-fired time when enough time
+    /// has elapsed since the previous fire (or no previous fire exists).
+    /// Returns `false` and leaves `lastFired` unchanged otherwise.
+    mutating func shouldFire(now: Date = Date()) -> Bool {
+        if let last = lastFired, now.timeIntervalSince(last) < interval {
+            return false
+        }
+        lastFired = now
+        return true
+    }
+}
+
 struct AppToolbar: ToolbarContent {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
@@ -11,7 +32,7 @@ struct AppToolbar: ToolbarContent {
     @State private var hoveringChip = false
     @State private var isShowingChipPopover = false
     @State private var isShowingAdminConfirmation = false
-    @State private var lastRefreshPosted: Date = .distantPast
+    @State private var debouncer = RefreshDebouncer(interval: 2.0)
     @State private var isRefreshDisabled = false
 
     var body: some ToolbarContent {
@@ -176,10 +197,8 @@ struct AppToolbar: ToolbarContent {
 
     private var refreshButton: some View {
         Button {
-            let now = Date()
-            guard now.timeIntervalSince(lastRefreshPosted) >= 2.0 else { return }
+            guard debouncer.shouldFire() else { return }
 
-            lastRefreshPosted = now
             isRefreshDisabled = true
 
             // Brief disabled state to provide visual feedback

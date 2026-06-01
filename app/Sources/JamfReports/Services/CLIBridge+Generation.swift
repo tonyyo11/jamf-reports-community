@@ -1,8 +1,5 @@
 import Foundation
 
-// Note: `GenerateOutputType` is defined in `Views/GenerateSheet.swift` because
-// it's primarily a UI-state concern. CLIBridge consumes it here.
-
 /// Errors thrown by `CLIBridge` methods for app-internal pre-spawn failures.
 ///
 /// These cases replace the `-1` sentinel that previously collapsed six distinct
@@ -315,14 +312,18 @@ extension CLIBridge {
         if let outputDir {
             dir = outputDir
         } else if let workspace = ProfileService.workspaceURL(for: profile) {
-            dir = workspace.appendingPathComponent("Generated Reports", isDirectory: true)
+            dir = workspace.appendingPathComponent(
+                WorkspacePaths.generatedReportsDirName, isDirectory: true)
         } else {
             dir = FileManager.default.temporaryDirectory
         }
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
-            AppLogger.cli.warning("htmlOutputURL: could not create output directory \(dir.path): \(error)")
+            let path = dir.path
+            let desc = error.localizedDescription
+            AppLogger.cli.warning(
+                "htmlOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
         }
         let stem = "jamf_report_\(profile)_\(htmlTimestamp())"
         return dir.appendingPathComponent("\(stem).html")
@@ -334,14 +335,18 @@ extension CLIBridge {
         if let outputDir {
             dir = outputDir
         } else if let workspace = ProfileService.workspaceURL(for: profile) {
-            dir = workspace.appendingPathComponent("Generated Reports", isDirectory: true)
+            dir = workspace.appendingPathComponent(
+                WorkspacePaths.generatedReportsDirName, isDirectory: true)
         } else {
             dir = FileManager.default.temporaryDirectory
         }
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
-            AppLogger.cli.warning("pdfOutputURL: could not create output directory \(dir.path): \(error)")
+            let path = dir.path
+            let desc = error.localizedDescription
+            AppLogger.cli.warning(
+                "pdfOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
         }
         let stem = "jamf_report_\(profile)_\(htmlTimestamp())"
         return dir.appendingPathComponent("\(stem).pdf")
@@ -355,13 +360,22 @@ extension CLIBridge {
 
     /// Describes the age of the newest cached snapshot for the given profile.
     /// Returns an empty string if no cached data exists at all.
-    private static func describeCacheAge(for profile: String) async -> String {
+    static func describeCacheAge(for profile: String) async -> String {
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             return ""
         }
+        return describeCacheAge(inDirectory: dataDir)
+    }
 
+    /// Scans `dir` for the newest regular file and returns a human-readable
+    /// age string ("X.X hours old" / "X.X days old"). Returns `""` when the
+    /// directory doesn't exist, is empty, or contains no regular files.
+    ///
+    /// `internal` so tests can inject a tmp directory without going through
+    /// `WorkspacePaths.dataDir`, which requires a real profile workspace.
+    static func describeCacheAge(inDirectory dir: URL) -> String {
         guard let enumerator = FileManager.default.enumerator(
-            at: dataDir,
+            at: dir,
             includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else {
@@ -371,16 +385,15 @@ extension CLIBridge {
         var newestDate: Date?
         while let item = enumerator.nextObject() {
             guard let fileURL = item as? URL else { continue }
-            guard let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
+            guard let values = try? fileURL.resourceValues(
+                    forKeys: [.contentModificationDateKey, .isRegularFileKey]),
                   values.isRegularFile == true,
                   let mtime = values.contentModificationDate else {
                 continue
             }
 
             if let current = newestDate {
-                if mtime > current {
-                    newestDate = mtime
-                }
+                if mtime > current { newestDate = mtime }
             } else {
                 newestDate = mtime
             }
