@@ -217,7 +217,8 @@ struct UpdatesView: View {
                             lastEvent: "2026-05-08T22:40:00Z")
         ],
         sourceFile: nil,
-        snapshotDate: Date()
+        snapshotDate: Date(),
+        scanFailuresAvailable: true
     )
 
     // MARK: - Computed values
@@ -226,12 +227,22 @@ struct UpdatesView: View {
         snapshot.planStateBreakdown.first { $0.label == "PlanCompleted" }?.count ?? 0
     }
 
+    /// From plan_state_summary — always present, and always the same number
+    /// the plan-state donut shows. (The failedPlans array only exists after a
+    /// --scan-failures run; counting it rendered "0 failing plans" next to a
+    /// donut showing thousands of PlanFailed states.)
     private var failingPlansCount: Int {
-        snapshot.failedPlans.count
+        snapshot.plansFailedFromStates
     }
 
-    private var errorDevicesCount: Int {
-        snapshot.errorDevices.count
+    private var errorDevicesValue: String {
+        snapshot.scanFailuresAvailable ? "\(snapshot.errorDevices.count)" : "—"
+    }
+
+    private var errorDevicesSubtitle: String {
+        snapshot.scanFailuresAvailable
+            ? "Device-level failures"
+            : "Failure scan not run"
     }
 
     // MARK: - Sections
@@ -262,12 +273,12 @@ struct UpdatesView: View {
             StatTile(
                 label: "Failing Plans",
                 value: "\(failingPlansCount)",
-                sub: "Requiring intervention"
+                sub: "Failed or exception state"
             )
             StatTile(
                 label: "Error Devices",
-                value: "\(errorDevicesCount)",
-                sub: "Device-level failures"
+                value: errorDevicesValue,
+                sub: errorDevicesSubtitle
             )
             StatTile(
                 label: "Plans Completed",

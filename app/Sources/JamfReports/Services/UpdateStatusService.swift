@@ -17,6 +17,11 @@ struct UpdateStatusService: Sendable {
         let failedPlans: [UpdateFailedPlan]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// True only when the snapshot came from a `--scan-failures` run.
+        /// Without the scan, `errorDevices`/`failedPlans` are empty because
+        /// the data was never fetched — NOT because nothing is failing.
+        /// KPIs must not render those empty arrays as "0 failures".
+        var scanFailuresAvailable: Bool = false
 
         static func == (lhs: Snapshot, rhs: Snapshot) -> Bool {
             lhs.total == rhs.total
@@ -27,6 +32,20 @@ struct UpdateStatusService: Sendable {
                 && lhs.failedPlans.count == rhs.failedPlans.count
                 && lhs.sourceFile == rhs.sourceFile
                 && lhs.snapshotDate == rhs.snapshotDate
+                && lhs.scanFailuresAvailable == rhs.scanFailuresAvailable
+        }
+
+        /// Failed/exception plan count derived from `plan_state_summary`,
+        /// which every update-status snapshot carries. This is the number the
+        /// plan-state donut shows — the "Failing Plans" KPI uses it so the two
+        /// can never disagree. PlanCanceled is a user action, not a failure.
+        var plansFailedFromStates: Int {
+            planStateBreakdown
+                .filter {
+                    let upper = $0.label.uppercased()
+                    return upper.contains("PLANFAILED") || upper.contains("PLANEXCEPTION")
+                }
+                .reduce(0) { $0 + $1.count }
         }
 
         struct Slice: Sendable, Equatable, Identifiable {
@@ -101,7 +120,8 @@ struct UpdateStatusService: Sendable {
             errorDevices: failures.errorDevices,
             failedPlans: failures.failedPlans,
             sourceFile: url,
-            snapshotDate: mtime
+            snapshotDate: mtime,
+            scanFailuresAvailable: true
         )
     }
 
