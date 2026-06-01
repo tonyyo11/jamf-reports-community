@@ -90,7 +90,7 @@ extension CLIBridge {
         outputDir: URL?,
         profile: String,
         schoolMode: Bool = false,
-        template: any ReportTemplate = ExecutiveTemplate(),
+        template: any ReportTemplate = FullInstanceTemplate(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> GenerateAllResult {
         await Self.runGenerateAll(

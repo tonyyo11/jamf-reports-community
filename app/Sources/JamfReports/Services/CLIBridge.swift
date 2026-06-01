@@ -437,7 +437,7 @@ final class CLIBridge {
     func generate(
         profile: String,
         csvPath: String?,
-        template: any ReportTemplate = ExecutiveTemplate(),
+        template: any ReportTemplate = FullInstanceTemplate(),
         outputDir: URL? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
@@ -1021,7 +1021,7 @@ final class CLIBridge {
     func generateHTML(
         profile: String,
         outFile: String?,
-        template: any ReportTemplate = ExecutiveTemplate(),
+        template: any ReportTemplate = FullInstanceTemplate(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
@@ -1093,7 +1093,7 @@ final class CLIBridge {
     func generatePDF(
         profile: String,
         outFile: String,
-        template: any ReportTemplate = ExecutiveTemplate(),
+        template: any ReportTemplate = FullInstanceTemplate(),
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // PDF generation reads only cached jamf-cli JSON snapshots; no live API calls.

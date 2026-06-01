@@ -49,7 +49,9 @@ final class HtmlReportTests: XCTestCase {
     func testBuildPoliciesTableEmptyData() {
         let report = makeReport()
         let html = report.buildPoliciesTable([])
-        XCTAssertTrue(html.isEmpty, "Empty data should produce empty string")
+        // Empty data now produces an empty-section placeholder, not an empty string.
+        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
+        XCTAssertTrue(html.contains("empty-section"))
     }
 
     func testBuildPoliciesTableRendersRows() {
@@ -80,7 +82,9 @@ final class HtmlReportTests: XCTestCase {
 
     func testBuildSmartGroupsTableEmptyData() {
         let report = makeReport()
-        XCTAssertTrue(report.buildSmartGroupsTable([]).isEmpty)
+        let html = report.buildSmartGroupsTable([])
+        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
+        XCTAssertTrue(html.contains("empty-section"))
     }
 
     func testBuildSmartGroupsTableRendersRows() {
@@ -100,7 +104,9 @@ final class HtmlReportTests: XCTestCase {
 
     func testBuildScriptsTableEmptyData() {
         let report = makeReport()
-        XCTAssertTrue(report.buildScriptsTable([]).isEmpty)
+        let html = report.buildScriptsTable([])
+        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
+        XCTAssertTrue(html.contains("empty-section"))
     }
 
     func testBuildScriptsTableRendersRows() {
@@ -119,7 +125,9 @@ final class HtmlReportTests: XCTestCase {
 
     func testBuildPackagesTableEmptyData() {
         let report = makeReport()
-        XCTAssertTrue(report.buildPackagesTable([]).isEmpty)
+        let html = report.buildPackagesTable([])
+        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
+        XCTAssertTrue(html.contains("empty-section"))
     }
 
     func testBuildPackagesTableRendersRows() {
@@ -139,7 +147,9 @@ final class HtmlReportTests: XCTestCase {
 
     func testBuildCategoriesTableEmptyData() {
         let report = makeReport()
-        XCTAssertTrue(report.buildCategoriesTable([]).isEmpty)
+        let html = report.buildCategoriesTable([])
+        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
+        XCTAssertTrue(html.contains("empty-section"))
     }
 
     func testBuildCategoriesTableRendersRows() {
@@ -775,5 +785,57 @@ final class HtmlReportTests: XCTestCase {
         // After JSON encoding the backslash is doubled: \\\"injected\\\"
         // The resulting JSON array must be present and the raw sequence must not break parsing.
         XCTAssertTrue(html.contains("<script>"), "Chart section must still contain a script block")
+    }
+
+    // MARK: - emptySection placeholder
+
+    func testEmptySectionHelperRendersTitle() {
+        let html = HtmlSectionFormatters.emptySection(
+            title: "Policy Health", dataKind: "policy-status"
+        )
+        XCTAssertTrue(html.contains("Policy Health"), "Section title must appear in placeholder")
+        XCTAssertTrue(html.contains("policy-status"), "dataKind must appear in placeholder")
+        XCTAssertTrue(html.contains("empty-section"), "Must use empty-section CSS class")
+        XCTAssertTrue(html.contains("empty-note"), "Must use empty-note CSS class")
+    }
+
+    func testEmptySectionHelperEscapesInputs() {
+        let html = HtmlSectionFormatters.emptySection(
+            title: "<script>XSS</script>",
+            dataKind: "kind&value"
+        )
+        XCTAssertFalse(html.contains("<script>"), "Title must be HTML-escaped")
+        XCTAssertTrue(html.contains("&lt;script&gt;"), "Title must be HTML-escaped")
+        XCTAssertTrue(html.contains("kind&amp;value"), "dataKind must be HTML-escaped")
+    }
+
+    func testPoliciesTableEmptyReturnsEmptySectionPlaceholder() {
+        let report = makeReport()
+        let html = report.buildPoliciesTable([])
+        XCTAssertTrue(html.contains("empty-section"),
+                      "Empty policies should render an empty-section placeholder, not an empty string")
+        XCTAssertTrue(html.contains("policies"), "Placeholder must reference the snapshot kind")
+    }
+
+    func testSmartGroupsTableEmptyReturnsEmptySectionPlaceholder() {
+        let report = makeReport()
+        let html = report.buildSmartGroupsTable([])
+        XCTAssertTrue(html.contains("empty-section"))
+    }
+
+    /// When generated HTML contains a policyStatus snapshot that is empty, the
+    /// Policy Health section placeholder (not an empty string) must appear in the output.
+    func testGeneratedHtmlContainsEmptySectionForMissingPolicyStatus() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let report = makeReport(dataDir: dir)
+        let outputURL = dir.appendingPathComponent("report.html")
+        try await report.generate(outputURL: outputURL)
+        let html = try String(contentsOf: outputURL, encoding: .utf8)
+        // With no snapshot data, Policy Health should render a placeholder, not vanish.
+        XCTAssertTrue(
+            html.contains("empty-section"),
+            "Report must contain at least one empty-section placeholder when no snapshots exist"
+        )
     }
 }

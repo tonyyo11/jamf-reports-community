@@ -135,9 +135,9 @@ final class ModalsViewPolishTests: XCTestCase {
 
     // MARK: - GenerateSheet template picker round-trip
 
-    func testGenerateSheetTemplatePickerDefaultIsExecutive() {
+    func testGenerateSheetTemplatePickerDefaultIsFullInstance() {
         let state = GenerateSheetState()
-        XCTAssertEqual(state.selectedTemplateID, ExecutiveTemplate().identifier)
+        XCTAssertEqual(state.selectedTemplateID, FullInstanceTemplate().identifier)
     }
 
     func testGenerateSheetTemplatePickerRoundTrip() {

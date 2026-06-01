@@ -71,8 +71,9 @@ final class TemplatedEngineTests: XCTestCase {
 
     func testAllTemplatesAreReachable() {
         let templates = TemplateResolver.allTemplates
-        XCTAssertEqual(templates.count, 6)
+        XCTAssertEqual(templates.count, 7)
         let ids = Set(templates.map(\.identifier))
+        XCTAssertTrue(ids.contains("full-instance"))
         XCTAssertTrue(ids.contains("executive"))
         XCTAssertTrue(ids.contains("operational"))
         XCTAssertTrue(ids.contains("compliance"))
@@ -153,7 +154,7 @@ final class TemplatedEngineTests: XCTestCase {
     // MARK: - ReportEngine.generate with template parameter
 
     func testGenerateWithDefaultTemplateBehaviorUnchanged() async throws {
-        // Default parameter = ExecutiveTemplate — existing callers unaffected.
+        // Default parameter = FullInstanceTemplate — produces a workbook when called without template.
         let engine = ReportEngine(config: ReportConfig(), dataDir: tmpDir)
         let outURL = tmpDir.appendingPathComponent("default.xlsx")
         // No data directory → should produce a workbook (graceful Cover-sheet path).

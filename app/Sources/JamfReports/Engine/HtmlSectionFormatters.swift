@@ -168,6 +168,24 @@ enum HtmlSectionFormatters {
         "<p class=\"empty\">\(escapeHTML(reason))</p>"
     }
 
+    /// Render a placeholder `<section>` block for sections whose required snapshot
+    /// is absent. Used as the return value from section builders when data is missing,
+    /// so the generated report always shows every requested section rather than
+    /// silently omitting it.
+    ///
+    /// - Parameters:
+    ///   - title: Human-readable section heading (HTML-escaped before output).
+    ///   - dataKind: The snapshot kind name the section needs, e.g. `"patch-device-failures"`.
+    nonisolated static func emptySection(title: String, dataKind: String) -> String {
+        """
+        <section class="content-section empty-section">
+          <h2>\(escapeHTML(title))</h2>
+          <p class="empty-note">No data available — run Collect to fetch \
+        '\(escapeHTML(dataKind))' from Jamf Pro.</p>
+        </section>
+        """
+    }
+
     // MARK: - CSS additions
 
     /// CSS snippet appended to `HtmlReport.buildCSS` for new section elements.

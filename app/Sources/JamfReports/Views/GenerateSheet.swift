@@ -51,7 +51,7 @@ final class GenerateSheetState {
 
     /// Identifier of the currently selected report template.
     /// Persisted for the sheet's lifetime; falls back to Executive on next open.
-    var selectedTemplateID: String = ExecutiveTemplate().identifier
+    var selectedTemplateID: String = FullInstanceTemplate().identifier
 
     /// The resolved template for the current selection. Always a known template —
     /// unknown identifiers fall back to Executive via `TemplateResolver`.

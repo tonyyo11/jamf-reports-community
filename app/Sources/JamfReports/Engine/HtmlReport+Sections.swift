@@ -160,8 +160,7 @@ extension HtmlReport {
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
 
         let stale = computersInventory.filter { item -> Bool in
-            let raw = item["last_check_in"] as? String
-                ?? item["last_contact"] as? String ?? ""
+            let raw = inventoryLastContact(item)
             let days = daysAgo(from: raw)
             return days >= staleDays
         }
@@ -177,21 +176,15 @@ extension HtmlReport {
         }
 
         let sorted = stale.sorted { lhsItem, rhsItem -> Bool in
-            let lRaw = lhsItem["last_check_in"] as? String
-                ?? lhsItem["last_contact"] as? String ?? ""
-            let rRaw = rhsItem["last_check_in"] as? String
-                ?? rhsItem["last_contact"] as? String ?? ""
-            return daysAgo(from: lRaw) > daysAgo(from: rRaw)
+            daysAgo(from: inventoryLastContact(lhsItem)) >
+                daysAgo(from: inventoryLastContact(rhsItem))
         }
 
         let tableRows = sorted.prefix(100).map { item -> [String] in
-            let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
-            let serial = item["serial_number"] as? String
-                ?? item["serial"] as? String ?? ""
-            let user = item["username"] as? String
-                ?? item["last_logged_in_user"] as? String ?? "—"
-            let raw = item["last_check_in"] as? String
-                ?? item["last_contact"] as? String ?? ""
+            let name = inventoryName(item)
+            let serial = inventorySerial(item)
+            let user = inventoryUsername(item)
+            let raw = inventoryLastContact(item)
             let days = daysAgo(from: raw)
             let daysLabel = days >= 0 ? "\(days)" : "—"
             return [name, serial, user, daysLabel]
@@ -473,14 +466,11 @@ extension HtmlReport {
         }
 
         let tableRows = computersInventory.prefix(100).map { item -> [String] in
-            let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
-            let serial = item["serial_number"] as? String
-                ?? item["serial"] as? String ?? ""
-            let asset = item["asset_tag"] as? String ?? "—"
-            let dept = item["department"] as? String
-                ?? item["departmentName"] as? String ?? "—"
-            let building = item["building"] as? String
-                ?? item["buildingName"] as? String ?? "—"
+            let name = inventoryName(item)
+            let serial = inventorySerial(item)
+            let asset = inventoryAssetTag(item)
+            let dept = inventoryDepartment(item)
+            let building = inventoryBuilding(item)
             return [name, serial, asset, dept, building]
         }
 
@@ -507,7 +497,7 @@ extension HtmlReport {
         let f = HtmlSectionFormatters.self
 
         let withWarranty = computersInventory.filter { item -> Bool in
-            let raw = item["warranty_expires"] as? String ?? ""
+            let raw = inventoryWarrantyExpires(item)
             return !raw.trimmingCharacters(in: .whitespaces).isEmpty
         }
 
@@ -526,10 +516,9 @@ extension HtmlReport {
             let name: String; let serial: String; let expires: String; let daysLeft: Int
         }
         let rows: [WarrantyRow] = withWarranty.map { item in
-            let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
-            let serial = item["serial_number"] as? String
-                ?? item["serial"] as? String ?? ""
-            let raw = item["warranty_expires"] as? String ?? ""
+            let name = inventoryName(item)
+            let serial = inventorySerial(item)
+            let raw = inventoryWarrantyExpires(item)
             let days = daysUntil(raw)
             return WarrantyRow(name: name, serial: serial, expires: raw, daysLeft: days)
         }
@@ -575,9 +564,8 @@ extension HtmlReport {
         let f = HtmlSectionFormatters.self
 
         let withDate = computersInventory.compactMap { item -> (String, String)? in
-            let name = item["name"] as? String ?? item["device_name"] as? String ?? ""
-            let raw = item["purchase_date"] as? String
-                ?? item["purchaseDate"] as? String ?? ""
+            let name = inventoryName(item)
+            let raw = inventoryPurchaseDate(item)
             guard !raw.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
             return (name, raw)
         }
@@ -674,10 +662,20 @@ extension HtmlReport {
 
         var counts: [String: Int] = [:]
         for item in computersInventory {
-            var value = item[field] as? String ?? ""
-            if value.isEmpty {
-                for fb in fallbackFields {
-                    if let v = item[fb] as? String, !v.isEmpty { value = v; break }
+            // Use dedicated accessors for building/department to handle nested shape.
+            var value: String
+            if field == "building" {
+                value = inventoryBuilding(item)
+                if value == "—" { value = "" }
+            } else if field == "department" {
+                value = inventoryDepartment(item)
+                if value == "—" { value = "" }
+            } else {
+                value = item[field] as? String ?? ""
+                if value.isEmpty {
+                    for fb in fallbackFields {
+                        if let v = item[fb] as? String, !v.isEmpty { value = v; break }
+                    }
                 }
             }
             let key = value.isEmpty ? "(unassigned)" : value
@@ -928,11 +926,10 @@ extension HtmlReport {
             var unknown = 0
 
             for device in computersInventory {
-                guard let raw = device[agent.column] as? String else {
+                let raw = inventoryEAValue(device, column: agent.column)
+                if raw.isEmpty {
                     unknown += 1
-                    continue
-                }
-                if raw.lowercased().contains(agent.connectedValue.lowercased()) {
+                } else if raw.lowercased().contains(agent.connectedValue.lowercased()) {
                     installed += 1
                 } else {
                     missing += 1

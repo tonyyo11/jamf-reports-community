@@ -21,6 +21,7 @@ enum TemplateResolver {
     /// `SheetRegistry` both derive their lists from this single source.
     static var allTemplates: [any ReportTemplate] {
         [
+            FullInstanceTemplate(),
             ExecutiveTemplate(),
             OperationalTemplate(),
             ComplianceTemplate(),
