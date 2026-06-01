@@ -81,9 +81,14 @@ enum SystemActions {
     ///   canonicalize() resolves /tmp → /private/tmp anyway, leaving the
     ///   allow-list dead).
     /// - Removed `~/Documents` and `~/Downloads`: the audit found these too
-    ///   broad to claim "bounded to Jamf data". User-initiated export targets
-    ///   should go through `userExportTargetIsAllowed(_:)` with explicit
-    ///   per-action confirmation (UI seam not yet wired).
+    ///   broad to claim "bounded to Jamf data".
+    ///
+    /// B-04 follow-up (2026-06-01): the secondary `userExportTargetIsAllowed`
+    /// path-prefix gate for NSSavePanel exports was removed. The save panel
+    /// itself is stronger per-action consent than any prefix check, and the
+    /// gate rejected legitimate destinations (network shares, iCloud Drive) —
+    /// silently, in AuditView's case. This reveal/open allow-list remains the
+    /// boundary for all programmatic (non-panel) actions.
     private static func allowedParents() -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
@@ -91,24 +96,5 @@ enum SystemActions {
             home.appendingPathComponent("Library/LaunchAgents"),
             home.appendingPathComponent("Library/Logs/JamfReports"),
         ]
-    }
-
-    /// B-04: secondary allow-list for user-initiated export destinations
-    /// (Save As..., reveal-after-export). Callers MUST present a confirmation
-    /// affordance before invoking SystemActions on a path approved only by
-    /// this method — the broader trust comes from the user's explicit choice,
-    /// not from the path itself. Currently a seam: not yet wired into UI.
-    static func userExportTargetIsAllowed(_ url: URL) -> Bool {
-        let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let exportRoots = [
-            home.appendingPathComponent("Documents"),
-            home.appendingPathComponent("Downloads"),
-            home.appendingPathComponent("Desktop"),
-        ].map { $0.standardizedFileURL.path }
-        for root in exportRoots {
-            if resolved == root || resolved.hasPrefix(root + "/") { return true }
-        }
-        return false
     }
 }

@@ -970,11 +970,10 @@ struct DevicesView: View {
         panel.nameFieldStringValue = "devices-\(workspace.profile)-\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.canCreateDirectories = true
+        // The save panel is the user's explicit, per-action consent for this
+        // exact path — no additional allow-list gate (matches every other
+        // export flow: Patch, Runs, Reports, chart PNGs).
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard SystemActions.userExportTargetIsAllowed(url) else {
-            exportError = "Choose a location in Documents, Downloads, or Desktop."
-            return
-        }
         isExportingCSV = true
         defer { isExportingCSV = false }
         let rows = filteredDevices
