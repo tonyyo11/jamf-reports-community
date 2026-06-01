@@ -271,26 +271,56 @@ struct OverviewView: View {
             workspace.toast = Toast(message: "Invalid profile name — generate aborted", style: .danger)
             return
         }
-        isRunning = true
-        workspace.globalStatus = "collect + generate · profile=\(workspace.profile)"
+
         let profile = workspace.profile
+        guard workspace.setRunInProgress(for: profile) else {
+            workspace.toast = Toast(message: "Another run is already in progress for profile '\(profile)' — skipped", style: .danger)
+            return
+        }
+
+        isRunning = true
+        defer {
+            workspace.clearRunInProgress(for: profile)
+            isRunning = false
+        }
+
+        let shouldSkipCollect = await isSnapshotFresh(profile: profile)
+
+        if shouldSkipCollect {
+            workspace.globalStatus = "generate from cached snapshots · profile=\(profile)"
+        } else {
+            workspace.globalStatus = "collect + generate · profile=\(profile)"
+        }
+
         // Status-bar race guard — see HealthCheckView.runAudit comment.
         do {
-            let exit = try await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
-                Task { @MainActor in
-                    guard let workspace, self.isRunning else { return }
-                    // PR-15: capture T-13 SHA-256 fingerprints from the live log
-                    // so the success toast surfaces the same artifact-hash
-                    // provenance the Generate sheet shows. Same `[ok] sha256:
-                    // <64hex> <basename>` sentinel; parser reused from
-                    // GenerateSheetState to avoid drift.
-                    if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
-                        self.generatedHashes[parsed.filename] = parsed.hash
+            let exit: Int32
+            if shouldSkipCollect {
+                exit = try await bridge.generate(profile: profile, csvPath: nil) { [weak workspace] line in
+                    Task { @MainActor in
+                        guard let workspace, self.isRunning else { return }
+                        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                            self.generatedHashes[parsed.filename] = parsed.hash
+                        }
+                        workspace.globalStatus = line.text
                     }
-                    workspace.globalStatus = line.text
+                }
+            } else {
+                exit = try await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
+                    Task { @MainActor in
+                        guard let workspace, self.isRunning else { return }
+                        // PR-15: capture T-13 SHA-256 fingerprints from the live log
+                        // so the success toast surfaces the same artifact-hash
+                        // provenance the Generate sheet shows. Same `[ok] sha256:
+                        // <64hex> <basename>` sentinel; parser reused from
+                        // GenerateSheetState to avoid drift.
+                        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                            self.generatedHashes[parsed.filename] = parsed.hash
+                        }
+                        workspace.globalStatus = line.text
+                    }
                 }
             }
-            isRunning = false
             workspace.globalStatus = nil
 
             if exit == 0 {
@@ -309,12 +339,69 @@ struct OverviewView: View {
                 generatedHashes.removeAll()
             }
         } catch {
-            isRunning = false
             workspace.globalStatus = nil
             AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
             workspace.toast = Toast(message: "Generate failed — \(error.localizedDescription)", style: .danger)
             generatedHashes.removeAll()
         }
+    }
+
+    /// Check if the newest jamf-cli snapshot is fresh enough to skip collection.
+    /// Returns true if the newest data in the workspace's jamf-cli-data dir
+    /// is less than 60 minutes old, false otherwise.
+    private func isSnapshotFresh(profile: String) async -> Bool {
+        await Task.detached(priority: .utility) {
+            guard ProfileService.isValid(profile),
+                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+                return false
+            }
+
+            let newestMTime = Self.getNewestSnapshotMTime(in: dataDir)
+            guard let newestMTime else { return false }
+
+            let ageMinutes = Date().timeIntervalSince(newestMTime) / 60
+            let isFresh = ageMinutes < 60
+
+            if isFresh {
+                // Log the decision so users understand why collect was skipped
+                await MainActor.run {
+                    AppLogger.cli.info("snapshots are fresh (\(Int(ageMinutes))m old) — skipping collect")
+                }
+            }
+
+            return isFresh
+        }.value
+    }
+
+    /// Find the newest modification time across all files in the jamf-cli-data directory tree.
+    /// Returns nil if the directory doesn't exist or is empty.
+    private nonisolated static func getNewestSnapshotMTime(in dataDir: URL) -> Date? {
+        guard let enumerator = FileManager.default.enumerator(
+            at: dataDir,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        var newestDate: Date?
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
+                  values.isRegularFile == true,
+                  let mtime = values.contentModificationDate else {
+                continue
+            }
+
+            if let current = newestDate {
+                if mtime > current {
+                    newestDate = mtime
+                }
+            } else {
+                newestDate = mtime
+            }
+        }
+
+        return newestDate
     }
 
     /// Format the first artifact's 12-char short fingerprint for the toast.

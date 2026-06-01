@@ -154,6 +154,8 @@ final class CLIBridgeGenerationTests: XCTestCase {
         var collect = 0
         var xlsx = 0
         var html = 0
+        var pdf = 0
+        var csv = 0
         var tighten = 0
     }
 
@@ -164,18 +166,23 @@ final class CLIBridgeGenerationTests: XCTestCase {
         collectFresh: Bool,
         collectExit: Int32 = 0,
         xlsxExit: Int32 = 0,
-        htmlExit: Int32 = 0
+        htmlExit: Int32 = 0,
+        cacheAge: String = "2 hours old"
     ) async -> (result: GenerateAllResult, calls: StubCalls, lines: [String]) {
         let calls = StubCalls()
         let collector = LogLineCollector()
         let result = await CLIBridge.runGenerateAll(
             types: types,
             collectFresh: collectFresh,
+            profile: "test-profile",
             onLine: { collector.append($0) },
             collect: { calls.collect += 1; return collectExit },
             generateXLSX: { calls.xlsx += 1; return xlsxExit },
             generateHTML: { calls.html += 1; return htmlExit },
-            tighten: { calls.tighten += 1 }
+            generatePDF: { calls.pdf += 1; return 0 },
+            generateCSV: { calls.csv += 1; return 0 },
+            tighten: { calls.tighten += 1 },
+            cacheAge: { cacheAge }
         )
         return (result, calls, collector.snapshot().map(\.text))
     }
@@ -218,6 +225,20 @@ final class CLIBridgeGenerationTests: XCTestCase {
         let (_, calls, lines) = await runStubbed(collectFresh: true, collectExit: 1)
         XCTAssertEqual(calls.xlsx, 1, "a generic non-zero collect must still proceed with cached data")
         XCTAssertTrue(lines.contains { $0.contains("collect exited 1") }, "got \(lines)")
+    }
+
+    func testRunGenerateAllFailsOnCollectFailureWithNoCache() async {
+        // When collect fails AND no cached data exists, the run must fail
+        // loudly instead of producing an empty report.
+        let (result, calls, lines) = await runStubbed(
+            collectFresh: true, collectExit: CLIBridge.exitCodePermissionDenied, cacheAge: ""
+        )
+        XCTAssertEqual(calls.xlsx, 0, "no generator may run when there is no data at all")
+        XCTAssertEqual(calls.html, 0)
+        XCTAssertEqual(result.failed.first?.exitCode, CLIBridge.exitCodePermissionDenied)
+        XCTAssertTrue(lines.contains { $0.contains("no cached data available") },
+                      "the no-cache fatal must be explicit; got \(lines)")
+        XCTAssertEqual(calls.tighten, 0, "nothing was written — the permission sweep must not run")
     }
 
     func testRunGenerateAllPartialSuccessTightens() async {
