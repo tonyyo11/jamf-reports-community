@@ -490,7 +490,7 @@ struct ExtensionAttributesView: View {
         let totalRowCount = snapshot.totalRowCount
         let snapshotDate = snapshot.snapshotDate
         let result = DashboardChartExport.render(
-            suggestedFilename: DashboardChartExport.filename(for: "ea-values-\(distribution.eaName)")
+            suggestedFilename: DashboardChartExport.filename(for: "ea-values-\(distribution.eaName)", profile: workspace.profile)
         ) {
             BarChartExportView(
                 distribution: distribution,

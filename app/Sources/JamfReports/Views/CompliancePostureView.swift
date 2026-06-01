@@ -242,7 +242,7 @@ struct CompliancePostureView: View {
             title: "Compliance Bands",
             subtitle: "Compliance Posture",
             footnote: "Source: pro report security · \(total) devices banded by control-gap count",
-            suggestedFilename: DashboardChartExport.filename(for: "compliance-bands")
+            suggestedFilename: DashboardChartExport.filename(for: "compliance-bands", profile: workspace.profile)
         ) {
             CompliancePostureBandsDonutExport(bands: bands)
         }

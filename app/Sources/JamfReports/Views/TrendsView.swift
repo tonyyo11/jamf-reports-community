@@ -923,7 +923,7 @@ struct TrendsView: View {
         let exportResult = DashboardChartExport.run(
             title: m.displayLabel,
             subtitle: subtitle,
-            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel)
+            suggestedFilename: DashboardChartExport.filename(for: m.displayLabel, profile: workspaceStore.profile)
         ) { ChartExportView(trendPoints: pts, metric: m, domain: dom) }
 
         if case .failure(let error) = exportResult {

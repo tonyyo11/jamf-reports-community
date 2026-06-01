@@ -129,16 +129,54 @@ enum DashboardChartExport {
         }
     }
 
-    /// Convert an arbitrary dashboard name to a safe PNG filename stem.
-    /// Whitespace collapses to hyphens; path separators (`/`, `:`) collapse
-    /// to hyphens too so an upstream `NSSavePanel` doesn't misinterpret a
-    /// label like "macOS / iOS" as a path component.
-    static func filename(for label: String) -> String {
-        let cleaned = label
-            .replacingOccurrences(of: " ", with: "-")
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-        return "\(cleaned).png"
+    /// Shared `DateFormatter` for filename date stamps. Static let on a
+    /// `@MainActor` enum — safe under Swift 6 strict concurrency because all
+    /// callers are already on the main actor.
+    private static let dateStampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone.current
+        return f
+    }()
+
+    /// Sanitize an arbitrary string into a safe filename component. Replaces
+    /// any character outside `[A-Za-z0-9._-]` with a hyphen, collapses runs
+    /// of consecutive hyphens, and strips leading/trailing hyphens.
+    private static func sanitize(_ raw: String) -> String {
+        var result = raw.unicodeScalars.map { scalar in
+            let c = Character(scalar)
+            if c.isLetter || c.isNumber || c == "." || c == "_" || c == "-" {
+                return String(c)
+            }
+            return "-"
+        }.joined()
+        // Collapse repeated hyphens.
+        while result.contains("--") {
+            result = result.replacingOccurrences(of: "--", with: "-")
+        }
+        // Trim leading/trailing hyphens.
+        result = result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return result
+    }
+
+    /// Build a PNG filename prefilled with profile, label, and today's date.
+    ///
+    /// Format: `"<profile>-<label>-<yyyy-MM-dd>.png"`. If the sanitized
+    /// profile is empty the profile segment is omitted:
+    /// `"<label>-<yyyy-MM-dd>.png"`.
+    ///
+    /// Both `profile` and `label` are sanitized: characters outside
+    /// `[A-Za-z0-9._-]` become hyphens, consecutive hyphens collapse, and
+    /// leading/trailing hyphens are stripped.
+    static func filename(for label: String, profile: String) -> String {
+        let sanitizedProfile = sanitize(profile)
+        let sanitizedLabel = sanitize(label)
+        let dateStr = dateStampFormatter.string(from: Date())
+        if sanitizedProfile.isEmpty {
+            return "\(sanitizedLabel)-\(dateStr).png"
+        }
+        return "\(sanitizedProfile)-\(sanitizedLabel)-\(dateStr).png"
     }
 }
 
