@@ -328,10 +328,10 @@ final class TemplatedEngineTests: XCTestCase {
     // MARK: - GenerateSheetState template support
 
     @MainActor
-    func testGenerateSheetStateDefaultTemplateIsExecutive() {
+    func testGenerateSheetStateDefaultTemplateIsFullInstance() {
         let state = GenerateSheetState()
-        XCTAssertEqual(state.selectedTemplateID, "executive")
-        XCTAssertTrue(state.resolvedTemplate is ExecutiveTemplate)
+        XCTAssertEqual(state.selectedTemplateID, "full-instance")
+        XCTAssertTrue(state.resolvedTemplate is FullInstanceTemplate)
     }
 
     @MainActor
