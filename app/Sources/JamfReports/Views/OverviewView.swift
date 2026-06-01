@@ -237,7 +237,7 @@ struct OverviewView: View {
         PageHeader(
             kicker: workspace.demoMode ? "Snapshot · Apr 25, 2026 · 09:14" : "Snapshot · \(trendStore.filteredSummaries.last?.date ?? "No Data")",
             title: "\(workspace.org.name) Fleet Overview",
-            subtitle: workspace.demoMode ? "524 Macs across 8 departments · 3 sites · NIST 800-53r5 Moderate baseline" : "\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · NIST 800-53r5 Moderate baseline",
+            subtitle: workspace.demoMode ? "524 Macs across 8 departments · 3 sites · \(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline" : "\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · \(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline",
             lastModified: workspace.demoMode ? Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 25)) : trendStore.filteredSummaries.last?.parsedDate
         ) {
             AnyView(
@@ -545,7 +545,7 @@ struct OverviewView: View {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 2) {
                                 SectionHeader(title: "Top Failing Rules")
-                                Text(failingRulesSubtitle(baseline: "NIST 800-53r5 Moderate", fleetCount: overviewFleetCount))
+                                Text(failingRulesSubtitle(baseline: workspace.complianceBenchmarkLabel ?? "Compliance Benchmark", fleetCount: overviewFleetCount))
                                     .font(.caption)
                                     .foregroundStyle(Theme.Text.tertiary(contrast))
                             }
@@ -858,7 +858,7 @@ struct OverviewView: View {
                 kicker: "Top Failing Rules",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: "Top Failing Rules",
-                subtitle: "NIST 800-53r5 Moderate · highest failure counts"
+                subtitle: "\(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") · highest failure counts"
             )
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {

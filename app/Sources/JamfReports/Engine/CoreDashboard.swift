@@ -2617,7 +2617,7 @@ struct CoreDashboard: Sendable {
     func writeCompliancePosture() throws {
         let ws = workbook.addSheet("Compliance Posture")
         let ts = ISO8601DateFormatter().string(from: Date())
-        let framework = config.compliance?.resolvedFramework ?? "NIST 800-53 Moderate"
+        let framework = config.compliance?.resolvedFramework ?? "Compliance Benchmark"
         var row = ws.writeSheetHeader(title: t("Compliance Posture"),
                                       subtitle: "Generated: \(ts)", ncols: 3)
         ws.setColumnWidth(0, 0, 36)

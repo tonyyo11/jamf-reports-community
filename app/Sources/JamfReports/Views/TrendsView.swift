@@ -500,7 +500,7 @@ struct TrendsView: View {
                 multilineComparisonChart
                 HStack(spacing: 14) {
                     legendDot(color: Theme.Colors.ok, label: "FileVault")
-                    legendDot(color: Theme.Colors.gold, label: "NIST")
+                    legendDot(color: Theme.Colors.gold, label: workspaceStore.complianceBenchmarkLabel ?? "Compliance")
                     legendDot(color: Theme.Colors.info, label: "macOS")
                 }
             }
@@ -597,7 +597,7 @@ struct TrendsView: View {
             if let domain = chartDomain {
                 Chart {
                     series("FileVault", color: Theme.Colors.ok, points: points(for: .fileVault))
-                    series("NIST", color: Theme.Colors.gold, points: points(for: .compliance))
+                    series(workspaceStore.complianceBenchmarkLabel ?? "Compliance", color: Theme.Colors.gold, points: points(for: .compliance))
                     series("macOS Current", color: Theme.Colors.info, points: points(for: .osCurrent))
                 }
                 .chartXScale(domain: domain)
@@ -621,7 +621,7 @@ struct TrendsView: View {
                         .init(name: "FileVault",
                               dates: points(for: .fileVault).map(\.date),
                               values: points(for: .fileVault).map(\.value)),
-                        .init(name: "NIST Compliance",
+                        .init(name: workspaceStore.complianceBenchmarkLabel ?? "Compliance",
                               dates: points(for: .compliance).map(\.date),
                               values: points(for: .compliance).map(\.value)),
                         .init(name: "macOS Current",
@@ -943,8 +943,9 @@ struct TrendsView: View {
     nonisolated static let complianceTrendChartLabel = "Compliance trend"
 
     /// VoiceOver container label for the multi-metric comparison chart.
+    /// Static — cannot read workspace config; uses generic label.
     nonisolated static let multilineComparisonChartLabel =
-        "Multi-metric comparison: FileVault, NIST compliance, macOS currency"
+        "Multi-metric comparison: FileVault, Compliance, macOS currency"
 }
 
 

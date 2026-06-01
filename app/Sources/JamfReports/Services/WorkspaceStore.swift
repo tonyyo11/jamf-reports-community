@@ -93,6 +93,16 @@ final class WorkspaceStore {
     /// True when configState has been edited since the last save or load.
     var hasUnsavedChanges: Bool { _savedState != nil && configState != _savedState }
 
+    /// The configured compliance benchmark label for display in UI.
+    /// Prefers `compliance.baseline_label` when non-empty; falls back to the first
+    /// `platform.compliance_benchmarks` entry when set; otherwise nil (caller
+    /// should use a generic fallback like "Compliance Benchmark").
+    var complianceBenchmarkLabel: String? {
+        let label = configState.baselineLabel.trimmingCharacters(in: .whitespaces)
+        if !label.isEmpty { return label }
+        return configState.complianceBenchmarks.first(where: { !$0.isEmpty })
+    }
+
     // MARK: Column label / required metadata
 
     private static let columnLabels: [String: String] = [
