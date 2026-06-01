@@ -5,6 +5,33 @@ Security review findings and mitigations for the JamfReports macOS app.
 Each entry records a review's date, scope, findings, and resolution.
 Reviews are change-scoped unless explicitly noted as a full-project audit.
 
+## 2026-06-01 — Export-path gate removal (B-04 follow-up)
+
+**Scope:** removal of `SystemActions.userExportTargetIsAllowed(_:)` and its
+two call sites (`AuditView.exportFindings`, `DevicesView.exportFilteredCSV`).
+
+### Rationale
+
+B-04 narrowed the reveal/open allow-list and introduced a secondary
+path-prefix gate (Documents/Downloads/Desktop) for "user-initiated export
+destinations". In production use the gate proved to be a defect, not a
+control:
+
+- `AuditView` returned **silently** when the gate rejected the user's
+  NSSavePanel choice — "Export Findings" appeared to do nothing.
+- The gate rejected destinations Mac admins legitimately use (network
+  shares under `/Volumes`, iCloud Drive, workspace folders).
+- The 2026-05-20 review already classified the equivalent ungated pattern
+  in `PatchView.exportPatchComplianceCSV` as **verified clean**: "NSSavePanel
+  constrains the write to a user-chosen path."
+
+The save panel is per-action consent for one exact path — strictly stronger
+than a static prefix check. All six export flows now share that single
+pattern, with write failures surfaced in the UI.
+
+**Unchanged:** the `allowedParents()` allow-list in `SystemActions.reveal` /
+`openFolder` remains the boundary for all programmatic (non-panel) actions.
+
 ## 2026-05-20 — PR-25 change review
 
 **Scope:** the three changes in PR-25 — the `OOXMLWriter` xlsx ZIP/XML

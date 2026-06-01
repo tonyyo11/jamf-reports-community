@@ -354,7 +354,7 @@ struct ReportsView: View {
     @MainActor
     private func generateHTMLReport() {
         let profile = workspace.profile
-        let dateStr = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "jamf_report_\(profile)_\(dateStr).html"
         panel.allowedContentTypes = [.html]
@@ -412,7 +412,7 @@ struct ReportsView: View {
     @MainActor
     private func generatePDFReport() {
         let profile = workspace.profile
-        let dateStr = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "jamf_report_\(profile)_\(dateStr).pdf"
         panel.allowedContentTypes = [.pdf]
@@ -456,7 +456,7 @@ struct ReportsView: View {
     @MainActor
     private func runExportInventoryCSV() {
         let profile = workspace.profile
-        let dateStr = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "inventory_\(profile)_\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
@@ -514,25 +514,28 @@ struct ReportsView: View {
     }
 
     private func extractProfileFromFilename(_ filename: String) -> String? {
-        // Extract profile token from filename patterns like "jamf_report_PROFILE_date.ext"
-        // or "compliance_PROFILE_date.ext"
+        // Extract the profile token from filename patterns like
+        // "report_PROFILE_date.ext", "jamf_report_PROFILE_date.ext", or
+        // "inventory_PROFILE_date.ext". Multi-word prefixes are matched
+        // longest-first so "jamf_report_prod_..." yields "prod", not "report".
         let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
-        let components = stem.split(separator: "_")
-
-        // Look for profile token after the report type
-        if components.count >= 3 {
-            let reportType = String(components[0])
-            if ["jamf", "compliance", "mobile", "inventory", "school"].contains(reportType.lowercased()) {
-                let profileCandidate = String(components[1])
-                // Filter out date-like patterns (numbers only or date patterns)
-                if !profileCandidate.allSatisfy({ $0.isNumber }) &&
-                   !profileCandidate.contains("-") {
-                    return profileCandidate
-                }
-            }
+        let lowered = stem.lowercased()
+        let knownPrefixes = [
+            "jamf_report_", "school_report_", "school-report_",
+            "report_", "compliance_", "mobile_", "inventory_",
+        ]
+        guard let prefix = knownPrefixes.first(where: { lowered.hasPrefix($0) }) else {
+            return nil
         }
-
-        return nil
+        let rest = String(stem.dropFirst(prefix.count))
+        guard let profileCandidate = rest.split(separator: "_").first.map(String.init) else {
+            return nil
+        }
+        // Filter out date-like tokens (all numbers, or yyyy-MM-dd patterns).
+        if profileCandidate.allSatisfy({ $0.isNumber }) || profileCandidate.contains("-") {
+            return nil
+        }
+        return profileCandidate
     }
 }
 

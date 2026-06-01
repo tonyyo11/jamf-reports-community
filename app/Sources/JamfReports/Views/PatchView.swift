@@ -327,7 +327,9 @@ struct PatchView: View {
     private func exportPatchComplianceCSV() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
-        panel.nameFieldStringValue = "patch-compliance-\(workspace.profile).csv"
+        panel.nameFieldStringValue = ExportNaming.filename(
+            kind: "patch-compliance", profile: workspace.profile, ext: "csv"
+        )
         panel.title = "Export Patch Compliance CSV"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {

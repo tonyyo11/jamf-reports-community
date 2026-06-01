@@ -963,18 +963,15 @@ struct DevicesView: View {
     @MainActor
     private func exportFilteredCSV() async {
         let panel = NSSavePanel()
-        let dateStr = ISO8601DateFormatter.string(
-            from: Date(), timeZone: .current,
-            formatOptions: [.withFullDate]
+        panel.nameFieldStringValue = ExportNaming.filename(
+            kind: "devices", profile: workspace.profile, ext: "csv"
         )
-        panel.nameFieldStringValue = "devices-\(workspace.profile)-\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.canCreateDirectories = true
+        // The save panel is the user's explicit, per-action consent for this
+        // exact path — no additional allow-list gate (matches every other
+        // export flow: Patch, Runs, Reports, chart PNGs).
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard SystemActions.userExportTargetIsAllowed(url) else {
-            exportError = "Choose a location in Documents, Downloads, or Desktop."
-            return
-        }
         isExportingCSV = true
         defer { isExportingCSV = false }
         let rows = filteredDevices

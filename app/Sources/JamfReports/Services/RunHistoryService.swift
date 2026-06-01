@@ -146,6 +146,11 @@ enum RunHistoryService {
         let tail = String(label.dropFirst(prefix.count))
         guard let dot = tail.firstIndex(of: ".") else { return tail }
         var slug = String(tail[tail.index(after: dot)...])
+        // Per-run logs written by ScheduledRunRecorder carry a trailing
+        // `.yyyyMMdd-HHmmss` run timestamp — strip it from the display name.
+        if let stamp = slug.range(of: #"\.\d{8}-\d{6}$"#, options: .regularExpression) {
+            slug.removeSubrange(stamp)
+        }
         if slug.hasSuffix(".out") || slug.hasSuffix(".err") {
             slug = String(slug.dropLast(4))
         }

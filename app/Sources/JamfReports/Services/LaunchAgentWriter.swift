@@ -90,6 +90,9 @@ enum LaunchAgentWriter {
                 execPath, "--scheduled-run",
                 "--profile", schedule.profile,
                 "--mode", schedule.mode.rawValue,
+                // --label names the per-run record (ScheduledRunRecorder) so
+                // Run History attributes runs to this schedule.
+                "--label", agentLabel,
             ] + tierArguments(for: schedule),
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
@@ -424,6 +427,9 @@ enum LaunchAgentWriter {
                 "--scheduled-run",
                 "--profile", schedule.profile,
                 "--mode", schedule.mode.rawValue,
+                // --label names the per-run record (ScheduledRunRecorder) so
+                // Run History attributes runs to this schedule.
+                "--label", agentLabel,
             ] + tierArguments(for: schedule) + [
                 "--all-profiles",
             ],

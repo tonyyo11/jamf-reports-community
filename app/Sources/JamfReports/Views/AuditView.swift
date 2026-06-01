@@ -633,15 +633,17 @@ struct AuditView: View {
     @MainActor
     private func exportFindings() async {
         let panel = NSSavePanel()
-        let dateStr = ISO8601DateFormatter.string(
-            from: Date(), timeZone: .current,
-            formatOptions: [.withFullDate]
+        panel.nameFieldStringValue = ExportNaming.filename(
+            kind: "audit-findings", profile: workspace.profile, ext: "csv"
         )
-        panel.nameFieldStringValue = "audit-findings-\(workspace.profile)-\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.canCreateDirectories = true
+        // The save panel is the user's explicit, per-action consent for this
+        // exact path — no additional allow-list gate. (The old gate silently
+        // rejected anything outside Documents/Downloads/Desktop, which is why
+        // "Export Findings" appeared to do nothing on network shares and
+        // custom folders.)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard SystemActions.userExportTargetIsAllowed(url) else { return }
         let header = "Severity,Name,Category,Affected,Recommendation\n"
         let body = findings.map { f in
             [f.severity, f.name, f.category, "\(f.affected)", f.recommendation]

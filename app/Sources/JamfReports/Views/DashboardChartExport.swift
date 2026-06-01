@@ -129,54 +129,22 @@ enum DashboardChartExport {
         }
     }
 
-    /// Shared `DateFormatter` for filename date stamps. Static let on a
-    /// `@MainActor` enum — safe under Swift 6 strict concurrency because all
-    /// callers are already on the main actor.
-    private static let dateStampFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = TimeZone.current
-        return f
-    }()
-
-    /// Sanitize an arbitrary string into a safe filename component. Replaces
-    /// any character outside `[A-Za-z0-9._-]` with a hyphen, collapses runs
-    /// of consecutive hyphens, and strips leading/trailing hyphens and dots.
-    private static func sanitize(_ raw: String) -> String {
-        var result = raw.unicodeScalars.map { scalar in
-            let c = Character(scalar)
-            if c.isLetter || c.isNumber || c == "." || c == "_" || c == "-" {
-                return String(c)
-            }
-            return "-"
-        }.joined()
-        // Collapse repeated hyphens in one pass via regex (O(n) vs prior O(n²) loop).
-        result = result.replacingOccurrences(of: "-{2,}", with: "-", options: .regularExpression)
-        // Trim leading/trailing hyphens and dots.
-        // Leading dots make files hidden on the filesystem; leading/trailing ".."
-        // is visually confusing (no traversal risk here — slashes are already gone).
-        result = result.trimmingCharacters(in: CharacterSet(charactersIn: "-."))
-        return result
-    }
-
-    /// Build a PNG filename prefilled with profile, label, and today's date.
+    /// Build a PNG filename prefilled with profile, label, and a full timestamp.
     ///
-    /// Format: `"<profile>-<label>-<yyyy-MM-dd>.png"`. If the sanitized
+    /// Format: `"<profile>-<label>-<yyyy-MM-dd_HHmmss>.png"`. If the sanitized
     /// profile is empty the profile segment is omitted:
-    /// `"<label>-<yyyy-MM-dd>.png"`.
+    /// `"<label>-<yyyy-MM-dd_HHmmss>.png"`.
     ///
-    /// Both `profile` and `label` are sanitized: characters outside
-    /// `[A-Za-z0-9._-]` become hyphens, consecutive hyphens collapse, and
-    /// leading/trailing hyphens are stripped.
+    /// Sanitization and the timestamp come from `ExportNaming` so chart PNGs,
+    /// CSV exports, and engine reports all share one convention.
     static func filename(for label: String, profile: String) -> String {
-        let sanitizedProfile = sanitize(profile)
-        let sanitizedLabel = sanitize(label)
-        let dateStr = dateStampFormatter.string(from: Date())
+        let sanitizedProfile = ExportNaming.sanitize(profile)
+        let sanitizedLabel = ExportNaming.sanitize(label)
+        let stamp = ExportNaming.timestamp()
         if sanitizedProfile.isEmpty {
-            return "\(sanitizedLabel)-\(dateStr).png"
+            return "\(sanitizedLabel)-\(stamp).png"
         }
-        return "\(sanitizedProfile)-\(sanitizedLabel)-\(dateStr).png"
+        return "\(sanitizedProfile)-\(sanitizedLabel)-\(stamp).png"
     }
 }
 

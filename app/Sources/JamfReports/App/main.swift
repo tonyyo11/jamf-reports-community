@@ -16,7 +16,8 @@ private func scheduledRunSingle(
     profile: String,
     mode: Schedule.RunMode,
     tiers: Set<CollectionTier>?,
-    verbose: Bool
+    verbose: Bool,
+    label: String?
 ) async -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
@@ -42,7 +43,20 @@ private func scheduledRunSingle(
         }
     }
 
+    // Per-run record in <workspace>/automation/ — this is what Run History
+    // and the Schedules "Last Run" column read. The launchd stdout/stderr
+    // redirect to ~/Library/Logs/JamfReports/<label>/ is unchanged (raw
+    // stream capture); the recorder is the structured per-run record.
+    // Legacy plists without --label fall back to a profile+mode label so
+    // their runs are recorded too.
+    let runLabel = label ?? "\(LaunchAgentWriter.labelPrefix).\(profile).\(mode.rawValue)"
+    let recorder = ScheduledRunRecorder(workspace: workspace, label: runLabel)
+    if recorder == nil {
+        fputs("[warn] could not open run record in automation/logs — run will not appear in Run History\n", stderr)
+    }
+
     let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
+        recorder?.record(line.text)
         if verbose || line.level != .info {
             print(line.text)
         }
@@ -53,7 +67,10 @@ private func scheduledRunSingle(
     let resolvedCSV: URL?
     if mode == .csvAssisted {
         guard let csv = CLIBridge.newestCSV(in: profile) else {
-            fputs("[error] csv-assisted requires a CSV in csv-inbox/ — none found for '\(profile)'\n", stderr)
+            let message = "[error] csv-assisted requires a CSV in csv-inbox/ — none found for '\(profile)'"
+            fputs(message + "\n", stderr)
+            recorder?.record(message)
+            recorder?.finish(exitCode: 1)
             return 1
         }
         resolvedCSV = csv
@@ -87,7 +104,10 @@ private func scheduledRunSingle(
         }
         // snapshot-only stops after collect; summary.json is already written.
         if mode == .snapshotOnly {
-            print("[ok] scheduled snapshot complete for '\(profile)' — Trends updated")
+            let message = "[ok] scheduled snapshot complete for '\(profile)' — Trends updated"
+            print(message)
+            recorder?.record(message)
+            recorder?.finish(exitCode: 0)
             return 0
         }
 
@@ -97,12 +117,18 @@ private func scheduledRunSingle(
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
         try await engine.generate(csvURL: resolvedCSV, outputURL: outputURL)
-        print("[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)")
+        let message = "[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)"
+        print(message)
+        recorder?.record(message)
         // Tighten permissions on generated report and any newly written files.
         await WorkspacePermissionHardener.tighten(profile: profile)
+        recorder?.finish(exitCode: 0, artifacts: [outputURL])
         return 0
     } catch {
-        fputs("[error] '\(profile)': \(error.localizedDescription)\n", stderr)
+        let message = "[error] '\(profile)': \(error.localizedDescription)"
+        fputs(message + "\n", stderr)
+        recorder?.record(message)
+        recorder?.finish(exitCode: 1)
         return 1
     }
 }
@@ -136,6 +162,18 @@ private func scheduledRun(profile: String) async -> Int32 {
         return parsed.isEmpty ? nil : parsed
     }()
 
+    // --label <agent-label> names the per-run record in automation/ so Run
+    // History and the Schedules screen attribute the run to its schedule.
+    // Absent on plists written before the recorder existed; the run is then
+    // recorded under a profile+mode fallback label.
+    let label: String? = {
+        guard let idx = args.firstIndex(of: "--label"), idx + 1 < args.count,
+              LaunchAgentWriter.isValidLabel(args[idx + 1]) else {
+            return nil
+        }
+        return args[idx + 1]
+    }()
+
     if allProfiles {
         let profiles = ProfileService.discoverLocal()
         guard !profiles.isEmpty else {
@@ -145,7 +183,7 @@ private func scheduledRun(profile: String) async -> Int32 {
         var anyFailed = false
         for p in profiles {
             let code = await scheduledRunSingle(
-                profile: p.name, mode: mode, tiers: tiers, verbose: verbose
+                profile: p.name, mode: mode, tiers: tiers, verbose: verbose, label: label
             )
             if code != 0 { anyFailed = true }
         }
@@ -153,7 +191,7 @@ private func scheduledRun(profile: String) async -> Int32 {
     }
 
     return await scheduledRunSingle(
-        profile: profile, mode: mode, tiers: tiers, verbose: verbose
+        profile: profile, mode: mode, tiers: tiers, verbose: verbose, label: label
     )
 }
 

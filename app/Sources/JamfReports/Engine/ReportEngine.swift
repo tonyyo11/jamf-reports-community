@@ -1452,6 +1452,15 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // Include the profile in the filename so reports remain attributable
+        // to their tenant once moved out of the workspace folder.
+        // `report_prod_2026-06-01_120000.xlsx`, not `report_2026-06-01_120000.xlsx`.
+        let namedStem: String = {
+            guard let profile else { return stem }
+            let sanitized = ExportNaming.sanitize(profile)
+            return sanitized.isEmpty ? stem : "\(stem)_\(sanitized)"
+        }()
+
         let shouldTimestamp = config.output?.timestampOutputs ?? true
         if shouldTimestamp {
             let formatter = ISO8601DateFormatter()
@@ -1460,9 +1469,9 @@ struct ReportEngine: Sendable {
                 .replacingOccurrences(of: ":", with: "")
                 .replacingOccurrences(of: "-", with: "-")
                 .replacingOccurrences(of: "T", with: "_")
-            return outDir.appendingPathComponent("\(stem)_\(ts).xlsx")
+            return outDir.appendingPathComponent("\(namedStem)_\(ts).xlsx")
         } else {
-            return outDir.appendingPathComponent("\(stem).xlsx")
+            return outDir.appendingPathComponent("\(namedStem).xlsx")
         }
     }
 
