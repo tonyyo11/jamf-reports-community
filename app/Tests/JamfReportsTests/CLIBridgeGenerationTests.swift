@@ -93,12 +93,12 @@ final class CLIBridgeGenerationTests: XCTestCase {
             onLine: { line in collector.append(line) }
         )
 
-        XCTAssertEqual(result.failed.count, 1,
-                       "Unauthorized short-circuit must register exactly one failure (the .xlsx entry)")
-        XCTAssertEqual(result.failed.first?.type, .xlsx,
-                       "Short-circuit records .xlsx as the failed type — that's the documented contract")
-        XCTAssertEqual(result.failed.first?.exitCode, CLIBridge.exitCodeUnauthorized,
-                       "Failure exit code must be 3 (HTTP 401)")
+        XCTAssertEqual(result.failed.count, 2,
+                       "Unauthorized short-circuit must register a failure for every requested type")
+        XCTAssertTrue(result.failed.map(\.type).contains(.xlsx))
+        XCTAssertTrue(result.failed.map(\.type).contains(.html))
+        XCTAssertTrue(result.failed.allSatisfy { $0.exitCode == CLIBridge.exitCodeUnauthorized },
+                      "All failure entries must carry exit code 3 (HTTP 401)")
         XCTAssertTrue(result.succeeded.isEmpty,
                       "No type may be reported as succeeded when collect short-circuits")
         XCTAssertFalse(result.allSucceeded)
@@ -188,11 +188,14 @@ final class CLIBridgeGenerationTests: XCTestCase {
     }
 
     func testRunGenerateAllAbortsOnUnauthorizedCollect() async {
+        // runStubbed requests [.xlsx, .html]; both must appear in failed after exit 3.
         let (result, calls, _) = await runStubbed(
             collectFresh: true, collectExit: CLIBridge.exitCodeUnauthorized
         )
-        XCTAssertEqual(result.failed.map(\.type), [.xlsx],
-                       "exit 3 records exactly one .xlsx failure — the documented contract")
+        XCTAssertEqual(result.failed.count, 2,
+                       "exit 3 must record a failure entry for every requested type")
+        XCTAssertTrue(result.failed.map(\.type).contains(.xlsx))
+        XCTAssertTrue(result.failed.map(\.type).contains(.html))
         XCTAssertEqual(result.failed.first?.exitCode, CLIBridge.exitCodeUnauthorized)
         XCTAssertTrue(result.succeeded.isEmpty)
         XCTAssertEqual(calls.collect, 1)
@@ -269,6 +272,63 @@ final class CLIBridgeGenerationTests: XCTestCase {
         let (_, calls, _) = await runStubbed(types: [.xlsx], collectFresh: false)
         XCTAssertEqual(calls.xlsx, 1)
         XCTAssertEqual(calls.html, 0, "the HTML generator must not run when .html is not requested")
+    }
+
+    // MARK: - Fix 5: collect failure records all requested types
+
+    func testCollectFailureRecordsAllRequestedTypes() async {
+        // When collect hard-fails (exit 3), every requested type must appear in failed.
+        let calls = StubCalls()
+        let collector = LogLineCollector()
+        let result = await CLIBridge.runGenerateAll(
+            types: [.xlsx, .html, .pdf],
+            collectFresh: true,
+            profile: "test-profile",
+            onLine: { collector.append($0) },
+            collect: { calls.collect += 1; return CLIBridge.exitCodeUnauthorized },
+            generateXLSX: { calls.xlsx += 1; return 0 },
+            generateHTML: { calls.html += 1; return 0 },
+            generatePDF: { calls.pdf += 1; return 0 },
+            generateCSV: { calls.csv += 1; return 0 },
+            tighten: { calls.tighten += 1 },
+            cacheAge: { "" }
+        )
+        XCTAssertEqual(result.failed.count, 3, "all 3 requested types must be recorded as failed")
+        XCTAssertTrue(result.failed.map(\.type).contains(.xlsx))
+        XCTAssertTrue(result.failed.map(\.type).contains(.html))
+        XCTAssertTrue(result.failed.map(\.type).contains(.pdf))
+        XCTAssertEqual(calls.xlsx, 0, "no generator may run after unauthorized short-circuit")
+        XCTAssertEqual(calls.html, 0)
+        XCTAssertEqual(calls.pdf, 0)
+    }
+
+    // MARK: - Fix 6: generator throw continues to next format
+
+    func testXlsxThrowContinuesToHtml() async {
+        // When the XLSX generator throws (pre-spawn), the HTML generator must still run.
+        let calls = StubCalls()
+        let collector = LogLineCollector()
+        let result = await CLIBridge.runGenerateAll(
+            types: [.xlsx, .html],
+            collectFresh: false,
+            profile: "test-profile",
+            onLine: { collector.append($0) },
+            collect: { calls.collect += 1; return 0 },
+            generateXLSX: { throw CLIBridgeError.executableNotFound },
+            generateHTML: { calls.html += 1; return 0 },
+            generatePDF: { calls.pdf += 1; return 0 },
+            generateCSV: { calls.csv += 1; return 0 },
+            tighten: { calls.tighten += 1 },
+            cacheAge: { "1 day old" }
+        )
+        XCTAssertEqual(calls.html, 1, "HTML generator must still run after XLSX throw")
+        XCTAssertTrue(result.failed.map(\.type).contains(.xlsx),
+                      "XLSX must be recorded as failed")
+        XCTAssertTrue(result.succeeded.contains(.html),
+                      "HTML must be recorded as succeeded")
+        XCTAssertEqual(result.failed.first(where: { $0.type == .xlsx })?.exitCode, -1,
+                       "pre-spawn failure must record exit code -1")
+        XCTAssertEqual(calls.tighten, 1, "permission sweep must run because HTML succeeded")
     }
 }
 

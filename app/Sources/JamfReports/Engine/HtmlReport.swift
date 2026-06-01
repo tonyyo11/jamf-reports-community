@@ -1578,7 +1578,7 @@ struct HtmlReport: Sendable {
 
     // MARK: - JavaScript
 
-    private func buildScript() -> String {
+    func buildScript() -> String {
         """
         <script>
         (function() {
@@ -1596,6 +1596,34 @@ struct HtmlReport: Sendable {
           const btn = document.querySelector('.theme-toggle');
           if (btn) btn.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
         }
+        // Cleanup Analysis tab navigation.
+        // Buttons have class="cleanup-tab" and data-target="cpane-<id>".
+        // Panes have id="cpane-<id>" and class="cleanup-pane [active]".
+        document.addEventListener('click', function(e) {
+          var btn = e.target.closest('.cleanup-tab');
+          if (!btn) return;
+          var container = btn.closest('.cleanup-tabs');
+          if (!container) return;
+          // Deactivate all sibling tabs.
+          container.querySelectorAll('.cleanup-tab').forEach(function(t) {
+            t.classList.remove('active');
+            t.setAttribute('aria-selected', 'false');
+            t.setAttribute('tabindex', '-1');
+          });
+          // Activate the clicked tab.
+          btn.classList.add('active');
+          btn.setAttribute('aria-selected', 'true');
+          btn.setAttribute('tabindex', '0');
+          // Deactivate all panes in the same section, then activate the target.
+          var section = btn.closest('section');
+          if (section) {
+            section.querySelectorAll('.cleanup-pane').forEach(function(p) {
+              p.classList.remove('active');
+            });
+            var target = document.getElementById(btn.getAttribute('data-target'));
+            if (target) target.classList.add('active');
+          }
+        });
         </script>
         """
     }

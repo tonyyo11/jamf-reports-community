@@ -229,9 +229,10 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
 
     func testLoadSummarySnapshotsEmptyWhenDirMissing() {
         let report = makeReport()
-        let result = report.loadSummarySnapshots()
+        let (snapshots, skipped) = report.loadSummarySnapshots()
         // dataDir is /tmp/nonexistent-html-tests so snapshots/summaries doesn't exist.
-        XCTAssertTrue(result.isEmpty)
+        XCTAssertTrue(snapshots.isEmpty)
+        XCTAssertEqual(skipped, 0)
     }
 
     func testLoadSummarySnapshotsParsesValidFiles() throws {
@@ -260,9 +261,10 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
         // HtmlReport's dataDir is workspace/jamf-cli-data; summaries are at workspace/snapshots/summaries.
         let dataDir = tmp.appendingPathComponent("jamf-cli-data", isDirectory: true)
         let report = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
-        let snapshots = report.loadSummarySnapshots()
+        let (snapshots, skipped) = report.loadSummarySnapshots()
 
         XCTAssertEqual(snapshots.count, 1)
+        XCTAssertEqual(skipped, 0)
         XCTAssertEqual(snapshots.first?.date, "2026-01-15")
         XCTAssertEqual(snapshots.first?.totalDevices, 100)
         XCTAssertEqual(snapshots.first?.fileVaultPct, 95.0)
@@ -292,9 +294,10 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
 
         let dataDir = tmp.appendingPathComponent("jamf-cli-data", isDirectory: true)
         let report = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
-        let snapshots = report.loadSummarySnapshots()
+        let (snapshots, skipped) = report.loadSummarySnapshots()
 
         XCTAssertEqual(snapshots.count, 1)
+        XCTAssertEqual(skipped, 0)
         XCTAssertEqual(snapshots.first?.fileVaultPct, 99.0)
         XCTAssertEqual(snapshots.first?.sipPct, 1.0)
     }
@@ -317,9 +320,10 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
 
         let dataDir = tmp.appendingPathComponent("jamf-cli-data", isDirectory: true)
         let report = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
-        let snapshots = report.loadSummarySnapshots()
+        let (snapshots, skipped) = report.loadSummarySnapshots()
 
         XCTAssertEqual(snapshots.count, 3)
+        XCTAssertEqual(skipped, 0)
         XCTAssertEqual(snapshots[0].date, "2026-01-01")
         XCTAssertEqual(snapshots[1].date, "2026-02-01")
         XCTAssertEqual(snapshots[2].date, "2026-03-01")
@@ -387,6 +391,84 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
         let svg = report.renderTimelineSVG(summaries: snapshots)
         XCTAssertFalse(svg.contains("<script>"), "XSS in date strings must be escaped")
         XCTAssertTrue(svg.contains("&lt;script&gt;"))
+    }
+
+    // MARK: - loadSummarySnapshots: snake_case key support (Fix 7)
+
+    func testLoadSummarySnapshotsAcceptsSnakeCaseKeys() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let summariesDir = tmp.appendingPathComponent("snapshots/summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+
+        // Python v3.5 / legacy export format: snake_case keys.
+        let summary: [String: Any] = [
+            "date": "2026-03-15",
+            "total_devices": 120,
+            "filevault_pct": 88.5,
+            "sip_pct": 97.0,
+            "compliance_pct": 72.3,
+            "source": "csv",
+            "stale_count": 8,
+        ]
+        let data = try JSONSerialization.data(withJSONObject: summary)
+        try data.write(to: summariesDir.appendingPathComponent("summary_2026-03-15.json"))
+
+        let dataDir = tmp.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let report = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
+        let (snapshots, skipped) = report.loadSummarySnapshots()
+
+        XCTAssertEqual(snapshots.count, 1, "snake_case summary must be accepted")
+        XCTAssertEqual(skipped, 0)
+        XCTAssertEqual(snapshots.first?.totalDevices, 120)
+        XCTAssertEqual(snapshots.first?.fileVaultPct, 88.5)
+        XCTAssertEqual(snapshots.first?.sipPct, 97.0)
+        XCTAssertEqual(snapshots.first?.compliancePct, 72.3)
+    }
+
+    func testLoadSummarySnapshotsCountsUnparseable() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let summariesDir = tmp.appendingPathComponent("snapshots/summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+
+        // Valid file.
+        let good: [String: Any] = ["date": "2026-04-01", "totalDevices": 50, "source": "jamf-cli", "staleCount": 0]
+        let goodData = try JSONSerialization.data(withJSONObject: good)
+        try goodData.write(to: summariesDir.appendingPathComponent("summary_2026-04-01.json"))
+
+        // Missing totalDevices / total_devices → will be skipped.
+        let bad: [String: Any] = ["date": "2026-04-02", "source": "jamf-cli"]
+        let badData = try JSONSerialization.data(withJSONObject: bad)
+        try badData.write(to: summariesDir.appendingPathComponent("summary_2026-04-02.json"))
+
+        let dataDir = tmp.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let report = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
+        let (snapshots, skipped) = report.loadSummarySnapshots()
+
+        XCTAssertEqual(snapshots.count, 1)
+        XCTAssertEqual(skipped, 1, "file missing totalDevices must count as skipped")
+    }
+
+    // MARK: - buildScript: cleanup-tab handler (Fix 1)
+
+    func testBuildScriptContainsCleanupTabHandler() {
+        let report = makeReport()
+        let script = report.buildScript()
+        XCTAssertTrue(
+            script.contains("cleanup-tab"),
+            "buildScript must include a click delegation handler for .cleanup-tab buttons"
+        )
+        XCTAssertTrue(
+            script.contains("data-target"),
+            "cleanup-tab handler must look up the data-target attribute to identify the target pane"
+        )
+        XCTAssertTrue(
+            script.contains("cleanup-pane"),
+            "cleanup-tab handler must toggle .active on .cleanup-pane elements"
+        )
     }
 
     // MARK: - buildNewSectionEntries wiring

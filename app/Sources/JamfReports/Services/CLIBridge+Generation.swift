@@ -135,6 +135,11 @@ extension CLIBridge {
     /// stubs returning synthetic exit codes to exercise the collect-fallback
     /// (exit 3/5/6) and partial-success branches without a live jamf-cli.
     ///
+    /// Contract: every type in `types` ends up in exactly one of
+    /// `result.succeeded` or `result.failed`. A collect failure records ALL
+    /// requested types as failed; a generator throw records that type as failed
+    /// and execution continues to the next format.
+    ///
     /// `CLIBridge` is `final` and its generator methods are intentionally not
     /// behind the `CLICommand`/`CLIExecutor` protocol (ADR-W21 Hybrid scope), so
     /// this closure seam is the minimal injection point — it changes no method
@@ -171,11 +176,12 @@ extension CLIBridge {
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] collect failed: \(error.localizedDescription)"))
-                result.failed.append((.xlsx, -1)) // -1: no process exit code (pre-spawn failure)
+                // -1: no process exit code (pre-spawn failure). All requested types fail.
+                for t in types { result.failed.append((t, -1)) }
                 return result
             }
             if code == CLIBridge.exitCodeUnauthorized {
-                result.failed.append((.xlsx, code))
+                for t in types { result.failed.append((t, code)) }
                 return result
             }
             if code == CLIBridge.exitCodePermissionDenied {
@@ -183,7 +189,7 @@ extension CLIBridge {
                 if cacheAge.isEmpty {
                     onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                         text: "[fatal] collect permission denied (exit 5) and no cached data available"))
-                    result.failed.append((.xlsx, code))
+                    for t in types { result.failed.append((t, code)) }
                     return result
                 } else {
                     onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
@@ -194,7 +200,7 @@ extension CLIBridge {
                 if cacheAge.isEmpty {
                     onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                         text: "[fatal] collect rate-limited (exit 6) and no cached data available"))
-                    result.failed.append((.xlsx, code))
+                    for t in types { result.failed.append((t, code)) }
                     return result
                 } else {
                     onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
@@ -205,7 +211,7 @@ extension CLIBridge {
                 if cacheAge.isEmpty {
                     onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                         text: "[fatal] collect failed (exit \(code)) and no cached data available"))
-                    result.failed.append((.xlsx, code))
+                    for t in types { result.failed.append((t, code)) }
                     return result
                 } else {
                     onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
@@ -216,73 +222,66 @@ extension CLIBridge {
 
         // XLSX is the canonical workbook output.
         if types.contains(.xlsx) {
-            let code: Int32
             do {
-                code = try await generateXLSX()
+                let code = try await generateXLSX()
+                if code == 0 {
+                    result.succeeded.append(.xlsx)
+                } else {
+                    result.failed.append((.xlsx, code))
+                }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] generate failed: \(error.localizedDescription)"))
                 result.failed.append((.xlsx, -1)) // -1: no process exit code (pre-spawn failure)
-                return result
-            }
-            if code == 0 {
-                result.succeeded.append(.xlsx)
-            } else {
-                result.failed.append((.xlsx, code))
+                // Continue to next format — do not return.
             }
         }
 
         // HTML executive summary.
         if types.contains(.html) {
-            let code: Int32
             do {
-                code = try await generateHTML()
+                let code = try await generateHTML()
+                if code == 0 {
+                    result.succeeded.append(.html)
+                } else {
+                    result.failed.append((.html, code))
+                }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] html generate failed: \(error.localizedDescription)"))
                 result.failed.append((.html, -1)) // -1: no process exit code (pre-spawn failure)
-                return result
-            }
-            if code == 0 {
-                result.succeeded.append(.html)
-            } else {
-                result.failed.append((.html, code))
             }
         }
 
         // PDF paginated report.
         if types.contains(.pdf) {
-            let code: Int32
             do {
-                code = try await generatePDF()
+                let code = try await generatePDF()
+                if code == 0 {
+                    result.succeeded.append(.pdf)
+                } else {
+                    result.failed.append((.pdf, code))
+                }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] pdf generate failed: \(error.localizedDescription)"))
                 result.failed.append((.pdf, -1)) // -1: no process exit code (pre-spawn failure)
-                return result
-            }
-            if code == 0 {
-                result.succeeded.append(.pdf)
-            } else {
-                result.failed.append((.pdf, code))
             }
         }
 
         // CSV inventory export.
         if types.contains(.csv) {
-            let code: Int32
             do {
-                code = try await generateCSV()
+                let code = try await generateCSV()
+                if code == 0 {
+                    result.succeeded.append(.csv)
+                } else {
+                    result.failed.append((.csv, code))
+                }
             } catch {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
                     text: "[fatal] csv export failed: \(error.localizedDescription)"))
                 result.failed.append((.csv, -1)) // -1: no process exit code (pre-spawn failure)
-                return result
-            }
-            if code == 0 {
-                result.succeeded.append(.csv)
-            } else {
-                result.failed.append((.csv, code))
             }
         }
 

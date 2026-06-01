@@ -1312,13 +1312,16 @@ extension HtmlReport {
     /// from this data source; scalar metric trends are rendered instead.
     func buildTimelineSection() -> String {
         let f = HtmlSectionFormatters.self
-        let summaries = loadSummarySnapshots()
+        let (summaries, skipped) = loadSummarySnapshots()
+        let skippedNote = skipped > 0
+            ? "<p class=\"timeline-warn\">\(skipped) snapshot file\(skipped == 1 ? "" : "s") could not be parsed.</p>"
+            : ""
 
         guard !summaries.isEmpty else {
             return HtmlSectionFormatters.emptySection(
                 title: "Historical Trends",
                 dataKind: "snapshots/summaries/summary_*.json"
-            )
+            ) + skippedNote
         }
 
         // Build the trend table rows (date + key metrics), newest last.
@@ -1345,6 +1348,7 @@ extension HtmlReport {
             <section class="content-section" id="timeline">
               <h2>Historical Trends</h2>
               <p class="empty-note">Only 1 snapshot available — collect more runs to see trends.</p>
+              \(skippedNote)
               \(tableHTML)
             </section>
             """
@@ -1356,6 +1360,7 @@ extension HtmlReport {
         <section class="content-section" id="timeline">
           <h2>Historical Trends</h2>
           <p class="timeline-note">\(f.escapeHTML("\(summaries.count) snapshot\(summaries.count == 1 ? "" : "s")")) &middot; metrics from workspace summaries</p>
+          \(skippedNote)
           \(svgHTML)
           \(tableHTML)
         </section>
@@ -1375,9 +1380,11 @@ extension HtmlReport {
 
     /// Load and parse `summary_*.json` files from `<dataDir>/../snapshots/summaries/`.
     ///
-    /// Parses only the scalar fields needed for timeline rendering.
+    /// Parses only the scalar fields needed for timeline rendering. Accepts both
+    /// camelCase (Swift/Python-emitted) and snake_case key spellings for each field.
     /// Returns entries sorted oldest-first by date string (ISO format sorts correctly).
-    func loadSummarySnapshots() -> [SummarySnapshot] {
+    /// The `skipped` count reports files that were present but could not be decoded.
+    func loadSummarySnapshots() -> (snapshots: [SummarySnapshot], skipped: Int) {
         let summariesDir = dataDir
             .deletingLastPathComponent()
             .appendingPathComponent("snapshots/summaries", isDirectory: true)
@@ -1386,45 +1393,56 @@ extension HtmlReport {
             at: summariesDir,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
-        ) else { return [] }
+        ) else { return ([], 0) }
 
-        return files
+        let candidates = files
             .filter { $0.lastPathComponent.hasPrefix("summary_") && $0.pathExtension == "json" }
-            .compactMap { url -> SummarySnapshot? in
-                guard let data = try? Data(contentsOf: url),
-                      let obj = try? JSONSerialization.jsonObject(with: data),
-                      let dict = obj as? [String: Any],
-                      let date = dict["date"] as? String
-                else { return nil }
-                let total: Int
-                if let n = dict["totalDevices"] as? Int {
-                    total = n
-                } else if let d = dict["totalDevices"] as? Double {
-                    total = Int(d)
-                } else {
-                    return nil
-                }
-                let fv: Double?
-                if let n = dict["fileVaultPct"] as? Double { fv = n }
-                else if let n = dict["fileVaultPct"] as? Int { fv = Double(n) }
-                else { fv = nil }
-                let sip: Double?
-                if let n = dict["sipPct"] as? Double { sip = n }
-                else if let n = dict["sipPct"] as? Int { sip = Double(n) }
-                else { sip = nil }
-                let comp: Double?
-                if let n = dict["compliancePct"] as? Double { comp = n }
-                else if let n = dict["compliancePct"] as? Int { comp = Double(n) }
-                else { comp = nil }
-                return SummarySnapshot(
-                    date: date,
-                    totalDevices: total,
-                    fileVaultPct: fv,
-                    sipPct: sip,
-                    compliancePct: comp
-                )
+
+        var skipped = 0
+        var snapshots: [SummarySnapshot] = []
+        for url in candidates {
+            guard let data = try? Data(contentsOf: url),
+                  let obj = try? JSONSerialization.jsonObject(with: data),
+                  let dict = obj as? [String: Any],
+                  let date = dict["date"] as? String
+            else { skipped += 1; continue }
+
+            // Accept both camelCase (current Swift + Python writers) and snake_case
+            // (defensive: hand-authored or third-party summaries). Both writers emit camelCase.
+            func intVal(_ camel: String, _ snake: String) -> Int? {
+                if let n = dict[camel] as? Int { return n }
+                if let d = dict[camel] as? Double { return Int(d) }
+                if let n = dict[snake] as? Int { return n }
+                if let d = dict[snake] as? Double { return Int(d) }
+                return nil
             }
-            .sorted { $0.date < $1.date }
+            func dblVal(_ camel: String, _ snake: String) -> Double? {
+                if let n = dict[camel] as? Double { return n }
+                if let n = dict[camel] as? Int { return Double(n) }
+                if let n = dict[snake] as? Double { return n }
+                if let n = dict[snake] as? Int { return Double(n) }
+                return nil
+            }
+
+            guard let total = intVal("totalDevices", "total_devices") else {
+                skipped += 1; continue
+            }
+            snapshots.append(SummarySnapshot(
+                date: date,
+                totalDevices: total,
+                fileVaultPct: dblVal("fileVaultPct", "filevault_pct"),
+                sipPct:       dblVal("sipPct",       "sip_pct"),
+                compliancePct: dblVal("compliancePct", "compliance_pct")
+            ))
+        }
+
+        if skipped > 0 {
+            AppLogger.engine.warning(
+                "loadSummarySnapshots: \(skipped, privacy: .public) snapshot file(s) could not be parsed and were skipped"
+            )
+        }
+
+        return (snapshots: snapshots.sorted { $0.date < $1.date }, skipped: skipped)
     }
 
     /// Render an inline SVG multi-series line chart for summary trends.

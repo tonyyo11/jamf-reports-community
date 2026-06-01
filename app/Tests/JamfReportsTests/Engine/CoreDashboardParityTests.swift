@@ -176,7 +176,7 @@ final class CoreDashboardParityTests: XCTestCase {
              "gatekeeperStatus":"DISABLED","bootstrapTokenEscrowed":false}}
         ]
         """
-        try seedJSON(json, kind: "computers-list", in: dir)
+        try seedJSON(json, kind: "computers", in: dir)
 
         let dash = makeDashboard(dataDir: dir)
         XCTAssertNoThrow(try dash.writeDeviceSecurityState(),
@@ -205,7 +205,7 @@ final class CoreDashboardParityTests: XCTestCase {
         let json = """
         [{"general":{"id":"1","name":"Bare-Mac"},"hardware":{"serialNumber":"XYZ"}}]
         """
-        try seedJSON(json, kind: "computers-list", in: dir)
+        try seedJSON(json, kind: "computers", in: dir)
         let dash = makeDashboard(dataDir: dir)
         // All items lack security fields → throws noCachedData (empty filtered set)
         XCTAssertThrowsError(try dash.writeDeviceSecurityState())
@@ -214,6 +214,8 @@ final class CoreDashboardParityTests: XCTestCase {
     func testWriteDeviceSecurityStateWithFixture() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
+        // "computers-list" is the on-disk fixture name; it is in the fallback list
+        // ["computers", "computers-list", "computers_list"] so the reader finds it.
         copyFixture("computers-list", into: dir)
         guard FileManager.default.fileExists(
             atPath: dir.appendingPathComponent("computers-list").path)
@@ -297,14 +299,18 @@ final class CoreDashboardParityTests: XCTestCase {
         XCTAssertNotNil(ws, "Protect Plans sheet must be created")
     }
 
-    func testWriteProtectPlansEmptyArraySkips() throws {
+    func testWriteProtectPlansEmptyArrayThrows() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         try seedJSON("[]", kind: "protect-plans", in: dir)
 
         let dash = makeDashboard(dataDir: dir)
-        XCTAssertNoThrow(try dash.writeProtectPlans())
-        // Empty items → guard returns without writing a sheet
+        XCTAssertThrowsError(try dash.writeProtectPlans()) { error in
+            guard case CoreDashboardError.noCachedData = error else {
+                XCTFail("Expected CoreDashboardError.noCachedData for empty protect-plans, got \(error)")
+                return
+            }
+        }
         XCTAssertNil(dash.workbook.sheet(named: "Protect Plans"),
                      "Empty protect-plans must not create a sheet")
     }
@@ -382,13 +388,18 @@ final class CoreDashboardParityTests: XCTestCase {
         XCTAssertNotNil(ws, "Protect Threat Overview sheet must be created")
     }
 
-    func testWriteProtectThreatOverviewEmptyArraySkips() throws {
+    func testWriteProtectThreatOverviewEmptyArrayThrows() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         try seedJSON("[]", kind: "protect-alerts", in: dir)
 
         let dash = makeDashboard(dataDir: dir)
-        XCTAssertNoThrow(try dash.writeProtectThreatOverview())
+        XCTAssertThrowsError(try dash.writeProtectThreatOverview()) { error in
+            guard case CoreDashboardError.noCachedData = error else {
+                XCTFail("Expected CoreDashboardError.noCachedData for empty protect-alerts, got \(error)")
+                return
+            }
+        }
         XCTAssertNil(dash.workbook.sheet(named: "Protect Threat Overview"),
                      "Empty protect-alerts must not create a sheet")
     }

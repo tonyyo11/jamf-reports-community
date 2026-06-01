@@ -35,6 +35,8 @@ struct ReportLibrary {
     private let fileManager = FileManager.default
     private let allowedExtensions: Set<String> = ["xlsx", "html", "pdf", "csv"]
     private let maxCentralDirectoryBytes: UInt64 = 5 * 1024 * 1024
+    // Compiled once for all deviceCountFromSummary calls.
+    private static let timestampRegex = try? NSRegularExpression(pattern: #"(\d{4}-\d{2}-\d{2})"#)
 
     struct Stats: Sendable {
         let count: Int
@@ -280,8 +282,7 @@ struct ReportLibrary {
         let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
 
         // Look for timestamp pattern YYYY-MM-DD in the filename
-        let timestampRegex = try? NSRegularExpression(pattern: #"(\d{4}-\d{2}-\d{2})"#)
-        guard let regex = timestampRegex,
+        guard let regex = Self.timestampRegex,
               let match = regex.firstMatch(in: stem, range: NSRange(stem.startIndex..., in: stem)),
               let range = Range(match.range(at: 1), in: stem) else {
             return nil

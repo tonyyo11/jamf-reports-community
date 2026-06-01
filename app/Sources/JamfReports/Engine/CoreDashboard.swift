@@ -1805,9 +1805,11 @@ struct CoreDashboard: Sendable {
                   let nodes = dict["nodes"] as? [[String: Any]] {
             items = nodes
         } else {
-            return
+            throw CoreDashboardError.noCachedData(names: ["protect-plans"])
         }
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["protect-plans"])
+        }
 
         let ws = workbook.addSheet("Protect Plans")
         let ts = ISO8601DateFormatter().string(from: Date())
@@ -1878,7 +1880,9 @@ struct CoreDashboard: Sendable {
     func writeProtectThreatOverview() throws {
         let raw = try loadLatestJSON(names: ["protect-alerts"])
         let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["protect-alerts"])
+        }
 
         let severityRank: [String: Int] = [
             "critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4,
@@ -2074,13 +2078,13 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Device Security State
-    // Source: computers-list snapshot (SECURITY + diskEncryption sections).
+    // Source: computers snapshot (SECURITY + diskEncryption sections).
 
     func writeDeviceSecurityState() throws {
-        let raw = try? loadLatestJSON(names: ["computers-list", "computers_list"])
+        let raw = try? loadLatestJSON(names: ["computers", "computers-list", "computers_list"])
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["computers-list"])
+            throw CoreDashboardError.noCachedData(names: ["computers"])
         }
 
         struct DeviceSecurityRow {
@@ -2132,14 +2136,14 @@ struct CoreDashboard: Sendable {
         }
 
         guard !rows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["computers-list"])
+            throw CoreDashboardError.noCachedData(names: ["computers"])
         }
 
         let ws = workbook.addSheet("Device Security State")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(
             title: t("Device Security State"),
-            subtitle: "Source: computers-list (security sections) | Generated: \(ts)",
+            subtitle: "Source: computers (security sections) | Generated: \(ts)",
             ncols: 7
         )
         ws.setColumnWidth(0, 0, 32)
