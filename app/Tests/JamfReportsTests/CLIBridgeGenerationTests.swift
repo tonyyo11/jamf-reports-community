@@ -167,6 +167,8 @@ final class CLIBridgeGenerationTests: XCTestCase {
         collectExit: Int32 = 0,
         xlsxExit: Int32 = 0,
         htmlExit: Int32 = 0,
+        pdfExit: Int32 = 0,
+        csvExit: Int32 = 0,
         cacheAge: String = "2 hours old"
     ) async -> (result: GenerateAllResult, calls: StubCalls, lines: [String]) {
         let calls = StubCalls()
@@ -179,8 +181,8 @@ final class CLIBridgeGenerationTests: XCTestCase {
             collect: { calls.collect += 1; return collectExit },
             generateXLSX: { calls.xlsx += 1; return xlsxExit },
             generateHTML: { calls.html += 1; return htmlExit },
-            generatePDF: { calls.pdf += 1; return 0 },
-            generateCSV: { calls.csv += 1; return 0 },
+            generatePDF: { calls.pdf += 1; return pdfExit },
+            generateCSV: { calls.csv += 1; return csvExit },
             tighten: { calls.tighten += 1 },
             cacheAge: { cacheAge }
         )
@@ -329,6 +331,141 @@ final class CLIBridgeGenerationTests: XCTestCase {
         XCTAssertEqual(result.failed.first(where: { $0.type == .xlsx })?.exitCode, -1,
                        "pre-spawn failure must record exit code -1")
         XCTAssertEqual(calls.tighten, 1, "permission sweep must run because HTML succeeded")
+    }
+
+    // MARK: - Item 2: PDF and CSV generator coverage
+
+    func testPdfAndCsvBothSucceedWhenCollectSucceeds() async {
+        let (result, calls, _) = await runStubbed(
+            types: [.pdf, .csv],
+            collectFresh: true,
+            collectExit: 0,
+            pdfExit: 0,
+            csvExit: 0
+        )
+        XCTAssertEqual(calls.pdf, 1, "PDF generator must fire once")
+        XCTAssertEqual(calls.csv, 1, "CSV generator must fire once")
+        XCTAssertTrue(result.succeeded.contains(.pdf), "PDF must land in succeeded")
+        XCTAssertTrue(result.succeeded.contains(.csv), "CSV must land in succeeded")
+        XCTAssertTrue(result.failed.isEmpty)
+    }
+
+    func testPdfNonZeroExitLandsInFailedCsvStillRuns() async {
+        let (result, calls, _) = await runStubbed(
+            types: [.pdf, .csv],
+            collectFresh: true,
+            collectExit: 0,
+            pdfExit: 1,
+            csvExit: 0
+        )
+        XCTAssertEqual(calls.pdf, 1)
+        XCTAssertEqual(calls.csv, 1, "CSV must still run even after PDF non-zero exit")
+        XCTAssertTrue(result.failed.contains(where: { $0.type == .pdf && $0.exitCode == 1 }),
+                      "PDF must land in failed with exit 1")
+        XCTAssertTrue(result.succeeded.contains(.csv), "CSV must land in succeeded")
+    }
+
+    func testPdfThrowLandsInFailedWithMinusOneCsvStillRuns() async {
+        // PDF throws (pre-spawn failure) → recorded as exit -1; CSV still runs.
+        let calls = StubCalls()
+        let collector = LogLineCollector()
+        let result = await CLIBridge.runGenerateAll(
+            types: [.pdf, .csv],
+            collectFresh: false,
+            profile: "test-profile",
+            onLine: { collector.append($0) },
+            collect: { calls.collect += 1; return 0 },
+            generateXLSX: { calls.xlsx += 1; return 0 },
+            generateHTML: { calls.html += 1; return 0 },
+            generatePDF: { throw CLIBridgeError.executableNotFound },
+            generateCSV: { calls.csv += 1; return 0 },
+            tighten: { calls.tighten += 1 },
+            cacheAge: { "1 day old" }
+        )
+        XCTAssertEqual(calls.pdf, 0, "throw in closure means the generator ran but threw")
+        XCTAssertTrue(result.failed.contains(where: { $0.type == .pdf && $0.exitCode == -1 }),
+                      "PDF throw must record exit code -1")
+        XCTAssertEqual(calls.csv, 1, "CSV must still run after PDF throw")
+        XCTAssertTrue(result.succeeded.contains(.csv))
+    }
+
+    func testCsvThrowLandsInFailedOthersUnaffected() async {
+        // CSV throws; no other type is affected.
+        let calls = StubCalls()
+        let collector = LogLineCollector()
+        let result = await CLIBridge.runGenerateAll(
+            types: [.pdf, .csv],
+            collectFresh: false,
+            profile: "test-profile",
+            onLine: { collector.append($0) },
+            collect: { calls.collect += 1; return 0 },
+            generateXLSX: { calls.xlsx += 1; return 0 },
+            generateHTML: { calls.html += 1; return 0 },
+            generatePDF: { calls.pdf += 1; return 0 },
+            generateCSV: { throw CLIBridgeError.executableNotFound },
+            tighten: { calls.tighten += 1 },
+            cacheAge: { "1 day old" }
+        )
+        XCTAssertEqual(calls.pdf, 1, "PDF generator must run unaffected by CSV throw")
+        XCTAssertTrue(result.succeeded.contains(.pdf))
+        XCTAssertTrue(result.failed.contains(where: { $0.type == .csv && $0.exitCode == -1 }),
+                      "CSV throw must record exit code -1")
+        XCTAssertFalse(result.failed.contains(where: { $0.type == .pdf }),
+                       "PDF must not appear in failed")
+    }
+
+    // MARK: - Item 7: describeCacheAge formatting
+
+    func testDescribeCacheAgeHoursOld() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-cacheage-test-hours-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let file = dir.appendingPathComponent("snapshot.json")
+        try Data("{}".utf8).write(to: file)
+        let twoHoursAgo = Date().addingTimeInterval(-7200)
+        try FileManager.default.setAttributes(
+            [.modificationDate: twoHoursAgo], ofItemAtPath: file.path)
+
+        let result = CLIBridge.describeCacheAge(inDirectory: dir)
+        XCTAssertTrue(result.contains("hours old"),
+                      "2-hour-old file must produce 'hours old'; got: \(result)")
+    }
+
+    func testDescribeCacheAgeDaysOld() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-cacheage-test-days-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let file = dir.appendingPathComponent("snapshot.json")
+        try Data("{}".utf8).write(to: file)
+        let twoDaysAgo = Date().addingTimeInterval(-172_800)
+        try FileManager.default.setAttributes(
+            [.modificationDate: twoDaysAgo], ofItemAtPath: file.path)
+
+        let result = CLIBridge.describeCacheAge(inDirectory: dir)
+        XCTAssertTrue(result.contains("days old"),
+                      "2-day-old file must produce 'days old'; got: \(result)")
+    }
+
+    func testDescribeCacheAgeEmptyDirReturnsEmpty() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-cacheage-test-empty-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let result = CLIBridge.describeCacheAge(inDirectory: dir)
+        XCTAssertEqual(result, "", "empty dir must return empty string")
+    }
+
+    func testDescribeCacheAgeMissingDirReturnsEmpty() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-cacheage-test-missing-\(UUID().uuidString)", isDirectory: true)
+        // Do NOT create the directory.
+        let result = CLIBridge.describeCacheAge(inDirectory: dir)
+        XCTAssertEqual(result, "", "missing dir must return empty string")
     }
 }
 

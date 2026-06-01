@@ -284,7 +284,21 @@ struct OverviewView: View {
             isRunning = false
         }
 
-        let shouldSkipCollect = await isSnapshotFresh(profile: profile)
+        let freshnessDecision = await Task.detached(priority: .utility) {
+            guard ProfileService.isValid(profile),
+                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+                return SnapshotFreshness.Decision.noSnapshots
+            }
+            return SnapshotFreshness.evaluate(dataDir: dataDir)
+        }.value
+
+        let shouldSkipCollect: Bool
+        switch freshnessDecision {
+        case .fresh:
+            shouldSkipCollect = true
+        case .stale, .noSnapshots:
+            shouldSkipCollect = false
+        }
 
         if shouldSkipCollect {
             workspace.globalStatus = "generate from cached snapshots · profile=\(profile)"
@@ -296,6 +310,20 @@ struct OverviewView: View {
         do {
             let exit: Int32
             if shouldSkipCollect {
+                // Emit a durable-intent message through the live log channel so the
+                // skip reason is visible in globalStatus and any log viewer that reads
+                // this stream. True Runs-log durability (writing to automation/logs/)
+                // requires CLIBridge-side emit, which is outside this change's scope.
+                let skipMessage: String
+                if case .fresh(let ageMinutes) = freshnessDecision {
+                    skipMessage = "[info] snapshots are fresh (\(ageMinutes)m old) — skipped collect;" +
+                        " Trends will not gain a new data point this run"
+                } else {
+                    skipMessage = "[info] snapshots are fresh — skipped collect"
+                }
+                await MainActor.run { workspace.globalStatus = skipMessage }
+                AppLogger.cli.info("\(skipMessage, privacy: .public)")
+
                 exit = try await bridge.generate(profile: profile, csvPath: nil) { [weak workspace] line in
                     Task { @MainActor in
                         guard let workspace, self.isRunning else { return }
@@ -344,64 +372,6 @@ struct OverviewView: View {
             workspace.toast = Toast(message: "Generate failed — \(error.localizedDescription)", style: .danger)
             generatedHashes.removeAll()
         }
-    }
-
-    /// Check if the newest jamf-cli snapshot is fresh enough to skip collection.
-    /// Returns true if the newest data in the workspace's jamf-cli-data dir
-    /// is less than 60 minutes old, false otherwise.
-    private func isSnapshotFresh(profile: String) async -> Bool {
-        await Task.detached(priority: .utility) {
-            guard ProfileService.isValid(profile),
-                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-                return false
-            }
-
-            let newestMTime = Self.getNewestSnapshotMTime(in: dataDir)
-            guard let newestMTime else { return false }
-
-            let ageMinutes = Date().timeIntervalSince(newestMTime) / 60
-            let isFresh = ageMinutes < 60
-
-            if isFresh {
-                // Log the decision so users understand why collect was skipped
-                await MainActor.run {
-                    AppLogger.cli.info("snapshots are fresh (\(Int(ageMinutes))m old) — skipping collect")
-                }
-            }
-
-            return isFresh
-        }.value
-    }
-
-    /// Find the newest modification time across all files in the jamf-cli-data directory tree.
-    /// Returns nil if the directory doesn't exist or is empty.
-    private nonisolated static func getNewestSnapshotMTime(in dataDir: URL) -> Date? {
-        guard let enumerator = FileManager.default.enumerator(
-            at: dataDir,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
-        }
-
-        var newestDate: Date?
-        for case let fileURL as URL in enumerator {
-            guard let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey]),
-                  values.isRegularFile == true,
-                  let mtime = values.contentModificationDate else {
-                continue
-            }
-
-            if let current = newestDate {
-                if mtime > current {
-                    newestDate = mtime
-                }
-            } else {
-                newestDate = mtime
-            }
-        }
-
-        return newestDate
     }
 
     /// Format the first artifact's 12-char short fingerprint for the toast.

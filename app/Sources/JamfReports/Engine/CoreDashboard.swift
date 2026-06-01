@@ -1947,7 +1947,7 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["patch-status"])
         }
 
-        let rawDC = try? loadLatestJSON(names: ["device-compliance", "device_compliance"])
+        let rawDC = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
         let dcList = (rawDC as? [[String: Any]]) ?? []
         guard !dcList.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
@@ -2081,7 +2081,7 @@ struct CoreDashboard: Sendable {
     // Source: computers snapshot (SECURITY + diskEncryption sections).
 
     func writeDeviceSecurityState() throws {
-        let raw = try? loadLatestJSON(names: ["computers", "computers-list", "computers_list"])
+        let raw = try loadLatestJSON(names: ["computers", "computers-list", "computers_list"])
         let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["computers"])
@@ -2226,8 +2226,7 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
-        for family in perFamily.keys.sorted() {
-            let counts = perFamily[family]!
+        for (family, counts) in perFamily.sorted(by: { $0.key < $1.key }) {
             let pct = counts.total > 0
                 ? String(format: "%.1f%%", Double(counts.supervised) / Double(counts.total) * 100)
                 : "0.0%"

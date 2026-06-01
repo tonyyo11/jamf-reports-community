@@ -147,4 +147,48 @@ final class GenerateSheetStateTests: XCTestCase {
         XCTAssertEqual(GenerateOutputType.pdf.rawValue,  "PDF")
         XCTAssertEqual(GenerateOutputType.csv.rawValue,  "CSV")
     }
+
+    // MARK: - Item 1: GenerateSheetState.summarize
+
+    func testSummarizeAllSucceedReturnsCountAndNilMessage() {
+        var result = GenerateAllResult()
+        result.succeeded = [.xlsx, .html]
+        let (count, message) = GenerateSheetState.summarize(result)
+        XCTAssertEqual(count, 2)
+        XCTAssertNil(message, "all-success must produce nil error message")
+    }
+
+    func testSummarizeAllFailReturnsZeroCountAndMessage() {
+        var result = GenerateAllResult()
+        result.failed = [(.xlsx, 1), (.html, 3)]
+        let (count, message) = GenerateSheetState.summarize(result)
+        XCTAssertEqual(count, 0)
+        XCTAssertNotNil(message)
+        XCTAssertTrue(message?.contains("failed") == true,
+                      "all-fail message must mention 'failed'; got: \(message ?? "<nil>")")
+        XCTAssertTrue(message?.contains("XLSX") == true)
+        XCTAssertTrue(message?.contains("HTML") == true)
+    }
+
+    func testSummarizePartialSuccessReturnsSucceededCountAndMessage() {
+        var result = GenerateAllResult()
+        result.succeeded = [.xlsx]
+        result.failed = [(.html, 5)]
+        let (count, message) = GenerateSheetState.summarize(result)
+        XCTAssertEqual(count, 1, "partial success count must equal succeeded.count")
+        XCTAssertNotNil(message)
+        // Message must name the succeeded format and the failed format.
+        XCTAssertTrue(message?.contains("XLSX") == true,
+                      "partial message must mention the succeeded type; got: \(message ?? "<nil>")")
+        XCTAssertTrue(message?.contains("HTML") == true,
+                      "partial message must mention the failed type; got: \(message ?? "<nil>")")
+        XCTAssertTrue(message?.contains("failed") == true)
+    }
+
+    func testSummarizeEmptyResultReturnsZeroAndNilMessage() {
+        let result = GenerateAllResult()
+        let (count, message) = GenerateSheetState.summarize(result)
+        XCTAssertEqual(count, 0)
+        XCTAssertNil(message, "empty result (nothing requested) must return nil message")
+    }
 }
