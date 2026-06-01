@@ -532,7 +532,7 @@ struct Sparkline: View {
     var body: some View {
         GeometryReader { geo in
             let path = makePath(in: geo.size)
-            let fillOpacity = contrast == .increased ? 0.40 : 0.25
+            let fillOpacity = contrast == .increased ? 0.40 : 0.14
             ZStack {
                 path
                     .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))

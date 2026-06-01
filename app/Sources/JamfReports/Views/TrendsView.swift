@@ -312,10 +312,6 @@ struct TrendsView: View {
                                 .monospacedDigit()
                                 .contentTransition(.numericText(countsDown: delta < 0))
                                 .animation(.snappy(duration: 0.35), value: displayVal)
-                                .shadow(
-                                    color: Color(hex: metric.colorHex).opacity(0.3),
-                                    radius: 20
-                                )
 
                             if selectedPoint == nil {
                                 HStack(spacing: 4) {
@@ -353,7 +349,7 @@ struct TrendsView: View {
                             AreaMark(x: .value("Date", point.date),
                                      y: .value(metric.displayLabel, point.value))
                                 .foregroundStyle(LinearGradient(
-                                    colors: [Color(hex: metric.colorHex).opacity(0.35),
+                                    colors: [Color(hex: metric.colorHex).opacity(0.14),
                                              Color(hex: metric.colorHex).opacity(0.0)],
                                     startPoint: .top, endPoint: .bottom
                                 ))
@@ -363,6 +359,17 @@ struct TrendsView: View {
                                 .foregroundStyle(Color(hex: metric.colorHex))
                                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                                 .interpolationMethod(.monotone)
+
+                            // Always-visible data point dots
+                            PointMark(x: .value("Date", point.date),
+                                      y: .value(metric.displayLabel, point.value))
+                                .foregroundStyle(Color.white)
+                                .symbolSize(36)
+                                .annotation(position: .overlay) {
+                                    Circle()
+                                        .stroke(Color(hex: metric.colorHex), lineWidth: 2.2)
+                                        .frame(width: 8, height: 8)
+                                }
                         }
 
                         if let selectedPoint {
@@ -706,6 +713,18 @@ struct TrendsView: View {
             .foregroundStyle(color)
             .lineStyle(StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
             .interpolationMethod(.catmullRom)
+
+            PointMark(
+                x: .value("Date", point.date),
+                y: .value(name, point.value)
+            )
+            .foregroundStyle(Color.white)
+            .symbolSize(24)
+            .annotation(position: .overlay) {
+                Circle()
+                    .stroke(color, lineWidth: 1.8)
+                    .frame(width: 6, height: 6)
+            }
         }
     }
 
@@ -1079,8 +1098,8 @@ private struct ChartExportView: View {
                     y: .value(metric.displayLabel, point.value)
                 )
                 .foregroundStyle(LinearGradient(
-                    colors: [Color(hex: metric.colorHex).opacity(0.26),
-                             Color(hex: metric.colorHex).opacity(0.03)],
+                    colors: [Color(hex: metric.colorHex).opacity(0.12),
+                             Color(hex: metric.colorHex).opacity(0.0)],
                     startPoint: .top, endPoint: .bottom
                 ))
                 .interpolationMethod(.catmullRom)
