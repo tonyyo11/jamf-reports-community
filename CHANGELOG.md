@@ -51,14 +51,56 @@ versions in this repository map to git tags.
   Groups" — plus a toggleable "Groups & Searches" tab in the app. Each is gated on
   the command being present in your installed jamf-cli, so older binaries degrade
   gracefully.
+- "Full Instance Report" template: a new template containing every workbook sheet
+  and every HTML section, now the default for app report generation. Executive and
+  the other focused templates remain available in the picker.
+- Five workbook sheets ported from the Python engine: Patch Summary Dashboard,
+  Mobile Supervision Status, Device Security State, Protect Plans, and Protect
+  Threat Overview.
+- Two HTML report sections ported from the Python engine: Cleanup Analysis
+  (disabled policies, unscoped policies/profiles, unreferenced packages/scripts)
+  and Timeline (FileVault/SIP/compliance history from archived snapshots).
+- The app's collect now also fetches categories, classic iOS profiles, device
+  enrollment instances, mobile device inventory details, and Protect plans, so
+  the corresponding report sections have data.
+- PDF and inventory CSV are selectable output formats in the Generate sheet,
+  alongside XLSX and HTML, and the sheet lists exactly which files the current
+  selection will write.
+- Trends and posture comparison charts show a dot at every data point instead of
+  only on hover, and chart PNG exports prefill the filename with the profile name
+  and date (e.g. `dummy-Security-Score-2026-06-01.png`).
 
 ### Changed
 
 - Accessibility: empty-state actions are announced to VoiceOver, Extension
   Attribute rows are keyboard- and VoiceOver-reachable, and serif KPI numerals
   scale with Dynamic Type.
+- Trends chart visuals: removed the colored glow behind the hero metric and
+  softened the gradient fill under trend lines so sparse data no longer renders
+  as a solid block.
+- The Generate sheet defaults to XLSX only (previously XLSX + HTML), and the
+  Overview "Generate Report" button skips the collect step when snapshots are
+  less than an hour old.
+- Compliance labels: the app no longer hardcodes "NIST 800-53r5 Moderate" as the
+  compliance metric name. The default label is "Compliance Benchmark"; workspaces
+  that set `compliance.baseline_label` or `platform.compliance_benchmarks` in
+  config.yaml see their configured benchmark name throughout the app.
+- Collect failures during generation now report how old the cached data being
+  used is, and fail outright when no cached data exists instead of writing an
+  empty report.
 
 ### Fixed
+
+- The app's HTML report rendered most sections empty because it loaded cached
+  snapshots under names the collector never writes (computers-inventory vs
+  computers, classic-policies vs policies, computer-smart-groups vs
+  smart-computer-groups). Sections now load the canonical names, fleet-inventory
+  sections read the real nested computers-list shape, and sections with no data
+  show an explicit "No data — run Collect" placeholder instead of vanishing.
+- The Generated reports list showed 0 devices for every report; it now reads the
+  device count from the run's summary snapshot.
+- Concurrent GUI report runs for the same profile are blocked with a clear
+  message, and the toolbar refresh button is debounced.
 
 - `diagnostic-bundle` now collects trend summaries from the configured
   `charts.historical_csv_dir`/summaries directory (where they are actually
