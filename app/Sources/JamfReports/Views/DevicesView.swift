@@ -963,11 +963,9 @@ struct DevicesView: View {
     @MainActor
     private func exportFilteredCSV() async {
         let panel = NSSavePanel()
-        let dateStr = ISO8601DateFormatter.string(
-            from: Date(), timeZone: .current,
-            formatOptions: [.withFullDate]
+        panel.nameFieldStringValue = ExportNaming.filename(
+            kind: "devices", profile: workspace.profile, ext: "csv"
         )
-        panel.nameFieldStringValue = "devices-\(workspace.profile)-\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.canCreateDirectories = true
         // The save panel is the user's explicit, per-action consent for this

@@ -362,7 +362,9 @@ struct OutreachView: View {
             )
             return
         }
-        let filename = "outreach-stale-devices-\(workspace.profile).csv"
+        let filename = ExportNaming.filename(
+            kind: "outreach-stale-devices", profile: workspace.profile, ext: "csv"
+        )
         let fileURL = outputDir.appendingPathComponent(filename)
         do {
             try FileManager.default.createDirectory(
