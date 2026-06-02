@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SourcesView: View {
@@ -18,6 +19,14 @@ struct SourcesView: View {
     @State private var capabilitySnapshot: CLICapabilitySnapshot?
     @State private var capabilityService: CapabilityService?
     @State private var cliBridge = CLIBridge()
+    @State private var showingProductConnect: ProductConnectSheet? = nil
+
+    enum ProductConnectSheet: Identifiable {
+        case protect, school
+        var id: String {
+            switch self { case .protect: "protect"; case .school: "school" }
+        }
+    }
 
     private struct CLICommand: Identifiable {
         let id = UUID()
@@ -80,6 +89,13 @@ struct SourcesView: View {
             }
             capabilityCard
             familiesCard
+            additionalProductsCard
+        }
+        .sheet(item: $showingProductConnect) { kind in
+            ProductConnectSheetView(
+                product: kind,
+                profileSlug: workspace.profile
+            )
         }
         .onAppear {
             reload()
@@ -517,6 +533,42 @@ struct SourcesView: View {
             return "~/Jamf-Reports/\(workspace.profile)/\(suffix)/"
         }
         return dataPath + "/"
+    }
+
+    // MARK: - Additional products card
+
+    private var additionalProductsCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "plus.app.fill").foregroundStyle(Theme.Colors.goldBright)
+                        .font(.system(size: 16))
+                    SectionHeader(title: "Additional products")
+                }
+                Text("Connect Jamf Protect or Jamf School to extend report coverage for the active workspace.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    PNPButton(
+                        title: "Add Jamf Protect",
+                        icon: "shield.lefthalf.filled",
+                        size: .sm
+                    ) {
+                        showingProductConnect = .protect
+                    }
+                    PNPButton(
+                        title: "Add Jamf School",
+                        icon: "graduationcap.fill",
+                        size: .sm
+                    ) {
+                        showingProductConnect = .school
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func cacheDates(for cacheName: String, dataDir: URL, root: URL) -> [Date] {
