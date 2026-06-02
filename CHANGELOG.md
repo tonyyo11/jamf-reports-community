@@ -9,6 +9,11 @@ versions in this repository map to git tags.
 
 ### Added (v2.2.0 cycle)
 
+- Mobile-device CSV scaffolding: `scaffold` (Python CLI) and "Re-scaffold from
+  CSV" / onboarding (app) now detect whether a CSV is a Jamf Pro computer or
+  mobile-device export and populate the matching column mappings (`columns:`
+  or `mobile_columns:`) — never both. Mobile exports get their own column
+  hints (Display Name, OS Version, Jailbreak Detected as a suggested EA, …).
 - Scheduled configuration backups: a new "Configuration Backup" schedule mode
   runs `jamf-cli pro backup` on a cadence, keeps the newest 10 scheduled
   backups, and sweeps abandoned backup staging folders. Backup runs appear in
@@ -51,6 +56,22 @@ versions in this repository map to git tags.
 
 ### Fixed (v2.2.0 cycle)
 
+- Jamf Pro 11.28 computer CSV exports were detected as mobile-device exports
+  in both engines (Jamf added `Managed`/`Supervised` to computer exports),
+  generating Mobile Device Inventory/Stale sheets and silently skipping
+  Security Controls and Compliance. CSV family detection now counts
+  family-unique header discriminators (Computer Name, JSS Computer ID,
+  FileVault 2 Status, … vs Display Name, JSS Mobile Device ID, IMEI, …) and
+  no longer depends on which config sections are filled in.
+- Jamf "export-only field" CSVs (multi-value Applications / Certificates /
+  Groups / Printers data) inflated device counts: each multi-value item adds
+  a continuation row with a blank identity cell, so a 97-device export counted
+  as 607 devices in Security Controls percentages. Continuation rows are now
+  dropped at load with a warning, in report generation, column checks, trend
+  charts, and Fleet Drift comparisons.
+- `scaffold` mapped `last_checkin` to "Last Inventory Update" even when the
+  export contains "Last Check-in" — exact-match ties now follow hint priority
+  order, so the MDM check-in timestamp wins over the inventory recon date.
 - Corrupt `config.yaml` files written by pre-May-2026 GUI builds
   (`security_agents: []` followed by orphaned entries) are repaired on load
   and healed on the next save. Previously every config section after the

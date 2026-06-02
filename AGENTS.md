@@ -111,7 +111,7 @@ are no other Python files. Do not create additional modules — keep it single-f
 | `JamfCLIBridge` | Subprocess wrapper for jamf-cli pro/protect commands. Saves JSON output to `jamf-cli-data/`. Optional — gracefully no-ops if jamf-cli is absent. Supports `profile` for multi-tenant use. Falls back to latest cached JSON when live calls fail (`use_cached_data=True`). |
 | `SchoolCLIBridge` | Subclass of `JamfCLIBridge` for `jamf-cli school` commands. Same caching/fallback infrastructure. Methods: `overview`, `devices_list`, `device_groups_list`, `users_list`, `groups_list`, `classes_list`, `apps_list`, `profiles_list`, `locations_list`. |
 | `CoreDashboard` | Generates sheets from jamf-cli data: Fleet Overview, Mobile Fleet Summary, Inventory Summary, Mobile Inventory, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, Mobile Config Profiles, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures, Smart Groups, Advanced Mobile Searches, Computer Group Inventory, Mobile Device Groups. No CSV required. |
-| `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Generates: Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance, plus one sheet per `custom_eas` entry. |
+| `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Routes by detected CSV family: computer CSVs → Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance + `custom_eas` sheets; mobile CSVs → Mobile Device Inventory, Mobile Stale Devices. Export-only continuation rows are dropped before counting. |
 | `SchoolDashboard` | Generates sheets from Jamf School data (jamf-cli school or CSV export). Sheets: Device Inventory, OS Versions, Device Status, Stale Devices (CSV-driven); School Overview, Device Groups, Users, Classes, Apps, Profiles, Locations (bridge-driven). |
 | `SchoolColumnMapper` | Resolves `school_columns` config field names → Jamf School CSV column names. Same interface as `ColumnMapper`. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
@@ -128,7 +128,9 @@ are no other Python files. Do not create additional modules — keep it single-f
 | `_archive_csv_snapshot(csv_path, hist_dir)` | Copies the current CSV into the historical snapshot dir with a timestamp |
 | `_semantic_warnings(config, df)` | Checks for likely column mapping mistakes before writing |
 | `_school_csv_load(csv_path)` | Loads a Jamf School CSV export, auto-detecting semicolon vs comma delimiter |
-| `cmd_scaffold(csv_path, out_path)` | Reads CSV headers, fuzzy-matches via `COLUMN_HINTS`/`COLUMN_EXCLUDES`, writes starter `config.yaml` |
+| `cmd_scaffold(csv_path, out_path)` | Detects the CSV family, then fuzzy-matches via `COLUMN_HINTS`/`COLUMN_EXCLUDES` (computers) or `MOBILE_COLUMN_HINTS`/`MOBILE_COLUMN_EXCLUDES` (mobile), writes starter `config.yaml` |
+| `_detect_csv_family_from_headers(headers)` | Config-free CSV family detection: counts hits against `COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS`; returns "computers", "mobile", or None |
+| `_drop_continuation_rows(df, identity_column)` | Drops Jamf export-only multi-value continuation rows (blank identity cell) so device counts stay per-device |
 | `cmd_check(config, csv_path)` | Validates jamf-cli auth and all configured column names against actual CSV headers |
 | `cmd_generate(config, csv_path, out_file, historical_csv_dir)` | Main entry point — builds xlsx, generates charts |
 | `cmd_html(config, out_file, no_open)` | Builds the self-contained HTML instance report via `HtmlReport` |
@@ -141,11 +143,26 @@ are no other Python files. Do not create additional modules — keep it single-f
 
 ### Scaffold semantic matching
 
-`COLUMN_HINTS` / `COLUMN_EXCLUDES` — Jamf Pro CSV auto-detection.
+`COLUMN_HINTS` / `COLUMN_EXCLUDES` — Jamf Pro computer CSV auto-detection.
+`MOBILE_COLUMN_HINTS` / `MOBILE_COLUMN_EXCLUDES` — Jamf Pro mobile-device CSV auto-detection.
 `SCHOOL_COLUMN_HINTS` / `SCHOOL_COLUMN_EXCLUDES` — Jamf School CSV auto-detection.
 
 Each maps logical field names to known-good/bad header substrings. The `EXCLUDES` dict
 prevents false positives (e.g., "Name" must not match "LocationName" for `device_name`).
+Exact-match ties follow hint list order (earlier hint wins).
+
+### CSV family detection
+
+Jamf Pro exports computers and mobile devices as separate reports — never mixed.
+`COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS` are curated sets of headers that
+appear ONLY in that family's exports (verified against Jamf Pro 11.28). Detection counts
+discriminator hits per family; the higher count wins; zero/tie returns None (caller defaults
+to computers with a warning). Do NOT add headers that appear in both export types (e.g.
+`Managed`, `Supervised`, `Serial Number`, `Model`, `Last Inventory Update` are shared).
+The Swift port lives in `CSVFamilyDetector.swift` — keep both tables identical.
+
+Jamf "export-only field" exports add multi-value continuation rows (blank identity cell);
+these are dropped at load everywhere device counting happens.
 
 ### CLI commands
 
@@ -484,6 +501,7 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `BackupMaintenance` | (v2.2.0) Housekeeping for `backups/`: keeps the newest 10 scheduled backups (manual backups never pruned — identified by the `scheduled-` manifest label prefix) and sweeps abandoned `.tmp-*` staging dirs older than 24h. |
 | `SnapshotFreshness` | Decides fresh / stale / no-snapshots for a data dir by newest-file mtime. Gates the Overview "skip collect when fresh" path and the launch freshness sweep. |
 | `RefreshDebouncer` | Debounce helper extracted from the refresh path for testability. |
+| `CSVFamilyDetector` | Detects whether a Jamf Pro CSV export contains computers or mobile devices via family-unique discriminator headers (ported verbatim from Python `COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS` — keep both tables identical). Used by ScaffoldService and CSVDashboard sheet routing. |
 
 **Tab visibility model.** Every non-core sidebar tab is toggleable via SettingsView → Sidebar Visibility. Backed by `@AppStorage("hiddenTabs")` parsed/serialized through `TabVisibility`. Core tabs (`Tab.isCoreTab` — Overview, Devices, Sources, Settings, Onboarding) are filtered out at the toggle UI level and protected at the model level (toggling a core tab is a no-op). Sidebar groups with all-hidden contents auto-collapse so the layout never shows orphan headers. Visibility is a per-user UX preference, not workspace-bound.
 
