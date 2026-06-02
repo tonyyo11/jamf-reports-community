@@ -76,6 +76,129 @@ final class CSVDashboardTests: XCTestCase {
         XCTAssertEqual(Set(dashboard.missingEAColumns), ["EA One", "EA Two", "EA Three"])
     }
 
+    // MARK: - Family detection
+
+    func testCSVFamilyDetectedComputers() throws {
+        let csvText = "Computer Name,JSS Computer ID,Operating System Version,Last Check-in," +
+            "Gatekeeper,System Integrity Protection,FileVault 2 Status,Firewall Enabled," +
+            "Secure Boot Level,Processor Type,Apple Silicon,Boot Drive Percentage Full\n" +
+            "Mac-001,1,15.4,2024-01-01,Enabled,Enabled,Encrypted,On,Full Security," +
+            "Intel Core i9,false,45%\n"
+        let csvData = Data(csvText.utf8)
+        let wb = Workbook()
+        var config = ReportConfig()
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"
+        config.columns = cols
+        let dashboard = try XCTUnwrap(CSVDashboard(config: config, csvData: csvData, workbook: wb))
+        XCTAssertEqual(dashboard.csvFamily, .computers)
+    }
+
+    func testCSVFamilyDetectedMobile() throws {
+        let csvText = "Display Name,JSS Mobile Device ID,OS Version,Last Inventory Update," +
+            "Jailbreak Detected,Wi-Fi MAC Address,Battery Level,Lost Mode Enabled," +
+            "Device Ownership Type,Passcode Status\n" +
+            "iPad-001,100,18.0,2024-01-01,false,aa:bb:cc:dd:ee:ff,85%,false," +
+            "Institutional,Compliant\n"
+        let csvData = Data(csvText.utf8)
+        let wb = Workbook()
+        let config = ReportConfig()
+        let dashboard = try XCTUnwrap(CSVDashboard(config: config, csvData: csvData, workbook: wb))
+        XCTAssertEqual(dashboard.csvFamily, .mobile)
+    }
+
+    // MARK: - Sheet routing by family
+
+    func testSheetPlan_computerCSV_noMobileSheets() throws {
+        // A computer CSV must not produce mobile sheets even when mobile_columns is configured.
+        let csvText = "Computer Name,JSS Computer ID,Operating System Version,Last Check-in," +
+            "Gatekeeper,Firewall Enabled,FileVault 2 Status\n" +
+            "Mac-001,1,15.0,2024-01-01,Enabled,Enabled,Encrypted\n"
+        let csvData = Data(csvText.utf8)
+        let wb = Workbook()
+        var config = ReportConfig()
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"
+        config.columns = cols
+        var mobile = MobileColumnConfig()
+        mobile.deviceName = "Display Name"
+        config.mobileColumns = mobile
+        let dashboard = try XCTUnwrap(CSVDashboard(config: config, csvData: csvData, workbook: wb))
+        XCTAssertEqual(dashboard.csvFamily, .computers)
+        let sheetNames = dashboard.sheetPlan.map { $0.name }
+        XCTAssertTrue(sheetNames.contains("Device Inventory"),
+                      "Computer CSV must include Device Inventory sheet")
+        XCTAssertFalse(sheetNames.contains("Mobile Device Inventory"),
+                       "Computer CSV must not include Mobile Device Inventory sheet")
+        XCTAssertFalse(sheetNames.contains("Mobile Stale Devices"),
+                       "Computer CSV must not include Mobile Stale Devices sheet")
+    }
+
+    func testSheetPlan_mobileCSV_onlyMobileSheets() throws {
+        // A mobile CSV must produce only mobile sheets (no Device Inventory etc.).
+        let csvText = "Display Name,JSS Mobile Device ID,OS Version,Last Inventory Update," +
+            "Jailbreak Detected,Wi-Fi MAC Address,Battery Level,Lost Mode Enabled," +
+            "Device Ownership Type,Passcode Status\n" +
+            "iPad-001,100,18.0,2024-01-01,false,aa:bb:cc:dd:ee:ff,85%,false," +
+            "Institutional,Compliant\n"
+        let csvData = Data(csvText.utf8)
+        let wb = Workbook()
+        let config = ReportConfig()
+        let dashboard = try XCTUnwrap(CSVDashboard(config: config, csvData: csvData, workbook: wb))
+        XCTAssertEqual(dashboard.csvFamily, .mobile)
+        let sheetNames = dashboard.sheetPlan.map { $0.name }
+        XCTAssertTrue(sheetNames.contains("Mobile Device Inventory"),
+                      "Mobile CSV must include Mobile Device Inventory sheet")
+        XCTAssertTrue(sheetNames.contains("Mobile Stale Devices"),
+                      "Mobile CSV must include Mobile Stale Devices sheet")
+        XCTAssertFalse(sheetNames.contains("Device Inventory"),
+                       "Mobile CSV must not include Device Inventory sheet")
+        XCTAssertFalse(sheetNames.contains("Security Controls"),
+                       "Mobile CSV must not include Security Controls sheet")
+    }
+
+    // MARK: - Continuation-row drop
+
+    func testContinuationRowsDroppedFromComputerCSV() throws {
+        // A 97-device export may be 607 rows due to continuation rows for
+        // multi-value fields (Applications, Certificates, Groups…).
+        // Rows whose Computer Name cell is blank must be dropped.
+        let header = "Computer Name,Serial Number,Operating System Version"
+        let real1  = "Mac-001,ABC123,15.4"
+        let real2  = "Mac-002,DEF456,14.7"
+        // These rows have a blank Computer Name — continuation rows.
+        let cont1  = ",,"
+        let cont2  = ",,"
+        let cont3  = ",,"
+        let csvText = [header, real1, cont1, cont2, real2, cont3].joined(separator: "\n") + "\n"
+        let csvData = Data(csvText.utf8)
+        let wb = Workbook()
+        var config = ReportConfig()
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"
+        cols.serialNumber = "Serial Number"
+        config.columns = cols
+        let dashboard = try XCTUnwrap(CSVDashboard(config: config, csvData: csvData, workbook: wb))
+        // Only the 2 real device rows should survive.
+        XCTAssertEqual(dashboard.rows.count, 2,
+                       "Continuation rows with blank identity must be dropped")
+    }
+
+    func testContinuationRowsNotDroppedWhenIdentityColumnAbsent() throws {
+        // When the configured identity column is not in the CSV headers,
+        // no rows are dropped (guard: only drop when the column is present but blank).
+        let csvData = Data("Serial Number,OS Version\nABC123,15.4\n,15.4\n".utf8)
+        let wb = Workbook()
+        var config = ReportConfig()
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"  // not present in this CSV
+        config.columns = cols
+        let dashboard = try XCTUnwrap(CSVDashboard(config: config, csvData: csvData, workbook: wb))
+        // Neither row has a blank Computer Name (column absent) — both kept.
+        XCTAssertEqual(dashboard.rows.count, 2,
+                       "Rows must not be dropped when the identity column is absent")
+    }
+
     // MARK: - EA Warnings sheet in workbook
 
     func testEAWarningsSheetAbsentWhenAllColumnsPresent() throws {

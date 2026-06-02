@@ -341,6 +341,14 @@ private struct ColumnsTab: View {
             do {
                 let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
                 try ScaffoldService.writeConfig(to: configOut, result: result, profile: profile)
+                let familyLabel = result.family == .mobile ? "mobile device export" : "computer export"
+                let matched = (result.family == .mobile ? result.mobileColumns : result.columns).count
+                await MainActor.run {
+                    workspace.toast = Toast(
+                        message: "Detected \(familyLabel) — mapped \(matched) column(s)",
+                        style: .success
+                    )
+                }
                 workspace.reloadFromDisk()
             } catch {
                 await MainActor.run {
