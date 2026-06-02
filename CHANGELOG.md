@@ -9,6 +9,13 @@ versions in this repository map to git tags.
 
 ### Added (v2.2.0 cycle)
 
+- Multi-product onboarding: the Jamf Pro connection step offers Standard
+  OAuth2 or Platform Gateway authentication (account.jamf.com API client +
+  tenant ID — unlocks Blueprints, Compliance Benchmarks, and DDM Reports). A
+  new optional "Add Products" step connects Jamf Protect (OAuth2) and Jamf
+  School (Network ID + API key); both can also be added later from the
+  Sources screen. All credential prompts run through jamf-cli's guided setup
+  with the same keychain-backed security model as Jamf Pro.
 - OS Currency reporting via the [SOFA](https://sofa.macadmins.io) feed: both
   engines now know the latest available macOS, iOS/iPadOS, tvOS, and watchOS
   versions (version, build, release date, days since release, actively
@@ -70,6 +77,9 @@ versions in this repository map to git tags.
 
 ### Fixed (v2.2.0 cycle)
 
+- Onboarding's Continue button now enables while typing the client secret —
+  previously the secure field only registered its value after pressing
+  Return or clicking away, leaving the button greyed out (RC1 feedback).
 - Jamf Pro 11.28 computer CSV exports were detected as mobile-device exports
   in both engines (Jamf added `Managed`/`Supervised` to computer exports),
   generating Mobile Device Inventory/Stale sheets and silently skipping

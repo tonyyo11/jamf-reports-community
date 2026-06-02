@@ -473,7 +473,7 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
 | `LaunchAgentService` | Discovers and parses existing `~/Library/LaunchAgents/com.jamfreports.*.plist` jobs. |
 | `LaunchAgentWriter` | Generates LaunchAgent plists and writes them atomically. |
-| `OnboardingFlow` | Orchestrates first-run: jamf-cli auth via `stdin`, profile creation, workspace init, first collect/generate run. |
+| `OnboardingFlow` | Orchestrates first-run: jamf-cli auth via PTY-driven `stdin`, profile creation, workspace init, first collect/generate run. Supports four connection flows: Jamf Pro OAuth2 (`config add-profile`), Platform Gateway (`config add-profile --auth-method platform --tenant-id`), Jamf Protect (`protect setup`), Jamf School (`school setup`). Protect/School are optional "Add Products" additions (also reachable post-onboarding from SourcesView via `ProductConnectSheetView`); success wires `protect.enabled/profile` and `school_cli.enabled/profile` into config.yaml. Secrets: PTY stdin only, redacted output, cleared after use; `SecureSecretField` reports a has-text Bool (never content) so the Continue button enables while typing. |
 | `ConfigService` | Reads and writes `config.yaml` within a profile workspace. |
 | `TrendStore` | Loads `summary.json` snapshots from `snapshots/computers/summaries/`; feeds the Trends screen charts. |
 | `DeviceInventoryService` | Reads cached device inventory JSON from the workspace. |
