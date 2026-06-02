@@ -97,6 +97,12 @@ struct ContentView: View {
             // registered. Both no-op in demo mode.
             workspace.registerForegroundRefresh()
             workspace.triggerRefresh(for: workspace.profile)
+            // v2.2.0 launch freshness sweep: surface a prompt for heavy-tier
+            // data older than a week (never auto-collected — on-prem safety)
+            // and silently refresh week-old audit data (config analysis,
+            // cheap). Both no-op in demo mode.
+            await workspace.checkHeavyTierStaleness()
+            await workspace.autoRefreshAuditIfStale()
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
         .animation(.snappy, value: workspace.toast != nil)
