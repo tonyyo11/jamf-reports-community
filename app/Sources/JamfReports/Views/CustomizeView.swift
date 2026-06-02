@@ -158,17 +158,19 @@ struct CustomizeView: View {
                 SectionHeader(title: "Overview Score Cards", style: .body)
                     .padding(.bottom, 10)
                 
-                Text("Select up to 4 metrics for the dashboard.")
+                Text("Choose the metrics to show on the Overview dashboard.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(.bottom, 12)
 
+                // No selection cap — the Overview grid is adaptive and wraps
+                // to additional rows as more score cards are enabled.
                 ForEach(TrendSeries.Metric.allCases) { metric in
                     let isOn = Binding<Bool>(
                         get: { workspace.selectedScoreCards.contains(metric) },
                         set: { newValue in
                             if newValue {
-                                if workspace.selectedScoreCards.count < 4 {
+                                if !workspace.selectedScoreCards.contains(metric) {
                                     workspace.selectedScoreCards.append(metric)
                                 }
                             } else {
@@ -176,7 +178,7 @@ struct CustomizeView: View {
                             }
                         }
                     )
-                    
+
                     VStack(spacing: 0) {
                         HStack {
                             Text(metric.displayLabel)
@@ -184,8 +186,6 @@ struct CustomizeView: View {
                                 .foregroundStyle(Theme.Text.primary)
                             Spacer()
                             PNPToggle(isOn: isOn)
-                                .disabled(!isOn.wrappedValue && workspace.selectedScoreCards.count >= 4)
-                                .opacity(!isOn.wrappedValue && workspace.selectedScoreCards.count >= 4 ? 0.5 : 1.0)
                         }
                         .padding(.vertical, 6)
                         if metric != TrendSeries.Metric.allCases.last {

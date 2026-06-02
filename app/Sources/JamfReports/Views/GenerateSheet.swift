@@ -12,6 +12,14 @@ import AppKit
 final class GenerateSheetState {
     var selectedTypes: Set<GenerateOutputType> = [.xlsx]
     var collectFresh: Bool = true
+    /// When true, run a Health Audit before generating so audit-derived
+    /// workbook content reflects this run. Persisted via the same UserDefaults
+    /// key OverviewView's quick "Generate Report" button reads, so the
+    /// preference applies consistently to both generate flows.
+    var includeAudit: Bool = UserDefaults.standard.bool(forKey: GenerateSheetState.includeAuditKey) {
+        didSet { UserDefaults.standard.set(includeAudit, forKey: GenerateSheetState.includeAuditKey) }
+    }
+    nonisolated static let includeAuditKey = "includeAuditInGenerate"
     var customOutputDir: URL? = nil
     var folderPickerError: String? = nil
     var logLines: [CLIBridge.LogLine] = []
@@ -147,6 +155,7 @@ struct GenerateSheet: View {
                     formatsSection
                     templateSection
                     collectToggle
+                    auditToggle
                     outputFolderRow
                     profileRow
                     if state.collectFresh, let auth = workspace.authStatus, !auth.isValid {
@@ -388,6 +397,30 @@ struct GenerateSheet: View {
             .disabled(state.isRunning)
             .accessibilityLabel("Collect fresh data first. \(state.collectFresh ? "Enabled" : "Disabled")")
         }
+    }
+
+    private var auditToggle: some View {
+        Button {
+            state.includeAudit.toggle()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: state.includeAudit ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(state.includeAudit ? Theme.Colors.gold : Theme.Text.tertiary(contrast))
+                    .font(Theme.Fonts.bodyText)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Include Health Audit")
+                        .font(Theme.Fonts.bodyText.weight(.medium))
+                        .foregroundStyle(Theme.Text.primary)
+                    Text("Run jamf-cli pro audit first so audit findings in the report are current. Adds a few minutes on large fleets.")
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+                Spacer()
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(state.isRunning)
+        .accessibilityLabel("Include Health Audit. \(state.includeAudit ? "Enabled" : "Disabled")")
     }
 
     private var outputFolderRow: some View {
@@ -642,6 +675,26 @@ struct GenerateSheet: View {
 
         let outputDir: URL? = state.customOutputDir
         let isSchool = state.resolvedTemplate.identifier == SchoolTemplate().identifier
+
+        // Opt-in audit-before-generate (v2.2.0): refresh Health Audit data so
+        // audit-derived workbook content reflects this run. Failures warn and
+        // continue — a stale audit is preferable to no report.
+        if state.includeAudit && !workspace.demoMode {
+            state.appendLine(.init(
+                timestamp: Date(), level: .info,
+                text: "[info] running health audit before generate"
+            ))
+            do {
+                _ = try await bridge.audit(profile: profile, category: nil) { line in
+                    Task { @MainActor in state.appendLine(line) }
+                }
+            } catch {
+                state.appendLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: "[warn] audit failed; continuing with cached audit data: \(error.localizedDescription)"
+                ))
+            }
+        }
 
         // School template routes to the school generate command rather than the standard flow.
         if isSchool {

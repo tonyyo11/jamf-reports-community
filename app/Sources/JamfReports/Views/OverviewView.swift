@@ -12,6 +12,11 @@ struct OverviewView: View {
     @State private var bridge = CLIBridge()
     @State private var trendStore = TrendStore()
     @State private var isRunning = false
+    /// True while the heavy-tier "Refresh now" prompt's collection is running.
+    @State private var isRefreshingHeavyTiers = false
+    /// When enabled, "Generate Report" runs a Health Audit before generating so
+    /// audit-derived workbook content is current. Shared with GenerateSheet.
+    @AppStorage("includeAuditInGenerate") private var includeAuditInGenerate = false
     /// T-13 fingerprints captured from the live generate log so the success
     /// toast can surface the first artifact's 12-char short hash. Cleared
     /// after each run completes. PR-15.
@@ -62,6 +67,11 @@ struct OverviewView: View {
                     if !workspace.demoMode {
                         StaleDataBanner(source: trendStore.cacheSource)
                     }
+                    // v2.2.0: heavy-tier (per-device) data older than a week.
+                    // Never auto-collected — the button is the only trigger.
+                    if !workspace.demoMode, !workspace.staleHeavyTiers.isEmpty {
+                        heavyTierStalePrompt
+                    }
                     statRow
                     if workspace.demoMode {
                         osAndRules
@@ -109,6 +119,51 @@ struct OverviewView: View {
                 navigationPath = NavigationPath()
             }
         }
+    }
+
+    /// Prompt shown when .inventory / .scan data is older than a week.
+    /// Mirrors StaleDataBanner's visual language but adds the action button —
+    /// heavy collections only ever run when the operator asks.
+    private var heavyTierStalePrompt: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "clock.badge.exclamationmark")
+                .foregroundStyle(Theme.Colors.warn)
+                .accessibilityHidden(true)
+            Text(heavyTierStaleMessage)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.warn)
+            Spacer(minLength: 8)
+            PNPButton(
+                title: isRefreshingHeavyTiers ? "Refreshing…" : "Refresh now",
+                icon: isRefreshingHeavyTiers ? "hourglass" : "arrow.clockwise"
+            ) {
+                guard !isRefreshingHeavyTiers else { return }
+                Task {
+                    isRefreshingHeavyTiers = true
+                    defer { isRefreshingHeavyTiers = false }
+                    await workspace.runHeavyTierRefresh()
+                    trendStore.reload()
+                }
+            }
+            .help("Run the per-device collections now. Can take several minutes on on-prem servers.")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Theme.Colors.warn.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
+                )
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(heavyTierStaleMessage)
+    }
+
+    private var heavyTierStaleMessage: String {
+        let names = workspace.staleHeavyTiers.map(\.displayName).joined(separator: " and ")
+        return "\(names) data is more than a week old — Patch, Updates, and EA dashboards show stale values."
     }
 
     /// Pops the current drill-down off the NavigationStack. Called by breadcrumb
@@ -308,6 +363,26 @@ struct OverviewView: View {
 
         // Status-bar race guard — see HealthCheckView.runAudit comment.
         do {
+            // Opt-in audit-before-generate (v2.2.0): refresh Health Audit data
+            // so audit-derived workbook content reflects this run, not the
+            // last manual audit. Failures warn and continue — a stale audit
+            // is preferable to no report.
+            if includeAuditInGenerate && !workspace.demoMode {
+                workspace.globalStatus = "health audit · profile=\(profile)"
+                do {
+                    _ = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
+                        Task { @MainActor in
+                            guard let workspace, self.isRunning else { return }
+                            workspace.globalStatus = line.text
+                        }
+                    }
+                } catch {
+                    AppLogger.cli.warning(
+                        "Pre-generate audit failed; continuing with cached audit data: \(error.localizedDescription, privacy: .private)"
+                    )
+                }
+            }
+
             let exit: Int32
             if shouldSkipCollect {
                 // Emit a durable-intent message through the live log channel so the
