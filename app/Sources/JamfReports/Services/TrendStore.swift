@@ -182,7 +182,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .compliance:    return summary.compliancePct
         case .fileVault:     return summary.fileVaultPct
         case .osCurrent:     return summary.osCurrentPct
-        case .crowdstrike:   return summary.crowdstrikePct
+        case .edrAgent:      return summary.crowdstrikePct
         case .stale:         return Double(summary.staleCount)
         case .patch:         return summary.patchPct
         case .securityScore: return summary.securityScore

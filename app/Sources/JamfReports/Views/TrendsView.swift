@@ -238,8 +238,12 @@ struct TrendsView: View {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 6, height: 6)
                     .accessibilityHidden(true)
-                Text(m.displayLabel).font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg)
+                Text(m.displayLabel(
+                    benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
+                    edrAgentName: workspaceStore.edrAgentName
+                ))
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Theme.Colors.fg)
                 Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(

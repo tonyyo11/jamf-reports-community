@@ -257,7 +257,9 @@ struct FleetOverviewView: View {
                                 profileMetricRow("Compliance", value: summary.compliancePct)
                                 profileMetricRow("FileVault", value: summary.fileVaultPct)
                                 profileMetricRow("Current macOS", value: summary.osCurrentPct)
-                                profileMetricRow("CrowdStrike", value: summary.crowdstrikePct)
+                                // Generic label: Fleet Overview aggregates multiple
+                                // profiles, which may run different EDR products.
+                                profileMetricRow("EDR Agent", value: summary.crowdstrikePct)
                                 profileMetricRow("Patch", value: summary.patchPct)
                                 profileMetricRow("Stale", value: stalePercent(summary), inverse: true)
                             }
