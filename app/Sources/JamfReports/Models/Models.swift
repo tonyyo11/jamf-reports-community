@@ -945,19 +945,48 @@ struct TrendSeries: Identifiable, Sendable {
         }
     }
 
+    /// Composite fleet-stability score: compliance 0.4 + patch 0.4 +
+    /// stale-device pressure 0.2, with drop-missing-and-renormalize weighting
+    /// (the same approach as `SecurityScoreCalculator`). Tenants without a
+    /// compliance source — the common jamf-cli-only case — still get a
+    /// comparable index from patch + stale instead of a permanent "—".
+    ///
+    /// Returns nil only when both compliance and patch are unavailable;
+    /// stale pressure alone is not a meaningful stability signal.
     static func stabilityIndex(
         compliancePct: Double?,
         patchPct: Double?,
         staleCount: Int,
         totalDevices: Int
     ) -> Double? {
-        guard let compliancePct, let patchPct else { return nil }
+        guard compliancePct != nil || patchPct != nil else { return nil }
         let stalePct = totalDevices > 0
             ? (Double(staleCount) / Double(totalDevices)) * 100
             : 0
         let staleInverse = 100 - stalePct
-        let raw = 0.4 * compliancePct + 0.4 * patchPct + 0.2 * staleInverse
+
+        var components: [(value: Double, weight: Double)] = [(staleInverse, 0.2)]
+        if let compliancePct { components.append((compliancePct, 0.4)) }
+        if let patchPct { components.append((patchPct, 0.4)) }
+
+        let totalWeight = components.reduce(0) { $0 + $1.weight }
+        let raw = components.reduce(0) { $0 + $1.value * ($1.weight / totalWeight) }
         return min(max(raw, 0), 100)
+    }
+
+    /// Human-readable description of which components feed the stability
+    /// index, for the metric detail page. Nil when the index itself is nil.
+    static func stabilityBasis(compliancePct: Double?, patchPct: Double?) -> String? {
+        switch (compliancePct != nil, patchPct != nil) {
+        case (true, true):
+            return "Composite of compliance, patch posture, and stale-device pressure."
+        case (false, true):
+            return "Composite of patch posture and stale-device pressure (compliance not collected)."
+        case (true, false):
+            return "Composite of compliance and stale-device pressure (patch data not collected)."
+        case (false, false):
+            return nil
+        }
     }
 
     var id: String { metric.rawValue }

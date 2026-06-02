@@ -82,10 +82,6 @@ final class TrendStoreTests: XCTestCase {
         let idx1 = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: 80, staleCount: 10, totalDevices: 100)
         XCTAssertEqual(try XCTUnwrap(idx1), 86.0, accuracy: 0.1)
 
-        // compliancePct is nil -> returns nil
-        let idx2 = TrendSeries.stabilityIndex(compliancePct: nil, patchPct: 80, staleCount: 10, totalDevices: 100)
-        XCTAssertNil(idx2)
-
         // staleCount = 0, staleInverse = 100
         let idx3 = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: 80, staleCount: 0, totalDevices: 100)
         XCTAssertEqual(try XCTUnwrap(idx3), 88.0, accuracy: 0.1)
@@ -101,6 +97,40 @@ final class TrendStoreTests: XCTestCase {
         // All terrible -> 0
         let idx6 = TrendSeries.stabilityIndex(compliancePct: 0, patchPct: 0, staleCount: 100, totalDevices: 100)
         XCTAssertEqual(try XCTUnwrap(idx6), 0.0, accuracy: 0.1)
+    }
+
+    /// Production bug: jamf-cli-only tenants never have compliancePct, so the
+    /// old `guard let compliancePct, let patchPct` returned nil forever and the
+    /// Stability Index tile showed "—" with "0 summaries". Missing components
+    /// now drop out and the remaining weights renormalize.
+    func testStabilityIndexRenormalizesWhenComplianceMissing() throws {
+        // patch=80 (weight 0.4→2/3), staleInverse=90 (weight 0.2→1/3)
+        let idx = TrendSeries.stabilityIndex(compliancePct: nil, patchPct: 80, staleCount: 10, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx), 80.0 * 2 / 3 + 90.0 / 3, accuracy: 0.1)
+    }
+
+    func testStabilityIndexRenormalizesWhenPatchMissing() throws {
+        // compliance=90 (2/3), staleInverse=100 (1/3)
+        let idx = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: nil, staleCount: 0, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx), 90.0 * 2 / 3 + 100.0 / 3, accuracy: 0.1)
+    }
+
+    func testStabilityIndexNilWhenBothHealthSignalsMissing() {
+        // Stale pressure alone is not a stability signal.
+        let idx = TrendSeries.stabilityIndex(compliancePct: nil, patchPct: nil, staleCount: 0, totalDevices: 100)
+        XCTAssertNil(idx)
+    }
+
+    func testStabilityBasisDescribesAvailableComponents() {
+        XCTAssertEqual(
+            TrendSeries.stabilityBasis(compliancePct: 90, patchPct: 80),
+            "Composite of compliance, patch posture, and stale-device pressure."
+        )
+        XCTAssertEqual(
+            TrendSeries.stabilityBasis(compliancePct: nil, patchPct: 80),
+            "Composite of patch posture and stale-device pressure (compliance not collected)."
+        )
+        XCTAssertNil(TrendSeries.stabilityBasis(compliancePct: nil, patchPct: nil))
     }
 
     // MARK: - chartDomain tests
