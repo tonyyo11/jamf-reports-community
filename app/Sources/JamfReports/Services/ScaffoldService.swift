@@ -1,14 +1,20 @@
 import Foundation
 
 /// Native Swift implementation of the CSV column scaffolding logic, porting the
-/// Python `COLUMN_HINTS` / `COLUMN_EXCLUDES` scoring algorithm.
+/// Python `COLUMN_HINTS` / `COLUMN_EXCLUDES` / `MOBILE_COLUMN_HINTS` scoring algorithm.
 enum ScaffoldService {
 
     // MARK: - Public types
 
     struct ScaffoldResult: Sendable {
+        /// Detected CSV family (`nil` when headers are ambiguous).
+        let family: CSVFamily?
+        /// Matched computer column mappings (logical → CSV header).
         let columns: [String: String]
+        /// Matched compliance column mappings (logical → CSV header).
         let complianceColumns: [String: String]
+        /// Matched mobile column mappings (logical → CSV header).
+        let mobileColumns: [String: String]
     }
 
     // MARK: - Hint tables (ported verbatim from Python COLUMN_HINTS / COLUMN_EXCLUDES)
@@ -57,6 +63,32 @@ enum ScaffoldService {
         ],
     ]
 
+    // MARK: - Mobile hint tables (ported verbatim from Python MOBILE_COLUMN_HINTS / MOBILE_COLUMN_EXCLUDES)
+
+    private static let mobileColumnHints: [String: [String]] = [
+        "device_name":      ["display name", "device name"],
+        "serial_number":    ["serial number", "serial"],
+        "operating_system": ["os version"],
+        "last_checkin":     ["last inventory update", "last check-in", "last checkin"],
+        "email":            ["email address", "email"],
+        "model":            ["model"],
+        "device_family":    ["device family"],
+        "managed":          ["managed"],
+        "supervised":       ["supervised"],
+    ]
+
+    private static let mobileColumnExcludes: [String: [String]] = [
+        "device_name":      ["computer"],
+        "serial_number":    [],
+        "operating_system": ["build", "supplemental", "rapid"],
+        "last_checkin":     ["enrollment"],
+        "email":            [],
+        "model":            ["identifier", "number"],
+        "device_family":    [],
+        "managed":          ["by"],
+        "supervised":       [],
+    ]
+
     // MARK: - Scoring
 
     private static func normalizedText(_ value: String) -> String {
@@ -64,14 +96,32 @@ enum ScaffoldService {
             .components(separatedBy: .whitespaces).filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    private static func columnMatchScore(header: String, logical: String) -> Int {
+    /// Score a header/logical field pairing against a hint table and optional exclude table.
+    ///
+    /// Ported verbatim from Python ``_column_match_score``. Exact matches score
+    /// ``200 - hintIndex`` so the hint listed first for a logical field wins exact-match
+    /// ties (e.g. "Last Check-in" before "Last Inventory Update"). Prefix, substring, and
+    /// reverse-substring tiers stay below any exact match.
+    ///
+    /// - Parameters:
+    ///   - header: CSV column name being scored.
+    ///   - logical: Logical field name (key into `hints`/`excludes`).
+    ///   - hints: Hint table to score against.
+    ///   - excludes: Exclude table; pass `[:]` to skip exclusions.
+    /// - Returns: An integer score (0 when below the match threshold).
+    private static func matchScore(
+        header: String,
+        logical: String,
+        hints: [String: [String]],
+        excludes: [String: [String]]
+    ) -> Int {
         let normalized = normalizedText(header)
         var score = 0
 
-        for candidate in columnHints[logical] ?? [] {
+        for (index, candidate) in (hints[logical] ?? []).enumerated() {
             let candidateNorm = normalizedText(candidate)
             if normalized == candidateNorm {
-                score = max(score, 100 + candidateNorm.count)
+                score = max(score, 200 - index)
             } else if normalized.hasPrefix(candidateNorm) {
                 score = max(score, 80 + candidateNorm.count)
             } else if normalized.contains(candidateNorm) {
@@ -81,7 +131,7 @@ enum ScaffoldService {
             }
         }
 
-        for blocked in columnExcludes[logical] ?? [] {
+        for blocked in excludes[logical] ?? [] {
             if normalized.contains(normalizedText(blocked)) {
                 score -= 80
             }
@@ -90,33 +140,36 @@ enum ScaffoldService {
         return score >= 60 ? score : 0
     }
 
+    private static func columnMatchScore(header: String, logical: String) -> Int {
+        matchScore(header: header, logical: logical, hints: columnHints, excludes: columnExcludes)
+    }
+
     private static func complianceMatchScore(header: String, logical: String) -> Int {
-        let normalized = normalizedText(header)
-        var score = 0
+        matchScore(header: header, logical: logical, hints: complianceHints, excludes: [:])
+    }
 
-        for candidate in complianceHints[logical] ?? [] {
-            let candidateNorm = normalizedText(candidate)
-            if normalized == candidateNorm {
-                score = max(score, 100 + candidateNorm.count)
-            } else if normalized.hasPrefix(candidateNorm) {
-                score = max(score, 80 + candidateNorm.count)
-            } else if normalized.contains(candidateNorm) {
-                score = max(score, 60 + candidateNorm.count)
-            }
-        }
-
-        return score >= 60 ? score : 0
+    private static func mobileMatchScore(header: String, logical: String) -> Int {
+        matchScore(
+            header: header,
+            logical: logical,
+            hints: mobileColumnHints,
+            excludes: mobileColumnExcludes
+        )
     }
 
     // MARK: - Public API
 
-    /// Read the first line of `csvURL`, fuzzy-match headers to logical column names,
-    /// and return the best matches.
+    /// Read the first line of `csvURL`, detect the CSV family (computers vs mobile),
+    /// fuzzy-match headers to logical column names, and return the best matches.
+    ///
+    /// For a computer export the `columns` block is populated and `mobileColumns` is
+    /// empty. For a mobile export `mobileColumns` is populated and `columns` is empty.
     ///
     /// - Parameters:
     ///   - csvURL: URL of the CSV file whose header row should be parsed.
     ///   - profile: Profile slug (used for logging only; not embedded in the result).
-    /// - Returns: `ScaffoldResult` with matched column and compliance columns.
+    /// - Returns: `ScaffoldResult` with detected family, matched columns, and
+    ///   compliance columns.
     /// - Throws: `CocoaError` or `ScaffoldError` if the file cannot be read.
     static func matchColumns(from csvURL: URL, profile: String) throws -> ScaffoldResult {
         var text = try String(contentsOf: csvURL, encoding: .utf8)
@@ -126,6 +179,23 @@ enum ScaffoldService {
         let firstLine = text.components(separatedBy: CharacterSet.newlines).first ?? ""
         let headers = parseHeaderLine(firstLine)
 
+        let family = CSVFamilyDetector.detect(headers: headers)
+
+        if family == .mobile {
+            let mobile = matchLogicalFields(
+                headers: headers,
+                hintTable: mobileColumnHints,
+                scorer: mobileMatchScore
+            )
+            return ScaffoldResult(
+                family: family,
+                columns: [:],
+                complianceColumns: [:],
+                mobileColumns: mobile
+            )
+        }
+
+        // computers or nil (ambiguous) — use computer column tables.
         let columns = matchLogicalFields(
             headers: headers,
             hintTable: columnHints,
@@ -136,8 +206,12 @@ enum ScaffoldService {
             hintTable: complianceHints,
             scorer: complianceMatchScore
         )
-
-        return ScaffoldResult(columns: columns, complianceColumns: compliance)
+        return ScaffoldResult(
+            family: family,
+            columns: columns,
+            complianceColumns: compliance,
+            mobileColumns: [:]
+        )
     }
 
     /// Write a populated `config.yaml` to `url` based on scaffold results.
@@ -268,7 +342,14 @@ enum ScaffoldService {
         "disk_percent_full", "architecture", "model", "last_enrollment", "mdm_expiry",
     ]
 
+    // Mobile column key order matches Python DEFAULT_CONFIG["mobile_columns"].
+    private static let orderedMobileColumnKeys = [
+        "device_name", "serial_number", "operating_system", "last_checkin",
+        "email", "model", "device_family", "managed", "supervised",
+    ]
+
     private static func configYAML(result: ScaffoldResult, profile: String) -> String {
+        let isMobile = result.family == .mobile
         var lines: [String] = [
             "# config.yaml — generated by Jamf Reports scaffold",
             "# Edit column values to match your Jamf Pro CSV export headers.",
@@ -282,11 +363,22 @@ enum ScaffoldService {
             "columns:",
         ]
 
+        // For a mobile export all computer columns are left empty (mirrors Python behavior).
         for key in orderedColumnKeys {
-            let value = yamlEscape(result.columns[key] ?? "")
+            let value = isMobile ? "" : yamlEscape(result.columns[key] ?? "")
             lines.append("  \(key): \"\(value)\"")
         }
 
+        lines += [
+            "",
+            "mobile_columns:",
+        ]
+        for key in orderedMobileColumnKeys {
+            let value = isMobile ? yamlEscape(result.mobileColumns[key] ?? "") : ""
+            lines.append("  \(key): \"\(value)\"")
+        }
+
+        // Compliance block is only meaningful for computer exports.
         lines += [
             "",
             "compliance:",
@@ -333,6 +425,10 @@ enum ScaffoldService {
             "columns:",
         ]
         for key in orderedColumnKeys {
+            lines.append("  \(key): \"\"")
+        }
+        lines += ["", "mobile_columns:"]
+        for key in orderedMobileColumnKeys {
             lines.append("  \(key): \"\"")
         }
         lines += [

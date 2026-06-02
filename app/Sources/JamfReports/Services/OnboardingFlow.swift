@@ -335,10 +335,22 @@ final class OnboardingFlow {
             csvOutput.append(.init(timestamp: Date(), level: .info, text: "[info] reading CSV headers…"))
             let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
 
-            let matched = result.columns.count + result.complianceColumns.count
+            let familyLabel: String
+            let matchedCount: Int
+            switch result.family {
+            case .mobile:
+                familyLabel = "mobile device export"
+                matchedCount = result.mobileColumns.count
+            case .computers:
+                familyLabel = "computer export"
+                matchedCount = result.columns.count + result.complianceColumns.count
+            case nil:
+                familyLabel = "export (family unknown)"
+                matchedCount = result.columns.count + result.complianceColumns.count
+            }
             csvOutput.append(.init(
                 timestamp: Date(), level: .ok,
-                text: "[ok] matched \(matched) column(s) from CSV"
+                text: "[ok] Detected \(familyLabel) — matched \(matchedCount) column(s)"
             ))
 
             try ScaffoldService.writeConfig(to: outputConfig, result: result, profile: profile)

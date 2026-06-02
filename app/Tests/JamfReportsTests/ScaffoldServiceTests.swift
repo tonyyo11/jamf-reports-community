@@ -142,6 +142,130 @@ final class ScaffoldServiceTests: XCTestCase {
                       "double-quote in column name must be escaped as \\\" in YAML output")
     }
 
+    // MARK: - Family detection in ScaffoldResult
+
+    func test_matchColumns_computerCSV_familyIsComputers() throws {
+        let url = try csvURL(headers: [
+            "Computer Name", "JSS Computer ID", "Operating System Version",
+            "Last Check-in", "Gatekeeper", "System Integrity Protection",
+            "FileVault 2 Status", "Firewall Enabled", "Secure Boot Level",
+            "Processor Type", "Apple Silicon", "Boot Drive Percentage Full",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertEqual(result.family, .computers)
+        XCTAssertFalse(result.columns.isEmpty,
+                       "Computer CSV must produce non-empty columns block")
+        XCTAssertTrue(result.mobileColumns.isEmpty,
+                      "Computer CSV must produce empty mobileColumns block")
+    }
+
+    func test_matchColumns_mobileCSV_familyIsMobile() throws {
+        let url = try csvURL(headers: [
+            "Display Name", "JSS Mobile Device ID", "Device ID", "Serial Number",
+            "OS Version", "Last Inventory Update", "Email Address", "Model",
+            "Device Family", "Managed", "Supervised", "Jailbreak Detected",
+            "Wi-Fi MAC Address", "Battery Level", "Lost Mode Enabled",
+            "Device Ownership Type", "Passcode Status",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertEqual(result.family, .mobile)
+        XCTAssertFalse(result.mobileColumns.isEmpty,
+                       "Mobile CSV must produce non-empty mobileColumns block")
+        XCTAssertTrue(result.columns.isEmpty,
+                      "Mobile CSV must produce empty columns block")
+        // Key mobile columns must be correctly mapped.
+        XCTAssertEqual(result.mobileColumns["device_name"], "Display Name")
+        XCTAssertEqual(result.mobileColumns["operating_system"], "OS Version")
+        XCTAssertEqual(result.mobileColumns["serial_number"], "Serial Number")
+    }
+
+    func test_matchColumns_computerWithManagedAndSupervised_familyIsComputers() throws {
+        // Jamf Pro 11.28 computer exports include Managed + Supervised columns.
+        // These shared columns must not cause misdetection as .mobile.
+        let url = try csvURL(headers: [
+            "Computer Name", "Apple Silicon", "Firewall Enabled", "JSS Computer ID",
+            "Last Check-in", "Gatekeeper", "System Integrity Protection",
+            "FileVault 2 Status", "Secure Boot Level", "Processor Type",
+            "Boot Drive Percentage Full", "Operating System Version",
+            "Managed", "Supervised",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertEqual(result.family, .computers,
+                       "Computer CSV with Managed+Supervised must detect as .computers")
+        XCTAssertTrue(result.mobileColumns.isEmpty,
+                      "Computer CSV must not populate mobileColumns")
+    }
+
+    func test_matchColumns_ambiguousCSV_familyIsNil() throws {
+        // Headers with no discriminators → family is nil.
+        let url = try csvURL(headers: ["Asset Tag", "Serial Number", "Email Address"])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertNil(result.family,
+                     "Headers with no discriminators must return nil family")
+    }
+
+    // MARK: - configYAML writes mobile_columns for mobile export
+
+    func test_writeConfig_mobileCSV_writesMobileColumns() throws {
+        let url = try csvURL(headers: [
+            "Display Name", "JSS Mobile Device ID", "OS Version", "Last Inventory Update",
+            "Email Address", "Model", "Device Family", "Managed", "Supervised",
+            "Jailbreak Detected", "Wi-Fi MAC Address", "Battery Level",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        let dest = tempURL(name: "mobile-writeConfig")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        try ScaffoldService.writeConfig(to: dest, result: result, profile: "test")
+        let written = try String(contentsOf: dest, encoding: .utf8)
+        // mobile_columns block must be present with populated device_name.
+        XCTAssertTrue(written.contains("mobile_columns:"),
+                      "mobile_columns section must be written for mobile export")
+        XCTAssertTrue(written.contains("device_name: \"Display Name\""),
+                      "device_name must be mapped to 'Display Name' in mobile export")
+        // columns block must have empty values.
+        XCTAssertTrue(written.contains("computer_name: \"\""),
+                      "computer_name must be empty for mobile export")
+    }
+
+    func test_writeConfig_computerCSV_writesComputerColumns() throws {
+        let url = try csvURL(headers: [
+            "Computer Name", "Serial Number", "Operating System Version",
+            "Last Check-in", "Gatekeeper", "Firewall Enabled",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        let dest = tempURL(name: "computer-writeConfig")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        try ScaffoldService.writeConfig(to: dest, result: result, profile: "test")
+        let written = try String(contentsOf: dest, encoding: .utf8)
+        XCTAssertTrue(written.contains("computer_name: \"Computer Name\""),
+                      "computer_name must be mapped for computer export")
+        // mobile_columns block must be present but empty.
+        XCTAssertTrue(written.contains("mobile_columns:"),
+                      "mobile_columns section must always be written")
+        XCTAssertTrue(written.contains("device_name: \"\""),
+                      "device_name must be empty for computer export")
+    }
+
+    // MARK: - Exact-match scoring: 200 - hintIndex picks first hint on tie
+
+    func test_matchColumns_exactMatch_firstHintWinsOnTie() throws {
+        // Python uses 200 - hintIndex, so "Last Check-in" (hint index 0) must win
+        // over "Last Inventory Update" (hint index 3) when both are present.
+        let url = try csvURL(headers: [
+            "Last Inventory Update", "Last Check-in", "Computer Name",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertEqual(result.columns["last_checkin"], "Last Check-in",
+                       "First hint 'Last Check-in' must win over later hint 'Last Inventory Update'")
+    }
+
     // MARK: - RFC 4180: quoted field with embedded comma
 
     func test_matchColumns_rfc4180_quotedFieldWithComma() throws {
