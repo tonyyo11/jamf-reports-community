@@ -100,6 +100,10 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "inventory-summary":              .refresh,
         "patch-status":                   .refresh,
         "policy-status":                  .refresh,
+        // SOFA OS currency feeds — cheap network fetch, no jamf-cli required.
+        "sofa":                           .refresh,
+        // Merged patch release dates — lightweight post-patch-status step.
+        "patch-release-dates":            .refresh,
 
         // Inventory — Deep Dive screens
         "app-status":                     .inventory,

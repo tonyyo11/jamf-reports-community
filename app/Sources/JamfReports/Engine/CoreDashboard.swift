@@ -99,10 +99,12 @@ struct CoreDashboard: Sendable {
             ("Protect Insights", writeProtectInsights),
             ("Protect Plans", writeProtectPlans),
             ("Protect Threat Overview", writeProtectThreatOverview),
-            // --- Parity / detail sheets (sheets 38–40) ---
+            // --- Parity / detail sheets (sheets 38–41) ---
             ("Patch Summary Dashboard", writePatchSummaryDashboard),
             ("Device Security State", writeDeviceSecurityState),
             ("Mobile Supervision Status", writeMobileSupervisionStatus),
+            // --- OS currency (sheet 42) ---
+            ("OS Currency", writeOSCurrency),
         ]
     }
 
@@ -288,18 +290,31 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["patch-status"])
         }
 
+        // Load patch release dates if available — added as optional columns.
+        // Uses dataDir directly (already the workspace's jamf-cli-data directory).
+        // Backward compatible: no snapshot → columns render "—".
+        let releaseRows = PatchReleaseDateService.load(dataDir: dataDir)
+        let releaseLookup = PatchReleaseDateService.releaseDateLookup(from: releaseRows)
+        let hasReleaseDates = !releaseLookup.isEmpty
+
+        let ncols = hasReleaseDates ? 8 : 6
         let ws = workbook.addSheet("Patch Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Patch Compliance"),
-                                      subtitle: "Generated: \(ts)", ncols: 6)
+                                      subtitle: "Generated: \(ts)", ncols: ncols)
         ws.setColumnWidth(0, 0, 36)
         ws.setColumnWidth(1, 1, 10)
         ws.setColumnWidth(2, 2, 12)
         ws.setColumnWidth(3, 3, 12)
         ws.setColumnWidth(4, 4, 14)
         ws.setColumnWidth(5, 5, 14)
+        if hasReleaseDates {
+            ws.setColumnWidth(6, 6, 16)
+            ws.setColumnWidth(7, 7, 14)
+        }
 
-        let headers = ["Title", "Latest", "On Latest", "On Other", "Total", "Compliance %"]
+        var headers = ["Title", "Latest", "On Latest", "On Other", "Total", "Compliance %"]
+        if hasReleaseDates { headers += ["Latest Released", "Days Behind"] }
         for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
@@ -310,6 +325,19 @@ struct CoreDashboard: Sendable {
             ws.write(item.onOther, row: row, col: 3, format: .cell)
             ws.write(item.total, row: row, col: 4, format: .cell)
             ws.write(item.compliancePct, row: row, col: 5, format: colorForPctString(item.compliancePct))
+            if hasReleaseDates {
+                let releaseDate = releaseLookup[item.id] ?? ""
+                ws.write(releaseDate.isEmpty ? "\u{2014}" : releaseDate, row: row, col: 6, format: .cell)
+                // "Days Behind" is shown only for titles below 100% compliance,
+                // matching Python's pct_value < 1.0 / secondary > 0 logic.
+                let pct = PatchStatusService.parseCompliancePct(item.compliancePct)
+                let belowFull = pct < 100.0 || item.onOther > 0
+                if belowFull, let days = PatchReleaseDateService.daysBehind(releaseDate: releaseDate) {
+                    ws.write(days, row: row, col: 7, format: .cell)
+                } else {
+                    ws.write("\u{2014}", row: row, col: 7, format: .cell)
+                }
+            }
             row += 1
         }
     }
@@ -2237,6 +2265,145 @@ struct CoreDashboard: Sendable {
             ws.write(pct, row: row, col: 4, format: .cell)
             row += 1
         }
+    }
+
+    // MARK: - OS Currency
+    // Source: SOFA cache at `<workspace>/jamf-cli-data/sofa/<platform>_data_feed.json`.
+    // Mirrors Python CoreDashboard._write_os_currency.
+
+    func writeOSCurrency() throws {
+        let noDataNote = "SOFA feed unavailable — enable network access or check sofa.enabled"
+
+        // Load SOFA feeds from this workspace's dataDir directly.
+        // dataDir is already the jamf-cli-data directory for this profile.
+        let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+
+        let ws = workbook.addSheet("OS Currency")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let headers = [
+            "Platform", "OS Family", "Latest Version", "Build", "Released",
+            "Days Since Release", "Actively Exploited CVEs",
+            "Fleet On Latest", "Fleet Behind", "% On Latest",
+        ]
+        var row = ws.writeSheetHeader(
+            title: t("OS Currency"),
+            subtitle: "Source: SOFA (sofa.macadmins.io) | Generated: \(ts)",
+            ncols: headers.count
+        )
+        ws.setColumnWidth(0, 1, 18)
+        ws.setColumnWidth(2, 9, 16)
+
+        guard !sofaSnapshot.rows.isEmpty else {
+            ws.write(noDataNote, row: row, col: 0, format: .cell)
+            return
+        }
+
+        for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+
+        // Build macOS and mobile os_version → count lookups from cached snapshots.
+        let macosCounts = macosOSCounts()
+        let mobileCounts = mobileOSCounts()
+
+        // Collect family majors per platform to detect EOL devices.
+        var familyMajors: [String: Set<Int>] = [:]
+        for entry in sofaSnapshot.rows {
+            let majorTuple = SOFAFeedService.versionTuple(entry.productVersion)
+            if !majorTuple.isEmpty {
+                familyMajors[entry.platform, default: []].insert(majorTuple[0])
+            }
+        }
+
+        for entry in sofaSnapshot.rows {
+            let counts: [String: Int]?
+            switch entry.platform {
+            case "macOS":        counts = macosCounts
+            case "iOS / iPadOS": counts = mobileCounts
+            default:             counts = nil
+            }
+
+            ws.write(entry.platform, row: row, col: 0, format: .cell)
+            ws.write(entry.osFamily, row: row, col: 1, format: .cell)
+            ws.write(entry.productVersion, row: row, col: 2, format: .cell)
+            ws.write(entry.build, row: row, col: 3, format: .cell)
+            ws.write(entry.releaseDate.isEmpty ? "\u{2014}" : entry.releaseDate,
+                     row: row, col: 4, format: .cell)
+            if let days = entry.daysSinceRelease {
+                ws.write(days, row: row, col: 5, format: .cell)
+            } else {
+                ws.write("\u{2014}", row: row, col: 5, format: .cell)
+            }
+            let cveFmt: CellFormat = entry.activelyExploitedCVEs > 0 ? .red : .cell
+            ws.write(entry.activelyExploitedCVEs, row: row, col: 6, format: cveFmt)
+
+            if let counts {
+                let (onLatest, behind) = SOFAFeedService.fleetCurrency(
+                    latestVersion: entry.productVersion, osCounts: counts)
+                let total = onLatest + behind
+                ws.write(onLatest, row: row, col: 7, format: .cell)
+                ws.write(behind, row: row, col: 8, format: .cell)
+                if total > 0 {
+                    let pct = String(format: "%.1f%%", Double(onLatest) / Double(total) * 100)
+                    ws.write(pct, row: row, col: 9, format: .cell)
+                } else {
+                    ws.write("\u{2014}", row: row, col: 9, format: .cell)
+                }
+            } else {
+                for col in 7...9 { ws.write("\u{2014}", row: row, col: col, format: .cell) }
+            }
+            row += 1
+        }
+
+        // EOL row: devices on majors older than every SOFA-tracked major.
+        let eolSources = [("macOS", macosCounts), ("iOS / iPadOS", mobileCounts)]
+        for (platform, counts) in eolSources {
+            let majors = familyMajors[platform] ?? []
+            let (eolDevices, eolVersions) = SOFAFeedService.fleetEOLCount(
+                familyMajors: majors, osCounts: counts)
+            guard eolDevices > 0 else { continue }
+            ws.write(platform, row: row, col: 0, format: .cell)
+            ws.write("Out of support (EOL)", row: row, col: 1, format: .red)
+            let eolLabel = "\(eolVersions) version\(eolVersions == 1 ? "" : "s") older than all supported releases"
+            ws.write(eolLabel, row: row, col: 2, format: .red)
+            for col in 3...6 { ws.write("\u{2014}", row: row, col: col, format: .cell) }
+            ws.write(0, row: row, col: 7, format: .cell)
+            ws.write(eolDevices, row: row, col: 8, format: .red)
+            ws.write("0.0%", row: row, col: 9, format: .cell)
+            row += 1
+        }
+    }
+
+    /// Returns {osVersion: count} for macOS from the cached security report.
+    private func macosOSCounts() -> [String: Int] {
+        guard let items = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
+        else { return [:] }
+        var counts: [String: Int] = [:]
+        for item in items {
+            if case .osVersion(let v) = item {
+                let ver = v.osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !ver.isEmpty else { continue }
+                counts[ver, default: 0] += v.count
+            }
+        }
+        return counts
+    }
+
+    /// Returns {osVersion: count} for iOS/iPadOS from the cached mobile inventory.
+    private func mobileOSCounts() -> [String: Int] {
+        let inventoryDir = dataDir.appendingPathComponent(
+            "mobile-device-inventory-details", isDirectory: true)
+        guard let url = FileManager.newestJSONFile(in: inventoryDir),
+              let data = try? Data(contentsOf: url),
+              let items = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
+        else { return [:] }
+        var counts: [String: Int] = [:]
+        for item in items {
+            let ver = (item.general?.osVersion ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !ver.isEmpty else { continue }
+            counts[ver, default: 0] += 1
+        }
+        return counts
     }
 
     // MARK: - Protect Plans / Threat Overview helpers
