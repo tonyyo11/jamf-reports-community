@@ -116,6 +116,7 @@ are no other Python files. Do not create additional modules — keep it single-f
 | `SchoolColumnMapper` | Resolves `school_columns` config field names → Jamf School CSV column names. Same interface as `ColumnMapper`. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
 | `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources (policies, profiles, scripts, packages, smart groups, org data). Uses inline SVG charts; self-contained, no CDN dependency, no new Python dependencies. |
+| `SOFAFeedClient` | Fetches macadmins SOFA v2 feeds (latest macOS/iOS/iPadOS/tvOS/watchOS versions + release dates) via curl subprocess (NOT urllib — python.org installs lack SSL certs). Caches to `<jamf_cli.data_dir>/sofa/`; stale-cache fallback when offline. Config: `sofa:` block. Feeds the "OS Currency" sheet and HTML section. ReleaseDate parsing handles both ISO timestamps (macOS/iOS) and date-only strings (tvOS/watchOS). |
 
 ### Key top-level functions
 
@@ -502,6 +503,8 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `SnapshotFreshness` | Decides fresh / stale / no-snapshots for a data dir by newest-file mtime. Gates the Overview "skip collect when fresh" path and the launch freshness sweep. |
 | `RefreshDebouncer` | Debounce helper extracted from the refresh path for testability. |
 | `CSVFamilyDetector` | Detects whether a Jamf Pro CSV export contains computers or mobile devices via family-unique discriminator headers (ported verbatim from Python `COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS` — keep both tables identical). Used by ScaffoldService and CSVDashboard sheet routing. |
+| `SOFAFeedService` | Swift counterpart of Python's `SOFAFeedClient`. Reads/writes the shared `jamf-cli-data/sofa/` cache (URLSession fetch, atomic writes). Feeds the OS Currency sheet/section, UpdatesView latest-version card, and ReportEngine.collect (refresh tier; kinds `sofa` + `patch-release-dates` in knownCollectKinds). |
+| `PatchReleaseDateService` | Reads the merged `patch-release-dates` snapshot (`[{title_id, title, latest_version, release_date}]`, written by both engines' collect). Latest-definition matching: exact version → absoluteOrderId 0 → first. Feeds Patch Compliance sheet + PatchView Released/Days Behind columns. |
 
 **Tab visibility model.** Every non-core sidebar tab is toggleable via SettingsView → Sidebar Visibility. Backed by `@AppStorage("hiddenTabs")` parsed/serialized through `TabVisibility`. Core tabs (`Tab.isCoreTab` — Overview, Devices, Sources, Settings, Onboarding) are filtered out at the toggle UI level and protected at the model level (toggling a core tab is a no-op). Sidebar groups with all-hidden contents auto-collapse so the layout never shows orphan headers. Visibility is a per-user UX preference, not workspace-bound.
 

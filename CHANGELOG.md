@@ -9,6 +9,20 @@ versions in this repository map to git tags.
 
 ### Added (v2.2.0 cycle)
 
+- OS Currency reporting via the [SOFA](https://sofa.macadmins.io) feed: both
+  engines now know the latest available macOS, iOS/iPadOS, tvOS, and watchOS
+  versions (version, build, release date, days since release, actively
+  exploited CVE count). A new "OS Currency" sheet/section joins this against
+  the fleet — devices on the latest release, devices behind, and a red
+  "Out of support (EOL)" row for devices older than every supported release.
+  The app's Updates screen shows the same latest-version data. SOFA fetches
+  are cached and degrade gracefully offline; a `sofa:` config block controls
+  the feed (disable for air-gapped servers).
+- Patch release dates: collection now captures each patch title's latest
+  version release date (`jamf-cli pro patch-software-title-configurations
+  definitions`). The Patch Compliance sheet and the app's Patch screen gain
+  "Latest Released" / "Days Behind" columns — groundwork for adoption-lag
+  trend charts.
 - Mobile-device CSV scaffolding: `scaffold` (Python CLI) and "Re-scaffold from
   CSV" / onboarding (app) now detect whether a CSV is a Jamf Pro computer or
   mobile-device export and populate the matching column mappings (`columns:`
