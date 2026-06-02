@@ -186,13 +186,21 @@ else
 fi
 
 # Notarize when: release mode, real identity, SKIP_NOTARIZE not set.
+# Auth: NOTARY_KEY_PATH/NOTARY_KEY_ID/NOTARY_ISSUER (API key) or keychain profile.
 NOTARY_PROFILE="${NOTARY_PROFILE:-JamfReports-Notary}"
+if [[ -n "${NOTARY_KEY_PATH:-}" ]]; then
+  NOTARY_AUTH_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+  NOTARY_AUTH_DESC="API key ${NOTARY_KEY_ID}"
+else
+  NOTARY_AUTH_ARGS=(--keychain-profile "$NOTARY_PROFILE")
+  NOTARY_AUTH_DESC="profile: $NOTARY_PROFILE"
+fi
 if [[ "$CONFIG" == "release" \
       && "$SIGNING_IDENTITY" != "-" \
       && -z "${SKIP_NOTARIZE:-}" ]]; then
-  echo "→ submitting DMG to Apple notary service (profile: $NOTARY_PROFILE)"
+  echo "→ submitting DMG to Apple notary service ($NOTARY_AUTH_DESC)"
   if ! xcrun notarytool submit "$DMG_OUT" \
-       --keychain-profile "$NOTARY_PROFILE" \
+       "${NOTARY_AUTH_ARGS[@]}" \
        --wait; then
     echo "✗ notarization failed" >&2
     exit 1

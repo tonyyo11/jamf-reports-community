@@ -192,8 +192,17 @@ fi
 #   - building release, AND
 #   - a real Developer ID identity was used (ad-hoc cannot be notarized), AND
 #   - SKIP_NOTARIZE is not set (escape hatch for fast local iteration).
-# Uses the keychain profile stored via `xcrun notarytool store-credentials`.
+# Auth: set NOTARY_KEY_PATH/NOTARY_KEY_ID/NOTARY_ISSUER for keychain-free App Store
+# Connect API-key auth (CI / non-interactive); otherwise uses the keychain profile
+# stored via `xcrun notarytool store-credentials`.
 NOTARY_PROFILE="${NOTARY_PROFILE:-JamfReports-Notary}"
+if [[ -n "${NOTARY_KEY_PATH:-}" ]]; then
+  NOTARY_AUTH_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+  NOTARY_AUTH_DESC="API key ${NOTARY_KEY_ID}"
+else
+  NOTARY_AUTH_ARGS=(--keychain-profile "$NOTARY_PROFILE")
+  NOTARY_AUTH_DESC="profile: $NOTARY_PROFILE"
+fi
 if [[ "$CONFIG" == "release" \
       && "$SIGNING_IDENTITY" != "-" \
       && -z "${SKIP_NOTARIZE:-}" ]]; then
@@ -202,11 +211,11 @@ if [[ "$CONFIG" == "release" \
   rm -f "$ZIP_OUT"
   /usr/bin/ditto -c -k --keepParent "$APP_OUT" "$ZIP_OUT"
 
-  echo "→ submitting to Apple notary service (profile: $NOTARY_PROFILE)"
+  echo "→ submitting to Apple notary service ($NOTARY_AUTH_DESC)"
   if ! xcrun notarytool submit "$ZIP_OUT" \
-       --keychain-profile "$NOTARY_PROFILE" \
+       "${NOTARY_AUTH_ARGS[@]}" \
        --wait; then
-    echo "✗ notarization failed — run 'xcrun notarytool log <id> --keychain-profile $NOTARY_PROFILE' for details" >&2
+    echo "✗ notarization failed — run 'xcrun notarytool log <id>' with the same auth for details" >&2
     exit 1
   fi
 
