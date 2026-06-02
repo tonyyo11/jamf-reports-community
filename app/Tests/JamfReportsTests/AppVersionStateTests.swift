@@ -33,8 +33,8 @@ final class AppVersionStateTests: XCTestCase {
         // Simulate a previously seen version that differs from current.
         // lastSeenVersion is private(set); write via UserDefaults directly.
         UserDefaults.standard.set("1.0.0", forKey: testKey)
-        // currentVersion is either "2.1.0" from the hardcoded fallback or the
-        // bundle version; in tests there is no bundle, so fallback applies.
+        // currentVersion is either the hardcoded fallback or the bundle
+        // version; in tests there is no bundle, so the fallback applies.
         // Either way, "1.0.0" != currentVersion.
         if AppVersionState.currentVersion == "1.0.0" {
             // Guard against the unlikely case where currentVersion is also "1.0.0"
