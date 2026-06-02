@@ -62,6 +62,39 @@ private func scheduledRunSingle(
         }
     }
 
+    // Backup mode (v2.2.0): export configuration objects; no collect, no
+    // generate. Retention prunes scheduled backups beyond the newest 10 and
+    // sweeps abandoned .tmp-* staging dirs.
+    if mode == .backup {
+        do {
+            let bridge = CLIBridge()
+            let exit = try await bridge.backup(
+                profile: profile,
+                label: "scheduled-\(BackupMaintenance.dateStamp())",
+                onLine: onLine
+            )
+            if exit == 0 {
+                BackupMaintenance.pruneScheduledBackups(
+                    profile: profile, keep: BackupMaintenance.defaultKeepCount, onLine: onLine
+                )
+                _ = BackupMaintenance.cleanStaleTempDirs(profile: profile)
+            }
+            let message = exit == 0
+                ? "[ok] scheduled backup complete for '\(profile)'"
+                : "[error] scheduled backup failed for '\(profile)': exit \(exit)"
+            if exit == 0 { print(message) } else { fputs(message + "\n", stderr) }
+            recorder?.record(message)
+            recorder?.finish(exitCode: exit)
+            return exit
+        } catch {
+            let message = "[error] scheduled backup failed for '\(profile)': \(error.localizedDescription)"
+            fputs(message + "\n", stderr)
+            recorder?.record(message)
+            recorder?.finish(exitCode: 1)
+            return 1
+        }
+    }
+
     // PR-21: csv-assisted hard-fails when csv-inbox/ is empty. Resolve up
     // front so we don't run an expensive collect just to fail at generate.
     let resolvedCSV: URL?

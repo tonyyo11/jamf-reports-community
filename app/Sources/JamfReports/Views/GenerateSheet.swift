@@ -916,6 +916,7 @@ private struct NewScheduleSheetWrapper: View {
         case .jamfCLIOnly:  "Generate a report from live or cached jamf-cli data. No CSV required."
         case .jamfCLIFull:  "Full run: collect snapshots, archive CSV, then generate from both sources."
         case .csvAssisted:  "Generate combining a CSV from the inbox with live jamf-cli data."
+        case .backup:       "Back up Jamf Pro configuration objects to the workspace's backups folder."
         }
     }
 }

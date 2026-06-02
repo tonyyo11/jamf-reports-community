@@ -41,6 +41,21 @@ extension CLIBridge {
                 throw CLIBridgeError.csvMissing(profile: profile)
             }
             return try await collectThenGenerate(profile: profile, csvPath: csv.path, onLine: onLine)
+        case .backup:
+            // Scheduled/manual configuration backup — no collect, no report.
+            // Retention keeps the newest N scheduled backups; manual backups
+            // from BackupsView (no "scheduled-" prefix) are never pruned.
+            let exit = try await backup(
+                profile: profile,
+                label: "scheduled-\(BackupMaintenance.dateStamp())",
+                onLine: onLine
+            )
+            if exit == 0 {
+                BackupMaintenance.pruneScheduledBackups(
+                    profile: profile, keep: BackupMaintenance.defaultKeepCount, onLine: onLine
+                )
+            }
+            return exit
         }
     }
 

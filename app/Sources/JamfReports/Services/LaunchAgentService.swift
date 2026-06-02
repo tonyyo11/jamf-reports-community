@@ -461,6 +461,7 @@ enum LaunchAgentService {
             case .jamfCLIOnly: return "Jamf CLI Report"
             case .jamfCLIFull: return "Full Automation"
             case .csvAssisted: return "CSV Assisted"
+            case .backup: return "Configuration Backup"
             }
         }
         return slug.replacingOccurrences(of: "-", with: " ").capitalized

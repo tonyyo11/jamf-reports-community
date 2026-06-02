@@ -37,6 +37,8 @@ extension Schedule {
             modeSummary = "collects snapshots and builds a workbook"
         case .csvAssisted:
             modeSummary = "collects snapshots and builds a workbook (CSV required)"
+        case .backup:
+            modeSummary = "backs up Jamf Pro configuration objects"
         }
 
         let timeMatch = schedule.range(of: #"\d{2}:\d{2}"#, options: .regularExpression)
