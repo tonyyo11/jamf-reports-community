@@ -73,6 +73,12 @@ scripted automation where a GUI is not available.
 
 - Generates multi-sheet Excel workbooks and self-contained HTML instance reports.
 - Reports on Jamf Pro **and** Jamf School, from CSV exports or live jamf-cli data.
+- **OS Currency** — an "OS Currency" workbook sheet and HTML card show the latest
+  available macOS/iOS/iPadOS/tvOS/watchOS versions from the [SOFA](https://sofa.macadmins.io)
+  feed, joined to your fleet's OS distribution. Configure it in the `sofa:` block; set
+  `sofa.enabled: false` for air-gapped servers.
+- **Patch release dates** — the Patch Compliance sheet gains "Latest Released" and
+  "Days Behind" columns when patch-title definitions are collected.
 - Config-driven — map your column names in `config.yaml`; no code changes for normal use.
 - Schedules unattended runs through macOS LaunchAgents.
 - `scaffold` and `check` generate and validate `config.yaml` from a CSV export.

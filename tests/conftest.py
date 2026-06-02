@@ -51,3 +51,32 @@ def config_factory(jrc, fixtures_root, tmp_path):
         return config
 
     return _factory
+
+
+@pytest.fixture
+def real_sofa_curl(jrc, _block_sofa_network):
+    """Return the unpatched SOFAFeedClient._curl_fetch for curl-path tests.
+
+    Depends on the autouse network block so the original is captured before
+    this fixture reads it. Tests that need to exercise the real curl/subprocess
+    handler request this fixture and restore it explicitly.
+    """
+    return jrc._ORIGINAL_SOFA_CURL_FETCH
+
+
+@pytest.fixture(autouse=True)
+def _block_sofa_network(jrc, monkeypatch):
+    """Prevent SOFAFeedClient from making real network/curl calls in tests.
+
+    Patches `_curl_fetch` to raise so every fetch path falls back to cache (or
+    None) and never reaches the network. SOFA tests that exercise cache paths
+    keep working unchanged; tests that exercise the curl handler itself request
+    the `real_sofa_curl` fixture and restore it explicitly.
+    """
+    if not hasattr(jrc, "_ORIGINAL_SOFA_CURL_FETCH"):
+        jrc._ORIGINAL_SOFA_CURL_FETCH = jrc.SOFAFeedClient._curl_fetch
+
+    def _no_network(self, platform):
+        raise RuntimeError("SOFA network disabled in tests")
+
+    monkeypatch.setattr(jrc.SOFAFeedClient, "_curl_fetch", _no_network)
