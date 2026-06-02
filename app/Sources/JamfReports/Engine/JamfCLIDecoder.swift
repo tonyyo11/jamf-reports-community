@@ -334,6 +334,10 @@ struct EAResultRow: Decodable, Sendable {
     let serial: String?
     let eaId: String?
     let eaName: String?
+    /// Alternate shape: some jamf-cli versions emit a `device` field (device
+    /// name) instead of computer_id/serial. Decoded so per-device joins
+    /// (risk-factor security-agent checks) work against both shapes.
+    let device: String?
     let value: AnyCodable?
 
     private enum CodingKeys: String, CodingKey {
@@ -342,6 +346,7 @@ struct EAResultRow: Decodable, Sendable {
         case serial
         case eaId = "ea_id"
         case eaName = "ea_name"
+        case device
         case value
     }
 }

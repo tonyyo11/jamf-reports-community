@@ -246,7 +246,11 @@ struct DeviceRisk: Sendable, Equatable {
         case activeCVE
         case secureBootMedium
         case staleOffline
-        case nessusDisconnected
+        /// A configured `security_agents` entry's EA reports the agent as not
+        /// connected. v3.5 hardcoded this to Nessus; the agent (and its EA
+        /// column + connected value) is now whatever config.yaml defines.
+        /// The raw value keeps the legacy name for v3.5-parity traceability.
+        case securityAgentDisconnected = "nessusDisconnected"
         case bootstrapMissing
 
         var displayLabel: String {
@@ -263,9 +267,19 @@ struct DeviceRisk: Sendable, Equatable {
             case .activeCVE:          return "Active CVE With Exploits"
             case .secureBootMedium:   return "Secure Boot: Medium Security"
             case .staleOffline:       return "Stale Device (Offline)"
-            case .nessusDisconnected: return "Nessus Disconnected"
+            case .securityAgentDisconnected: return "Security Agent Disconnected"
             case .bootstrapMissing:   return "Bootstrap Token Missing"
             }
+        }
+
+        /// Tenant-specific label: the configured security agent's name (e.g.
+        /// "Nessus Agent Disconnected") for `.securityAgentDisconnected`; the
+        /// static label for everything else.
+        func displayLabel(agentName: String?) -> String {
+            if case .securityAgentDisconnected = self, let name = agentName, !name.isEmpty {
+                return "\(name) Disconnected"
+            }
+            return displayLabel
         }
 
         var remediation: String {
@@ -282,9 +296,18 @@ struct DeviceRisk: Sendable, Equatable {
             case .activeCVE:          return "Apply pending macOS updates to clear active exploit."
             case .secureBootMedium:   return "Upgrade Secure Boot to Full Security."
             case .staleOffline:       return "User outreach — locate device, force check-in."
-            case .nessusDisconnected: return "Re-link Nessus agent via standard policy."
+            case .securityAgentDisconnected: return "Re-link the security agent via its deployment policy."
             case .bootstrapMissing:   return "Re-enroll device (profiles renew enrollment)."
             }
+        }
+
+        /// Tenant-specific remediation for `.securityAgentDisconnected`; the
+        /// static remediation for everything else.
+        func remediation(agentName: String?) -> String {
+            if case .securityAgentDisconnected = self, let name = agentName, !name.isEmpty {
+                return "Re-link \(name) via its deployment policy."
+            }
+            return remediation
         }
     }
 }
@@ -306,7 +329,9 @@ struct RiskFactorWeights: Sendable, Equatable {
     var activeCVE: Int
     var secureBootMedium: Int
     var staleOffline: Int
-    var nessusDisconnected: Int
+    /// Points when the configured security agent reports disconnected
+    /// (v3.5's "Nessus disconnected" factor, now config-driven).
+    var securityAgentDisconnected: Int
     var bootstrapMissing: Int
     /// Boot drive fullness threshold (percent). Defaults to 95%.
     var bootDriveFullThresholdPct: Int
@@ -326,7 +351,7 @@ struct RiskFactorWeights: Sendable, Equatable {
         activeCVE: 10,
         secureBootMedium: 5,
         staleOffline: 5,
-        nessusDisconnected: 5,
+        securityAgentDisconnected: 5,
         bootstrapMissing: 4,
         bootDriveFullThresholdPct: 95
     )

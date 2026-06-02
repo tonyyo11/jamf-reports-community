@@ -28,8 +28,11 @@ struct RiskScoringService: Sendable {
         /// Number of active CVE exploits present. `nil` = field absent.
         var activeCVEExploits: Int?
         var bootstrapEscrowed: Bool
-        /// `nil` = Nessus not deployed in this tenant; do not penalize.
-        var nessusConnected: Bool?
+        /// Whether the tenant's configured security agent (first
+        /// `security_agents` config entry) reports connected on this device.
+        /// `nil` = no agent configured, or no EA value for this device;
+        /// do not penalize.
+        var securityAgentConnected: Bool?
 
         static let safe = Input(
             fileVaultEncrypted: true,
@@ -44,8 +47,29 @@ struct RiskScoringService: Sendable {
             daysSinceCheckIn: 1,
             activeCVEExploits: 0,
             bootstrapEscrowed: true,
-            nessusConnected: nil
+            securityAgentConnected: nil
         )
+    }
+
+    /// One device's status check against a configured `security_agents` entry.
+    ///
+    /// `connected_value` follows the config contract: a case-insensitive
+    /// substring match against the device's EA value. An empty EA value means
+    /// "no data" — the factor is not triggered.
+    struct SecurityAgentCheck: Sendable, Equatable {
+        /// The device's raw EA value for the agent's configured column.
+        let value: String
+        /// The configured `connected_value`.
+        let connectedValue: String
+
+        /// nil when there is no usable signal (empty value or empty
+        /// connected_value); otherwise whether the value matches.
+        var isConnected: Bool? {
+            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedExpected = connectedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedValue.isEmpty, !trimmedExpected.isEmpty else { return nil }
+            return trimmedValue.localizedCaseInsensitiveContains(trimmedExpected)
+        }
     }
 
     /// Compute risk for a single device's signals.
@@ -109,8 +133,8 @@ struct RiskScoringService: Sendable {
             add(.staleOffline, points: weights.staleOffline,
                 detail: "\(days) days since check-in")
         }
-        if input.nessusConnected == false {
-            add(.nessusDisconnected, points: weights.nessusDisconnected)
+        if input.securityAgentConnected == false {
+            add(.securityAgentDisconnected, points: weights.securityAgentDisconnected)
         }
         if !input.bootstrapEscrowed {
             add(.bootstrapMissing, points: weights.bootstrapMissing)
@@ -123,6 +147,44 @@ struct RiskScoringService: Sendable {
             triggered: sorted
         )
     }
+
+    // MARK: - Security-agent EA lookup
+
+    /// Per-device value lookup for `eaColumn` from the cached ea-results
+    /// snapshot. Keys are lowercased device identifiers — serial, computer ID,
+    /// computer name, and the alternate-shape `device` field — so callers can
+    /// probe with whichever identifiers their inventory record carries.
+    ///
+    /// Empty when no agent column is configured, no ea-results snapshot
+    /// exists, or the snapshot has no rows for that column. The risk factor is
+    /// then never triggered (absence of data is not a finding).
+    static func agentStatusLookup(profile: String, eaColumn: String) -> [String: String] {
+        let column = eaColumn.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !column.isEmpty,
+              let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            return [:]
+        }
+        let resultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
+        guard let url = FileManager.newestJSONFile(in: resultsDir),
+              let data = try? Data(contentsOf: url),
+              let rows = try? JSONDecoder().decode([EAResultRow].self, from: data) else {
+            return [:]
+        }
+
+        var lookup: [String: String] = [:]
+        for row in rows {
+            guard let name = row.eaName, name.caseInsensitiveCompare(column) == .orderedSame,
+                  let value = row.value?.stringValue, !value.isEmpty else {
+                continue
+            }
+            for key in [row.serial, row.computerId, row.computerName, row.device] {
+                if let key, !key.isEmpty {
+                    lookup[key.lowercased()] = value
+                }
+            }
+        }
+        return lookup
+    }
 }
 
 // MARK: - DeviceInventoryRecord adapter
@@ -133,7 +195,15 @@ extension RiskScoringService.Input {
     /// fields absent from the record (mSCP failures, active CVE counts) are
     /// treated as zero so the device is not unfairly penalized. Wire those in
     /// once the inventory snapshot starts carrying them.
-    static func from(record: DeviceInventoryRecord) -> Self {
+    ///
+    /// `agentCheck` is the device's status against the tenant's configured
+    /// security agent (see `RiskScoringService.SecurityAgentCheck`). Pass nil
+    /// when no agent is configured or the device has no EA value — the factor
+    /// is then skipped, never penalized.
+    static func from(
+        record: DeviceInventoryRecord,
+        agentCheck: RiskScoringService.SecurityAgentCheck? = nil
+    ) -> Self {
         Self(
             fileVaultEncrypted: looksAffirmative(record.fileVault) &&
                                 !looksNegative(record.fileVault),
@@ -149,7 +219,7 @@ extension RiskScoringService.Input {
             activeCVEExploits: nil,
             bootstrapEscrowed: looksAffirmative(record.bootstrapToken) &&
                                !looksNegative(record.bootstrapToken),
-            nessusConnected: nil
+            securityAgentConnected: agentCheck?.isConnected
         )
     }
 
