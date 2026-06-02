@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -119,8 +120,12 @@ struct OnboardingView: View {
         case .welcome: "Build your Jamf Reports workspace."
         case .installCLI: "Install the Jamf CLI."
         case .workspace: "Name the workspace."
-        case .authenticate: "Connect to Jamf Pro."
+        case .authenticate:
+            flow.proConnectionType == .platformGateway
+                ? "Connect via Platform Gateway."
+                : "Connect to Jamf Pro."
         case .validate: "Validate the profile."
+        case .addProducts: "Add more products."
         case .csvMapping: "Map your first CSV export."
         case .firstReport: "Generate the first report."
         }
@@ -135,9 +140,13 @@ struct OnboardingView: View {
         case .workspace:
             "The profile name becomes both the jamf-cli profile id and the folder under ~/Jamf-Reports."
         case .authenticate:
-            "Jamf Reports passes the API client secret to jamf-cli over stdin and clears the field after the profile add command returns."
+            flow.proConnectionType == .platformGateway
+                ? "Registers a jamf-cli profile with Platform API auth. Secrets are passed over stdin and cleared immediately."
+                : "Jamf Reports passes the API client secret to jamf-cli over stdin and clears the field after the profile add command returns."
         case .validate:
             "jamf-cli validates the saved profile before report setup continues."
+        case .addProducts:
+            "Optionally connect Jamf Protect and Jamf School. Both products are skippable — you can add them later from Settings."
         case .csvMapping:
             "CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop. The app's scaffold tool reads the CSV headers and writes the workspace config."
         case .firstReport:
@@ -158,6 +167,8 @@ struct OnboardingView: View {
             authenticateStep
         case .validate:
             validateStep
+        case .addProducts:
+            addProductsStep
         case .csvMapping:
             csvMappingStep
         case .firstReport:
@@ -304,37 +315,339 @@ struct OnboardingView: View {
 
     private var authenticateStep: some View {
         VStack(alignment: .leading, spacing: 18) {
+            // Connection-type picker
+            Card(padding: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    FieldLabel(label: "Connection type")
+                    Picker("", selection: Binding(
+                        get: { flow.proConnectionType },
+                        set: { flow.proConnectionType = $0 }
+                    )) {
+                        ForEach(OnboardingFlow.ProConnectionType.allCases) { kind in
+                            Text(kind.label).tag(kind)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.radioGroup)
+                }
+            }
+
+            if flow.proConnectionType == .oauth2 {
+                oauth2Form
+            } else {
+                platformGatewayForm
+            }
+        }
+    }
+
+    private var oauth2Form: some View {
+        Card(padding: 22) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 5) {
+                    FieldLabel(label: "Jamf Pro URL")
+                    PNPTextField(value: binding(\.jamfURL), placeholder: "https://example.jamfcloud.com")
+                    validationLine(ok: flow.isJamfURLValid, text: "Must use https:// and include a host")
+                }
+
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "Client ID")
+                        PNPTextField(value: binding(\.clientID), mono: true)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "Client Secret")
+                        SecureSecretField(
+                            placeholder: "OAuth client secret",
+                            onTextChange: { flow.secretFieldHasText = $0 }
+                        ) { data in
+                            flow.setClientSecret(data)
+                        }
+                        .frame(height: 28)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                privilegesBox
+
+                if flow.profileRegistered {
+                    Pill(text: "PROFILE REGISTERED", tone: .teal, icon: "checkmark")
+                } else if flow.isRegisteringProfile {
+                    Pill(text: "VERIFYING", tone: .gold, icon: "arrow.clockwise")
+                }
+            }
+        }
+    }
+
+    private var platformGatewayForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Before continuing info box
+            Card(padding: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundStyle(Theme.Colors.goldBright)
+                        Text("Before continuing:")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.fg)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("1. Go to account.jamf.com → API Clients")
+                        Text("2. Create an API Client and note the Client ID")
+                        Text("3. Generate a Client Secret (shown only once)")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fg2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             Card(padding: 22) {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Jamf Pro URL")
-                        PNPTextField(value: binding(\.jamfURL), placeholder: "https://example.jamfcloud.com")
-                        validationLine(ok: flow.isJamfURLValid, text: "Must use https:// and include a host")
+                        FieldLabel(label: "Gateway URL")
+                        PNPTextField(
+                            value: binding(\.gatewayURL),
+                            placeholder: "https://us.apigw.jamf.com",
+                            mono: true
+                        )
+                        validationLine(ok: flow.isGatewayURLValid, text: "Must use https:// and include a host")
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "Tenant ID")
+                        PNPTextField(value: binding(\.tenantID), placeholder: "your-tenant-id", mono: true)
                     }
 
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 5) {
                             FieldLabel(label: "Client ID")
-                            PNPTextField(value: binding(\.clientID), mono: true)
+                            PNPTextField(value: binding(\.platformClientID), mono: true)
                         }
                         .frame(maxWidth: .infinity)
 
                         VStack(alignment: .leading, spacing: 5) {
                             FieldLabel(label: "Client Secret")
-                            SecureSecretField(placeholder: "OAuth client secret") { data in
-                                flow.setClientSecret(data)
+                            SecureSecretField(
+                                placeholder: "Platform client secret",
+                                onTextChange: { flow.platformSecretFieldHasText = $0 }
+                            ) { data in
+                                flow.setPlatformClientSecret(data)
                             }
                             .frame(height: 28)
                         }
                         .frame(maxWidth: .infinity)
                     }
 
-                    privilegesBox
-
                     if flow.profileRegistered {
                         Pill(text: "PROFILE REGISTERED", tone: .teal, icon: "checkmark")
                     } else if flow.isRegisteringProfile {
                         Pill(text: "VERIFYING", tone: .gold, icon: "arrow.clockwise")
+                    }
+                }
+            }
+        }
+    }
+
+    private var addProductsStep: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            protectProductCard
+            schoolProductCard
+        }
+    }
+
+    private var protectProductCard: some View {
+        Card(padding: 22) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.goldBright)
+                        .frame(width: 38, height: 38)
+                        .background(
+                            Theme.Colors.gold.opacity(0.14),
+                            in: RoundedRectangle(cornerRadius: 8)
+                        )
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Jamf Protect")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.fg)
+                        Text("Endpoint detection, analytics, and compliance signals.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    Spacer()
+                    if flow.protectConnected {
+                        Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
+                    }
+                }
+
+                if !flow.protectConnected {
+                    Divider().background(Theme.Colors.hairline)
+
+                    Text("Create API client credentials in your Jamf Protect console under Settings → API Clients.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "Protect URL")
+                        PNPTextField(
+                            value: binding(\.protectURL),
+                            placeholder: "https://yourorg.protect.jamfcloud.com"
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "Profile name")
+                        PNPTextField(value: binding(\.protectProfileName), placeholder: "protect", mono: true)
+                        FieldHelp(text: "Lowercase letters, numbers, hyphens, and underscores.")
+                    }
+
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            FieldLabel(label: "Client ID")
+                            PNPTextField(value: binding(\.protectClientID), mono: true)
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            FieldLabel(label: "Client Secret")
+                            SecureSecretField(
+                                placeholder: "Protect client secret",
+                                onTextChange: { flow.protectSecretFieldHasText = $0 }
+                            ) { data in
+                                flow.setProtectClientSecret(data)
+                            }
+                            .frame(height: 28)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+
+                    if let err = flow.protectConnectionError {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    HStack(spacing: 10) {
+                        PNPButton(
+                            title: flow.isConnectingProtect ? "Connecting…" : "Connect Protect",
+                            icon: "shield.lefthalf.filled",
+                            style: .gold,
+                            size: .sm
+                        ) {
+                            // Force finalization before reading credentials.
+                            NSApp.keyWindow?.makeFirstResponder(nil)
+                            Task { await flow.registerProtectProfile() }
+                        }
+                        .disabled(
+                            flow.isConnectingProtect
+                            || flow.protectURL.trimmedForView.isEmpty
+                            || flow.protectProfileName.trimmedForView.isEmpty
+                            || flow.protectClientID.trimmedForView.isEmpty
+                            || (!flow.protectConnected && flow.protectClientSecret.isEmpty
+                                && !flow.protectSecretFieldHasText)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private var schoolProductCard: some View {
+        Card(padding: 22) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    Image(systemName: "graduationcap.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.goldBright)
+                        .frame(width: 38, height: 38)
+                        .background(
+                            Theme.Colors.gold.opacity(0.14),
+                            in: RoundedRectangle(cornerRadius: 8)
+                        )
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Jamf School")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.fg)
+                        Text("Device and user management for K-12 and education environments.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    Spacer()
+                    if flow.schoolConnected {
+                        Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
+                    }
+                }
+
+                if !flow.schoolConnected {
+                    Divider().background(Theme.Colors.hairline)
+
+                    Text("Find your Network ID at Devices → Enroll Device(s). Generate an API key at Organization → Settings → API.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "School URL")
+                        PNPTextField(
+                            value: binding(\.schoolURL),
+                            placeholder: "https://yourorg.jamfcloud.com"
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        FieldLabel(label: "Profile name")
+                        PNPTextField(value: binding(\.schoolProfileName), placeholder: "school", mono: true)
+                        FieldHelp(text: "Lowercase letters, numbers, hyphens, and underscores.")
+                    }
+
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            FieldLabel(label: "Network ID")
+                            PNPTextField(value: binding(\.schoolNetworkID), mono: true)
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            FieldLabel(label: "API Key")
+                            SecureSecretField(
+                                placeholder: "School API key",
+                                onTextChange: { flow.schoolAPIKeyFieldHasText = $0 }
+                            ) { data in
+                                flow.setSchoolAPIKey(data)
+                            }
+                            .frame(height: 28)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+
+                    if let err = flow.schoolConnectionError {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    HStack(spacing: 10) {
+                        PNPButton(
+                            title: flow.isConnectingSchool ? "Connecting…" : "Connect School",
+                            icon: "graduationcap.fill",
+                            style: .gold,
+                            size: .sm
+                        ) {
+                            NSApp.keyWindow?.makeFirstResponder(nil)
+                            Task { await flow.registerSchoolProfile() }
+                        }
+                        .disabled(
+                            flow.isConnectingSchool
+                            || flow.schoolURL.trimmedForView.isEmpty
+                            || flow.schoolProfileName.trimmedForView.isEmpty
+                            || flow.schoolNetworkID.trimmedForView.isEmpty
+                            || (!flow.schoolConnected && flow.schoolAPIKey.isEmpty
+                                && !flow.schoolAPIKeyFieldHasText)
+                        )
                     }
                 }
             }
@@ -540,7 +853,8 @@ struct OnboardingView: View {
             }
             .disabled(flow.currentStep == .welcome || flow.isRegisteringProfile ||
                       flow.isValidatingConnection || flow.isScaffoldingCSV ||
-                      flow.isSkippingCSVMapping || flow.isRunningFirstReport)
+                      flow.isSkippingCSVMapping || flow.isRunningFirstReport ||
+                      flow.isConnectingProtect || flow.isConnectingSchool)
             .opacity(flow.currentStep == .welcome ? 0.45 : 1)
             .accessibilityLabel("Back to step \(max(1, flow.currentStep.number - 1))")
 
@@ -566,7 +880,9 @@ struct OnboardingView: View {
         case .workspace: "Create workspace"
         case .authenticate: flow.isRegisteringProfile ? "Verifying" : "Verify & continue"
         case .validate:
-            if flow.isValidatingConnection { "Validating" } else { flow.connectionValidated ? "Continue" : "Validate" }
+            if flow.isValidatingConnection { "Validating" }
+            else { flow.connectionValidated ? "Continue" : "Validate" }
+        case .addProducts: "Continue"
         case .csvMapping:
             if flow.isScaffoldingCSV { "Mapping" }
             else if flow.isSkippingCSVMapping { "Seeding" }
@@ -582,6 +898,7 @@ struct OnboardingView: View {
         case .workspace: "folder.badge.plus"
         case .authenticate: "checkmark"
         case .validate: flow.connectionValidated ? "arrow.right" : "network.badge.shield.half.filled"
+        case .addProducts: "arrow.right"
         case .csvMapping: "arrow.right"
         case .firstReport: "play.fill"
         }
@@ -599,6 +916,11 @@ struct OnboardingView: View {
                 flow.lastError = error.localizedDescription
             }
         case .authenticate:
+            // Force finalization of any focused secure field before the async
+            // work reads clientSecret/platformClientSecret. AppKit processes the
+            // makeFirstResponder synchronously, so controlTextDidEndEditing fires
+            // before the Task body runs.
+            NSApp.keyWindow?.makeFirstResponder(nil)
             Task {
                 do {
                     try await flow.registerJamfCLIProfile()
@@ -615,6 +937,8 @@ struct OnboardingView: View {
                     await flow.validateRegisteredProfile()
                 }
             }
+        case .addProducts:
+            flow.nextStep()
         case .csvMapping:
             flow.nextStep()
         case .firstReport:
