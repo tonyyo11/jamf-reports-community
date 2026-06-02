@@ -91,7 +91,7 @@ struct SecurityScoreCalculator: Sendable {
         if let pct = summary.fileVaultPct { counts[.fileVault] = countFor(pct: pct, total: total) }
         if let pct = summary.sipPct { counts[.sip] = countFor(pct: pct, total: total) }
         if let pct = summary.firewallPct { counts[.firewall] = countFor(pct: pct, total: total) }
-        if let pct = summary.crowdstrikePct { counts[.crowdstrike] = countFor(pct: pct, total: total) }
+        if let pct = summary.crowdstrikePct { counts[.edrAgent] = countFor(pct: pct, total: total) }
         if let pct = summary.mscpScorePct { counts[.mscp] = countFor(pct: pct, total: total) }
         if let pct = summary.xprotectPct { counts[.xprotect] = countFor(pct: pct, total: total) }
         if let pct = summary.cvePct { counts[.cve] = countFor(pct: pct, total: total) }

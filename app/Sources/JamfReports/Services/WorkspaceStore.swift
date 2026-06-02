@@ -138,6 +138,15 @@ final class WorkspaceStore {
         return configState.complianceBenchmarks.first(where: { !$0.isEmpty })
     }
 
+    /// The first configured security agent's name (e.g. "CrowdStrike Falcon"),
+    /// used to label the EDR metric across the UI. Nil when no security_agents
+    /// are configured — surfaces fall back to the generic "EDR Agent" label.
+    var edrAgentName: String? {
+        configState.securityAgents
+            .first { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }?
+            .name
+    }
+
     // MARK: Column label / required metadata
 
     private static let columnLabels: [String: String] = [

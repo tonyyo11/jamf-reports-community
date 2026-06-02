@@ -242,12 +242,16 @@ struct SecurityPostureView: View {
     }
 
     private var availabilityText: String {
-        let names = score.available.map(\.displayLabel).joined(separator: ", ")
+        let names = score.available
+            .map { $0.displayLabel(edrAgentName: workspace.edrAgentName) }
+            .joined(separator: ", ")
         return "Weighted across: \(names)."
     }
 
     private var missingText: String {
-        let names = score.missing.map(\.displayLabel).joined(separator: ", ")
+        let names = score.missing
+            .map { $0.displayLabel(edrAgentName: workspace.edrAgentName) }
+            .joined(separator: ", ")
         return "Not in this snapshot (run collect on EA results + device-compliance to include): \(names)."
     }
 

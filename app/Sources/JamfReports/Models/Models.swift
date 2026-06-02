@@ -886,7 +886,13 @@ struct TokenStatus: Sendable, Codable {
 
 struct TrendSeries: Identifiable, Sendable {
     enum Metric: String, CaseIterable, Identifiable, Sendable {
-        case stability, activeDevices, compliance, fileVault, osCurrent, crowdstrike, stale, patch
+        // .edrAgent keeps the legacy "crowdstrike" raw value so persisted
+        // score-card selections and the summary.json field name stay valid.
+        // The user-visible name is config-driven (security_agents → first
+        // entry's name); the generic fallback is "EDR Agent Installed".
+        case stability, activeDevices, compliance, fileVault, osCurrent
+        case edrAgent = "crowdstrike"
+        case stale, patch
         /// v3.5 weighted security score (0–100). Populated from
         /// LegacyHistoryImporter and from future Swift ReportEngine runs that
         /// emit the field in summary.json.
@@ -899,18 +905,20 @@ struct TrendSeries: Identifiable, Sendable {
             case .compliance:    return "Compliance Benchmark"
             case .fileVault:     return "FileVault Encryption"
             case .osCurrent:     return "On Current macOS"
-            case .crowdstrike:   return "CrowdStrike Installed"
+            case .edrAgent:      return "EDR Agent Installed"
             case .stale:         return "Stale Devices (30d+)"
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
             }
         }
 
-        /// Returns the compliance-specific label when `benchmarkLabel` is set and
-        /// non-empty; otherwise returns the metric's static `displayLabel`.
-        /// Only `.compliance` is overridable — other metrics are not affected.
-        func displayLabel(benchmarkLabel: String?) -> String {
+        /// Returns the tenant-specific label when one is configured; otherwise
+        /// the metric's static `displayLabel`. `.compliance` follows
+        /// `compliance.baseline_label`; `.edrAgent` follows the first
+        /// `security_agents` entry's name (e.g. "CrowdStrike Falcon Installed").
+        func displayLabel(benchmarkLabel: String?, edrAgentName: String? = nil) -> String {
             if case .compliance = self, let b = benchmarkLabel, !b.isEmpty { return b }
+            if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) Installed" }
             return displayLabel
         }
         var unit: String {
@@ -926,7 +934,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .compliance:    return 40
             case .fileVault:     return 60
             case .osCurrent:     return 30
-            case .crowdstrike:   return 70
+            case .edrAgent:      return 70
             case .stale:         return 0
             case .patch:         return 40
             case .securityScore: return 60
@@ -946,7 +954,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .compliance:    return 0xC9970A
             case .fileVault:     return 0x30D158
             case .osCurrent:     return 0x0A84FF
-            case .crowdstrike:   return 0x3A8A8A
+            case .edrAgent:      return 0x3A8A8A
             case .stale:         return 0xFF9F0A
             case .patch:         return 0xBF5AF2
             case .securityScore: return 0xFF453A

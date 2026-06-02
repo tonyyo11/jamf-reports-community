@@ -67,7 +67,7 @@ enum DemoData {
         .compliance:  complianceTrend,
         .stale:       staleTrend,
         .osCurrent:   osCurrentTrend,
-        .crowdstrike: crowdstrikeTrend,
+        .edrAgent:    crowdstrikeTrend,
         .patch:       patchTrend,
     ]
 

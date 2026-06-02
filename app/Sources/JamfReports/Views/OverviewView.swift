@@ -534,7 +534,10 @@ struct OverviewView: View {
         }()
 
         return StatTile(
-            label: metric.displayLabel,
+            label: metric.displayLabel(
+                benchmarkLabel: workspace.complianceBenchmarkLabel,
+                edrAgentName: workspace.edrAgentName
+            ),
             value: valueStr,
             delta: values.count >= 2 ? deltaStr : nil,
             deltaTrend: trend,
@@ -1069,7 +1072,7 @@ struct OverviewView: View {
             "Open Devices to inspect FileVault state on individual Macs."
         case .osCurrent:
             "Open Devices to inspect macOS versions and filter inventory."
-        case .crowdstrike:
+        case .edrAgent:
             "Open Devices or Config to review security-agent tracking."
         case .stale:
             "Open Devices to focus on stale inventory records."
@@ -1091,7 +1094,7 @@ struct OverviewView: View {
             return [.devices]
         case .compliance, .securityScore:
             return [.securityPosture, .compliancePosture]
-        case .crowdstrike:
+        case .edrAgent:
             return [.devices, .config]
         }
     }
