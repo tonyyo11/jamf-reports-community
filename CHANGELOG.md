@@ -7,6 +7,55 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added (v2.2.0 cycle)
+
+- Scheduled configuration backups: a new "Configuration Backup" schedule mode
+  runs `jamf-cli pro backup` on a cadence, keeps the newest 10 scheduled
+  backups, and sweeps abandoned backup staging folders. Backup runs appear in
+  Run History like any other schedule.
+- Overview score cards are no longer capped at 4 — choose any combination of
+  the 9 metrics, and the selection now persists across launches.
+- Launch freshness sweep: per-device data (Patch / Updates / EA results) older
+  than a week surfaces a "Refresh now" prompt on the Overview screen, and
+  Health Audit data older than a week refreshes automatically in the
+  background. Heavy collections never run without the prompt's button —
+  on-prem servers are not hammered at launch.
+- "Include Health Audit" toggle in the Generate flow (both the Generate sheet
+  and the Overview quick-generate): runs `jamf-cli pro audit` before
+  generating so audit-derived report content is current.
+- Exports and reports now carry a tenant + timestamp in every filename:
+  `patch-compliance-<profile>-<date_time>.csv`,
+  `report_<profile>_<date_time>.xlsx`, etc. Exports a second apart no longer
+  overwrite each other, and reports remain attributable outside their
+  workspace folder.
+
+### Changed (v2.2.0 cycle)
+
+- Stability Index and Compliance Benchmark now compute on jamf-cli-only
+  tenants: missing components drop out and the remaining weights renormalize
+  (the same approach the Security Score uses). The Compliance Benchmark trend
+  is fed by a control-gap proxy (FileVault/SIP/Firewall/Gatekeeper), labeled
+  as a proxy in the UI until a real compliance EA is configured.
+- "CrowdStrike Installed/Connected" labels are gone: the EDR metric is named
+  after your configured `security_agents` entry (e.g. "CrowdStrike Falcon
+  Installed"), or the generic "EDR Agent" when none is configured.
+- OS Updates KPIs no longer report "0 failing plans" when the failure scan
+  simply hasn't run — the count derives from plan states (matching the donut)
+  and Error Devices shows "—" until a `--scan-failures` snapshot exists.
+
+### Fixed (v2.2.0 cycle)
+
+- Corrupt `config.yaml` files written by pre-May-2026 GUI builds
+  (`security_agents: []` followed by orphaned entries) are repaired on load
+  and healed on the next save. Previously every config section after the
+  corruption point was silently ignored.
+- "Export Findings" on the Health Audit screen silently did nothing when the
+  chosen folder was outside Documents/Downloads/Desktop. Save-panel choices
+  are now honored everywhere, and write failures show an error.
+- Run History now records native scheduled and manual runs (it previously
+  only saw legacy Python-era logs), and the Schedules screen's "Last Run"
+  column populates after each run.
+
 ### Added
 
 - In-app diagnostic bundle: Settings → Diagnostics gains a "Generate diagnostic

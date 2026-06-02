@@ -67,7 +67,8 @@ final class UXPolishQ4Tests: XCTestCase {
 
     func testAllScheduleRunModesHaveTexts() {
         let modes = Schedule.RunMode.allCases
-        XCTAssertEqual(modes.count, 4, "Expected 4 run modes")
+        // v2.2.0 added .backup (scheduled configuration backups).
+        XCTAssertEqual(modes.count, 5, "Expected 5 run modes")
 
         let titles = modes.map(\.displayTitle)
         let descriptions = modes.map(\.displayDescription)

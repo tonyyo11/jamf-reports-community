@@ -479,6 +479,11 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `MobileFleetService` | Reads `mobile-devices-list/` (light) + `mobile-device-inventory-details/` (rich) + `classic-ios-profiles/`. Surfaces iOS/iPadOS KPIs, OS distribution, compliance signals. |
 | `LegacyHistoryImporter` | One-shot import from v3.5's `fleet_health_metrics_history.json` into the workspace's summaries dir. Translates snake_case + yyyyMMdd → camelCase + yyyy-MM-dd; idempotent unless overwriteExisting=true. Triggered from SettingsView. |
 | `DiagnosticBundleService` | Native port of Python `cmd_diagnostic_bundle`. Stages recent logs, last-N summaries, redacted config, a workspace tree, and version metadata into a zip under `~/Jamf-Reports/<profile>/diagnostics/` (an allow-listed dir, so `SystemActions.reveal` accepts it). Never executes the bundled script. `DiagnosticRedactor` reproduces the Python redaction behavior: always-on credential patterns, exact-key JSON redaction, and HMAC-SHA256 `<kind>-<8hex>` PII placeholders (per-instance random salt — stable within one bundle only, by design). Powers SettingsView's "Generate diagnostic bundle now". |
+| `ScheduledRunRecorder` | (v2.2.0) Writes the per-run artifacts the Run History screen and Schedules "Last Run" column read: `automation/logs/<label>.<timestamp>.log` + `automation/<label>_status.json`. Used by the headless `--scheduled-run` path, which both launchd and the GUI "Run now" button invoke. Prunes its own logs at 50 per workspace; never touches legacy `.out.log`/`.err.log` files. |
+| `ExportNaming` | (v2.2.0) Single filename convention for exports and engine reports: `<kind>-<profile>-<yyyy-MM-dd_HHmmss>.<ext>`. Used by every CSV/PNG export site and `ReportEngine.resolveOutputURL` (reports become `report_<profile>_<timestamp>.xlsx`). |
+| `BackupMaintenance` | (v2.2.0) Housekeeping for `backups/`: keeps the newest 10 scheduled backups (manual backups never pruned — identified by the `scheduled-` manifest label prefix) and sweeps abandoned `.tmp-*` staging dirs older than 24h. |
+| `SnapshotFreshness` | Decides fresh / stale / no-snapshots for a data dir by newest-file mtime. Gates the Overview "skip collect when fresh" path and the launch freshness sweep. |
+| `RefreshDebouncer` | Debounce helper extracted from the refresh path for testability. |
 
 **Tab visibility model.** Every non-core sidebar tab is toggleable via SettingsView → Sidebar Visibility. Backed by `@AppStorage("hiddenTabs")` parsed/serialized through `TabVisibility`. Core tabs (`Tab.isCoreTab` — Overview, Devices, Sources, Settings, Onboarding) are filtered out at the toggle UI level and protected at the model level (toggling a core tab is a no-op). Sidebar groups with all-hidden contents auto-collapse so the layout never shows orphan headers. Visibility is a per-user UX preference, not workspace-bound.
 
@@ -488,11 +493,13 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 
 **Compliance benchmark label.** UI surfaces never hardcode a benchmark name. `TrendSeries.Metric.compliance`'s default label is "Compliance Benchmark"; `WorkspaceStore.complianceBenchmarkLabel` overrides it from `compliance.baseline_label` or the first `platform.compliance_benchmarks` entry in the workspace config. mSCP baseline identifiers and the framework preset pickers keep real benchmark names — those are data/user choices, not labels the app asserts.
 
+**EDR agent label (v2.2.0).** Same rule for security-agent vendor names. `TrendSeries.Metric.edrAgent` / `SecurityScore.Metric.edrAgent` default to "EDR Agent Installed/Connected"; `WorkspaceStore.edrAgentName` overrides from the first `security_agents` entry. Both enums keep the legacy `"crowdstrike"` raw value for persisted-selection and summary.json schema compatibility — do not rename the raw value or the `crowdstrikePct` JSON field.
+
 **Convention:** New jamf-cli command wrappers go through the `CLICommand` enum and `CLIExecutor` protocol (`Services/CLICommand.swift`), not bespoke `CLIBridge` methods. Existing helpers (`generate`, `collect`, `audit`, `deviceDetail`, …) stay as-is per `.claude/plans/ADR-W21-clicommand-enum.md` (Hybrid scope).
 
-#### Schedule mode contract (PR-20 / PR-21)
+#### Schedule mode contract (PR-20 / PR-21; backup added in v2.2.0)
 
-`Schedule.RunMode` has four cases; each is strict and operationally distinct.
+`Schedule.RunMode` has five cases; each is strict and operationally distinct.
 Both the GUI "Run now" path (`CLIBridge.runNow(profile:mode:)`) and the
 LaunchAgent path (`main.swift --scheduled-run --mode <rawValue>`) honor the
 same contract — they share `CLIBridge.newestCSV(in:)` so CSV lookup is
@@ -504,6 +511,7 @@ identical between the two.
 | `.jamfCLIOnly` (`jamf-cli-only`)   | `ReportEngine.generate` only — uses cached snapshots; NO collect            | No (no collect)  |
 | `.jamfCLIFull` (`jamf-cli-full`)   | collect + generate; no CSV                                                  | Yes              |
 | `.csvAssisted` (`csv-assisted`)    | collect + generate; **requires** a CSV in `csv-inbox/` — hard-fails if none | Yes              |
+| `.backup` (`backup`)               | `jamf-cli pro backup` only — config objects to `backups/`; no collect, no report | No          |
 
 LaunchAgent plists written before PR-20 omit `--mode`; both the parser
 (`LaunchAgentService.parse` line 185) and `main.swift` (`scheduledRun`
@@ -536,7 +544,7 @@ Named constants in `CLIBridge`. Reference: jamf-cli Error Handling & Exit Codes 
 
 The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data.
 
-#### Key views (39 Swift view files as of v2.1.0; tables last synced at v2.0 — see Views/ and Services/ for the current set)
+#### Key views (41 Swift view files as of v2.2.0; tables last synced at v2.0 — see Views/ and Services/ for the current set)
 
 Core: `Sidebar`, `Titlebar`, `OverviewView`, `FleetOverviewView`, `DevicesView`,
 `DeviceLookupView`, `TrendsView`, `ReportsView`, `BackupsView`, `SchedulesView`,
@@ -883,7 +891,6 @@ jamf-reports-community/
 ├── LICENSE                     # MIT — canonical; mirrored to app/Sources/JamfReports/Resources/
 ├── NOTICE.md                   # Trademark/affiliation notice — canonical; mirrored to Resources
 ├── THIRD_PARTY_NOTICES.md      # Third-party attribution — canonical; mirrored to Resources
-├── PROJECT_CONTEXT.md          # Session context, known issues, enhancement backlog
 ├── requirements.txt            # xlsxwriter, pandas, pyyaml, matplotlib
 ├── requirements-dev.txt        # pytest and dev tools
 ├── docs/wiki/                  # GitHub Wiki source files
