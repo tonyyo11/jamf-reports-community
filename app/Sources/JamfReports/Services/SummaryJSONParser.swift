@@ -8,7 +8,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
              sipPct, firewallPct, gatekeeperPct, secureBootPct, bootstrapPct,
              xprotectPct, cvePct, mscpScorePct, securityScore,
              actionItemsP0, actionItemsP1, actionItemsP2,
-             noBaselineActive
+             noBaselineActive,
+             // True when compliancePct is the control-gap proxy (FileVault/SIP/
+             // Firewall/Gatekeeper all passing) rather than a real compliance
+             // EA / mSCP failure count. UI labels the metric accordingly.
+             complianceIsProxy
     }
 
     var id: String { date }
@@ -54,6 +58,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
     let actionItemsP2: Int?
     /// Active devices (≤30d check-in) with `No Baseline Set` mSCP version.
     let noBaselineActive: Int?
+    /// True when `compliancePct` is the control-gap proxy rather than a real
+    /// compliance EA / mSCP source. Absent (nil) in legacy summaries.
+    let complianceIsProxy: Bool?
 
     var parsedDate: Date {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
@@ -82,7 +89,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         actionItemsP0: Int? = nil,
         actionItemsP1: Int? = nil,
         actionItemsP2: Int? = nil,
-        noBaselineActive: Int? = nil
+        noBaselineActive: Int? = nil,
+        complianceIsProxy: Bool? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -107,6 +115,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.actionItemsP1 = actionItemsP1
         self.actionItemsP2 = actionItemsP2
         self.noBaselineActive = noBaselineActive
+        self.complianceIsProxy = complianceIsProxy
     }
 
     init(from decoder: Decoder) throws {
@@ -134,6 +143,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         actionItemsP1 = try container.decodeIfPresent(Int.self, forKey: .actionItemsP1)
         actionItemsP2 = try container.decodeIfPresent(Int.self, forKey: .actionItemsP2)
         noBaselineActive = try container.decodeIfPresent(Int.self, forKey: .noBaselineActive)
+        complianceIsProxy = try container.decodeIfPresent(Bool.self, forKey: .complianceIsProxy)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -161,6 +171,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(actionItemsP1, forKey: .actionItemsP1)
         try container.encodeIfPresent(actionItemsP2, forKey: .actionItemsP2)
         try container.encodeIfPresent(noBaselineActive, forKey: .noBaselineActive)
+        try container.encodeIfPresent(complianceIsProxy, forKey: .complianceIsProxy)
     }
 }
 

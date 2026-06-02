@@ -258,8 +258,9 @@ struct ReportEngine: Sendable {
     /// Write `summary_YYYY-MM-DD.json` to `summariesDir` from cached jamf-cli snapshots.
     ///
     /// Skips if a valid same-day file already exists (first run of day wins, matching Python
-    /// default non-force behavior). Fields that require CSV data (compliancePct, crowdstrikePct)
-    /// are omitted so TrendStore skips them rather than rendering a flat 0% line.
+    /// default non-force behavior). compliancePct is the control-gap proxy (flagged via
+    /// complianceIsProxy) when per-device security data exists; crowdstrikePct still requires
+    /// CSV/EA data and is omitted so TrendStore skips it rather than rendering a flat 0% line.
     ///
     /// - Parameters:
     ///   - summariesDir: Directory to write the summary file into.
@@ -350,12 +351,22 @@ struct ReportEngine: Sendable {
         var sipCount: Int?
         var firewallCount: Int?
         var gatekeeperCount: Int?
+        // Compliance proxy (control-gap derivation, same rules as
+        // CompliancePostureService): % of devices failing zero of the four
+        // baseline controls. Gives the Compliance Benchmark trend and the
+        // Stability Index a real signal on jamf-cli-only tenants where no
+        // compliance EA / CSV source exists. Marked complianceIsProxy so the
+        // UI labels it honestly.
+        var complianceProxyPct: Double? = nil
 
-        // Security report: total_devices + per-control counts
+        // Security report: total_devices + per-control counts + per-device
+        // sections (decoded once, used for both the summary and the proxy).
         if let secData = cachedData(kind: "security"),
            let items = try? JSONDecoder().decode([SecurityReportItem].self, from: secData) {
+            var deviceGapCounts: [Int] = []
             for item in items {
-                if case .summary(let s) = item {
+                switch item {
+                case .summary(let s):
                     totalDevices = s.data.totalDevices ?? 0
                     fileVaultCount = s.data.fileVaultEncrypted
                     sipCount = s.data.sipEnabled
@@ -368,8 +379,17 @@ struct ReportEngine: Sendable {
                         fileVaultPct = Double(enc) / Double(totalDevices) * 100.0
                     }
                     // If neither source is available fileVaultPct remains nil.
+                case .device(let device):
+                    if let gaps = CompliancePostureService.deviceGapCount(device) {
+                        deviceGapCounts.append(gaps)
+                    }
+                default:
                     break
                 }
+            }
+            if !deviceGapCounts.isEmpty {
+                let compliant = deviceGapCounts.filter { $0 == 0 }.count
+                complianceProxyPct = Double(compliant) / Double(deviceGapCounts.count) * 100.0
             }
         }
 
@@ -448,7 +468,7 @@ struct ReportEngine: Sendable {
             date: date,
             totalDevices: totalDevices,
             fileVaultPct: fileVaultPct.map(round1),
-            compliancePct: nil,
+            compliancePct: complianceProxyPct.map(round1),
             staleCount: staleCount,
             osCurrentPct: osCurrentPct.map(round1),
             crowdstrikePct: nil,
@@ -459,7 +479,8 @@ struct ReportEngine: Sendable {
             gatekeeperPct: gatekeeperPct.map(round1),
             securityScore: securityScore.map(round1),
             actionItemsP0: fileVaultCount != nil ? p0 : nil,
-            actionItemsP1: gatekeeperCount.map { _ in p1 }
+            actionItemsP1: gatekeeperCount.map { _ in p1 },
+            complianceIsProxy: complianceProxyPct != nil ? true : nil
         )
     }
 

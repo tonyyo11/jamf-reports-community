@@ -18,6 +18,7 @@ struct SnapshotArchiveService {
         "mobile": "Mobile Inventory",
         "compliance": "Future automation",
         "patching": "Archive only",
+        "summaries": "Trends · Overview score cards",
     ]
 
     func families(profile: String) -> [SnapshotFamily] {
@@ -50,7 +51,7 @@ struct SnapshotArchiveService {
     }
 
     private func family(from directory: URL, root: URL) -> SnapshotFamily {
-        let files = csvFiles(in: directory, root: root)
+        let files = snapshotFiles(in: directory, root: root)
         let name = directory.lastPathComponent
         let latest = files.compactMap(\.mtime).max()
         let bytes = files.reduce(Int64(0)) { $0 + $1.size }
@@ -64,7 +65,13 @@ struct SnapshotArchiveService {
         )
     }
 
-    private func csvFiles(in directory: URL, root: URL) -> [(url: URL, size: Int64, mtime: Date?)] {
+    /// Snapshot extensions a family can hold. CSV snapshots come from
+    /// `--historical-csv-dir` archiving; JSON files are the daily
+    /// `summary_*.json` Trends snapshots — the production "summaries" family
+    /// showed 0 / Zero KB forever because only `.csv` was counted.
+    private static let snapshotExtensions: Set<String> = ["csv", "json"]
+
+    private func snapshotFiles(in directory: URL, root: URL) -> [(url: URL, size: Int64, mtime: Date?)] {
         guard let enumerator = fileManager.enumerator(
             at: directory,
             includingPropertiesForKeys: [
@@ -79,7 +86,7 @@ struct SnapshotArchiveService {
 
         var files: [(url: URL, size: Int64, mtime: Date?)] = []
         for case let candidate as URL in enumerator {
-            guard candidate.pathExtension.lowercased() == "csv",
+            guard Self.snapshotExtensions.contains(candidate.pathExtension.lowercased()),
                   let validated = WorkspacePathGuard.validate(candidate, under: root),
                   let values = try? validated.resourceValues(
                     forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
@@ -126,6 +133,13 @@ struct SnapshotArchiveService {
             if $0.value == $1.value { return $0.key.count > $1.key.count }
             return $0.value > $1.value
         }.first?.key ?? fallback.lowercased()
-        return "*\(token)*.csv"
+        // Use the family's dominant extension (.json for summaries, .csv for
+        // archived exports) instead of assuming CSV.
+        var extensionCounts: [String: Int] = [:]
+        for url in urls {
+            extensionCounts[url.pathExtension.lowercased(), default: 0] += 1
+        }
+        let ext = extensionCounts.max { $0.value < $1.value }?.key ?? "csv"
+        return "*\(token)*.\(ext)"
     }
 }

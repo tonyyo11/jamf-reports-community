@@ -975,13 +975,21 @@ struct OverviewView: View {
     }
 
     private func detailHint(for metric: TrendSeries.Metric) -> some View {
+        let latest = trendStore.filteredSummaries.last
         let text: String = switch metric {
         case .stability:
-            "Composite of compliance, patch posture, and stale-device pressure."
+            // Reflect which components actually feed the index for this tenant
+            // (compliance is often unavailable on jamf-cli-only setups).
+            TrendSeries.stabilityBasis(
+                compliancePct: latest?.compliancePct,
+                patchPct: latest?.patchPct
+            ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
             "Open Devices to inspect records contributing to this count."
         case .compliance:
-            "Open Health Audit for controls, findings, and recommendations."
+            latest?.complianceIsProxy == true
+                ? "Control-gap proxy (FileVault/SIP/Firewall/Gatekeeper). Configure a Compliance EA for true mSCP banding."
+                : "Open Health Audit for controls, findings, and recommendations."
         case .fileVault:
             "Open Devices to inspect FileVault state on individual Macs."
         case .osCurrent:
