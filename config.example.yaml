@@ -261,6 +261,10 @@ jamf_cli:
   #
   # Supported values:
   #   patch-device-failures   `pro report patch-status --scan-failures`
+  #   patch-definitions       per-title `patch-software-title-configurations
+  #                           definitions` fetches that build the patch
+  #                           release-date snapshot (Patch Compliance "Latest
+  #                           Released"/"Days Behind" columns go absent).
   #   profile-status          `pro report profile-status`
   #   update-status           `pro report update-status`
   #   update-device-failures  `pro report update-status --scan-failures`
@@ -280,6 +284,37 @@ jamf_cli:
   #   - update-device-failures
   #   - device-security-state
   #   - mobile-details
+
+
+# ---------------------------------------------------------------------------
+# SOFA OS currency feed (optional)
+# ---------------------------------------------------------------------------
+# SOFA (https://sofa.macadmins.io) publishes the latest available Apple OS
+# versions. The "OS Currency" workbook sheet and the HTML "OS Currency" card
+# join this feed against your fleet's OS-version distribution to show how
+# current each platform is. Feeds are fetched with curl (the system trust
+# store), so no extra Python packages are required.
+sofa:
+  # Set false to disable all SOFA fetches (e.g. air-gapped servers). The OS
+  # Currency sheet still renders, with a single "feed unavailable" note row.
+  enabled: true
+
+  # Where to cache the downloaded feeds. Blank defaults to
+  # <jamf_cli.data_dir>/sofa. Relative paths resolve from this config file.
+  cache_dir: ""
+
+  # Re-fetch a feed only when its cached copy is older than this many hours.
+  max_cache_age_hours: 24
+
+  # Per-feed curl timeout, in seconds.
+  timeout_seconds: 30
+
+  # Which feeds to fetch. iPadOS shares the "ios" feed.
+  platforms:
+    - macos
+    - ios
+    - tvos
+    - watchos
 
 
 # ---------------------------------------------------------------------------

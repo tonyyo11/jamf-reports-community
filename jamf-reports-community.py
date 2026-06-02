@@ -47,7 +47,7 @@ import urllib.request
 import zipfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -260,10 +260,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Accepts jamf-cli report type identifiers, e.g. "update-status", "profile-status".
         # Use this to exclude expensive per-device queries that can stall on-prem Jamf Pro.
         # Underscores and hyphens are interchangeable ("update_status" == "update-status").
-        # Only the four skippable report types (Patch Failures, Profile Status,
-        # Update Status, Update Failures) honor this list — core inventory commands
-        # always run because the primary report sheets depend on them.
+        # Only the skippable report types (Patch Failures, Patch Definitions,
+        # Profile Status, Update Status, Update Failures) honor this list — core
+        # inventory commands always run because the primary report sheets depend
+        # on them.
         "collect_skip": [],
+    },
+    "sofa": {
+        # SOFA (https://sofa.macadmins.io) publishes the latest available Apple OS
+        # versions. Used by the "OS Currency" sheet/section to judge fleet currency.
+        "enabled": True,
+        "cache_dir": "",                # defaults to <jamf_cli.data_dir>/sofa
+        "max_cache_age_hours": 24,      # re-fetch when the cache is older than this
+        "timeout_seconds": 30,          # per-feed curl timeout
+        "platforms": ["macos", "ios", "tvos", "watchos"],
     },
     "school_cli": {
         "enabled": False,
@@ -5057,6 +5067,203 @@ class JamfCLIBridge:
                 print(f"  [warn] Could not save patch-summaries snapshot: {exc}")
         return summaries
 
+    def patch_definitions(self, title_id: str) -> Any:
+        """Fetch patch definitions for one software-title configuration.
+
+        Wraps ``pro patch-software-title-configurations definitions <id>``. The
+        id is positional. ``--page-size 100`` caps the result. jamf-cli's
+        default sort is ``absoluteOrderId:asc``, so the newest version is first
+        (absoluteOrderId "0"). JSON shape:
+          [{"version": "151.0.2", "releaseDate": "2026-05-26T13:48:54Z",
+            "standalone": true, "minimumOperatingSystem": "...",
+            "rebootRequired": false, "killApps": [...],
+            "absoluteOrderId": "0"}, ...]
+
+        Per-title snapshots are saved as
+        ``patch-definitions/patch-definitions_title<id>.json`` so multiple
+        titles never overwrite one another. Falls back to the newest cached
+        per-title snapshot when the live call fails and ``use_cached_data``
+        is True.
+
+        Args:
+            title_id: The software-title configuration id (the ``id`` field
+                returned by ``patch_status()``).
+
+        Returns:
+            Parsed list of definition records, or an empty list when the title
+            id is blank.
+
+        Raises:
+            RuntimeError: When the live call fails and no cached snapshot is
+                available (and ``use_cached_data`` is True), or when caching
+                is disabled.
+        """
+        ident = str(title_id).strip()
+        if not ident:
+            return []
+        safe_ident = re.sub(r"[^0-9A-Za-z._-]", "_", ident)
+        report_type = f"patch-definitions:{safe_ident}"
+        cached_path = self._data_dir / "patch-definitions" / f"patch-definitions_title{safe_ident}.json"
+        args = [
+            "pro", "patch-software-title-configurations", "definitions",
+            ident, "--page-size", "100",
+        ]
+        try:
+            data = self._run(args)
+        except RuntimeError as exc:
+            if not self._use_cached_data or not cached_path.is_file():
+                raise
+            try:
+                raw = cached_path.read_bytes()
+                _verify_snapshot_bytes_against_manifest(
+                    cached_path, raw, strict=self._strict_manifest
+                )
+                cached = json.loads(raw)
+            except (OSError, json.JSONDecodeError) as cache_exc:
+                raise RuntimeError(f"{exc} | cache fallback: {cache_exc}") from exc
+            print(f"  [cache] {cached_path}")
+            self._set_source_info(report_type, "cached-fallback", cached_path)
+            return cached
+
+        self._set_source_info(report_type, "live")
+        if self._save:
+            out_dir = self._data_dir / "patch-definitions"
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                final_path = out_dir / f"patch-definitions_title{safe_ident}.json"
+                tmp_path = final_path.with_suffix(".partial")
+                payload = json.dumps(data, indent=2).encode("utf-8")
+                with open(tmp_path, "wb") as fh:
+                    fh.write(payload)
+                tmp_path.rename(final_path)
+                _rewrite_snapshot_manifest(
+                    out_dir,
+                    pinned={final_path.name: hashlib.sha256(payload).hexdigest()},
+                )
+            except OSError as exc:
+                print(f"  [warn] Could not save patch-definitions snapshot: {exc}")
+        return data
+
+    @staticmethod
+    def _latest_definition_date(definitions: Any, latest_version: str) -> tuple[str, str]:
+        """Return (version, releaseDate) for the title's latest definition.
+
+        Prefers the definition whose ``version`` exactly matches the title's
+        ``latest`` field. Falls back to the ``absoluteOrderId == "0"`` entry
+        (jamf-cli's newest-first default sort), then to the first record.
+
+        Args:
+            definitions: Parsed definitions list from ``patch_definitions``.
+            latest_version: The title's ``latest`` field from patch-status.
+
+        Returns:
+            A ``(version, release_date)`` tuple; both are empty strings when no
+            usable definition is present.
+        """
+        defs = definitions if isinstance(definitions, list) else []
+        records = [d for d in defs if isinstance(d, dict)]
+        if not records:
+            return "", ""
+        target = str(latest_version or "").strip()
+        if target:
+            for rec in records:
+                if str(rec.get("version", "")).strip() == target:
+                    return target, str(rec.get("releaseDate", "") or "").strip()
+        for rec in records:
+            if str(rec.get("absoluteOrderId", "")).strip() == "0":
+                return (
+                    str(rec.get("version", "") or "").strip(),
+                    str(rec.get("releaseDate", "") or "").strip(),
+                )
+        first = records[0]
+        return (
+            str(first.get("version", "") or "").strip(),
+            str(first.get("releaseDate", "") or "").strip(),
+        )
+
+    def collect_patch_release_dates(self) -> list[dict[str, Any]]:
+        """Build and persist the merged patch release-date snapshot.
+
+        Fetches ``patch_status`` for the list of title ids, then
+        ``patch_definitions`` per title, extracts the latest definition's
+        release date, and saves a merged
+        ``patch-release-dates/patch-release-dates_<ts>.json`` snapshot of the
+        shape::
+
+            [{"title_id": "2", "title": "Mozilla Firefox",
+              "latest_version": "151.0.2",
+              "release_date": "2026-05-26T13:48:54Z"}]
+
+        Returns:
+            The merged list (possibly empty).
+
+        Raises:
+            RuntimeError: When the patch-status fetch itself fails (so the
+                caller can log a single skip rather than a half-built snapshot).
+        """
+        status = self.patch_status()
+        titles = status if isinstance(status, list) else []
+        merged: list[dict[str, Any]] = []
+        for item in titles:
+            if not isinstance(item, dict):
+                continue
+            title_id = str(item.get("id", "") or "").strip()
+            if not title_id:
+                continue
+            try:
+                definitions = self.patch_definitions(title_id)
+            except RuntimeError as exc:
+                print(f"  [warn] patch-definitions fetch failed for title {title_id}: {exc}")
+                continue
+            version, release_date = self._latest_definition_date(
+                definitions, str(item.get("latest", "") or "")
+            )
+            if not release_date:
+                continue
+            merged.append({
+                "title_id": title_id,
+                "title": str(item.get("title", "") or ""),
+                "latest_version": version,
+                "release_date": release_date,
+            })
+
+        if self._save:
+            out_dir = self._data_dir / "patch-release-dates"
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                final_path = out_dir / f"patch-release-dates_{_now_ts()}.json"
+                tmp_path = final_path.with_suffix(".partial")
+                payload = json.dumps(merged, indent=2).encode("utf-8")
+                with open(tmp_path, "wb") as fh:
+                    fh.write(payload)
+                tmp_path.rename(final_path)
+                _rewrite_snapshot_manifest(
+                    out_dir,
+                    pinned={final_path.name: hashlib.sha256(payload).hexdigest()},
+                )
+            except OSError as exc:
+                print(f"  [warn] Could not save patch-release-dates snapshot: {exc}")
+        self._set_source_info("patch-release-dates", "live")
+        return merged
+
+    def patch_release_dates(self) -> list[dict[str, Any]]:
+        """Return the newest cached merged patch release-date snapshot.
+
+        Read-only: the merged snapshot is built at ``collect`` time by
+        :meth:`collect_patch_release_dates`. Returns an empty list when no
+        snapshot exists, so the Patch Compliance sheet renders identically to
+        installs without the snapshot (backward compatible).
+        """
+        try:
+            data = self._load_cached_json(
+                ["patch-release-dates"],
+                report_type="patch-release-dates",
+                source_mode="cached",
+            )
+        except RuntimeError:
+            return []
+        return data if isinstance(data, list) else []
+
     def app_status(self) -> Any:
         """Fetch managed app deployment report from jamf-cli pro report app-status."""
         self._require_report_command("app-status", ["app-status", "app_status"])
@@ -5660,6 +5867,248 @@ class JamfCLIBridge:
         if any(token in lowered for token in parse_tokens):
             return "parse_error"
         return "general"
+
+
+# ---------------------------------------------------------------------------
+# SOFA feed client
+# ---------------------------------------------------------------------------
+
+
+SOFA_FEED_URL = "https://sofafeed.macadmins.io/v2/{platform}_data_feed.json"
+
+# Maps SOFA feed platform identifiers to the human-readable label used in the
+# report. iPadOS shares the `ios` feed and is surfaced as a single combined row.
+SOFA_PLATFORM_LABELS: dict[str, str] = {
+    "macos": "macOS",
+    "ios": "iOS / iPadOS",
+    "tvos": "tvOS",
+    "watchos": "watchOS",
+}
+
+
+def _sofa_parse_date(value: Any) -> Optional[date]:
+    """Parse a SOFA release-date string into a :class:`date`.
+
+    SOFA feeds mix two formats: macOS/iOS use full ISO timestamps
+    (``2026-06-01T00:00:00Z``) while tvOS/watchOS use date-only strings
+    (``2026-05-11``). Both are handled.
+
+    Args:
+        value: A SOFA date string, or any value.
+
+    Returns:
+        The parsed :class:`date`, or None when the value is empty or
+        unparseable.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    candidate = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(candidate).date()
+    except ValueError:
+        pass
+    match = re.match(r"(\d{4}-\d{2}-\d{2})", text)
+    if match:
+        try:
+            return datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+class SOFAFeedClient:
+    """Fetches and normalizes the macadmins SOFA OS-version feeds.
+
+    Reads the ``sofa`` config section. Feeds are fetched with ``curl`` (not
+    urllib) because python.org Python on macOS ships without CA certificates
+    configured, so urllib HTTPS fails with ``CERTIFICATE_VERIFY_FAILED``; curl
+    is always present on macOS and uses the system trust store. SSL
+    verification is never disabled.
+
+    Args:
+        config: Loaded :class:`Config` instance.
+        reference_date: Optional "today" override for deterministic
+            ``days_since_release`` computation in tests.
+    """
+
+    def __init__(self, config: "Config", reference_date: Optional[date] = None) -> None:
+        self._config = config
+        sofa_cfg = config.get("sofa") or {}
+        self._enabled = sofa_cfg.get("enabled", True) is not False
+        self._timeout = max(1, _to_int(sofa_cfg.get("timeout_seconds", 30), 30))
+        self._max_cache_age_hours = max(0, _to_int(sofa_cfg.get("max_cache_age_hours", 24), 24))
+        platforms = sofa_cfg.get("platforms") or ["macos", "ios", "tvos", "watchos"]
+        self._platforms = [
+            str(p).strip().lower() for p in platforms if str(p).strip()
+        ]
+        self._reference_date = reference_date or date.today()
+        self._cache_dir = self._resolve_cache_dir(config, sofa_cfg)
+
+    @staticmethod
+    def _resolve_cache_dir(config: "Config", sofa_cfg: dict[str, Any]) -> Path:
+        """Resolve the SOFA cache directory, defaulting to <data_dir>/sofa."""
+        explicit = config.resolve_path("sofa", "cache_dir")
+        if explicit is not None:
+            return explicit
+        data_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+        base = data_dir if data_dir is not None else Path("jamf-cli-data")
+        return base / "sofa"
+
+    @property
+    def enabled(self) -> bool:
+        """Return True when SOFA fetching is enabled in config."""
+        return self._enabled
+
+    @property
+    def platforms(self) -> list[str]:
+        """Return the configured list of SOFA platform identifiers."""
+        return list(self._platforms)
+
+    def _cache_path(self, platform: str) -> Path:
+        return self._cache_dir / f"{platform}_data_feed.json"
+
+    def _cache_is_fresh(self, path: Path) -> bool:
+        """Return True when the cached feed is within the max-age window."""
+        if self._max_cache_age_hours <= 0:
+            return False
+        if not path.is_file():
+            return False
+        age = datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)
+        return age <= timedelta(hours=self._max_cache_age_hours)
+
+    @staticmethod
+    def _load_cached_feed(path: Path) -> Optional[dict[str, Any]]:
+        """Return a parsed cached feed dict, or None when unreadable/invalid."""
+        if not path.is_file():
+            return None
+        try:
+            parsed = json.loads(path.read_bytes())
+        except (OSError, json.JSONDecodeError):
+            return None
+        if isinstance(parsed, dict) and "OSVersions" in parsed:
+            return parsed
+        return None
+
+    def _curl_fetch(self, platform: str) -> dict[str, Any]:
+        """Fetch one feed via curl and return the parsed dict.
+
+        Raises:
+            RuntimeError: On a missing curl binary, non-zero exit, timeout, or
+                output that does not parse as a feed dict with ``OSVersions``.
+        """
+        url = SOFA_FEED_URL.format(platform=platform)
+        try:
+            result = subprocess.run(
+                ["curl", "-s", "-f", "--max-time", str(self._timeout), url],
+                capture_output=True, text=True, check=True,
+                timeout=self._timeout + 5, stdin=subprocess.DEVNULL,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("curl not found") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"curl timed out after {self._timeout}s") from exc
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"curl failed ({exc.returncode})") from exc
+        try:
+            parsed = json.loads(result.stdout or "")
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"SOFA feed is not valid JSON: {exc}") from exc
+        if not isinstance(parsed, dict) or "OSVersions" not in parsed:
+            raise RuntimeError("SOFA feed missing OSVersions key")
+        return parsed
+
+    def fetch(self, platform: str) -> Optional[dict[str, Any]]:
+        """Fetch one platform feed, using cache when fresh and on failure.
+
+        Returns the parsed feed dict, or None when disabled, the platform is
+        not configured, and no usable cache exists. On a live failure, falls
+        back to any cached copy (regardless of age) and prints a note.
+
+        Args:
+            platform: A SOFA platform identifier (``macos``/``ios``/etc.).
+
+        Returns:
+            Parsed feed dict, or None when unavailable.
+        """
+        if not self._enabled:
+            return None
+        plat = str(platform).strip().lower()
+        cache_path = self._cache_path(plat)
+        if self._cache_is_fresh(cache_path):
+            cached = self._load_cached_feed(cache_path)
+            if cached is not None:
+                return cached
+        try:
+            feed = self._curl_fetch(plat)
+        except RuntimeError as exc:
+            cached = self._load_cached_feed(cache_path)
+            if cached is not None:
+                print(f"  [cache] SOFA {plat}: live fetch failed ({exc}); using cached feed")
+                return cached
+            print(f"  [warn] SOFA {plat}: {exc}; no cached feed available")
+            return None
+        self._write_cache(cache_path, feed)
+        return feed
+
+    @staticmethod
+    def _write_cache(path: Path, feed: dict[str, Any]) -> None:
+        """Persist a fetched feed atomically; warn (never raise) on failure."""
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = path.with_suffix(".partial")
+            tmp_path.write_text(json.dumps(feed, indent=2), encoding="utf-8")
+            tmp_path.rename(path)
+        except OSError as exc:
+            print(f"  [warn] Could not cache SOFA feed {path}: {exc}")
+
+    def _normalize_feed(self, platform: str, feed: dict[str, Any]) -> list[dict[str, Any]]:
+        """Reduce one feed to per-OS-family summary rows."""
+        label = SOFA_PLATFORM_LABELS.get(platform, platform)
+        rows: list[dict[str, Any]] = []
+        for entry in feed.get("OSVersions") or []:
+            if not isinstance(entry, dict):
+                continue
+            latest = entry.get("Latest") or {}
+            if not isinstance(latest, dict):
+                continue
+            product = str(latest.get("ProductVersion", "") or "").strip()
+            if not product:
+                continue
+            release_raw = str(latest.get("ReleaseDate", "") or "").strip()
+            parsed = _sofa_parse_date(release_raw)
+            days = (
+                max(0, (self._reference_date - parsed).days)
+                if parsed is not None else None
+            )
+            exploited = latest.get("ActivelyExploitedCVEs") or []
+            rows.append({
+                "platform": label,
+                "os_family": str(entry.get("OSVersion", "") or "").strip(),
+                "product_version": product,
+                "build": str(latest.get("Build", "") or "").strip(),
+                "release_date": parsed.isoformat() if parsed is not None else "",
+                "days_since_release": days,
+                "actively_exploited_cves": len(exploited) if isinstance(exploited, list) else 0,
+                "security_info_url": str(latest.get("SecurityInfo", "") or "").strip(),
+            })
+        return rows
+
+    def latest_versions(self) -> list[dict[str, Any]]:
+        """Return normalized latest-version rows across all enabled platforms.
+
+        One row per OS family per enabled platform. Returns an empty list when
+        SOFA is disabled or no feed could be fetched.
+        """
+        if not self._enabled:
+            return []
+        results: list[dict[str, Any]] = []
+        for plat in self._platforms:
+            feed = self.fetch(plat)
+            if feed is None:
+                continue
+            results.extend(self._normalize_feed(plat, feed))
+        return results
 
 
 # ---------------------------------------------------------------------------
@@ -7021,6 +7470,7 @@ class CoreDashboard:
             [
                 ("Mobile Fleet Summary", self._write_mobile_fleet_summary),
                 ("Inventory Summary", self._write_inventory_summary),
+                ("OS Currency", self._write_os_currency),
                 ("Hardware Models", self._write_hardware_models),
                 ("Mobile Inventory", self._write_mobile_inventory),
                 ("Mobile Supervision Status", self._write_mobile_supervision_status),
@@ -8739,6 +9189,199 @@ class CoreDashboard:
                 _safe_write(ws, row, 2, pct, _pct_format(self._fmts, pct))
                 row += 1
 
+    def _macos_os_counts(self) -> dict[str, int]:
+        """Return {os_version: device_count} for macOS from the security report.
+
+        Mirrors the OS-version distribution in `_write_security`. Returns an
+        empty dict when the security report is unavailable.
+        """
+        try:
+            raw = self._bridge.security_report()
+        except RuntimeError:
+            return {}
+        counts: dict[str, int] = {}
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, dict) or item.get("section") != "os_version":
+                continue
+            ver = _normalize_os_version(str(item.get("os_version", "") or ""))
+            if ver:
+                counts[ver] = counts.get(ver, 0) + _to_int(item.get("count", 0))
+        return counts
+
+    def _mobile_os_counts(self) -> dict[str, int]:
+        """Return {os_version: device_count} for iOS/iPadOS from mobile inventory."""
+        try:
+            rows, _ = self._mobile_inventory_rows()
+        except RuntimeError:
+            return {}
+        counts: dict[str, int] = {}
+        for row in rows:
+            ver = str(row.get("OS Version", "") or "").strip()
+            if ver:
+                counts[ver] = counts.get(ver, 0) + 1
+        return counts
+
+    @staticmethod
+    def _fleet_currency(latest_version: str, os_counts: dict[str, int]) -> tuple[int, int]:
+        """Return (on_latest, behind) for one OS family against its SOFA latest.
+
+        Counts only devices whose major version matches the family's major
+        version. A device is "on latest" when its full version tuple is >= the
+        family's latest ProductVersion tuple.
+
+        Args:
+            latest_version: The SOFA ProductVersion for this OS family.
+            os_counts: {os_version: count} for the relevant platform's fleet.
+
+        Returns:
+            ``(on_latest, behind)`` device counts within this OS family.
+        """
+        latest_tuple = _version_tuple(latest_version)
+        if not latest_tuple:
+            return 0, 0
+        major = latest_tuple[0]
+        on_latest = 0
+        behind = 0
+        for version, count in os_counts.items():
+            dev_tuple = _version_tuple(version)
+            if not dev_tuple or dev_tuple[0] != major:
+                continue
+            if dev_tuple >= latest_tuple:
+                on_latest += count
+            else:
+                behind += count
+        return on_latest, behind
+
+    @staticmethod
+    def _fleet_eol_count(family_majors: set[int], os_counts: dict[str, int]) -> tuple[int, int]:
+        """Return (eol_devices, eol_version_count) for devices outside all SOFA families.
+
+        Devices whose major version is older than every SOFA-tracked OS family
+        no longer receive security updates — the most critical OS-currency
+        finding. Without this row, an EOL-heavy fleet renders all zeros and the
+        sheet looks broken.
+
+        Args:
+            family_majors: Major version numbers of every SOFA OS family.
+            os_counts: {os_version: count} for the relevant platform's fleet.
+
+        Returns:
+            ``(device_count, distinct_version_count)`` for out-of-support devices.
+        """
+        if not family_majors:
+            return 0, 0
+        oldest_supported = min(family_majors)
+        devices = 0
+        versions = 0
+        for version, count in os_counts.items():
+            dev_tuple = _version_tuple(version)
+            if dev_tuple and dev_tuple[0] < oldest_supported:
+                devices += count
+                versions += 1
+        return devices, versions
+
+    def _write_os_currency(self) -> None:
+        """Write the OS Currency sheet from the SOFA feed joined to fleet counts.
+
+        Always emits the sheet. When SOFA data is unavailable (offline or
+        disabled), writes a single note row rather than raising, so the sheet is
+        never silently omitted.
+        """
+        ws = self._wb.add_worksheet("OS Currency")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        headers = [
+            "Platform", "OS Family", "Latest Version", "Build", "Released",
+            "Days Since Release", "Actively Exploited CVEs",
+            "Fleet On Latest", "Fleet Behind", "% On Latest",
+        ]
+        row = _write_sheet_header(
+            ws,
+            self._t("OS Currency"),
+            f"Source: SOFA (sofa.macadmins.io) | Generated: {ts}",
+            self._fmts,
+            ncols=len(headers),
+        )
+        ws.set_column(0, 1, 18)
+        ws.set_column(2, len(headers) - 1, 16)
+
+        client = SOFAFeedClient(self._config)
+        rows = client.latest_versions()
+        if not rows:
+            _safe_write(
+                ws, row, 0,
+                "SOFA feed unavailable — enable network access or check sofa.enabled",
+                self._fmts["cell"],
+            )
+            return
+
+        for c, h in enumerate(headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        row += 1
+
+        macos_counts = self._macos_os_counts()
+        mobile_counts = self._mobile_os_counts()
+        family_majors: dict[str, set[int]] = {}
+        for entry in rows:
+            major_tuple = _version_tuple(str(entry.get("product_version", "")))
+            if major_tuple:
+                family_majors.setdefault(str(entry.get("platform", "")), set()).add(major_tuple[0])
+        for entry in rows:
+            platform = str(entry.get("platform", ""))
+            latest = str(entry.get("product_version", ""))
+            counts = None
+            if platform == "macOS":
+                counts = macos_counts
+            elif platform == "iOS / iPadOS":
+                counts = mobile_counts
+            _safe_write(ws, row, 0, platform, self._fmts["cell"])
+            _safe_write(ws, row, 1, entry.get("os_family", ""), self._fmts["cell"])
+            _safe_write(ws, row, 2, latest, self._fmts["cell"])
+            _safe_write(ws, row, 3, entry.get("build", ""), self._fmts["cell"])
+            _safe_write(ws, row, 4, entry.get("release_date", ""), self._fmts["cell"])
+            days = entry.get("days_since_release")
+            _safe_write(ws, row, 5, days if days is not None else "—", self._fmts["cell"])
+            cve_count = _to_int(entry.get("actively_exploited_cves", 0))
+            cve_fmt = self._fmts["red"] if cve_count > 0 else self._fmts["cell"]
+            _safe_write(ws, row, 6, cve_count, cve_fmt)
+            if counts is None:
+                _safe_write(ws, row, 7, "—", self._fmts["cell"])
+                _safe_write(ws, row, 8, "—", self._fmts["cell"])
+                _safe_write(ws, row, 9, "—", self._fmts["cell"])
+            else:
+                on_latest, behind = self._fleet_currency(latest, counts)
+                family_total = on_latest + behind
+                pct = on_latest / family_total if family_total > 0 else None
+                _safe_write(ws, row, 7, on_latest, self._fmts["cell"])
+                _safe_write(ws, row, 8, behind, self._fmts["cell"])
+                if pct is not None:
+                    _safe_write(ws, row, 9, pct, _pct_format(self._fmts, pct))
+                else:
+                    _safe_write(ws, row, 9, "—", self._fmts["cell"])
+            row += 1
+
+        # Devices on majors older than every SOFA family receive no security
+        # updates at all — surface them instead of leaving them invisible.
+        eol_sources = [("macOS", macos_counts), ("iOS / iPadOS", mobile_counts)]
+        for platform, counts in eol_sources:
+            eol_devices, eol_versions = self._fleet_eol_count(
+                family_majors.get(platform, set()), counts
+            )
+            if eol_devices <= 0:
+                continue
+            _safe_write(ws, row, 0, platform, self._fmts["cell"])
+            _safe_write(ws, row, 1, "Out of support (EOL)", self._fmts["red"])
+            _safe_write(
+                ws, row, 2,
+                f"{eol_versions} version(s) older than all supported releases",
+                self._fmts["red"],
+            )
+            for col in (3, 4, 5, 6):
+                _safe_write(ws, row, col, "—", self._fmts["cell"])
+            _safe_write(ws, row, 7, 0, self._fmts["cell"])
+            _safe_write(ws, row, 8, eol_devices, self._fmts["red"])
+            _safe_write(ws, row, 9, 0, _pct_format(self._fmts, 0))
+            row += 1
+
     def _write_device_security_state(self) -> None:
         """Write per-device security control state from cached computers-list JSON.
 
@@ -9883,6 +10526,23 @@ class CoreDashboard:
             pass
         release_date_available = bool(release_dates)
 
+        # Attempt to load the merged patch-release-dates snapshot (built at
+        # collect time by collect_patch_release_dates). Keyed by title_id so it
+        # is robust to title-name drift. Absent snapshot → the two appended
+        # columns are omitted and the sheet renders identically to before.
+        rel_by_id: dict[str, dict[str, str]] = {}
+        for entry in self._bridge.patch_release_dates():
+            if not isinstance(entry, dict):
+                continue
+            tid = str(entry.get("title_id", "") or "").strip()
+            if tid:
+                rel_by_id[tid] = {
+                    "latest_version": str(entry.get("latest_version", "") or "").strip(),
+                    "release_date": str(entry.get("release_date", "") or "").strip(),
+                }
+        self._patch_rel_by_id = rel_by_id
+        definitions_available = bool(rel_by_id)
+
         # Attempt to load active-device stats for adjusted columns.
         # Patch-status only has aggregate counts per title; per-device filtering is
         # approximated by scaling with the active-device ratio from device-compliance.
@@ -9905,6 +10565,11 @@ class CoreDashboard:
 
         base_cols = 7 if release_date_available else 6
         ncols = base_cols + (4 if adj_available else 0)
+        # The two definitions columns are appended rightmost so the existing
+        # column offsets above are never disturbed (advisor 2026-06-02).
+        def_start_col = ncols
+        if definitions_available:
+            ncols += 2
         ws = self._wb.add_worksheet("Patch Compliance")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         source_note = (
@@ -9924,6 +10589,8 @@ class CoreDashboard:
         ws.set_column(1, base_cols - 1, 18)
         if adj_available:
             ws.set_column(base_cols, base_cols + 3, 22)
+        if definitions_available:
+            ws.set_column(def_start_col, def_start_col + 1, 18)
         raw_headers = ["Software Title", "On Latest", "On Other", "Total", "Latest Version"]
         adj_headers = ["Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
                        "Adjusted Completion %"]
@@ -9931,6 +10598,8 @@ class CoreDashboard:
             raw_headers.append("Release Date")
         raw_headers.append("Compliance %")
         headers = raw_headers + (adj_headers if adj_available else [])
+        if definitions_available:
+            headers += ["Latest Released", "Days Behind"]
         for c, h in enumerate(headers):
             _safe_write(ws, row, c, h, self._fmts["header"])
         row += 1
@@ -9981,7 +10650,44 @@ class CoreDashboard:
                     )
                 else:
                     _safe_write(ws, row, adj_start_col + 3, "N/A", self._fmts["cell"])
+
+            if definitions_available:
+                self._write_patch_definition_cells(
+                    ws, row, def_start_col, item, pct_value, secondary
+                )
             row += 1
+
+    def _write_patch_definition_cells(
+        self,
+        ws: Any,
+        row: int,
+        col: int,
+        item: dict[str, Any],
+        pct_value: Optional[float],
+        secondary: int,
+    ) -> None:
+        """Write the appended 'Latest Released' + 'Days Behind' cells for one title.
+
+        'Days Behind' is the day count from the latest release date to today,
+        shown only for titles below 100% compliance; '—' when the title is on
+        latest or has no release-date data.
+        """
+        rel = getattr(self, "_patch_rel_by_id", {}).get(str(item.get("id", "") or "").strip())
+        release_iso = rel.get("release_date", "") if rel else ""
+        parsed = _sofa_parse_date(release_iso)
+        _safe_write(
+            ws, row, col,
+            parsed.isoformat() if parsed is not None else "—",
+            self._fmts["cell"],
+        )
+        below_full = (pct_value is not None and pct_value < 1.0) or (
+            pct_value is None and secondary > 0
+        )
+        if parsed is not None and below_full:
+            days_behind = max(0, (date.today() - parsed).days)
+            _safe_write(ws, row, col + 1, days_behind, self._fmts["cell"])
+        else:
+            _safe_write(ws, row, col + 1, "—", self._fmts["cell"])
 
     def _write_patch_failures(self) -> None:
         # jamf-cli pro report patch-status --scan-failures --output json returns:
@@ -17107,6 +17813,53 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </table>
 </div>"""
 
+    def _render_os_currency_card(self) -> str:
+        """Render the SOFA OS-currency table as a card.
+
+        Returns an empty string when SOFA is disabled or no feed is available,
+        so the section is simply absent rather than showing an empty shell.
+        """
+        client = SOFAFeedClient(self._config)
+        rows = client.latest_versions()
+        if not rows:
+            return ""
+        body = ""
+        for entry in rows:
+            days = entry.get("days_since_release")
+            days_label = str(days) if isinstance(days, int) else "—"
+            cve = _to_int(entry.get("actively_exploited_cves", 0))
+            cve_cell = (
+                f"<td class='val-err'>{cve}</td>" if cve > 0 else f"<td>{cve}</td>"
+            )
+            body += (
+                f"<tr><td>{self._html_text(str(entry.get('platform', '')))}</td>"
+                f"<td>{self._html_text(str(entry.get('os_family', '')))}</td>"
+                f"<td>{self._html_text(str(entry.get('product_version', '')))}</td>"
+                f"<td>{self._html_text(str(entry.get('build', '')))}</td>"
+                f"<td>{self._html_text(str(entry.get('release_date', '')))}</td>"
+                f"<td>{self._html_text(days_label)}</td>"
+                f"{cve_cell}</tr>"
+            )
+        return f"""<h3 class="section-title">OS Currency (SOFA)</h3>
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <caption class="sr-only">Latest available Apple OS versions from the SOFA feed.</caption>
+      <thead><tr>
+        <th scope="col">Platform</th>
+        <th scope="col">OS Family</th>
+        <th scope="col">Latest Version</th>
+        <th scope="col">Build</th>
+        <th scope="col">Released</th>
+        <th scope="col">Days Since Release</th>
+        <th scope="col">Actively Exploited CVEs</th>
+      </tr></thead>
+      <tbody>{body}</tbody>
+    </table>
+  </div>
+  <p class="empty-note">Source: SOFA (sofa.macadmins.io) &mdash; latest available Apple OS versions.</p>
+</div>"""
+
     def _render_mobile_inventory_table(
         self,
         rows: list[dict[str, Any]],
@@ -17902,6 +18655,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_os_distribution_card(os_labels, os_counts)}
     </div>
 
+    {self._render_os_currency_card()}
     {self._render_timeline_section(timeline)}
     {self._render_trends_section(trends)}
     {self._render_flagged_table(flagged, console_url)}
@@ -18206,6 +18960,7 @@ def _collect_jamf_cli_commands(
             ("Software Installs", bridge.software_installs, ""),
             ("Patch Compliance", bridge.patch_status, ""),
             ("Patch Summaries", bridge.patch_summaries, ""),
+            ("Patch Release Dates", bridge.collect_patch_release_dates, "patch-definitions"),
             ("Patch Failures", bridge.patch_device_failures, "patch-device-failures"),
             ("Policy Health", bridge.policy_status, ""),
             ("Profile Status", bridge.profile_status, "profile-status"),
@@ -18375,7 +19130,32 @@ def _collect_snapshots(
     else:
         print("  jamf-cli disabled in config; skipping live snapshot collection.")
 
+    collected += _collect_sofa_feeds(config)
+
     return collected, _archive_collect_csv_inputs(config, csv_path, historical_csv_dir)
+
+
+def _collect_sofa_feeds(config: Config) -> int:
+    """Fetch and cache SOFA OS-currency feeds. Returns the count fetched.
+
+    Respects ``sofa.enabled``. Prints a per-platform result line. Failures for
+    one platform never abort the others.
+    """
+    client = SOFAFeedClient(config)
+    if not client.enabled:
+        print("  [skip] SOFA feeds: disabled in config (sofa.enabled: false)")
+        return 0
+    print("  SOFA OS currency feeds:")
+    fetched = 0
+    for plat in client.platforms:
+        feed = client.fetch(plat)
+        if feed is None:
+            print(f"    [skip] SOFA {plat}: unavailable")
+            continue
+        count = len(feed.get("OSVersions") or [])
+        fetched += 1
+        print(f"    [ok] SOFA {plat} ({count} OS families)")
+    return fetched
 
 
 def cmd_collect(
