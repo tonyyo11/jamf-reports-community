@@ -10,6 +10,9 @@ struct PatchView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: PatchStatusService.Snapshot = .empty
     @State private var hasLoaded = false
+    /// title_id → release_date from the patch-release-dates snapshot.
+    /// Empty when the snapshot hasn't been collected yet — table column shows "—".
+    @State private var releaseLookup: [String: String] = [:]
 
     var body: some View {
         PageScaffold {
@@ -60,6 +63,10 @@ struct PatchView: View {
         snapshot = workspace.demoMode
             ? Self.demoSnapshot
             : PatchStatusService.load(profile: workspace.profile)
+        if !workspace.demoMode {
+            let rows = PatchReleaseDateService.load(profile: workspace.profile)
+            releaseLookup = PatchReleaseDateService.releaseDateLookup(from: rows)
+        }
     }
 
     private static let demoSnapshot = PatchStatusService.Snapshot(
@@ -171,6 +178,15 @@ struct PatchView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     .width(min: 120, ideal: 150)
+
+                    TableColumn("Released") { title in
+                        let dateStr = releaseLookup[title.id] ?? ""
+                        Text(dateStr.isEmpty ? "—" : String(dateStr.prefix(10)))
+                            .font(Theme.Fonts.mono(11))
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .accessibilityLabel(dateStr.isEmpty ? "No release date" : "Released \(dateStr)")
+                    }
+                    .width(min: 90, ideal: 110)
 
                     TableColumn("Compliance") { title in
                         let pct = PatchStatusService.parseCompliancePct(title.compliancePct)

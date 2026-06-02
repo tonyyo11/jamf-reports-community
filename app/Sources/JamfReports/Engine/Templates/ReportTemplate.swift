@@ -55,6 +55,8 @@ enum SheetID: String, Sendable, CaseIterable {
     case protectInsights     = "Protect Insights"
     case protectPlans        = "Protect Plans"
     case protectThreatOverview = "Protect Threat Overview"
+    // OS currency
+    case osCurrency          = "OS Currency"
 }
 
 /// Logical HTML section identifiers.
@@ -84,6 +86,7 @@ enum SectionID: String, Sendable, CaseIterable {
     case execSummary     = "exec_summary"
     case cleanupAnalysis = "cleanup_analysis"
     case timeline        = "timeline"
+    case osCurrency      = "os_currency"
 }
 
 /// PDF pagination strategy hint.

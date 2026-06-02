@@ -806,6 +806,9 @@ struct ReportEngine: Sendable {
         "classic-ios-profiles",
         "device-enrollment-instances",
         "mobile-device-inventory-details",
+        // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
+        "sofa",
+        "patch-release-dates",
     ]
 
     /// Fetch jamf-cli snapshots for `profile`, filtered by:
@@ -1042,6 +1045,30 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
+        // is in the requested tiers. Light network fetch — always in the Refresh tier
+        // so snapshot-only and full runs both capture it.
+        if let sofaTier = CollectionTier.tier(forReport: "sofa"), tiers.contains(sofaTier) {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] collecting sofa for \(profile)"))
+            let (_, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
+            for w in sofaWarnings {
+                onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(w)"))
+            }
+            onLine(.init(timestamp: Date(), level: .ok, text: "[ok] sofa: feeds refreshed"))
+        }
+
+        // Patch release dates: collect per-title definitions after patch-status.
+        // Gated on the "patch-release-dates" kind being in the requested tiers
+        // AND patch-status having been collected (so the title list exists).
+        if let prdTier = CollectionTier.tier(forReport: "patch-release-dates"),
+           tiers.contains(prdTier) {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] collecting patch-release-dates for \(profile)"))
+            await collectPatchReleaseDates(
+                profile: profile, bin: bin, dataDir: dataDir, onLine: onLine)
+        }
+
         // PR-20: also emit summary.json from collect so the snapshot-only schedule
         // mode populates Trends without requiring a workbook generation. Skipped
         // when config is missing (fresh workspace pre-init) — generate() is the
@@ -1056,6 +1083,100 @@ struct ReportEngine: Sendable {
             )
             let engine = ReportEngine(config: config, dataDir: dataDir)
             engine.emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
+        }
+    }
+
+    // MARK: - Patch release date collection
+
+    /// Fetch per-title patch definitions from jamf-cli and write the merged
+    /// `patch-release-dates_<ts>.json` snapshot.
+    ///
+    /// Reads the current patch-status snapshot for the title list, then runs
+    /// `pro patch-software-title-configurations definitions <id>` for each title.
+    /// Mirrors Python's `JamfCLIBridge.collect_patch_release_dates`.
+    /// Non-fatal: warn and skip titles that fail rather than aborting the run.
+    private static func collectPatchReleaseDates(
+        profile: String,
+        bin: URL,
+        dataDir: URL,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async {
+        // Read patch-status snapshot to get title list.
+        guard let patchData = try? loadLatestSnapshotData(kind: "patch-status", dataDir: dataDir),
+              let patchItems = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData)
+        else {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] patch-release-dates: no patch-status snapshot; skipping"))
+            return
+        }
+
+        let bridge = CLIBridge()
+        var merged: [[String: String]] = []
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        let ts = formatter.string(from: Date())
+
+        for patchItem in patchItems {
+            let titleId = patchItem.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !titleId.isEmpty else { continue }
+            // Sanitize id for filename — mirrors Python's `re.sub(r"[^0-9A-Za-z._-]", "_", id)`.
+            let safeId = titleId.unicodeScalars.map { c -> Character in
+                let ch = Character(c)
+                if ch.isLetter || ch.isNumber || ch == "." || ch == "_" || ch == "-" {
+                    return ch
+                }
+                return "_"
+            }.reduce("") { $0 + String($1) }
+
+            let args = ["-p", profile, "pro", "patch-software-title-configurations",
+                        "definitions", titleId, "--page-size", "100", "--output", "json"]
+            let captureResult = try? await bridge.runAndCapture(
+                executable: bin, arguments: args,
+                environment: CLIBridge.environmentForJamfCLI(), onLine: { _ in })
+            guard let (exitCode, data) = captureResult, exitCode == 0, !data.isEmpty else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[warn] patch-definitions: title \(titleId) failed — skipping"))
+                continue
+            }
+
+            // Cache per-title definition file.
+            let defsDir = dataDir.appendingPathComponent("patch-definitions", isDirectory: true)
+            try? FileManager.default.createDirectory(at: defsDir, withIntermediateDirectories: true)
+            let cacheFile = defsDir.appendingPathComponent(
+                "patch-definitions_title\(safeId).json")
+            try? data.write(to: cacheFile)
+
+            // Extract latest definition date.
+            guard let definitions = try? JSONSerialization.jsonObject(with: data)
+                    as? [[String: Any]]
+            else { continue }
+            let (version, releaseDate) = PatchReleaseDateService.latestDefinitionDate(
+                definitions: definitions, latestVersion: patchItem.latest)
+            guard !releaseDate.isEmpty else { continue }
+            merged.append([
+                "title_id": titleId,
+                "title": patchItem.title,
+                "latest_version": version,
+                "release_date": releaseDate,
+            ])
+        }
+
+        // Write merged snapshot.
+        do {
+            let outDir = dataDir.appendingPathComponent("patch-release-dates", isDirectory: true)
+            try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+            let outFile = outDir.appendingPathComponent("patch-release-dates_\(ts).json")
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted]
+            let payload = try encoder.encode(merged)
+            try payload.write(to: outFile)
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] patch-release-dates: \(merged.count) title(s)"))
+        } catch {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] patch-release-dates: could not write snapshot — " +
+                               error.localizedDescription))
         }
     }
 

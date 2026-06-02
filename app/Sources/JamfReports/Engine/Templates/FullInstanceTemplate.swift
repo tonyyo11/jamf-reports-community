@@ -53,6 +53,8 @@ struct FullInstanceTemplate: ReportTemplate {
             // Device security & supervision detail
             .deviceSecurityState,
             .mobileSupervisionStatus,
+            // OS currency
+            .osCurrency,
             // Platform / DDM
             .complianceDevices,
             .complianceRules,
@@ -95,6 +97,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .protectAlerts,
             .insightsDrift,
             .orgInfo,
+            .osCurrency,
         ]
     }
 
