@@ -39,6 +39,12 @@ versions in this repository map to git tags.
 - "CrowdStrike Installed/Connected" labels are gone: the EDR metric is named
   after your configured `security_agents` entry (e.g. "CrowdStrike Falcon
   Installed"), or the generic "EDR Agent" when none is configured.
+- The per-device risk model's "Nessus Disconnected" factor is now a
+  config-driven "Security Agent Disconnected" check: it reads the EA column
+  and connected value from your first `security_agents` entry, labels the
+  finding with that agent's name, and — for the first time — actually
+  triggers when the agent reports disconnected. With no agent configured the
+  factor stays dormant.
 - OS Updates KPIs no longer report "0 failing plans" when the failure scan
   simply hasn't run — the count derives from plan states (matching the donut)
   and Error Devices shows "—" until a `--scan-failures` snapshot exists.
