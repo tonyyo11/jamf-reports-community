@@ -118,6 +118,9 @@ struct Schedule: Identifiable, Sendable {
         case jamfCLIOnly   = "jamf-cli-only"
         case jamfCLIFull   = "jamf-cli-full"
         case csvAssisted   = "csv-assisted"
+        /// v2.2.0: scheduled `jamf-cli pro backup` — exports configuration
+        /// objects into the workspace's backups/ folder. No collect, no report.
+        case backup        = "backup"
         var id: String { rawValue }
 
         var displayTitle: String {
@@ -126,6 +129,7 @@ struct Schedule: Identifiable, Sendable {
             case .jamfCLIOnly: "Generate from cached data"
             case .jamfCLIFull: "Refresh + Generate"
             case .csvAssisted: "Refresh + Generate (CSV required)"
+            case .backup: "Configuration Backup"
             }
         }
 
@@ -139,6 +143,8 @@ struct Schedule: Identifiable, Sendable {
                 "Runs collect to refresh jamf-cli data, then generates a workbook. No CSV input. Use this for a self-contained scheduled run that does not depend on a CSV export."
             case .csvAssisted:
                 "Runs collect, then combines the newest CSV in csv-inbox/ with cached jamf-cli data. The run fails if no CSV is available — use this when CSV data is required (e.g. for custom inventory columns jamf-cli can't reach)."
+            case .backup:
+                "Runs jamf-cli pro backup to export Jamf Pro configuration objects (policies, profiles, scripts, groups) into the workspace's backups folder. Keeps the last 10 scheduled backups. No data collection, no report."
             }
         }
 
@@ -150,13 +156,16 @@ struct Schedule: Identifiable, Sendable {
         ///
         /// `jamf-cli-only` does not collect at all, so its tier set is
         /// moot — it returns all tiers as a harmless default; the form
-        /// hides the tier picker for this mode.
+        /// hides the tier picker for this mode. `backup` never collects;
+        /// its empty tier set keeps the tier picker hidden too.
         var defaultTiers: Set<CollectionTier> {
             switch self {
             case .snapshotOnly:
                 return [.refresh]
             case .jamfCLIOnly, .jamfCLIFull, .csvAssisted:
                 return Set(CollectionTier.allCases)
+            case .backup:
+                return []
             }
         }
     }
