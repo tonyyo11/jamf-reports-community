@@ -63,16 +63,91 @@ final class RiskScoringServiceTests: XCTestCase {
         XCTAssertTrue(activeRisk.triggered.contains { $0.factor == .noBaseline })
     }
 
-    func testNessusConnectivityIsOnlyScoredWhenAgentDeployed() {
-        // nil = agent not deployed → do not penalize
+    func testSecurityAgentConnectivityIsOnlyScoredWhenAgentDeployed() {
+        // nil = no agent configured / no EA data → do not penalize
         var noAgent = RiskScoringService.Input.safe
-        noAgent.nessusConnected = nil
+        noAgent.securityAgentConnected = nil
         XCTAssertEqual(RiskScoringService.score(input: noAgent).score, 0)
 
-        // false = agent deployed but disconnected → penalize
+        // false = agent configured but disconnected → penalize
         var disconnected = RiskScoringService.Input.safe
-        disconnected.nessusConnected = false
+        disconnected.securityAgentConnected = false
         XCTAssertEqual(RiskScoringService.score(input: disconnected).score, 5)
+        XCTAssertTrue(
+            RiskScoringService.score(input: disconnected).triggered
+                .contains { $0.factor == .securityAgentDisconnected }
+        )
+
+        // true = agent connected → no penalty
+        var connected = RiskScoringService.Input.safe
+        connected.securityAgentConnected = true
+        XCTAssertEqual(RiskScoringService.score(input: connected).score, 0)
+    }
+
+    // MARK: - Security-agent check (config-driven, replaces hardcoded Nessus)
+
+    func testSecurityAgentCheckMatchesConnectedValueCaseInsensitively() {
+        // connected_value is a case-insensitive substring match (config contract).
+        let connected = RiskScoringService.SecurityAgentCheck(
+            value: "Agent CONNECTED to cloud.tenable.com", connectedValue: "connected"
+        )
+        XCTAssertEqual(connected.isConnected, true)
+
+        let disconnected = RiskScoringService.SecurityAgentCheck(
+            value: "Unlinked", connectedValue: "connected"
+        )
+        XCTAssertEqual(disconnected.isConnected, false)
+    }
+
+    func testSecurityAgentCheckHasNoSignalForEmptyValues() {
+        XCTAssertNil(RiskScoringService.SecurityAgentCheck(
+            value: "", connectedValue: "connected"
+        ).isConnected, "empty EA value = no data, not a finding")
+        XCTAssertNil(RiskScoringService.SecurityAgentCheck(
+            value: "Connected", connectedValue: ""
+        ).isConnected, "empty connected_value = unconfigured, not a finding")
+    }
+
+    func testAdapterFeedsAgentCheckIntoScore() {
+        let record = DeviceInventoryRecord(
+            id: "JSS-200", jamfID: "200", name: "Mac-200", serial: "DEF456",
+            osVersion: "15.4", model: "MacBookPro18,1", user: "bob",
+            email: "bob@example.org", department: "Eng", building: "HQ",
+            site: "main", ipAddress: "10.0.0.2", assetTag: "AT-002",
+            managedState: "Managed", lastContact: "2026-05-10T12:00:00Z",
+            lastInventory: "2026-05-10T12:00:00Z", daysSinceContact: 2,
+            stale: false, fileVault: "Encrypted", sip: "Enabled",
+            firewall: "Enabled", gatekeeper: "Enabled",
+            bootstrapToken: "Escrowed", diskUsage: "62%", failedRules: 0,
+            patchFailures: [], source: "jamf-cli"
+        )
+        let disconnectedInput = RiskScoringService.Input.from(
+            record: record,
+            agentCheck: .init(value: "Service not running", connectedValue: "Connected")
+        )
+        XCTAssertEqual(disconnectedInput.securityAgentConnected, false)
+
+        let noCheckInput = RiskScoringService.Input.from(record: record)
+        XCTAssertNil(noCheckInput.securityAgentConnected)
+    }
+
+    func testAgentFactorLabelsAreConfigDrivenNotHardcoded() {
+        let factor = DeviceRisk.Factor.securityAgentDisconnected
+        XCTAssertEqual(factor.displayLabel, "Security Agent Disconnected")
+        XCTAssertFalse(factor.displayLabel.localizedCaseInsensitiveContains("nessus"))
+        XCTAssertFalse(factor.remediation.localizedCaseInsensitiveContains("nessus"))
+        XCTAssertEqual(
+            factor.displayLabel(agentName: "Nessus Agent"), "Nessus Agent Disconnected"
+        )
+        XCTAssertEqual(
+            factor.remediation(agentName: "CrowdStrike Falcon"),
+            "Re-link CrowdStrike Falcon via its deployment policy."
+        )
+        // Other factors ignore the agent name.
+        XCTAssertEqual(
+            DeviceRisk.Factor.noFileVault.displayLabel(agentName: "Anything"),
+            "No FileVault Encryption"
+        )
     }
 
     func testSecureBootMediumAndNoneScoreDifferently() {
