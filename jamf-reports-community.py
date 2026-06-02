@@ -50,7 +50,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 import xlsxwriter
@@ -511,6 +511,48 @@ SCHOOL_COLUMN_EXCLUDES: dict[str, list[str]] = {
     "location_name": ["schoolnumber"],
     "model": ["modelidentifier", "modelid"],
     "user_name": ["owner"],
+}
+
+# Headers that appear ONLY in a Jamf Pro computer export. Values are pre-normalized
+# (lowercase, single-spaced) for comparison via ``_normalized_text``.
+COMPUTER_CSV_DISCRIMINATORS: frozenset[str] = frozenset({
+    "computer name", "jss computer id", "operating system version",
+    "last check-in", "gatekeeper", "system integrity protection",
+    "filevault 2 status", "firewall enabled", "secure boot level",
+    "processor type", "apple silicon", "boot drive percentage full",
+})
+
+# Headers that appear ONLY in a Jamf Pro mobile-device export. Pre-normalized.
+MOBILE_CSV_DISCRIMINATORS: frozenset[str] = frozenset({
+    "display name", "jss mobile device id", "device id", "imei", "iccid",
+    "jailbreak detected", "shared ipad", "wi-fi mac address",
+    "battery level", "lost mode enabled", "device ownership type",
+    "passcode status",
+})
+
+# Fuzzy-match candidates for mobile-device scaffold auto-detection.
+MOBILE_COLUMN_HINTS: dict[str, list[str]] = {
+    "device_name": ["display name", "device name"],
+    "serial_number": ["serial number", "serial"],
+    "operating_system": ["os version"],
+    "last_checkin": ["last inventory update", "last check-in", "last checkin"],
+    "email": ["email address", "email"],
+    "model": ["model"],
+    "device_family": ["device family"],
+    "managed": ["managed"],
+    "supervised": ["supervised"],
+}
+
+MOBILE_COLUMN_EXCLUDES: dict[str, list[str]] = {
+    "device_name": ["computer"],
+    "serial_number": [],
+    "operating_system": ["build", "supplemental", "rapid"],
+    "last_checkin": ["enrollment"],
+    "email": [],
+    "model": ["identifier", "number"],
+    "device_family": [],
+    "managed": ["by"],
+    "supervised": [],
 }
 
 
@@ -1391,19 +1433,60 @@ def _default_generate_csv(config: "Config") -> tuple[Optional[Path], Optional[st
     return None, None, " | ".join(notes)
 
 
+def _detect_csv_family_from_headers(header_cols: list[str]) -> Optional[str]:
+    """Detect a CSV's device family by counting export-only discriminator headers.
+
+    Jamf Pro exports computers and mobile devices as separate reports. Each family
+    has headers that appear only in its own export; counting those hits is a
+    deterministic, config-free signal. Returns ``"computers"``, ``"mobile"``, or
+    ``None`` when neither family clearly wins (no hits, or a nonzero tie).
+
+    Args:
+        header_cols: CSV column names (any case/spacing).
+
+    Returns:
+        ``"computers"``, ``"mobile"``, or ``None`` if the family is ambiguous.
+    """
+    normalized = {_normalized_text(item) for item in header_cols}
+    computer_hits = len(COMPUTER_CSV_DISCRIMINATORS & normalized)
+    mobile_hits = len(MOBILE_CSV_DISCRIMINATORS & normalized)
+    if mobile_hits > computer_hits:
+        return "mobile"
+    if computer_hits > mobile_hits:
+        return "computers"
+    return None
+
+
 def _guess_report_family_from_headers(
     config: "Config",
     header_cols: list[str],
 ) -> Optional[str]:
-    """Infer the most likely report family from CSV headers."""
-    best_family: Optional[str] = None
-    best_score = (0, 0)
-    for family_name in REPORT_FAMILY_NAMES:
-        score = _report_family_header_score(config, family_name, header_cols)
-        if score > best_score:
-            best_family = family_name
-            best_score = score
-    return best_family if best_score > (0, 0) else None
+    """Infer the report family from CSV headers, with a compliance refinement.
+
+    Detection is deterministic (see ``_detect_csv_family_from_headers``). When the
+    headers look like a computer export and the configured compliance columns are
+    present, the family is refined to ``"compliance"`` (a computer-shaped CSV with
+    added mSCP failure columns).
+
+    Args:
+        config: Loaded Config instance (used only for compliance refinement).
+        header_cols: CSV column names.
+
+    Returns:
+        ``"computers"``, ``"mobile"``, ``"compliance"``, or ``None``.
+    """
+    family = _detect_csv_family_from_headers(header_cols)
+    if family != "computers":
+        return family
+    normalized = {_normalized_text(item) for item in header_cols}
+    compliance_cols = [
+        str(config.compliance.get("failures_count_column", "") or "").strip(),
+        str(config.compliance.get("failures_list_column", "") or "").strip(),
+    ]
+    present = [col for col in compliance_cols if col and _normalized_text(col) in normalized]
+    if present:
+        return "compliance"
+    return "computers"
 
 
 def _default_historical_dir(
@@ -1748,14 +1831,36 @@ def _normalized_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value).strip().lower())
 
 
-def _column_match_score(header: str, logical: str) -> int:
-    """Return a heuristic scaffold score for a header/logical field pairing."""
+def _column_match_score(
+    header: str,
+    logical: str,
+    hints: Optional[dict[str, list[str]]] = None,
+    excludes: Optional[dict[str, list[str]]] = None,
+) -> int:
+    """Return a heuristic scaffold score for a header/logical field pairing.
+
+    Exact matches score ``200 - hint_index`` so the hint listed first for a
+    logical field wins exact-match ties (e.g. "Last Check-in" before "Last
+    Inventory Update"). Prefix, substring, and reverse-substring tiers stay below
+    any exact match.
+
+    Args:
+        header: CSV column name being scored.
+        logical: Logical field name (key into ``hints``/``excludes``).
+        hints: Hint table to score against; defaults to ``COLUMN_HINTS``.
+        excludes: Exclude table; defaults to ``COLUMN_EXCLUDES``.
+
+    Returns:
+        An integer score (0 when below the match threshold).
+    """
+    hint_table = COLUMN_HINTS if hints is None else hints
+    exclude_table = COLUMN_EXCLUDES if excludes is None else excludes
     normalized = _normalized_text(header)
     score = 0
-    for candidate in COLUMN_HINTS.get(logical, []):
+    for index, candidate in enumerate(hint_table.get(logical, [])):
         candidate_norm = _normalized_text(candidate)
         if normalized == candidate_norm:
-            score = max(score, 100 + len(candidate_norm))
+            score = max(score, 200 - index)
         elif normalized.startswith(candidate_norm):
             score = max(score, 80 + len(candidate_norm))
         elif candidate_norm in normalized:
@@ -1763,7 +1868,7 @@ def _column_match_score(header: str, logical: str) -> int:
         elif len(normalized) >= 8 and normalized in candidate_norm:
             score = max(score, 40 + len(normalized))
 
-    for blocked in COLUMN_EXCLUDES.get(logical, []):
+    for blocked in exclude_table.get(logical, []):
         if _normalized_text(blocked) in normalized:
             score -= 80
 
@@ -1774,15 +1879,28 @@ def _best_header_match(
     headers: list[str],
     logical: str,
     used_headers: Optional[set[str]] = None,
+    hints: Optional[dict[str, list[str]]] = None,
+    excludes: Optional[dict[str, list[str]]] = None,
 ) -> tuple[Optional[str], int]:
-    """Return the best-scoring header for a logical field."""
+    """Return the best-scoring header for a logical field.
+
+    Args:
+        headers: All CSV column names.
+        logical: Logical field name to match.
+        used_headers: Headers already claimed by other fields (skipped).
+        hints: Hint table; defaults to ``COLUMN_HINTS``.
+        excludes: Exclude table; defaults to ``COLUMN_EXCLUDES``.
+
+    Returns:
+        Tuple of (best header or None, score).
+    """
     best_header: Optional[str] = None
     best_score = 0
     reserved = used_headers or set()
     for header in headers:
         if header in reserved:
             continue
-        score = _column_match_score(header, logical)
+        score = _column_match_score(header, logical, hints, excludes)
         if score > best_score:
             best_header = header
             best_score = score
@@ -1813,6 +1931,66 @@ def _best_hint_match(
             best_header = header
             best_score = score
     return best_header if best_score else None
+
+
+def _identity_column_for_family(config: "Config", family_name: Optional[str]) -> str:
+    """Return the identity (device-name) column for a CSV family.
+
+    Used to detect Jamf "export-only" continuation rows, which carry a blank
+    identity cell. Falls back to the canonical Jamf header when the family's
+    mapping is unset.
+
+    Args:
+        config: Loaded Config instance.
+        family_name: ``"mobile"``, ``"computers"``, ``"compliance"``, or None.
+
+    Returns:
+        The configured identity column name, or a sensible default.
+    """
+    if family_name == "mobile":
+        configured = str(config.mobile_columns.get("device_name", "") or "").strip()
+        return configured or "Display Name"
+    configured = str(config.columns.get("computer_name", "") or "").strip()
+    return configured or "Computer Name"
+
+
+def _drop_continuation_rows(df: Any, identity_column: str) -> tuple[Any, int]:
+    """Drop Jamf export-only continuation rows (blank identity cell) from a CSV.
+
+    Jamf "export-only" field exports emit multi-value data (Applications,
+    Certificates, Groups, Printers, Services) as continuation rows whose identity
+    column is blank. These inflate device counts. Rows are only dropped when the
+    identity column is present in the DataFrame.
+
+    Args:
+        df: A pandas DataFrame loaded from a Jamf CSV export.
+        identity_column: The device-name column whose blanks mark continuation rows.
+
+    Returns:
+        Tuple of (filtered DataFrame, number of rows dropped).
+    """
+    if not identity_column or identity_column not in df.columns:
+        return df, 0
+    identity = df[identity_column].fillna("").astype(str).str.strip()
+    keep_mask = identity != ""
+    dropped = int((~keep_mask).sum())
+    if not dropped:
+        return df, 0
+    return df[keep_mask].reset_index(drop=True), dropped
+
+
+def _warn_continuation_rows(dropped: int, remaining: int) -> None:
+    """Print a loud warning when continuation rows were dropped from a CSV."""
+    if dropped <= 0:
+        return
+    print(
+        f"[warn] Ignored {dropped} continuation rows from multi-value export fields"
+        " (Applications, Certificates, Groups, ...)."
+    )
+    print(
+        f"       Device counts use {remaining} unique devices. For cleaner reports,"
+        ' export with "Built-in" fields only.'
+    )
 
 
 def _contains_case_insensitive(series: Any, needle: str) -> Any:
@@ -10568,11 +10746,16 @@ class CSVDashboard:
             self._df = primary
             print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
 
+        identity_column = _identity_column_for_family(config, family_name)
+        self._df, dropped_rows = _drop_continuation_rows(self._df, identity_column)
+        _warn_continuation_rows(dropped_rows, len(self._df))
+
         self._prior_df: Optional[pd.DataFrame] = None
         self._prior_label = ""
         if family_name != "mobile" and historical_dir and current_csv_path:
             prior_df, prior_label = _load_prior_snapshot(historical_dir, current_csv_path)
             if prior_df is not None and prior_label:
+                prior_df, _ = _drop_continuation_rows(prior_df, identity_column)
                 self._prior_df = prior_df
                 self._prior_label = prior_label
                 print(f"  Fleet Drift baseline: {prior_label}")
@@ -12401,6 +12584,12 @@ class ChartGenerator:
             if temp_chart_dir:
                 shutil.rmtree(temp_chart_dir, ignore_errors=True)
 
+    def _drop_snapshot_continuation_rows(self, df: Any) -> Any:
+        """Drop export-only continuation rows so snapshot row counts are device counts."""
+        identity_column = _identity_column_for_family(self._config, self._csv_family_name)
+        filtered, _ = _drop_continuation_rows(df, identity_column)
+        return filtered
+
     def _load_snapshots(self, charts_cfg: dict[str, Any]) -> list[tuple[datetime, Any]]:
         """Load all CSV snapshots sorted by date. Returns list of (date, DataFrame)."""
         loaded: list[dict[str, Any]] = []
@@ -12430,6 +12619,7 @@ class ChartGenerator:
                 except Exception as exc:
                     print(f"  [warn] Skipping CSV snapshot {f.name}: {exc}")
                     continue
+                df = self._drop_snapshot_continuation_rows(df)
                 loaded.append(
                     {
                         "date": dt,
@@ -12446,6 +12636,7 @@ class ChartGenerator:
                 df = pd.read_csv(
                     self._csv_path, dtype=str, encoding="utf-8-sig"
                 ).fillna("")
+                df = self._drop_snapshot_continuation_rows(df)
                 loaded.append(
                     {
                         "date": current_dt,
@@ -13024,13 +13215,41 @@ def _looks_like_ea(header: str) -> bool:
     return False
 
 
-def _suggest_custom_ea_candidates(unmatched_headers: list[str]) -> None:
+# Mobile export-only columns that carry per-item (not per-device) data and make
+# no sense as custom EAs. Matched as exact normalized names or, for the
+# "enrollment method:" prefix, as a startswith.
+_MOBILE_MULTIVALUE_EA_SKIP: frozenset[str] = frozenset({
+    "application title", "application version", "application id",
+    "certificate name", "certificate issuer", "certificate expiration",
+    "certificate id", "group", "profile name", "profile id", "profile version",
+})
+_MOBILE_MULTIVALUE_EA_SKIP_PREFIXES: tuple[str, ...] = ("enrollment method:",)
+
+
+def _is_mobile_multivalue_column(header: str) -> bool:
+    """Return True for mobile export-only multi-value columns unfit as custom EAs."""
+    normalized = _normalized_text(header)
+    if normalized in _MOBILE_MULTIVALUE_EA_SKIP:
+        return True
+    return any(normalized.startswith(prefix) for prefix in _MOBILE_MULTIVALUE_EA_SKIP_PREFIXES)
+
+
+def _suggest_custom_ea_candidates(
+    unmatched_headers: list[str],
+    skip_predicate: Optional[Callable[[str], bool]] = None,
+) -> None:
     """Print custom_eas config suggestions for unmatched columns that look like EAs.
 
     Args:
         unmatched_headers: CSV column names that were not mapped to logical fields.
+        skip_predicate: Optional callable; headers it returns True for are excluded
+            (used to drop mobile per-item multi-value columns).
     """
-    candidates = [(h, _suggest_ea_type(h)) for h in unmatched_headers if _looks_like_ea(h)]
+    candidates = [
+        (h, _suggest_ea_type(h))
+        for h in unmatched_headers
+        if _looks_like_ea(h) and not (skip_predicate and skip_predicate(h))
+    ]
     if not candidates:
         return
 
@@ -13101,6 +13320,13 @@ def _render_scaffold_config(config_data: dict[str, Any], csv_path: Path) -> str:
                 if key in config_data["columns"]:
                     rendered.append(f"  {key}: {_yaml_scalar(config_data['columns'][key])}")
                     continue
+            if nested_match and current_section == "mobile_columns":
+                key = nested_match.group(2)
+                if key in config_data["mobile_columns"]:
+                    rendered.append(
+                        f"  {key}: {_yaml_scalar(config_data['mobile_columns'][key])}"
+                    )
+                    continue
             if nested_match and current_section == "compliance":
                 key = nested_match.group(2)
                 if key in config_data["compliance"]:
@@ -13122,6 +13348,8 @@ def _render_scaffold_config(config_data: dict[str, Any], csv_path: Path) -> str:
 def _interactive_column_mapping(
     headers: list[str],
     matched: dict[str, str],
+    logical_fields: Optional[list[str]] = None,
+    hint_table: Optional[dict[str, list[str]]] = None,
 ) -> dict[str, str]:
     """Walk the user through reviewing and correcting auto-matched column assignments.
 
@@ -13132,6 +13360,8 @@ def _interactive_column_mapping(
     Args:
         headers: All column names from the CSV.
         matched: Auto-matched dict of logical_field -> csv_column (may be empty string).
+        logical_fields: Ordered logical field names; defaults to computer columns.
+        hint_table: Hint table for display; defaults to ``COLUMN_HINTS``.
 
     Returns:
         Updated mapping dict (logical -> csv_column or "").
@@ -13140,7 +13370,8 @@ def _interactive_column_mapping(
         print("[interactive] stdin is not a terminal; using auto-matched results.")
         return matched
 
-    logical_fields = list(DEFAULT_CONFIG["columns"].keys())
+    fields = logical_fields or list(DEFAULT_CONFIG["columns"].keys())
+    hints_for = hint_table if hint_table is not None else COLUMN_HINTS
     result = dict(matched)
 
     print("\nInteractive column mapping")
@@ -13148,14 +13379,14 @@ def _interactive_column_mapping(
     print("  number — choose that column from the list")
     print("  s / 0  — leave this field blank\n")
 
-    for idx, logical in enumerate(logical_fields, 1):
+    for idx, logical in enumerate(fields, 1):
         auto = result.get(logical, "")
         # Available = all headers not already claimed by another field
         others_used = {v for k, v in result.items() if k != logical and v}
         available = [h for h in headers if h not in others_used]
 
-        hints = ", ".join(COLUMN_HINTS.get(logical, []))
-        print(f"[{idx}/{len(logical_fields)}] {logical}  (hints: {hints})")
+        hints = ", ".join(hints_for.get(logical, []))
+        print(f"[{idx}/{len(fields)}] {logical}  (hints: {hints})")
 
         if auto:
             print(f"  Auto-match: {auto!r}  (press Enter to accept)")
@@ -13194,6 +13425,95 @@ def _interactive_column_mapping(
     return result
 
 
+def _scaffold_match_columns(
+    headers: list[str],
+    logical_fields: list[str],
+    hints: dict[str, list[str]],
+    excludes: dict[str, list[str]],
+) -> tuple[dict[str, str], set[str]]:
+    """Match CSV headers to logical fields using the given hint/exclude tables.
+
+    Args:
+        headers: All CSV column names.
+        logical_fields: Logical field names to match (in priority order).
+        hints: Hint table for scoring.
+        excludes: Exclude table for scoring.
+
+    Returns:
+        Tuple of (matched mapping, set of claimed headers).
+    """
+    matched: dict[str, str] = {}
+    used_headers: set[str] = set()
+    for logical in logical_fields:
+        best_header, best_score = _best_header_match(
+            headers, logical, used_headers, hints, excludes
+        )
+        if best_header and best_score > 0:
+            matched[logical] = best_header
+            used_headers.add(best_header)
+    return matched, used_headers
+
+
+def _scaffold_print_summary(matched: dict[str, str], unmatched: list[str]) -> None:
+    """Print the auto-match summary and unmatched-column list for scaffold."""
+    print(f"Auto-matched {len(matched)} logical fields:")
+    for key, value in matched.items():
+        print(f"  {key}: {value!r}")
+    if unmatched:
+        print(f"Unmatched columns ({len(unmatched)}) — add manually to config if needed:")
+        for header in unmatched:
+            print(f"  - {header!r}")
+
+
+def _scaffold_computer_config(
+    headers: list[str], interactive: bool
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Build computer column + compliance matches for a scaffolded config."""
+    matched, used_headers = _scaffold_match_columns(
+        headers, list(DEFAULT_CONFIG["columns"].keys()), COLUMN_HINTS, COLUMN_EXCLUDES
+    )
+    compliance_matches: dict[str, str] = {}
+    for key, hints in _SCAFFOLD_COMPLIANCE_HINTS.items():
+        best_header = _best_hint_match(headers, hints, used_headers)
+        if best_header:
+            compliance_matches[key] = best_header
+            used_headers.add(best_header)
+
+    unmatched = [header for header in headers if header not in used_headers]
+    _scaffold_print_summary(matched, unmatched)
+    if compliance_matches:
+        print("Auto-detected compliance fields:")
+        for key, value in compliance_matches.items():
+            print(f"  compliance.{key}: {value!r}")
+        enabled = len(compliance_matches) == 2
+        print(f"  compliance.enabled: {'true' if enabled else 'false'}")
+    _suggest_custom_ea_candidates(unmatched)
+    if interactive:
+        matched = _interactive_column_mapping(headers, matched)
+    return matched, compliance_matches
+
+
+def _scaffold_mobile_config(headers: list[str], interactive: bool) -> dict[str, str]:
+    """Build mobile column matches for a scaffolded config."""
+    matched, used_headers = _scaffold_match_columns(
+        headers,
+        list(DEFAULT_CONFIG["mobile_columns"].keys()),
+        MOBILE_COLUMN_HINTS,
+        MOBILE_COLUMN_EXCLUDES,
+    )
+    unmatched = [header for header in headers if header not in used_headers]
+    _scaffold_print_summary(matched, unmatched)
+    _suggest_custom_ea_candidates(unmatched, skip_predicate=_is_mobile_multivalue_column)
+    if interactive:
+        matched = _interactive_column_mapping(
+            headers,
+            matched,
+            list(DEFAULT_CONFIG["mobile_columns"].keys()),
+            MOBILE_COLUMN_HINTS,
+        )
+    return matched
+
+
 def cmd_scaffold(
     csv_path: str,
     out_path: str,
@@ -13201,6 +13521,9 @@ def cmd_scaffold(
     profile: Optional[str] = None,
 ) -> None:
     """Auto-generate a starter config.yaml from CSV headers.
+
+    Detects whether the CSV is a Jamf Pro computer or mobile-device export and
+    populates the matching column block, leaving the other block empty.
 
     Args:
         csv_path: Path to the CSV file to inspect.
@@ -13229,60 +13552,41 @@ def cmd_scaffold(
     headers = list(df.columns)
     print(f"Found {len(headers)} columns in CSV.")
 
-    matched: dict[str, str] = {}
-    used_headers: set[str] = set()
-    for logical in DEFAULT_CONFIG["columns"]:
-        best_header, best_score = _best_header_match(headers, logical, used_headers)
-        if best_header and best_score > 0:
-            matched[logical] = best_header
-            used_headers.add(best_header)
-
-    compliance_matches: dict[str, str] = {}
-    for key, hints in _SCAFFOLD_COMPLIANCE_HINTS.items():
-        best_header = _best_hint_match(headers, hints, used_headers)
-        if best_header:
-            compliance_matches[key] = best_header
-            used_headers.add(best_header)
-
-    unmatched = [header for header in headers if header not in used_headers]
-
-    print(f"Auto-matched {len(matched)} logical fields:")
-    for k, v in matched.items():
-        print(f"  {k}: {v!r}")
-    if compliance_matches:
-        print("Auto-detected compliance fields:")
-        for key, value in compliance_matches.items():
-            print(f"  compliance.{key}: {value!r}")
-        if len(compliance_matches) == 2:
-            print("  compliance.enabled: true")
-        else:
-            print(
-                "  compliance.enabled: false (complete the missing column before"
-                " generating)"
-            )
-    if unmatched:
-        print(f"Unmatched columns ({len(unmatched)}) — add manually to config if needed:")
-        for h in unmatched:
-            print(f"  - {h!r}")
-
-    _suggest_custom_ea_candidates(unmatched)
-
-    if interactive:
-        matched = _interactive_column_mapping(headers, matched)
+    family = _detect_csv_family_from_headers(headers)
+    if family == "mobile":
+        print("Detected: Jamf Pro mobile device export")
+    elif family == "computers":
+        print("Detected: Jamf Pro computer export")
+    else:
+        print(
+            "[warn] This CSV does not look like a Jamf Pro computer or mobile device"
+            " export — defaulting to computer columns."
+        )
 
     config_data = copy.deepcopy(DEFAULT_CONFIG)
-    for logical in config_data["columns"]:
-        config_data["columns"][logical] = matched.get(logical, "")
-    config_data["compliance"]["failures_count_column"] = compliance_matches.get(
-        "failures_count_column", ""
-    )
-    config_data["compliance"]["failures_list_column"] = compliance_matches.get(
-        "failures_list_column", ""
-    )
-    config_data["compliance"]["enabled"] = bool(
-        config_data["compliance"]["failures_count_column"]
-        and config_data["compliance"]["failures_list_column"]
-    )
+    if family == "mobile":
+        mobile_matched = _scaffold_mobile_config(headers, interactive)
+        for logical in config_data["mobile_columns"]:
+            config_data["mobile_columns"][logical] = mobile_matched.get(logical, "")
+        for logical in config_data["columns"]:
+            config_data["columns"][logical] = ""
+    else:
+        matched, compliance_matches = _scaffold_computer_config(headers, interactive)
+        for logical in config_data["columns"]:
+            config_data["columns"][logical] = matched.get(logical, "")
+        for logical in config_data["mobile_columns"]:
+            config_data["mobile_columns"][logical] = ""
+        config_data["compliance"]["failures_count_column"] = compliance_matches.get(
+            "failures_count_column", ""
+        )
+        config_data["compliance"]["failures_list_column"] = compliance_matches.get(
+            "failures_list_column", ""
+        )
+        config_data["compliance"]["enabled"] = bool(
+            config_data["compliance"]["failures_count_column"]
+            and config_data["compliance"]["failures_list_column"]
+        )
+
     if profile_value:
         config_data.setdefault("jamf_cli", {})["profile"] = profile_value
 
@@ -13777,8 +14081,21 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                 selected_csv_family = _family_for_csv_path(config, csv_path_obj)
             if selected_csv_family is None:
                 selected_csv_family = _guess_report_family_from_headers(config, headers)
+            if selected_csv_family is None:
+                print(
+                    "  [WARN] This CSV does not look like a Jamf Pro computer or mobile"
+                    " device export — column validation defaults to computer fields."
+                )
+            df, dropped_rows = _drop_continuation_rows(
+                df, _identity_column_for_family(config, selected_csv_family)
+            )
+            _warn_continuation_rows(dropped_rows, len(df))
             mapping = config.mobile_columns if selected_csv_family == "mobile" else config.columns
             mapping_label = "mobile_columns" if selected_csv_family == "mobile" else "columns"
+            hint_table = MOBILE_COLUMN_HINTS if selected_csv_family == "mobile" else COLUMN_HINTS
+            exclude_table = (
+                MOBILE_COLUMN_EXCLUDES if selected_csv_family == "mobile" else COLUMN_EXCLUDES
+            )
             if selected_csv_family:
                 print(f"  Detected CSV family: {selected_csv_family}")
             if selected_csv_family == "mobile" and not any(str(value or "").strip() for value in mapping.values()):
@@ -13792,8 +14109,12 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                     continue
                 if col in csv_cols:
                     print(f"  [ok] {mapping_label}.{field}: {col!r}")
-                    suggested_col, suggested_score = _best_header_match(headers, field)
-                    configured_score = _column_match_score(col, field)
+                    suggested_col, suggested_score = _best_header_match(
+                        headers, field, hints=hint_table, excludes=exclude_table
+                    )
+                    configured_score = _column_match_score(
+                        col, field, hint_table, exclude_table
+                    )
                     if (
                         suggested_col
                         and suggested_col != col
@@ -14149,6 +14470,11 @@ def cmd_generate(
             )
         except Exception:
             selected_family_name = None
+    if csv_path_obj is not None and selected_family_name is None:
+        print(
+            "[warn] This CSV does not look like a Jamf Pro computer or mobile device"
+            " export — defaulting to computer inventory sheets."
+        )
     if csv_path_obj is not None and not selected_csv_origin:
         if selected_family_name and _family_for_csv_path(config, csv_path_obj) == selected_family_name:
             selected_csv_origin = f"report_families.{selected_family_name}"
