@@ -375,9 +375,29 @@ struct CompliancePostureView: View {
                                 .foregroundStyle(Theme.Colors.fg)
                         }
                     }
+                    // Diagnostic: shown only when every device is No Data, which
+                    // means the configured EA column name matched no rows — likely
+                    // a config typo.
+                    if result.devicesWithData == 0 && result.totalDevices > 0 {
+                        noMatchDiagnostic(result: result)
+                    }
                 }
             }
         }
+    }
+
+    /// Caption displayed when matched device count is zero — signals a likely
+    /// `failures_count_column` config typo without cluttering the normal view.
+    @ViewBuilder
+    private func noMatchDiagnostic(result: MSCPComplianceService.BaselineResult) -> some View {
+        let msg = "0 of \(result.totalDevices) device\(result.totalDevices == 1 ? "" : "s") matched"
+            + " EA column \"\(result.failuresCountColumn)\" — verify the column name"
+            + " matches your Jamf EA."
+        Text(msg)
+            .font(.caption)
+            .foregroundStyle(Theme.Colors.warn)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(msg)
     }
 
     @ViewBuilder

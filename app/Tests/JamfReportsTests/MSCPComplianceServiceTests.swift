@@ -335,4 +335,51 @@ final class MSCPComplianceServiceTests: XCTestCase {
         XCTAssertEqual(resolved[0].failuresCountColumn,
                        "Compliance - Failed mSCP Results Count - NIST 800-53r5")
     }
+
+    // MARK: - Improvement 2: column-mismatch is detectable from BaselineResult
+
+    /// When `failures_count_column` doesn't match any EA row — the prod symptom
+    /// of an all-No-Data donut — `devicesWithData` must be 0 and
+    /// `failuresCountColumn` must surface the configured column name so the UI
+    /// can show a diagnostic caption.
+    func testDevicesWithDataIsZeroWhenColumnNameDoesNotMatch() {
+        let configuredColumn = "Compliance Failures Count NIST"  // intentional typo vs actual EA name
+        let actualEAName     = "Compliance - Failed mSCP Results Count - NIST 800-53r5"
+
+        let rows = [
+            EAResultRow(device: "mac-001", eaName: actualEAName, value: 0),
+            EAResultRow(device: "mac-002", eaName: actualEAName, value: 5),
+            EAResultRow(device: "mac-003", eaName: actualEAName, value: 20),
+        ]
+
+        let baseline = ComplianceBaselineConfig(
+            name: "NIST", failuresCountColumn: configuredColumn, ruleCount: nil)
+        let results = MSCPComplianceService.evaluate(rows: rows, baselines: [baseline])
+        let result = results.first!
+
+        XCTAssertEqual(result.devicesWithData, 0,
+            "A column name that matches no EA row must produce devicesWithData == 0")
+        XCTAssertEqual(result.totalDevices, 3,
+            "totalDevices must reflect the full universe even when the column doesn't match")
+        XCTAssertEqual(result.failuresCountColumn, configuredColumn,
+            "failuresCountColumn must surface the configured column name for diagnostic UI")
+        XCTAssertNil(result.compliancePct,
+            "compliancePct must be nil when devicesWithData == 0")
+    }
+
+    /// Baseline result with correct column shows non-zero devicesWithData —
+    /// regression guard to confirm the diagnostic path is narrow.
+    func testDevicesWithDataIsNonZeroWhenColumnNameMatches() {
+        let col = "Compliance - Failed mSCP Results Count - NIST 800-53r5"
+        let rows = [
+            EAResultRow(device: "mac-001", eaName: col, value: 0),
+            EAResultRow(device: "mac-002", eaName: col, value: 5),
+        ]
+        let baseline = ComplianceBaselineConfig(name: "NIST", failuresCountColumn: col, ruleCount: nil)
+        let results = MSCPComplianceService.evaluate(rows: rows, baselines: [baseline])
+        let result = results.first!
+
+        XCTAssertEqual(result.devicesWithData, 2)
+        XCTAssertNotNil(result.compliancePct)
+    }
 }

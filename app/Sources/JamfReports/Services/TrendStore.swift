@@ -23,11 +23,24 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// for the active profile. Distinguishes `.stale` from `.neverFetchedLive`.
     private(set) var hasEverFetchedLive: Bool = false
 
+    /// Cached band-history from both ea-results snapshots (primary) and
+    /// summary.json mscpBands (fallback). Rebuilt once per load/reload; never
+    /// re-scanned during view rendering.
+    private var cachedBandPoints: [MSCPChartDataBuilder.BandPoint] = []
+
+    /// The primary baseline used to build `cachedBandPoints`. Matches the
+    /// first resolved baseline from config when loaded from disk, or the
+    /// first key found in summary mscpBands when constructed in-memory.
+    private var cachedBaseline: ComplianceBaselineConfig?
+
     init(summaries: [DailySummary] = [], range: TrendRange = .w4) {
         allSummaries = summaries
         currentRange = range
         hasEverFetchedLive = summaries.contains(where: { $0.source == "jamf-cli" })
         filterSummaries(range: range)
+        // In-memory init: build band points from summaries only. The inaccessible
+        // dataDir degrades gracefully to summaries-only inside buildSeries.
+        rebuildBandPoints(profile: nil)
     }
 
     func load(profile: String, range: TrendRange) {
@@ -36,6 +49,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             latestSnapshotDate = readLatestSnapshotMTime(profile: profile)
             hasEverFetchedLive = allSummaries.contains(where: { $0.source == "jamf-cli" })
             currentProfile = profile
+            rebuildBandPoints(profile: profile)
         }
 
         currentRange = range
@@ -51,6 +65,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         allSummaries = readSummaries(profile: profile)
         latestSnapshotDate = readLatestSnapshotMTime(profile: profile)
         hasEverFetchedLive = allSummaries.contains(where: { $0.source == "jamf-cli" })
+        rebuildBandPoints(profile: profile)
         filterSummaries(range: currentRange)
     }
 
@@ -187,8 +202,19 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .patch:         return summary.patchPct
         case .securityScore: return summary.securityScore
         case .mscpBandTrend:
-            // For mSCP band trends, return the total devices with data for any baseline.
-            // This provides a reference value for the stacked-area chart series.
+            // Derive from cachedBandPoints: find the point whose date matches
+            // this summary's date (string-matched), then sum the 5 bands.
+            // Falls back to summary.mscpBands when no ea-results point exists.
+            let dayKey = summary.date
+            if let pt = cachedBandPoints.first(where: {
+                SummaryJSONParser.dateFormatter.string(from: $0.date) == dayKey
+            }) {
+                let total = pt.counts.pass + pt.counts.low + pt.counts.medLow
+                    + pt.counts.medium + pt.counts.high
+                return total > 0 ? Double(total) : nil
+            }
+            // Summary-only fallback for in-memory paths where cachedBandPoints
+            // was built from summaries and the date keys match exactly.
             guard let bands = summary.mscpBands, !bands.isEmpty else { return nil }
             let totalWithData = bands.values.map { $0.total - $0.noData }.reduce(0, max)
             return totalWithData > 0 ? Double(totalWithData) : nil
@@ -203,37 +229,97 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         allSummaries.isEmpty
     }
 
-    /// True when at least one summary file contains mscpBands data.
-    /// Used by TrendsView to gate the mSCP band trend metric availability.
+    /// True when band-history data is available from either ea-results snapshots
+    /// or summary.json mscpBands. The pill for `.mscpBandTrend` is visible only
+    /// when this is true.
     var hasMSCPBandHistory: Bool {
-        allSummaries.contains { summary in
-            guard let bands = summary.mscpBands else { return false }
-            return !bands.isEmpty
-        }
+        !cachedBandPoints.isEmpty
     }
 
     /// Returns the primary baseline name for mSCP band trending.
-    /// Uses the first baseline found across all summaries, or nil if none exist.
     var primaryMSCPBaseline: String? {
-        for summary in allSummaries {
-            guard let bands = summary.mscpBands, !bands.isEmpty else { continue }
-            return bands.keys.first
-        }
-        return nil
+        cachedBaseline?.name
     }
 
-    /// Build mSCP stacked-area chart series for the primary baseline.
+    /// Build mSCP stacked-area chart series for the primary baseline,
+    /// range-filtered to match `filteredSummaries`.
+    ///
     /// Returns 5 series (Pass, Low, Med-Low, Medium, High) with device counts.
     /// Used by TrendsView when metric == .mscpBandTrend.
     func mscpStackedSeries() -> [ChartSeries] {
-        guard let baseline = primaryMSCPBaseline else { return [] }
+        guard !cachedBandPoints.isEmpty else { return [] }
 
-        let bandPoints = filteredSummaries.compactMap { summary -> MSCPChartDataBuilder.BandPoint? in
-            guard let bands = summary.mscpBands,
-                  let counts = bands[baseline] else { return nil }
-            return MSCPChartDataBuilder.BandPoint(date: summary.parsedDate, counts: counts)
+        // Determine the date range from filteredSummaries so the stackplot
+        // respects the user-selected trend range.
+        let rangeStart = filteredSummaries.first?.parsedDate
+        let rangeEnd   = filteredSummaries.last?.parsedDate
+
+        let inRange: [MSCPChartDataBuilder.BandPoint]
+        if let start = rangeStart, let end = rangeEnd {
+            inRange = cachedBandPoints.filter { $0.date >= start && $0.date <= end }
+        } else {
+            inRange = cachedBandPoints
         }
 
-        return MSCPChartDataBuilder.toStackedSeries(points: bandPoints)
+        return MSCPChartDataBuilder.toStackedSeries(points: inRange)
+    }
+
+    // MARK: - Band-point cache
+
+    /// Rebuild `cachedBandPoints` from ea-results snapshots (primary) and
+    /// summary.json mscpBands (fallback). Called once at load/reload time;
+    /// never called during view rendering.
+    ///
+    /// When `profile` is nil (in-memory init path) there is no config.yaml or
+    /// dataDir to read, so `buildSeries` runs with a non-existent dir and
+    /// degrades to summaries-only. The existing tests that pass `summaries:`
+    /// with mscpBands continue to work through this path.
+    private func rebuildBandPoints(profile: String?) {
+        // 1. Resolve the baseline to use.
+        let baseline: ComplianceBaselineConfig
+        if let profile,
+           let workspaceURL = ProfileService.workspaceURL(for: profile),
+           let config = try? ConfigLoader.load(from: workspaceURL.appendingPathComponent("config.yaml")),
+           let resolved = config.compliance?.resolvedBaselines.first {
+            baseline = resolved
+        } else if let firstSummaryBaseline = firstBaselineFromSummaries() {
+            baseline = firstSummaryBaseline
+        } else {
+            cachedBandPoints = []
+            cachedBaseline = nil
+            return
+        }
+        cachedBaseline = baseline
+
+        // 2. Resolve the data directory. Uses a non-existent temp URL when the
+        //    profile is nil or dataDir lookup fails; buildSeries degrades to
+        //    summaries-only gracefully.
+        let dataDir: URL
+        if let profile, let dir = try? WorkspacePaths.dataDir(for: profile) {
+            dataDir = dir
+        } else if let profile, let workspace = ProfileService.workspaceURL(for: profile) {
+            dataDir = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        } else {
+            // No on-disk path available; buildSeries will use summaries only.
+            dataDir = URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
+        }
+
+        cachedBandPoints = MSCPChartDataBuilder.buildSeries(
+            baseline: baseline,
+            dataDir: dataDir,
+            summaries: allSummaries
+        )
+    }
+
+    /// Extract a synthetic `ComplianceBaselineConfig` from the first summary
+    /// that contains mscpBands. Used as a fallback when no config.yaml is
+    /// readable (in-memory test path).
+    private func firstBaselineFromSummaries() -> ComplianceBaselineConfig? {
+        for summary in allSummaries {
+            guard let bands = summary.mscpBands, let name = bands.keys.first else { continue }
+            // failuresCountColumn is unused by buildSeries when ea-results is absent.
+            return ComplianceBaselineConfig(name: name, failuresCountColumn: name, ruleCount: nil)
+        }
+        return nil
     }
 }

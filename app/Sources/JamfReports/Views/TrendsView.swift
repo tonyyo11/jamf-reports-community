@@ -548,6 +548,9 @@ struct TrendsView: View {
                 if workspaceStore.demoMode {
                     stackedBandsChart
                     complianceBandLegend
+                } else if trendStore.hasMSCPBandHistory {
+                    liveBandsChart
+                    liveBandsLegend
                 } else {
                     complianceBandUnavailable
                 }
@@ -593,8 +596,59 @@ struct TrendsView: View {
             EmptyStateView(
                 systemImage: "chart.bar.doc.horizontal",
                 title: "Compliance band history unavailable",
-                message: "The summary cache does not include per-band failed-rule counts."
+                message: "No ea-results snapshots or summary band data found. Run a collect to populate."
             )
+        }
+    }
+
+    /// Live stacked-area chart built from `trendStore.mscpStackedSeries()`.
+    /// Mirrors the hero chart's mSCP band rendering (AreaMark, stacking: .standard).
+    private var liveBandsChart: some View {
+        Group {
+            if let domain = chartDomain {
+                let stackedSeries = trendStore.mscpStackedSeries()
+                Chart {
+                    ForEach(stackedSeries.reversed(), id: \.label) { series in
+                        ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
+                            AreaMark(
+                                x: .value("Date", point.date),
+                                y: .value("Count", point.value),
+                                stacking: .standard
+                            )
+                            .foregroundStyle(Color(cgColor: series.color))
+                            .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
+                        }
+                    }
+                }
+                .chartXScale(domain: domain)
+                .chartXAxis { trendXAxisMarks(for: range) }
+                .chartYAxis {
+                    AxisMarks(position: .leading) {
+                        AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                        AxisValueLabel().font(.caption.monospaced())
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                }
+                .frame(height: 200)
+                .accessibilityLabel(Self.complianceTrendChartLabel)
+            } else {
+                ProgressView().frame(height: 200)
+            }
+        }
+    }
+
+    /// Band legend for the live stacked-area chart.
+    private var liveBandsLegend: some View {
+        let series = trendStore.mscpStackedSeries()
+        return HStack(spacing: 14) {
+            ForEach(series, id: \.label) { s in
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Color(cgColor: s.color))
+                        .frame(width: 10, height: 10)
+                    Text(s.label).font(.caption).foregroundStyle(Theme.Colors.fg2)
+                }
+            }
         }
     }
 
