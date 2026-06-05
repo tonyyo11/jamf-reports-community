@@ -108,6 +108,21 @@ final class CollectionTierLookupTests: XCTestCase {
         }
     }
 
+    /// `groups` must be collected (in knownCollectKinds) and assigned to the
+    /// Inventory tier. Both `writeGroupHygiene` and `writeSmartGroups` read
+    /// from the `groups` snapshot directory; without this entry collect never
+    /// writes the directory and those sheets silently vanish on a fresh deploy.
+    func testGroupsKindIsCollectedAndInventoryTiered() {
+        XCTAssertTrue(
+            ReportEngine.knownCollectKinds.contains("groups"),
+            "'groups' must be in knownCollectKinds so collect writes the snapshot"
+        )
+        XCTAssertEqual(
+            CollectionTier.tier(forReport: "groups"), .inventory,
+            "'groups' is a list-type endpoint — must be Inventory tiered"
+        )
+    }
+
     // MARK: - Conformance
 
     func testCollectionTierIsCaseIterable() {

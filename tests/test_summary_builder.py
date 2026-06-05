@@ -42,7 +42,9 @@ class _BaselineBridge:
         ]
 
     def inventory_summary(self) -> list[dict[str, Any]]:
-        return [{"os_version": "15.7.3", "count": 100}]
+        # 15.7.7 is the latest macOS 15.x in the committed SOFA fixture, so the
+        # whole fleet is "current" under the SOFA-driven osCurrentPct metric.
+        return [{"os_version": "15.7.7", "count": 100}]
 
     def device_compliance(self) -> list[dict[str, Any]]:
         return [{"stale": True}, {"stale": False}, {"stale": True}]
@@ -52,15 +54,19 @@ class _BaselineBridge:
 
 
 def _config_with_macos_ea(jrc, fixtures_root):
-    """Build a config that has a macOS-version EA so the OS-adoption branch fires."""
+    """Build a config wired to the committed SOFA fixtures.
+
+    The OS-adoption branch is now SOFA-driven (latest-within-major), so the
+    config's ``sofa`` cache must point at the committed feed fixtures rather
+    than relying on a static ``current_versions`` EA list.
+    """
     config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
-    config._data["custom_eas"] = [
-        {
-            "name": "macOS version",
-            "type": "version",
-            "current_versions": ["15.7"],
-        }
-    ]
+    config._data["sofa"] = {
+        "enabled": True,
+        "cache_dir": str(fixtures_root / "sofa"),
+        "max_cache_age_hours": 10_000,
+        "platforms": ["macos"],
+    }
     return config
 
 

@@ -409,21 +409,18 @@ struct ReportEngine: Sendable {
             staleCount = rows.filter { $0.stale == true }.count
         }
 
-        // OS current % — requires current_versions config; nil when unconfigured or
-        // inventory data is absent (not the same as 0%).
+        // OS current % — SOFA-driven: a device is "current" when its OS version is
+        // >= the latest release for its own major version per the SOFA macOS feed.
+        // Falls back to nil (not 0%) when the SOFA cache or inventory-summary is absent.
         var osCurrentPct: Double? = nil
-        let currentVersions: [String] = config.customEas?
-            .first { $0.type == .version && $0.name.lowercased().contains("macos") }
-            .flatMap { $0.currentVersions }?.map { $0.lowercased() } ?? []
-
-        if !currentVersions.isEmpty,
-           let invData = cachedData(kind: "inventory-summary"),
+        if let invData = cachedData(kind: "inventory-summary"),
            let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData),
            totalDevices > 0 {
-            let current = rows
-                .filter { row in currentVersions.contains { row.osVersion.lowercased().hasPrefix($0) } }
-                .reduce(0) { $0 + $1.count }
-            osCurrentPct = Double(current) / Double(totalDevices) * 100.0
+            let osCounts = Dictionary(rows.map { ($0.osVersion, $0.count) }, uniquingKeysWith: +)
+            let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+            let macOSRows = sofaSnapshot.rows.filter { $0.platform == "macOS" }
+            osCurrentPct = Self.osCurrentPercent(
+                macOSRows: macOSRows, osCounts: osCounts, totalDevices: totalDevices)
         }
 
         // Patch % — average compliance_pct across patch-status rows; nil when
@@ -482,6 +479,60 @@ struct ReportEngine: Sendable {
             actionItemsP1: gatekeeperCount.map { _ in p1 },
             complianceIsProxy: complianceProxyPct != nil ? true : nil
         )
+    }
+
+    /// Compute OS-currency percentage from SOFA macOS rows and the fleet OS histogram.
+    ///
+    /// A device is "current" when its full OS version tuple is >= the latest release for
+    /// its own major version in the SOFA feed (e.g., a Sequoia device is current iff on
+    /// 15.7.7; a Tahoe device iff on 26.5.1). Devices on a major that SOFA does not
+    /// track are excluded from both the numerator and denominator, so a transition fleet
+    /// with devices on two majors still returns a meaningful percentage.
+    ///
+    /// Returns nil when `macOSRows` is empty (SOFA cache absent) or `totalDevices` is 0.
+    ///
+    /// Exposed as `static` for unit testability — callers pass in the data rather than
+    /// relying on `self.dataDir`, so tests need no temp dir.
+    static func osCurrentPercent(
+        macOSRows: [SOFAFeedService.OSFamilyRow],
+        osCounts: [String: Int],
+        totalDevices: Int
+    ) -> Double? {
+        guard !macOSRows.isEmpty, totalDevices > 0 else { return nil }
+        // Build latest-version-per-major from SOFA macOS rows.
+        // When two rows share a major (e.g., two macOS 15 entries), keep the
+        // numerically greatest product version — that is the true latest.
+        var latestByMajor: [Int: String] = [:]
+        for row in macOSRows {
+            let tuple = SOFAFeedService.versionTuple(row.productVersion)
+            guard let major = tuple.first else { continue }
+            if let existing = latestByMajor[major] {
+                let existingTuple = SOFAFeedService.versionTuple(existing)
+                // Compare component-by-component; keep the greater version.
+                let len = max(tuple.count, existingTuple.count)
+                var newer = false
+                for i in 0..<len {
+                    let a = i < tuple.count ? tuple[i] : 0
+                    let b = i < existingTuple.count ? existingTuple[i] : 0
+                    if a != b { newer = a > b; break }
+                }
+                if newer { latestByMajor[major] = row.productVersion }
+            } else {
+                latestByMajor[major] = row.productVersion
+            }
+        }
+        guard !latestByMajor.isEmpty else { return nil }
+        // Count devices whose version >= their major's SOFA latest.
+        // fleetCurrency internally filters osCounts to the given major, so
+        // iterating all entries and summing onLatest cannot double-count a device
+        // (each device OS version maps to exactly one major).
+        var currentCount = 0
+        for (_, familyLatest) in latestByMajor {
+            let (onLatest, _) = SOFAFeedService.fleetCurrency(
+                latestVersion: familyLatest, osCounts: osCounts)
+            currentCount += onLatest
+        }
+        return Double(currentCount) / Double(totalDevices) * 100.0
     }
 
     private func pct(of count: Int?, total: Int) -> Double? {
@@ -796,6 +847,7 @@ struct ReportEngine: Sendable {
         "scripts",
         "packages",
         "smart-computer-groups",
+        "groups",
         "sites",
         "buildings",
         "departments",
@@ -910,6 +962,7 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "packages", "list", "--output", "json"], "packages"),
             (["-p", profile, "pro", "computer-groups-smart-groups", "list", "--output", "json"],
              "smart-computer-groups"),
+            (["-p", profile, "pro", "groups", "list", "--output", "json"], "groups"),
             (["-p", profile, "pro", "sites", "list", "--output", "json"], "sites"),
             (["-p", profile, "pro", "buildings", "list", "--output", "json"], "buildings"),
             (["-p", profile, "pro", "departments", "list", "--output", "json"], "departments"),
