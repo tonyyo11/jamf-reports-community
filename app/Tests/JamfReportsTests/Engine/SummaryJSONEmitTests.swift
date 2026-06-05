@@ -182,10 +182,80 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertEqual(s.source, "jamf-cli")
     }
 
+    // MARK: - Real mSCP compliance wiring
+
+    /// When ea-results contains rows for the configured baseline, the emitted
+    /// summary should carry real compliancePct (Pass ÷ devicesWithData) and
+    /// complianceIsProxy == false.
+    func testEmitUsesRealCompliancePctWhenEAResultsPresent() throws {
+        let eaColumn = "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+        var cfg = ReportConfig()
+        cfg.compliance = ComplianceConfig(
+            enabled: true,
+            failuresCountColumn: eaColumn,
+            failuresListColumn: nil,
+            baselineLabel: "NIST",
+            framework: nil,
+            baselines: nil
+        )
+        let dataDir = tmpDir.appendingPathComponent("real-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+
+        try writeMinimalSecuritySnapshot(to: dataDir)
+        try writeEAResultsSnapshot(to: dataDir, eaColumn: eaColumn, passCount: 8, failCount: 2)
+
+        let localSummaries = tmpDir.appendingPathComponent("real-summaries", isDirectory: true)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let summaries = SummaryJSONParser.parseDirectory(localSummaries)
+        let s = try XCTUnwrap(summaries.first, "Summary must be emitted when security + ea-results exist")
+
+        // 8 pass out of 10 with data = 80%
+        let pct = try XCTUnwrap(s.compliancePct, "compliancePct must be set from real ea-results")
+        XCTAssertEqual(pct, 80.0, accuracy: 0.1)
+        XCTAssertEqual(s.complianceIsProxy, false,
+                       "complianceIsProxy must be false when real ea-results data is used")
+    }
+
+    /// When no ea-results snapshot exists but security data (including device rows)
+    /// does, the engine falls back to the 4-control proxy and sets complianceIsProxy = true.
+    func testEmitFallsBackToProxyWhenNoEAResults() throws {
+        let eaColumn = "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+        var cfg = ReportConfig()
+        cfg.compliance = ComplianceConfig(
+            enabled: true,
+            failuresCountColumn: eaColumn,
+            failuresListColumn: nil,
+            baselineLabel: "NIST",
+            framework: nil,
+            baselines: nil
+        )
+        let dataDir = tmpDir.appendingPathComponent("proxy-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+
+        // Write security snapshot with device rows so the proxy can compute
+        // deviceGapCounts (the proxy requires per-device sections, not just the summary).
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+
+        let localSummaries = tmpDir.appendingPathComponent("proxy-summaries", isDirectory: true)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let summaries = SummaryJSONParser.parseDirectory(localSummaries)
+        let s = try XCTUnwrap(summaries.first, "Summary must be emitted from security data alone")
+
+        XCTAssertEqual(s.complianceIsProxy, true,
+                       "complianceIsProxy must be true when falling back to security-report proxy")
+        XCTAssertNotNil(s.compliancePct,
+                        "Proxy compliancePct must be populated when device security data is present")
+    }
+
     // MARK: - Helpers
 
     private func writeMinimalSecuritySnapshot() throws {
-        let dataDir = engine.dataDir
+        try writeMinimalSecuritySnapshot(to: engine.dataDir)
+    }
+
+    private func writeMinimalSecuritySnapshot(to dataDir: URL) throws {
         let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
         try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
         let payload: [[String: Any]] = [
@@ -203,6 +273,62 @@ final class SummaryJSONEmitTests: XCTestCase {
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
         let file = secDir.appendingPathComponent("security_20240615T120000.json")
+        try data.write(to: file)
+    }
+
+    /// Write a security snapshot that includes per-device rows so the 4-control
+    /// proxy (deviceGapCounts) is populated. All 5 synthetic devices pass every
+    /// control, so proxy compliancePct ≈ 100%.
+    private func writeSecuritySnapshotWithDevices(to dataDir: URL) throws {
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        var rows: [[String: Any]] = [
+            [
+                "section": "summary",
+                "data": [
+                    "total_devices": 5,
+                    "filevault_encrypted": 5,
+                    "sip_enabled": 5,
+                    "firewall_enabled": 5,
+                    "gatekeeper_enabled": 5,
+                ],
+            ]
+        ]
+        for i in 0..<5 {
+            rows.append([
+                "section": "device",
+                "name": "test-mac-\(i)",
+                "filevault": "ENCRYPTED",
+                "sip": "ENABLED",
+                "firewall": true,
+                "gatekeeper": "APP_STORE_AND_IDENTIFIED_DEVELOPERS",
+            ])
+        }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        let file = secDir.appendingPathComponent("security_20240615T120000.json")
+        try data.write(to: file)
+    }
+
+    /// Write a synthetic ea-results snapshot with `passCount` devices at 0
+    /// failures and `failCount` devices at 60 failures (High band).
+    private func writeEAResultsSnapshot(
+        to dataDir: URL,
+        eaColumn: String,
+        passCount: Int,
+        failCount: Int
+    ) throws {
+        let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
+        try FileManager.default.createDirectory(at: eaDir, withIntermediateDirectories: true)
+
+        var rows: [[String: Any]] = []
+        for i in 0..<passCount {
+            rows.append(["device": "mac-pass-\(i)", "ea_name": eaColumn, "value": 0])
+        }
+        for i in 0..<failCount {
+            rows.append(["device": "mac-fail-\(i)", "ea_name": eaColumn, "value": 60])
+        }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        let file = eaDir.appendingPathComponent("ea-results_20240615T120000.json")
         try data.write(to: file)
     }
 }

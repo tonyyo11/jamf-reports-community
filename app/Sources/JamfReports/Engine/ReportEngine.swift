@@ -434,6 +434,22 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // Real mSCP compliance from ea-results — overrides the proxy when the
+        // primary baseline resolves to at least one device with data.
+        // `devicesWithData == 0` → primary.compliancePct is nil → proxy kept.
+        var complianceFinalPct: Double? = complianceProxyPct
+        var complianceIsRealData = false
+        let eaBaselines = config.compliance?.resolvedBaselines ?? []
+        if !eaBaselines.isEmpty,
+           let eaData = try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir),
+           let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData) {
+            let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
+            if let primary = results.first, let realPct = primary.compliancePct {
+                complianceFinalPct = realPct
+                complianceIsRealData = true
+            }
+        }
+
         // Derive per-control percentages and the weighted v3.5 security
         // score from the same counts the summary section provided. These are
         // all optional — when a tenant lacks any of these signals the field
@@ -461,11 +477,24 @@ struct ReportEngine: Sendable {
             .reduce(0, +)
         let p1 = gatekeeperCount.map { totalDevices - $0 } ?? 0
 
+        // complianceIsProxy:
+        //   nil   — no compliance data at all (neither proxy nor real)
+        //   true  — 4-control proxy from security report
+        //   false — real mSCP failure-count data from ea-results
+        let complianceIsProxy: Bool?
+        if complianceIsRealData {
+            complianceIsProxy = false
+        } else if complianceProxyPct != nil {
+            complianceIsProxy = true
+        } else {
+            complianceIsProxy = nil
+        }
+
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
             fileVaultPct: fileVaultPct.map(round1),
-            compliancePct: complianceProxyPct.map(round1),
+            compliancePct: complianceFinalPct.map(round1),
             staleCount: staleCount,
             osCurrentPct: osCurrentPct.map(round1),
             crowdstrikePct: nil,
@@ -477,7 +506,7 @@ struct ReportEngine: Sendable {
             securityScore: securityScore.map(round1),
             actionItemsP0: fileVaultCount != nil ? p0 : nil,
             actionItemsP1: gatekeeperCount.map { _ in p1 },
-            complianceIsProxy: complianceProxyPct != nil ? true : nil
+            complianceIsProxy: complianceIsProxy
         )
     }
 
