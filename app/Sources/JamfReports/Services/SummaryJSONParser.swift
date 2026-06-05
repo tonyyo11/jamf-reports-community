@@ -1,5 +1,34 @@
 import Foundation
 
+// MARK: - mSCP band snapshot (persisted in summary.json)
+
+/// Per-baseline compliance band counts persisted in `summary.json`.
+///
+/// Optional in all summary files — old summaries decode cleanly without it.
+/// Keys match the `ComplianceBandingService.Band` label lowercased (camelCase)
+/// so they are stable even if the display labels change.
+struct MSCPBandCounts: Codable, Sendable, Equatable {
+    /// Devices with 0 failures.
+    let pass: Int
+    /// Devices with 1–10 failures.
+    let low: Int
+    /// Devices with 11–30 failures.
+    let medLow: Int
+    /// Devices with 31–50 failures.
+    let medium: Int
+    /// Devices with >50 failures.
+    let high: Int
+    /// Devices with no row for this baseline EA.
+    let noData: Int
+
+    /// Total device count (including No Data).
+    var total: Int { pass + low + medLow + medium + high + noData }
+
+    private enum CodingKeys: String, CodingKey {
+        case pass, low, medLow, medium, high, noData
+    }
+}
+
 struct DailySummary: Codable, Identifiable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case date, totalDevices, fileVaultPct, compliancePct, staleCount,
@@ -12,7 +41,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // True when compliancePct is the control-gap proxy (FileVault/SIP/
              // Firewall/Gatekeeper all passing) rather than a real compliance
              // EA / mSCP failure count. UI labels the metric accordingly.
-             complianceIsProxy
+             complianceIsProxy,
+             // Per-baseline band counts for mSCP/STIG compliance trend charts.
+             // Key = baseline name; value = band distribution for that date.
+             mscpBands
     }
 
     var id: String { date }
@@ -61,6 +93,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// True when `compliancePct` is the control-gap proxy rather than a real
     /// compliance EA / mSCP source. Absent (nil) in legacy summaries.
     let complianceIsProxy: Bool?
+    /// Per-baseline mSCP band counts for trend charts.
+    /// Key = baseline name (e.g. "NIST 800-53r5"). Absent in legacy summaries.
+    let mscpBands: [String: MSCPBandCounts]?
 
     var parsedDate: Date {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
@@ -90,7 +125,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         actionItemsP1: Int? = nil,
         actionItemsP2: Int? = nil,
         noBaselineActive: Int? = nil,
-        complianceIsProxy: Bool? = nil
+        complianceIsProxy: Bool? = nil,
+        mscpBands: [String: MSCPBandCounts]? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -116,6 +152,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.actionItemsP2 = actionItemsP2
         self.noBaselineActive = noBaselineActive
         self.complianceIsProxy = complianceIsProxy
+        self.mscpBands = mscpBands
     }
 
     init(from decoder: Decoder) throws {
@@ -144,6 +181,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         actionItemsP2 = try container.decodeIfPresent(Int.self, forKey: .actionItemsP2)
         noBaselineActive = try container.decodeIfPresent(Int.self, forKey: .noBaselineActive)
         complianceIsProxy = try container.decodeIfPresent(Bool.self, forKey: .complianceIsProxy)
+        mscpBands = try container.decodeIfPresent(
+            [String: MSCPBandCounts].self, forKey: .mscpBands)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -172,6 +211,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(actionItemsP2, forKey: .actionItemsP2)
         try container.encodeIfPresent(noBaselineActive, forKey: .noBaselineActive)
         try container.encodeIfPresent(complianceIsProxy, forKey: .complianceIsProxy)
+        try container.encodeIfPresent(mscpBands, forKey: .mscpBands)
     }
 }
 
