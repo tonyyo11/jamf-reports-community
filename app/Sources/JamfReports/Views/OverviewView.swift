@@ -1080,6 +1080,8 @@ struct OverviewView: View {
             "Open Devices to review devices with patch failures."
         case .securityScore:
             "Weighted composite from Security Posture. Open that tab to see the breakdown."
+        case .mscpBandTrend:
+            "Per-baseline mSCP compliance band trends over time. Open Compliance Posture for current distribution."
         }
         return Text(text)
             .font(.footnote)
@@ -1092,7 +1094,7 @@ struct OverviewView: View {
             return [.trends, .audit]
         case .activeDevices, .fileVault, .osCurrent, .stale, .patch:
             return [.devices]
-        case .compliance, .securityScore:
+        case .compliance, .securityScore, .mscpBandTrend:
             return [.securityPosture, .compliancePosture]
         case .edrAgent:
             return [.devices, .config]

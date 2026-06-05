@@ -186,6 +186,12 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .stale:         return Double(summary.staleCount)
         case .patch:         return summary.patchPct
         case .securityScore: return summary.securityScore
+        case .mscpBandTrend:
+            // For mSCP band trends, return the total devices with data for any baseline.
+            // This provides a reference value for the stacked-area chart series.
+            guard let bands = summary.mscpBands, !bands.isEmpty else { return nil }
+            let totalWithData = bands.values.map { $0.total - $0.noData }.reduce(0, max)
+            return totalWithData > 0 ? Double(totalWithData) : nil
         }
     }
 
@@ -195,5 +201,39 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     var isEmpty: Bool {
         allSummaries.isEmpty
+    }
+
+    /// True when at least one summary file contains mscpBands data.
+    /// Used by TrendsView to gate the mSCP band trend metric availability.
+    var hasMSCPBandHistory: Bool {
+        allSummaries.contains { summary in
+            guard let bands = summary.mscpBands else { return false }
+            return !bands.isEmpty
+        }
+    }
+
+    /// Returns the primary baseline name for mSCP band trending.
+    /// Uses the first baseline found across all summaries, or nil if none exist.
+    var primaryMSCPBaseline: String? {
+        for summary in allSummaries {
+            guard let bands = summary.mscpBands, !bands.isEmpty else { continue }
+            return bands.keys.first
+        }
+        return nil
+    }
+
+    /// Build mSCP stacked-area chart series for the primary baseline.
+    /// Returns 5 series (Pass, Low, Med-Low, Medium, High) with device counts.
+    /// Used by TrendsView when metric == .mscpBandTrend.
+    func mscpStackedSeries() -> [ChartSeries] {
+        guard let baseline = primaryMSCPBaseline else { return [] }
+
+        let bandPoints = filteredSummaries.compactMap { summary -> MSCPChartDataBuilder.BandPoint? in
+            guard let bands = summary.mscpBands,
+                  let counts = bands[baseline] else { return nil }
+            return MSCPChartDataBuilder.BandPoint(date: summary.parsedDate, counts: counts)
+        }
+
+        return MSCPChartDataBuilder.toStackedSeries(points: bandPoints)
     }
 }

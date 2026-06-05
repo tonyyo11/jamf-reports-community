@@ -144,11 +144,13 @@ enum ChartRenderer {
     // MARK: - Donut / ring chart
 
     /// A single slice in a donut chart.
-    struct DonutSlice: Sendable {
+    struct DonutSlice: Sendable, Identifiable {
         let label: String
         let count: Int
         let pct: Double
         let color: CGColor
+
+        var id: String { label }
     }
 
     /// Render a donut (ring) chart with a right-side legend.

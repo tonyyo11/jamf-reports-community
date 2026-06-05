@@ -99,7 +99,7 @@ final class EDRAgentLabelTests: XCTestCase {
     func testCaseIterableOrderUnchangedByRename() {
         XCTAssertEqual(TrendSeries.Metric.allCases, [
             .stability, .activeDevices, .compliance, .fileVault, .osCurrent,
-            .edrAgent, .stale, .patch, .securityScore,
+            .edrAgent, .stale, .patch, .securityScore, .mscpBandTrend,
         ])
         XCTAssertEqual(SecurityScore.Metric.allCases, [
             .fileVault, .sip, .firewall, .edrAgent, .mscp, .xprotect, .cve, .secureBoot,

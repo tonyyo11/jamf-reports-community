@@ -211,26 +211,69 @@ struct TrendsView: View {
         )
     }
 
+    /// Get trend points for a specific metric, handling mSCP band trends specially.
+    private func points(for m: TrendSeries.Metric) -> [TrendPoint] {
+        if m == .mscpBandTrend {
+            // For mSCP band trends, return points based on total devices with data
+            return workspaceStore.demoMode
+                ? TrendDemoSeries.points(for: m, range: range)
+                : trendStore.points(metric: m)
+        } else {
+            return workspaceStore.demoMode
+                ? TrendDemoSeries.points(for: m, range: range)
+                : trendStore.points(metric: m)
+        }
+    }
+
     // MARK: Metric picker pills
 
     private var metricPicker: some View {
         FlowLayout(spacing: 8) {
-            ForEach(TrendSeries.Metric.allCases) { m in
+            ForEach(availableMetrics) { m in
                 metricPill(m)
             }
         }
     }
 
+    /// Filter available metrics based on data availability.
+    /// .mscpBandTrend only appears when mSCP band history exists.
+    /// .securityScore only appears when security score data exists.
+    private var availableMetrics: [TrendSeries.Metric] {
+        TrendSeries.Metric.allCases.filter { metric in
+            switch metric {
+            case .mscpBandTrend:
+                return trendStore.hasMSCPBandHistory
+            case .securityScore:
+                // Keep existing logic for security score availability
+                return trendStore.points(metric: .securityScore).count > 0
+            default:
+                return true
+            }
+        }
+    }
+
     private func metricPill(_ m: TrendSeries.Metric) -> some View {
-        let series = points(for: m).map(\.value)
+        let series: [Double]
+        let sparkValues: [Double]
+
+        if m == .mscpBandTrend {
+            // For mSCP band trends, use total devices with data as the reference line
+            series = points(for: m).map(\.value)
+            sparkValues = Array(series.suffix(8))
+        } else {
+            series = points(for: m).map(\.value)
+            sparkValues = Array(series.suffix(8))
+        }
+
         let dl = (series.last ?? 0) - (series.first ?? 0)
         let deltaInt = Int(dl.rounded())
         let deltaState: DeltaState = deltaInt > 0 ? .positive : deltaInt < 0 ? .negative : .flat
+
+        // For mSCP band trends, "good" trend is more devices with data (positive)
         let goodTrend = m == .stale ? deltaState == .negative : deltaState == .positive
         let isActive = metric == m
         let color = Color(hex: m.colorHex)
-        let sparkValues = Array(series.suffix(8))
-        let isBadTrend = deltaState == .negative && m != .stale
+        let isBadTrend = deltaState == .negative && m != .stale && m != .mscpBandTrend
 
         return Button {
             withAnimation(.snappy(duration: 0.25)) { metric = m }
@@ -346,60 +389,80 @@ struct TrendsView: View {
                     }
                 }
 
-                // Swift Charts line + area mark
+                // Swift Charts line + area mark OR stacked area for mSCP bands
                 if let domain = chartDomain {
                     Chart {
-                        ForEach(Array(trendPoints.enumerated()), id: \.offset) { _, point in
-                            AreaMark(x: .value("Date", point.date),
-                                     y: .value(metric.displayLabel, point.value))
-                                .foregroundStyle(LinearGradient(
-                                    colors: [Color(hex: metric.colorHex).opacity(0.14),
-                                             Color(hex: metric.colorHex).opacity(0.0)],
-                                    startPoint: .top, endPoint: .bottom
-                                ))
-                                .interpolationMethod(.monotone)
-                            LineMark(x: .value("Date", point.date),
-                                     y: .value(metric.displayLabel, point.value))
-                                .foregroundStyle(Color(hex: metric.colorHex))
-                                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                                .interpolationMethod(.monotone)
-
-                            // Always-visible data point dots
-                            PointMark(x: .value("Date", point.date),
-                                      y: .value(metric.displayLabel, point.value))
-                                .foregroundStyle(Color.white)
-                                .symbolSize(36)
-                                .annotation(position: .overlay) {
-                                    Circle()
-                                        .stroke(Color(hex: metric.colorHex), lineWidth: 2.2)
-                                        .frame(width: 8, height: 8)
+                        if metric == .mscpBandTrend {
+                            // Stacked area chart for mSCP compliance bands
+                            let stackedSeries = trendStore.mscpStackedSeries()
+                            ForEach(stackedSeries.reversed(), id: \.label) { series in
+                                ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
+                                    AreaMark(
+                                        x: .value("Date", point.date),
+                                        y: .value("Count", point.value),
+                                        stacking: .standard
+                                    )
+                                    .foregroundStyle(Color(cgColor: series.color))
+                                    .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
                                 }
+                            }
+                        } else {
+                            // Standard line + area chart for other metrics
+                            ForEach(Array(trendPoints.enumerated()), id: \.offset) { _, point in
+                                AreaMark(x: .value("Date", point.date),
+                                         y: .value(metric.displayLabel, point.value))
+                                    .foregroundStyle(LinearGradient(
+                                        colors: [Color(hex: metric.colorHex).opacity(0.14),
+                                                 Color(hex: metric.colorHex).opacity(0.0)],
+                                        startPoint: .top, endPoint: .bottom
+                                    ))
+                                    .interpolationMethod(.monotone)
+                                LineMark(x: .value("Date", point.date),
+                                         y: .value(metric.displayLabel, point.value))
+                                    .foregroundStyle(Color(hex: metric.colorHex))
+                                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                    .interpolationMethod(.monotone)
+
+                                // Always-visible data point dots
+                                PointMark(x: .value("Date", point.date),
+                                          y: .value(metric.displayLabel, point.value))
+                                    .foregroundStyle(Color.white)
+                                    .symbolSize(36)
+                                    .annotation(position: .overlay) {
+                                        Circle()
+                                            .stroke(Color(hex: metric.colorHex), lineWidth: 2.2)
+                                            .frame(width: 8, height: 8)
+                                    }
+                            }
                         }
 
-                        if let selectedPoint {
-                            RuleMark(x: .value("Selected", selectedPoint.date))
-                                .foregroundStyle(Theme.Colors.hairlineStrong)
-                                .offset(y: -10)
-                                .zIndex(-1)
+                        // Selection indicator (only for non-mSCP metrics)
+                        if metric != .mscpBandTrend {
+                            if let selectedPoint {
+                                RuleMark(x: .value("Selected", selectedPoint.date))
+                                    .foregroundStyle(Theme.Colors.hairlineStrong)
+                                    .offset(y: -10)
+                                    .zIndex(-1)
 
-                            PointMark(x: .value("Selected", selectedPoint.date),
-                                      y: .value(metric.displayLabel, selectedPoint.value))
-                                .foregroundStyle(Color(hex: metric.colorHex))
-                                .symbolSize(100)
-                                .annotation(position: .top, spacing: 8) {
-                                    Text("\(Int(selectedPoint.value.rounded()))\(metric.unit)")
-                                        .font(Theme.Fonts.mono(12, weight: .bold))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Theme.Colors.winBG2)
-                                        .cornerRadius(4)
-                                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: metric.colorHex), lineWidth: 1))
-                                }
-                        } else if let lastPoint = trendPoints.last {
-                            PointMark(x: .value("Date", lastPoint.date),
-                                      y: .value(metric.displayLabel, lastPoint.value))
-                                .foregroundStyle(Color(hex: metric.colorHex))
-                                .symbolSize(60)
+                                PointMark(x: .value("Selected", selectedPoint.date),
+                                          y: .value(metric.displayLabel, selectedPoint.value))
+                                    .foregroundStyle(Color(hex: metric.colorHex))
+                                    .symbolSize(100)
+                                    .annotation(position: .top, spacing: 8) {
+                                        Text("\(Int(selectedPoint.value.rounded()))\(metric.unit)")
+                                            .font(Theme.Fonts.mono(12, weight: .bold))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Theme.Colors.winBG2)
+                                            .cornerRadius(4)
+                                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color(hex: metric.colorHex), lineWidth: 1))
+                                    }
+                            } else if let lastPoint = trendPoints.last {
+                                PointMark(x: .value("Date", lastPoint.date),
+                                          y: .value(metric.displayLabel, lastPoint.value))
+                                    .foregroundStyle(Color(hex: metric.colorHex))
+                                    .symbolSize(60)
+                            }
                         }
                     }
                     .chartXScale(domain: domain)
@@ -647,12 +710,6 @@ struct TrendsView: View {
         let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
         let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(m.unit)"
         return "\(m.displayLabel), \(direction), \(deltaStr) change"
-    }
-
-    private func points(for m: TrendSeries.Metric) -> [TrendPoint] {
-        workspaceStore.demoMode
-            ? TrendDemoSeries.points(for: m, range: range)
-            : trendStore.points(metric: m)
     }
 
     /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless

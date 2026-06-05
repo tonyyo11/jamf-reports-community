@@ -897,6 +897,10 @@ struct TrendSeries: Identifiable, Sendable {
         /// LegacyHistoryImporter and from future Swift ReportEngine runs that
         /// emit the field in summary.json.
         case securityScore
+        /// Per-baseline mSCP compliance band trend. Shows stacked-area chart
+        /// of device counts by compliance band (Pass/Low/Medium/High) over time.
+        /// Only appears in TrendsView metric picker when mscpBands history exists.
+        case mscpBandTrend
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
@@ -909,6 +913,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .stale:         return "Stale Devices (30d+)"
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
+            case .mscpBandTrend: return "mSCP Compliance Bands"
             }
         }
 
@@ -923,13 +928,13 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var unit: String {
             switch self {
-            case .stale, .activeDevices: return ""
+            case .stale, .activeDevices, .mscpBandTrend: return ""
             default: return "%"
             }
         }
         var minY: Double {
             switch self {
-            case .activeDevices: return 0
+            case .activeDevices, .mscpBandTrend: return 0
             case .stability:     return 40
             case .compliance:    return 40
             case .fileVault:     return 60
@@ -944,6 +949,7 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .activeDevices: return 1000
             case .stale:         return 60
+            case .mscpBandTrend: return 500  // Per-band device count max
             default:             return 100
             }
         }
@@ -958,6 +964,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .stale:         return 0xFF9F0A
             case .patch:         return 0xBF5AF2
             case .securityScore: return 0xFF453A
+            case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
             }
         }
     }
