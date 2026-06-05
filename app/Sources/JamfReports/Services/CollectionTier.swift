@@ -120,6 +120,7 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "scripts":                        .inventory,
         "packages":                       .inventory,
         "smart-computer-groups":              .inventory,
+        "groups":                             .inventory,
         "sites":                              .inventory,
         "buildings":                          .inventory,
         "departments":                        .inventory,

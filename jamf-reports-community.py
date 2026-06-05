@@ -50,7 +50,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from datetime import date, datetime, timedelta, timezone
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import pandas as pd
 import xlsxwriter
@@ -2926,19 +2926,27 @@ def _emit_summary_json(
     if checkin_col and checkin_col in df.columns:
         stale_count = int(df[checkin_col].apply(lambda v: (_days_since(v) or 0) > stale_days if v else True).sum())
 
-    # 4. OS Current — None when no OS column or no current-version EA is
-    # configured, mirroring the FileVault metric's missing-vs-zero handling.
+    # 4. OS Current — SOFA-driven: a device is current when its OS version is
+    # the latest release within its own major version per the SOFA feed
+    # (Tahoe 26 -> latest 26.x, Sequoia 15 -> latest 15.x). None when no OS
+    # column is mapped or SOFA data is unavailable, mirroring the FileVault
+    # metric's missing-vs-zero handling. The static config current_versions
+    # list is intentionally no longer used here — it goes stale and misreports.
     os_col = csv_dash._col("operating_system")
     os_pct: Optional[float] = None
-    current_os_versions = []
-    for ea in config.custom_eas:
-        if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
-            current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
-            break
-    if os_col and os_col in df.columns and current_os_versions:
-        os_vals = df[os_col].fillna("").astype(str).str.lower()
-        is_current = os_vals.apply(lambda v: any(v.startswith(cv) for cv in current_os_versions))
-        os_pct = (is_current.sum() / total_devices * 100.0)
+    if os_col and os_col in df.columns:
+        try:
+            latest_per_major = _sofa_latest_per_major(SOFAFeedClient(config))
+            os_pct = _os_current_pct(
+                latest_per_major,
+                ((str(v), 1) for v in df[os_col].fillna("")),
+                total_devices,
+            )
+        except Exception as exc:
+            print(
+                f"  [warn] _emit_summary_json: SOFA OS-currency failed — "
+                f"osCurrentPct omitted (no data): {exc}"
+            )
 
     # 5. CrowdStrike — None when no CrowdStrike agent is configured or its
     # column is absent, so the trend chart skips the point rather than
@@ -3142,30 +3150,24 @@ def _build_summary_from_bridge(
     except Exception as exc:
         print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
 
+    # OS Current — SOFA-driven (latest release within each device's own major
+    # version). Replaces the stale static config current_versions list. None
+    # when SOFA data or inventory_summary is unavailable.
     os_pct: Optional[float] = None
-    current_os_versions: list[str] = []
-    for ea in config.custom_eas:
-        if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
-            current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
-            break
-    if current_os_versions:
-        try:
+    try:
+        latest_per_major = _sofa_latest_per_major(SOFAFeedClient(config))
+        if latest_per_major:
             inv = bridge.inventory_summary() or []
-            current = 0
-            for row in inv:
-                if not isinstance(row, dict):
-                    continue
-                ver = str(row.get("os_version") or "").lower()
-                count = int(row.get("count") or 0)
-                if any(ver.startswith(cv) for cv in current_os_versions):
-                    current += count
-            if total_devices:
-                os_pct = (current / total_devices) * 100.0
-        except Exception as exc:
-            print(
-                f"  [warn] _build_summary_from_bridge: inventory_summary "
-                f"(os adoption) failed — osCurrentPct omitted (no data): {exc}"
+            versions = (
+                (str(row.get("os_version") or ""), int(row.get("count") or 0))
+                for row in inv if isinstance(row, dict)
             )
+            os_pct = _os_current_pct(latest_per_major, versions, total_devices)
+    except Exception as exc:
+        print(
+            f"  [warn] _build_summary_from_bridge: inventory_summary "
+            f"(os adoption) failed — osCurrentPct omitted (no data): {exc}"
+        )
 
     patch_pct: Optional[float] = None
     try:
@@ -6109,6 +6111,126 @@ class SOFAFeedClient:
                 continue
             results.extend(self._normalize_feed(plat, feed))
         return results
+
+
+def _os_version_tuple(value: Any) -> tuple[int, ...]:
+    """Parse an OS-version string into a numeric component tuple.
+
+    Mirrors the Swift engine's ``SOFAFeedService.versionTuple`` byte-for-byte:
+    trim, split on ``.``, then take the *leading* digits of each component
+    (``"0-rc1"`` → ``0``; a component with no leading digit → ``0``). A trailing
+    build suffix like ``"26.5.1 (25F80)"`` agrees with Swift (the ``"1 "`` head
+    parses to ``1``). A *leading* non-numeric prefix (``"macOS 26.0"``) parses
+    the first component to ``0`` exactly as Swift does — both engines consume
+    bare-numeric OS strings, so this never fires on real data; keeping the
+    behavior identical avoids any cross-engine classification drift.
+
+    Args:
+        value: A raw OS-version string (e.g. ``"15.7.3"``).
+
+    Returns:
+        A tuple of ints (e.g. ``(15, 7, 3)``), empty when the string is blank.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ()
+    parts: list[int] = []
+    for component in text.split("."):
+        if not component:
+            # Swift's split(separator:".") omits empty subsequences; match it so
+            # "26.5." -> (26, 5) and ".5" -> (5,) the same way both engines do.
+            continue
+        digits = ""
+        for ch in component:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def _compare_version_tuples(a: tuple[int, ...], b: tuple[int, ...]) -> int:
+    """Return -1/0/1 comparing two version tuples, zero-padding the shorter.
+
+    Mirrors the Swift engine's ``compareTuples`` so ``"15.7"`` and ``"15.7.0"``
+    compare equal.
+    """
+    for i in range(max(len(a), len(b))):
+        ai = a[i] if i < len(a) else 0
+        bi = b[i] if i < len(b) else 0
+        if ai != bi:
+            return -1 if ai < bi else 1
+    return 0
+
+
+def _sofa_latest_per_major(client: "SOFAFeedClient") -> dict[int, tuple[int, ...]]:
+    """Build a {major-version: latest-version-tuple} map from SOFA macOS rows.
+
+    Filters to the ``macOS`` platform only (Apple's unified versioning means
+    macOS 26 and iOS 26 would otherwise collide on major key 26). When two rows
+    share a major, the numerically greatest version wins. Mirrors the Swift
+    engine's ``latestByMajor`` construction.
+
+    Args:
+        client: A :class:`SOFAFeedClient` instance.
+
+    Returns:
+        Mapping of major version int → latest version tuple. Empty when SOFA
+        data is unavailable.
+    """
+    latest_by_major: dict[int, tuple[int, ...]] = {}
+    for row in client.latest_versions():
+        if str(row.get("platform", "")) != SOFA_PLATFORM_LABELS["macos"]:
+            continue
+        version = _os_version_tuple(row.get("product_version"))
+        if not version:
+            continue
+        major = version[0]
+        existing = latest_by_major.get(major)
+        if existing is None or _compare_version_tuples(version, existing) > 0:
+            latest_by_major[major] = version
+    return latest_by_major
+
+
+def _os_current_pct(
+    latest_per_major: dict[int, tuple[int, ...]],
+    versions: Iterable[tuple[str, int]],
+    total_devices: int,
+) -> Optional[float]:
+    """Compute the SOFA-driven "% of fleet current for its OS major version".
+
+    A device is "current" when its OS version is **>= the latest release within
+    its own major version** per SOFA (e.g. Tahoe 26 → latest ``26.x``; Sequoia
+    15 → latest ``15.x``). The denominator is always ``total_devices`` — devices
+    on a major SOFA does not track (too old) are not current but still count
+    toward the total. Mirrors the Swift engine's ``osCurrentPercent`` exactly
+    (``>=`` comparison via :func:`_compare_version_tuples`, ``total_devices``
+    denominator).
+
+    Args:
+        latest_per_major: Map of major version int → latest version tuple, as
+            built by :func:`_sofa_latest_per_major`.
+        versions: Iterable of ``(raw_os_version, device_count)`` pairs. Use a
+            count of 1 per device for per-device data, or the aggregate count
+            for inventory-summary rows.
+        total_devices: Total fleet size (the denominator).
+
+    Returns:
+        The current-OS percentage (0–100), or None when SOFA data is empty or
+        ``total_devices`` is 0.
+    """
+    if not latest_per_major or total_devices <= 0:
+        return None
+    current = 0
+    for raw_version, count in versions:
+        dev = _os_version_tuple(raw_version)
+        if not dev:
+            continue
+        latest = latest_per_major.get(dev[0])
+        if latest is not None and _compare_version_tuples(dev, latest) >= 0:
+            current += int(count)
+    return current / total_devices * 100.0
 
 
 # ---------------------------------------------------------------------------
