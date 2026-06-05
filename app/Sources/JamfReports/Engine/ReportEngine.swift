@@ -292,16 +292,24 @@ struct ReportEngine: Sendable {
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
 
         if fm.fileExists(atPath: summaryFile.path),
-           let data = try? Data(contentsOf: summaryFile),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let existingData = try? Data(contentsOf: summaryFile),
+           let obj = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any],
            obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
-            // Same-day summary already valid — leave the existing file untouched
-            // so its mtime reflects the first run that produced it. Log an [info]
-            // line so operators investigating "Refresh didn't clear staleness"
-            // can see this is the reason a fresh file wasn't written.
-            let msg = "[info] summary_\(today).json already exists — leaving existing file in place"
-            AppLogger.engine.info("\(msg, privacy: .public)")
-            onLine?(.init(timestamp: Date(), level: .info, text: msg))
+            // Same-day summary is valid. Check whether a fresh build would be strictly
+            // better (proxy→real mSCP upgrade, or mscpBands newly populated). If not,
+            // keep the existing file so its mtime reflects the first run.
+            if let fresh = buildSummaryFromCLI(date: today, provenance: provenance),
+               let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
+               Self.freshSummaryIsBetter(existing: existing, fresh: fresh) {
+                let upgradeMsg = "[info] summary_\(today).json upgraded (proxy→real mSCP)"
+                AppLogger.engine.info("\(upgradeMsg, privacy: .public)")
+                onLine?(.init(timestamp: Date(), level: .info, text: upgradeMsg))
+                writeSummaryFile(fresh, to: summaryFile, onLine: onLine)
+            } else {
+                let msg = "[info] summary_\(today).json already exists — leaving existing file in place"
+                AppLogger.engine.info("\(msg, privacy: .public)")
+                onLine?(.init(timestamp: Date(), level: .info, text: msg))
+            }
             return
         }
 
@@ -318,12 +326,40 @@ struct ReportEngine: Sendable {
             return
         }
 
+        writeSummaryFile(summary, to: summaryFile, onLine: onLine)
+    }
+
+    // MARK: - Summary upgrade helpers
+
+    /// Returns true when `fresh` is strictly better than `existing` — meaning it
+    /// should overwrite a same-day summary that would otherwise be kept.
+    ///
+    /// "Better" means at least one of:
+    /// - `existing.complianceIsProxy == true` AND `fresh.complianceIsProxy == false`
+    ///   (real mSCP data is now available where before only the 4-control proxy was), OR
+    /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`.
+    ///
+    /// Never returns true when the fresh run would downgrade (real→proxy, or bands dropped),
+    /// preserving the PR-18 protection against partial-collect clobbering a good summary.
+    static func freshSummaryIsBetter(existing: DailySummary, fresh: DailySummary) -> Bool {
+        if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
+        let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
+        let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
+        return !existingHasBands && freshHasBands
+    }
+
+    /// Encode and atomically write `summary` to `url`, logging the outcome to `onLine`.
+    private func writeSummaryFile(
+        _ summary: DailySummary,
+        to url: URL,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             let data = try encoder.encode(summary)
-            try data.write(to: summaryFile, options: .atomic)
-            let msg = "[ok] wrote \(summaryFile.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
+            try data.write(to: url, options: .atomic)
+            let msg = "[ok] wrote \(url.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
             AppLogger.engine.info("\(msg, privacy: .public)")
             onLine?(.init(timestamp: Date(), level: .ok, text: msg))
         } catch {

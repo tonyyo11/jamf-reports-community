@@ -249,7 +249,180 @@ final class SummaryJSONEmitTests: XCTestCase {
                         "Proxy compliancePct must be populated when device security data is present")
     }
 
+    // MARK: - freshSummaryIsBetter unit tests
+
+    /// Direct unit test of all four quadrants of the downgrade-guard logic.
+    func testFreshSummaryIsBetter_proxyToReal_returnsTrue() {
+        let existing = makeSummary(complianceIsProxy: true, hasBands: false)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
+    }
+
+    func testFreshSummaryIsBetter_realToProxy_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true)
+        let fresh = makeSummary(complianceIsProxy: true, hasBands: false)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "Must not overwrite real summary with proxy — downgrade protection")
+    }
+
+    func testFreshSummaryIsBetter_realToReal_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "No upgrade when both are real — skip is preferred")
+    }
+
+    func testFreshSummaryIsBetter_proxyNoBandsToProxyWithBands_returnsTrue() {
+        let existing = makeSummary(complianceIsProxy: true, hasBands: false)
+        let fresh = makeSummary(complianceIsProxy: true, hasBands: true)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                      "Gaining mscpBands is an upgrade even if both are proxy")
+    }
+
+    func testFreshSummaryIsBetter_realBandsDropped_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: false)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "Dropping bands is not an upgrade — downgrade protection")
+    }
+
+    // MARK: - emitSummaryJSON upgrade behavior (integration)
+
+    /// Existing proxy summary + fresh real-mSCP summary → file overwritten with real data.
+    func testEmitUpgradesProxySummaryToRealWhenEAResultsAppear() throws {
+        let eaColumn = "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+        var cfg = ReportConfig()
+        cfg.compliance = ComplianceConfig(
+            enabled: true,
+            failuresCountColumn: eaColumn,
+            failuresListColumn: nil,
+            baselineLabel: "NIST",
+            framework: nil,
+            baselines: nil
+        )
+        let dataDir = tmpDir.appendingPathComponent("upgrade-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+
+        // Seed security snapshot with device rows (so proxy can compute).
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        // Seed ea-results so the fresh build produces real mSCP data.
+        try writeEAResultsSnapshot(to: dataDir, eaColumn: eaColumn, passCount: 7, failCount: 3)
+
+        let localSummaries = tmpDir.appendingPathComponent("upgrade-summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: localSummaries, withIntermediateDirectories: true)
+
+        // Write a synthetic proxy summary for today.
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryFile = localSummaries.appendingPathComponent("summary_\(today).json")
+        let proxySummary = makeSummary(complianceIsProxy: true, hasBands: false,
+                                       date: today, totalDevices: 42)
+        let existingData = try JSONEncoder().encode(proxySummary)
+        try existingData.write(to: summaryFile, options: .atomic)
+
+        // Run emit — should upgrade.
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let result = try SummaryJSONParser.parse(summaryFile)
+        XCTAssertEqual(result.complianceIsProxy, false,
+                       "After upgrade the summary must carry real mSCP data (complianceIsProxy=false)")
+        // The real-mSCP path produces mscpBands from MSCPComplianceService.
+        XCTAssertNotNil(result.mscpBands, "Upgraded summary must carry mscpBands")
+        XCTAssertFalse(result.mscpBands?.isEmpty ?? true, "mscpBands must be non-empty after upgrade")
+    }
+
+    /// Existing real summary + fresh proxy run (no ea-results) → file NOT overwritten.
+    func testEmitDoesNotDowngradeRealSummaryToProxy() throws {
+        let eaColumn = "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+        var cfg = ReportConfig()
+        cfg.compliance = ComplianceConfig(
+            enabled: true,
+            failuresCountColumn: eaColumn,
+            failuresListColumn: nil,
+            baselineLabel: "NIST",
+            framework: nil,
+            baselines: nil
+        )
+        // dataDir has only security data (no ea-results) → fresh build is proxy.
+        let dataDir = tmpDir.appendingPathComponent("nodowngrade-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+
+        let localSummaries = tmpDir.appendingPathComponent("nodowngrade-summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: localSummaries, withIntermediateDirectories: true)
+
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryFile = localSummaries.appendingPathComponent("summary_\(today).json")
+        // Sentinel totalDevices=999 to distinguish "unchanged" from overwritten.
+        let realSummary = makeSummary(complianceIsProxy: false, hasBands: true,
+                                      date: today, totalDevices: 999)
+        try JSONEncoder().encode(realSummary).write(to: summaryFile, options: .atomic)
+
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let result = try SummaryJSONParser.parse(summaryFile)
+        XCTAssertEqual(result.totalDevices, 999,
+                       "Real summary must not be overwritten by a proxy run (downgrade protection)")
+    }
+
+    /// Existing real summary + fresh real run → file NOT overwritten (skip preserved).
+    func testEmitDoesNotOverwriteRealWithRealNeedlessly() throws {
+        let eaColumn = "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+        var cfg = ReportConfig()
+        cfg.compliance = ComplianceConfig(
+            enabled: true,
+            failuresCountColumn: eaColumn,
+            failuresListColumn: nil,
+            baselineLabel: "NIST",
+            framework: nil,
+            baselines: nil
+        )
+        let dataDir = tmpDir.appendingPathComponent("realreal-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        try writeEAResultsSnapshot(to: dataDir, eaColumn: eaColumn, passCount: 5, failCount: 5)
+
+        let localSummaries = tmpDir.appendingPathComponent("realreal-summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: localSummaries, withIntermediateDirectories: true)
+
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryFile = localSummaries.appendingPathComponent("summary_\(today).json")
+        // Sentinel to detect an overwrite.
+        let existingReal = makeSummary(complianceIsProxy: false, hasBands: true,
+                                       date: today, totalDevices: 777)
+        try JSONEncoder().encode(existingReal).write(to: summaryFile, options: .atomic)
+
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let result = try SummaryJSONParser.parse(summaryFile)
+        XCTAssertEqual(result.totalDevices, 777,
+                       "Real summary must not be overwritten when fresh run is equally real (skip preserved)")
+    }
+
     // MARK: - Helpers
+
+    private func makeSummary(
+        complianceIsProxy: Bool?,
+        hasBands: Bool,
+        date: String = "2026-06-05",
+        totalDevices: Int = 100
+    ) -> DailySummary {
+        let bands: [String: MSCPBandCounts]? = hasBands
+            ? ["NIST": MSCPBandCounts(pass: 80, low: 10, medLow: 5, medium: 3, high: 2, noData: 0)]
+            : nil
+        return DailySummary(
+            date: date,
+            totalDevices: totalDevices,
+            fileVaultPct: 95.0,
+            compliancePct: 80.0,
+            staleCount: 5,
+            osCurrentPct: 70.0,
+            crowdstrikePct: nil,
+            patchPct: 85.0,
+            source: "jamf-cli",
+            complianceIsProxy: complianceIsProxy,
+            mscpBands: bands
+        )
+    }
 
     private func writeMinimalSecuritySnapshot() throws {
         try writeMinimalSecuritySnapshot(to: engine.dataDir)
