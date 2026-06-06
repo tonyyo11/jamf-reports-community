@@ -968,8 +968,13 @@ enum LaunchAgentWriter {
         return URL(fileURLWithPath: expanded).standardizedFileURL
     }
 
+    /// True when `url` is itself a symlink. Uses `attributesOfItem` (lstat — never
+    /// follows) so it is reliable on a freshly constructed URL.
+    /// `URL.resourceValues(.isSymbolicLinkKey)` follows the link on a fresh URL,
+    /// which is the same bug already fixed in `DiagnosticBundleService.isSymlink`.
     private static func isSymlink(_ url: URL) -> Bool {
-        (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes?[.type] as? FileAttributeType) == .typeSymbolicLink
     }
 
     private static func isPath(_ path: String, inside root: String) -> Bool {

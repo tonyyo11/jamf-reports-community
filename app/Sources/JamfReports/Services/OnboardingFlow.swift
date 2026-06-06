@@ -571,7 +571,7 @@ final class OnboardingFlow {
     static func slugify(_ name: String) -> String {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
         let lowered = name.lowercased()
-        var result = lowered.unicodeScalars.map { scalar -> Character in
+        let result = lowered.unicodeScalars.map { scalar -> Character in
             if allowed.contains(scalar) {
                 return Character(scalar)
             } else if scalar == "_" || scalar.value == 0x20 {
@@ -1055,6 +1055,15 @@ final class OnboardingFlow {
             guard slave >= 0 else {
                 Darwin.close(master)
                 throw FlowError.processFailed("open(slave) failed: errno \(errno)")
+            }
+
+            // Disable echo on the slave so the secret written to stdin is not
+            // reflected back into the captured PTY output buffer. Without this
+            // the no-leak guarantee depends entirely on string-match redaction.
+            var term = termios()
+            if Darwin.tcgetattr(slave, &term) == 0 {
+                term.c_lflag &= ~tcflag_t(ECHO)
+                _ = Darwin.tcsetattr(slave, TCSANOW, &term)
             }
 
             let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)

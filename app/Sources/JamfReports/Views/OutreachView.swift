@@ -336,15 +336,14 @@ struct OutreachView: View {
         copy(text: emailString, then: "Copied \(emails.count) emails")
     }
 
-    // TODO: copyTableCSV/escapeCSV lacks formula-injection neutralization — tracked in backlog.
     private func copyTableCSV() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
         var csv = "Name,Serial,Email,Department,Days Since Check-in\n"
         for device in devices {
-            let name = escapeCSV(device.displayName)
-            let serial = escapeCSV(device.displaySerial)
-            let email = escapeCSV(device.email.isEmpty ? "" : device.email)
-            let dept = escapeCSV(device.department.isEmpty ? "" : device.department)
+            let name = StaleDeviceService.csvField(device.displayName)
+            let serial = StaleDeviceService.csvField(device.displaySerial)
+            let email = StaleDeviceService.csvField(device.email)
+            let dept = StaleDeviceService.csvField(device.department)
             let days = device.daysSinceContact ?? 0
             csv += "\(name),\(serial),\(email),\(dept),\(days)\n"
         }
@@ -428,11 +427,4 @@ struct OutreachView: View {
         return nil
     }
 
-    private func escapeCSV(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.contains(",") || trimmed.contains("\"") || trimmed.contains("\n") {
-            return "\"\(trimmed.replacingOccurrences(of: "\"", with: "\"\""))\""
-        }
-        return trimmed
-    }
 }

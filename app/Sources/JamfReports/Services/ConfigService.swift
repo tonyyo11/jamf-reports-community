@@ -368,9 +368,12 @@ enum ConfigService {
     }
 
     private static func rejectSymlinkDestination(_ url: URL) throws {
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
-        let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
-        if values.isSymbolicLink == true {
+        // Use lstat (attributesOfItem) rather than URL.resourceValues so the check
+        // is reliable on a freshly constructed URL — same fix as DiagnosticBundleService.
+        // Returns nil for non-existent paths, so no separate fileExists guard needed;
+        // dangling symlinks (exist as links but target absent) are also caught.
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        if (attributes?[.type] as? FileAttributeType) == .typeSymbolicLink {
             throw ConfigError.symlinkDestination(url)
         }
     }
