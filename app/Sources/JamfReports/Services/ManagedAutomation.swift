@@ -1,0 +1,316 @@
+import Foundation
+
+/// Owns the global "managed" LaunchAgents derived from `AutomationPolicy`
+/// (v2.2.0 "set policy, not cron jobs").
+///
+/// Reconcile is DECLARATIVE and tightly SCOPED: it only ever installs, updates,
+/// or removes agents whose label is in the reserved managed set — by **exact
+/// membership**, never a prefix match. A user's hand-built multi-schedule
+/// (`…multi.<their-name>`) therefore can never be removed by reconcile, even if
+/// they named it `managed-freshness-backup` or similar.
+///
+/// The pure parts (`desiredSchedules`, `plan`, `owns`) carry the correctness
+/// weight and are unit-tested; the async `reconcile` is a thin executor over
+/// injectable install/remove closures so tests never touch real `launchctl`.
+enum ManagedAutomation {
+
+    // MARK: - Reserved identity
+
+    /// The four managed agent kinds. Raw values are slug-safe and become the
+    /// `<prefix>.multi.<slug>` label suffix.
+    enum ManagedKind: String, CaseIterable, Sendable {
+        case freshness = "managed-freshness"
+        case scan      = "managed-scan"
+        case reports   = "managed-reports"
+        case backup    = "managed-backup"
+    }
+
+    /// Exact reserved label set: `<prefix>.multi.<slug>` for every kind.
+    static var reservedLabels: Set<String> {
+        Set(ManagedKind.allCases.map(label(for:)))
+    }
+
+    static func label(for kind: ManagedKind) -> String {
+        "\(LaunchAgentWriter.labelPrefix).multi.\(kind.rawValue)"
+    }
+
+    /// True only when `label` is exactly one of the reserved managed labels.
+    /// Deliberately not a prefix test — reconcile must never remove a user
+    /// agent whose name merely starts with `managed-`.
+    static func owns(_ label: String) -> Bool {
+        reservedLabels.contains(label)
+    }
+
+    // MARK: - Desired specs (pure)
+
+    /// The managed `Schedule`s the policy maps to. Empty when `isManaged` is
+    /// false or when no base profile is available (nothing to manage).
+    ///
+    /// - Parameter baseProfile: A valid profile slug used as the multi plist's
+    ///   base `--profile`. The actual run fans out over `--all-profiles`, so
+    ///   the base is vestigial, but `nativeMultiWrite` requires a valid slug.
+    static func desiredSchedules(
+        for policy: AutomationPolicy,
+        baseProfile: String?
+    ) -> [Schedule] {
+        guard policy.isManaged,
+              let baseProfile, ProfileService.isValid(baseProfile) else { return [] }
+
+        var out: [Schedule] = []
+        if policy.freshnessEnabled {
+            out.append(makeSchedule(.freshness, policy: policy, baseProfile: baseProfile))
+        }
+        if policy.scanEnabled {
+            out.append(makeSchedule(.scan, policy: policy, baseProfile: baseProfile))
+        }
+        if policy.reportsCadence != .off {
+            out.append(makeSchedule(.reports, policy: policy, baseProfile: baseProfile))
+        }
+        if policy.backupsEnabled {
+            out.append(makeSchedule(.backup, policy: policy, baseProfile: baseProfile))
+        }
+        return out
+    }
+
+    private static func makeSchedule(
+        _ kind: ManagedKind,
+        policy: AutomationPolicy,
+        baseProfile: String
+    ) -> Schedule {
+        Schedule(
+            name: kind.rawValue,
+            profile: baseProfile,
+            schedule: scheduleString(kind, policy: policy),
+            cadence: cadenceWord(kind, policy: policy),
+            mode: mode(kind),
+            next: "—",
+            last: "—",
+            lastStatus: .ok,
+            artifacts: [],
+            enabled: true,
+            launchAgentLabel: label(for: kind),
+            multiTarget: MultiTarget(scope: .all, sequential: true),
+            tiers: tiers(kind),
+            excludedProfiles: policy.excludedProfiles
+        )
+    }
+
+    // MARK: - Plan (pure)
+
+    /// A single reconcile step.
+    enum Action {
+        case install(Schedule)
+        case remove(label: String)
+    }
+
+    /// Diff `policy`'s desired managed agents against the currently-installed
+    /// schedules and produce the install/remove actions.
+    ///
+    /// - When `force` is false an installed managed agent whose mode + cadence +
+    ///   tier signature already matches the desired spec is left alone (quiet
+    ///   launches). When `force` is true every desired agent is reinstalled.
+    /// - Removals are restricted to installed labels `owns(_:)` accepts, so a
+    ///   user's multi-schedule is never a removal target.
+    static func plan(
+        for policy: AutomationPolicy,
+        installed: [Schedule],
+        baseProfile: String?,
+        force: Bool = false
+    ) -> [Action] {
+        let desired = desiredSchedules(for: policy, baseProfile: baseProfile)
+        let desiredByLabel: [String: Schedule] = Dictionary(
+            uniqueKeysWithValues: desired.compactMap { sched in
+                LaunchAgentWriter.label(for: sched).map { ($0, sched) }
+            }
+        )
+
+        // Existing managed agents only — never any user-owned label.
+        let installedManaged: [String: Schedule] = Dictionary(
+            installed.compactMap { sched -> (String, Schedule)? in
+                guard let lbl = sched.launchAgentLabel, owns(lbl) else { return nil }
+                return (lbl, sched)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var actions: [Action] = []
+
+        // Installs / updates.
+        for (lbl, sched) in desiredByLabel {
+            if !force, let existing = installedManaged[lbl],
+               signature(existing) == signature(sched) {
+                continue  // unchanged — skip the unload/reload churn.
+            }
+            actions.append(.install(sched))
+        }
+
+        // Removals: managed agents no longer desired (covers isManaged → off).
+        for lbl in installedManaged.keys where desiredByLabel[lbl] == nil {
+            actions.append(.remove(label: lbl))
+        }
+
+        // Stable order so the plan is deterministic for tests + logs.
+        return actions.sorted(by: actionSort)
+    }
+
+    // MARK: - Reconcile (thin executor)
+
+    /// Apply the policy: discover profiles, plan, and execute installs/removes.
+    /// No-op-safe to call on every launch — for a user who never opted in
+    /// (`isManaged == false`, no managed agents installed) the plan is empty.
+    ///
+    /// The `install`/`remove`/`discover`/`installed` closures default to the
+    /// production implementations; tests inject spies so no real `launchctl`
+    /// runs.
+    @discardableResult
+    static func reconcile(
+        policy: AutomationPolicy,
+        force: Bool = false,
+        discover: () -> [JamfCLIProfile] = ProfileService.discoverLocal,
+        installed: () -> [Schedule] = LaunchAgentService.list,
+        install: @Sendable (Schedule) async -> Int32 = defaultInstall,
+        remove: @Sendable (String) async -> Void = defaultRemove
+    ) async -> [Action] {
+        let profiles = discover()
+        let excluded = Set(policy.excludedProfiles)
+        let baseProfile = profiles.first { !excluded.contains($0.name) }?.name
+        let actions = plan(
+            for: policy, installed: installed(), baseProfile: baseProfile, force: force
+        )
+        for action in actions {
+            switch action {
+            case .install(let sched):
+                let code = await install(sched)
+                if code != 0 {
+                    AppLogger.cli.warning(
+                        "ManagedAutomation: install of \(sched.name, privacy: .public) returned \(code)"
+                    )
+                }
+            case .remove(let label):
+                await remove(label)
+            }
+        }
+        return actions
+    }
+
+    static let defaultInstall: @Sendable (Schedule) async -> Int32 = { schedule in
+        (try? await CLIBridge().setupLaunchAgent(schedule, load: true) { _ in }) ?? -1
+    }
+
+    static let defaultRemove: @Sendable (String) async -> Void = { label in
+        guard owns(label) else { return }  // defence in depth: never delete a non-managed label.
+        _ = await LaunchAgentWriter.unload(label)
+        try? LaunchAgentWriter.delete(label)
+    }
+
+    // MARK: - Per-kind mapping
+
+    private static func mode(_ kind: ManagedKind) -> Schedule.RunMode {
+        switch kind {
+        case .freshness: return .snapshotOnly          // collect + summary.json, no workbook
+        case .scan:      return .snapshotOnly          // collect heavy scan only
+        case .reports:   return .jamfCLIOnly           // generate from the already-fresh cache
+        case .backup:    return .backup
+        }
+    }
+
+    private static func tiers(_ kind: ManagedKind) -> Set<CollectionTier>? {
+        switch kind {
+        case .freshness: return [.refresh, .inventory]
+        case .scan:      return [.scan]
+        case .reports, .backup: return nil             // these modes never collect
+        }
+    }
+
+    /// Minutes each kind is offset off the shared base run time, so the four
+    /// agents don't fire simultaneously against on-prem Jamf Pro.
+    private static func staggerMinutes(_ kind: ManagedKind) -> Int {
+        switch kind {
+        case .freshness: return 0
+        case .scan:      return 10
+        case .reports:   return 20
+        case .backup:    return 30
+        }
+    }
+
+    private static func cadenceWord(_ kind: ManagedKind, policy: AutomationPolicy) -> String {
+        switch kind {
+        case .freshness: return "daily"
+        case .scan, .backup: return "weekly"
+        case .reports:
+            switch policy.reportsCadence {
+            case .daily:   return "daily"
+            case .monthly: return "monthly"
+            case .weekly, .off: return "weekly"
+            }
+        }
+    }
+
+    /// Cadence string in the exact shape `LaunchAgentWriter.setupCadence`
+    /// parses (same format `ScheduleFormState.scheduleString` emits):
+    /// "Daily HH:MM" / "<Day3> HH:MM" / "<n><suffix> HH:MM".
+    private static func scheduleString(_ kind: ManagedKind, policy: AutomationPolicy) -> String {
+        let time = staggeredTime(base: policy.runTime, offsetMinutes: staggerMinutes(kind))
+        switch kind {
+        case .freshness:
+            return "Daily \(time)"
+        case .scan:
+            return "\(weekdayAbbrev(policy.scanWeekday)) \(time)"
+        case .backup:
+            return "\(weekdayAbbrev(policy.backupsWeekday)) \(time)"
+        case .reports:
+            switch policy.reportsCadence {
+            case .daily:
+                return "Daily \(time)"
+            case .monthly:
+                return "\(ordinal(policy.reportsDayOfMonth)) \(time)"
+            case .weekly, .off:
+                return "\(weekdayAbbrev(policy.reportsWeekday)) \(time)"
+            }
+        }
+    }
+
+    // MARK: - Pure formatting helpers
+
+    /// Add `offsetMinutes` to "HH:mm", clamped within the same day (never wraps
+    /// past 23:59 — staggers are small and a wrap would reorder the agents).
+    static func staggeredTime(base: String, offsetMinutes: Int) -> String {
+        let parts = base.split(separator: ":").compactMap { Int($0) }
+        let h = parts.count > 0 ? parts[0] : 6
+        let m = parts.count > 1 ? parts[1] : 0
+        let total = min(23 * 60 + 59, max(0, h * 60 + m) + offsetMinutes)
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    private static func weekdayAbbrev(_ weekday: Int) -> String {
+        let names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        return names[min(max(0, weekday), 6)]
+    }
+
+    private static func ordinal(_ day: Int) -> String {
+        let clamped = min(max(1, day), 28)
+        let suffixes = ["th", "st", "nd", "rd"]
+        let suffix = clamped <= 3 ? suffixes[clamped] : "th"
+        return "\(clamped)\(suffix)"
+    }
+
+    /// Stable signature for the "unchanged?" check: mode + cadence string +
+    /// sorted tiers. Exclusions are intentionally out — `LaunchAgentService.parse`
+    /// doesn't surface them, so including them would force a reinstall whenever
+    /// exclusions are set; the Automation UI calls `reconcile(force: true)` to
+    /// apply an exclusion change explicitly.
+    private static func signature(_ schedule: Schedule) -> String {
+        let tierCSV = (schedule.tiers ?? []).map(\.rawValue).sorted().joined(separator: ",")
+        return "\(schedule.mode.rawValue)|\(schedule.schedule)|\(tierCSV)"
+    }
+
+    private static func actionSort(_ lhs: Action, _ rhs: Action) -> Bool {
+        func key(_ a: Action) -> String {
+            switch a {
+            case .install(let s): return "0:\(s.launchAgentLabel ?? s.name)"
+            case .remove(let l):  return "1:\(l)"
+            }
+        }
+        return key(lhs) < key(rhs)
+    }
+}

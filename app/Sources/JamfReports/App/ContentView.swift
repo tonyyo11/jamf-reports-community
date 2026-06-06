@@ -103,6 +103,10 @@ struct ContentView: View {
             // cheap). Both no-op in demo mode.
             await workspace.checkHeavyTierStaleness()
             await workspace.autoRefreshAuditIfStale()
+            // v2.2.0 managed automation: reconcile the policy-driven
+            // all-profiles agents. No-op unless the operator opted in
+            // (AutomationPolicy.isManaged); no-op in demo mode.
+            await workspace.reconcileManagedAutomation()
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
         .animation(.snappy, value: workspace.toast != nil)

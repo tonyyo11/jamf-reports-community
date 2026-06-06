@@ -204,6 +204,12 @@ struct Schedule: Identifiable, Sendable {
     /// PR-23 omit the `--tiers` flag, and `main.swift` defaults a missing
     /// value to all tiers so their behavior is unchanged.
     var tiers: Set<CollectionTier>? = nil
+    /// Profiles excluded from a multi-profile (`--all-profiles`) run. Emitted
+    /// as `--exclude-profiles <csv>` by `nativeMultiWrite` so the managed
+    /// freshness/scan agents can skip a dummy/test tenant. Empty/nil → no flag
+    /// (run-time discovery picks up every profile). Ignored for single-profile
+    /// schedules.
+    var excludedProfiles: [String]? = nil
 
     var isMulti: Bool { multiTarget != nil }
     var profileDisplayLabel: String { multiTarget?.displayLabel ?? profile }

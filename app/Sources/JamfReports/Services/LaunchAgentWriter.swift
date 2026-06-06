@@ -49,6 +49,18 @@ enum LaunchAgentWriter {
         return ["--tiers", csv]
     }
 
+    /// `--exclude-profiles <csv>` arguments for a multi-profile schedule, or
+    /// `[]` when the schedule excludes nothing. Only valid profile slugs are
+    /// emitted; the CSV is sorted for byte-stable plists. main.swift re-parses
+    /// and re-validates the value, so this is a convenience, not a trust gate.
+    private static func excludeArguments(for schedule: Schedule) -> [String] {
+        let valid = (schedule.excludedProfiles ?? [])
+            .filter(ProfileService.isValid)
+            .sorted()
+        guard !valid.isEmpty else { return [] }
+        return ["--exclude-profiles", valid.joined(separator: ",")]
+    }
+
     /// Write a LaunchAgent plist that invokes `JamfReports --scheduled-run --profile <slug>`
     /// directly.
     ///
@@ -432,7 +444,7 @@ enum LaunchAgentWriter {
                 "--label", agentLabel,
             ] + tierArguments(for: schedule) + [
                 "--all-profiles",
-            ],
+            ] + excludeArguments(for: schedule),
             "WorkingDirectory": ProfileService.workspacesRoot().path,
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
