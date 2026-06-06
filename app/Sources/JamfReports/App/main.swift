@@ -11,6 +11,18 @@ import SwiftUI
 // When --all-profiles is also present, discover all local profiles via
 // ProfileService.discoverLocal() and run the cycle for each in sequence.
 
+/// The installed jamf-cli version when it is present but below the supported
+/// floor; nil when jamf-cli is absent (optional) or meets the floor. Uses the
+/// nonisolated probe so it is callable from the headless `@Sendable` runner
+/// without a MainActor hop.
+@Sendable
+private func jamfCLIVersionBelowFloor() -> String? {
+    guard let binary = ExecutableLocator.locate("jamf-cli"),
+          let installed = JamfCLIInstaller.installedVersion(at: binary),
+          JamfCLIInstaller.isBelowMinimumSupported(installed) else { return nil }
+    return installed
+}
+
 @Sendable
 private func scheduledRunSingle(
     profile: String,
@@ -60,6 +72,21 @@ private func scheduledRunSingle(
         if verbose || line.level != .info {
             print(line.text)
         }
+    }
+
+    // Version-floor preflight (v2.2.0 Phase 3): abort loudly when an installed
+    // jamf-cli is below the supported floor, before any collect/backup, so a
+    // scheduled run never silently writes data from an unsupported binary.
+    // jamf-cli-only generates from cache and never calls jamf-cli, so it is
+    // exempt; an absent jamf-cli is also exempt (the collect path handles it).
+    if mode != .jamfCLIOnly, let belowVersion = jamfCLIVersionBelowFloor() {
+        let message = "[error] jamf-cli \(belowVersion) is below the supported floor "
+            + "\(JamfCLIInstaller.minimumSupportedVersion) — aborting '\(profile)' to avoid "
+            + "writing data from an unsupported binary. Run: brew upgrade jamf-cli"
+        fputs(message + "\n", stderr)
+        recorder?.record(message)
+        recorder?.finish(exitCode: 1)
+        return 1
     }
 
     // Backup mode (v2.2.0): export configuration objects; no collect, no
