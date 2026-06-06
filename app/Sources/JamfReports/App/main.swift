@@ -11,6 +11,25 @@ import SwiftUI
 // When --all-profiles is also present, discover all local profiles via
 // ProfileService.discoverLocal() and run the cycle for each in sequence.
 
+/// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
+/// is enabled with a usable https URL. Best-effort — never affects the run.
+@Sendable
+private func notifyScheduledRun(
+    config: ReportConfig?,
+    profile: String,
+    mode: Schedule.RunMode,
+    artifact: String?
+) async {
+    guard let notify = config?.notify, notify.isUsable else { return }
+    var facts: [WebhookNotifier.Fact] = [
+        .init(label: "Profile", value: profile),
+        .init(label: "Run", value: mode.displayTitle),
+        .init(label: "Status", value: "Success"),
+    ]
+    if let artifact { facts.append(.init(label: "Report", value: artifact)) }
+    await WebhookNotifier.send(config: notify, title: "Jamf Report — \(profile)", facts: facts)
+}
+
 /// The installed jamf-cli version when it is present but below the supported
 /// floor; nil when jamf-cli is absent (optional) or meets the floor. Uses the
 /// nonisolated probe so it is callable from the headless `@Sendable` runner
@@ -181,6 +200,7 @@ private func scheduledRunSingle(
             let message = "[ok] scheduled snapshot complete for '\(profile)' — Trends updated"
             print(message)
             recorder?.record(message)
+            await notifyScheduledRun(config: routingConfig, profile: profile, mode: mode, artifact: nil)
             recorder?.finish(exitCode: 0)
             return 0
         }
@@ -195,6 +215,9 @@ private func scheduledRunSingle(
         recorder?.record(message)
         // Tighten permissions on generated report and any newly written files.
         await WorkspacePermissionHardener.tighten(profile: profile)
+        await notifyScheduledRun(
+            config: config, profile: profile, mode: mode, artifact: outputURL.lastPathComponent
+        )
         recorder?.finish(exitCode: 0, artifacts: [outputURL])
         return 0
     } catch {

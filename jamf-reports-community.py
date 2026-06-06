@@ -323,6 +323,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "alerts": {"enabled": False},
         "insights": {"enabled": False},
     },
+    # v2.2.0 Phase 3: opt-in scheduled-run webhook digest. OFF by default; the
+    # operator must enable it and supply a provider + https URL. --notify still
+    # works as a URL override for the Python CLI path.
+    "notify": {
+        "enabled": False,
+        "provider": "teams",  # teams | slack
+        "url": "",
+    },
     "platform": {
         "enabled": False,
         "compliance_benchmarks": [],
@@ -4667,6 +4675,11 @@ class Config:
     @property
     def protect(self) -> dict:
         value = self._data.get("protect") or {}
+        return value if isinstance(value, dict) else {}
+
+    @property
+    def notify(self) -> dict:
+        value = self._data.get("notify") or {}
         return value if isinstance(value, dict) else {}
 
     @property
@@ -15909,21 +15922,9 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _post_teams_notification(
-    webhook_url: str,
-    report_path: Path,
-    sheets_written: int,
-    generated_at: str,
-) -> None:
-    """Post an Adaptive Card summary to a Microsoft Teams incoming webhook.
-
-    Args:
-        webhook_url: Teams incoming webhook URL (from --notify or config).
-        report_path: Path to the generated xlsx file.
-        sheets_written: Total number of sheets written to the workbook.
-        generated_at: Human-readable generation timestamp string.
-    """
-    payload = {
+def _teams_card_payload(title: str, facts: list[tuple[str, str]]) -> dict:
+    """Build a Microsoft Teams Adaptive Card body. Pure — no network."""
+    return {
         "type": "message",
         "attachments": [
             {
@@ -15934,28 +15935,64 @@ def _post_teams_notification(
                     "type": "AdaptiveCard",
                     "version": "1.4",
                     "body": [
-                        {
-                            "type": "TextBlock",
-                            "size": "Large",
-                            "weight": "Bolder",
-                            "text": "Jamf Report Generated",
-                        },
+                        {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
                         {
                             "type": "FactSet",
-                            "facts": [
-                                {"title": "File", "value": report_path.name},
-                                {"title": "Sheets", "value": str(sheets_written)},
-                                {"title": "Generated", "value": generated_at},
-                            ],
+                            "facts": [{"title": k, "value": v} for k, v in facts],
                         },
                     ],
                 },
             }
         ],
     }
+
+
+def _slack_blocks_payload(title: str, facts: list[tuple[str, str]]) -> dict:
+    """Build a Slack Block Kit message. Pure — no network. ``text`` is the
+    fallback/notification line; blocks render the header + mrkdwn fact list."""
+    fact_lines = "\n".join(f"*{k}:* {v}" for k, v in facts)
+    return {
+        "text": title,
+        "blocks": [
+            {"type": "header", "text": {"type": "plain_text", "text": title}},
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": fact_lines or title},
+            },
+        ],
+    }
+
+
+def _post_webhook_notification(
+    webhook_url: str,
+    report_path: Path,
+    sheets_written: int,
+    generated_at: str,
+    provider: str = "teams",
+) -> None:
+    """Post a report-generated summary to a Teams or Slack incoming webhook.
+
+    Args:
+        webhook_url: Incoming webhook URL (from --notify or config.notify.url).
+        report_path: Path to the generated xlsx file.
+        sheets_written: Total number of sheets written to the workbook.
+        generated_at: Human-readable generation timestamp string.
+        provider: "teams" (default) or "slack" — selects the payload format.
+    """
+    title = "Jamf Report Generated"
+    facts = [
+        ("File", report_path.name),
+        ("Sheets", str(sheets_written)),
+        ("Generated", generated_at),
+    ]
+    if provider == "slack":
+        payload, label = _slack_blocks_payload(title, facts), "Slack"
+    else:
+        payload, label = _teams_card_payload(title, facts), "Teams"
+
     parsed_url = urllib.parse.urlparse(webhook_url)
     if parsed_url.scheme != "https":
-        print("  [warn] Teams notification skipped: webhook URL must use https://.")
+        print(f"  [warn] {label} notification skipped: webhook URL must use https://.")
         return
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -15967,11 +16004,11 @@ def _post_teams_notification(
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             if resp.status not in (200, 202):
-                print(f"  [warn] Teams webhook returned HTTP {resp.status}; notification may not appear.")
+                print(f"  [warn] {label} webhook returned HTTP {resp.status}; notification may not appear.")
     except urllib.error.URLError as exc:
-        print(f"  [warn] Teams webhook notification failed: {exc}")
+        print(f"  [warn] {label} webhook notification failed: {exc}")
     except Exception as exc:  # best-effort notify must never abort the run
-        print(f"  [warn] Teams webhook notification error: {exc}")
+        print(f"  [warn] {label} webhook notification error: {exc}")
 
 
 def cmd_generate(
@@ -16407,9 +16444,17 @@ def cmd_generate(
             finished_at=datetime.now(timezone.utc).isoformat(),
             profile=str(config.jamf_cli.get("profile", "") or "").strip() or None,
         )
-    if notify_url:
-        print("  Sending Teams notification...")
-        _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
+    notify_cfg = config.notify
+    notify_provider = str(notify_cfg.get("provider", "teams") or "teams").strip().lower()
+    # --notify is an explicit URL override; otherwise use config.notify when enabled.
+    resolved_notify_url = notify_url or (
+        str(notify_cfg.get("url", "") or "").strip() if notify_cfg.get("enabled") else ""
+    )
+    if resolved_notify_url:
+        print(f"  Sending {notify_provider} notification...")
+        _post_webhook_notification(
+            resolved_notify_url, out_path, sheets_written, generated_at, notify_provider
+        )
 
     if config.output.get("export_pptx") is True:
         exporter = ReportExporter(

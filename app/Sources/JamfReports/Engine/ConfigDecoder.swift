@@ -23,6 +23,7 @@ struct ReportConfig: Decodable, Sendable {
     var platform: PlatformConfig?
     var protect: ProtectConfig?
     var schoolCli: SchoolCLIConfig?
+    var notify: NotifyConfig?
     var html: HTMLReportConfig?
     /// PR-22 T-3: per-report cadence + preset overrides. Top-level (not
     /// nested under `jamf_cli`) because the GUI's new Cadence tab edits it
@@ -47,6 +48,7 @@ struct ReportConfig: Decodable, Sendable {
         case platform
         case protect
         case schoolCli = "school_cli"
+        case notify
         case html
         case collectCadence = "collect_cadence"
     }
@@ -746,6 +748,31 @@ struct SchoolCLIConfig: Decodable, Sendable {
 
     var isEnabled: Bool { enabled ?? false }
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
+}
+
+// MARK: - notify (opt-in webhook digest)
+
+/// `notify:` block — opt-in scheduled-run webhook digest. OFF by default; the
+/// operator must set `enabled: true`, a `provider`, and an `https://` `url`.
+struct NotifyConfig: Decodable, Sendable {
+    enum Provider: String, Decodable, Sendable, CaseIterable { case teams, slack }
+
+    var enabled: Bool?
+    var provider: String?
+    var url: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, provider, url
+    }
+
+    var isEnabled: Bool { enabled ?? false }
+    var resolvedProvider: Provider {
+        Provider(rawValue: (provider ?? "teams").lowercased()) ?? .teams
+    }
+    var resolvedURL: String { url?.trimmingCharacters(in: .whitespaces) ?? "" }
+    /// Usable only when enabled AND a usable https URL is present — the gate
+    /// every send path checks so an off/misconfigured block silently no-ops.
+    var isUsable: Bool { isEnabled && resolvedURL.lowercased().hasPrefix("https://") }
 }
 
 // MARK: - exceptions (list, not dict)

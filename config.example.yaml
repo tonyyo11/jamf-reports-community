@@ -426,6 +426,18 @@ protect:
 
 
 # =============================================================================
+# WEBHOOK NOTIFICATIONS (opt-in)
+# =============================================================================
+# Post a short "report generated" digest to a Microsoft Teams or Slack incoming
+# webhook after a scheduled run. OFF by default — set enabled: true and supply a
+# provider + https URL. The Python CLI also accepts --notify <url> as an
+# override (provider still read from here). Never commit a real webhook URL.
+notify:
+  enabled: false
+  provider: "teams"   # teams | slack
+  url: ""             # https:// incoming webhook URL
+
+# =============================================================================
 # JAMF PLATFORM API
 # =============================================================================
 # Preview workbook support for jamf-cli builds that expose Platform API report
