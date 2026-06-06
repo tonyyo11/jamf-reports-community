@@ -129,6 +129,24 @@ and Jamf School.
 - [`docs/testing.md`](docs/testing.md) — the Python and Swift test suites.
 - [`docs/architecture/`](docs/architecture) — design decisions and the threat model.
 
+### Diagnostic bundles
+
+The `diagnostic-bundle` command (and the app's Settings → "Generate diagnostic bundle
+now") packages recent logs, snapshots, and a redacted `config.yaml` into a shareable zip.
+Credentials are always redacted; PII (hostnames, serials, emails, device names) is redacted
+by default unless you pass the matching `--keep-*` flag. Two redaction limits are worth
+knowing before you share a bundle:
+
+- **Jamf reached by IP address is not redacted.** The hostname redactor matches URLs with
+  an alphabetic TLD (`https://acme.jamfcloud.com/…`), so an on-prem instance addressed by
+  IP (`https://10.0.0.5/…`) passes through un-redacted. If your Jamf Pro is reachable by IP,
+  generate the bundle for local debugging only — do not share it externally — or scrub the
+  IP by hand first. (`--keep-hostnames` keeps all host values regardless.)
+- **Profile slugs and schedule labels are not redacted.** They appear verbatim in the
+  bundle's manifest, file names, and workspace tree listing. Keep profile slugs and
+  LaunchAgent schedule labels non-identifying (avoid org names, site codes, or personal
+  identifiers) so a shared bundle stays tenant-safe.
+
 Found a problem? Open an issue with the error message, the relevant part of your
 `config.yaml` (secrets redacted), and your `python3 --version` if it is CLI-related.
 

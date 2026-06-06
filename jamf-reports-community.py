@@ -4213,6 +4213,12 @@ class LogRedactor:
     #       without a URL prefix (covers log lines like "connection to
     #       acme-prod.jamfcloud.com failed"). Narrow to well-known TLDs to
     #       avoid false-positives on every dotted path.
+    # NOTE: the `\.[a-z]{2,63}` tail requires an alpha TLD, so URLs whose host
+    # is a bare IP address (e.g. `https://10.0.0.5/JSSResource/...`) are
+    # intentionally NOT matched and pass through un-redacted. On-prem Jamf Pro
+    # reached by IP is common; if your instance is addressed by IP, generate the
+    # diagnostic bundle locally only (do not share it externally) or scrub the
+    # IP by hand before sharing. See README (--keep-hostnames / diagnostic-bundle).
     _HOSTNAME_URL_RE = re.compile(
         r"(https?://)([a-z0-9][a-z0-9\-\.]{1,253}\.[a-z]{2,63})\b",
         re.IGNORECASE,

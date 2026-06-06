@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -36,7 +36,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       # Pin Xcode so the runner-image rotation doesn't silently shift the
       # bundled Swift between PRs. Xcode 16.4 ships Swift 6.1.x. Pinning
@@ -45,7 +45,7 @@ jobs:
       # — mixing them produces frontend crashes like the SIGABRT we hit on
       # ZIPFoundation during the first PR-9.5 attempt.
       - name: Pin Xcode 16.4
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90  # v1
         with:
           xcode-version: "16.4"
 
