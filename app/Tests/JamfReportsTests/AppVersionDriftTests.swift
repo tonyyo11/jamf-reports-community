@@ -29,7 +29,16 @@ final class AppVersionDriftTests: XCTestCase {
         let range = NSRange(script.startIndex..., in: script)
         guard let match = regex.firstMatch(in: script, range: range),
               let r = Range(match.range(at: 1), in: script) else {
-            throw XCTSkip("Could not find MARKETING_VERSION default in build-app.sh")
+            // File was found but the MARKETING_VERSION line no longer matches the regex.
+            // This is the drift condition to catch — fail, not skip. (XCTSkip here would
+            // silently pass whenever build-app.sh is reformatted, defeating the guard.)
+            struct RegexMismatch: Error {
+                let message: String
+            }
+            throw RegexMismatch(message:
+                "MARKETING_VERSION pattern not found in build-app.sh; " +
+                "update the regex in marketingVersion(in:) to match the current format"
+            )
         }
         return String(script[r])
     }

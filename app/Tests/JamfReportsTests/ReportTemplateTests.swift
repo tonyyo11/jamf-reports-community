@@ -246,6 +246,7 @@ final class ReportTemplateTests: XCTestCase {
 
     /// Every SectionID must appear in FullInstanceTemplate.htmlSections so new
     /// sections can never be silently omitted from the full report.
+    /// The SheetID equivalent lives in MSCPComplianceSheetsTests.testFullInstanceTemplateCoversAllSheetIDs.
     func testFullInstanceTemplateHtmlSectionsCoversAllSectionIDs() {
         let templateSections = Set(FullInstanceTemplate().htmlSections)
         let allSections = Set(SectionID.allCases)
