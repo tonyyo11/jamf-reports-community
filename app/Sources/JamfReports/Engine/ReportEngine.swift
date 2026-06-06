@@ -211,6 +211,28 @@ struct ReportEngine: Sendable {
                 AppLogger.engine.warning("\(msg, privacy: .private)")
                 print(msg)
                 onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+                // Skip sidecar move when the xlsx move failed — sidecars without
+                // a workbook in the archive are uninformative.
+                continue
+            }
+            // Move sibling sidecar files (sha256 + manifest.txt) alongside the
+            // xlsx so they don't accumulate as orphans in the reports root.
+            // Failures are best-effort: warn and continue rather than block rotation.
+            let sidecarExts = ["sha256", "manifest.txt"]
+            for ext in sidecarExts {
+                let sidecar = file.appendingPathExtension(ext)
+                guard fm.fileExists(atPath: sidecar.path) else { continue }
+                let sidecarDest = archiveDir.appendingPathComponent(sidecar.lastPathComponent)
+                do {
+                    if fm.fileExists(atPath: sidecarDest.path) {
+                        try fm.removeItem(at: sidecarDest)
+                    }
+                    try fm.moveItem(at: sidecar, to: sidecarDest)
+                } catch {
+                    let msg = "[warn] Could not archive sidecar \(sidecar.lastPathComponent): \(error)"
+                    AppLogger.engine.warning("\(msg, privacy: .private)")
+                    onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+                }
             }
         }
     }
@@ -402,11 +424,19 @@ struct ReportEngine: Sendable {
 
         guard totalDevices > 0 else { return nil }
 
-        // Stale count from device-compliance
+        // Stale count from device-compliance using the same threshold as
+        // DeviceInventoryService/StaleDeviceService (thresholds.stale_device_days,
+        // default 30). The server-side `stale` flag uses a different cadence
+        // (~90-100 days) and would produce a count inconsistent with the
+        // Devices and Outreach screens, which both derive staleness from
+        // `daysSinceContact >= resolvedStaleDays`.
+        let staleDaysThreshold = config.thresholds?.resolvedStaleDays ?? 30
         var staleCount = 0
         if let compData = cachedData(kind: "device-compliance"),
            let rows = try? JSONDecoder().decode([DeviceComplianceRow].self, from: compData) {
-            staleCount = rows.filter { $0.stale == true }.count
+            staleCount = rows.filter {
+                ($0.daysSinceCheckin ?? 0) >= staleDaysThreshold
+            }.count
         }
 
         // OS current % — SOFA-driven: a device is "current" when its OS version is
