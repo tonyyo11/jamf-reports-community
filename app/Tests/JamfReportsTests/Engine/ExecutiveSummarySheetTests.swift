@@ -92,7 +92,7 @@ final class ExecutiveSummarySheetTests: XCTestCase {
         XCTAssertTrue(labels.contains("FileVault Coverage"))
         XCTAssertTrue(labels.contains("SIP Coverage"))
         XCTAssertTrue(labels.contains("Firewall Coverage"))
-        XCTAssertTrue(labels.contains("Stale — Recent (0–30d)"))
+        XCTAssertTrue(labels.contains("Recent (0–30d)"))
         XCTAssertTrue(labels.contains("Stale — Offline (31–90d)"))
         XCTAssertTrue(labels.contains("Stale — Inactive (91–180d)"))
         XCTAssertTrue(labels.contains("Stale — Dormant (180d+)"))

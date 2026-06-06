@@ -2592,10 +2592,17 @@ struct CoreDashboard: Sendable {
     /// Pure render helper: write metric rows from `metrics` into `ws`.
     /// Emits "—" for any nil field. Extracted for testability — test exercises
     /// this directly without touching the snapshot loader.
-    func renderExecutiveSummaryRows(into ws: Worksheet, metrics m: ExecutiveSummaryMetrics) {
+    ///
+    /// - Parameter subtitle: Sheet subtitle, typically built by `writeExecutiveSummary`
+    ///   using `snapshotSubtitle` so the data-age label reflects the actual snapshot date.
+    func renderExecutiveSummaryRows(
+        into ws: Worksheet,
+        metrics m: ExecutiveSummaryMetrics,
+        subtitle: String = "Fleet KPIs · KPI source: security + patch-status + device-compliance"
+    ) {
         var row = ws.writeSheetHeader(
             title: t("Executive Summary"),
-            subtitle: "Fleet KPIs · Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: subtitle,
             ncols: 2
         )
         ws.setColumnWidth(0, 0, 36)
@@ -2624,7 +2631,8 @@ struct CoreDashboard: Sendable {
             ("FileVault Coverage", fmtPct(m.fileVaultPct)),
             ("SIP Coverage", fmtPct(m.sipPct)),
             ("Firewall Coverage", fmtPct(m.firewallPct)),
-            ("Stale — Recent (0–30d)", fmtInt(m.recentCount)),
+            // "Recent" (0–30d) is healthy — only Offline/Inactive/Dormant are stale.
+            ("Recent (0–30d)", fmtInt(m.recentCount)),
             ("Stale — Offline (31–90d)", fmtInt(m.offlineCount)),
             ("Stale — Inactive (91–180d)", fmtInt(m.inactiveCount)),
             ("Stale — Dormant (180d+)", fmtInt(m.dormantCount)),
@@ -2655,8 +2663,20 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["security", "patch-status",
                                                            "device-compliance"])
         }
+
+        // Build the subtitle with a "Data as of" clause when any headline KPI snapshot
+        // predates today (skip-expensive preset). Only the three headline-KPI kinds are
+        // checked — "inventory-summary" is always-run (today) and would suppress the
+        // clause permanently if included.
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let subtitle = snapshotSubtitle(
+            names: ["security", "patch-status", "patch_status", "device-compliance"],
+            generated: ts,
+            prefix: "KPI source: security + patch-status + device-compliance"
+        )
+
         let ws = workbook.addSheet("Executive Summary")
-        renderExecutiveSummaryRows(into: ws, metrics: metrics)
+        renderExecutiveSummaryRows(into: ws, metrics: metrics, subtitle: subtitle)
     }
 
     // MARK: - Cover sheet

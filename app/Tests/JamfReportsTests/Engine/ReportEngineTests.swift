@@ -554,6 +554,39 @@ final class ReportEngineTests: XCTestCase {
         )
     }
 
+    // MARK: - csvEscape formula-injection guard
+
+    /// =HYPERLINK(...) contains a double-quote, so after tab-prefixing the whole field is
+    /// RFC-4180 quoted: "\t=...". Assert the raw string (not hasPrefix("\t=")).
+    func testCSVEscapeNeutralizeEqualsHyperlink() {
+        let raw = #"=HYPERLINK("http://x")"#
+        let escaped = ReportEngine.testableCSVEscape(raw)
+        // Tab-prefixed, then quoted due to embedded double-quote.
+        XCTAssertTrue(
+            escaped.hasPrefix("\"\t="),
+            "csvEscape must tab-prefix and RFC4180-quote a cell beginning with '='; got: \(escaped)"
+        )
+    }
+
+    /// Simple = prefix (no special chars) → tab-prefix only, no quoting.
+    func testCSVEscapeNeutralizeSimpleEquals() {
+        let escaped = ReportEngine.testableCSVEscape("=1+1")
+        XCTAssertEqual(escaped, "\t=1+1",
+                       "csvEscape must tab-prefix a cell beginning with '=' when no quoting is needed")
+    }
+
+    /// + prefix → tab-prefixed.
+    func testCSVEscapeNeutralizePlus() {
+        let escaped = ReportEngine.testableCSVEscape("+cmd|calc")
+        XCTAssertEqual(escaped, "\t+cmd|calc")
+    }
+
+    /// Normal value — no injection prefix, no special chars — passes through unchanged.
+    func testCSVEscapePassesThroughCleanValue() {
+        let escaped = ReportEngine.testableCSVEscape("MacBook Pro")
+        XCTAssertEqual(escaped, "MacBook Pro")
+    }
+
     // MARK: - Helpers
 
     /// Thread-safe collector for `@Sendable` log-line closures so Swift 6

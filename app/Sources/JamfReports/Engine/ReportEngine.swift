@@ -466,12 +466,12 @@ struct ReportEngine: Sendable {
 
         guard totalDevices > 0 else { return nil }
 
-        // Stale count from device-compliance using the same threshold as
-        // DeviceInventoryService/StaleDeviceService (thresholds.stale_device_days,
-        // default 30). The server-side `stale` flag uses a different cadence
-        // (~90-100 days) and would produce a count inconsistent with the
-        // Devices and Outreach screens, which both derive staleness from
-        // `daysSinceContact >= resolvedStaleDays`.
+        // Stale count from device-compliance, using `daysSinceCheckin >= resolvedStaleDays`
+        // with the config threshold (default 30 days). The server-side `stale` flag uses a
+        // ~90-100d cadence and is intentionally avoided here. Note: this path only unified
+        // the summary-writer threshold (#176); DeviceInventoryService and StaleDeviceService
+        // still hardcode 30 and use `daysSinceContact` — counts agree at the default config
+        // but diverge with a non-default threshold (follow-up: parameterize those services).
         let staleDaysThreshold = config.thresholds?.resolvedStaleDays ?? 30
         var staleCount = 0
         if let compData = cachedData(kind: "device-compliance"),
@@ -935,12 +935,18 @@ struct ReportEngine: Sendable {
     }
 
     /// Write a PNG to `dir` using `ExportNaming` conventions.
-    /// No-ops when `dir` is nil or the write fails (PNG export is non-fatal).
+    /// No-ops when `dir` is nil. Logs a warning on write failure; xlsx embed is unaffected.
     private func writePNG(_ png: Data, kind: String, profile: String, to dir: URL?) {
         guard let dir else { return }
         let name = ExportNaming.filename(kind: kind, profile: profile, ext: "png")
         let url = dir.appendingPathComponent(name)
-        try? png.write(to: url, options: .atomic)
+        do {
+            try png.write(to: url, options: .atomic)
+        } catch {
+            AppLogger.engine.warning(
+                "[warn] PNG export failed for \(kind, privacy: .public): \(error)"
+            )
+        }
     }
 
     private func sanitizeForFilename(_ s: String) -> String {
@@ -2115,10 +2121,19 @@ struct ReportEngine: Sendable {
     }
 
     private static func csvEscape(_ value: String) -> String {
-        if value.contains(",") || value.contains("\"") || value.contains("\n") {
-            return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        // Formula-injection neutralization: tab-prefix cells beginning with =, +, -, @.
+        // Mirrors PatchStatusService.csvField and Python's _csv_injection_safe.
+        var field = value
+        if let first = field.first, "=+-@".contains(first) {
+            field = "\t" + field
         }
-        return value
+        guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
+        return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// Internal entry point for injection-guard testing — mirrors `testableScaffoldMappings`.
+    static func testableCSVEscape(_ value: String) -> String {
+        csvEscape(value)
     }
 
     // MARK: - Column scaffold helpers
