@@ -278,7 +278,9 @@ final class CollectCadenceConfigTests: XCTestCase {
         XCTAssertEqual(table["overview"]?.cadence, .seconds(43_200), "cloud refresh = twice daily")
         XCTAssertEqual(table["computers"]?.cadence, .seconds(172_800), "cloud inventory = 2 days")
         // Cloud has no hard exclusions — update-status seeds as a real cadence.
-        XCTAssertEqual(table["update-status"]?.cadence, .seconds(604_800))
+        // update-status moved scan -> inventory (scan is now only the two
+        // --scan-failures fan-outs), so it resolves to cloud inventory = 2 days.
+        XCTAssertEqual(table["update-status"]?.cadence, .seconds(172_800))
     }
 
     func testCustomDefaultsEntriesCarryTheReportsTier() {

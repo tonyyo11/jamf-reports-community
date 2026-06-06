@@ -57,8 +57,10 @@ final class LaunchFreshnessTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
 
         let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        // .inventory probe kind = "computers" (8 days old → stale)
-        // .scan probe kind = "ea-results" (1 day old → fresh)
+        // .inventory probe kind = "computers" (8 days old → stale). ea-results is
+        // now inventory-tier too, but inventory probes "computers", so the old
+        // 8-day computers file still makes inventory stale. .scan now probes
+        // update-device-failures (absent here → never-collected, not reported).
         let computersDir = dataDir.appendingPathComponent("computers", isDirectory: true)
         let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
@@ -75,7 +77,7 @@ final class LaunchFreshnessTests: XCTestCase {
 
         let stale = WorkspaceStore.staleTiers(profile: profile, olderThan: 7 * 86_400)
 
-        XCTAssertEqual(stale, [.inventory], "8-day-old computers data is stale; 1-day ea-results is not")
+        XCTAssertEqual(stale, [.inventory], "computers (8d) makes inventory stale; scan never-collected")
     }
 
     func testStaleTiersIgnoresNeverCollectedTiers() throws {

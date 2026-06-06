@@ -590,13 +590,13 @@ COLLECTION_TIER_MAP: dict[str, str] = {
     "classic-ios-profiles": "inventory",
     "device-enrollment-instances": "inventory",
     "mobile-device-inventory-details": "inventory",
-    # Scan — per-device / server-expensive
+    "update-status": "inventory",
+    "device-compliance": "inventory",
+    "ea-results": "inventory",
+    "profile-status": "inventory",
+    # Scan — the two expensive --scan-failures per-device fan-outs only
     "patch-device-failures": "scan",
-    "update-status": "scan",
     "update-device-failures": "scan",
-    "device-compliance": "scan",
-    "ea-results": "scan",
-    "profile-status": "scan",
 }
 
 # Valid `--tiers` values; mirrors Swift CollectionTier's CaseIterable set.

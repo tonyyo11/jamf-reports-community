@@ -39,7 +39,9 @@ final class CollectFilterCompositionTests: XCTestCase {
         XCTAssertEqual(CollectionTier.tier(forReport: "computers"), .inventory)
         XCTAssertFalse(refreshOnly.contains(CollectionTier.tier(forReport: "computers")!))
 
-        XCTAssertEqual(CollectionTier.tier(forReport: "ea-results"), .scan)
+        // ea-results moved scan -> inventory (scan is now only the two
+        // --scan-failures fan-outs); still excluded from refresh-only.
+        XCTAssertEqual(CollectionTier.tier(forReport: "ea-results"), .inventory)
         XCTAssertFalse(refreshOnly.contains(CollectionTier.tier(forReport: "ea-results")!))
     }
 
