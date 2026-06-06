@@ -47,7 +47,13 @@ class _BaselineBridge:
         return [{"os_version": "15.7.7", "count": 100}]
 
     def device_compliance(self) -> list[dict[str, Any]]:
-        return [{"stale": True}, {"stale": False}, {"stale": True}]
+        # staleCount now mirrors Swift: days_since_contact >= stale_days (30),
+        # not the server `stale` flag. Two devices exceed the threshold.
+        return [
+            {"days_since_contact": "45"},
+            {"days_since_contact": "5"},
+            {"days_since_contact": "60"},
+        ]
 
     def patch_status(self) -> list[dict[str, Any]]:
         return [{"compliance_pct": "80%"}, {"compliance_pct": "70%"}]

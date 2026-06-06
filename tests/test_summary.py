@@ -161,8 +161,9 @@ def test_emit_summary_csv_branch_computes_all_metrics(tmp_path, monkeypatch, jrc
     assert payload["crowdstrikePct"] == 75.0
     # 3 of 4 are on the latest macOS 15.x (15.7.7) per SOFA -> 75%
     assert payload["osCurrentPct"] == 75.0
-    # One blank check-in is treated as stale; 2026-04-28 is fresh; 2025-01-01 is stale.
-    assert payload["staleCount"] == 2
+    # Canonical rule (mirrors Swift): blank check-in is NOT stale; 2026-04-28 is
+    # fresh; only 2025-01-01 exceeds the 30-day threshold (>=), so staleCount == 1.
+    assert payload["staleCount"] == 1
     # No bridge supplied -> patchPct omitted (mirrors Swift `Double?` shape so
     # trend charts treat the metric as missing, not as a real 0% floor).
     assert "patchPct" not in payload

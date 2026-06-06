@@ -351,9 +351,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "failures_list_column": "",
         "baseline_label": "mSCP Compliance",
         # Per-baseline list for multi-baseline mSCP/STIG tracking. Each entry is
-        # {name, failures_count_column, rule_count?}. When empty, the engine
-        # synthesizes a single implicit baseline from failures_count_column +
-        # baseline_label so legacy single-baseline configs keep working.
+        # {name, failures_count_column}. When empty, the engine synthesizes a
+        # single implicit baseline from failures_count_column + baseline_label
+        # so legacy single-baseline configs keep working.
         "baselines": [],
     },
     "custom_eas": [],
@@ -696,10 +696,12 @@ MSCP_BAND_LABELS = {
     "noData": "No Data",
 }
 MSCP_BAND_RANGES = {
+    # Numeric ranges use en-dashes (U+2013) for exact display parity with the
+    # Swift app (ComplianceBandingService.range); labels only, no thresholds.
     "pass": "0",
-    "low": "1-10",
-    "medLow": "11-30",
-    "medium": "31-50",
+    "low": "1–10",
+    "medLow": "11–30",
+    "medium": "31–50",
     "high": ">50",
     "noData": "—",
 }
@@ -3233,12 +3235,18 @@ def _emit_summary_json(
         else:
             comp_pct = (compliant / total_devices * 100.0) if total_devices > 0 else 0.0
 
-    # 3. Stale count (30d+)
+    # 3. Stale count (>= stale_days). Canonical stale rule (mirrors Swift):
+    # days_since_checkin >= stale_days; a missing/unparseable checkin is NOT
+    # stale (treated as not-stale, not as stale).
     checkin_col = csv_dash._col("last_checkin")
     stale_days = int(config.thresholds.get("stale_device_days", 30))
     stale_count = 0
     if checkin_col and checkin_col in df.columns:
-        stale_count = int(df[checkin_col].apply(lambda v: (_days_since(v) or 0) > stale_days if v else True).sum())
+        stale_count = int(
+            df[checkin_col]
+            .apply(lambda v: (_days_since(v) or 0) >= stale_days)
+            .sum()
+        )
 
     # 4. OS Current — SOFA-driven: a device is current when its OS version is
     # the latest release within its own major version per the SOFA feed
@@ -3302,6 +3310,9 @@ def _emit_summary_json(
         "totalDevices": int(total_devices),
         "staleCount": int(stale_count),
         "source": "csv",
+        # CSV path always uses the 4-control proxy; real ea-results bands below
+        # flip this to False when they resolve. Matches the Swift summary schema.
+        "complianceIsProxy": True,
     }
     if fv_pct is not None:
         summary_data["fileVaultPct"] = round(fv_pct, 1)
@@ -3462,10 +3473,19 @@ def _build_summary_from_bridge(
     if total_devices == 0:
         return None
 
+    # Canonical stale rule (mirrors Swift #176): days_since_checkin >=
+    # stale_days from the config threshold, NOT the server-side `stale` flag
+    # (~90-100d cadence). Missing/unknown checkin is NOT stale (-1 default).
+    stale_days = int(config.thresholds.get("stale_device_days", 30))
     stale_count = 0
     try:
         comp = bridge.device_compliance() or []
-        stale_count = sum(1 for row in comp if isinstance(row, dict) and row.get("stale"))
+        stale_count = sum(
+            1
+            for row in comp
+            if isinstance(row, dict)
+            and _to_int(row.get("days_since_contact"), -1) >= stale_days
+        )
     except Exception as exc:
         print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
 
@@ -4345,10 +4365,10 @@ class LogRedactor:
         self._cache[cache_key] = placeholder
         return placeholder
 
-    def seed_from_workspace(self, workspace: Path) -> int:
+    def seed_from_workspace(self, data_dir: Path) -> int:
         """Harvest device/identity literals from cached jamf-cli JSON.
 
-        Walks ``<workspace>/jamf-cli-data/`` for JSON snapshots and collects
+        Walks the configured jamf-cli data dir for JSON snapshots and collects
         string values under `_PII_JSON_KEYS` keys into per-category literal
         sets, then compiles per-category alternation regexes. `redact_text`
         uses these to redact exact device names, UDIDs, asset tags, etc. from
@@ -4356,12 +4376,12 @@ class LogRedactor:
         names are not regex-patternable.
 
         Args:
-            workspace: Profile workspace directory.
+            data_dir: Resolved jamf-cli data directory (honors
+                ``jamf_cli.data_dir`` config, not the hardcoded default).
 
         Returns:
             Count of distinct literals collected across all categories.
         """
-        data_dir = workspace / "jamf-cli-data"
         if not data_dir.is_dir():
             return 0
         known: dict[str, set[str]] = {}
@@ -21928,7 +21948,11 @@ def cmd_diagnostic_bundle(
         # Harvest device/identity literals from cached jamf-cli JSON so log
         # redaction strips device names, UDIDs, asset tags, etc. that appear
         # in free-text — not just the regex-patternable serials and hosts.
-        seeded = redactor.seed_from_workspace(workspace)
+        # Honor jamf_cli.data_dir; a custom dir must still be seeded.
+        seed_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+        if seed_dir is None:
+            seed_dir = workspace / "jamf-cli-data"
+        seeded = redactor.seed_from_workspace(seed_dir)
         if seeded:
             print(f"  redaction seeded with {seeded} identifier(s) from jamf-cli-data/")
 
