@@ -1144,6 +1144,10 @@ struct ReportEngine: Sendable {
     ///   narrows to `[.refresh]` so only cheap KPI commands run.
     /// - `skipExpensive` (PR-16): when true, removes the four cold-tier
     ///   per-device commands regardless of cadence. Settings toggle.
+    /// - `force`: when `false` (the default), skips the entire collection loop
+    ///   if a valid `summary_<today>.json` already exists for the profile —
+    ///   i.e., a full collect already completed today. Passes `force: true` for
+    ///   ad-hoc Refresh so manual refreshes are never skipped.
     /// - Cadence (PR-22 T-8): per-report time-since-last-run check; uses
     ///   `CadenceResolver.resolve` for policy and `StateFileStore` for the
     ///   last-success timestamp. State is written on successful save so a
@@ -1159,19 +1163,44 @@ struct ReportEngine: Sendable {
     /// - `[skip] <kind>: tier <t> not selected` — T-9 tier filter
     /// - `[skip] <kind>: not due (last: ..., cadence: ...)` — T-8 cadence
     /// - `[info] skipping per-device commands (...)` — PR-16 skipExpensive
+    /// - `[info] already collected today — skipping (use Refresh to force)` — once-per-day guard
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         skipExpensive: Bool = false,
+        force: Bool = false,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
-        guard let bin = ExecutableLocator.locate("jamf-cli") else {
-            throw ReportEngineError.jamfCLINotFound
-        }
         guard ProfileService.isValid(profile) else {
             throw ReportEngineError.invalidProfile(profile)
         }
+
+        // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
+        // summary for today already exists, unless the caller passes force: true.
+        // Placed before the jamf-cli binary check so it short-circuits without
+        // requiring jamf-cli to be installed (testable without the binary).
+        // Mirrors the emitSummaryJSON first-run-of-day check (required keys: date,
+        // totalDevices, source). Ad-hoc Refresh paths pass force: true so they are
+        // never gated by a prior scheduled collect.
+        if !force, let summariesDir = try? workspacePaths.summariesDir(for: profile) {
+            let today = SummaryJSONParser.dateFormatter.string(from: Date())
+            let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
+            if FileManager.default.fileExists(atPath: summaryFile.path),
+               let data = try? Data(contentsOf: summaryFile),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
+                let msg = "[info] already collected today — skipping (use Refresh to force)"
+                AppLogger.engine.info("\(msg, privacy: .public)")
+                onLine(.init(timestamp: Date(), level: .info, text: msg))
+                return
+            }
+        }
+
+        guard let bin = ExecutableLocator.locate("jamf-cli") else {
+            throw ReportEngineError.jamfCLINotFound
+        }
+
         let dataDir = try workspacePaths.dataDir(for: profile)
         // Respect use_cached_data: when false, a failed collect is fatal for that kind.
         // File-missing is a legitimate first-run state and defaults to true.

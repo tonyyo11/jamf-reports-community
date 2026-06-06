@@ -110,7 +110,8 @@ extension WorkspaceStore {
         defer { globalStatus = nil }
         do {
             let exit = try await CLIBridge().collect(
-                profile: activeProfile, tiers: Set(tiers), onLine: CLIBridge.noOpOnLine
+                profile: activeProfile, tiers: Set(tiers), force: true,
+                onLine: CLIBridge.noOpOnLine
             )
             if exit == 0 {
                 staleHeavyTiers = []

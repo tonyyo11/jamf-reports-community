@@ -348,7 +348,7 @@ final class WorkspaceStore {
         workspaceInitMessage = "Workspace initialized · collecting jamf-cli snapshots…"
         let collectExit: Int32
         do {
-            collectExit = try await bridge.collect(profile: profile) { _ in }
+            collectExit = try await bridge.collect(profile: profile, force: true) { _ in }
         } catch {
             isInitializingWorkspace = false
             workspaceInitMessage = "Workspace initialized · collect failed · \(error.localizedDescription)"

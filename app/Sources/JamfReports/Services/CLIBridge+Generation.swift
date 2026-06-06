@@ -95,7 +95,7 @@ extension CLIBridge {
             collectFresh: collectFresh,
             profile: profile,
             onLine: onLine,
-            collect: { try await self.collect(profile: profile, onLine: onLine) },
+            collect: { try await self.collect(profile: profile, force: true, onLine: onLine) },
             generateXLSX: {
                 if schoolMode {
                     return try await self.schoolGenerate(profile: profile, csvPath: nil, onLine: onLine)

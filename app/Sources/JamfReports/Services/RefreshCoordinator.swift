@@ -140,10 +140,13 @@ final class RefreshCoordinator {
 
         // Backfill only the requested tier — a profile-switch refresh should
         // not pull every list endpoint and per-device scan (PR-22 T-9 tier set).
+        // force: true bypasses the once-per-day guard; the coordinator already
+        // gates on staleness, so the guard is redundant and would silently no-op
+        // a user-triggered profile-switch refresh that ran after a scheduled collect.
         let exitCode: Int32
         do {
             exitCode = try await bridge.collect(
-                profile: profile, tiers: [tier], onLine: CLIBridge.noOpOnLine
+                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine
             )
         } catch {
             failureCounts[key, default: 0] += 1

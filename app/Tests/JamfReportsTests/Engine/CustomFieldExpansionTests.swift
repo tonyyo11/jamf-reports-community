@@ -214,7 +214,7 @@ final class CustomFieldExpansionTests: XCTestCase {
 
     func testScaffoldDetectsFullNameVariants() throws {
         for header in ["Full Name", "User Full Name", "FullName"] {
-            let result = try ReportEngine.testableScaffoldMappings(from: [header])
+            let result = ReportEngine.testableScaffoldMappings(from: [header])
             XCTAssertEqual(result["full_name"], header,
                            "full_name hint must match header '\(header)'")
         }
@@ -222,7 +222,7 @@ final class CustomFieldExpansionTests: XCTestCase {
 
     func testScaffoldDetectsAssetTagVariants() throws {
         for header in ["Asset Tag", "AssetTag", "Asset ID"] {
-            let result = try ReportEngine.testableScaffoldMappings(from: [header])
+            let result = ReportEngine.testableScaffoldMappings(from: [header])
             XCTAssertEqual(result["asset_tag"], header,
                            "asset_tag hint must match header '\(header)'")
         }
@@ -230,7 +230,7 @@ final class CustomFieldExpansionTests: XCTestCase {
 
     func testScaffoldDetectsBuildingVariants() throws {
         for header in ["Building", "Site Building"] {
-            let result = try ReportEngine.testableScaffoldMappings(from: [header])
+            let result = ReportEngine.testableScaffoldMappings(from: [header])
             XCTAssertEqual(result["building"], header,
                            "building hint must match header '\(header)'")
         }
@@ -238,7 +238,7 @@ final class CustomFieldExpansionTests: XCTestCase {
 
     func testScaffoldDetectsPositionVariants() throws {
         for header in ["Position", "Job Title"] {
-            let result = try ReportEngine.testableScaffoldMappings(from: [header])
+            let result = ReportEngine.testableScaffoldMappings(from: [header])
             XCTAssertEqual(result["position"], header,
                            "position hint must match header '\(header)'")
         }
@@ -246,7 +246,7 @@ final class CustomFieldExpansionTests: XCTestCase {
 
     func testScaffoldDetectsLastLoggedInUserVariants() throws {
         for header in ["Last Logged In", "Last User", "Logged In User"] {
-            let result = try ReportEngine.testableScaffoldMappings(from: [header])
+            let result = ReportEngine.testableScaffoldMappings(from: [header])
             XCTAssertEqual(result["last_logged_in_user"], header,
                            "last_logged_in_user hint must match header '\(header)'")
         }
@@ -254,7 +254,7 @@ final class CustomFieldExpansionTests: XCTestCase {
 
     func testScaffoldDetectsRecoveryLockVariants() throws {
         for header in ["Recovery Lock", "RecoveryLock", "Recovery Lock Enabled"] {
-            let result = try ReportEngine.testableScaffoldMappings(from: [header])
+            let result = ReportEngine.testableScaffoldMappings(from: [header])
             XCTAssertEqual(result["recovery_lock"], header,
                            "recovery_lock hint must match header '\(header)'")
         }
@@ -262,7 +262,7 @@ final class CustomFieldExpansionTests: XCTestCase {
 
     func testScaffoldDetectsBatteryHealthVariants() throws {
         for header in ["Battery Health", "Battery Condition", "Battery Cycle Count"] {
-            let result = try ReportEngine.testableScaffoldMappings(from: [header])
+            let result = ReportEngine.testableScaffoldMappings(from: [header])
             XCTAssertEqual(result["battery_health"], header,
                            "battery_health hint must match header '\(header)'")
         }
@@ -270,7 +270,7 @@ final class CustomFieldExpansionTests: XCTestCase {
 
     func testScaffoldDetectsEntraSSOStatusVariants() throws {
         for header in ["Entra SSO", "Azure AD Status", "Entra ID SSO"] {
-            let result = try ReportEngine.testableScaffoldMappings(from: [header])
+            let result = ReportEngine.testableScaffoldMappings(from: [header])
             XCTAssertEqual(result["entra_sso_status"], header,
                            "entra_sso_status hint must match header '\(header)'")
         }

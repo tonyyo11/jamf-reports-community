@@ -26,7 +26,8 @@ extension CLIBridge {
         }
         switch mode {
         case .snapshotOnly:
-            return try await collect(profile: profile, onLine: onLine)
+            // GUI "Run now" is always ad-hoc — bypass the once-per-day guard.
+            return try await collect(profile: profile, force: true, onLine: onLine)
         case .jamfCLIOnly:
             return try await generate(profile: profile, csvPath: nil, onLine: onLine)
         case .jamfCLIFull:
