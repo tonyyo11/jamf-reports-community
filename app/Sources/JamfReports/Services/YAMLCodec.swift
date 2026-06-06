@@ -219,12 +219,18 @@ enum YAMLCodec {
             || value.rangeOfCharacter(from: special) != nil
             || value.first?.isWhitespace == true
             || value.last?.isWhitespace == true
+            || value.contains("\n") || value.contains("\r")
             || ["true", "false", "null", "~"].contains(value.lowercased())
             || Int(value) != nil
         guard needsQuote else { return value }
+        // Escape in order: backslash first, then other special chars.
+        // \n and \r are always escaped so a value containing a literal newline
+        // cannot break the YAML line structure even when wrapped in quotes.
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
         return "\"\(escaped)\""
     }
 

@@ -13,7 +13,7 @@ struct QuickLookPreview: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: QLPreviewView, context: Context) {
-        // Validate URL against SystemActions allow-list before previewing
+        // Validate URL against the canonical SystemActions allow-list before previewing.
         guard let url = url,
               SystemActions.isURLAllowed(url) else {
             nsView.previewItem = nil
@@ -21,22 +21,5 @@ struct QuickLookPreview: NSViewRepresentable {
         }
 
         nsView.previewItem = url as NSURL
-    }
-}
-
-extension SystemActions {
-    /// Check if a URL is within the allowed path bounds for file operations.
-    /// Reuses the same validation logic as open/reveal operations.
-    static func isURLAllowed(_ url: URL) -> Bool {
-        let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-        let allowedPaths = [
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Jamf-Reports").path + "/",
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents").path + "/",
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents").path + "/",
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads").path + "/",
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop").path + "/"
-        ]
-
-        return allowedPaths.contains { resolved.path.hasPrefix($0) }
     }
 }

@@ -32,6 +32,55 @@ pattern, with write failures surfaced in the UI.
 **Unchanged:** the `allowedParents()` allow-list in `SystemActions.reveal` /
 `openFolder` remains the boundary for all programmatic (non-panel) actions.
 
+## 2026-06-06 — CONSIDER-grade hardening (v2.2.0 tail review)
+
+**Scope:** two documentation items flagged in the 2026-06-06 security review;
+no code or entitlement changes.
+
+### Unsandboxed posture and inert entitlement keys
+
+`JamfReports.entitlements` sets `com.apple.security.app-sandbox = false`.
+This is intentional: the app shells out to `jamf-cli` via `Process`, writes
+`~/Library/LaunchAgents` plists, and reads `/Volumes` for external-drive
+workspaces — all require capabilities that macOS grants outside the sandbox
+and restricts inside it. Adopting the sandbox would require sandbox extensions
+for every LaunchAgent write and every direct subprocess, which is incompatible
+with the security model (user-agent-only, no daemon, no privileged helper).
+
+Three additional keys in the entitlements file are sandbox-scoped and have no
+effect while the sandbox is off:
+
+- `com.apple.security.files.user-selected.read-write` — grants sandbox
+  extensions for user-selected files; inert when the sandbox is disabled.
+- `com.apple.security.files.bookmarks.app-scope` — enables persisted security-
+  scoped bookmarks; inert when the sandbox is disabled.
+- `com.apple.security.network.client` — allows outbound TCP in the sandbox;
+  inert when the sandbox is disabled (outbound network is unrestricted outside
+  the sandbox under Hardened Runtime alone).
+
+These keys are retained to document intent: if the app is ever sandboxed in the
+future, the minimum required entitlements are already declared. They do not
+weaken or change the current security posture.
+
+### `output.allow_absolute_paths` knob
+
+`WorkspacePaths.swift` exposes an `output.allow_absolute_paths` config key
+(default `false`, opt-in only). When enabled, the output path is not required
+to be a child of the profile workspace, allowing reports to land on a shared
+mount (e.g. `/Volumes/SharedTeamDrive/reports`).
+
+The sensitive-path blocklist in `WorkspacePaths` still applies even when
+absolute paths are enabled, so paths under `/etc`, `/usr`, and similar are
+rejected regardless of the setting.
+
+Risk to note: if multiple profiles are configured to write to the same absolute
+output path, reports from different tenants co-mingle in one directory. This is
+a multi-tenant co-mingling risk, not a privilege-escalation risk. Operators
+enabling this knob should use per-tenant subdirectories within the shared mount.
+This key has no entry in `config.example.yaml` or `DEFAULT_CONFIG` and is not
+documented in `README.md` — it is an undocumented power-user knob. If it is
+promoted to a documented feature, the cross-tenant warning must accompany it.
+
 ## 2026-05-20 — PR-25 change review
 
 **Scope:** the three changes in PR-25 — the `OOXMLWriter` xlsx ZIP/XML

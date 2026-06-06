@@ -55,6 +55,13 @@ enum SystemActions {
         NSWorkspace.shared.open(resolved)
     }
 
+    /// Returns true when `url` is within the allow-list used by `reveal` and
+    /// `open`. Delegates to `canonicalize` so QuickLook preview and the
+    /// reveal/open paths enforce an identical boundary.
+    static func isURLAllowed(_ url: URL) -> Bool {
+        canonicalize(url) != nil
+    }
+
     /// Copy a string to the general pasteboard.
     static func copyToClipboard(_ text: String) {
         let pb = NSPasteboard.general
@@ -64,11 +71,15 @@ enum SystemActions {
 
     /// Resolve `~`, follow symlinks, and confirm the final path lives inside
     /// one of the allowed parents. Returns nil otherwise.
+    ///
+    /// Both the candidate and each parent are fully resolved before comparison
+    /// so an allowed parent that is itself a symlink (e.g. `~/Jamf-Reports` on
+    /// an external-drive workspace) does not cause false rejections.
     private static func canonicalize(_ url: URL) -> URL? {
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL
         let resolvedPath = resolved.path
         for parent in allowedParents() {
-            let parentPath = parent.standardizedFileURL.path
+            let parentPath = parent.resolvingSymlinksInPath().standardizedFileURL.path
             if resolvedPath == parentPath || resolvedPath.hasPrefix(parentPath + "/") {
                 return resolved
             }
