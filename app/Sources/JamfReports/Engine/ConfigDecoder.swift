@@ -388,12 +388,48 @@ enum ComplianceFramework: String, CaseIterable, Codable, Sendable {
 
 // MARK: - compliance
 
+/// A single mSCP/STIG baseline entry under `compliance.baselines`.
+///
+/// `failuresCountColumn` is the EA name whose integer value is the per-device
+/// failure count for this baseline. Must match the `ea_name` field in
+/// `ea-results` snapshots exactly (case-sensitive).
+///
+/// `ruleCount` is reserved for future use (e.g. compliance percentage relative
+/// to total rules). Nothing reads it in the foundation increment; declare it now
+/// so the on-disk config format is stable and parsers can round-trip it without
+/// data loss.
+struct ComplianceBaselineConfig: Decodable, Sendable {
+    var name: String
+    var failuresCountColumn: String
+    /// Total rule count for this baseline. Reserved — not read by any engine
+    /// path in the foundation increment.
+    var ruleCount: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case failuresCountColumn = "failures_count_column"
+        case ruleCount = "rule_count"
+    }
+}
+
 struct ComplianceConfig: Decodable, Sendable {
     var enabled: Bool?
     var failuresCountColumn: String?   // key is `failures_count_column`
     var failuresListColumn: String?    // key is `failures_list_column`
     var baselineLabel: String?
     var framework: String?             // key is `framework`; surfaces in Compliance Posture sheet
+    /// Per-baseline list for multi-baseline mSCP/STIG tracking.
+    ///
+    /// When non-empty, each entry maps a baseline label to the EA column that
+    /// carries its per-device failure count. The first entry is the "primary"
+    /// baseline: its data drives `compliancePct` in the daily summary and the
+    /// Compliance Benchmark trend.
+    ///
+    /// Backward compat: when absent, `MSCPComplianceService` synthesizes a
+    /// single baseline from `failures_count_column` + `baseline_label` (the
+    /// pre-baselines config shape). If both are absent the service returns no
+    /// real-data result and the proxy remains active.
+    var baselines: [ComplianceBaselineConfig]?
 
     private enum CodingKeys: String, CodingKey {
         case enabled
@@ -401,6 +437,7 @@ struct ComplianceConfig: Decodable, Sendable {
         case failuresListColumn = "failures_list_column"
         case baselineLabel = "baseline_label"
         case framework
+        case baselines
     }
 
     var isEnabled: Bool { enabled ?? false }
@@ -430,6 +467,24 @@ struct ComplianceConfig: Decodable, Sendable {
         if let parsed = parsedFramework { return parsed.rawValue }
         let raw = framework?.trimmingCharacters(in: .whitespaces) ?? ""
         return raw.isEmpty ? "Not configured" : raw
+    }
+
+    /// Normalized baseline list for `MSCPComplianceService`.
+    ///
+    /// Returns `baselines` when non-empty. Otherwise synthesizes a single
+    /// entry from the legacy `failures_count_column` + `baseline_label`
+    /// fields. Returns `[]` when neither is configured.
+    var resolvedBaselines: [ComplianceBaselineConfig] {
+        if let list = baselines, !list.isEmpty { return list }
+        guard let col = failuresCountColumn,
+              !col.trimmingCharacters(in: .whitespaces).isEmpty
+        else { return [] }
+        let label = baselineLabel?.trimmingCharacters(in: .whitespaces)
+        return [ComplianceBaselineConfig(
+            name: label.flatMap { $0.isEmpty ? nil : $0 } ?? "Compliance",
+            failuresCountColumn: col,
+            ruleCount: nil
+        )]
     }
 }
 

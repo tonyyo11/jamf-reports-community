@@ -67,6 +67,9 @@ struct FullInstanceTemplate: ReportTemplate {
             .protectInsights,
             .protectPlans,
             .protectThreatOverview,
+            // mSCP / STIG compliance
+            .mscpCompliance,
+            .complianceTrend,
         ]
     }
 

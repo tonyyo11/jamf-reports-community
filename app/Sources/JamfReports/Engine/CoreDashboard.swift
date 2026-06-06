@@ -105,6 +105,9 @@ struct CoreDashboard: Sendable {
             ("Mobile Supervision Status", writeMobileSupervisionStatus),
             // --- OS currency (sheet 42) ---
             ("OS Currency", writeOSCurrency),
+            // --- mSCP / STIG compliance (sheets 43–44) ---
+            ("mSCP Compliance", writeMSCPCompliance),
+            ("Compliance Trend", writeComplianceTrend),
         ]
     }
 
@@ -2777,6 +2780,10 @@ struct CoreDashboard: Sendable {
             "Protect Computers": "Protect-enrolled computers with plan, status, and "
                 + "access grants.",
             "Protect Insights": "Protect insight pass/fail counts by section.",
+            "mSCP Compliance": "Per-baseline band distribution: No Data / Pass / Low / "
+                + "Med-Low / Medium / High with count and percent.",
+            "Compliance Trend": "Historical band counts per snapshot date for the "
+                + "primary configured baseline.",
         ]
     }
 
@@ -3083,6 +3090,173 @@ struct CoreDashboard: Sendable {
         if num >= 95 { return .green }
         if num >= 80 { return .yellow }
         return .red
+    }
+
+    // MARK: - mSCP Compliance sheet
+    // Source: `ea-results` snapshots + `compliance.baselines` config.
+
+    /// Per-baseline band-distribution table.
+    ///
+    /// One block per configured baseline. Each block shows a header row (total
+    /// systems / devices-evaluated / compliance % / rule count if configured)
+    /// followed by six band rows (No Data → High) with Count and Percent columns.
+    /// Skips when no baseline is configured or no ea-results snapshot is available.
+    func writeMSCPCompliance() throws {
+        let baselines = config.compliance?.resolvedBaselines ?? []
+        guard !baselines.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results (no baselines configured)"])
+        }
+
+        guard let eaData = try? loadLatestJSONData(names: ["ea-results"]),
+              let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData),
+              !eaRows.isEmpty
+        else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results"])
+        }
+
+        let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: baselines)
+        let hasAnyData = results.contains { $0.devicesWithData > 0 }
+        guard hasAnyData else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results"])
+        }
+
+        let ws = workbook.addSheet("mSCP Compliance")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(
+            title: t("mSCP Compliance"),
+            subtitle: "Generated: \(ts)", ncols: 3
+        )
+        ws.setColumnWidth(0, 0, 24)
+        ws.setColumnWidth(1, 1, 10)
+        ws.setColumnWidth(2, 2, 10)
+
+        for result in results {
+            writeMSCPBaselineBlock(ws: ws, row: &row, result: result)
+            row += 1
+        }
+    }
+
+    /// Write one baseline block (header + 6 band rows) into `ws` at `row`.
+    private func writeMSCPBaselineBlock(
+        ws: Worksheet,
+        row: inout Int,
+        result: MSCPComplianceService.BaselineResult
+    ) {
+        // Baseline header — name from config (not from user data in the snapshot).
+        ws.write(result.name, row: row, col: 0, format: .header)
+        row += 1
+
+        // Summary row: total / evaluated / compliance % / rule count
+        let compliancePctStr: String
+        if let pct = result.compliancePct {
+            compliancePctStr = String(format: "%.1f%%", pct)
+        } else {
+            compliancePctStr = "\u{2014}"
+        }
+        let summaryPairs: [(String, String)] = [
+            ("Total Systems", "\(result.totalDevices)"),
+            ("Devices Evaluated", "\(result.devicesWithData)"),
+            ("Compliance %", compliancePctStr),
+        ]
+        for (label, value) in summaryPairs {
+            ws.write(label, row: row, col: 0, format: .cell)
+            ws.write(value, row: row, col: 1, format: .cell)
+            row += 1
+        }
+
+        // Band distribution header
+        ws.write("Band", row: row, col: 0, format: .header)
+        ws.write("Count", row: row, col: 1, format: .header)
+        ws.write("Percent", row: row, col: 2, format: .header)
+        row += 1
+
+        // No Data row first (spec: No Data → Pass → Low → Med-Low → Medium → High).
+        let total = result.totalDevices
+        let noDataPct = total > 0 ? Double(result.noDataCount) / Double(total) * 100 : 0
+        ws.write("No Data", row: row, col: 0, format: .cell)
+        ws.write(result.noDataCount, row: row, col: 1, format: .cell)
+        ws.write(String(format: "%.1f%%", noDataPct), row: row, col: 2, format: .cell)
+        row += 1
+
+        // bands is in Band.allCases order: pass, low, medLow, medium, high, noData
+        // (noData is the last element but we rendered it first, so skip index 5).
+        let bandLabels = ["Pass (0)", "Low (1\u{2013}10)", "Med-Low (11\u{2013}30)",
+                          "Medium (31\u{2013}50)", "High (>50)"]
+        let bandFormats: [CellFormat] = [.green, .cell, .yellow, .yellow, .red]
+        let nonNoDataBands = result.bands.filter { $0.label != "No Data" }
+        for (idx, band) in nonNoDataBands.enumerated() {
+            let label = idx < bandLabels.count ? bandLabels[idx] : band.label
+            let fmt = idx < bandFormats.count ? bandFormats[idx] : .cell
+            ws.write(label, row: row, col: 0, format: fmt)
+            ws.write(band.count, row: row, col: 1, format: fmt)
+            ws.write(String(format: "%.1f%%", band.pct), row: row, col: 2, format: fmt)
+            row += 1
+        }
+    }
+
+    // MARK: - Compliance Trend sheet
+    // Source: dated `ea-results` snapshots under dataDir.
+
+    /// Historical band counts per snapshot date for the primary configured baseline.
+    ///
+    /// Uses `MSCPChartDataBuilder.buildSeries` against the `ea-results/` subdir of
+    /// `dataDir`. Summaries are not loaded here (CoreDashboard has no profile/path
+    /// to the summaries dir); the builder's ea-results source provides full fidelity.
+    /// Skips when no baseline is configured or fewer than one dated snapshot exists.
+    func writeComplianceTrend() throws {
+        let baselines = config.compliance?.resolvedBaselines ?? []
+        guard !baselines.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results (no baselines configured)"])
+        }
+
+        guard let primary = baselines.first else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results"])
+        }
+
+        // buildSeries reads ea-results/ under dataDir; pass summaries:[] since
+        // CoreDashboard has no access to the profile's summaries directory.
+        let points = MSCPChartDataBuilder.buildSeries(
+            baseline: primary,
+            dataDir: dataDir,
+            summaries: []
+        )
+        guard !points.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results"])
+        }
+
+        let ws = workbook.addSheet("Compliance Trend")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(
+            title: t("Compliance Trend — \(primary.name)"),
+            subtitle: "Generated: \(ts)", ncols: 7
+        )
+        ws.setColumnWidth(0, 0, 14)
+        ws.setColumnWidth(1, 6, 12)
+
+        let headers = ["Date", "Pass (0)", "Low (1\u{2013}10)", "Med-Low (11\u{2013}30)",
+                       "Medium (31\u{2013}50)", "High (>50)", "Total"]
+        for (col, header) in headers.enumerated() {
+            ws.write(header, row: row, col: col, format: .header)
+        }
+        row += 1
+
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.locale = Locale(identifier: "en_US_POSIX")
+
+        for point in points {
+            let counts = point.counts
+            let total = counts.pass + counts.low + counts.medLow
+                + counts.medium + counts.high + counts.noData
+            ws.write(df.string(from: point.date), row: row, col: 0, format: .cell)
+            ws.write(counts.pass,   row: row, col: 1, format: .cell)
+            ws.write(counts.low,    row: row, col: 2, format: .cell)
+            ws.write(counts.medLow, row: row, col: 3, format: .cell)
+            ws.write(counts.medium, row: row, col: 4, format: .cell)
+            ws.write(counts.high,   row: row, col: 5, format: .cell)
+            ws.write(total,         row: row, col: 6, format: .cell)
+            row += 1
+        }
     }
 }
 

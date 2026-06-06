@@ -350,6 +350,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "failures_count_column": "",
         "failures_list_column": "",
         "baseline_label": "mSCP Compliance",
+        # Per-baseline list for multi-baseline mSCP/STIG tracking. Each entry is
+        # {name, failures_count_column, rule_count?}. When empty, the engine
+        # synthesizes a single implicit baseline from failures_count_column +
+        # baseline_label so legacy single-baseline configs keep working.
+        "baselines": [],
     },
     "custom_eas": [],
     "sheets": {
@@ -667,6 +672,315 @@ def strict_parse_failures(value: Any) -> int:
     if result < 0:
         raise ValueError(f"Compliance value is negative: {result}")
     return result
+
+
+# ---------------------------------------------------------------------------
+# mSCP / STIG compliance banding from ea-results (Swift-engine parity)
+# ---------------------------------------------------------------------------
+#
+# Mirrors the Swift engine's MSCPComplianceService + ComplianceBandingService.
+# Band boundaries are fixed here (NOT read from charts.compliance_trend.bands)
+# so a user who customizes chart bands cannot silently break summary/sheet
+# parity with the Swift output. The chart code reuses the config bands; the
+# summary and sheet math bind to these constants.
+
+# Donut-legend order (best -> worst, No Data last) — matches
+# ComplianceBandingService.Band.allCases exactly.
+MSCP_BAND_KEYS = ("pass", "low", "medLow", "medium", "high", "noData")
+MSCP_BAND_LABELS = {
+    "pass": "Pass",
+    "low": "Low",
+    "medLow": "Med-Low",
+    "medium": "Medium",
+    "high": "High",
+    "noData": "No Data",
+}
+MSCP_BAND_RANGES = {
+    "pass": "0",
+    "low": "1-10",
+    "medLow": "11-30",
+    "medium": "31-50",
+    "high": ">50",
+    "noData": "—",
+}
+
+
+def _mscp_int_value(value: Any) -> Optional[int]:
+    """Parse an ea-results cell into a failure count, mirroring Swift's intValue.
+
+    Byte-for-byte parity with ``AnyCodable.intValue`` + the ``>= 0`` guard in
+    ``MSCPComplianceService.evaluateBaseline``. A JSON bool, a non-integer
+    string (``"5.0"``, ``"1e3"``, padded), a negative number, or any other type
+    returns None — which the caller routes to the No Data band, exactly as the
+    Swift code does for the absent-key path.
+
+    Args:
+        value: Raw JSON value from an ea-results row's ``value`` field.
+
+    Returns:
+        Non-negative integer failure count, or None for No Data.
+    """
+    # bool is a subclass of int in Python; Swift's intValue returns nil for a
+    # JSON Bool, so exclude it first or `True` would land in the Low band.
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        result = value
+    elif isinstance(value, float):
+        result = int(value)  # truncate toward zero — matches Swift Int(Double)
+    elif isinstance(value, str):
+        # Swift Int(s) accepts only a plain integer literal: no decimals,
+        # no exponent, no surrounding whitespace.
+        if not re.fullmatch(r"[+-]?\d+", value):
+            return None
+        result = int(value)
+    else:
+        return None
+    return result if result >= 0 else None
+
+
+def _mscp_band_key(failures: Optional[int]) -> str:
+    """Return the band key for a failure count (None/negative -> noData).
+
+    Mirrors ``ComplianceBandingService.Band.from(failures:)``.
+    """
+    if failures is None or failures < 0:
+        return "noData"
+    if failures == 0:
+        return "pass"
+    if failures <= 10:
+        return "low"
+    if failures <= 30:
+        return "medLow"
+    if failures <= 50:
+        return "medium"
+    return "high"
+
+
+def _mscp_resolved_baselines(comp_cfg: dict[str, Any]) -> list[dict[str, str]]:
+    """Return the normalized baseline list, mirroring ``resolvedBaselines``.
+
+    Uses ``compliance.baselines`` when non-empty; otherwise synthesizes a single
+    implicit baseline from ``failures_count_column`` + ``baseline_label``.
+    Returns [] when neither is configured.
+
+    Args:
+        comp_cfg: The ``compliance`` config dict.
+
+    Returns:
+        A list of ``{"name", "failures_count_column"}`` dicts.
+    """
+    raw = comp_cfg.get("baselines")
+    resolved: list[dict[str, str]] = []
+    if isinstance(raw, list) and raw:
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            col = str(entry.get("failures_count_column", "") or "").strip()
+            if not col:
+                continue
+            name = str(entry.get("name", "") or "").strip() or "Compliance"
+            resolved.append({"name": name, "failures_count_column": col})
+        return resolved
+
+    col = str(comp_cfg.get("failures_count_column", "") or "").strip()
+    if not col:
+        return []
+    name = str(comp_cfg.get("baseline_label", "") or "").strip() or "Compliance"
+    return [{"name": name, "failures_count_column": col}]
+
+
+def _mscp_row_identity(row: dict[str, Any]) -> Optional[str]:
+    """Return a row's device identity, mirroring Swift ``primaryIdentifier``.
+
+    Fallback chain: ``computer_id ?? serial ?? device ?? computer_name`` —
+    first non-empty value, lowercased. None when all are empty.
+    """
+    for key in ("computer_id", "serial", "device", "computer_name"):
+        candidate = str(row.get(key, "") or "").strip()
+        if candidate:
+            return candidate.lower()
+    return None
+
+
+def _mscp_evaluate_baseline(
+    rows: list[dict[str, Any]], failures_count_column: str
+) -> dict[str, Any]:
+    """Evaluate one baseline over one ea-results snapshot (one universe).
+
+    Mirrors ``MSCPComplianceService.evaluateBaseline``: the device universe is
+    every distinct identity across ALL rows; a device with no parseable row for
+    this baseline's ``ea_name`` is No Data; ``compliancePct = pass /
+    devicesWithData`` (None when devicesWithData == 0).
+
+    Args:
+        rows: Decoded ea-results rows for a single snapshot.
+        failures_count_column: The ``ea_name`` to match (case-insensitive).
+
+    Returns:
+        A dict with ``bands`` (key->count over MSCP_BAND_KEYS), ``noData``,
+        ``total`` (universe size), ``devices_with_data``, ``pass``, and
+        ``compliance_pct`` (float or None).
+    """
+    col = failures_count_column.strip()
+    universe: set[str] = set()
+    failures_by_device: dict[str, int] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        identity = _mscp_row_identity(row)
+        if identity is None:
+            continue
+        universe.add(identity)
+        ea_name = str(row.get("ea_name", "") or "").strip()
+        if ea_name.lower() != col.lower():
+            continue
+        count = _mscp_int_value(row.get("value"))
+        if count is None:
+            # Unparseable / negative -> No Data (no dict entry). Note: a later
+            # parseable row for the same device still wins (last-write-wins);
+            # mirror Swift by only assigning on a parseable value.
+            continue
+        failures_by_device[identity] = count
+
+    bands = {key: 0 for key in MSCP_BAND_KEYS}
+    for identity in universe:
+        bands[_mscp_band_key(failures_by_device.get(identity))] += 1
+    no_data = bands["noData"]
+    devices_with_data = len(universe) - no_data
+    pass_count = sum(1 for c in failures_by_device.values() if c == 0)
+    compliance_pct = (
+        (pass_count / devices_with_data * 100.0) if devices_with_data > 0 else None
+    )
+    return {
+        "bands": bands,
+        "noData": no_data,
+        "total": len(universe),
+        "devices_with_data": devices_with_data,
+        "pass": pass_count,
+        "compliance_pct": compliance_pct,
+    }
+
+
+def _mscp_bands_from_ea_results(
+    config: "Config", bridge: Optional["JamfCLIBridge"]
+) -> Optional[dict[str, Any]]:
+    """Compute per-baseline mSCP bands from the latest cached ea-results.
+
+    Mirrors the Swift summary wiring: returns the per-baseline ``mscpBands`` map
+    (keyed by baseline name) plus the primary baseline's real compliance pct.
+    Returns None when no baseline is configured, the bridge is unavailable, or
+    ea-results yields no usable data — callers then omit ``mscpBands`` and keep
+    the proxy.
+
+    Args:
+        config: Loaded Config instance.
+        bridge: jamf-cli bridge (may be None or unavailable).
+
+    Returns:
+        ``{"bands_map": {name: {pass,...,noData,total}}, "primary_pct": float|None}``
+        or None.
+    """
+    if bridge is None or not bridge.is_available():
+        return None
+    baselines = _mscp_resolved_baselines(config.compliance)
+    if not baselines:
+        return None
+    try:
+        raw = bridge.ea_results_report(include_all=True)
+    except Exception as exc:  # absent report or unexpected shape
+        print(f"  [warn] mSCP bands: ea-results unavailable — omitting mscpBands: {exc}")
+        return None
+    rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+    if not rows:
+        return None
+
+    bands_map: dict[str, dict[str, int]] = {}
+    primary_pct: Optional[float] = None
+    for index, baseline in enumerate(baselines):
+        result = _mscp_evaluate_baseline(rows, baseline["failures_count_column"])
+        if result["total"] <= 0:
+            # Skip baselines with no data seen for their EA — mirrors
+            # mscpBandsMap's `guard result.totalDevices > 0`.
+            if index == 0:
+                primary_pct = None
+            continue
+        counts = dict(result["bands"])
+        counts["total"] = result["total"]
+        bands_map[baseline["name"]] = counts
+        if index == 0:
+            primary_pct = result["compliance_pct"]
+    if not bands_map:
+        return None
+    return {"bands_map": bands_map, "primary_pct": primary_pct}
+
+
+def _snapshot_date_from_path(path: Path) -> datetime:
+    """Extract a timestamp from a snapshot filename, falling back to file mtime.
+
+    Shared by the Compliance Trend sheet and ChartGenerator so dated ea-results
+    snapshots sort identically in both. Handles ``YYYY-MM-DDTHHMMSS``,
+    ``YYYY-MM-DD_HHMMSS``, ``YYYYMMDD_HHMMSS``, ``YYYY-MM-DD``, and ``YYYYMMDD``.
+    """
+    name = path.stem
+    for pattern, fmt in (
+        (r"(\d{4}-\d{2}-\d{2}T\d{6})", "%Y-%m-%dT%H%M%S"),
+        (r"(\d{4}-\d{2}-\d{2}_\d{6})", "%Y-%m-%d_%H%M%S"),
+        (r"(\d{8}T\d{6})", "%Y%m%dT%H%M%S"),
+        (r"(\d{8}_\d{6})", "%Y%m%d_%H%M%S"),
+    ):
+        match = re.search(pattern, name)
+        if not match:
+            continue
+        value = match.group(1)
+        for candidate_fmt in {fmt, fmt.replace("T", "_"), fmt.replace("_", "T")}:
+            try:
+                return datetime.strptime(value, candidate_fmt)
+            except ValueError:
+                continue
+    for pattern, fmt in ((r"(\d{4}-\d{2}-\d{2})", "%Y-%m-%d"), (r"(\d{8})", "%Y%m%d")):
+        match = re.search(pattern, name)
+        if match:
+            try:
+                return datetime.strptime(match.group(1), fmt)
+            except ValueError:
+                continue
+    return datetime.fromtimestamp(path.stat().st_mtime).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+
+def _load_ea_results_snapshots(data_dir: Path) -> list[tuple[datetime, list[dict[str, Any]]]]:
+    """Load all dated ea-results JSON snapshots sorted by timestamp.
+
+    Reads ``<data_dir>/ea-results/*.json``. Skips partial/manifest files and
+    unreadable JSON (warn-only) so a bad historical snapshot never breaks the
+    trend. Each returned snapshot is its own device universe.
+
+    Args:
+        data_dir: jamf-cli data directory.
+
+    Returns:
+        List of ``(date, rows)`` tuples sorted ascending by date.
+    """
+    results_dir = data_dir / "ea-results"
+    if not results_dir.is_dir():
+        return []
+    snapshots: list[tuple[datetime, list[dict[str, Any]]]] = []
+    for path in sorted(results_dir.rglob("*.json")):
+        if ".partial" in path.name or path.name == SNAPSHOT_MANIFEST_FILENAME:
+            continue
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_bytes())
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"  [warn] Skipping unreadable ea-results snapshot {path.name}: {exc}")
+            continue
+        rows = [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+        snapshots.append((_snapshot_date_from_path(path), rows))
+    snapshots.sort(key=lambda item: item[0])
+    return snapshots
 
 
 def _now_ts() -> str:
@@ -3000,6 +3314,11 @@ def _emit_summary_json(
     if comp_pct is not None:
         summary_data["compliancePct"] = round(comp_pct, 1)
 
+    # Real mSCP/STIG bands from ea-results override the CSV-column compliancePct
+    # when a baseline resolves to at least one device with data. Mirrors the
+    # Swift summary wiring (ReportEngine.emitSummaryJSON).
+    _apply_mscp_bands_to_summary(summary_data, config, bridge)
+
     _atomic_write_summary(summary_file, summaries_dir, summary_data)
 
 
@@ -3201,7 +3520,42 @@ def _build_summary_from_bridge(
         summary["osCurrentPct"] = round(os_pct, 1)
     if patch_pct is not None:
         summary["patchPct"] = round(patch_pct, 1)
+
+    # Real mSCP/STIG bands from ea-results. Pure-CLI users get true compliance
+    # banding when a baseline is configured. Mirrors the Swift summary wiring.
+    _apply_mscp_bands_to_summary(summary, config, bridge)
     return summary
+
+
+def _apply_mscp_bands_to_summary(
+    summary: dict[str, Any], config: "Config", bridge: Optional["JamfCLIBridge"]
+) -> None:
+    """Add ``mscpBands`` + real compliancePct to a summary dict when resolvable.
+
+    Shared by the CSV path (``_emit_summary_json``) and the pure-CLI path
+    (``_build_summary_from_bridge``). When a baseline resolves to at least one
+    device with data the primary baseline's pct overrides any existing
+    ``compliancePct`` and ``complianceIsProxy`` is set to False. A failure to
+    read ea-results leaves the summary untouched (per-metric degrade), matching
+    the surrounding optional-metric pattern.
+
+    Args:
+        summary: The summary dict to mutate in place.
+        config: Loaded Config instance.
+        bridge: jamf-cli bridge (may be None or unavailable).
+    """
+    try:
+        result = _mscp_bands_from_ea_results(config, bridge)
+    except Exception as exc:  # never let an ea-results hiccup abort the summary
+        print(f"  [warn] mSCP bands: skipped — {exc}")
+        return
+    if not result:
+        return
+    summary["mscpBands"] = result["bands_map"]
+    primary_pct = result.get("primary_pct")
+    if primary_pct is not None:
+        summary["compliancePct"] = round(primary_pct, 1)
+        summary["complianceIsProxy"] = False
 
 
 def _percent_string_to_float(raw: Any) -> float:
@@ -7601,6 +7955,8 @@ class CoreDashboard:
                 ("Security Posture", self._write_security),
                 ("Device Security State", self._write_device_security_state),
                 ("Device Compliance", self._write_device_compliance),
+                ("mSCP Compliance", self._write_mscp_compliance),
+                ("Compliance Trend", self._write_mscp_compliance_trend),
                 ("Check-in Health", self._write_checkin_health),
                 ("EA Coverage", self._write_ea_coverage),
                 ("Environment Stats", self._write_env_stats),
@@ -9948,6 +10304,130 @@ class CoreDashboard:
             _safe_write(ws, row, 4, item.get("last_contact", ""), row_fmt)
             _safe_write(ws, row, 5, item.get("days_since_contact", ""), row_fmt)
             _safe_write(ws, row, 6, stale_label, row_fmt)
+            row += 1
+
+    def _write_mscp_compliance(self) -> None:
+        """Write per-baseline mSCP/STIG band distribution from the latest ea-results.
+
+        Sources ``pro report ea-results`` and the configured
+        ``compliance.baselines`` (or the legacy single ``failures_count_column``).
+        Raises RuntimeError to skip when no baseline is configured or no
+        ea-results data resolves — never emits an empty sheet.
+        """
+        baselines = _mscp_resolved_baselines(self._config.compliance)
+        if not baselines:
+            raise RuntimeError("no compliance baseline configured (compliance.baselines)")
+
+        raw = self._bridge.ea_results_report(include_all=True)
+        rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+        if not rows:
+            raise RuntimeError("jamf-cli ea-results returned no rows")
+
+        evaluated = [
+            (b["name"], _mscp_evaluate_baseline(rows, b["failures_count_column"]))
+            for b in baselines
+        ]
+        evaluated = [(name, res) for name, res in evaluated if res["total"] > 0]
+        if not evaluated:
+            raise RuntimeError("ea-results contained no rows for any configured baseline EA")
+
+        ws = self._wb.add_worksheet("mSCP Compliance")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ncols = 2 + len(MSCP_BAND_KEYS) + 3  # name + col + 6 bands + total/eval/pct
+        row = _write_sheet_header(
+            ws,
+            self._t("mSCP Compliance"),
+            f"Source: jamf-cli pro report ea-results --all | Generated: {ts}",
+            self._fmts,
+            ncols=ncols,
+        )
+        headers = (
+            ["Baseline", "Failures Count EA"]
+            + [f"{MSCP_BAND_LABELS[k]} ({MSCP_BAND_RANGES[k]})" for k in MSCP_BAND_KEYS]
+            + ["Evaluated", "Total Devices", "Compliance %"]
+        )
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+        ws.set_column(0, 0, 28)
+        ws.set_column(1, 1, 40)
+        ws.set_column(2, len(headers) - 1, 14)
+
+        for name, res in evaluated:
+            col_i = 0
+            _safe_write(ws, row, col_i, name, self._fmts["cell"])
+            col_i += 1
+            ea_col = next(
+                (b["failures_count_column"] for b in baselines if b["name"] == name), ""
+            )
+            _safe_write(ws, row, col_i, ea_col, self._fmts["cell"])
+            col_i += 1
+            for key in MSCP_BAND_KEYS:
+                _safe_write(ws, row, col_i, res["bands"][key], self._fmts["cell"])
+                col_i += 1
+            _safe_write(ws, row, col_i, res["devices_with_data"], self._fmts["cell"])
+            col_i += 1
+            _safe_write(ws, row, col_i, res["total"], self._fmts["cell"])
+            col_i += 1
+            pct = res["compliance_pct"]
+            if pct is None:
+                _safe_write(ws, row, col_i, "—", self._fmts["cell"])
+            else:
+                frac = pct / 100.0
+                _safe_write(ws, row, col_i, frac, _pct_format(self._fmts, frac))
+            row += 1
+
+    def _write_mscp_compliance_trend(self) -> None:
+        """Write per-date mSCP band counts from dated ea-results snapshots.
+
+        One row per (date, baseline) with the six band counts. Each snapshot is
+        evaluated as its own device universe. Raises RuntimeError to skip when no
+        baseline is configured or fewer than one dated snapshot resolves.
+        """
+        baselines = _mscp_resolved_baselines(self._config.compliance)
+        if not baselines:
+            raise RuntimeError("no compliance baseline configured (compliance.baselines)")
+
+        snapshots = _load_ea_results_snapshots(self._bridge._data_dir)
+        if not snapshots:
+            raise RuntimeError("no dated ea-results snapshots found for trend")
+
+        records: list[tuple[datetime, str, dict[str, int]]] = []
+        for dt, rows in snapshots:
+            if not rows:
+                continue
+            for baseline in baselines:
+                res = _mscp_evaluate_baseline(rows, baseline["failures_count_column"])
+                if res["total"] <= 0:
+                    continue
+                records.append((dt, baseline["name"], res["bands"]))
+        if not records:
+            raise RuntimeError("dated ea-results snapshots contained no usable baseline rows")
+
+        ws = self._wb.add_worksheet("Compliance Trend")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        headers = ["Date", "Baseline"] + [
+            f"{MSCP_BAND_LABELS[k]} ({MSCP_BAND_RANGES[k]})" for k in MSCP_BAND_KEYS
+        ]
+        row = _write_sheet_header(
+            ws,
+            self._t("Compliance Trend"),
+            f"Source: dated jamf-cli ea-results snapshots | Generated: {ts}",
+            self._fmts,
+            ncols=len(headers),
+        )
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+        ws.set_column(0, 0, 18)
+        ws.set_column(1, 1, 28)
+        ws.set_column(2, len(headers) - 1, 14)
+
+        for dt, name, bands in records:
+            _safe_write(ws, row, 0, dt.strftime("%Y-%m-%d"), self._fmts["cell"])
+            _safe_write(ws, row, 1, name, self._fmts["cell"])
+            for offset, key in enumerate(MSCP_BAND_KEYS):
+                _safe_write(ws, row, 2 + offset, bands[key], self._fmts["cell"])
             row += 1
 
     def _write_checkin_health(self) -> None:
@@ -13398,6 +13878,11 @@ class ChartGenerator:
                     png_paths.append(path)
                     chart_sources.add("jamf-cli snapshots")
 
+            mscp_paths = self._generate_mscp_band_charts()
+            if mscp_paths:
+                png_paths.extend(mscp_paths)
+                chart_sources.add("jamf-cli snapshots")
+
             if not png_paths:
                 print("  [skip] Charts: no CSV or jamf-cli snapshot history found")
                 return [], [], False
@@ -13887,6 +14372,132 @@ class ChartGenerator:
         fig.tight_layout()
 
         path = self._chart_path("device_state_trend")
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  [chart] {Path(path).name}")
+        return path
+
+    def _generate_mscp_band_charts(self) -> list[str]:
+        """Generate per-baseline mSCP band donuts + a band-trend stackplot.
+
+        Reads dated ea-results snapshots from the jamf-cli data dir, evaluates
+        each as its own device universe per configured baseline, then plots:
+          - one donut per baseline from the newest snapshot, and
+          - one stackplot of band counts over time (primary baseline).
+        Returns [] when no baseline is configured or no usable snapshots exist.
+        """
+        if not self._jamf_cli_dir:
+            return []
+        baselines = _mscp_resolved_baselines(self._config.compliance)
+        if not baselines:
+            return []
+        snapshots = _load_ea_results_snapshots(self._jamf_cli_dir)
+        if not snapshots:
+            return []
+
+        # Band colors mirror ComplianceBandingService.Band.colorHex for parity.
+        band_colors = {
+            "pass": "#30D158",
+            "low": "#0A84FF",
+            "medLow": "#E8B614",
+            "medium": "#FF9F0A",
+            "high": "#FF453A",
+            "noData": "#8E8E93",
+        }
+        paths: list[str] = []
+
+        # Donuts from the newest snapshot, one per baseline with data.
+        newest_rows = snapshots[-1][1]
+        for baseline in baselines:
+            res = _mscp_evaluate_baseline(newest_rows, baseline["failures_count_column"])
+            if res["total"] <= 0:
+                continue
+            path = self._plot_mscp_band_donut(baseline["name"], res["bands"], band_colors)
+            if path:
+                paths.append(path)
+
+        # Stackplot of the primary baseline's bands over time.
+        path = self._plot_mscp_band_trend(snapshots, baselines[0], band_colors)
+        if path:
+            paths.append(path)
+        return paths
+
+    def _plot_mscp_band_donut(
+        self, baseline_name: str, bands: dict[str, int], band_colors: dict[str, str]
+    ) -> Optional[str]:
+        """Plot a single baseline's band distribution as a donut. Returns PNG path."""
+        labels = [MSCP_BAND_LABELS[k] for k in MSCP_BAND_KEYS if bands[k] > 0]
+        values = [bands[k] for k in MSCP_BAND_KEYS if bands[k] > 0]
+        colors = [band_colors[k] for k in MSCP_BAND_KEYS if bands[k] > 0]
+        if not values:
+            return None
+
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.pie(
+            values,
+            labels=labels,
+            colors=colors,
+            autopct=lambda pct: f"{pct:.0f}%" if pct >= 3 else "",
+            startangle=90,
+            wedgeprops={"width": 0.42, "edgecolor": "white"},
+        )
+        ax.set_title(f"{baseline_name} — Compliance Bands", fontweight="bold")
+        fig.tight_layout()
+
+        path = self._chart_path(f"mscp_band_donut_{_filename_component(baseline_name)}")
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  [chart] {Path(path).name}")
+        return path
+
+    def _plot_mscp_band_trend(
+        self,
+        snapshots: list[tuple[datetime, list[dict[str, Any]]]],
+        baseline: dict[str, str],
+        band_colors: dict[str, str],
+    ) -> Optional[str]:
+        """Plot the primary baseline's band counts over time. Returns PNG path."""
+        records = []
+        for dt, rows in snapshots:
+            if not rows:
+                continue
+            res = _mscp_evaluate_baseline(rows, baseline["failures_count_column"])
+            if res["total"] <= 0:
+                continue
+            row: dict[str, Any] = {"date": dt}
+            row.update({MSCP_BAND_LABELS[k]: res["bands"][k] for k in MSCP_BAND_KEYS})
+            records.append(row)
+        if not records:
+            return None
+
+        ts = pd.DataFrame(records).groupby("date", as_index=True).sum().sort_index()
+        labels = [MSCP_BAND_LABELS[k] for k in MSCP_BAND_KEYS]
+        colors = [band_colors[k] for k in MSCP_BAND_KEYS]
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        if len(ts.index) == 1:
+            values = [int(ts.iloc[0][label]) for label in labels]
+            ax.bar(labels, values, color=colors)
+            plt.setp(ax.get_xticklabels(), rotation=20, ha="right")
+            ax.set_xlabel("Compliance Band")
+        else:
+            ax.stackplot(
+                ts.index,
+                [ts[label].values for label in labels],
+                labels=labels,
+                colors=colors,
+                alpha=0.85,
+            )
+            ax.set_xlabel("Date")
+            ax.legend(loc="upper left", fontsize=9)
+            self._format_date_axis(ax, ts.index)
+
+        ax.set_title(f"{baseline['name']} — Compliance Bands Over Time", fontweight="bold")
+        ax.set_ylabel("Number of Devices")
+        ax.grid(True, alpha=0.2)
+        fig.tight_layout()
+
+        path = self._chart_path("mscp_band_trend")
         fig.savefig(path, dpi=150, bbox_inches="tight")
         plt.close(fig)
         print(f"  [chart] {Path(path).name}")

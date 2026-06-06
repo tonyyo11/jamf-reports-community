@@ -103,9 +103,15 @@ struct ReportEngine: Sendable {
         }
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
+        // Standalone PNGs land next to the xlsx via ExportNaming conventions.
         if config.charts?.isEnabled == true,
            let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
-            renderChartSheet(workbook: workbook, summariesDir: summariesDir)
+            renderChartSheet(
+                workbook: workbook,
+                summariesDir: summariesDir,
+                pngOutputDir: outputURL.deletingLastPathComponent(),
+                profile: profile
+            )
         }
 
         // Write the workbook atomically.
@@ -286,16 +292,24 @@ struct ReportEngine: Sendable {
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
 
         if fm.fileExists(atPath: summaryFile.path),
-           let data = try? Data(contentsOf: summaryFile),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let existingData = try? Data(contentsOf: summaryFile),
+           let obj = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any],
            obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
-            // Same-day summary already valid — leave the existing file untouched
-            // so its mtime reflects the first run that produced it. Log an [info]
-            // line so operators investigating "Refresh didn't clear staleness"
-            // can see this is the reason a fresh file wasn't written.
-            let msg = "[info] summary_\(today).json already exists — leaving existing file in place"
-            AppLogger.engine.info("\(msg, privacy: .public)")
-            onLine?(.init(timestamp: Date(), level: .info, text: msg))
+            // Same-day summary is valid. Check whether a fresh build would be strictly
+            // better (proxy→real mSCP upgrade, or mscpBands newly populated). If not,
+            // keep the existing file so its mtime reflects the first run.
+            if let fresh = buildSummaryFromCLI(date: today, provenance: provenance),
+               let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
+               Self.freshSummaryIsBetter(existing: existing, fresh: fresh) {
+                let upgradeMsg = "[info] summary_\(today).json upgraded (proxy→real mSCP)"
+                AppLogger.engine.info("\(upgradeMsg, privacy: .public)")
+                onLine?(.init(timestamp: Date(), level: .info, text: upgradeMsg))
+                writeSummaryFile(fresh, to: summaryFile, onLine: onLine)
+            } else {
+                let msg = "[info] summary_\(today).json already exists — leaving existing file in place"
+                AppLogger.engine.info("\(msg, privacy: .public)")
+                onLine?(.init(timestamp: Date(), level: .info, text: msg))
+            }
             return
         }
 
@@ -312,12 +326,40 @@ struct ReportEngine: Sendable {
             return
         }
 
+        writeSummaryFile(summary, to: summaryFile, onLine: onLine)
+    }
+
+    // MARK: - Summary upgrade helpers
+
+    /// Returns true when `fresh` is strictly better than `existing` — meaning it
+    /// should overwrite a same-day summary that would otherwise be kept.
+    ///
+    /// "Better" means at least one of:
+    /// - `existing.complianceIsProxy == true` AND `fresh.complianceIsProxy == false`
+    ///   (real mSCP data is now available where before only the 4-control proxy was), OR
+    /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`.
+    ///
+    /// Never returns true when the fresh run would downgrade (real→proxy, or bands dropped),
+    /// preserving the PR-18 protection against partial-collect clobbering a good summary.
+    static func freshSummaryIsBetter(existing: DailySummary, fresh: DailySummary) -> Bool {
+        if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
+        let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
+        let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
+        return !existingHasBands && freshHasBands
+    }
+
+    /// Encode and atomically write `summary` to `url`, logging the outcome to `onLine`.
+    private func writeSummaryFile(
+        _ summary: DailySummary,
+        to url: URL,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             let data = try encoder.encode(summary)
-            try data.write(to: summaryFile, options: .atomic)
-            let msg = "[ok] wrote \(summaryFile.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
+            try data.write(to: url, options: .atomic)
+            let msg = "[ok] wrote \(url.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
             AppLogger.engine.info("\(msg, privacy: .public)")
             onLine?(.init(timestamp: Date(), level: .ok, text: msg))
         } catch {
@@ -434,6 +476,27 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // Real mSCP compliance from ea-results — overrides the proxy when the
+        // primary baseline resolves to at least one device with data.
+        // `devicesWithData == 0` → primary.compliancePct is nil → proxy kept.
+        var complianceFinalPct: Double? = complianceProxyPct
+        var complianceIsRealData = false
+        var mscpBandsSnapshot: [String: MSCPBandCounts]? = nil
+        let eaBaselines = config.compliance?.resolvedBaselines ?? []
+        if !eaBaselines.isEmpty,
+           let eaData = try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir),
+           let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData) {
+            let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
+            if let primary = results.first, let realPct = primary.compliancePct {
+                complianceFinalPct = realPct
+                complianceIsRealData = true
+            }
+            // Map all baseline results into the mscpBands summary field so the
+            // trend chart has per-date band data from the first collect onward.
+            let bandsMap = Self.mscpBandsMap(from: results)
+            if !bandsMap.isEmpty { mscpBandsSnapshot = bandsMap }
+        }
+
         // Derive per-control percentages and the weighted v3.5 security
         // score from the same counts the summary section provided. These are
         // all optional — when a tenant lacks any of these signals the field
@@ -461,11 +524,24 @@ struct ReportEngine: Sendable {
             .reduce(0, +)
         let p1 = gatekeeperCount.map { totalDevices - $0 } ?? 0
 
+        // complianceIsProxy:
+        //   nil   — no compliance data at all (neither proxy nor real)
+        //   true  — 4-control proxy from security report
+        //   false — real mSCP failure-count data from ea-results
+        let complianceIsProxy: Bool?
+        if complianceIsRealData {
+            complianceIsProxy = false
+        } else if complianceProxyPct != nil {
+            complianceIsProxy = true
+        } else {
+            complianceIsProxy = nil
+        }
+
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
             fileVaultPct: fileVaultPct.map(round1),
-            compliancePct: complianceProxyPct.map(round1),
+            compliancePct: complianceFinalPct.map(round1),
             staleCount: staleCount,
             osCurrentPct: osCurrentPct.map(round1),
             crowdstrikePct: nil,
@@ -477,7 +553,41 @@ struct ReportEngine: Sendable {
             securityScore: securityScore.map(round1),
             actionItemsP0: fileVaultCount != nil ? p0 : nil,
             actionItemsP1: gatekeeperCount.map { _ in p1 },
-            complianceIsProxy: complianceProxyPct != nil ? true : nil
+            complianceIsProxy: complianceIsProxy,
+            mscpBands: mscpBandsSnapshot
+        )
+    }
+
+    /// Map `MSCPComplianceService.BaselineResult` array → `[baselineName: MSCPBandCounts]`
+    /// for persistence in `summary.json`.
+    ///
+    /// Skips baselines with zero total devices (no data seen for that baseline's EA).
+    static func mscpBandsMap(from results: [MSCPComplianceService.BaselineResult]) -> [String: MSCPBandCounts] {
+        var out: [String: MSCPBandCounts] = [:]
+        for result in results {
+            guard result.totalDevices > 0 else { continue }
+            out[result.name] = bandCountsFromBands(result.bands, noData: result.noDataCount)
+        }
+        return out
+    }
+
+    /// Extract raw integer counts from `[ComplianceBand]` (which carries computed pct
+    /// alongside count). Band order matches `ComplianceBandingService.Band.allCases`:
+    /// pass, low, medLow, medium, high, noData.
+    private static func bandCountsFromBands(
+        _ bands: [ComplianceBand],
+        noData: Int
+    ) -> MSCPBandCounts {
+        // bands is always 6 elements in Band.allCases order: pass, low, medLow, medium, high, noData.
+        // Index them defensively.
+        func count(at index: Int) -> Int { index < bands.count ? bands[index].count : 0 }
+        return MSCPBandCounts(
+            pass: count(at: 0),
+            low: count(at: 1),
+            medLow: count(at: 2),
+            medium: count(at: 3),
+            high: count(at: 4),
+            noData: noData
         )
     }
 
@@ -561,124 +671,242 @@ struct ReportEngine: Sendable {
     ///   (using `ChartPalette.majorVersionColors`).
     /// - `charts.compliance_trend.bands` — uses band labels/colors for compliance stacked area.
     /// - `charts.device_state_trend.enabled` — renders managed/stale trend line chart.
-    func renderChartSheet(workbook: Workbook, summariesDir: URL) {
+    /// - `compliance.baselines` — when configured, appends mSCP/STIG compliance donut(s) and
+    ///   a band trend stackplot even when the summaries dir is empty (first-run case).
+    ///
+    /// - Parameters:
+    ///   - workbook: Workbook to append the "Charts" sheet to.
+    ///   - summariesDir: Directory containing `summary_*.json` files.
+    ///   - pngOutputDir: When non-nil, standalone PNG files are written here alongside
+    ///     the xlsx using `ExportNaming` conventions.
+    ///   - profile: Profile slug used in `ExportNaming` filenames. Defaults to "".
+    func renderChartSheet(
+        workbook: Workbook,
+        summariesDir: URL,
+        pngOutputDir: URL? = nil,
+        profile: String = ""
+    ) {
         let summaries = SummaryJSONParser.parseDirectory(summariesDir)
             .sorted { $0.parsedDate < $1.parsedDate }
-        guard !summaries.isEmpty else { return }
+        let baselines = config.compliance?.resolvedBaselines ?? []
+
+        // Load the mSCP baseline data for the current snapshot — needed even when
+        // summaries is empty (first-run case: ea-results exists, summary not yet written).
+        let eaData = try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir)
+        let eaRows = eaData.flatMap { try? JSONDecoder().decode([EAResultRow].self, from: $0) }
+        let mscpResults: [MSCPComplianceService.BaselineResult] = {
+            guard !baselines.isEmpty, let rows = eaRows else { return [] }
+            return MSCPComplianceService.evaluate(rows: rows, baselines: baselines)
+        }()
+        let hasMSCPData = mscpResults.contains { $0.devicesWithData > 0 }
+
+        // Only open the sheet when there's something to render.
+        guard !summaries.isEmpty || hasMSCPData else { return }
 
         let ws = workbook.addSheet("Charts")
         ws.setColumnWidth(0, 0, 30)
         var embedRow = 0
 
         // --- Fleet size trend ---
-        let fleetPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            guard s.totalDevices > 0 else { return nil }
-            return (s.parsedDate, Double(s.totalDevices))
-        }
-        if !fleetPoints.isEmpty {
-            let series = ChartSeries(label: "Total Devices",
-                                     color: ChartPalette.color(for: 0), points: fleetPoints)
-            if let png = ChartRenderer.lineChart(series: [series], title: "Fleet Size Trend") {
-                ws.insertImage(row: embedRow, col: 0, data: png, filename: "fleet_trend.png")
-                embedRow += 20
+        if !summaries.isEmpty {
+            let fleetPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                guard s.totalDevices > 0 else { return nil }
+                return (s.parsedDate, Double(s.totalDevices))
             }
-        }
-
-        // --- FileVault / patch trend (security metrics) ---
-        let fvPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            guard let pct = s.fileVaultPct else { return nil }
-            return (s.parsedDate, pct)
-        }
-        let patchPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            guard let pct = s.patchPct else { return nil }
-            return (s.parsedDate, pct)
-        }
-        var secSeries: [ChartSeries] = []
-        if !fvPoints.isEmpty {
-            secSeries.append(ChartSeries(label: "FileVault %",
-                                         color: ChartPalette.color(for: 1), points: fvPoints))
-        }
-        if !patchPoints.isEmpty {
-            secSeries.append(ChartSeries(label: "Patch Compliance %",
-                                         color: ChartPalette.color(for: 2), points: patchPoints))
-        }
-        if !secSeries.isEmpty {
-            if let png = ChartRenderer.lineChart(series: secSeries,
-                                                  title: "Security Metric Trends",
-                                                  yLabel: "Percent") {
-                ws.insertImage(row: embedRow, col: 0, data: png, filename: "security_trend.png")
-                embedRow += 20
-            }
-        }
-
-        // --- Device state trend (managed / stale) ---
-        if config.charts?.deviceStateTrend?.enabled == true {
-            let stalePoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-                return (s.parsedDate, Double(s.staleCount))
-            }
-            if !stalePoints.isEmpty {
-                let series = ChartSeries(label: "Stale Devices",
-                                         color: ChartPalette.color(for: 3), points: stalePoints)
-                if let png = ChartRenderer.lineChart(series: [series],
-                                                      title: "Stale Device Count Trend") {
-                    ws.insertImage(row: embedRow, col: 0, data: png, filename: "stale_trend.png")
+            if !fleetPoints.isEmpty {
+                let series = ChartSeries(label: "Total Devices",
+                                         color: ChartPalette.color(for: 0), points: fleetPoints)
+                if let png = ChartRenderer.lineChart(series: [series], title: "Fleet Size Trend") {
+                    ws.insertImage(row: embedRow, col: 0, data: png, filename: "fleet_trend.png")
                     embedRow += 20
+                    writePNG(png, kind: "fleet-trend", profile: profile, to: pngOutputDir)
                 }
             }
-        }
 
-        // --- Compliance trend (stacked area with configurable bands) ---
-        if let bands = config.charts?.complianceTrend?.bands, !bands.isEmpty {
-            let bandSeries: [ChartSeries] = bands.enumerated().compactMap { (idx, band) -> ChartSeries? in
-                let color = cgColorFromHex(band.color) ?? ChartPalette.color(for: idx)
-                let pts = summaries.compactMap { s -> (date: Date, value: Double)? in
-                    guard let pct = s.compliancePct else { return nil }
-                    let within = pct >= Double(band.minFailures) && pct <= Double(band.maxFailures)
-                    return within ? (s.parsedDate, 1.0) : nil
-                }
-                return pts.isEmpty ? nil : ChartSeries(label: band.label, color: color, points: pts)
+            // --- FileVault / patch trend (security metrics) ---
+            let fvPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                guard let pct = s.fileVaultPct else { return nil }
+                return (s.parsedDate, pct)
             }
-            if !bandSeries.isEmpty {
-                if let png = ChartRenderer.stackedAreaChart(series: bandSeries,
-                                                             title: "Compliance Band Distribution") {
-                    ws.insertImage(row: embedRow, col: 0, data: png,
-                                   filename: "compliance_bands.png")
+            let patchPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                guard let pct = s.patchPct else { return nil }
+                return (s.parsedDate, pct)
+            }
+            var secSeries: [ChartSeries] = []
+            if !fvPoints.isEmpty {
+                secSeries.append(ChartSeries(label: "FileVault %",
+                                             color: ChartPalette.color(for: 1), points: fvPoints))
+            }
+            if !patchPoints.isEmpty {
+                secSeries.append(ChartSeries(label: "Patch Compliance %",
+                                             color: ChartPalette.color(for: 2), points: patchPoints))
+            }
+            if !secSeries.isEmpty {
+                if let png = ChartRenderer.lineChart(series: secSeries,
+                                                      title: "Security Metric Trends",
+                                                      yLabel: "Percent") {
+                    ws.insertImage(row: embedRow, col: 0, data: png, filename: "security_trend.png")
                     embedRow += 20
+                    writePNG(png, kind: "security-trend", profile: profile, to: pngOutputDir)
+                }
+            }
+
+            // --- Device state trend (managed / stale) ---
+            if config.charts?.deviceStateTrend?.enabled == true {
+                let stalePoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                    (s.parsedDate, Double(s.staleCount))
+                }
+                if !stalePoints.isEmpty {
+                    let series = ChartSeries(label: "Stale Devices",
+                                             color: ChartPalette.color(for: 3), points: stalePoints)
+                    if let png = ChartRenderer.lineChart(series: [series],
+                                                          title: "Stale Device Count Trend") {
+                        ws.insertImage(row: embedRow, col: 0, data: png, filename: "stale_trend.png")
+                        embedRow += 20
+                        writePNG(png, kind: "stale-trend", profile: profile, to: pngOutputDir)
+                    }
+                }
+            }
+
+            // --- Compliance trend (stacked area with configurable bands) ---
+            if let bands = config.charts?.complianceTrend?.bands, !bands.isEmpty {
+                let bandSeries: [ChartSeries] = bands.enumerated().compactMap { (idx, band) in
+                    let color = cgColorFromHex(band.color) ?? ChartPalette.color(for: idx)
+                    let pts = summaries.compactMap { s -> (date: Date, value: Double)? in
+                        guard let pct = s.compliancePct else { return nil }
+                        let within = pct >= Double(band.minFailures) && pct <= Double(band.maxFailures)
+                        return within ? (s.parsedDate, 1.0) : nil
+                    }
+                    return pts.isEmpty ? nil : ChartSeries(label: band.label, color: color, points: pts)
+                }
+                if !bandSeries.isEmpty {
+                    if let png = ChartRenderer.stackedAreaChart(
+                        series: bandSeries, title: "Compliance Band Distribution"
+                    ) {
+                        ws.insertImage(row: embedRow, col: 0, data: png,
+                                       filename: "compliance_bands.png")
+                        embedRow += 20
+                        writePNG(png, kind: "compliance-bands", profile: profile, to: pngOutputDir)
+                    }
+                }
+            }
+
+            // --- OS adoption (per-major when enabled) ---
+            if config.charts?.osAdoption?.perMajorCharts == true {
+                var majorData: [String: Double] = [:]
+                if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary",
+                                                                  dataDir: dataDir),
+                   let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
+                    let total = rows.reduce(0) { $0 + $1.count }
+                    for invRow in rows {
+                        let major = String(invRow.osVersion.prefix(while: { $0.isNumber }))
+                        majorData[major, default: 0] += Double(invRow.count)
+                    }
+                    if total > 0 {
+                        majorData = majorData.mapValues { $0 / Double(total) * 100 }
+                    }
+                } else if let pct = summaries.last?.osCurrentPct {
+                    majorData["Current"] = pct
+                    majorData["Other"] = max(0, 100 - pct)
+                }
+                if !majorData.isEmpty {
+                    let sortedMajor = majorData.sorted { $0.key > $1.key }
+                    let barData = BarChartData(
+                        categories: sortedMajor.map(\.key),
+                        values: sortedMajor.map(\.value),
+                        colors: sortedMajor.map { ChartPalette.colorForMajorVersion($0.key) }
+                    )
+                    if let png = ChartRenderer.barChart(data: barData,
+                                                         title: "OS Adoption by Major Version") {
+                        ws.insertImage(row: embedRow, col: 0, data: png, filename: "os_adoption.png")
+                        embedRow += 20
+                        writePNG(png, kind: "os-adoption", profile: profile, to: pngOutputDir)
+                    }
                 }
             }
         }
 
-        // --- OS adoption (per-major when enabled) ---
-        if config.charts?.osAdoption?.perMajorCharts == true {
-            var majorData: [String: Double] = [:]
-            if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary",
-                                                              dataDir: dataDir),
-               let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
-                let total = rows.reduce(0) { $0 + $1.count }
-                for invRow in rows {
-                    let major = String(invRow.osVersion.prefix(while: { $0.isNumber }))
-                    majorData[major, default: 0] += Double(invRow.count)
-                }
-                if total > 0 {
-                    majorData = majorData.mapValues { $0 / Double(total) * 100 }
-                }
-            } else if let pct = summaries.last?.osCurrentPct {
-                majorData["Current"] = pct
-                majorData["Other"] = max(0, 100 - pct)
-            }
-            if !majorData.isEmpty {
-                let sortedMajor = majorData.sorted { $0.key > $1.key }
-                let barData = BarChartData(
-                    categories: sortedMajor.map(\.key),
-                    values: sortedMajor.map(\.value),
-                    colors: sortedMajor.map { ChartPalette.colorForMajorVersion($0.key) }
-                )
-                if let png = ChartRenderer.barChart(data: barData,
-                                                     title: "OS Adoption by Major Version") {
-                    ws.insertImage(row: embedRow, col: 0, data: png, filename: "os_adoption.png")
-                }
+        // --- mSCP/STIG compliance charts (appended after existing 5) ---
+        embedRow = renderMSCPCharts(
+            workbook: workbook, ws: ws, embedRow: embedRow,
+            mscpResults: mscpResults, baselines: baselines, summaries: summaries,
+            profile: profile, pngOutputDir: pngOutputDir
+        )
+        _ = embedRow  // final row count not needed outside this scope
+    }
+
+    /// Renders mSCP/STIG compliance charts and embeds them in `ws`.
+    ///
+    /// Separated from `renderChartSheet` to keep line count per function ≤100.
+    /// Returns the updated `embedRow` value so the caller can continue appending.
+    private func renderMSCPCharts(
+        workbook: Workbook,
+        ws: Worksheet,
+        embedRow startRow: Int,
+        mscpResults: [MSCPComplianceService.BaselineResult],
+        baselines: [ComplianceBaselineConfig],
+        summaries: [DailySummary],
+        profile: String,
+        pngOutputDir: URL?
+    ) -> Int {
+        var embedRow = startRow
+        guard !mscpResults.isEmpty else { return embedRow }
+
+        for (idx, result) in mscpResults.enumerated() {
+            guard result.devicesWithData > 0 else { continue }
+
+            // Build donut slices (No Data → Pass → Low → Med-Low → Medium → High).
+            let slices = MSCPChartDataBuilder.toDonutSlices(result: result)
+            // Skip when no slice has any count (baseline produced purely empty data).
+            guard slices.contains(where: { $0.count > 0 }) else { continue }
+
+            let baseline = idx < baselines.count ? baselines[idx] : nil
+            var footer = "Total systems: \(result.totalDevices)"
+            if let rc = baseline?.ruleCount { footer += " · Baseline: \(rc) auditable rules" }
+
+            // Per spec: all six legend rows rendered ("No Data: N (P%)", "Pass (0): N (P%)", …).
+            let donutTitle = "Compliance Donut — \(result.name) All Devices"
+            if let png = ChartRenderer.donutChart(slices: slices,
+                                                   title: donutTitle, footer: footer) {
+                let fname = "mscp-donut-\(idx).png"
+                ws.insertImage(row: embedRow, col: 0, data: png, filename: fname)
+                embedRow += 20
+                writePNG(png, kind: "mscp-donut-\(sanitizeForFilename(result.name))",
+                         profile: profile, to: pngOutputDir)
             }
         }
+
+        // Band trend stackplot — uses primary baseline (first with data).
+        guard let primaryBaseline = baselines.first,
+              let primaryResult = mscpResults.first, primaryResult.devicesWithData > 0
+        else { return embedRow }
+
+        let points = MSCPChartDataBuilder.buildSeries(
+            baseline: primaryBaseline, dataDir: dataDir, summaries: summaries)
+        guard !points.isEmpty else { return embedRow }
+
+        let stackSeries = MSCPChartDataBuilder.toStackedSeries(points: points)
+        let trendTitle = "mSCP/STIG Compliance Trend — \(primaryBaseline.name)"
+        if let png = ChartRenderer.stackedAreaChart(series: stackSeries, title: trendTitle) {
+            ws.insertImage(row: embedRow, col: 0, data: png, filename: "mscp-band-trend.png")
+            embedRow += 20
+            writePNG(png, kind: "mscp-band-trend", profile: profile, to: pngOutputDir)
+        }
+
+        return embedRow
+    }
+
+    /// Write a PNG to `dir` using `ExportNaming` conventions.
+    /// No-ops when `dir` is nil or the write fails (PNG export is non-fatal).
+    private func writePNG(_ png: Data, kind: String, profile: String, to dir: URL?) {
+        guard let dir else { return }
+        let name = ExportNaming.filename(kind: kind, profile: profile, ext: "png")
+        let url = dir.appendingPathComponent(name)
+        try? png.write(to: url, options: .atomic)
+    }
+
+    private func sanitizeForFilename(_ s: String) -> String {
+        ExportNaming.sanitize(s).prefix(32).description
     }
 
     /// Parse a hex color string (#RRGGBB) into a `CGColor`. Returns nil on malformed input.

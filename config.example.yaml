@@ -513,10 +513,36 @@ compliance:
   enabled: true
   baseline_label: "mSCP Compliance"
   # EA column containing the integer count of failed rules.
+  # Used as the single-baseline shorthand when `baselines` is absent.
   failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5"
   # EA column containing the pipe-delimited list of failed rule IDs.
   # Example cell value: "os_filevault_enable|os_screensaver_timeout|..."
   failures_list_column: "Compliance - Failed mSCP Result List - NIST 800-53r5"
+
+  # Per-baseline list for multi-baseline mSCP/STIG tracking.
+  # When present, drives real per-device compliance banding from ea-results
+  # instead of the 4-control security-report proxy.
+  #
+  # The first entry is the "primary" baseline: its Pass % surfaces in the daily
+  # summary, the Compliance Benchmark trend chart, and the Stability Index.
+  # Additional entries are evaluated but do not affect the trend today.
+  #
+  # failures_count_column must match the `ea_name` field in your ea-results
+  # snapshot exactly (case-insensitive match at query time).
+  #
+  # rule_count is reserved for future per-rule-% display; leave it out or
+  # set to the total rule count for your baseline.
+  #
+  # When `baselines` is empty, the engine synthesizes a single baseline from
+  # failures_count_column + baseline_label above — no migration needed.
+  baselines: []
+  # Example multi-baseline configuration (uncomment and edit to enable):
+  # baselines:
+  #   - name: "NIST 800-53r5"
+  #     failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+  #     # rule_count: 315
+  #   - name: "DISA STIG"
+  #     failures_count_column: "Compliance - Failed mSCP Results Count - DISA STIG"
 
 
 # =============================================================================
