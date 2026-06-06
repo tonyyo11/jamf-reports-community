@@ -93,7 +93,13 @@ struct OverviewView: View {
         .tint(Theme.Colors.goldBright)
         .onAppear {
             if !workspace.demoMode {
+                // `load` sets profile + range on first appear (required for initial state);
+                // `reload` follows unconditionally so re-navigating to Overview picks up
+                // any summary files written since the last load — e.g. a same-day
+                // proxy→real mSCP upgrade or a background LaunchAgent run that completed
+                // while the user was on another tab.
                 trendStore.load(profile: workspace.profile, range: defaultTrendRange)
+                trendStore.reload()
             }
         }
         .onChange(of: workspace.profile) { _, newValue in

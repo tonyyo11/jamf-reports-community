@@ -75,6 +75,77 @@ final class TrendStoreTests: XCTestCase {
         SummaryJSONParser.dateFormatter.string(from: date)
     }
 
+    // MARK: - stabilityIndex sourcing tests
+
+    /// Regression guard for the prod observation (2026-06-06) where the Overview
+    /// Stability Index tile displayed a prior-day value.
+    ///
+    /// Root cause: TrendStore had not been reloaded after a same-day proxy→real mSCP
+    /// summary upgrade, so `filteredSummaries.last` still held the pre-upgrade summary.
+    /// The stability tile and every other score-card tile share the identical TrendStore
+    /// path — all tiles were equally stale.
+    ///
+    /// This test proves the sourcing is correct: `values(metric: .stability).last` is
+    /// computed live from the most-recent summary's stored fields (not a separate persisted
+    /// value), so a TrendStore loaded from the updated summary yields the correct index.
+    func testStabilityTileReflectsMostRecentSummaryInputs() throws {
+        // Day 1: proxy compliance = 96.8% (before mSCP config typo fix)
+        let day1 = DailySummary(
+            date: "2026-06-05",
+            totalDevices: 659,
+            fileVaultPct: 98.8,
+            compliancePct: 96.8,
+            staleCount: 166,
+            osCurrentPct: 36.3,
+            crowdstrikePct: nil,
+            patchPct: 36.3,
+            complianceIsProxy: true
+        )
+        // Day 2: real compliance = 66.9% (after mSCP config typo fix + summary upgrade)
+        let day2 = DailySummary(
+            date: "2026-06-06",
+            totalDevices: 659,
+            fileVaultPct: 98.8,
+            compliancePct: 66.9,
+            staleCount: 166,
+            osCurrentPct: 36.3,
+            crowdstrikePct: nil,
+            patchPct: 36.3,
+            complianceIsProxy: false
+        )
+
+        // A TrendStore loaded with both summaries must show day2's stability as the
+        // current (last) value, not day1's.
+        let store = TrendStore(summaries: [day1, day2], range: .all)
+
+        let stabilityValues = store.values(metric: .stability)
+        XCTAssertEqual(stabilityValues.count, 2, "both days must have stability data")
+
+        let current = try XCTUnwrap(stabilityValues.last)
+        let expectedCurrent = try XCTUnwrap(
+            TrendSeries.stabilityIndex(
+                compliancePct: day2.compliancePct,
+                patchPct: day2.patchPct,
+                staleCount: day2.staleCount,
+                totalDevices: day2.totalDevices
+            )
+        )
+        XCTAssertEqual(current, expectedCurrent, accuracy: 0.01,
+            "tile must reflect today's summary inputs; got \(current), want \(expectedCurrent)")
+
+        // Confirm it is NOT the prior-day value.
+        let staleValue = try XCTUnwrap(
+            TrendSeries.stabilityIndex(
+                compliancePct: day1.compliancePct,
+                patchPct: day1.patchPct,
+                staleCount: day1.staleCount,
+                totalDevices: day1.totalDevices
+            )
+        )
+        XCTAssertGreaterThan(abs(current - staleValue), 1.0,
+            "tile must not reflect yesterday's proxy-compliance inputs")
+    }
+
     // MARK: - stabilityIndex tests
 
     func testStabilityIndexCalculation() throws {
