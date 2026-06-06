@@ -60,8 +60,8 @@ if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
   echo "✗ unexpected CFBundleShortVersionString: '$APP_VERSION' (want N.N or N.N.N)" >&2
   exit 1
 fi
-if [[ ! "$APP_BUILD" =~ ^[0-9A-Za-z._-]+$ ]]; then
-  echo "✗ unexpected CFBundleVersion: '$APP_BUILD'" >&2
+if [[ ! "$APP_BUILD" =~ ^[0-9]+$ ]]; then
+  echo "✗ unexpected CFBundleVersion: '$APP_BUILD' (must be a monotonic integer)" >&2
   exit 1
 fi
 
@@ -190,6 +190,8 @@ fi
 # Auth: NOTARY_KEY_PATH/NOTARY_KEY_ID/NOTARY_ISSUER (API key) or keychain profile.
 NOTARY_PROFILE="${NOTARY_PROFILE:-JamfReports-Notary}"
 if [[ -n "${NOTARY_KEY_PATH:-}" ]]; then
+  : "${NOTARY_KEY_ID:?NOTARY_KEY_ID must be set when NOTARY_KEY_PATH is set}"
+  : "${NOTARY_ISSUER:?NOTARY_ISSUER must be set when NOTARY_KEY_PATH is set}"
   NOTARY_AUTH_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
   NOTARY_AUTH_DESC="API key ${NOTARY_KEY_ID}"
 else

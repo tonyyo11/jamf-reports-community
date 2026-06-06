@@ -30,8 +30,11 @@ echo
 # Step 1: Build release bundle.
 # RELEASE=1 stamps the release channel into Info.plist; MARKETING_VERSION pins
 # the .app's semver to the declared RELEASE_VERSION so the two never drift.
+# SKIP_NOTARIZE=1 defers notarization to the dedicated step 3 (notarize-release.sh)
+# so the .app is not notarized+stapled here and then immediately re-signed in
+# step 2, which would otherwise invalidate the staple.
 echo "→ Building release bundle..."
-if ! RELEASE=1 MARKETING_VERSION="${RELEASE_VERSION}" ./build-app.sh release; then
+if ! RELEASE=1 MARKETING_VERSION="${RELEASE_VERSION}" SKIP_NOTARIZE=1 ./build-app.sh release; then
   echo "✗ build-app.sh release failed" >&2
   exit 1
 fi
