@@ -30,23 +30,43 @@ struct MSCPChartDataBuilder: Sendable {
     /// snapshots and summary.json files.
     ///
     /// - Parameters:
-    ///   - baselineName: The baseline label to chart (must match a configured baseline name).
-    ///   - baseline: The baseline config entry supplying `failuresCountColumn`.
+    ///   - baseline: The baseline config entry supplying `name` and `failuresCountColumn`.
     ///   - dataDir: Workspace data directory containing `ea-results/` subdirectory.
     ///   - summaries: Pre-parsed `DailySummary` objects from the summaries directory.
     ///     Already sorted by date is preferred but not required.
+    ///   - singleBaselineWorkspace: When `true` (and a summary carries exactly one
+    ///     mscpBands key that does not match `baseline.name`), the lone value is
+    ///     coalesced onto `baseline.name`. This bridges a one-time baseline-name
+    ///     transition without forking the trend series — safe only when the workspace
+    ///     is known to configure a single baseline. Multi-baseline workspaces must
+    ///     leave this `false` so old summaries' differently-named keys are not
+    ///     mis-coalesced onto the primary baseline.
     /// - Returns: Array of `BandPoint` sorted ascending by date, deduped (one entry per day).
     ///   Empty when no data is found from either source.
     static func buildSeries(
         baseline: ComplianceBaselineConfig,
         dataDir: URL,
-        summaries: [DailySummary]
+        summaries: [DailySummary],
+        singleBaselineWorkspace: Bool = false
     ) -> [BandPoint] {
         var byDate: [String: BandPoint] = [:]
 
         // --- Source 1: summary.json mscpBands (baseline → cheap, available first) ---
         for summary in summaries {
-            guard let counts = summary.mscpBands?[baseline.name] else { continue }
+            guard let bands = summary.mscpBands else { continue }
+            // Exact-name match first.
+            let counts: MSCPBandCounts?
+            if let exact = bands[baseline.name] {
+                counts = exact
+            } else if singleBaselineWorkspace, bands.count == 1, let sole = bands.values.first {
+                // Single-baseline workspace with a renamed baseline: coalesce the
+                // lone key's value onto the current baseline name so a config
+                // fix (e.g. typo correction) doesn't fork the trend series.
+                counts = sole
+            } else {
+                counts = nil
+            }
+            guard let counts else { continue }
             let date = SummaryJSONParser.dateFormatter.date(from: summary.date) ?? .distantPast
             guard date != .distantPast else { continue }
             let key = summary.date
@@ -73,8 +93,12 @@ struct MSCPChartDataBuilder: Sendable {
             .sorted { dateFromSnapshotFilename($0) < dateFromSnapshotFilename($1) }
         for url in jsonFiles {
             guard let data = try? Data(contentsOf: url),
-                  let rows = try? JSONDecoder().decode([EAResultRow].self, from: data)
-            else { continue }
+                  let rows = try? JSONDecoder().decode([EAResultRow].self, from: data) else {
+                AppLogger.engine.debug(
+                    "MSCPChartDataBuilder: skipping undecodable ea-results file \(url.lastPathComponent, privacy: .public)"
+                )
+                continue
+            }
             let snapshotDate = dateFromSnapshotFilename(url, fm: fm)
             let dayKey = SummaryJSONParser.dateFormatter.string(from: snapshotDate)
 
@@ -174,6 +198,16 @@ struct MSCPChartDataBuilder: Sendable {
         return d
     }
 
+    // Allocated once; DateFormatter is not Sendable, so `nonisolated(unsafe)` is
+    // required to store it in a static on a Sendable-conforming type.
+    nonisolated(unsafe) private static let snapshotDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd'T'HHmmss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .iso8601)
+        return f
+    }()
+
     /// Extract a date from an ea-results snapshot filename.
     ///
     /// `saveSnapshot` writes `<kind>_yyyyMMddTHHmmss.json`. Falls back to the
@@ -183,11 +217,7 @@ struct MSCPChartDataBuilder: Sendable {
         // Canonical saveSnapshot format: ea-results_20240615T120000
         if let range = stem.range(of: #"(\d{8})T(\d{6})$"#, options: .regularExpression) {
             let match = String(stem[range])
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyyMMdd'T'HHmmss"
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.calendar = Calendar(identifier: .iso8601)
-            if let date = formatter.date(from: match) { return date }
+            if let date = snapshotDateFormatter.date(from: match) { return date }
         }
         let attrs = try? fm.attributesOfItem(atPath: url.path)
         return (attrs?[.modificationDate] as? Date) ?? .distantPast

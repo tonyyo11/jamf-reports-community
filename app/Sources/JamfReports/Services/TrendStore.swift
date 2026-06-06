@@ -236,6 +236,20 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         !cachedBandPoints.isEmpty
     }
 
+    /// X-axis domain for the mSCP band stacked-area chart.
+    ///
+    /// Prefers `chartDomain` (summary-driven) so the axis matches the rest of
+    /// the Trends screen. Falls back to a domain derived from `cachedBandPoints`
+    /// when summaries are absent (e.g. deleted or interrupted collect) but
+    /// ea-results-only band data exists. Returns `nil` only when both sources
+    /// are empty, in which case the band chart shows the unavailable empty-state.
+    var bandChartDomain: ClosedRange<Date>? {
+        if let domain = chartDomain { return domain }
+        guard let first = cachedBandPoints.first?.date,
+              let last  = cachedBandPoints.last?.date else { return nil }
+        return first <= last ? first...last : last...first
+    }
+
     /// Returns the primary baseline name for mSCP band trending.
     var primaryMSCPBaseline: String? {
         cachedBaseline?.name
@@ -277,13 +291,18 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     private func rebuildBandPoints(profile: String?) {
         // 1. Resolve the baseline to use.
         let baseline: ComplianceBaselineConfig
+        let isSingleBaseline: Bool
         if let profile,
            let workspaceURL = ProfileService.workspaceURL(for: profile),
            let config = try? ConfigLoader.load(from: workspaceURL.appendingPathComponent("config.yaml")),
            let resolved = config.compliance?.resolvedBaselines.first {
             baseline = resolved
+            isSingleBaseline = (config.compliance?.resolvedBaselines.count ?? 0) <= 1
         } else if let firstSummaryBaseline = firstBaselineFromSummaries() {
             baseline = firstSummaryBaseline
+            // No config available; treat as single-baseline so the summary-only
+            // coalesce path bridges any name drift in the fallback case.
+            isSingleBaseline = true
         } else {
             cachedBandPoints = []
             cachedBaseline = nil
@@ -307,7 +326,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         cachedBandPoints = MSCPChartDataBuilder.buildSeries(
             baseline: baseline,
             dataDir: dataDir,
-            summaries: allSummaries
+            summaries: allSummaries,
+            singleBaselineWorkspace: isSingleBaseline
         )
     }
 
@@ -316,7 +336,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// readable (in-memory test path).
     private func firstBaselineFromSummaries() -> ComplianceBaselineConfig? {
         for summary in allSummaries {
-            guard let bands = summary.mscpBands, let name = bands.keys.first else { continue }
+            guard let bands = summary.mscpBands,
+                  let name = bands.keys.sorted().first else { continue }
             // failuresCountColumn is unused by buildSeries when ea-results is absent.
             return ComplianceBaselineConfig(name: name, failuresCountColumn: name, ruleCount: nil)
         }

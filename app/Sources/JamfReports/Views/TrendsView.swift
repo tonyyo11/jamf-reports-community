@@ -211,18 +211,11 @@ struct TrendsView: View {
         )
     }
 
-    /// Get trend points for a specific metric, handling mSCP band trends specially.
+    /// Get trend points for a specific metric.
     private func points(for m: TrendSeries.Metric) -> [TrendPoint] {
-        if m == .mscpBandTrend {
-            // For mSCP band trends, return points based on total devices with data
-            return workspaceStore.demoMode
-                ? TrendDemoSeries.points(for: m, range: range)
-                : trendStore.points(metric: m)
-        } else {
-            return workspaceStore.demoMode
-                ? TrendDemoSeries.points(for: m, range: range)
-                : trendStore.points(metric: m)
-        }
+        workspaceStore.demoMode
+            ? TrendDemoSeries.points(for: m, range: range)
+            : trendStore.points(metric: m)
     }
 
     // MARK: Metric picker pills
@@ -256,14 +249,8 @@ struct TrendsView: View {
         let series: [Double]
         let sparkValues: [Double]
 
-        if m == .mscpBandTrend {
-            // For mSCP band trends, use total devices with data as the reference line
-            series = points(for: m).map(\.value)
-            sparkValues = Array(series.suffix(8))
-        } else {
-            series = points(for: m).map(\.value)
-            sparkValues = Array(series.suffix(8))
-        }
+        series = points(for: m).map(\.value)
+        sparkValues = Array(series.suffix(8))
 
         let dl = (series.last ?? 0) - (series.first ?? 0)
         let deltaInt = Int(dl.rounded())
@@ -605,7 +592,7 @@ struct TrendsView: View {
     /// Mirrors the hero chart's mSCP band rendering (AreaMark, stacking: .standard).
     private var liveBandsChart: some View {
         Group {
-            if let domain = chartDomain {
+            if let domain = trendStore.bandChartDomain {
                 let stackedSeries = trendStore.mscpStackedSeries()
                 Chart {
                     ForEach(stackedSeries.reversed(), id: \.label) { series in
@@ -632,7 +619,7 @@ struct TrendsView: View {
                 .frame(height: 200)
                 .accessibilityLabel(Self.complianceTrendChartLabel)
             } else {
-                ProgressView().frame(height: 200)
+                complianceBandUnavailable
             }
         }
     }

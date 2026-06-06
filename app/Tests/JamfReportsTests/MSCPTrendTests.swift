@@ -275,6 +275,75 @@ final class MSCPTrendTests: XCTestCase {
         XCTAssertEqual(passSeries?.points.first?.value, 50.0)
     }
 
+    // MARK: - Finding 1: single-baseline name-drift bridging
+
+    /// A single-baseline workspace where the baseline name changed between two
+    /// daily summaries must produce ONE continuous series, not two separate ones.
+    ///
+    /// Scenario: day1 summary was written with key "OldName" (pre-config-fix);
+    /// day2 summary uses "Compliance" (post-config-fix). With
+    /// `singleBaselineWorkspace: true`, both points land on the same series.
+    func testSingleBaselineNameDriftProducesOneContinuousSeries() {
+        let nonexistentDir = URL(fileURLWithPath: "/tmp/mscp-nonexistent-\(UUID().uuidString)")
+        let bands = MSCPBandCounts(pass: 50, low: 10, medLow: 5, medium: 2, high: 1, noData: 0)
+
+        let day1 = makeSummary(date: "2026-06-05",
+                               mscpBands: ["OldName": bands])    // pre-rename key
+        let day2 = makeSummary(date: "2026-06-06",
+                               mscpBands: ["Compliance": bands]) // post-rename key
+
+        let baseline = ComplianceBaselineConfig(
+            name: "Compliance", failuresCountColumn: "Compliance Failures", ruleCount: nil)
+
+        let points = MSCPChartDataBuilder.buildSeries(
+            baseline: baseline,
+            dataDir: nonexistentDir,
+            summaries: [day1, day2],
+            singleBaselineWorkspace: true
+        )
+
+        XCTAssertEqual(points.count, 2,
+            "Single-baseline rename must bridge to one continuous series (2 points), not fork into 1")
+    }
+
+    /// With `singleBaselineWorkspace: false` (multi-baseline), mismatched keys
+    /// are NOT coalesced — each baseline keeps its own series.
+    func testMultiBaselineNameMismatchIsNotCoalesced() {
+        let nonexistentDir = URL(fileURLWithPath: "/tmp/mscp-nonexistent-\(UUID().uuidString)")
+        let bands = MSCPBandCounts(pass: 50, low: 10, medLow: 5, medium: 2, high: 1, noData: 0)
+
+        let day1 = makeSummary(date: "2026-06-05",
+                               mscpBands: ["OtherBaseline": bands, "Compliance": bands])
+        let day2 = makeSummary(date: "2026-06-06",
+                               mscpBands: ["OtherBaseline": bands, "Compliance": bands])
+
+        let baseline = ComplianceBaselineConfig(
+            name: "Compliance", failuresCountColumn: "Compliance Failures", ruleCount: nil)
+
+        let points = MSCPChartDataBuilder.buildSeries(
+            baseline: baseline,
+            dataDir: nonexistentDir,
+            summaries: [day1, day2],
+            singleBaselineWorkspace: false
+        )
+
+        // Multi-baseline: only exact-name matches land — both days have "Compliance"
+        XCTAssertEqual(points.count, 2,
+            "Multi-baseline workspace must key by exact name; both days match 'Compliance' directly")
+
+        // Now try a name that doesn't appear in the multi-baseline dict
+        let missingBaseline = ComplianceBaselineConfig(
+            name: "Missing", failuresCountColumn: "x", ruleCount: nil)
+        let noPoints = MSCPChartDataBuilder.buildSeries(
+            baseline: missingBaseline,
+            dataDir: nonexistentDir,
+            summaries: [day1, day2],
+            singleBaselineWorkspace: false  // must NOT coalesce despite count > 1
+        )
+        XCTAssertEqual(noPoints.count, 0,
+            "Multi-baseline workspace must not coalesce a non-matching key even when no exact match exists")
+    }
+
     // MARK: - Helpers
 
     private func makeSummary(date: String, mscpBands: [String: MSCPBandCounts]?) -> DailySummary {
