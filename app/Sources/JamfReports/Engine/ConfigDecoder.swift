@@ -22,6 +22,7 @@ struct ReportConfig: Decodable, Sendable {
     var branding: BrandingConfig?
     var platform: PlatformConfig?
     var protect: ProtectConfig?
+    var schoolCli: SchoolCLIConfig?
     var html: HTMLReportConfig?
     /// PR-22 T-3: per-report cadence + preset overrides. Top-level (not
     /// nested under `jamf_cli`) because the GUI's new Cadence tab edits it
@@ -45,6 +46,7 @@ struct ReportConfig: Decodable, Sendable {
         case branding
         case platform
         case protect
+        case schoolCli = "school_cli"
         case html
         case collectCadence = "collect_cadence"
     }
@@ -726,6 +728,24 @@ struct ProtectConfig: Decodable, Sendable {
     var isEnabled: Bool { enabled ?? false }
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data/protect" }
+}
+
+// MARK: - school_cli
+
+/// Configuration for Jamf School integration.
+/// School uses API-key auth (no bearer token), managed by jamf-cli via a named `--profile`.
+/// When `enabled` is false (or absent), all school commands are skipped and the profile
+/// is treated as Jamf Pro for collect routing. Written by `OnboardingFlow.writeSchoolConfig`.
+struct SchoolCLIConfig: Decodable, Sendable {
+    var enabled: Bool?
+    var profile: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, profile
+    }
+
+    var isEnabled: Bool { enabled ?? false }
+    var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
 }
 
 // MARK: - exceptions (list, not dict)

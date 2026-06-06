@@ -110,6 +110,21 @@ private func scheduledRunSingle(
         resolvedCSV = nil
     }
 
+    // Load config once, before collect (routing needs it) and before generate.
+    // Failure degrades collect routing to Jamf Pro and still fails generate
+    // with the real error (ConfigLoader.LoadError) so the recorded run shows
+    // a meaningful message. nil config in routing logs loudly and uses Pro.
+    let configURL = workspace.appendingPathComponent("config.yaml")
+    let routingConfig: ReportConfig? = {
+        guard let loaded = try? ConfigLoader.load(from: configURL) else {
+            AppLogger.schedule.warning(
+                "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+            )
+            return nil
+        }
+        return loaded
+    }()
+
     do {
         // jamf-cli-only generates from cache only — no collect, no fresh API calls.
         // The other three modes all need fresh snapshots.
@@ -121,10 +136,12 @@ private func scheduledRunSingle(
             // the mode default: snapshot-only → Refresh only (PR-22 T-10),
             // the generate modes → all tiers.
             let resolvedTiers = tiers ?? mode.defaultTiers
-            try await ReportEngine.collect(
+            // Route to the correct collect function(s) based on profile product type.
+            // Scheduled collects never bypass the once-per-day guard (force: false).
+            try await CollectRouter.run(
                 profile: profile,
-                workspacePaths: WorkspacePaths.self,
                 tiers: resolvedTiers,
+                config: routingConfig,
                 onLine: onLine
             )
             // Tighten permissions on collected snapshots immediately after
@@ -141,8 +158,7 @@ private func scheduledRunSingle(
             return 0
         }
 
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        let config = try ConfigLoader.load(from: configURL)
+        let config = try routingConfig ?? ConfigLoader.load(from: configURL)
         let dataDir = try WorkspacePaths.dataDir(for: profile)
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)

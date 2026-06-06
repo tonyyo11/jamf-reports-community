@@ -665,13 +665,26 @@ final class CLIBridge {
         // Scheduled collects run from main.swift and pass skipExpensive=false
         // unconditionally — the toggle only affects manual GUI refreshes.
         let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
+        // Load config for product-type routing. Failure degrades to Jamf Pro
+        // (same behaviour as before the router existed) and logs loudly.
+        let config: ReportConfig? = {
+            guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
+            let url = workspace.appendingPathComponent("config.yaml")
+            let loaded = try? ConfigLoader.load(from: url)
+            if loaded == nil {
+                AppLogger.cli.warning(
+                    "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+                )
+            }
+            return loaded
+        }()
         do {
-            try await ReportEngine.collect(
+            try await CollectRouter.run(
                 profile: profile,
-                workspacePaths: WorkspacePaths.self,
                 tiers: tiers,
                 skipExpensive: skipExpensive,
                 force: force,
+                config: config,
                 onLine: onLine
             )
             tightenOnSuccess(0, profile: profile)
