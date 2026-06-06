@@ -1124,6 +1124,8 @@ struct ReportEngine: Sendable {
         "classic-ios-profiles",
         "device-enrollment-instances",
         "mobile-device-inventory-details",
+        // Health audit — cheap single call; see collect command matrix entry above.
+        "audit",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
         "sofa",
         "patch-release-dates",
@@ -1246,6 +1248,10 @@ struct ReportEngine: Sendable {
              "device-enrollment-instances"),
             (["-p", profile, "pro", "mobile-device-inventory-details", "list", "--output", "json"],
              "mobile-device-inventory-details"),
+            // Health audit — single cheap server call; matches CLIBridge.audit() shape that
+            // AuditView, HealthCheckView, and WorkspaceStore+Refresh all consume as "audit".
+            // audit-platform-checks omitted: no Swift reader for that kind yet.
+            (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
         ]
 
         let plannedCommands: [(args: [String], kind: String)]

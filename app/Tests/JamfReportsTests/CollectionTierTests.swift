@@ -108,6 +108,21 @@ final class CollectionTierLookupTests: XCTestCase {
         }
     }
 
+    /// `audit` must be collected and in the Refresh tier. AuditView,
+    /// HealthCheckView, and WorkspaceStore+Refresh all consume the "audit"
+    /// snapshot; without this entry the scheduled Swift collect never writes
+    /// the directory, leaving the audit manifest.json permanently stale.
+    func testAuditKindIsCollectedAndRefreshTiered() {
+        XCTAssertTrue(
+            ReportEngine.knownCollectKinds.contains("audit"),
+            "'audit' must be in knownCollectKinds so collect writes the snapshot"
+        )
+        XCTAssertEqual(
+            CollectionTier.tier(forReport: "audit"), .refresh,
+            "'audit' is a cheap single server call — must be Refresh tiered"
+        )
+    }
+
     /// `groups` must be collected (in knownCollectKinds) and assigned to the
     /// Inventory tier. Both `writeGroupHygiene` and `writeSmartGroups` read
     /// from the `groups` snapshot directory; without this entry collect never

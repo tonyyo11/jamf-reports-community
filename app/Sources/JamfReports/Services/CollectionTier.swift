@@ -100,6 +100,9 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "inventory-summary":              .refresh,
         "patch-status":                   .refresh,
         "policy-status":                  .refresh,
+        // Single cheap server call; WorkspaceStore+Refresh already probes "audit" for
+        // staleness, so keeping it fresh is required at the refresh cadence.
+        "audit":                          .refresh,
         // SOFA OS currency feeds — cheap network fetch, no jamf-cli required.
         "sofa":                           .refresh,
         // Merged patch release dates — lightweight post-patch-status step.
