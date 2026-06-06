@@ -160,6 +160,7 @@ AUTOMATION_MODE_DESCRIPTIONS: dict[str, str] = {
     "jamf-cli-only": "Use jamf-cli data to generate configured automation outputs.",
     "jamf-cli-full": "Build an automation inventory CSV, refresh snapshots, and generate configured outputs.",
     "csv-assisted": "Prefer manifest-selected CSV input when available, then fall back to inbox CSV, plus jamf-cli data.",
+    "backup": "Export Jamf Pro configuration objects to the workspace backups/ dir; no collect, no report.",
 }
 AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
     "daily": "Every day at the chosen time",
@@ -544,6 +545,93 @@ MOBILE_CSV_DISCRIMINATORS: frozenset[str] = frozenset({
     "battery level", "lost mode enabled", "device ownership type",
     "passcode status",
 })
+
+# Collection-tier model mirroring the Swift engine's CollectionTier.tierMap
+# (app/Sources/JamfReports/Services/CollectionTier.swift). KEEP THESE TWO TABLES
+# IDENTICAL — a kind's tier assignment must match between the Python and Swift
+# collectors so a Python-driven `--tiers` agent behaves the same as a Swift one.
+# Keys are the canonical Swift collect-kind names; collect commands carry the
+# matching kind so `--tiers` can filter by tier. Kinds with no Swift tier (e.g.
+# checkin-status, patch-summaries, classic-policies, Protect commands) are
+# intentionally absent and always collected — see `_command_tier`.
+COLLECTION_TIER_MAP: dict[str, str] = {
+    # Refresh — Overview KPIs + Trends summary
+    "overview": "refresh",
+    "security": "refresh",
+    "inventory-summary": "refresh",
+    "patch-status": "refresh",
+    "policy-status": "refresh",
+    "audit": "refresh",
+    "sofa": "refresh",
+    "patch-release-dates": "refresh",
+    # Inventory — Deep Dive screens
+    "app-status": "inventory",
+    "software-installs": "inventory",
+    "classic-macos-profiles": "inventory",
+    "computer-extension-attributes": "inventory",
+    "mobile-devices-list": "inventory",
+    "compliance-devices": "inventory",
+    "compliance-rules": "inventory",
+    "ddm-status": "inventory",
+    "blueprint-status": "inventory",
+    "computers": "inventory",
+    "policies": "inventory",
+    "scripts": "inventory",
+    "packages": "inventory",
+    "smart-computer-groups": "inventory",
+    "groups": "inventory",
+    "sites": "inventory",
+    "buildings": "inventory",
+    "departments": "inventory",
+    "advanced-mobile-device-searches": "inventory",
+    "classic-computer-groups": "inventory",
+    "classic-mobile-device-groups": "inventory",
+    "categories": "inventory",
+    "classic-ios-profiles": "inventory",
+    "device-enrollment-instances": "inventory",
+    "mobile-device-inventory-details": "inventory",
+    # Scan — per-device / server-expensive
+    "patch-device-failures": "scan",
+    "update-status": "scan",
+    "update-device-failures": "scan",
+    "device-compliance": "scan",
+    "ea-results": "scan",
+    "profile-status": "scan",
+}
+
+# Valid `--tiers` values; mirrors Swift CollectionTier's CaseIterable set.
+COLLECTION_TIER_NAMES: frozenset[str] = frozenset({"refresh", "inventory", "scan"})
+
+
+def _parse_tiers_arg(raw: Optional[str]) -> Optional[frozenset[str]]:
+    """Parse a comma-separated ``--tiers`` value into a validated tier set.
+
+    Mirrors Swift CollectionTier's case-sensitive strictness: an unknown tier
+    name is an error rather than a silent miss. An empty/None value means "no
+    filter" (collect all tiers).
+
+    Args:
+        raw: The raw ``--tiers`` argument value, or None.
+
+    Returns:
+        A frozenset of tier names, or None when no filter was requested.
+
+    Raises:
+        SystemExit: If any token is not a valid CollectionTier name.
+    """
+    if raw is None:
+        return None
+    names = {token.strip() for token in raw.split(",") if token.strip()}
+    if not names:
+        return None
+    unknown = sorted(names - COLLECTION_TIER_NAMES)
+    if unknown:
+        valid = ", ".join(sorted(COLLECTION_TIER_NAMES))
+        raise SystemExit(
+            f"Error: unknown --tiers value(s): {', '.join(unknown)}. Valid: {valid}."
+        )
+    return frozenset(names)
+
 
 # Fuzzy-match candidates for mobile-device scaffold auto-detection.
 MOBILE_COLUMN_HINTS: dict[str, list[str]] = {
@@ -19674,10 +19762,26 @@ def cmd_pdf(
     return out_path
 
 
+def _command_tier(kind: str) -> Optional[str]:
+    """Return the collection tier for a Swift collect-kind, or None if unmapped.
+
+    Mirrors Swift ``CollectionTier.tier(forReport:)``. None means the kind is not
+    part of the tier model and must always be collected regardless of ``--tiers``.
+
+    Args:
+        kind: Canonical Swift collect-kind name (``""`` for unmapped commands).
+
+    Returns:
+        The tier name (``"refresh"``/``"inventory"``/``"scan"``) or None.
+    """
+    return COLLECTION_TIER_MAP.get(kind) if kind else None
+
+
 def _collect_jamf_cli_commands(
     config: Config,
     bridge: JamfCLIBridge,
     live_overview_allowed: bool,
+    tiers: Optional[frozenset[str]] = None,
 ) -> list[tuple[str, Any]]:
     """Return Jamf Pro snapshot commands collected without CSV input.
 
@@ -19685,12 +19789,20 @@ def _collect_jamf_cli_commands(
     ``jamf_cli.collect_skip`` in config (use jamf-cli report type identifiers,
     e.g. "update-status", "profile-status"). Core inventory commands are not
     skippable because they are required for the primary report sheets.
+
+    Args:
+        config: Active configuration.
+        bridge: jamf-cli bridge used to invoke each command.
+        live_overview_allowed: Whether the live Fleet Overview call may run.
+        tiers: When set, only commands whose Swift collect-kind maps to one of
+            these tiers (plus unmapped commands) are returned; None collects all.
     """
     stale_days = int(config.thresholds.get("stale_device_days", 30))
     skip_types = _normalized_skip_types(config)
 
-    # Each entry: (human label, callable, report-type key).
-    # An empty report-type key means the command is not skippable via collect_skip.
+    # Each entry: (human label, callable, report-type key, Swift collect-kind).
+    # report-type key "" means not skippable via collect_skip; collect-kind ""
+    # means the command has no Swift tier (always collected — see _command_tier).
     inventory_sections = (
         _inventory_computer_sections_without_security()
         if "device-security-state" in skip_types
@@ -19698,56 +19810,61 @@ def _collect_jamf_cli_commands(
     )
     if "device-security-state" in skip_types:
         print("  [skip] SECURITY inventory section: excluded by jamf_cli.collect_skip")
-    candidates: list[tuple[str, Any, str]] = []
+    candidates: list[tuple[str, Any, str, str]] = []
     if live_overview_allowed:
-        candidates.append(("Fleet Overview", bridge.overview, ""))
+        candidates.append(("Fleet Overview", bridge.overview, "", "overview"))
     else:
         print("  [skip] Fleet Overview: live overview disabled in config")
     candidates.extend(
         [
-            ("Computer Inventory", lambda: bridge.computers_list(inventory_sections), ""),
-            ("Inventory Summary", bridge.inventory_summary, ""),
-            ("Hardware Models", bridge.hardware_models, ""),
-            ("Mobile Inventory", bridge.mobile_device_inventory_details, "mobile-details"),
-            ("Mobile Device List", bridge.mobile_devices_list, ""),
-            ("Mobile Config Profiles", bridge.ios_profiles_list, ""),
-            ("Security Posture", bridge.security_report, ""),
-            ("Device Compliance", lambda: bridge.device_compliance(stale_days), ""),
-            ("Check-in Health", bridge.checkin_status, ""),
-            ("EA Coverage", lambda: bridge.ea_results_report(include_all=True), ""),
-            ("EA Definitions", bridge.computer_extension_attributes, ""),
-            ("Software Installs", bridge.software_installs, ""),
-            ("Patch Compliance", bridge.patch_status, ""),
-            ("Patch Summaries", bridge.patch_summaries, ""),
-            ("Patch Release Dates", bridge.collect_patch_release_dates, "patch-definitions"),
-            ("Patch Failures", bridge.patch_device_failures, "patch-device-failures"),
-            ("Policy Health", bridge.policy_status, ""),
-            ("Profile Status", bridge.profile_status, "profile-status"),
-            ("App Status", bridge.app_status, ""),
-            ("Update Status", bridge.update_status, "update-status"),
-            ("Update Failures", bridge.update_device_failures, "update-device-failures"),
-            ("Group Inventory", bridge.groups, ""),
-            ("Smart Computer Groups", bridge.smart_groups_list, ""),
-            ("Computer Group Inventory", bridge.classic_computer_groups_list, ""),
-            ("Mobile Device Groups", bridge.classic_mobile_device_groups_list, ""),
-            ("Advanced Mobile Searches", bridge.advanced_mobile_device_searches_list, ""),
-            ("Package Lifecycle", bridge.packages, ""),
-            ("Classic Policies", bridge.classic_policies_list, ""),
-            ("macOS Config Profiles", bridge.macos_profiles_list, ""),
-            ("Scripts", bridge.scripts_list, ""),
-            ("Categories", bridge.categories_list, ""),
-            ("Device Enrollments", bridge.device_enrollments_list, ""),
-            ("Sites", bridge.sites_list, ""),
-            ("Buildings", bridge.buildings_list, ""),
-            ("Departments", bridge.departments_list, ""),
+            ("Computer Inventory", lambda: bridge.computers_list(inventory_sections), "", "computers"),
+            ("Inventory Summary", bridge.inventory_summary, "", "inventory-summary"),
+            ("Hardware Models", bridge.hardware_models, "", "inventory-summary"),
+            ("Mobile Inventory", bridge.mobile_device_inventory_details, "mobile-details", "mobile-device-inventory-details"),
+            ("Mobile Device List", bridge.mobile_devices_list, "", "mobile-devices-list"),
+            ("Mobile Config Profiles", bridge.ios_profiles_list, "", "classic-ios-profiles"),
+            ("Security Posture", bridge.security_report, "", "security"),
+            ("Device Compliance", lambda: bridge.device_compliance(stale_days), "", "device-compliance"),
+            ("Check-in Health", bridge.checkin_status, "", ""),
+            ("EA Coverage", lambda: bridge.ea_results_report(include_all=True), "", "ea-results"),
+            ("EA Definitions", bridge.computer_extension_attributes, "", "computer-extension-attributes"),
+            ("Software Installs", bridge.software_installs, "", "software-installs"),
+            ("Patch Compliance", bridge.patch_status, "", "patch-status"),
+            ("Patch Summaries", bridge.patch_summaries, "", ""),
+            ("Patch Release Dates", bridge.collect_patch_release_dates, "patch-definitions", "patch-release-dates"),
+            ("Patch Failures", bridge.patch_device_failures, "patch-device-failures", "patch-device-failures"),
+            ("Policy Health", bridge.policy_status, "", "policy-status"),
+            ("Profile Status", bridge.profile_status, "profile-status", "profile-status"),
+            ("App Status", bridge.app_status, "", "app-status"),
+            ("Update Status", bridge.update_status, "update-status", "update-status"),
+            ("Update Failures", bridge.update_device_failures, "update-device-failures", "update-device-failures"),
+            ("Group Inventory", bridge.groups, "", "groups"),
+            ("Smart Computer Groups", bridge.smart_groups_list, "", "smart-computer-groups"),
+            ("Computer Group Inventory", bridge.classic_computer_groups_list, "", "classic-computer-groups"),
+            ("Mobile Device Groups", bridge.classic_mobile_device_groups_list, "", "classic-mobile-device-groups"),
+            ("Advanced Mobile Searches", bridge.advanced_mobile_device_searches_list, "", "advanced-mobile-device-searches"),
+            ("Package Lifecycle", bridge.packages, "", "packages"),
+            ("Classic Policies", bridge.classic_policies_list, "", ""),
+            ("macOS Config Profiles", bridge.macos_profiles_list, "", "classic-macos-profiles"),
+            ("Scripts", bridge.scripts_list, "", "scripts"),
+            ("Categories", bridge.categories_list, "", "categories"),
+            ("Device Enrollments", bridge.device_enrollments_list, "", "device-enrollment-instances"),
+            ("Sites", bridge.sites_list, "", "sites"),
+            ("Buildings", bridge.buildings_list, "", "buildings"),
+            ("Departments", bridge.departments_list, "", "departments"),
         ]
     )
 
     commands: list[tuple[str, Any]] = []
-    for label, fn, rtype in candidates:
+    for label, fn, rtype, kind in candidates:
         if rtype and rtype in skip_types:
             print(f"  [skip] {label}: excluded by jamf_cli.collect_skip")
             continue
+        if tiers is not None:
+            tier = _command_tier(kind)
+            if tier is not None and tier not in tiers:
+                print(f"  [skip] {label}: tier '{tier}' not in --tiers")
+                continue
         commands.append((label, fn))
     return commands
 
@@ -19792,14 +19909,41 @@ def _archive_collect_csv_inputs(
     return archived
 
 
+def _tier_allows(kind: str, tiers: Optional[frozenset[str]]) -> bool:
+    """Return True if a kind is collected under the given tier selection.
+
+    Unmapped kinds (no Swift tier) are always allowed; mirrors Swift's nil-tier
+    "not part of the tier model" semantics so cheap extras are never dropped.
+
+    Args:
+        kind: Canonical Swift collect-kind name.
+        tiers: Selected tier set, or None to allow everything.
+    """
+    if tiers is None:
+        return True
+    tier = _command_tier(kind)
+    return tier is None or tier in tiers
+
+
 def _collect_snapshots(
     config: Config,
     csv_path: Optional[str] = None,
     historical_csv_dir: Optional[str] = None,
+    tiers: Optional[frozenset[str]] = None,
 ) -> tuple[int, bool]:
-    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
+    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot.
+
+    Args:
+        config: Active configuration.
+        csv_path: Optional CSV to archive into the historical snapshot dir.
+        historical_csv_dir: Optional override for the CSV snapshot dir.
+        tiers: When set, only collect kinds whose Swift CollectionTier is in this
+            set (unmapped kinds always collected); None collects all tiers.
+    """
     print("--- Collect snapshots ---")
     print(f"  config base dir: {config.base_dir}")
+    if tiers is not None:
+        print(f"  tiers: {', '.join(sorted(tiers))}")
 
     collected = 0
     jamf_cli_enabled = _jamf_cli_enabled(config)
@@ -19829,7 +19973,7 @@ def _collect_snapshots(
                 " lacks auth-method: platform"
             )
     if jamf_cli_enabled and bridge is not None and bridge.is_available():
-        commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed)
+        commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed, tiers)
         if protect_enabled:
             protect_bridge = _build_protect_bridge(
                 config, save_output=True, use_cached_data=False
@@ -19852,13 +19996,11 @@ def _collect_snapshots(
                     " skipping Protect snapshots."
                 )
         if platform_enabled:
-            commands.extend(
-                [
-                    ("Platform Blueprints", bridge.blueprint_status),
-                    ("Platform DDM Status", bridge.ddm_status),
-                ]
-            )
-            if platform_benchmarks:
+            if _tier_allows("blueprint-status", tiers):
+                commands.append(("Platform Blueprints", bridge.blueprint_status))
+            if _tier_allows("ddm-status", tiers):
+                commands.append(("Platform DDM Status", bridge.ddm_status))
+            if platform_benchmarks and _tier_allows("compliance-rules", tiers):
                 for bench in platform_benchmarks:
                     bench_label = bench[:40]
                     commands.extend(
@@ -19873,7 +20015,7 @@ def _collect_snapshots(
                             ),
                         ]
                     )
-            else:
+            elif not platform_benchmarks:
                 print(
                     "  [skip] Platform Compliance: platform.compliance_benchmarks is empty"
                 )
@@ -19889,7 +20031,10 @@ def _collect_snapshots(
     else:
         print("  jamf-cli disabled in config; skipping live snapshot collection.")
 
-    collected += _collect_sofa_feeds(config)
+    # SOFA feeds are the refresh-tier `sofa` kind in the Swift tier map; gate the
+    # out-of-loop call the same way so `--tiers` without refresh skips it.
+    if _tier_allows("sofa", tiers):
+        collected += _collect_sofa_feeds(config)
 
     return collected, _archive_collect_csv_inputs(config, csv_path, historical_csv_dir)
 
@@ -19922,10 +20067,20 @@ def cmd_collect(
     csv_path: Optional[str] = None,
     historical_csv_dir: Optional[str] = None,
     summary_json: Optional[str] = None,
+    tiers: Optional[frozenset[str]] = None,
 ) -> None:
-    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
+    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot.
+
+    Args:
+        config: Active configuration.
+        csv_path: Optional CSV to archive into the historical snapshot dir.
+        historical_csv_dir: Optional override for the CSV snapshot dir.
+        summary_json: Optional path to write the machine-readable run summary.
+        tiers: When set, only collect kinds in these CollectionTiers (unmapped
+            kinds always collected); None collects all tiers.
+    """
     summary = _command_summary_base("collect", config)
-    collected, archived = _collect_snapshots(config, csv_path, historical_csv_dir)
+    collected, archived = _collect_snapshots(config, csv_path, historical_csv_dir, tiers)
     if collected == 0 and not archived:
         if not _jamf_cli_enabled(config):
             raise SystemExit(
@@ -19955,6 +20110,7 @@ def cmd_collect(
             "inputs": {
                 "csv": str(selected_csv_path) if selected_csv_path is not None else None,
                 "historical_csv_dir": str(hist_dir_obj) if hist_dir_obj is not None else None,
+                "tiers": sorted(tiers) if tiers is not None else None,
             },
             "counts": {
                 "collected_snapshots": collected,
@@ -21031,8 +21187,22 @@ def cmd_launchagent_run(
     historical_csv_dir: Optional[str],
     status_file: Optional[str],
     notify_url: Optional[str] = None,
+    tiers: Optional[frozenset[str]] = None,
 ) -> None:
-    """Run a scheduled automation workflow from a generated LaunchAgent."""
+    """Run a scheduled automation workflow from a generated LaunchAgent.
+
+    Args:
+        config: Active configuration.
+        mode: Run mode (snapshot-only/jamf-cli-only/jamf-cli-full/csv-assisted/
+            backup); mirrors the Swift ``Schedule.RunMode`` contract.
+        csv_inbox_dir: Optional CSV inbox dir for csv-assisted/snapshot-only.
+        csv_freshness_days: Max age in days for an inbox CSV to be eligible.
+        historical_csv_dir: Optional override for the CSV snapshot dir.
+        status_file: Optional path for the per-run status JSON.
+        notify_url: Optional Teams webhook for completion notifications.
+        tiers: When set, collect modes only collect kinds in these
+            CollectionTiers (unmapped kinds always collected); None collects all.
+    """
     started_at = datetime.now(timezone.utc).isoformat()
     # PR-11 / threat-model T-12: derive the per-log summary filename from
     # status_file so cmd_generate can write a manifest-protected status
@@ -21078,6 +21248,8 @@ def cmd_launchagent_run(
             "generate_inventory_csv": generate_inventory_csv,
             "generate_xlsx": generate_xlsx,
         }
+        if tiers is not None:
+            status["tiers"] = sorted(tiers)
         if mode in {"snapshot-only", "csv-assisted"}:
             selected_csv, selected_family, selected_origin, selection_note = _select_automation_csv(
                 config,
@@ -21096,6 +21268,7 @@ def cmd_launchagent_run(
                 config,
                 snapshot_csv,
                 historical_csv_dir,
+                tiers,
             )
             if collected == 0 and not archived:
                 raise SystemExit(
@@ -21145,7 +21318,7 @@ def cmd_launchagent_run(
                     str(_automation_inventory_out_file(config)),
                 )
                 status["inventory_csv_path"] = str(inventory_path)
-            _collect_snapshots(config, None, historical_csv_dir)
+            _collect_snapshots(config, None, historical_csv_dir, tiers)
             if generate_xlsx:
                 report_path = cmd_generate(
                     config,
@@ -21173,7 +21346,7 @@ def cmd_launchagent_run(
                 raise SystemExit(
                     "Error: csv-assisted mode requires a CSV in the inbox; none found."
                 )
-            _collect_snapshots(config, None, historical_csv_dir)
+            _collect_snapshots(config, None, historical_csv_dir, tiers)
             if generate_inventory_csv:
                 inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
                 status["inventory_csv_path"] = str(inventory_path)
@@ -21191,6 +21364,11 @@ def cmd_launchagent_run(
             if generate_html:
                 html_path = cmd_html(config, None, no_open=True)
                 status["html_report_path"] = str(html_path)
+        elif mode == "backup":
+            # Mirrors the Swift `Schedule.RunMode.backup` contract: config objects
+            # to the workspace `backups/` dir only — no collect, no report.
+            backup_path = cmd_backup(config)
+            status["backup_path"] = str(backup_path)
         else:
             raise SystemExit(f"Error: unsupported automation mode: {mode}")
     except SystemExit as exc:
@@ -22799,6 +22977,16 @@ def main() -> None:
         help="Automation workflow mode (launchagent commands only)",
     )
     parser.add_argument(
+        "--tiers",
+        metavar="TIER[,TIER...]",
+        help=(
+            "Comma-separated CollectionTiers to collect"
+            f" ({', '.join(sorted(COLLECTION_TIER_NAMES))}); when omitted, all"
+            " tiers are collected. Applies to collect and launchagent-run."
+            " Unmapped/cheap kinds are always collected."
+        ),
+    )
+    parser.add_argument(
         "--profile",
         help=(
             "jamf-cli profile override for Jamf Pro commands; workspace-init target"
@@ -23053,7 +23241,13 @@ def main() -> None:
         if args.command == "check":
             cmd_check(config, args.csv)
         elif args.command == "collect":
-            cmd_collect(config, args.csv, args.historical_csv_dir, args.summary_json)
+            cmd_collect(
+                config,
+                args.csv,
+                args.historical_csv_dir,
+                args.summary_json,
+                _parse_tiers_arg(args.tiers),
+            )
         elif args.command == "inventory-csv":
             cmd_inventory_csv(config, args.out_file)
         elif args.command == "backup":
@@ -23094,6 +23288,7 @@ def main() -> None:
                 args.historical_csv_dir,
                 args.status_file,
                 args.notify,
+                _parse_tiers_arg(args.tiers),
             )
         elif args.command == "html":
             cmd_html(
