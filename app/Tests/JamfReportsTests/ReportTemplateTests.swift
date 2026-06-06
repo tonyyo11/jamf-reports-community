@@ -268,4 +268,72 @@ final class ReportTemplateTests: XCTestCase {
             "FullInstanceTemplate must be the first template in TemplateResolver.allTemplates"
         )
     }
+
+    // MARK: - CustomTemplate
+
+    func testCustomTemplateIdentifier() {
+        XCTAssertEqual(CustomTemplate(includedSheets: [.cover]).identifier, "custom")
+    }
+
+    func testCustomTemplateSingleSheet() {
+        let template = CustomTemplate(includedSheets: [.executiveSummary])
+        XCTAssertEqual(template.includedSheets, [.executiveSummary])
+    }
+
+    func testCustomTemplateMultipleSheets() {
+        let sheets: [SheetID] = [.executiveSummary, .securityPosture, .patchCompliance]
+        let template = CustomTemplate(includedSheets: sheets)
+        XCTAssertEqual(template.includedSheets, sheets)
+    }
+
+    func testCustomTemplatePreservesSheetOrder() {
+        let sheets: [SheetID] = [.patchCompliance, .executiveSummary, .securityPosture]
+        let template = CustomTemplate(includedSheets: sheets)
+        XCTAssertEqual(template.includedSheets, sheets) // Order preserved
+    }
+
+    func testCustomTemplateEmptySheets() {
+        let template = CustomTemplate(includedSheets: [])
+        XCTAssertTrue(template.includedSheets.isEmpty)
+    }
+
+    func testCustomTemplateHtmlSectionsIncludesKpiTiles() {
+        let template = CustomTemplate(includedSheets: [.executiveSummary])
+        XCTAssertTrue(template.htmlSections.contains(.kpiTiles))
+    }
+
+    func testCustomTemplateHtmlSectionsIncludesOrgInfo() {
+        let template = CustomTemplate(includedSheets: [.executiveSummary])
+        XCTAssertTrue(template.htmlSections.contains(.orgInfo))
+    }
+
+    func testCustomTemplateEmptyHtmlSectionsWhenNoSheets() {
+        let template = CustomTemplate(includedSheets: [])
+        XCTAssertTrue(template.htmlSections.isEmpty)
+    }
+
+    // MARK: - TemplateResolver custom support
+
+    func testResolveCustomWithSheets() {
+        let sheets: [SheetID] = [.executiveSummary, .securityPosture]
+        let template = TemplateResolver.resolveCustom(sheets: sheets)
+        XCTAssertEqual(template.identifier, "custom")
+        if let customTemplate = template as? CustomTemplate {
+            XCTAssertEqual(customTemplate.includedSheets, sheets)
+        } else {
+            XCTFail("Expected CustomTemplate, got \(type(of: template))")
+        }
+    }
+
+    func testResolveCustomWithEmptySheetsFallsBackToExecutive() {
+        let template = TemplateResolver.resolveCustom(sheets: [])
+        XCTAssertEqual(template.identifier, "executive")
+        XCTAssertTrue(template is ExecutiveTemplate)
+    }
+
+    func testResolveCustomIdentifierFallsBackToExecutive() {
+        let template = TemplateResolver.resolve(identifier: "custom")
+        XCTAssertEqual(template.identifier, "executive")
+        XCTAssertTrue(template is ExecutiveTemplate)
+    }
 }

@@ -71,8 +71,9 @@ final class TemplatedEngineTests: XCTestCase {
 
     func testAllTemplatesAreReachable() {
         let templates = TemplateResolver.allTemplates
-        XCTAssertEqual(templates.count, 7)
+        XCTAssertEqual(templates.count, 8)
         let ids = Set(templates.map(\.identifier))
+        XCTAssertTrue(ids.contains("custom"))
         XCTAssertTrue(ids.contains("full-instance"))
         XCTAssertTrue(ids.contains("executive"))
         XCTAssertTrue(ids.contains("operational"))

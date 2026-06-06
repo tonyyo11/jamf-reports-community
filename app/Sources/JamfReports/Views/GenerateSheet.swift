@@ -38,15 +38,40 @@ final class GenerateSheetState {
     /// Persisted for the sheet's lifetime; falls back to Executive on next open.
     var selectedTemplateID: String = FullInstanceTemplate().identifier
 
+    /// Custom sheet selection for the "custom" template.
+    /// Persisted across app launches via UserDefaults.
+    var customSelectedSheets: Set<SheetID> {
+        get {
+            let raw = UserDefaults.standard.string(forKey: Self.customSheetsKey) ?? ""
+            let identifiers = raw.split(separator: ",").compactMap { SheetID(rawValue: String($0)) }
+            return Set(identifiers)
+        }
+        set {
+            let raw = newValue.map(\.rawValue).sorted().joined(separator: ",")
+            UserDefaults.standard.set(raw, forKey: Self.customSheetsKey)
+        }
+    }
+
+    nonisolated static let customSheetsKey = "generateSheetCustomSelection"
+
     /// The resolved template for the current selection. Always a known template —
     /// unknown identifiers fall back to Executive via `TemplateResolver`.
     var resolvedTemplate: any ReportTemplate {
-        TemplateResolver.resolve(identifier: selectedTemplateID)
+        if selectedTemplateID == "custom" {
+            return TemplateResolver.resolveCustom(sheets: Array(customSelectedSheets))
+        }
+        return TemplateResolver.resolve(identifier: selectedTemplateID)
     }
 
-    /// True when at least one output type is selected, not running, and no folder error.
+    /// True when generation can proceed: output type selected, not running, no folder error,
+    /// and if custom template is selected, at least one sheet is chosen.
     var canGenerate: Bool {
-        !selectedTypes.isEmpty && !isRunning && folderPickerError == nil
+        let hasOutputType = !selectedTypes.isEmpty
+        let notRunning = !isRunning
+        let noFolderError = folderPickerError == nil
+        let customSelectionValid = selectedTemplateID != "custom" || !customSelectedSheets.isEmpty
+
+        return hasOutputType && notRunning && noFolderError && customSelectionValid
     }
 
     /// Resolved output directory for display. Falls back to the profile default.
@@ -272,7 +297,12 @@ struct GenerateSheet: View {
             .disabled(state.isRunning)
             .accessibilityLabel("Report template selection")
 
-            templateDescriptionPanel(for: state.resolvedTemplate)
+            // Show custom sheet selection when "custom" template is selected
+            if state.selectedTemplateID == "custom" {
+                customSheetSelection
+            } else {
+                templateDescriptionPanel(for: state.resolvedTemplate)
+            }
         }
     }
 
@@ -324,6 +354,95 @@ struct GenerateSheet: View {
                     .strokeBorder(Theme.Colors.gold.opacity(0.35), lineWidth: 0.5)
             )
             .accessibilityLabel("Data tier: \(tier.rawValue)")
+    }
+
+    // MARK: - Custom sheet selection
+
+    /// Multi-select sheet picker for the "custom" template option.
+    private var customSheetSelection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if state.customSelectedSheets.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.warn)
+                        .font(Theme.Fonts.caption)
+                    Text("Select at least one sheet to enable generation")
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Colors.warn)
+                }
+                .padding(.top, 4)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.Colors.ok)
+                        .font(Theme.Fonts.caption)
+                    Text("\(state.customSelectedSheets.count) sheet\(state.customSelectedSheets.count == 1 ? "" : "s") selected")
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Text.secondary)
+                }
+                .padding(.top, 4)
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(CustomSheetGroup.allGroups, id: \.name) { group in
+                        sheetGroupSection(group)
+                    }
+                }
+            }
+            .frame(maxHeight: 280)
+            .background(Theme.Surface.quiet, in: RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius)
+                    .strokeBorder(Theme.Hairline.standard, lineWidth: 0.5)
+            )
+        }
+    }
+
+    private func sheetGroupSection(_ group: CustomSheetGroup) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(group.name)
+                .font(Theme.Fonts.label.weight(.medium))
+                .foregroundStyle(Theme.Text.primary)
+                .padding(.horizontal, 12)
+                .padding(.top, group.name == CustomSheetGroup.allGroups.first?.name ? 8 : 4)
+
+            ForEach(group.sheets, id: \.self) { sheet in
+                customSheetRow(sheet)
+            }
+        }
+    }
+
+    private func customSheetRow(_ sheet: SheetID) -> some View {
+        let isSelected = state.customSelectedSheets.contains(sheet)
+        return Button {
+            if isSelected {
+                state.customSelectedSheets.remove(sheet)
+            } else {
+                state.customSelectedSheets.insert(sheet)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isSelected ? Theme.Colors.gold : Theme.Text.tertiary(contrast))
+                    .font(Theme.Fonts.bodyText)
+
+                Text(sheet.rawValue)
+                    .font(Theme.Fonts.bodyText)
+                    .foregroundStyle(Theme.Text.primary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 4)
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 12)
+            .background(
+                isSelected ? Theme.Colors.gold.opacity(0.06) : Color.clear
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(state.isRunning)
+        .accessibilityLabel("\(sheet.rawValue) sheet. \(isSelected ? "Selected" : "Not selected")")
     }
 
     private func formatRow(_ type: GenerateOutputType) -> some View {

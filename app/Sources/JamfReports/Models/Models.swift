@@ -1035,3 +1035,72 @@ enum TrendRange: String, CaseIterable, Identifiable, Sendable {
     case w4 = "W4", w12 = "W12", w26 = "W26", w52 = "W52", all = "All"
     var id: String { rawValue }
 }
+
+// MARK: - Sheet grouping for custom template selection
+
+/// Groups report sheets into logical categories for the custom template picker.
+struct CustomSheetGroup: Sendable {
+    let name: String
+    let sheets: [SheetID]
+
+    /// All sheet groups organized by functional area.
+    /// Order matches the sidebar grouping in the main app for consistency.
+    static let allGroups: [CustomSheetGroup] = [
+        CustomSheetGroup(name: "Executive", sheets: [
+            .executiveSummary,
+            .cover,
+            .fleetOverview,
+            .auditSummary,
+        ]),
+        CustomSheetGroup(name: "Posture", sheets: [
+            .securityPosture,
+            .compliancePosture,
+            .deviceCompliance,
+            .mscpCompliance,
+            .complianceTrend,
+        ]),
+        CustomSheetGroup(name: "Operations", sheets: [
+            .patchCompliance,
+            .patchFailures,
+            .patchSummaryDashboard,
+            .updateStatus,
+            .updateFailures,
+            .policyHealth,
+            .profileStatus,
+            .mobileConfigProfiles,
+            .eaCoverage,
+            .eaDefinitions,
+            .ddmStatus,
+            .blueprintStatus,
+        ]),
+        CustomSheetGroup(name: "Fleet", sheets: [
+            .inventorySummary,
+            .hardwareModels,
+            .mobileFleetSummary,
+            .mobileInventory,
+            .mobileSupervisionStatus,
+            .checkinHealth,
+            .activeDevices,
+            .groupHygiene,
+            .smartGroups,
+            .environmentStats,
+        ]),
+        CustomSheetGroup(name: "Security", sheets: [
+            .deviceSecurityState,
+            .protectOverview,
+            .protectAlerts,
+            .protectComputers,
+            .protectInsights,
+            .protectPlans,
+            .protectThreatOverview,
+        ]),
+        CustomSheetGroup(name: "System", sheets: [
+            .osCurrency,
+            .appStatus,
+            .softwareInstalls,
+            .packageLifecycle,
+            .complianceDevices,
+            .complianceRules,
+        ]),
+    ]
+}

@@ -226,6 +226,9 @@ final class TemplateApplierTests: XCTestCase {
             // branches (balanced thresholds, no EA keyword filtering) — it
             // includes every sheet/section, so no template-specific tuning.
             "full-instance",
+            // custom is a user-chosen sheet subset; it intentionally uses
+            // TemplateApplier's default branches — no template-specific tuning.
+            "custom",
         ]
         XCTAssertEqual(
             shipping, explicitlyCovered,
