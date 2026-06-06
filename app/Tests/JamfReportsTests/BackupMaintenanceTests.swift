@@ -105,4 +105,32 @@ final class BackupMaintenanceTests: XCTestCase {
         XCTAssertEqual(stamp.count, 8)
         XCTAssertTrue(stamp.allSatisfy(\.isNumber))
     }
+
+    // MARK: - Post-success housekeeping (GUI/headless parity)
+
+    /// `performPostSuccessHousekeeping` must prune scheduled backups beyond
+    /// `keep` AND sweep abandoned `.tmp-*` dirs in a single call — the same
+    /// operations `main.swift` and `CLIBridge+Run` both delegate to this helper.
+    func testPerformPostSuccessHousekeepingPrunesAndSweeps() throws {
+        // Two scheduled backups where keep=1 → oldest pruned.
+        try makeBackup(name: "20260501T010101", label: "scheduled-20260501", age: 2 * 86_400)
+        try makeBackup(name: "20260502T010101", label: "scheduled-20260502", age: 1 * 86_400)
+
+        // Stale staging dir (>24 h old) — should be swept.
+        let staleTemp = backupsRoot.appendingPathComponent(".tmp-STALE001", isDirectory: true)
+        try FileManager.default.createDirectory(at: staleTemp, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -2 * 86_400)], ofItemAtPath: staleTemp.path
+        )
+
+        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, keep: 1)
+
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: backupsRoot.path).sorted()
+        XCTAssertTrue(remaining.contains("20260502T010101"), "newest scheduled backup kept")
+        XCTAssertFalse(remaining.contains("20260501T010101"), "older scheduled backup pruned")
+        XCTAssertFalse(
+            remaining.contains(".tmp-STALE001"),
+            "stale staging dir swept by housekeeping"
+        )
+    }
 }

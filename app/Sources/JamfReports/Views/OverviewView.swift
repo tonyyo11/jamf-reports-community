@@ -1056,11 +1056,12 @@ struct OverviewView: View {
         let latest = trendStore.filteredSummaries.last
         let text: String = switch metric {
         case .stability:
-            // Reflect which components actually feed the index for this tenant
-            // (compliance is often unavailable on jamf-cli-only setups).
+            // Reflect which components feed the index and whether compliance
+            // is proxy-backed (4-control estimate vs. real mSCP EA data).
             TrendSeries.stabilityBasis(
                 compliancePct: latest?.compliancePct,
-                patchPct: latest?.patchPct
+                patchPct: latest?.patchPct,
+                complianceIsProxy: latest?.complianceIsProxy
             ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
             "Open Devices to inspect records contributing to this count."

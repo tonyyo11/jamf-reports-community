@@ -133,6 +133,51 @@ final class TrendStoreTests: XCTestCase {
         XCTAssertNil(TrendSeries.stabilityBasis(compliancePct: nil, patchPct: nil))
     }
 
+    // MARK: - stabilityBasis proxy propagation
+
+    /// When the compliance component is present and proxy-backed (4-control
+    /// proxy from the security report), the stability basis must append a note
+    /// so operators understand the index is partially estimated.
+    func testStabilityBasisAppendProxyNoteWhenComplianceIsProxy() {
+        let basis = TrendSeries.stabilityBasis(
+            compliancePct: 75,
+            patchPct: 80,
+            complianceIsProxy: true
+        )
+        XCTAssertNotNil(basis)
+        XCTAssertTrue(
+            basis!.contains("4-control proxy"),
+            "proxy note must mention '4-control proxy'; got: \(basis!)"
+        )
+    }
+
+    /// When compliance is real mSCP data (proxy == false), no proxy note.
+    func testStabilityBasisNoProxyNoteWhenComplianceIsReal() {
+        let basis = TrendSeries.stabilityBasis(
+            compliancePct: 88,
+            patchPct: 92,
+            complianceIsProxy: false
+        )
+        XCTAssertEqual(
+            basis,
+            "Composite of compliance, patch posture, and stale-device pressure."
+        )
+    }
+
+    /// When compliance is missing entirely, proxy flag is irrelevant and must
+    /// not produce a proxy note (there is no compliance component to qualify).
+    func testStabilityBasisNoProxyNoteWhenComplianceMissing() {
+        let basis = TrendSeries.stabilityBasis(
+            compliancePct: nil,
+            patchPct: 80,
+            complianceIsProxy: true
+        )
+        XCTAssertFalse(
+            basis?.contains("4-control proxy") == true,
+            "proxy note must be omitted when compliance is not feeding the index"
+        )
+    }
+
     // MARK: - chartDomain tests
 
     func testChartDomainReturnsNilWhenEmpty() {

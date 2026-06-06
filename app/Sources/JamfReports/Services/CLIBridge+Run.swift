@@ -51,9 +51,7 @@ extension CLIBridge {
                 onLine: onLine
             )
             if exit == 0 {
-                BackupMaintenance.pruneScheduledBackups(
-                    profile: profile, keep: BackupMaintenance.defaultKeepCount, onLine: onLine
-                )
+                BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
             }
             return exit
         }

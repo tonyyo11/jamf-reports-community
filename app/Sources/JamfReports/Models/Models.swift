@@ -1000,14 +1000,26 @@ struct TrendSeries: Identifiable, Sendable {
 
     /// Human-readable description of which components feed the stability
     /// index, for the metric detail page. Nil when the index itself is nil.
-    static func stabilityBasis(compliancePct: Double?, patchPct: Double?) -> String? {
+    ///
+    /// When `compliancePct` is present and `complianceIsProxy` is true, appends
+    /// a note that the compliance component is a 4-control proxy rather than a
+    /// real mSCP failure-count source, so operators understand the index is
+    /// partially estimated.
+    static func stabilityBasis(
+        compliancePct: Double?,
+        patchPct: Double?,
+        complianceIsProxy: Bool? = nil
+    ) -> String? {
+        let proxyNote: String = compliancePct != nil && complianceIsProxy == true
+            ? " Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data."
+            : ""
         switch (compliancePct != nil, patchPct != nil) {
         case (true, true):
-            return "Composite of compliance, patch posture, and stale-device pressure."
+            return "Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)"
         case (false, true):
             return "Composite of patch posture and stale-device pressure (compliance not collected)."
         case (true, false):
-            return "Composite of compliance and stale-device pressure (patch data not collected)."
+            return "Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)"
         case (false, false):
             return nil
         }

@@ -74,10 +74,7 @@ private func scheduledRunSingle(
                 onLine: onLine
             )
             if exit == 0 {
-                BackupMaintenance.pruneScheduledBackups(
-                    profile: profile, keep: BackupMaintenance.defaultKeepCount, onLine: onLine
-                )
-                _ = BackupMaintenance.cleanStaleTempDirs(profile: profile)
+                BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
             }
             let message = exit == 0
                 ? "[ok] scheduled backup complete for '\(profile)'"

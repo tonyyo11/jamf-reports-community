@@ -495,8 +495,16 @@ struct ReportEngine: Sendable {
                 macOSRows: macOSRows, osCounts: osCounts, totalDevices: totalDevices)
         }
 
-        // Patch % — average compliance_pct across patch-status rows; nil when
-        // patch-status data is absent (not the same as 0%).
+        // Patch % — unweighted mean of per-title compliance_pct across patch-status
+        // rows; nil when patch-status data is absent (not the same as 0%).
+        //
+        // `compactMap` excludes titles that carry a nil or unparseable
+        // compliance_pct (e.g. patch titles with no enrolled devices yet).
+        // Those titles are not counted in the denominator, so `patchPct` is the
+        // average title compliance for titles that *have* data. It is NOT a
+        // device-weighted fleet compliance figure. The displayed label "Patch
+        // Compliance" should be read as "average per-title compliance", not as
+        // the fraction of devices on the latest patch version.
         var patchPct: Double? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {

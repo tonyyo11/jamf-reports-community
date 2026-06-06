@@ -30,6 +30,13 @@ versions in this repository map to git tags.
   definitions`). The Patch Compliance sheet and the app's Patch screen gain
   "Latest Released" / "Days Behind" columns — groundwork for adoption-lag
   trend charts.
+- mSCP/STIG compliance real banding: when a `compliance.baselines` entry
+  maps an EA column containing per-device failure counts, both engines derive
+  real pass/low/medium/high distribution bands instead of the four-control
+  proxy (FileVault/SIP/Firewall/Gatekeeper). New "mSCP Compliance" and
+  "Compliance Trend" workbook sheets display band donuts and trend stackplots;
+  the Compliance Posture screen shows real band distribution and per-device
+  pass/fail status.
 - Mobile-device CSV scaffolding: `scaffold` (Python CLI) and "Re-scaffold from
   CSV" / onboarding (app) now detect whether a CSV is a Jamf Pro computer or
   mobile-device export and populate the matching column mappings (`columns:`
@@ -54,6 +61,21 @@ versions in this repository map to git tags.
   `report_<profile>_<date_time>.xlsx`, etc. Exports a second apart no longer
   overwrite each other, and reports remain attributable outside their
   workspace folder.
+- Report sidecar archives: Excel, HTML, PDF, and CSV reports now write
+  accompanying `.sha256` and `.manifest` metadata files for integrity checks and
+  run attribution.
+- Smart Groups and Computer/Mobile Groups collection: a new `groups` collection
+  kind fetches jamf-cli 1.18+ smart-group templates and group lists (smart and
+  static), fixing a stale-data issue where Group Hygiene and Computer Group
+  Inventory sheets vanished on fresh profile installs awaiting first collect.
+  Groups is included in the Standard collection tier.
+- Per-sheet "Data as of" dates: every workbook sheet now displays the
+  collection timestamp of the snapshot it reads (or empty state if the kind is
+  missing), so stale data is visually identifiable without checking the
+  report filename.
+- First-run-of-day summary.json: when `summary_<today>.json` already exists,
+  the collect step upgrades a stale proxy summary (4-control mSCP proxy) to
+  real mSCP banding if a baseline EA is now configured.
 
 ### Changed (v2.2.0 cycle)
 
@@ -154,6 +176,10 @@ versions in this repository map to git tags.
 - "Full Instance Report" template: a new template containing every workbook sheet
   and every HTML section, now the default for app report generation. Executive and
   the other focused templates remain available in the picker.
+- Custom report template: the Generate sheet now offers a "Custom" template picker
+  where you select which sheets to include in a single-sheet or subset report. The
+  selected sheet list persists across launches, so repeat jobs use your preferred
+  subset automatically.
 - Five workbook sheets ported from the Python engine: Patch Summary Dashboard,
   Mobile Supervision Status, Device Security State, Protect Plans, and Protect
   Threat Overview.

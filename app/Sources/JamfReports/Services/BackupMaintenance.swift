@@ -69,6 +69,20 @@ enum BackupMaintenance {
         }
     }
 
+    /// Post-success housekeeping run by both the GUI "Run now" backup path
+    /// (`CLIBridge+Run`) and the headless `--scheduled-run` path (`main.swift`).
+    /// Prunes old scheduled backups and sweeps abandoned `.tmp-*` staging dirs.
+    /// Both paths must call this and nothing else — do not inline the two steps
+    /// at call sites or they will diverge again.
+    static func performPostSuccessHousekeeping(
+        profile: String,
+        keep: Int = defaultKeepCount,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) {
+        pruneScheduledBackups(profile: profile, keep: keep, onLine: onLine)
+        cleanStaleTempDirs(profile: profile)
+    }
+
     /// Delete `.tmp-*` staging directories older than `staleTempAge`.
     /// Returns the names of the directories removed (for logging/tests).
     @discardableResult
