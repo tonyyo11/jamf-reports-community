@@ -57,6 +57,9 @@ enum SheetID: String, Sendable, CaseIterable {
     case protectThreatOverview = "Protect Threat Overview"
     // OS currency
     case osCurrency          = "OS Currency"
+    // mSCP / STIG compliance
+    case mscpCompliance      = "mSCP Compliance"
+    case complianceTrend     = "Compliance Trend"
 }
 
 /// Logical HTML section identifiers.

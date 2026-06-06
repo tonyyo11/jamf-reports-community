@@ -21,6 +21,8 @@ struct ComplianceTemplate: ReportTemplate {
             .cover,
             .compliancePosture,
             .auditSummary,
+            .mscpCompliance,
+            .complianceTrend,
             .deviceCompliance,
             .complianceDevices,
             .complianceRules,
