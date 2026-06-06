@@ -126,7 +126,7 @@ struct ContentView: View {
         case .trends:            TrendsView()
         case .audit:             AuditView()
         case .reports:           ReportsView()
-        case .schedules:         SchedulesView()
+        case .schedules:         AutomationView()
         case .runs:              RunsView()
         case .config:            ConfigView()
         case .customize:         CustomizeView()
@@ -157,7 +157,7 @@ struct ContentView: View {
         case .deviceLookup:      "LOOKUP"
         case .trends:            TrendRange(rawValue: defaultTrendRangeRaw)?.rawValue ?? TrendRange.w4.rawValue
         case .audit:             "HEALTH & HYGIENE"
-        case .schedules:         "LAUNCHAGENT"
+        case .schedules:         "POLICY"
         case .runs:              "STDOUT"
         case .config:            "CONFIG.YAML"
         case .customize:         "SHEETS"

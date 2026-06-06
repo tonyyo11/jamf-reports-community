@@ -1,0 +1,303 @@
+import SwiftUI
+
+/// v2.2.0 Phase 5 — the "set policy, not cron jobs" Automation screen (DRAFT,
+/// owes visual sign-off at `PageScaffold.minSupportedWidth`).
+///
+/// Edits the single app-level `AutomationPolicy` (@AppStorage). When "Manage
+/// automation" is on, `ManagedAutomation.reconcile` (run at launch) installs the
+/// daily-freshness / weekly-scan / reports / backup all-profiles agents from
+/// this policy; turning it off tears them down. Report groups drive the
+/// consolidated fleet report.
+struct AutomationView: View {
+    @Environment(WorkspaceStore.self) private var workspace
+
+    @AppStorage(AutomationPolicy.storageKey) private var policyRaw: String = ""
+
+    // Add-group form state.
+    @State private var newGroupName: String = ""
+    @State private var newGroupProfiles: Set<String> = []
+
+    private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+    private var policy: AutomationPolicy { AutomationPolicy.parse(policyRaw) }
+
+    private var discoveredProfiles: [String] {
+        workspace.demoMode ? [] : ProfileService.discoverLocal().map(\.name)
+    }
+
+    var body: some View {
+        PageScaffold(spacing: 16) {
+            PageHeader(
+                kicker: "Automation",
+                title: "Automation Policy",
+                subtitle: "Set how often data refreshes and reports generate — it applies to "
+                    + "every profile automatically, adjusting as profiles are added or removed."
+            )
+            if workspace.demoMode {
+                Card { Text("Automation is unavailable in demo mode.")
+                    .foregroundStyle(Theme.Colors.fgMuted) }
+            } else {
+                masterCard
+                if policy.isManaged {
+                    freshnessCard
+                    reportsCard
+                    backupsCard
+                    scheduleCard
+                    exclusionsCard
+                    groupsCard
+                }
+            }
+        }
+    }
+
+    // MARK: - Master
+
+    private var masterCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: binding(\.isManaged)) {
+                    Text("Manage automation").font(.headline)
+                }
+                .toggleStyle(.switch)
+                Text("When on, the app keeps every profile's jamf-cli data fresh and generates "
+                    + "reports on the cadence below — no hand-built schedules. When off, the app "
+                    + "installs nothing and removes any managed agents.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
+    }
+
+    // MARK: - Data freshness
+
+    private var freshnessCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("Data Freshness")
+                Toggle("Keep data fresh daily", isOn: binding(\.freshnessEnabled))
+                    .toggleStyle(.switch)
+                Text("A daily collect (everything except the two heavy per-device scans) so "
+                    + "Trends and reports stay current.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                Divider().background(Theme.Colors.hairline)
+                Toggle("Weekly deep scan", isOn: binding(\.scanEnabled))
+                    .toggleStyle(.switch)
+                if policy.scanEnabled {
+                    weekdayPicker("Scan day", binding(\.scanWeekday))
+                }
+                Text("The two per-device --scan-failures queries (patch + update failures) that "
+                    + "can stall on-prem Jamf Pro — run weekly, never daily.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
+    }
+
+    // MARK: - Reports
+
+    private var reportsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("Reports")
+                Picker("Generate reports", selection: binding(\.reportsCadence)) {
+                    Text("Off").tag(AutomationPolicy.ReportsCadence.off)
+                    Text("Daily").tag(AutomationPolicy.ReportsCadence.daily)
+                    Text("Weekly").tag(AutomationPolicy.ReportsCadence.weekly)
+                    Text("Monthly").tag(AutomationPolicy.ReportsCadence.monthly)
+                }
+                .pickerStyle(.segmented)
+                switch policy.reportsCadence {
+                case .weekly:
+                    weekdayPicker("Report day", binding(\.reportsWeekday))
+                case .monthly:
+                    Stepper("Day of month: \(policy.reportsDayOfMonth)",
+                            value: binding(\.reportsDayOfMonth), in: 1...28)
+                case .daily, .off:
+                    EmptyView()
+                }
+                Text("Reports generate from the already-fresh cache for every profile.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
+    }
+
+    // MARK: - Backups
+
+    private var backupsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("Configuration Backups")
+                Toggle("Weekly configuration backup", isOn: binding(\.backupsEnabled))
+                    .toggleStyle(.switch)
+                if policy.backupsEnabled {
+                    weekdayPicker("Backup day", binding(\.backupsWeekday))
+                }
+            }
+        }
+    }
+
+    // MARK: - Schedule time
+
+    private var scheduleCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                sectionTitle("Run Time")
+                HStack {
+                    Text("Run automation at")
+                    TextField("06:00", text: binding(\.runTime))
+                        .frame(width: 80)
+                        .textFieldStyle(.roundedBorder)
+                }
+                Text("Shared base time (24-hour HH:mm). Freshness, scan, reports, and backup are "
+                    + "staggered a few minutes apart so on-prem Jamf Pro isn't hit all at once.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
+    }
+
+    // MARK: - Exclusions
+
+    private var exclusionsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("Excluded Profiles")
+                if discoveredProfiles.isEmpty {
+                    Text("No profiles discovered.").font(.footnote)
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                } else {
+                    ForEach(discoveredProfiles, id: \.self) { profile in
+                        Toggle(profile, isOn: exclusionBinding(profile))
+                            .toggleStyle(.checkbox)
+                    }
+                    Text("Excluded profiles are skipped by all managed automation (e.g. a "
+                        + "dummy/test tenant).")
+                        .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                }
+            }
+        }
+    }
+
+    // MARK: - Report groups
+
+    private var groupsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionTitle("Report Groups")
+                Text("Each group's profiles roll up into one consolidated fleet report; profiles "
+                    + "in no group get a per-profile report. Combine prod/dev/sandbox into one "
+                    + "fleet, or make one group per customer.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+
+                ForEach(policy.reportGroups) { group in
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(group.name).font(.callout.weight(.semibold))
+                            Text(group.profiles.joined(separator: ", "))
+                                .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                        }
+                        Spacer()
+                        Button(role: .destructive) { removeGroup(group) } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Divider().background(Theme.Colors.hairline)
+                }
+
+                addGroupForm
+            }
+        }
+    }
+
+    private var addGroupForm: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("New group").font(.footnote.weight(.semibold))
+            TextField("Group name (e.g. Production Fleet)", text: $newGroupName)
+                .textFieldStyle(.roundedBorder)
+            if !discoveredProfiles.isEmpty {
+                ForEach(discoveredProfiles, id: \.self) { profile in
+                    Toggle(profile, isOn: newGroupProfileBinding(profile))
+                        .toggleStyle(.checkbox)
+                }
+            }
+            PNPButton(title: "Add group", style: .gold, size: .sm) { addGroup() }
+                .disabled(!canAddGroup)
+        }
+    }
+
+    private var canAddGroup: Bool {
+        let trimmed = newGroupName.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty
+            && !newGroupProfiles.isEmpty
+            && !policy.reportGroups.contains { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+    }
+
+    private func addGroup() {
+        let trimmed = newGroupName.trimmingCharacters(in: .whitespaces)
+        guard canAddGroup else { return }
+        update {
+            $0.reportGroups.append(
+                ReportGroup(name: trimmed, profiles: discoveredProfiles.filter(newGroupProfiles.contains))
+            )
+        }
+        newGroupName = ""
+        newGroupProfiles = []
+    }
+
+    private func removeGroup(_ group: ReportGroup) {
+        update { $0.reportGroups.removeAll { $0.id == group.id } }
+    }
+
+    // MARK: - Helpers
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text).font(.headline)
+    }
+
+    private func weekdayPicker(_ label: String, _ value: Binding<Int>) -> some View {
+        Picker(label, selection: value) {
+            ForEach(0..<7, id: \.self) { index in
+                Text(Self.weekdays[index]).tag(index)
+            }
+        }
+        .pickerStyle(.menu)
+        .frame(maxWidth: 220, alignment: .leading)
+    }
+
+    /// Two-way binding into the persisted policy for a single field.
+    private func binding<T>(_ keyPath: WritableKeyPath<AutomationPolicy, T>) -> Binding<T> {
+        Binding(
+            get: { policy[keyPath: keyPath] },
+            set: { newValue in update { $0[keyPath: keyPath] = newValue } }
+        )
+    }
+
+    private func exclusionBinding(_ profile: String) -> Binding<Bool> {
+        Binding(
+            get: { policy.excludedProfiles.contains(profile) },
+            set: { excluded in
+                update { p in
+                    if excluded {
+                        if !p.excludedProfiles.contains(profile) { p.excludedProfiles.append(profile) }
+                    } else {
+                        p.excludedProfiles.removeAll { $0 == profile }
+                    }
+                }
+            }
+        )
+    }
+
+    private func newGroupProfileBinding(_ profile: String) -> Binding<Bool> {
+        Binding(
+            get: { newGroupProfiles.contains(profile) },
+            set: { on in
+                if on { newGroupProfiles.insert(profile) } else { newGroupProfiles.remove(profile) }
+            }
+        )
+    }
+
+    private func update(_ mutate: (inout AutomationPolicy) -> Void) {
+        var p = AutomationPolicy.parse(policyRaw)
+        mutate(&p)
+        policyRaw = p.serialize()
+    }
+}

@@ -721,7 +721,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .trends:            "Trends"
         case .audit:             "Health Audit"
         case .reports:           "Generated"
-        case .schedules:         "Schedules"
+        case .schedules:         "Automation"
         case .runs:              "Run History"
         case .config:            "Config"
         case .customize:         "Customize"
@@ -753,7 +753,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .trends:            "chart.line.uptrend.xyaxis"
         case .audit:             "shield.checkered"
         case .reports:           "doc.text"
-        case .schedules:         "clock"
+        case .schedules:         "gearshape.2"
         case .runs:              "terminal"
         case .config:            "wrench.and.screwdriver"
         case .customize:         "sparkles"
@@ -782,7 +782,6 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .fleet:     "multi"
         case .trends:    "26w"
         case .reports:   "47"
-        case .schedules: "5"
         default:         nil
         }
     }
