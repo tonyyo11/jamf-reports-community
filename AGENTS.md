@@ -623,11 +623,24 @@ swift run JamfReports              # launch (debug)
 
 # Produce a runnable .app bundle (ad-hoc signed, local dev use)
 ./build-app.sh release             # → app/build/JamfReports.app
+
+# A public release (vs a beta): set RELEASE=1
+RELEASE=1 ./build-app.sh release   # stamps JRReleaseChannel=release
 ```
 
 For distribution to other Macs: sign with a Developer ID certificate, notarize via
 `xcrun notarytool`, and staple with `xcrun stapler staple`. These steps are currently
 manual and not integrated into `build-app.sh`.
+
+**Version model.** `MARKETING_VERSION` in `build-app.sh` is the single source of
+truth for the user-facing semver (`CFBundleShortVersionString`); keep it in sync with
+`AppVersionState.fallbackVersion` (`AppVersionDriftTests` enforces this). `CFBundleVersion`
+is always a monotonic integer (git commit count) — never set it to the marketing version.
+Release-vs-beta is signalled by `RELEASE=1` → `JRReleaseChannel` in `Info.plist`, which
+`build-dmg.sh`/`build-pkg.sh` read to decide artifact naming (`-betaN` suffix for betas).
+To bump: change `MARKETING_VERSION`, roll `CHANGELOG.md`, tag `vX.Y.Z`; the build number
+takes care of itself. `.jamf-cli-tracked-version` is a separate axis (the jamf-cli
+dependency floor), unrelated to app versioning.
 
 #### Swift code conventions
 

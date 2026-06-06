@@ -27,9 +27,11 @@ echo "Version: ${RELEASE_VERSION}"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo
 
-# Step 1: Build release bundle
+# Step 1: Build release bundle.
+# RELEASE=1 stamps the release channel into Info.plist; MARKETING_VERSION pins
+# the .app's semver to the declared RELEASE_VERSION so the two never drift.
 echo "→ Building release bundle..."
-if ! ./build-app.sh release; then
+if ! RELEASE=1 MARKETING_VERSION="${RELEASE_VERSION}" ./build-app.sh release; then
   echo "✗ build-app.sh release failed" >&2
   exit 1
 fi

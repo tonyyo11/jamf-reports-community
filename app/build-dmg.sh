@@ -40,11 +40,11 @@ if [[ "$CONFIG" == "release" ]]; then
   fi
 fi
 
-# Read marketing version and build number from the built .app's Info.plist.
-# CFBundleShortVersionString = user-facing version (must be N.N or N.N.N).
-# CFBundleVersion           = build number; bumped per beta while marketing
-#                              version stays stable. When they match, this is a
-#                              release build; when they differ, this is a beta.
+# Read marketing version, build number, and release channel from the .app's
+# Info.plist. CFBundleShortVersionString = user-facing semver (N.N or N.N.N).
+# CFBundleVersion = monotonic integer build number. JRReleaseChannel
+# ("release"/"beta") decides artifact naming; a missing key (older .app)
+# defaults to beta so a release is never mislabeled by accident.
 PLIST="$APP_PATH/Contents/Info.plist"
 APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST") || {
   echo "✗ could not read CFBundleShortVersionString from $PLIST" >&2
@@ -54,6 +54,7 @@ APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST") || {
   echo "✗ could not read CFBundleVersion from $PLIST" >&2
   exit 1
 }
+APP_CHANNEL=$(/usr/libexec/PlistBuddy -c "Print :JRReleaseChannel" "$PLIST" 2>/dev/null || echo "beta")
 
 if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
   echo "✗ unexpected CFBundleShortVersionString: '$APP_VERSION' (want N.N or N.N.N)" >&2
@@ -64,7 +65,7 @@ if [[ ! "$APP_BUILD" =~ ^[0-9A-Za-z._-]+$ ]]; then
   exit 1
 fi
 
-if [[ "$APP_BUILD" != "$APP_VERSION" ]]; then
+if [[ "$APP_CHANNEL" != "release" ]]; then
   DMG_OUT="build/JamfReports-${APP_VERSION}-beta${APP_BUILD}.dmg"
   DMG_VOLUME="Jamf Reports ${APP_VERSION} beta ${APP_BUILD}"
 else

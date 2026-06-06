@@ -9,17 +9,29 @@ cd "$(dirname "$0")"
 CONFIG="${1:-release}"
 
 # Marketing version (CFBundleShortVersionString) — bumped per milestone.
+# This is the single source of truth for the user-facing semver; keep it in
+# sync with AppVersionState.fallbackVersion (a test enforces this).
 MARKETING_VERSION="${MARKETING_VERSION:-2.2.0}"
 
-# Build number (CFBundleVersion). When equal to MARKETING_VERSION the
-# downstream build-dmg.sh / build-pkg.sh treat the build as a public
-# release; when different they name the artifacts -betaN. Default derives
-# from git commit count so every dev build is uniquely identifiable.
-# For a clean release, invoke as:
-#   BUILD_NUMBER="${MARKETING_VERSION}" ./build-app.sh release
+# Build number (CFBundleVersion). Always a monotonically increasing integer
+# (git commit count), independent of the marketing version — this matches
+# Apple's CURRENT_PROJECT_VERSION model and keeps every build comparable.
+# Do NOT set this to the marketing version for releases (that made a beta's
+# integer build look "newer" than its own release to version-comparing tools).
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 0)}"
 
-echo "→ version ${MARKETING_VERSION} build ${BUILD_NUMBER}"
+# Release channel. Set RELEASE=1 for a public release build; otherwise the
+# build is a beta and downstream build-dmg.sh / build-pkg.sh append -betaN.
+# This is stamped into Info.plist (JRReleaseChannel) so the packaging scripts
+# read the channel from the .app rather than guessing from the build number.
+RELEASE="${RELEASE:-0}"
+if [[ "$RELEASE" == "1" ]]; then
+  RELEASE_CHANNEL="release"
+else
+  RELEASE_CHANNEL="beta"
+fi
+
+echo "→ version ${MARKETING_VERSION} build ${BUILD_NUMBER} (${RELEASE_CHANNEL})"
 echo "→ swift build (${CONFIG})"
 if [[ "$CONFIG" == "release" ]]; then
   swift build -c release
@@ -108,11 +120,15 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>${MARKETING_VERSION}</string>
-    <!-- CFBundleVersion equals CFBundleShortVersionString for a release build.
-         build-dmg.sh / build-pkg.sh treat a differing value as a beta and name
-         the artifacts -betaN; keep the two in sync for a public release. -->
+    <!-- CFBundleVersion is always a monotonic integer (git commit count),
+         independent of the marketing version. Release-vs-beta is signalled by
+         JRReleaseChannel below, which build-dmg.sh / build-pkg.sh read. -->
     <key>CFBundleVersion</key>
     <string>${BUILD_NUMBER}</string>
+    <!-- Private key: "release" or "beta". The packaging scripts read this to
+         decide artifact naming instead of inferring it from the build number. -->
+    <key>JRReleaseChannel</key>
+    <string>${RELEASE_CHANNEL}</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
