@@ -213,6 +213,10 @@ extension WorkspaceStore {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.triggerRefresh(for: self.profile)
+                // Catch-up-on-wake: if the Mac slept through the scheduled
+                // freshness run, collect today's snapshot now. Once-per-day
+                // guarded; no-op unless managed freshness is on.
+                await self.catchUpCollectIfNeeded()
             }
         }
         objc_setAssociatedObject(

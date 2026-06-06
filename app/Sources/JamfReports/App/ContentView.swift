@@ -107,6 +107,10 @@ struct ContentView: View {
             // all-profiles agents. No-op unless the operator opted in
             // (AutomationPolicy.isManaged); no-op in demo mode.
             await workspace.reconcileManagedAutomation()
+            // Catch-up backstop: collect today's freshness snapshot if the
+            // scheduled run was missed (e.g. asleep at 06:00). No-op when
+            // already collected today or automation is unmanaged.
+            await workspace.catchUpCollectIfNeeded()
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
         .animation(.snappy, value: workspace.toast != nil)
