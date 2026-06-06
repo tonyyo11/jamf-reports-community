@@ -48,6 +48,12 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
     /// Profiles excluded from all managed automation (run-time exclusion —
     /// discovered set minus these).
     var excludedProfiles: [String]
+    /// Report grouping (v2.2.0 Phase 4). Each group's profiles roll up into ONE
+    /// consolidated fleet report; profiles in no group get a per-profile report.
+    /// Empty (default) → every profile reports on its own, preserving prior
+    /// behaviour. A single org can combine prod/dev/sandbox into one "fleet"
+    /// group; an MSP makes one group per customer.
+    var reportGroups: [ReportGroup]
 
     static let storageKey = "automationPolicy"
 
@@ -62,7 +68,8 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
         backupsEnabled: Bool = false,
         backupsWeekday: Int = 0,
         runTime: String = "06:00",
-        excludedProfiles: [String] = []
+        excludedProfiles: [String] = [],
+        reportGroups: [ReportGroup] = []
     ) {
         self.isManaged = isManaged
         self.freshnessEnabled = freshnessEnabled
@@ -75,6 +82,7 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
         self.backupsWeekday = backupsWeekday
         self.runTime = runTime
         self.excludedProfiles = excludedProfiles
+        self.reportGroups = reportGroups
     }
 
     // Lenient decoding: a key absent from older saved JSON falls back to the
@@ -93,6 +101,7 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
         backupsWeekday = try c.decodeIfPresent(Int.self, forKey: .backupsWeekday) ?? d.backupsWeekday
         runTime = try c.decodeIfPresent(String.self, forKey: .runTime) ?? d.runTime
         excludedProfiles = try c.decodeIfPresent([String].self, forKey: .excludedProfiles) ?? d.excludedProfiles
+        reportGroups = try c.decodeIfPresent([ReportGroup].self, forKey: .reportGroups) ?? d.reportGroups
     }
 
     /// Parse a stored `@AppStorage` JSON string. Any decode failure (corrupt or
@@ -122,3 +131,16 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
         return parse(raw)
     }
 }
+
+/// A named set of profiles that roll up into one consolidated fleet report.
+struct ReportGroup: Codable, Sendable, Equatable, Identifiable {
+    var id: String { name }
+    var name: String
+    var profiles: [String]
+
+    init(name: String, profiles: [String]) {
+        self.name = name
+        self.profiles = profiles
+    }
+}
+

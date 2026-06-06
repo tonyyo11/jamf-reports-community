@@ -11,6 +11,39 @@ import SwiftUI
 // When --all-profiles is also present, discover all local profiles via
 // ProfileService.discoverLocal() and run the cycle for each in sequence.
 
+/// Emit one consolidated fleet CSV per configured `report_group` after an
+/// all-profiles reports run. No-op when no groups are configured. Best-effort:
+/// a failed group logs a warning and never fails the overall run. Lookback for
+/// the delta columns follows the report cadence (daily 1d / weekly 7d /
+/// monthly 30d).
+@Sendable
+private func emitConsolidatedReports() {
+    let policy = AutomationPolicy.current()
+    guard !policy.reportGroups.isEmpty else { return }
+    let lookback: Int = {
+        switch policy.reportsCadence {
+        case .daily:   return 1
+        case .monthly: return 30
+        case .weekly, .off: return 7
+        }
+    }()
+    let stamp = ExportNaming.timestamp()
+    for group in policy.reportGroups {
+        do {
+            if let url = try FleetReportEmitter.emit(
+                group: group, lookbackDays: lookback, timestamp: stamp
+            ) {
+                print("[ok] consolidated fleet report: \(url.lastPathComponent)")
+            }
+        } catch {
+            fputs(
+                "[warn] consolidated report for '\(group.name)' failed: \(error.localizedDescription)\n",
+                stderr
+            )
+        }
+    }
+}
+
 /// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
 /// is enabled with a usable https URL. Best-effort — never affects the run.
 @Sendable
@@ -297,6 +330,12 @@ private func scheduledRun(profile: String) async -> Int32 {
                 profile: p.name, mode: mode, tiers: tiers, verbose: verbose, label: label
             )
             if code != 0 { anyFailed = true }
+        }
+        // v2.2.0 Phase 4: after the per-profile reports run, emit one
+        // consolidated fleet report per configured group. Only for
+        // report-generating modes — the freshness/scan snapshot agents skip it.
+        if mode == .jamfCLIOnly || mode == .jamfCLIFull || mode == .csvAssisted {
+            emitConsolidatedReports()
         }
         return anyFailed ? 1 : 0
     }

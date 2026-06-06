@@ -22,6 +22,10 @@ final class AutomationPolicyTests: XCTestCase {
         p.reportsDayOfMonth = 15
         p.excludedProfiles = ["dummy", "sandbox"]
         p.runTime = "07:30"
+        p.reportGroups = [
+            ReportGroup(name: "Production Fleet", profiles: ["prod", "dev"]),
+            ReportGroup(name: "Customer A", profiles: ["cust-a"]),
+        ]
         XCTAssertEqual(AutomationPolicy.parse(p.serialize()), p)
     }
 
