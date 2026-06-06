@@ -227,7 +227,8 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Security Posture")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Security Posture"),
-                                      subtitle: "Generated: \(ts)", ncols: 5)
+                                      subtitle: snapshotSubtitle(names: ["security"], generated: ts),
+                                      ncols: 5)
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 20)
         ws.setColumnWidth(2, 2, 12)
@@ -304,7 +305,9 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Patch Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Patch Compliance"),
-                                      subtitle: "Generated: \(ts)", ncols: ncols)
+                                      subtitle: snapshotSubtitle(names: ["patch-status", "patch_status"],
+                                                                  generated: ts),
+                                      ncols: ncols)
         ws.setColumnWidth(0, 0, 36)
         ws.setColumnWidth(1, 1, 10)
         ws.setColumnWidth(2, 2, 12)
@@ -353,7 +356,10 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Patch Failures")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Patch Failures"),
-                                      subtitle: "Generated: \(ts)", ncols: 8)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["patch-device-failures", "patch_device_failures"],
+                                          generated: ts),
+                                      ncols: 8)
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 24)
         ws.setColumnWidth(2, 2, 16)
@@ -398,7 +404,10 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Update Status")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Update Status"),
-                                      subtitle: "Generated: \(ts)", ncols: 4)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["update-status", "update_status"],
+                                          generated: ts),
+                                      ncols: 4)
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 14)
 
@@ -440,7 +449,10 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Update Failures")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Update Failures"),
-                                      subtitle: "Generated: \(ts)", ncols: 8)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["update-device-failures", "update_device_failures"],
+                                          generated: ts),
+                                      ncols: 8)
         ws.setColumnWidth(0, 0, 26)
         ws.setColumnWidth(1, 1, 14)
         ws.setColumnWidth(2, 2, 14)
@@ -533,7 +545,10 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Device Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Device Compliance"),
-                                      subtitle: "Generated: \(ts)", ncols: 5)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["device-compliance", "device_compliance"],
+                                          generated: ts),
+                                      ncols: 5)
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 16)
         ws.setColumnWidth(2, 2, 10)
@@ -634,7 +649,11 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Profile Status")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Profile Status"),
-                                      subtitle: "Generated: \(ts)", ncols: 5)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["classic-macos-profiles", "macos-profiles",
+                                                  "profiles", "profile-status"],
+                                          generated: ts),
+                                      ncols: 5)
         ws.setColumnWidth(0, 0, 8)
         ws.setColumnWidth(1, 1, 36)
         ws.setColumnWidth(2, 2, 18)
@@ -3045,6 +3064,51 @@ struct CoreDashboard: Sendable {
     private func loadLatestJSON(names: [String]) throws -> Any {
         let data = try loadLatestJSONData(names: names)
         return try JSONSerialization.jsonObject(with: data)
+    }
+
+    /// Return the modification date of the newest snapshot file for `names`, or nil
+    /// when no file exists. Used by `snapshotSubtitle` to surface the data age.
+    func latestSnapshotDate(names: [String]) -> Date? {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        for name in names {
+            let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
+            if fm.fileExists(atPath: subdir.path),
+               let files = try? fm.contentsOfDirectory(
+                at: subdir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+               ) {
+                candidates.append(contentsOf: files.filter {
+                    $0.pathExtension == "json"
+                    && $0.lastPathComponent != SnapshotManifest.fileName
+                })
+            }
+        }
+        return candidates.compactMap {
+            (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate
+        }.max()
+    }
+
+    /// Build a sheet subtitle that includes a "Data as of" clause when the
+    /// snapshot was not collected on today's run (snapshot date != today).
+    ///
+    /// - Parameters:
+    ///   - names: Snapshot kind names, passed directly to `latestSnapshotDate`.
+    ///   - generated: The current run timestamp, typically from `ISO8601DateFormatter`.
+    ///   - prefix: Optional label prefix to prepend (e.g. "Threshold: 30 days | ").
+    /// - Returns: A subtitle string with an embedded data-age notice when the
+    ///            snapshot predates the current run by at least one calendar day.
+    func snapshotSubtitle(names: [String], generated: String, prefix: String = "") -> String {
+        let base = "\(prefix.isEmpty ? "" : "\(prefix) | ")Generated: \(generated)"
+        guard let snapDate = latestSnapshotDate(names: names) else { return base }
+        let cal = Calendar.current
+        guard !cal.isDateInToday(snapDate) else { return base }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyy-MM-dd"
+        return "\(base) | Data as of: \(df.string(from: snapDate))"
     }
 
     // MARK: - Value coercions

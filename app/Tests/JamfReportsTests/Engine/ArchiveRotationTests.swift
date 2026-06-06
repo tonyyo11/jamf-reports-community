@@ -164,6 +164,75 @@ final class ArchiveRotationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: archiveDir.path))
     }
 
+    // MARK: - Sidecar archival (Fix 3)
+
+    /// When an xlsx is archived its sha256 and manifest.txt sidecars must
+    /// move with it. No orphaned sidecars should remain in the source dir.
+    func testSidecarsArchivedAlongsideXLSX() throws {
+        let files = [
+            "report_2024-01-01.xlsx",
+            "report_2024-01-02.xlsx",
+            "report_2024-01-03.xlsx",
+        ]
+        try createFiles(names: files, in: outputDir)
+        // Write .sha256 and .manifest.txt sidecars for each workbook.
+        for name in files {
+            let base = outputDir.appendingPathComponent(name)
+            try "sha256content".write(
+                to: base.appendingPathExtension("sha256"), atomically: true, encoding: .utf8)
+            try "manifestcontent".write(
+                to: base.appendingPathExtension("manifest.txt"), atomically: true, encoding: .utf8)
+        }
+
+        engine.archiveOldRuns(outputDir: outputDir, archiveDir: archiveDir, stem: "report", keep: 2)
+
+        // The oldest run (2024-01-01) is archived.
+        let srcContents = try FileManager.default.contentsOfDirectory(atPath: outputDir.path)
+        let archContents = try FileManager.default.contentsOfDirectory(atPath: archiveDir.path)
+
+        // No sha256 or manifest.txt for the archived run should remain in the source dir.
+        XCTAssertFalse(
+            srcContents.contains("report_2024-01-01.xlsx.sha256"),
+            "Orphaned .sha256 must not remain in source dir"
+        )
+        XCTAssertFalse(
+            srcContents.contains("report_2024-01-01.xlsx.manifest.txt"),
+            "Orphaned .manifest.txt must not remain in source dir"
+        )
+
+        // Sidecars for the archived workbook must exist in the archive dir.
+        XCTAssertTrue(
+            archContents.contains("report_2024-01-01.xlsx.sha256"),
+            ".sha256 sidecar must be in the archive dir"
+        )
+        XCTAssertTrue(
+            archContents.contains("report_2024-01-01.xlsx.manifest.txt"),
+            ".manifest.txt sidecar must be in the archive dir"
+        )
+
+        // Sidecars for retained workbooks must still be in the source dir.
+        XCTAssertTrue(
+            srcContents.contains("report_2024-01-02.xlsx.sha256"),
+            ".sha256 sidecar for a kept workbook must remain in source dir"
+        )
+        XCTAssertTrue(
+            srcContents.contains("report_2024-01-03.xlsx.sha256"),
+            ".sha256 sidecar for a kept workbook must remain in source dir"
+        )
+    }
+
+    /// Sidecars are optional: a workbook without sidecars archives cleanly.
+    func testArchivingWorkbookWithoutSidecarsSucceeds() throws {
+        let files = ["report_2024-01-01.xlsx", "report_2024-01-02.xlsx", "report_2024-01-03.xlsx"]
+        try createFiles(names: files, in: outputDir)
+        // No sidecars written.
+        engine.archiveOldRuns(outputDir: outputDir, archiveDir: archiveDir, stem: "report", keep: 2)
+        let remaining = try xlsxNames(in: outputDir)
+        XCTAssertEqual(remaining.count, 2, "Two workbooks should be retained")
+        let archived = try xlsxNames(in: archiveDir)
+        XCTAssertEqual(archived.count, 1, "One workbook should be in the archive")
+    }
+
     // MARK: - Helpers
 
     private func createFiles(names: [String], in dir: URL) throws {
