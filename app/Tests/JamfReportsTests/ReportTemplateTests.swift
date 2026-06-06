@@ -312,6 +312,59 @@ final class ReportTemplateTests: XCTestCase {
         XCTAssertTrue(template.htmlSections.isEmpty)
     }
 
+    // MARK: - CustomTemplate.htmlSections switch-arm coverage
+
+    /// Parametric test: each switch arm in `CustomTemplate.htmlSections` maps its
+    /// trigger sheet to its expected SectionID(s). Tests every non-`default` arm,
+    /// guarding against transposed or missing SectionIDs in a custom HTML report.
+    func testCustomTemplateHtmlSectionsSheetMappings() {
+        // (triggerSheet, expectedSections) — based on the switch in CustomTemplate.htmlSections
+        let cases: [(SheetID, [SectionID])] = [
+            (.executiveSummary,   [.execSummary]),
+            (.securityPosture,    [.securityTiles]),
+            (.compliancePosture,  [.complianceBands]),
+            (.patchCompliance,    [.patchBar, .patchQueue]),
+            (.patchFailures,      [.patchBar, .patchQueue]),
+            (.auditSummary,       [.auditEvidence]),
+            (.inventorySummary,   [.assetMap]),
+            (.hardwareModels,     [.assetMap]),
+            (.osCurrency,         [.osAdoptionChart, .osCurrency]),
+            (.policyHealth,       [.policyTable]),
+            (.profileStatus,      [.profileTable]),
+            (.mobileConfigProfiles, [.profileTable]),
+            (.protectOverview,    [.protectAlerts, .insightsDrift]),
+            (.protectAlerts,      [.protectAlerts, .insightsDrift]),
+            (.protectComputers,   [.protectAlerts, .insightsDrift]),
+            (.protectInsights,    [.protectAlerts, .insightsDrift]),
+        ]
+
+        for (sheet, expectedSections) in cases {
+            let template = CustomTemplate(includedSheets: [sheet])
+            let sections = template.htmlSections
+            for expected in expectedSections {
+                XCTAssertTrue(
+                    sections.contains(expected),
+                    "CustomTemplate([.\(sheet.rawValue)]).htmlSections missing .\(expected.rawValue)"
+                )
+            }
+        }
+    }
+
+    /// A sheet with no specific HTML mapping (the `default` arm) should yield
+    /// only the always-on sections: kpiTiles, fleetSummary, and orgInfo.
+    func testCustomTemplateHtmlSectionsDefaultArmYieldsOnlyAlwaysOnSections() {
+        // .cover has no HTML mapping (hits the default arm)
+        let template = CustomTemplate(includedSheets: [.cover])
+        let sections = Set(template.htmlSections)
+        XCTAssertTrue(sections.contains(.kpiTiles))
+        XCTAssertTrue(sections.contains(.fleetSummary))
+        XCTAssertTrue(sections.contains(.orgInfo))
+        // No other sections should be added for a default-arm sheet
+        XCTAssertEqual(sections.count, 3,
+            "Default-arm sheet should produce exactly 3 always-on sections, got \(sections.count): "
+            + sections.map(\.rawValue).sorted().joined(separator: ", "))
+    }
+
     // MARK: - TemplateResolver custom support
 
     func testResolveCustomWithSheets() {

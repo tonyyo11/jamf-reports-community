@@ -200,7 +200,7 @@ struct MSCPChartDataBuilder: Sendable {
 
     // Allocated once; DateFormatter is not Sendable, so `nonisolated(unsafe)` is
     // required to store it in a static on a Sendable-conforming type.
-    nonisolated(unsafe) private static let snapshotDateFormatter: DateFormatter = {
+    private static let snapshotDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyyMMdd'T'HHmmss"
         f.locale = Locale(identifier: "en_US_POSIX")

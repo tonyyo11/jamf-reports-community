@@ -39,7 +39,8 @@ final class GenerateSheetState {
     var selectedTemplateID: String = FullInstanceTemplate().identifier
 
     /// Custom sheet selection for the "custom" template.
-    /// Persisted across app launches via UserDefaults.
+    /// Persisted across app launches via UserDefaults. The serialized order is
+    /// rawValue-alphabetical (`.sorted()`), not tap order.
     var customSelectedSheets: Set<SheetID> {
         get {
             let raw = UserDefaults.standard.string(forKey: Self.customSheetsKey) ?? ""

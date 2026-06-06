@@ -38,8 +38,8 @@ enum TemplateResolver {
 
     /// Return the template matching `identifier`, or `ExecutiveTemplate` on a miss.
     ///
-    /// A warning is printed to stderr when the identifier is unrecognized. This is
-    /// intentional: silent fallback hides configuration drift; a log line surfaces it.
+    /// A warning is emitted to the engine log when the identifier is unrecognized.
+    /// Silent fallback hides configuration drift; a log line surfaces it.
     ///
     /// - Parameter identifier: The `ReportTemplate.identifier` value to look up.
     ///   Must be a known, stable identifier such as `"executive"` or `"compliance"`.
@@ -47,8 +47,12 @@ enum TemplateResolver {
     static func resolve(identifier: String) -> any ReportTemplate {
         // Special case: "custom" requires specific sheets and should not be resolved here
         if identifier == "custom" {
-            print("[warn] TemplateResolver: 'custom' template requires sheets selection. " +
-                  "Use resolveCustom(sheets:) instead. Falling back to ExecutiveTemplate.")
+            AppLogger.engine.warning(
+                """
+                TemplateResolver: 'custom' template requires sheets selection; \
+                use resolveCustom(sheets:) instead. Falling back to ExecutiveTemplate.
+                """
+            )
             return ExecutiveTemplate()
         }
 
@@ -56,8 +60,12 @@ enum TemplateResolver {
             return match
         }
         let known = allTemplates.map(\.identifier).joined(separator: ", ")
-        print("[warn] TemplateResolver: unknown identifier '\(identifier)'. " +
-              "Known: \(known). Falling back to ExecutiveTemplate.")
+        AppLogger.engine.warning(
+            """
+            TemplateResolver: unknown identifier '\(identifier, privacy: .public)'. \
+            Known: \(known, privacy: .public). Falling back to ExecutiveTemplate.
+            """
+        )
         return ExecutiveTemplate()
     }
 
@@ -69,8 +77,12 @@ enum TemplateResolver {
     ///            or ExecutiveTemplate if the sheets list is empty.
     static func resolveCustom(sheets: [SheetID]) -> any ReportTemplate {
         guard !sheets.isEmpty else {
-            print("[warn] TemplateResolver: custom template requires at least one sheet. " +
-                  "Falling back to ExecutiveTemplate.")
+            AppLogger.engine.warning(
+                """
+                TemplateResolver: custom template requires at least one sheet. \
+                Falling back to ExecutiveTemplate.
+                """
+            )
             return ExecutiveTemplate()
         }
         return CustomTemplate(includedSheets: sheets)

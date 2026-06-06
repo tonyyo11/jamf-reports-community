@@ -5,8 +5,8 @@ import Foundation
 /// User-selectable custom template for generating reports with specific sheets.
 ///
 /// Allows users to choose exactly which sheets to include in their reports,
-/// rather than using pre-defined template collections. Sheets are preserved
-/// in the order specified by the user selection.
+/// rather than using pre-defined template collections. Sheets are ordered by
+/// SheetID rawValue sort order (the storage key) regardless of tap order.
 struct CustomTemplate: ReportTemplate {
 
     let identifier = "custom"
@@ -15,7 +15,7 @@ struct CustomTemplate: ReportTemplate {
     let audience = "Custom reporting requirements"
 
     /// The user-selected sheets to include in the report.
-    /// Order is preserved from the user's selection.
+    /// Ordered by SheetID rawValue sort order (serialized via `.sorted()` in storage).
     let includedSheets: [SheetID]
 
     /// HTML sections derived from the selected sheets.

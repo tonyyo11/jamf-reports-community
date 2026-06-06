@@ -144,9 +144,14 @@ struct CompliancePostureView: View {
 
     private var subtitle: String? {
         if !mscpResults.isEmpty {
-            let totalDevices = mscpResults.first?.totalDevices ?? 0
+            let devicesWithData = mscpResults.first?.devicesWithData ?? 0
             let baselinesText = mscpResults.count == 1 ? "baseline" : "baselines"
-            return "\(totalDevices) device\(totalDevices == 1 ? "" : "s") evaluated across \(mscpResults.count) mSCP \(baselinesText)."
+            if devicesWithData > 0 {
+                return "\(devicesWithData) device\(devicesWithData == 1 ? "" : "s") evaluated across "
+                    + "\(mscpResults.count) mSCP \(baselinesText)."
+            } else {
+                return "No device data matched the configured baseline EA column."
+            }
         } else if snapshot.totalDevices > 0 {
             return "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s") evaluated by control-gap proxy."
         } else {
