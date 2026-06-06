@@ -533,9 +533,10 @@ compliance:
   # rule_count is reserved for future per-rule-% display; leave it out or
   # set to the total rule count for your baseline.
   #
-  # When `baselines` is absent, the engine synthesizes a single baseline from
+  # When `baselines` is empty, the engine synthesizes a single baseline from
   # failures_count_column + baseline_label above — no migration needed.
-
+  baselines: []
+  # Example multi-baseline configuration (uncomment and edit to enable):
   # baselines:
   #   - name: "NIST 800-53r5"
   #     failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
