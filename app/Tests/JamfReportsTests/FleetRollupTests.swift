@@ -37,7 +37,7 @@ final class FleetRollupTests: XCTestCase {
         XCTAssertEqual(metric(rollup, "stale")?.value, 15)
     }
 
-    func testComplianceIsDeviceWeightedNotSimpleMean() {
+    func testComplianceIsDeviceWeightedNotSimpleMean() throws {
         // 1000@90% + 10@50% → weighted ≈ 89.6%, NOT the 70% simple mean.
         let rollup = FleetRollup.compute(
             groupName: "Fleet",
@@ -47,8 +47,12 @@ final class FleetRollupTests: XCTestCase {
             ],
             previous: []
         )
-        let compliance = try? XCTUnwrap(metric(rollup, "compliance")?.value)
-        XCTAssertEqual(compliance ?? 0, (90 * 1000 + 50 * 10) / 1010.0, accuracy: 0.01)
+        let compliance = try XCTUnwrap(metric(rollup, "compliance")?.value)
+        // Precomputed as explicit Double — inline mixed-literal arithmetic in
+        // XCTAssertEqual trips the Swift 6.1 type-checker (CI gate).
+        let weightedSum = 90.0 * 1000.0 + 50.0 * 10.0
+        let expected = weightedSum / 1010.0
+        XCTAssertEqual(compliance, expected, accuracy: 0.01)
     }
 
     func testPercentMetricNilWhenNoProfileReportsIt() {
@@ -68,7 +72,8 @@ final class FleetRollupTests: XCTestCase {
             current: [summary(date: "2026-06-06", devices: 100, compliance: 92, stale: 8)],
             previous: [summary(date: "2026-05-30", devices: 100, compliance: 88, stale: 12)]
         )
-        XCTAssertEqual(metric(rollup, "compliance")?.delta ?? 0, 4, accuracy: 0.01)
+        let complianceDelta: Double = metric(rollup, "compliance")?.delta ?? 0
+        XCTAssertEqual(complianceDelta, 4.0, accuracy: 0.01)
         XCTAssertEqual(metric(rollup, "stale")?.delta, -4)
     }
 
