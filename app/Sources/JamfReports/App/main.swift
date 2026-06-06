@@ -221,10 +221,25 @@ private func scheduledRun(profile: String) async -> Int32 {
     }()
 
     if allProfiles {
-        let profiles = ProfileService.discoverLocal()
+        // --exclude-profiles <csv> drops profiles from the run-time-discovered
+        // set (run-time exclusion — never a positive --multi-profiles list, so
+        // a managed all-profiles agent still picks up profiles added later).
+        let excludeArg: String? = {
+            guard let idx = args.firstIndex(of: "--exclude-profiles"), idx + 1 < args.count else {
+                return nil
+            }
+            return args[idx + 1]
+        }()
+        let excluded = ProfileService.parseExclusions(excludeArg)
+        let profiles = ProfileService.applyingExclusions(
+            ProfileService.discoverLocal(), excluding: excluded
+        )
         guard !profiles.isEmpty else {
             fputs("[error] --all-profiles: no local profiles found\n", stderr)
             return 1
+        }
+        if !excluded.isEmpty {
+            fputs("[info] --all-profiles excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
         }
         var anyFailed = false
         for p in profiles {

@@ -467,8 +467,9 @@ def test_multi_launchagent_run_invokes_each_initialized_profile(
     calls: list[tuple[str, str]] = []
 
     def fake_launchagent_run(config, mode, csv_inbox_dir, csv_freshness_days,
-                             historical_csv_dir, status_file, notify_url=None):
-        del csv_inbox_dir, csv_freshness_days, historical_csv_dir, notify_url
+                             historical_csv_dir, status_file, notify_url=None,
+                             tiers=None):
+        del csv_inbox_dir, csv_freshness_days, historical_csv_dir, notify_url, tiers
         calls.append((config.jamf_cli["profile"], mode))
         Path(status_file).write_text(json.dumps({"success": True}), encoding="utf-8")
 
@@ -490,3 +491,68 @@ def test_multi_launchagent_run_invokes_each_initialized_profile(
     assert calls == [("alpha", "jamf-cli-only"), ("beta", "jamf-cli-only")]
     assert status["success"] is True
     assert [item["profile"] for item in status["results"]] == ["alpha", "beta"]
+
+
+def test_multi_launchagent_profile_list_excludes_named_profiles(jrc, tmp_path: Path) -> None:
+    """`exclude` drops profiles AFTER discovery (run-time exclusion), so the
+    managed all-profiles agent still discovers the rest dynamically."""
+    root = tmp_path / "Jamf-Reports"
+    for name in ["alpha", "beta", "dummy"]:
+        workspace = root / name
+        workspace.mkdir(parents=True)
+        (workspace / "config.yaml").write_text("jamf_cli:\n  profile: test\n", encoding="utf-8")
+
+    _, profiles = jrc._multi_launchagent_profile_list(
+        str(root),
+        profiles=None,
+        profile_filter=None,
+        exclude="dummy, ",
+    )
+
+    assert profiles == ["alpha", "beta"]
+
+
+def test_multi_launchagent_run_threads_tiers_to_each_profile(
+    jrc,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """`--tiers` reaches each profile's `cmd_launchagent_run` so a Python-driven
+    freshness agent collects only the requested tiers, matching Swift."""
+    root = tmp_path / "Jamf-Reports"
+    for name in ["alpha", "beta"]:
+        workspace = root / name
+        workspace.mkdir(parents=True)
+        (workspace / "config.yaml").write_text(
+            f"jamf_cli:\n  profile: {name}\n", encoding="utf-8"
+        )
+    status_path = tmp_path / "multi-status.json"
+    seen_tiers: list[tuple[str, object]] = []
+
+    def fake_launchagent_run(config, mode, csv_inbox_dir, csv_freshness_days,
+                             historical_csv_dir, status_file, notify_url=None,
+                             tiers=None):
+        del mode, csv_inbox_dir, csv_freshness_days, historical_csv_dir, notify_url
+        seen_tiers.append((config.jamf_cli["profile"], tiers))
+        Path(status_file).write_text(json.dumps({"success": True}), encoding="utf-8")
+
+    monkeypatch.setattr(jrc, "cmd_launchagent_run", fake_launchagent_run)
+
+    jrc.cmd_multi_launchagent_run(
+        mode="snapshot-only",
+        workspace_root=str(root),
+        profiles="alpha,beta",
+        profile_filter=None,
+        sequential=True,
+        csv_inbox_dir=None,
+        csv_freshness_days=14,
+        historical_csv_dir=None,
+        status_file=str(status_path),
+        tiers=frozenset({"refresh", "inventory"}),
+        exclude=None,
+    )
+
+    assert seen_tiers == [
+        ("alpha", frozenset({"refresh", "inventory"})),
+        ("beta", frozenset({"refresh", "inventory"})),
+    ]

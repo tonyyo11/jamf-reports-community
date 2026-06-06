@@ -21539,8 +21539,16 @@ def _multi_launchagent_profile_list(
     workspace_root: Optional[str],
     profiles: Optional[str],
     profile_filter: Optional[str],
+    exclude: Optional[str] = None,
 ) -> tuple[Path, list[str]]:
-    """Resolve multi-profile LaunchAgent targets from initialized workspaces."""
+    """Resolve multi-profile LaunchAgent targets from initialized workspaces.
+
+    ``exclude`` is a comma-separated profile list dropped from the resolved
+    set AFTER discovery/filtering. It is a run-time exclusion (discover all,
+    minus excluded), not a positive selection — this preserves the dynamic
+    property that a managed all-profiles agent picks up profiles added later
+    and drops profiles deleted later without rewriting the agent.
+    """
     root = Path(workspace_root or Path.home() / "Jamf-Reports").expanduser().resolve()
 
     def valid_profile(value: str) -> str:
@@ -21565,10 +21573,16 @@ def _multi_launchagent_profile_list(
         if profile_filter:
             names = [name for name in names if fnmatch(name, profile_filter)]
 
+    excluded = {
+        item.strip()
+        for item in (exclude or "").split(",")
+        if item.strip()
+    }
+
     deduped: list[str] = []
     seen: set[str] = set()
     for name in names:
-        if name and name not in seen:
+        if name and name not in seen and name not in excluded:
             deduped.append(name)
             seen.add(name)
     return root, deduped
@@ -21582,6 +21596,7 @@ def _multi_launchagent_run_one(
     csv_freshness_days: int,
     historical_csv_dir: Optional[str],
     notify_url: Optional[str],
+    tiers: Optional[frozenset[str]] = None,
 ) -> dict[str, Any]:
     """Run one profile's LaunchAgent workflow and return a compact result."""
     config_path = workspace_root / profile / "config.yaml"
@@ -21625,6 +21640,7 @@ def _multi_launchagent_run_one(
             per_historical_dir,
             str(status_path),
             notify_url,
+            tiers,
         )
         return {
             "profile": profile,
@@ -21662,10 +21678,14 @@ def cmd_multi_launchagent_run(
     historical_csv_dir: Optional[str],
     status_file: Optional[str],
     notify_url: Optional[str] = None,
+    tiers: Optional[frozenset[str]] = None,
+    exclude: Optional[str] = None,
 ) -> None:
     """Run one automation workflow across initialized profile workspaces."""
     started_at = datetime.now(timezone.utc).isoformat()
-    root, targets = _multi_launchagent_profile_list(workspace_root, profiles, profile_filter)
+    root, targets = _multi_launchagent_profile_list(
+        workspace_root, profiles, profile_filter, exclude
+    )
     status: dict[str, Any] = {
         "command": "multi-launchagent-run",
         "finished_at": None,
@@ -21704,6 +21724,7 @@ def cmd_multi_launchagent_run(
                 csv_freshness_days,
                 historical_csv_dir,
                 notify_url,
+                tiers,
             )
             for profile in targets
         ]
@@ -21721,6 +21742,7 @@ def cmd_multi_launchagent_run(
                     csv_freshness_days,
                     historical_csv_dir,
                     notify_url,
+                    tiers,
                 ): profile
                 for profile in targets
             }
@@ -23055,6 +23077,11 @@ def main() -> None:
         help="Glob filter for initialized profile workspaces in multi-launchagent-run",
     )
     parser.add_argument(
+        "--multi-exclude",
+        help="Comma-separated profiles to exclude from multi-launchagent-run "
+        "(run-time exclusion; the rest are discovered dynamically)",
+    )
+    parser.add_argument(
         "--multi-sequential",
         action="store_true",
         help="Run multi-launchagent-run profiles one at a time",
@@ -23229,6 +23256,8 @@ def main() -> None:
             args.historical_csv_dir,
             args.status_file,
             args.notify,
+            _parse_tiers_arg(args.tiers),
+            args.multi_exclude,
         )
         return
 
