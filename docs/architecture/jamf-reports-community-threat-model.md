@@ -213,7 +213,7 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Path:** A6 / a device record or patch title with attacker-controlled metadata.
 - **Existing mitigations:**
   - Python `_safe_write` is the documented invariant (CLAUDE.md "Invariants") sanitizing formula injection; PR-5 added 29 malicious-payload tests including formula-injection payloads.
-  - Swift `OOXMLWriter.sanitizeString` prepends a tab to any cell beginning with `=+-@` — parity with `_safe_write`, verified clean in the PR-26 security review (`app/SECURITY_AUDIT.md`).
+  - Swift `OOXMLWriter.sanitizeString` prepends a tab to any cell beginning with `=+-@` — parity with `_safe_write`, verified clean in the PR-26 security review.
   - **PR-25 Patch Compliance CSV export:** `PatchStatusService.csvField` neutralizes the same formula-injection prefixes before RFC 4180 quoting; covered by `testComplianceCSVNeutralizesFormulaInjection`. This was a MUST-FIX caught in the PR-26 security review and folded into PR-25 before merge.
 - **Likelihood:** Low.
 - **Impact:** Medium.

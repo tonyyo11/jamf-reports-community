@@ -993,7 +993,6 @@ jamf-reports-community/
 │   ├── build-app.sh            # Produces app/build/JamfReports.app with ad-hoc signing
 │   ├── python-runtime.lock     # Pinned python-build-standalone release + SHA256 checksums
 │   ├── requirements-runtime.txt # Packages bundled in the private Python runtime
-│   ├── SECURITY_AUDIT.md       # Security audit findings and mitigations
 │   ├── scripts/
 │   │   └── build-python-runtime.sh  # Downloads + packages the private Python runtime
 │   ├── iconset/                # App icon source and build script
