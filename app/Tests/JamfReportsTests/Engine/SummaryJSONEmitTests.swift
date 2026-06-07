@@ -279,6 +279,29 @@ final class SummaryJSONEmitTests: XCTestCase {
                       "Gaining mscpBands is an upgrade even if both are proxy")
     }
 
+    func testFreshSummaryIsBetter_degradedStaleZeroToReal_returnsTrue() {
+        // The prod symptom: a transient-auth run wrote staleCount 0 on a 659-Mac
+        // fleet; a later healthy same-day collect computes the real ~166 and must
+        // be allowed to correct it.
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true,
+                                   totalDevices: 659, staleCount: 0)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true,
+                                totalDevices: 659, staleCount: 166)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                      "A real staleCount where the existing was a degraded 0 is an upgrade")
+    }
+
+    func testFreshSummaryIsBetter_realStaleToZero_returnsFalse() {
+        // Never downgrade a real stale count to 0 — a genuinely zero-stale fresh
+        // run must not clobber a populated one.
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true,
+                                   totalDevices: 659, staleCount: 166)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true,
+                                totalDevices: 659, staleCount: 0)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "Real staleCount → 0 is a downgrade, must be rejected")
+    }
+
     func testFreshSummaryIsBetter_realBandsDropped_returnsFalse() {
         let existing = makeSummary(complianceIsProxy: false, hasBands: true)
         let fresh = makeSummary(complianceIsProxy: false, hasBands: false)
@@ -404,7 +427,8 @@ final class SummaryJSONEmitTests: XCTestCase {
         complianceIsProxy: Bool?,
         hasBands: Bool,
         date: String = "2026-06-05",
-        totalDevices: Int = 100
+        totalDevices: Int = 100,
+        staleCount: Int = 5
     ) -> DailySummary {
         let bands: [String: MSCPBandCounts]? = hasBands
             ? ["NIST": MSCPBandCounts(pass: 80, low: 10, medLow: 5, medium: 3, high: 2, noData: 0)]
@@ -414,7 +438,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             totalDevices: totalDevices,
             fileVaultPct: 95.0,
             compliancePct: 80.0,
-            staleCount: 5,
+            staleCount: staleCount,
             osCurrentPct: 70.0,
             crowdstrikePct: nil,
             patchPct: 85.0,

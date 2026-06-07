@@ -367,7 +367,15 @@ struct ReportEngine: Sendable {
         if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
         let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
         let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
-        return !existingHasBands && freshHasBands
+        if !existingHasBands && freshHasBands { return true }
+        // A later same-day collect that now sees stale devices where the earlier
+        // one recorded zero (on a non-empty fleet) is strictly better — the
+        // earlier run's stale source (device-compliance) was empty/degraded,
+        // e.g. after a transient auth failure that fell back to incomplete data.
+        // Upgrade only; a real count (existing > 0) is never downgraded to 0, so
+        // a genuinely zero-stale tenant is unaffected.
+        if existing.staleCount == 0, existing.totalDevices > 0, fresh.staleCount > 0 { return true }
+        return false
     }
 
     /// Encode and atomically write `summary` to `url`, logging the outcome to `onLine`.
