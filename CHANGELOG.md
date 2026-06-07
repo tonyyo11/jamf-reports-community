@@ -105,8 +105,23 @@ versions in this repository map to git tags.
 - `--exclude-profiles` (app `--all-profiles` runner) and `--multi-exclude`
   (Python `multi-launchagent-run`) skip named profiles from a multi-profile run
   at run time; the Python multi-runner also forwards `--tiers`.
+- Admin-controlled snapshot retention (`retention:` config, both engines):
+  **off by default — raw snapshots are kept indefinitely** (they're a reporting
+  input for per-device history, and `~/Jamf-Reports` often lives on cloud
+  storage). When enabled, `mode: archive` (default) **moves** old snapshots to
+  an archive folder — still on disk, you decide whether to trash them — and
+  `mode: delete` removes them. Tunable by age (`snapshot_keep_days`) and/or
+  newest-N (`snapshot_keep_count`); trend summaries are never touched unless
+  `include_summaries: true`. The sweep now runs once/day on every collect path,
+  including headless scheduled runs.
 
 ### Changed (v2.2.0 cycle)
+
+- Snapshot cleanup is now opt-in. Previously the app deleted raw snapshots older
+  than 90 days, but only while it was open. It now keeps everything by default
+  and only archives/deletes when you enable `retention:` — so per-device raw
+  history (e.g. mSCP day-over-day) survives, and headless servers no longer grow
+  unbounded once retention is configured.
 
 - The **Schedules** tab is now **Automation** — the global policy screen above.
   (Migration that consolidates any existing hand-built schedules into the new

@@ -388,6 +388,31 @@ URL override for the Python CLI; provider still comes from config. Report
 *grouping* is NOT a config.yaml key — `report_groups` lives on the app-level
 `AutomationPolicy` (`@AppStorage`), edited in `AutomationView`.
 
+### retention config (v2.2.0 — admin-controlled snapshot lifecycle)
+
+```yaml
+retention:
+  enabled: false           # OFF by default — raw snapshots kept indefinitely
+  mode: "archive"          # archive (move to archive_dir) | delete
+  snapshot_keep_days: 365  # age horizon (<=0 disables the age rule)
+  snapshot_keep_count: 0   # newest-N floor per kind (0 = none)
+  include_summaries: false # leave the durable trend summaries alone
+  archive_dir: ""          # default <workspace>/_archive (distinct from output.archive_dir)
+```
+
+Raw `jamf-cli-data/<kind>/` snapshots are a reporting input (per-device
+day-over-day history), so retention is **off by default** — nothing is removed.
+When enabled, a file is kept if EITHER the age horizon or the count floor
+protects it. Non-snapshot subdirs (`state`, `sofa`) and `_`-prefixed dirs are
+never swept. Swift: `SnapshotRetentionService.sweepIfDue` runs at the top of
+`ReportEngine.collect` (once/day via a `.retention-last` marker at the workspace
+root, OUTSIDE the swept tree) — covering every collect path including headless
+scheduled runs; the old RefreshCoordinator delete-at-90d sweep was removed.
+Python: `_sweep_snapshots` in `_collect_snapshots`, same model. **Behavior
+change:** existing app users move from auto-pruned-at-90d to keep-everything.
+Per-device raw-history *rendering* (reading dated raw snapshots, not just
+summaries) is a planned follow-up; retention makes the raw durable for it.
+
 ### security_agents format
 
 `security_agents` is a **list**, not a dict. `connected_value` is a case-insensitive
