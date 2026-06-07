@@ -13,8 +13,8 @@ import XCTest
 /// - exit 0 + non-empty data = success
 final class CollectAuthDeadVerdictTests: XCTestCase {
 
-    private func outcome(_ kind: String, _ exit: Int32, data: Bool = true) -> ReportEngine.CollectOutcome {
-        ReportEngine.CollectOutcome(kind: kind, exitCode: exit, hasData: data)
+    private func outcome(_ kind: String, _ exit: Int32) -> ReportEngine.CollectOutcome {
+        ReportEngine.CollectOutcome(kind: kind, exitCode: exit)
     }
 
     /// Every auth-required call 401s and nothing succeeds → auth-dead.
@@ -76,13 +76,14 @@ final class CollectAuthDeadVerdictTests: XCTestCase {
         XCTAssertFalse(ReportEngine.isCollectAuthDead([]))
     }
 
-    /// exit 0 with EMPTY data is not a real success (404 can return `[]` at exit
-    /// 0); paired with a 401 and no genuine success → auth-dead.
-    func testExitZeroEmptyDataIsNotSuccess_isAuthDead() {
+    /// exit 0 proves auth was accepted even with an empty body, so a 401
+    /// alongside it is transient (not auth-dead) — mirrors the Python tally,
+    /// which counts any non-raising call as a success.
+    func testExitZeroCountsAsSuccessEvenEmpty_isNotAuthDead() {
         let outcomes = [
-            outcome("ea-results", 0, data: false),
+            outcome("ea-results", 0),
             outcome("security", 3),
         ]
-        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
     }
 }

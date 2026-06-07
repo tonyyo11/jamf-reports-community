@@ -209,7 +209,14 @@ enum LaunchAgentService {
                 continue
             }
             didArchive = true
-            _ = bootout(label)
+            let bootoutStatus = bootout(label)
+            if bootoutStatus != 0 {
+                // Non-zero is usually "no such process" — the agent was never
+                // bootstrapped this session — and the plist removal below still
+                // retires it. Logged so a genuinely stuck agent is diagnosable.
+                AppLogger.schedule.info(
+                    "bootout \(label, privacy: .public) exited \(bootoutStatus) (agent likely not loaded; plist removed regardless)")
+            }
             do {
                 try FileManager.default.removeItem(at: url)
                 removed.append(label)
@@ -242,18 +249,60 @@ enum LaunchAgentService {
         return f
     }()
 
+    /// CLI flags whose following ProgramArguments value is a secret and must be
+    /// redacted before the plist is archived. Only `--notify` carries one today:
+    /// the Python launchagent writer embeds a Teams/Slack incoming-webhook URL
+    /// (a posting credential) in ProgramArguments. The archive lives under the
+    /// workspaces root, which operators commonly host on a cloud share — so the
+    /// URL is scrubbed in the COPY. The live plist in LaunchAgents is untouched;
+    /// restoring it means re-adding the webhook.
+    private static let secretArgFlags: Set<String> = ["--notify"]
+
     private static func archivePlist(at url: URL, label: String, into dir: URL) -> Bool {
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let stamp = archiveTimestampFormatter.string(from: Date())
             let dest = dir.appendingPathComponent("\(label).\(stamp).plist")
-            try FileManager.default.copyItem(at: url, to: dest)
+            if let redacted = redactedPlistData(at: url) {
+                try redacted.write(to: dest, options: .atomic)
+            } else {
+                try FileManager.default.copyItem(at: url, to: dest)
+            }
             return true
         } catch {
             AppLogger.schedule.error(
                 "archivePlist failed for \(label, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return false
         }
+    }
+
+    /// Returns plist `Data` with secret arg values redacted, or nil when the
+    /// plist has no secrets to redact or can't be parsed — in which case the
+    /// caller copies it verbatim, preserving behavior for non-secret plists.
+    /// Internal (not private) so the redaction is directly unit-testable.
+    static func redactedPlistData(at url: URL) -> Data? {
+        guard let data = try? Data(contentsOf: url),
+              let parsed = try? PropertyListSerialization.propertyList(
+                  from: data, options: [], format: nil),
+              var plist = parsed as? [String: Any],
+              var args = plist["ProgramArguments"] as? [String] else {
+            return nil
+        }
+        var redacted = false
+        var i = 0
+        while i + 1 < args.count {
+            if secretArgFlags.contains(args[i]) {
+                args[i + 1] = "<redacted-on-archive>"
+                redacted = true
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+        guard redacted else { return nil }
+        plist["ProgramArguments"] = args
+        return try? PropertyListSerialization.data(
+            fromPropertyList: plist, format: .xml, options: 0)
     }
 
     // MARK: - Private

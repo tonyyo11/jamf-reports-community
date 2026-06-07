@@ -23,12 +23,36 @@ def test_failure_exit_code_parsing(jrc):
     assert jrc._jamf_cli_failure_exit_code(RuntimeError("jamf-cli timed out after 60s")) is None
 
 
+def test_collect_skip_echo_redacts_secrets_keeps_host(jrc):
+    """The per-command [skip] error echo scrubs credentials but keeps the host
+    visible — secret-only LogRedactor, PII redaction off (matches the
+    construction in _collect_snapshots)."""
+    redactor = jrc.LogRedactor(
+        redact_hostnames=False,
+        redact_serials=False,
+        redact_emails=False,
+        redact_device_names=False,
+        redact_usernames=False,
+    )
+    out = redactor.redact_text(
+        "jamf-cli failed (3): client_secret: abcd1234efgh5678 at https://jss.example.com"
+    )
+    assert "abcd1234efgh5678" not in out  # secret scrubbed
+    assert "jss.example.com" in out       # host preserved for debugging
+
+
 def test_is_auth_failure(jrc):
     assert jrc._is_jamf_auth_failure(RuntimeError("jamf-cli failed (3): x"))
     assert jrc._is_jamf_auth_failure(RuntimeError("HTTP 401 Unauthorized"))
     # exit 1 with a 404 detail is NOT auth even though it failed.
     assert not jrc._is_jamf_auth_failure(RuntimeError("jamf-cli failed (4): not found"))
     assert not jrc._is_jamf_auth_failure(RuntimeError("jamf-cli timed out after 60s"))
+    # A parsed exit code is authoritative: a 403 (exit 5) whose stderr happens to
+    # say "unauthorized" is a privilege error, NOT dead credentials — it must not
+    # fall through to keyword matching and be misclassified as auth-dead.
+    assert not jrc._is_jamf_auth_failure(
+        RuntimeError("jamf-cli failed (5): user is unauthorized for this resource")
+    )
 
 
 # --- _collect_snapshots verdict integration ----------------------------------

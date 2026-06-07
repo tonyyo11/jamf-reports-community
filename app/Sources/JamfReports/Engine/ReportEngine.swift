@@ -1176,7 +1176,6 @@ struct ReportEngine: Sendable {
     struct CollectOutcome: Equatable, Sendable {
         let kind: String
         let exitCode: Int32
-        let hasData: Bool
     }
 
     /// Whether a collect's per-command outcomes mean the profile's credentials are
@@ -1191,7 +1190,11 @@ struct ReportEngine: Sendable {
     /// ran) is never auth-dead.
     static func isCollectAuthDead(_ outcomes: [CollectOutcome]) -> Bool {
         guard !outcomes.isEmpty else { return false }
-        let anySuccess = outcomes.contains { $0.exitCode == 0 && $0.hasData }
+        // exit 0 proves the credential was accepted (auth precedes the response
+        // body), so it counts as a success even with an empty body — mirrors the
+        // Python tally, which counts any non-raising call. A single such success
+        // means auth is alive, so a co-occurring 401 is transient, not auth-dead.
+        let anySuccess = outcomes.contains { $0.exitCode == 0 }
         let anyAuthFailure = outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
         return !anySuccess && anyAuthFailure
     }
@@ -1427,7 +1430,7 @@ struct ReportEngine: Sendable {
             // after the loop. Launch failures (nil captureResult, already warned and
             // continued) carry no exit code and are not auth signals, so they are
             // intentionally excluded.
-            outcomes.append(CollectOutcome(kind: kind, exitCode: exitCode, hasData: !data.isEmpty))
+            outcomes.append(CollectOutcome(kind: kind, exitCode: exitCode))
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 // T-8: record success so the cadence boundary advances.

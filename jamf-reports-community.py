@@ -20156,8 +20156,13 @@ def _is_jamf_auth_failure(exc: BaseException) -> bool:
     keyword fallback covers messages that surface the status without the
     canonical ``jamf-cli failed (N)`` exit-code prefix.
     """
-    if _jamf_cli_failure_exit_code(exc) == _JAMF_CLI_EXIT_UNAUTHORIZED:
-        return True
+    code = _jamf_cli_failure_exit_code(exc)
+    if code is not None:
+        # A parsed exit code is authoritative: only 3 (HTTP 401) is auth-dead.
+        # A 403 (exit 5) or general failure (exit 1) whose stderr happens to
+        # contain "unauthorized"/"401" is a privilege or other error, NOT dead
+        # credentials — keyword-matching it would misclassify it as auth-dead.
+        return code == _JAMF_CLI_EXIT_UNAUTHORIZED
     text = str(exc).lower()
     return "401" in text or "unauthorized" in text
 
@@ -20256,6 +20261,17 @@ def _collect_snapshots(
                 print(
                     "  [skip] Platform Compliance: platform.compliance_benchmarks is empty"
                 )
+        # Scrub credentials from the per-command error echo below: jamf-cli
+        # stderr (carried in the RuntimeError) could in pathological cases
+        # contain a rejected token. Secret patterns only — PII redaction is left
+        # off so the host/endpoint stays visible for debugging.
+        secret_redactor = LogRedactor(
+            redact_hostnames=False,
+            redact_serials=False,
+            redact_emails=False,
+            redact_device_names=False,
+            redact_usernames=False,
+        )
         live_attempts = 0
         live_successes = 0
         auth_failures = 0
@@ -20276,7 +20292,7 @@ def _collect_snapshots(
             except RuntimeError as exc:
                 if counts_for_auth and _is_jamf_auth_failure(exc):
                     auth_failures += 1
-                print(f"  [skip] {label}: {exc}")
+                print(f"  [skip] {label}: {secret_redactor.redact_text(str(exc))}")
         # Auth-dead guard: every live Pro call failed and at least one was a 401 →
         # credentials are dead. Raise so the scheduled-run status records
         # success: False and no degraded summary is written (cmd_generate is never
