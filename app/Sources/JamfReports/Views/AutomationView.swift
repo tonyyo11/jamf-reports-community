@@ -31,6 +31,10 @@ struct AutomationTab: View {
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
         let actions = await workspace.reconcileManagedAutomation()
         guard !actions.isEmpty else { return }
+        // Reflect the install/remove in any visible schedule list (the manual
+        // SchedulesView table reads workspace.schedules) so the table doesn't
+        // show agents the reconcile just added or removed until a manual refresh.
+        workspace.reloadFromDisk()
         let installs = actions.filter { if case .install = $0 { return true }; return false }.count
         let removes = actions.count - installs
         var parts: [String] = []
