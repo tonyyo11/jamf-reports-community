@@ -17,6 +17,11 @@ struct AutomationView: View {
     @State private var newGroupName: String = ""
     @State private var newGroupProfiles: Set<String> = []
 
+    // Consolidation (retire hand-built agents the managed policy now duplicates).
+    @State private var consolidationCandidates: [ScheduleConsolidation.Candidate] = []
+    @State private var selectedForRemoval: Set<String> = []
+    @State private var showRemovalConfirm = false
+
     private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
     private var policy: AutomationPolicy { AutomationPolicy.parse(policyRaw) }
@@ -45,6 +50,9 @@ struct AutomationView: View {
                     scheduleCard
                     exclusionsCard
                     groupsCard
+                    if !consolidationCandidates.isEmpty {
+                        consolidationCard
+                    }
                 }
             }
         }
@@ -60,6 +68,10 @@ struct AutomationView: View {
         guard !workspace.demoMode else { return }
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
         let actions = await workspace.reconcileManagedAutomation()
+        // Refresh consolidation candidates against the now-current agent set
+        // (reconcile may have just installed the managed agents this card
+        // compares against), regardless of whether reconcile changed anything.
+        refreshConsolidationCandidates()
         guard !actions.isEmpty else { return }
         let installs = actions.filter { if case .install = $0 { return true }; return false }.count
         let removes = actions.count - installs
@@ -69,6 +81,38 @@ struct AutomationView: View {
         workspace.toast = Toast(
             message: "Automation applied — \(parts.joined(separator: ", "))", style: .success
         )
+    }
+
+    /// Recompute the hand-built agents the active policy duplicates. Reads the
+    /// installed agents once (synchronous directory I/O) per call.
+    private func refreshConsolidationCandidates() {
+        guard !workspace.demoMode, policy.isManaged else {
+            consolidationCandidates = []
+            selectedForRemoval = []
+            return
+        }
+        let installed = LaunchAgentService.list()
+        consolidationCandidates = ScheduleConsolidation.candidates(installed: installed, policy: policy)
+        // Drop selections that no longer correspond to a live candidate.
+        let live = Set(consolidationCandidates.map(\.label))
+        selectedForRemoval = selectedForRemoval.intersection(live)
+    }
+
+    /// Archive + remove the user-confirmed hand-built agents, then refresh.
+    private func removeSelectedAgents() async {
+        let labels = Array(selectedForRemoval)
+        guard !labels.isEmpty else { return }
+        let result = await Task.detached { LaunchAgentService.archiveAndRemove(labels: labels) }.value
+        await MainActor.run {
+            refreshConsolidationCandidates()
+            let n = result.removed.count
+            let suffix = result.rejected.isEmpty ? "" : " (\(result.rejected.count) skipped)"
+            workspace.toast = Toast(
+                message: "Retired \(n) hand-built schedule\(n == 1 ? "" : "s")\(suffix) — "
+                    + "archived under _archived-launchagents",
+                style: result.rejected.isEmpty ? .success : .danger
+            )
+        }
     }
 
     // MARK: - Master
@@ -227,6 +271,61 @@ struct AutomationView: View {
                 addGroupForm
             }
         }
+    }
+
+    // MARK: - Consolidation (DRAFT — needs visual sign-off at minSupportedWidth)
+
+    private var consolidationCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionTitle("Consolidate Schedules")
+                Text("These hand-built schedules do work managed automation now covers for "
+                    + "every profile — retiring them stops duplicate collection. Each is "
+                    + "archived to _archived-launchagents before removal, so it is recoverable.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+
+                ForEach(consolidationCandidates) { candidate in
+                    Toggle(isOn: removalBinding(candidate.label)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(candidate.displayName).font(.callout.weight(.semibold))
+                            Text("\(candidate.mode.displayTitle) · now covered by \(candidate.coveredBy)")
+                                .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    Divider().background(Theme.Colors.hairline)
+                }
+
+                PNPButton(
+                    title: "Retire \(selectedForRemoval.count) selected",
+                    style: .danger, size: .sm
+                ) { showRemovalConfirm = true }
+                .disabled(selectedForRemoval.isEmpty)
+            }
+        }
+        .confirmationDialog(
+            "Retire \(selectedForRemoval.count) hand-built schedule"
+                + (selectedForRemoval.count == 1 ? "" : "s") + "?",
+            isPresented: $showRemovalConfirm, titleVisibility: .visible
+        ) {
+            Button("Retire & archive", role: .destructive) {
+                Task { await removeSelectedAgents() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Each schedule is archived to _archived-launchagents and can be restored by "
+                + "copying its plist back to ~/Library/LaunchAgents. Managed agents are never "
+                + "affected.")
+        }
+    }
+
+    private func removalBinding(_ label: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedForRemoval.contains(label) },
+            set: { isOn in
+                if isOn { selectedForRemoval.insert(label) } else { selectedForRemoval.remove(label) }
+            }
+        )
     }
 
     private var addGroupForm: some View {

@@ -167,6 +167,95 @@ enum LaunchAgentService {
         return removed.sorted()
     }
 
+    /// Result of a consolidation removal.
+    struct ConsolidationRemovalResult: Sendable {
+        let removed: [String]
+        let rejected: [String]
+        let archiveDir: URL?
+    }
+
+    /// Archive, then remove, the hand-built (NON-managed) LaunchAgents named by
+    /// `labels` — the consolidation path that retires schedules the managed
+    /// policy now duplicates.
+    ///
+    /// Safety, in order:
+    /// 1. Any reserved managed label (`ManagedAutomation.owns`) is REFUSED — the
+    ///    exact inverse of the managed-reconcile guard, so this path can only
+    ///    ever retire a user-built agent the operator confirmed.
+    /// 2. Each plist is copied to
+    ///    `<workspacesRoot>/_archived-launchagents/<label>.<ts>.plist` BEFORE
+    ///    bootout + delete (recoverable, matching the snapshot retention
+    ///    archive-not-delete model). A failed archive aborts that label's
+    ///    removal — recoverability first, nothing is lost on a mis-click.
+    static func archiveAndRemove(labels: [String]) -> ConsolidationRemovalResult {
+        let archiveDir = ProfileService.workspacesRoot()
+            .appendingPathComponent("_archived-launchagents", isDirectory: true)
+        var removed: [String] = []
+        var rejected: [String] = []
+        var didArchive = false
+        for label in labels {
+            guard !ManagedAutomation.owns(label) else {
+                AppLogger.schedule.warning(
+                    "archiveAndRemove refused managed label \(label, privacy: .public)")
+                rejected.append(label)
+                continue
+            }
+            guard LaunchAgentWriter.isValidLabel(label), let url = agentURL(forLabel: label) else {
+                rejected.append(label)
+                continue
+            }
+            guard archivePlist(at: url, label: label, into: archiveDir) else {
+                rejected.append(label)  // archive failed → do not delete.
+                continue
+            }
+            didArchive = true
+            _ = bootout(label)
+            do {
+                try FileManager.default.removeItem(at: url)
+                removed.append(label)
+            } catch {
+                rejected.append(label)
+            }
+        }
+        return ConsolidationRemovalResult(
+            removed: removed.sorted(), rejected: rejected.sorted(),
+            archiveDir: didArchive ? archiveDir : nil
+        )
+    }
+
+    /// Resolve the on-disk plist URL whose `Label` matches `label`. Prefers the
+    /// `<label>.plist` filename convention, then falls back to scanning.
+    private static func agentURL(forLabel label: String) -> URL? {
+        let direct = agentsDir.appendingPathComponent("\(label).plist")
+        if FileManager.default.fileExists(atPath: direct.path), plistLabel(direct) == label {
+            return direct
+        }
+        return launchAgentEntries()
+            .first { $0.pathExtension == "plist" && plistLabel($0) == label }
+    }
+
+    private static let archiveTimestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd_HHmmss"
+        return f
+    }()
+
+    private static func archivePlist(at url: URL, label: String, into dir: URL) -> Bool {
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let stamp = archiveTimestampFormatter.string(from: Date())
+            let dest = dir.appendingPathComponent("\(label).\(stamp).plist")
+            try FileManager.default.copyItem(at: url, to: dest)
+            return true
+        } catch {
+            AppLogger.schedule.error(
+                "archivePlist failed for \(label, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
     // MARK: - Private
 
     private static func launchAgentEntries() -> [URL] {
