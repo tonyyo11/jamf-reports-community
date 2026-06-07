@@ -331,6 +331,19 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "provider": "teams",  # teams | slack
         "url": "",
     },
+    # v2.2.0: admin-controlled snapshot lifecycle. OFF by default — raw snapshots
+    # are kept indefinitely (they're a reporting input, and ~/Jamf-Reports often
+    # lives on cloud storage). When enabled, mode "archive" MOVES old snapshots to
+    # the archive folder; "delete" removes them. Summaries untouched unless
+    # include_summaries is true.
+    "retention": {
+        "enabled": False,
+        "mode": "archive",  # archive | delete
+        "snapshot_keep_days": 365,
+        "snapshot_keep_count": 0,
+        "include_summaries": False,
+        "archive_dir": "",
+    },
     "platform": {
         "enabled": False,
         "compliance_benchmarks": [],
@@ -4680,6 +4693,11 @@ class Config:
     @property
     def notify(self) -> dict:
         value = self._data.get("notify") or {}
+        return value if isinstance(value, dict) else {}
+
+    @property
+    def retention(self) -> dict:
+        value = self._data.get("retention") or {}
         return value if isinstance(value, dict) else {}
 
     @property
@@ -19970,6 +19988,130 @@ def _tier_allows(kind: str, tiers: Optional[frozenset[str]]) -> bool:
     return tier is None or tier in tiers
 
 
+_RETENTION_SKIP_SUBDIRS = {"state", "sofa"}
+
+
+def _retention_archive_root(config: Config) -> Path:
+    """Resolve the raw-snapshot archive root: ``retention.archive_dir`` if set,
+    else ``<base_dir>/_archive``. Distinct from the reports archive."""
+    raw = str(config.retention.get("archive_dir", "") or "").strip()
+    if raw:
+        path = Path(raw).expanduser()
+        return path if path.is_absolute() else (config.base_dir / path)
+    return config.base_dir / "_archive"
+
+
+def _retention_act(path: Path, archive_subpath: str, archive_root: Path, mode: str) -> bool:
+    """Archive (move) or delete one file. Returns True on success; never raises."""
+    try:
+        if mode == "delete":
+            path.unlink()
+            return True
+        dest_dir = archive_root / archive_subpath
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / path.name
+        if dest.exists():
+            dest.unlink()
+        shutil.move(str(path), str(dest))
+        return True
+    except OSError as exc:
+        print(f"  [warn] retention: could not process {path.name}: {exc}")
+        return False
+
+
+def _sweep_snapshot_dir(
+    directory: Path,
+    archive_subpath: str,
+    archive_root: Path,
+    mode: str,
+    keep_days: int,
+    keep_count: int,
+) -> int:
+    """Archive/delete files in one snapshot dir. A file is kept if EITHER the
+    age horizon (keep_days) or the count floor (keep_count) protects it."""
+    files = [
+        (entry, entry.stat().st_mtime)
+        for entry in directory.iterdir()
+        if entry.is_file() and not entry.name.startswith(".")
+    ]
+    if not files:
+        return 0
+    files.sort(key=lambda item: item[1], reverse=True)  # newest first
+    cutoff = datetime.now().timestamp() - keep_days * 86_400
+    acted = 0
+    for rank, (path, mtime) in enumerate(files):
+        protected_by_count = keep_count > 0 and rank < keep_count
+        protected_by_age = keep_days > 0 and mtime >= cutoff
+        if protected_by_count or protected_by_age:
+            continue
+        if _retention_act(path, archive_subpath, archive_root, mode):
+            acted += 1
+    return acted
+
+
+def _sweep_snapshots(config: Config) -> int:
+    """Archive or delete old jamf-cli snapshots per the ``retention:`` config.
+
+    OFF by default. Runs at most once per calendar day (marker at the workspace
+    root, OUTSIDE the swept tree). Non-snapshot subdirs (``state``, ``sofa``) and
+    any ``_``-prefixed dir are skipped. Summaries are left alone unless
+    ``include_summaries`` is true. Best-effort — never raises into collect.
+    Mirrors Swift ``SnapshotRetentionService.sweepIfDue``.
+    """
+    retention = config.retention
+    if retention.get("enabled") is not True:
+        return 0
+    mode = str(retention.get("mode", "archive") or "archive").strip().lower()
+    if mode not in ("archive", "delete"):
+        mode = "archive"
+    keep_days = int(retention.get("snapshot_keep_days", 365) or 0)
+    keep_count = max(0, int(retention.get("snapshot_keep_count", 0) or 0))
+    include_summaries = retention.get("include_summaries") is True
+    if keep_days <= 0 and keep_count <= 0:
+        return 0  # nothing would ever be removed
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    marker = config.base_dir / ".retention-last"
+    try:
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() == today:
+            return 0
+    except OSError:
+        pass
+
+    data_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    if data_dir is None or not data_dir.is_dir():
+        return 0
+    archive_root = _retention_archive_root(config)
+
+    acted = 0
+    for sub in sorted(data_dir.iterdir()):
+        if not sub.is_dir():
+            continue
+        if sub.name in _RETENTION_SKIP_SUBDIRS or sub.name.startswith("_"):
+            continue
+        acted += _sweep_snapshot_dir(
+            sub, f"jamf-cli-data/{sub.name}", archive_root, mode, keep_days, keep_count
+        )
+
+    if include_summaries:
+        hist = config.resolve_path("charts", "historical_csv_dir", default="snapshots")
+        summaries = (hist / "summaries") if hist else None
+        if summaries and summaries.is_dir():
+            acted += _sweep_snapshot_dir(
+                summaries, "summaries", archive_root, mode, keep_days, keep_count
+            )
+
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(today, encoding="utf-8")
+    except OSError:
+        pass
+    if acted:
+        verb = "archived" if mode == "archive" else "deleted"
+        print(f"  [info] retention: {verb} {acted} snapshot file(s)")
+    return acted
+
+
 def _collect_snapshots(
     config: Config,
     csv_path: Optional[str] = None,
@@ -20080,6 +20222,10 @@ def _collect_snapshots(
     # out-of-loop call the same way so `--tiers` without refresh skips it.
     if _tier_allows("sofa", tiers):
         collected += _collect_sofa_feeds(config)
+
+    # Snapshot retention (v2.2.0): config-driven, OFF by default, once/day.
+    # Mirrors Swift SnapshotRetentionService.sweepIfDue. Best-effort.
+    _sweep_snapshots(config)
 
     return collected, _archive_collect_csv_inputs(config, csv_path, historical_csv_dir)
 
