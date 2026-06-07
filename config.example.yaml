@@ -438,6 +438,26 @@ notify:
   url: ""             # https:// incoming webhook URL
 
 # =============================================================================
+# SNAPSHOT RETENTION (admin-controlled; OFF by default)
+# =============================================================================
+# Raw jamf-cli snapshots under jamf-cli-data/ are a reporting input (per-device
+# day-over-day / week-over-week history, especially mSCP) — not just disk cost.
+# By default NOTHING is ever removed, so the full raw history stays available
+# (ideal when ~/Jamf-Reports lives on cloud/SharePoint storage). Turn this on
+# only if you want the app to manage disk for you.
+#
+# mode: "archive" MOVES old snapshots to the archive folder (still on disk — you
+# decide whether to trash them); "delete" removes them. Summaries (the durable
+# trend source) are never touched unless include_summaries is true.
+retention:
+  enabled: false             # OFF — keep everything
+  mode: "archive"            # archive | delete
+  snapshot_keep_days: 365    # archive/delete raw snapshots older than this (<=0 = no age rule)
+  snapshot_keep_count: 0     # always keep at least N newest per kind (0 = no count floor)
+  include_summaries: false   # leave the trend summaries alone
+  archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir)
+
+# =============================================================================
 # JAMF PLATFORM API
 # =============================================================================
 # Preview workbook support for jamf-cli builds that expose Platform API report

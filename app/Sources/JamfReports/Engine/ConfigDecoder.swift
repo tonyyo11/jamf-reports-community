@@ -24,6 +24,7 @@ struct ReportConfig: Decodable, Sendable {
     var protect: ProtectConfig?
     var schoolCli: SchoolCLIConfig?
     var notify: NotifyConfig?
+    var retention: RetentionConfig?
     var html: HTMLReportConfig?
     /// PR-22 T-3: per-report cadence + preset overrides. Top-level (not
     /// nested under `jamf_cli`) because the GUI's new Cadence tab edits it
@@ -49,6 +50,7 @@ struct ReportConfig: Decodable, Sendable {
         case protect
         case schoolCli = "school_cli"
         case notify
+        case retention
         case html
         case collectCadence = "collect_cadence"
     }
@@ -773,6 +775,48 @@ struct NotifyConfig: Decodable, Sendable {
     /// Usable only when enabled AND a usable https URL is present — the gate
     /// every send path checks so an off/misconfigured block silently no-ops.
     var isUsable: Bool { isEnabled && resolvedURL.lowercased().hasPrefix("https://") }
+}
+
+// MARK: - retention (snapshot archive/cleanup)
+
+/// `retention:` block — admin-controlled snapshot lifecycle (v2.2.0).
+///
+/// **OFF by default** — raw jamf-cli snapshots are kept indefinitely so per-device
+/// history stays available (the old jamf_reports_cli generated graphs from raw
+/// data, not just summaries). When enabled, the default mode is `archive`: old
+/// snapshots are MOVED to an archive folder (still on disk; the admin decides
+/// whether to trash them), not deleted. `delete` mode removes them outright.
+/// Summaries (the durable trend source) are never touched unless
+/// `include_summaries` is explicitly true.
+struct RetentionConfig: Decodable, Sendable {
+    enum Mode: String, Decodable, Sendable, CaseIterable { case archive, delete }
+
+    var enabled: Bool?
+    var mode: String?
+    var snapshotKeepDays: Int?
+    var snapshotKeepCount: Int?
+    var includeSummaries: Bool?
+    var archiveDir: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case mode
+        case snapshotKeepDays = "snapshot_keep_days"
+        case snapshotKeepCount = "snapshot_keep_count"
+        case includeSummaries = "include_summaries"
+        case archiveDir = "archive_dir"
+    }
+
+    var isEnabled: Bool { enabled ?? false }
+    var resolvedMode: Mode { Mode(rawValue: (mode ?? "archive").lowercased()) ?? .archive }
+    /// Snapshots older than this many days are archived/deleted. <= 0 disables
+    /// the age rule (keep all by age). Default 365.
+    var keepDays: Int { snapshotKeepDays ?? 365 }
+    /// Always keep at least this many newest files per kind regardless of age.
+    /// 0 = no count floor. Default 0.
+    var keepCount: Int { max(0, snapshotKeepCount ?? 0) }
+    var includesSummaries: Bool { includeSummaries ?? false }
+    var resolvedArchiveDir: String { archiveDir?.trimmingCharacters(in: .whitespaces) ?? "" }
 }
 
 // MARK: - exceptions (list, not dict)

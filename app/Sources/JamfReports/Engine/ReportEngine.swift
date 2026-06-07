@@ -1176,6 +1176,12 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.invalidProfile(profile)
         }
 
+        // Snapshot retention (v2.2.0): config-driven, OFF by default, once per
+        // calendar day. Placed before the early-return guard so it runs on any
+        // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its
+        // own marker keeps it idempotent. Best-effort — never fails the collect.
+        SnapshotRetentionService.sweepIfDue(profile: profile, onLine: onLine)
+
         // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
         // summary for today already exists, unless the caller passes force: true.
         // Placed before the jamf-cli binary check so it short-circuits without
