@@ -5,14 +5,20 @@ import Foundation
 extension WorkspaceStore {
 
     /// Reconcile the managed-automation LaunchAgents from the saved
-    /// `AutomationPolicy`. Called once from the root view's `.task`.
+    /// `AutomationPolicy`. Called from the root view's `.task` at launch AND
+    /// from the Automation screen whenever the policy changes, so enabling
+    /// "Manage automation" (or editing the cadence) takes effect immediately
+    /// instead of waiting for the next app launch.
     ///
     /// No-ops in demo mode. Safe to call when automation is unmanaged: the
     /// reconcile plan is then empty for a user who never opted in, and tears
     /// down any leftover managed agents if the operator turned the policy off.
-    func reconcileManagedAutomation() async {
-        guard !demoMode else { return }
-        await ManagedAutomation.reconcile(policy: AutomationPolicy.current())
+    /// Returns the install/remove actions it applied (empty when nothing
+    /// changed) so callers can surface confirmation.
+    @discardableResult
+    func reconcileManagedAutomation() async -> [ManagedAutomation.Action] {
+        guard !demoMode else { return [] }
+        return await ManagedAutomation.reconcile(policy: AutomationPolicy.current())
     }
 
     // MARK: - Catch-up-on-wake

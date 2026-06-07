@@ -48,6 +48,27 @@ struct AutomationView: View {
                 }
             }
         }
+        // Apply policy edits without a relaunch: `.task(id:)` re-runs (cancelling
+        // the prior) on every change, so rapid edits debounce and only the
+        // settled state reconciles the managed agents.
+        .task(id: policyRaw) { await applyPolicyChange() }
+    }
+
+    /// Debounce, then reconcile the managed LaunchAgents from the just-edited
+    /// policy and surface a toast for any install/remove.
+    private func applyPolicyChange() async {
+        guard !workspace.demoMode else { return }
+        do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
+        let actions = await workspace.reconcileManagedAutomation()
+        guard !actions.isEmpty else { return }
+        let installs = actions.filter { if case .install = $0 { return true }; return false }.count
+        let removes = actions.count - installs
+        var parts: [String] = []
+        if installs > 0 { parts.append("\(installs) installed") }
+        if removes > 0 { parts.append("\(removes) removed") }
+        workspace.toast = Toast(
+            message: "Automation applied — \(parts.joined(separator: ", "))", style: .success
+        )
     }
 
     // MARK: - Master
