@@ -17,6 +17,9 @@ struct ContentView: View {
     @AppStorage("sidebarMode") private var sidebarModeRaw: String = SidebarMode.expanded.rawValue
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
+    /// Drives the Automation tab's breadcrumb: "POLICY" in managed mode,
+    /// "SCHEDULES" when the operator manages hand-built agents directly.
+    @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
 
     private var sidebarMode: SidebarMode {
         get { SidebarMode(rawValue: sidebarModeRaw) ?? .expanded }
@@ -126,7 +129,7 @@ struct ContentView: View {
         case .trends:            TrendsView()
         case .audit:             AuditView()
         case .reports:           ReportsView()
-        case .schedules:         AutomationView()
+        case .schedules:         AutomationTab()
         case .runs:              RunsView()
         case .config:            ConfigView()
         case .customize:         CustomizeView()
@@ -157,7 +160,7 @@ struct ContentView: View {
         case .deviceLookup:      "LOOKUP"
         case .trends:            TrendRange(rawValue: defaultTrendRangeRaw)?.rawValue ?? TrendRange.w4.rawValue
         case .audit:             "HEALTH & HYGIENE"
-        case .schedules:         "POLICY"
+        case .schedules:         AutomationPolicy.parse(automationPolicyRaw).isManaged ? "POLICY" : "SCHEDULES"
         case .runs:              "STDOUT"
         case .config:            "CONFIG.YAML"
         case .customize:         "SHEETS"

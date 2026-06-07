@@ -1,5 +1,47 @@
 import SwiftUI
 
+/// Routes the Automation tab between its two modes. Managed automation
+/// (`isManaged`) is the "set policy, not cron jobs" editor (`AutomationView`);
+/// when it is off the operator manages hand-built LaunchAgents directly
+/// (`SchedulesView`). The master toggle lives in BOTH screens so switching modes
+/// is always reachable — flipping it here re-routes and reconciles.
+struct AutomationTab: View {
+    @Environment(WorkspaceStore.self) private var workspace
+    @AppStorage(AutomationPolicy.storageKey) private var policyRaw: String = ""
+
+    var body: some View {
+        Group {
+            if AutomationPolicy.parse(policyRaw).isManaged {
+                AutomationView()
+            } else {
+                SchedulesView()
+            }
+        }
+        // Reconcile on every settled policy change HERE, on the stable parent —
+        // toggling managed off swaps the child view, so a reconcile owned by
+        // AutomationView would be cancelled mid-debounce before the teardown
+        // (managed-agent removal) ran. AutomationTab is never unmounted by the
+        // toggle, so the reconcile always completes. (Relocated from 6101086.)
+        .task(id: policyRaw) { await reconcileOnPolicyChange() }
+    }
+
+    /// Debounce, then reconcile the managed LaunchAgents and toast the result.
+    private func reconcileOnPolicyChange() async {
+        guard !workspace.demoMode else { return }
+        do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
+        let actions = await workspace.reconcileManagedAutomation()
+        guard !actions.isEmpty else { return }
+        let installs = actions.filter { if case .install = $0 { return true }; return false }.count
+        let removes = actions.count - installs
+        var parts: [String] = []
+        if installs > 0 { parts.append("\(installs) installed") }
+        if removes > 0 { parts.append("\(removes) removed") }
+        workspace.toast = Toast(
+            message: "Automation applied — \(parts.joined(separator: ", "))", style: .success
+        )
+    }
+}
+
 /// v2.2.0 Phase 5 — the "set policy, not cron jobs" Automation screen (DRAFT,
 /// owes visual sign-off at `PageScaffold.minSupportedWidth`).
 ///
@@ -62,25 +104,16 @@ struct AutomationView: View {
         .task(id: policyRaw) { await applyPolicyChange() }
     }
 
-    /// Debounce, then reconcile the managed LaunchAgents from the just-edited
-    /// policy and surface a toast for any install/remove.
+    /// Refresh the consolidation candidates after a policy edit. The managed-
+    /// agent reconcile + toast is owned by `AutomationTab` (the stable parent),
+    /// so this view only recomputes what it displays. Candidate detection is a
+    /// pure label comparison (`ManagedAutomation.owns`), independent of whether
+    /// reconcile has physically (re)installed the managed agents yet, so the two
+    /// tasks need no ordering.
     private func applyPolicyChange() async {
         guard !workspace.demoMode else { return }
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
-        let actions = await workspace.reconcileManagedAutomation()
-        // Refresh consolidation candidates against the now-current agent set
-        // (reconcile may have just installed the managed agents this card
-        // compares against), regardless of whether reconcile changed anything.
         refreshConsolidationCandidates()
-        guard !actions.isEmpty else { return }
-        let installs = actions.filter { if case .install = $0 { return true }; return false }.count
-        let removes = actions.count - installs
-        var parts: [String] = []
-        if installs > 0 { parts.append("\(installs) installed") }
-        if removes > 0 { parts.append("\(removes) removed") }
-        workspace.toast = Toast(
-            message: "Automation applied — \(parts.joined(separator: ", "))", style: .success
-        )
     }
 
     /// Recompute the hand-built agents the active policy duplicates. Reads the
