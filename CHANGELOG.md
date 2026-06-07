@@ -76,8 +76,41 @@ versions in this repository map to git tags.
 - First-run-of-day summary.json: when `summary_<today>.json` already exists,
   the collect step upgrades a stale proxy summary (4-control mSCP proxy) to
   real mSCP banding if a baseline EA is now configured.
+- Managed automation ("set policy, not cron jobs"): a new **Automation** screen
+  replaces hand-built per-profile schedules with a small set of global policies.
+  Turn on "Manage automation" and the app keeps every profile's jamf-cli data
+  fresh daily (everything except the two heavy per-device scans), runs a weekly
+  deep scan, generates reports on your chosen cadence (Off / Daily / Weekly /
+  Monthly), and optionally takes a weekly configuration backup — all across
+  every profile, adjusting automatically as profiles are added or removed (the
+  agents resolve the profile set at run time). A shared run time staggers the
+  jobs so on-prem Jamf Pro isn't hit all at once, and a per-profile exclusion
+  list skips a dummy/test tenant. **Off by default** — existing schedules are
+  untouched until you opt in.
+- Catch-up-on-wake: if a Mac sleeps through the scheduled run, the app collects
+  the day's freshness snapshot on the next launch or wake (once per calendar
+  day), so Trends and reports don't silently fall behind on laptops.
+- Opt-in webhook digest: a scheduled run can post a short "report generated"
+  summary to a Microsoft Teams **or** Slack incoming webhook. Configure it under
+  `notify:` (provider + https URL) in config.yaml — **off by default**; the
+  Python CLI also accepts `--notify <url>` as an override.
+- Report groups + consolidated fleet report: group profiles together (combine
+  prod/dev/sandbox into one "fleet", or make one group per customer) and each
+  group emits a consolidated report — aggregated KPIs with **period-over-period
+  delta columns**. Percentages are device-weighted across the group; counts are
+  summed. Profiles in no group keep their per-profile report.
+- Version-floor preflight: a scheduled run now aborts loudly (with a clear Run
+  History entry) when the installed jamf-cli is below the supported floor,
+  instead of silently writing data from an unsupported binary.
+- `--exclude-profiles` (app `--all-profiles` runner) and `--multi-exclude`
+  (Python `multi-launchagent-run`) skip named profiles from a multi-profile run
+  at run time; the Python multi-runner also forwards `--tiers`.
 
 ### Changed (v2.2.0 cycle)
+
+- The **Schedules** tab is now **Automation** — the global policy screen above.
+  (Migration that consolidates any existing hand-built schedules into the new
+  model lands in a follow-up; until then existing schedules continue to run.)
 
 - Stability Index and Compliance Benchmark now compute on jamf-cli-only
   tenants: missing components drop out and the remaining weights renormalize

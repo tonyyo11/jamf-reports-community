@@ -4,6 +4,14 @@ Historical reporting is only as good as the cadence behind it. The app and the P
 both schedule unattended runs through macOS **LaunchAgents** — user-scoped jobs that run
 as the logged-in user, never as root.
 
+> **v2.2.0 is moving to "set policy, not cron jobs."** The per-schedule builder below is
+> being replaced by an **Automation** screen: one global policy keeps every profile's data
+> fresh daily, runs the heavy per-device scans weekly, and generates reports on a single
+> cadence across all profiles (adjusting automatically as profiles are added or removed),
+> with optional opt-in Teams/Slack webhook digests and grouped consolidated fleet reports.
+> The managed model is **off by default** and the underlying LaunchAgent mechanics described
+> here are unchanged. This page is updated in full when v2.2.0 ships.
+
 ## The Schedules screen
 
 ![Scheduled Runs](images/schedules.png)

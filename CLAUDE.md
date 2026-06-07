@@ -217,7 +217,8 @@ python3 jamf-reports-community.py launchagent-run   --mode MODE [--csv-inbox-dir
                                                     [--notify WEBHOOK_URL]
 python3 jamf-reports-community.py multi-launchagent-run --multi-profiles PROFILES
                                                         [--multi-filter FILTER]
-                                                        [--multi-sequential]
+                                                        [--multi-exclude PROFILES]
+                                                        [--multi-sequential] [--tiers TIERS]
 
 # Jamf School (jamf-cli 1.7+)
 python3 jamf-reports-community.py school-generate [--config config.yaml]
@@ -373,6 +374,20 @@ output:
   keep_latest_runs: 10           # how many timestamped runs to keep in output_dir
 ```
 
+### notify config (v2.2.0 — opt-in webhook digest)
+
+```yaml
+notify:
+  enabled: false        # OFF by default
+  provider: "teams"     # teams | slack
+  url: ""               # https:// incoming webhook URL
+```
+
+Read by `cmd_generate` (Python) and `NotifyConfig` (Swift). `--notify <url>` is a
+URL override for the Python CLI; provider still comes from config. Report
+*grouping* is NOT a config.yaml key — `report_groups` lives on the app-level
+`AutomationPolicy` (`@AppStorage`), edited in `AutomationView`.
+
 ### security_agents format
 
 `security_agents` is a **list**, not a dict. `connected_value` is a case-insensitive
@@ -507,6 +522,13 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `PatchReleaseDateService` | Reads the merged `patch-release-dates` snapshot (`[{title_id, title, latest_version, release_date}]`, written by both engines' collect). Latest-definition matching: exact version → absoluteOrderId 0 → first. Feeds Patch Compliance sheet + PatchView Released/Days Behind columns. |
 | `MSCPComplianceService` | (v2.2.0) Derives real per-device mSCP/STIG compliance band distributions from `ea-results` snapshots. Reads per-baseline failure counts, buckets devices into Pass/Low/Med-Low/Medium/High/No Data bands, and computes pass percentage. Replaces the four-control proxy when configured via `compliance.baselines`. Used by CompliancePostureView donut and MSCPChartDataBuilder for trend charting. |
 | `MSCPChartDataBuilder` | (v2.2.0) Builds historical per-baseline mSCP/STIG compliance band time-series by merging dated `ea-results` snapshots and `summary.json` daily mscpBands. Used by TrendsView to render the compliance band stackplot trend chart. |
+| `CollectRouter` | (v2.2.0) Dispatches a collect run to the right engine function(s) by profile **product type** (`ProfileProductType.detect` from config): Jamf School → `ReportEngine.schoolCollect`; Jamf Pro → `ReportEngine.collect`, then `protectCollect` if `protect.enabled` (Protect augments Pro; its failure is non-fatal). Closures default to the real statics; tests inject spies. The scheduled-run path and catch-up-on-wake both route through it. |
+| `ManagedAutomation` | (v2.2.0) Owns the global "managed" all-profiles LaunchAgents derived from `AutomationPolicy`. `reconcile` is declarative and scoped to a **reserved EXACT label set** (`managed-freshness`/`-scan`/`-reports`/`-backup` → `<prefix>.multi.managed-*`); `owns(_:)` is exact membership, NEVER a prefix match, so a user's hand-built multi-schedule can't be removed. Pure `desiredSchedules`/`plan`/`owns` are unit-tested; the thin `reconcile` executes through injectable install/remove closures (no real `launchctl` in tests). Idempotent (signature-skips unchanged), force-reinstalls, and tears agents down when `isManaged` flips off. Called from `WorkspaceStore.reconcileManagedAutomation` on app launch (no-op in demo / when unmanaged). |
+| `WebhookNotifier` | (v2.2.0) Opt-in scheduled-run webhook digest. Pure Teams adaptive-card and Slack Block Kit payload builders + a thin best-effort `URLSession` send that never throws into the run; gated on `NotifyConfig.isUsable` (enabled + https URL). Posts after a successful snapshot-only collect and after a successful generate in the scheduled-run path. Python twin: `_post_webhook_notification` / `_teams_card_payload` / `_slack_blocks_payload`. |
+| `FleetRollup` | (v2.2.0) Pure aggregator of a report group's per-profile `DailySummary` KPIs into consolidated metrics with period-over-period deltas. Percentages are **device-weighted** (Σ(pct × devices) / Σ(devices)); counts are summed. The caller passes one latest summary per profile plus the matching prior-period summary. |
+| `FleetReportEmitter` | (v2.2.0) Emits a `ReportGroup`'s consolidated report as a `Metric,Current,Previous,Delta` CSV (formula-injection-safe by construction; group name only in the filename) under `_fleet-reports/` in the workspaces root. `priorSummary` selects the delta baseline by lookback (daily 1d / weekly 7d / monthly 30d). `main.swift`'s all-profiles **reports** run emits one CSV per group after the per-profile loop. |
+
+**Managed automation model (v2.2.0 — "set policy, not cron jobs").** `AutomationPolicy` (Models/AutomationPolicy.swift) is a single app-level `@AppStorage` JSON value (key `automationPolicy`, lenient `decodeIfPresent` so a new field never wipes a saved policy). `isManaged` is the master switch and **defaults off** — until the operator opts in via `AutomationView` (Phase 5) or the deferred Phase 6 migration, `ManagedAutomation.reconcile` installs and removes nothing. The managed agents are `--all-profiles` plists that resolve the profile set at run time, so adding/removing a profile auto-adjusts with no agent rewrite; `excludedProfiles` is enforced as a run-time exclusion (discover all, minus excluded — never a positive `--multi-profiles` list). `report_groups` (a `[ReportGroup]` on `AutomationPolicy`, NOT in config.yaml) drives the consolidated fleet report. The opt-in webhook digest lives in config.yaml's `notify:` block (`NotifyConfig`). Catch-up-on-wake (`WorkspaceStore.catchUpCollectIfNeeded`, launch + `willBecomeActive`) collects the day's freshness snapshot if a scheduled run was missed, gated by the Phase-1 once-per-day `force:false` collect guard.
 
 **Tab visibility model.** Every non-core sidebar tab is toggleable via SettingsView → Sidebar Visibility. Backed by `@AppStorage("hiddenTabs")` parsed/serialized through `TabVisibility`. Core tabs (`Tab.isCoreTab` — Overview, Devices, Sources, Settings, Onboarding) are filtered out at the toggle UI level and protected at the model level (toggling a core tab is a no-op). Sidebar groups with all-hidden contents auto-collapse so the layout never shows orphan headers. Visibility is a per-user UX preference, not workspace-bound.
 
@@ -570,9 +592,14 @@ The `authGuard` function probes `pro auth token` before any live API command. It
 #### Key views (41 Swift view files as of v2.2.0; tables last synced at v2.0 — see Views/ and Services/ for the current set)
 
 Core: `Sidebar`, `Titlebar`, `OverviewView`, `FleetOverviewView`, `DevicesView`,
-`DeviceLookupView`, `TrendsView`, `ReportsView`, `BackupsView`, `SchedulesView`,
+`DeviceLookupView`, `TrendsView`, `ReportsView`, `BackupsView`, `AutomationView`,
 `RunsView`, `ConfigView`, `CustomizeView`, `SourcesView`, `AuditView`,
 `OnboardingView`, `SettingsView`
+
+`AutomationView` (v2.2.0, DRAFT pending visual sign-off) is the "set policy"
+screen bound to `AutomationPolicy`; the `Tab.schedules` case now routes to it
+(label "Automation"). `SchedulesView` remains compiled but **unrouted** pending
+the deferred Phase 6 migration that consolidates existing hand-built schedules.
 
 Posture group: `SecurityPostureView` (weighted score ring + per-control KPIs +
 P0/P1/P2 action items + OS donut), `CompliancePostureView` (compliance band
