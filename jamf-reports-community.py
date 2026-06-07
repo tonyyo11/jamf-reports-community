@@ -20112,6 +20112,56 @@ def _sweep_snapshots(config: Config) -> int:
     return acted
 
 
+# jamf-cli exit 3 = HTTP 401 (mirrors Swift CLIBridge.exitCodeUnauthorized).
+_JAMF_CLI_EXIT_UNAUTHORIZED = 3
+
+
+class JamfAuthError(RuntimeError):
+    """Raised when every live Jamf Pro call in a collect failed and at least one
+    returned HTTP 401 — the profile's credentials are expired or revoked.
+
+    Surfaces a scheduled/manual collect as non-success (exit 1) instead of
+    silently serving stale cache as a fresh snapshot, and is raised before any
+    summary is written so no degraded snapshot persists. Mirrors the Swift
+    ``ReportEngineError.authExpired``. A single 401 among successful calls is NOT
+    this — that falls back to cache.
+    """
+
+    def __init__(self, profile: str, failed_count: int) -> None:
+        self.profile = profile
+        self.failed_count = failed_count
+        super().__init__(
+            f"Authentication failed for profile '{profile}': all {failed_count} live "
+            f"Jamf Pro call(s) returned 401 (expired or revoked credentials) and none "
+            f"succeeded. Re-authenticate with: jamf-cli -p {profile} pro auth token. "
+            f"No snapshot was written."
+        )
+
+
+def _jamf_cli_failure_exit_code(exc: BaseException) -> Optional[int]:
+    """Extract the jamf-cli exit code from a JamfCLIBridge failure RuntimeError.
+
+    ``JamfCLIBridge._run`` raises ``RuntimeError("jamf-cli failed (N): <detail>")``
+    on a non-zero exit. Returns N, or None when the message has a different shape
+    (timeout, binary missing, JSON parse failure) — those are not auth signals.
+    """
+    match = re.match(r"jamf-cli failed \((-?\d+)\)", str(exc))
+    return int(match.group(1)) if match else None
+
+
+def _is_jamf_auth_failure(exc: BaseException) -> bool:
+    """True when a bridge failure indicates HTTP 401 (dead credentials).
+
+    Primary signal is the jamf-cli exit code (3 == 401). The 401/unauthorized
+    keyword fallback covers messages that surface the status without the
+    canonical ``jamf-cli failed (N)`` exit-code prefix.
+    """
+    if _jamf_cli_failure_exit_code(exc) == _JAMF_CLI_EXIT_UNAUTHORIZED:
+        return True
+    text = str(exc).lower()
+    return "401" in text or "unauthorized" in text
+
+
 def _collect_snapshots(
     config: Config,
     csv_path: Optional[str] = None,
@@ -20206,13 +20256,34 @@ def _collect_snapshots(
                 print(
                     "  [skip] Platform Compliance: platform.compliance_benchmarks is empty"
                 )
+        live_attempts = 0
+        live_successes = 0
+        auth_failures = 0
         for label, command in commands:
+            # Protect uses separate OAuth2 credentials; a Protect 401 does not mean
+            # the Jamf Pro profile's credentials are dead, so it must not count
+            # toward the Pro auth-dead verdict (mirrors the Swift split where
+            # ReportEngine.collect only sees Pro commands).
+            counts_for_auth = not label.startswith("Protect ")
+            if counts_for_auth:
+                live_attempts += 1
             try:
                 command()
                 collected += 1
+                if counts_for_auth:
+                    live_successes += 1
                 print(f"  [ok] {label}")
             except RuntimeError as exc:
+                if counts_for_auth and _is_jamf_auth_failure(exc):
+                    auth_failures += 1
                 print(f"  [skip] {label}: {exc}")
+        # Auth-dead guard: every live Pro call failed and at least one was a 401 →
+        # credentials are dead. Raise so the scheduled-run status records
+        # success: False and no degraded summary is written (cmd_generate is never
+        # reached). A single 401 among successes does not reach here — it fell back
+        # to cache above. Mirrors Swift ReportEngine.isCollectAuthDead.
+        if live_attempts > 0 and live_successes == 0 and auth_failures > 0:
+            raise JamfAuthError(jamf_cli_profile or "(default)", auth_failures)
     elif jamf_cli_enabled:
         print("  jamf-cli: not found; skipping live snapshot collection.")
     else:

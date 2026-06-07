@@ -1172,6 +1172,30 @@ struct ReportEngine: Sendable {
     /// - `[skip] <kind>: not due (last: ..., cadence: ...)` — T-8 cadence
     /// - `[info] skipping per-device commands (...)` — PR-16 skipExpensive
     /// - `[info] already collected today — skipping (use Refresh to force)` — once-per-day guard
+    /// One jamf-cli command's outcome in the collect loop, for the auth-dead verdict.
+    struct CollectOutcome: Equatable, Sendable {
+        let kind: String
+        let exitCode: Int32
+        let hasData: Bool
+    }
+
+    /// Whether a collect's per-command outcomes mean the profile's credentials are
+    /// dead (vs a partial failure that should fall back to cache).
+    ///
+    /// Auth-dead requires BOTH: zero successful live calls (no `exit 0` with a
+    /// non-empty body) AND at least one `exit 3` (HTTP 401 — expired/revoked).
+    /// A single 401 among successes is NOT auth-dead: a working call proves auth is
+    /// alive, so the 401 is transient/per-endpoint and falls back to cache. Chronic
+    /// non-auth failures (Platform-API 404 → exit 1 on on-prem) carry no 401 and
+    /// cannot trip this on their own. An empty outcome set (no auth-bearing command
+    /// ran) is never auth-dead.
+    static func isCollectAuthDead(_ outcomes: [CollectOutcome]) -> Bool {
+        guard !outcomes.isEmpty else { return false }
+        let anySuccess = outcomes.contains { $0.exitCode == 0 && $0.hasData }
+        let anyAuthFailure = outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
+        return !anySuccess && anyAuthFailure
+    }
+
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
@@ -1342,6 +1366,7 @@ struct ReportEngine: Sendable {
 
         let bridge = CLIBridge()
         var didFetchPrior = false
+        var outcomes: [CollectOutcome] = []
         for (args, kind) in plannedCommands {
             // T-9 tier filter: drop kinds outside the selected tier set.
             // An unmapped kind has no tier and is always allowed — the
@@ -1398,6 +1423,11 @@ struct ReportEngine: Sendable {
                 captureResult = nil
             }
             guard let (exitCode, data) = captureResult else { continue }
+            // Record every command with a known exit code for the auth-dead verdict
+            // after the loop. Launch failures (nil captureResult, already warned and
+            // continued) carry no exit code and are not auth signals, so they are
+            // intentionally excluded.
+            outcomes.append(CollectOutcome(kind: kind, exitCode: exitCode, hasData: !data.isEmpty))
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 // T-8: record success so the cadence boundary advances.
@@ -1417,6 +1447,25 @@ struct ReportEngine: Sendable {
                              text: "[error] \(kind): exit \(exitCode) — failing (use_cached_data=false)"))
                 throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
             }
+        }
+
+        // Auth-dead guard: every live jamf-cli call failed and at least one returned
+        // 401 (exit 3) → the profile's credentials are expired/revoked. Surface as a
+        // throw so the scheduled-run catch records exit 1 (not a silent success
+        // serving stale cache), and abort BEFORE SOFA/summary so no degraded snapshot
+        // is written. A single 401 among successes does not reach here — it took the
+        // cache-fallback branch above. Skipped when use_cached_data=false (that path
+        // already threw collectFailed on the first failure).
+        if Self.isCollectAuthDead(outcomes) {
+            let authFailures = outcomes.filter {
+                $0.exitCode == CLIBridge.exitCodeUnauthorized
+            }.count
+            let msg = "[error] auth failed for '\(profile)': \(authFailures) live call(s) " +
+                "returned 401 and none succeeded — re-authenticate " +
+                "(jamf-cli -p \(profile) pro auth token). No snapshot written."
+            AppLogger.engine.error("\(msg, privacy: .public)")
+            onLine(.init(timestamp: Date(), level: .fail, text: msg))
+            throw ReportEngineError.authExpired(profile: profile, failedCount: authFailures)
         }
 
         // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
@@ -2445,6 +2494,15 @@ enum ReportEngineError: Error, LocalizedError {
     case snapshotParseError(String)
     /// Raised during collect when `use_cached_data=false` and a live call fails.
     case collectFailed(kind: String, exitCode: Int32)
+    /// Raised at the end of collect when every live jamf-cli call failed and at
+    /// least one returned HTTP 401 (exit 3) — the profile's credentials are dead
+    /// (expired or revoked) and need re-auth. Surfaces the run as non-success so a
+    /// scheduled job records exit 1 (not a silent success serving stale cache), and
+    /// is thrown BEFORE summary emission so no degraded snapshot is written. A 401
+    /// among successful calls is NOT this — that falls back to cache per
+    /// `use_cached_data`. Chronic non-auth failures (Platform-API 404 → exit 1 on
+    /// on-prem) carry no 401 and cannot trip this on their own.
+    case authExpired(profile: String, failedCount: Int)
     /// PR-10 / threat-model T-11: raised at run start when
     /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
     /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
@@ -2471,6 +2529,10 @@ enum ReportEngineError: Error, LocalizedError {
             return "No cached snapshot found for '\(kind)'. Run collect first."
         case .collectFailed(let kind, let code):
             return "Collect failed for '\(kind)' (exit \(code)). Set use_cached_data: true to allow fallback."
+        case .authExpired(let p, let n):
+            return "Authentication failed for profile '\(p)': all \(n) live Jamf Pro call(s) " +
+                "returned 401 (expired or revoked credentials) and none succeeded. " +
+                "Re-authenticate with: jamf-cli -p \(p) pro auth token. No snapshot was written."
         case .snapshotIntegrityViolation(let summary, let dataDir):
             var parts: [String] = []
             if summary.mismatch > 0 { parts.append("\(summary.mismatch) hash mismatch") }
