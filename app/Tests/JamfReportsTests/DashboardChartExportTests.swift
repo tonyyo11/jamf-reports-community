@@ -47,7 +47,7 @@ final class DashboardChartExportTests: XCTestCase {
     }
 
     func testSpacesInLabelBecomeHyphens() {
-        let result = DashboardChartExport.filename(for: "Security Posture", profile: "cbp")
+        let result = DashboardChartExport.filename(for: "Security Posture", profile: "acme")
         XCTAssert(result.contains("Security-Posture"), "Spaces become hyphens: \(result)")
     }
 

@@ -36,7 +36,7 @@ private extension EAResultRow {
 
 private let stig = "Compliance - Failed mSCP Results Count - DISA STIG"
 private let nist = "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
-private let cbp  = "Compliance - Failed mSCP Results Count - CBP Tailored STIG and NIST 800-53r5"
+private let tailored  = "Compliance - Failed mSCP Results Count - Org Tailored Baseline"
 
 /// Synthetic ea-results fixture with fabricated device identifiers.
 /// Shape uses the prod `device` field (no computer_id / serial).
@@ -150,12 +150,12 @@ final class MSCPComplianceServiceTests: XCTestCase {
     func testMultiBaselinePreservesOrder() {
         let rows = makeRows()
         let baselines = [
-            makeBaseline(cbp, name: "CBP"),
+            makeBaseline(tailored, name: "Tailored"),
             makeBaseline(stig, name: "STIG"),
             makeBaseline(nist, name: "NIST"),
         ]
         let results = MSCPComplianceService.evaluate(rows: rows, baselines: baselines)
-        XCTAssertEqual(results.map(\.name), ["CBP", "STIG", "NIST"])
+        XCTAssertEqual(results.map(\.name), ["Tailored", "STIG", "NIST"])
     }
 
     // MARK: Empty ea-results → nil compliancePct → proxy fallback
