@@ -9,8 +9,9 @@ import XCTest
 @MainActor
 final class DashboardChartExportTests: XCTestCase {
 
-    // Date stamp component format for regex assertions.
-    private let datePattern = #"\d{4}-\d{2}-\d{2}"#
+    // Timestamp component format for regex assertions (date + time since the
+    // export-collision fix — exports a second apart must not overwrite).
+    private let datePattern = #"\d{4}-\d{2}-\d{2}_\d{6}"#
 
     // MARK: - Normal label + profile produces expected structure
 
@@ -27,7 +28,7 @@ final class DashboardChartExportTests: XCTestCase {
     func testResultMatchesDatePattern() throws {
         let result = DashboardChartExport.filename(for: "OS Versions", profile: "org")
         let regex = try NSRegularExpression(
-            pattern: #"^org-OS-Versions-\d{4}-\d{2}-\d{2}\.png$"#
+            pattern: #"^org-OS-Versions-\d{4}-\d{2}-\d{2}_\d{6}\.png$"#
         )
         let range = NSRange(result.startIndex..., in: result)
         XCTAssertNotNil(
@@ -46,7 +47,7 @@ final class DashboardChartExportTests: XCTestCase {
     }
 
     func testSpacesInLabelBecomeHyphens() {
-        let result = DashboardChartExport.filename(for: "Security Posture", profile: "cbp")
+        let result = DashboardChartExport.filename(for: "Security Posture", profile: "acme")
         XCTAssert(result.contains("Security-Posture"), "Spaces become hyphens: \(result)")
     }
 
@@ -70,7 +71,7 @@ final class DashboardChartExportTests: XCTestCase {
     func testEmptyProfileOmitsProfileSegment() throws {
         let result = DashboardChartExport.filename(for: "Patch Status", profile: "")
         let regex = try NSRegularExpression(
-            pattern: #"^Patch-Status-\d{4}-\d{2}-\d{2}\.png$"#
+            pattern: #"^Patch-Status-\d{4}-\d{2}-\d{2}_\d{6}\.png$"#
         )
         let range = NSRange(result.startIndex..., in: result)
         XCTAssertNotNil(

@@ -9,6 +9,7 @@ struct CompliancePostureView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
+    @State private var mscpResults: [MSCPComplianceService.BaselineResult] = []
     @State private var hasLoaded = false
 
     /// Compliance-category templates from jamf-cli `pro sg` (PR #205, target release TBD).
@@ -43,11 +44,20 @@ struct CompliancePostureView: View {
                 StaleDataBanner(source: snapshot.cacheSource)
             }
 
-            proxyNoteCard
-            if snapshot.totalDevices == 0 {
+            // Show proxy note only when using proxy compliance (no mSCP baselines)
+            if mscpResults.isEmpty {
+                proxyNoteCard
+            }
+
+            if snapshot.totalDevices == 0 && mscpResults.isEmpty {
                 emptyState
             } else {
-                bandsHeroCard
+                // Show mSCP baseline donuts when available, otherwise proxy bands
+                if !mscpResults.isEmpty {
+                    mscpBaselineDonuts
+                } else {
+                    bandsHeroCard
+                }
                 controlCoverageCard
                 if !complianceTemplates.isEmpty {
                     complianceSmartGroupBar
@@ -133,8 +143,20 @@ struct CompliancePostureView: View {
     }
 
     private var subtitle: String? {
-        guard snapshot.totalDevices > 0 else { return nil }
-        return "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s") evaluated by control-gap proxy."
+        if !mscpResults.isEmpty {
+            let devicesWithData = mscpResults.first?.devicesWithData ?? 0
+            let baselinesText = mscpResults.count == 1 ? "baseline" : "baselines"
+            if devicesWithData > 0 {
+                return "\(devicesWithData) device\(devicesWithData == 1 ? "" : "s") evaluated across "
+                    + "\(mscpResults.count) mSCP \(baselinesText)."
+            } else {
+                return "No device data matched the configured baseline EA column."
+            }
+        } else if snapshot.totalDevices > 0 {
+            return "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s") evaluated by control-gap proxy."
+        } else {
+            return nil
+        }
     }
 
     // MARK: - Data loading
@@ -149,6 +171,66 @@ struct CompliancePostureView: View {
         snapshot = workspace.demoMode
             ? Self.demoSnapshot
             : CompliancePostureService.load(profile: workspace.profile)
+
+        // Load real mSCP baseline results when not in demo mode
+        if workspace.demoMode {
+            mscpResults = Self.demoMSCPResults
+        } else {
+            // Load config to get resolved baselines
+            if let config = readConfig(),
+               let compliance = config.compliance,
+               !compliance.resolvedBaselines.isEmpty {
+                mscpResults = MSCPComplianceService.load(
+                    profile: workspace.profile,
+                    baselines: compliance.resolvedBaselines
+                )
+            } else {
+                mscpResults = []
+            }
+        }
+    }
+
+    private func readConfig() -> ReportConfig? {
+        guard let workspaceURL = ProfileService.workspaceURL(for: workspace.profile) else { return nil }
+        let configURL = workspaceURL.appendingPathComponent("config.yaml")
+        return try? ConfigLoader.load(from: configURL)
+    }
+
+    private static var demoMSCPResults: [MSCPComplianceService.BaselineResult] {
+        // Demo baselines with different band distributions
+        let stigBands = ComplianceBandingService.bands(failures:
+            Array(repeating: 0, count: 380) +   // Pass
+            Array(repeating: 5, count: 120) +   // Low
+            Array(repeating: 15, count: 80) +   // Med-Low
+            Array(repeating: 35, count: 40) +   // Medium
+            Array(repeating: 60, count: 35)     // High
+        )
+        let nistBands = ComplianceBandingService.bands(failures:
+            Array(repeating: 0, count: 400) +   // Pass
+            Array(repeating: 3, count: 100) +   // Low
+            Array(repeating: 20, count: 90) +   // Med-Low
+            Array(repeating: 40, count: 50) +   // Medium
+            Array(repeating: 55, count: 15)     // High
+        )
+
+        return [
+            MSCPComplianceService.BaselineResult(
+                name: "DISA STIG",
+                failuresCountColumn: "STIG Failures Count",
+                bands: stigBands,
+                noDataCount: 0,
+                totalDevices: 655,
+                compliancePct: 58.0
+            ),
+            MSCPComplianceService.BaselineResult(
+                name: "NIST 800-53r5",
+                failuresCountColumn: "NIST Failures Count",
+                bands: nistBands,
+                noDataCount: 0,
+                totalDevices: 655,
+                compliancePct: 61.1
+            )
+        ]
     }
 
     private static var demoSnapshot: CompliancePostureService.Snapshot {
@@ -247,6 +329,155 @@ struct CompliancePostureView: View {
             CompliancePostureBandsDonutExport(bands: bands)
         }
         if case .failure(let error) = result {
+            workspace.toast = Toast(message: error.userMessage, style: .danger)
+        }
+    }
+
+    private var mscpBaselineDonuts: some View {
+        ForEach(Array(mscpResults.enumerated()), id: \.offset) { index, result in
+            Card {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        SectionHeader(
+                            title: "mSCP Compliance",
+                            trailing: result.name
+                        )
+                        PNPButton(
+                            title: "Export PNG",
+                            icon: "square.and.arrow.down",
+                            style: .neutral,
+                            size: .sm,
+                            action: { exportMSCPDonut(result: result) }
+                        )
+                        .accessibilityLabel("Export \(result.name) compliance donut as PNG")
+                        .help("Save the \(result.name) compliance donut as a PNG image")
+                    }
+                    HStack(alignment: .top, spacing: 28) {
+                        mscpDonutChart(for: result)
+                            .frame(width: 220, height: 220)
+                        mscpLegend(for: result)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    // Compliance percentage and rule count if available
+                    HStack {
+                        if let pct = result.compliancePct {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Compliance Rate")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                                Text(String(format: "%.1f%%", pct))
+                                    .font(.title2.weight(.semibold))
+                                    .foregroundStyle(Theme.Colors.fg)
+                            }
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Devices Evaluated")
+                                .font(.caption)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                            Text("\(result.devicesWithData)")
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                        }
+                    }
+                    // Diagnostic: shown only when every device is No Data, which
+                    // means the configured EA column name matched no rows — likely
+                    // a config typo.
+                    if result.devicesWithData == 0 && result.totalDevices > 0 {
+                        noMatchDiagnostic(result: result)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Caption displayed when matched device count is zero — signals a likely
+    /// `failures_count_column` config typo without cluttering the normal view.
+    @ViewBuilder
+    private func noMatchDiagnostic(result: MSCPComplianceService.BaselineResult) -> some View {
+        let msg = "0 of \(result.totalDevices) device\(result.totalDevices == 1 ? "" : "s") matched"
+            + " EA column \"\(result.failuresCountColumn)\" — verify the column name"
+            + " matches your Jamf EA."
+        Text(msg)
+            .font(.caption)
+            .foregroundStyle(Theme.Colors.warn)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(msg)
+    }
+
+    @ViewBuilder
+    private func mscpDonutChart(for result: MSCPComplianceService.BaselineResult) -> some View {
+        let slices = MSCPChartDataBuilder.toDonutSlices(result: result)
+        Chart(slices.filter { $0.count > 0 }) { slice in
+            SectorMark(
+                angle: .value("Count", slice.count),
+                innerRadius: .ratio(0.62),
+                angularInset: 1.6
+            )
+            .foregroundStyle(Color(cgColor: slice.color))
+            .accessibilityLabel(slice.label)
+            .accessibilityValue("\(slice.count) devices, \(Int(slice.pct.rounded()))%")
+        }
+        .chartLegend(.hidden)
+        .accessibilityLabel("\(result.name) compliance bands")
+        .accessibilityChartDescriptor(
+            SectorChartDescriptor(
+                title: "\(result.name) Compliance Bands",
+                unit: " devices",
+                slices: slices.filter { $0.count > 0 }.map { slice in
+                    SectorChartDescriptor.Slice(
+                        label: slice.label,
+                        value: Double(slice.count)
+                    )
+                }
+            )
+        )
+    }
+
+    @ViewBuilder
+    private func mscpLegend(for result: MSCPComplianceService.BaselineResult) -> some View {
+        let slices = MSCPChartDataBuilder.toDonutSlices(result: result)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(slices, id: \.label) { slice in
+                HStack(spacing: 10) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color(cgColor: slice.color))
+                        .frame(width: 12, height: 12)
+                    Text(slice.label)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.Colors.fg)
+                    Spacer()
+                    Text("\(slice.count)")
+                        .font(Theme.Fonts.mono(12, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.fg2)
+                        .monospacedDigit()
+                    Text(String(format: "%.1f%%", slice.pct))
+                        .font(Theme.Fonts.mono(11))
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .frame(minWidth: 56, alignment: .trailing)
+                        .monospacedDigit()
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(slice.label), \(slice.count) devices, \(Int(slice.pct.rounded())) percent")
+            }
+        }
+    }
+
+    private func exportMSCPDonut(result: MSCPComplianceService.BaselineResult) {
+        let slices = MSCPChartDataBuilder.toDonutSlices(result: result)
+        let filename = DashboardChartExport.filename(for: "\(result.name.lowercased().replacingOccurrences(of: " ", with: "-"))-compliance-bands", profile: workspace.profile)
+        let exportResult = DashboardChartExport.run(
+            title: "\(result.name) Compliance Bands",
+            subtitle: "Compliance Posture",
+            footnote: "Source: mSCP Extension Attribute · \(result.devicesWithData) devices evaluated",
+            suggestedFilename: filename
+        ) {
+            MSCPComplianceBandsDonutExport(
+                result: result,
+                slices: slices
+            )
+        }
+        if case .failure(let error) = exportResult {
             workspace.toast = Toast(message: error.userMessage, style: .danger)
         }
     }
@@ -500,6 +731,69 @@ private struct CompliancePostureBandsDonutExport: View {
                         .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color(hex: 0x475569))
                         .padding(.top, 4)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+// MARK: - mSCP Export Chart
+
+/// Light-mode export rendering of an mSCP compliance bands donut.
+private struct MSCPComplianceBandsDonutExport: View {
+    let result: MSCPComplianceService.BaselineResult
+    let slices: [ChartRenderer.DonutSlice]
+
+    private var visibleSlices: [ChartRenderer.DonutSlice] { slices.filter { $0.count > 0 } }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 24) {
+            Chart(visibleSlices, id: \.label) { slice in
+                SectorMark(
+                    angle: .value("Count", slice.count),
+                    innerRadius: .ratio(0.62),
+                    angularInset: 1.6
+                )
+                .foregroundStyle(Color(cgColor: slice.color))
+            }
+            .chartLegend(.hidden)
+            .frame(width: 260, height: 260)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(slices, id: \.label) { slice in
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color(cgColor: slice.color))
+                            .frame(width: 10, height: 10)
+                        Text(slice.label)
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundStyle(Color(hex: 0x111827))
+                        Spacer(minLength: 6)
+                        Text("\(slice.count)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color(hex: 0x111827))
+                            .monospacedDigit()
+                        Text(String(format: "%.1f%%", slice.pct))
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(Color(hex: 0x475569))
+                            .frame(width: 50, alignment: .trailing)
+                            .monospacedDigit()
+                    }
+                }
+                if result.totalDevices > 0 {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Total: \(result.totalDevices) devices")
+                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color(hex: 0x475569))
+                        if let pct = result.compliancePct {
+                            Text("Compliance: \(String(format: "%.1f%%", pct))")
+                                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color(hex: 0x475569))
+                        }
+                    }
+                    .padding(.top, 4)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

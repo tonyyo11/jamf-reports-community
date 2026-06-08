@@ -47,10 +47,10 @@ import urllib.request
 import zipfile
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import pandas as pd
 import xlsxwriter
@@ -160,6 +160,7 @@ AUTOMATION_MODE_DESCRIPTIONS: dict[str, str] = {
     "jamf-cli-only": "Use jamf-cli data to generate configured automation outputs.",
     "jamf-cli-full": "Build an automation inventory CSV, refresh snapshots, and generate configured outputs.",
     "csv-assisted": "Prefer manifest-selected CSV input when available, then fall back to inbox CSV, plus jamf-cli data.",
+    "backup": "Export Jamf Pro configuration objects to the workspace backups/ dir; no collect, no report.",
 }
 AUTOMATION_SCHEDULE_DESCRIPTIONS: dict[str, str] = {
     "daily": "Every day at the chosen time",
@@ -260,10 +261,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
         # Accepts jamf-cli report type identifiers, e.g. "update-status", "profile-status".
         # Use this to exclude expensive per-device queries that can stall on-prem Jamf Pro.
         # Underscores and hyphens are interchangeable ("update_status" == "update-status").
-        # Only the four skippable report types (Patch Failures, Profile Status,
-        # Update Status, Update Failures) honor this list — core inventory commands
-        # always run because the primary report sheets depend on them.
+        # Only the skippable report types (Patch Failures, Patch Definitions,
+        # Profile Status, Update Status, Update Failures) honor this list — core
+        # inventory commands always run because the primary report sheets depend
+        # on them.
         "collect_skip": [],
+    },
+    "sofa": {
+        # SOFA (https://sofa.macadmins.io) publishes the latest available Apple OS
+        # versions. Used by the "OS Currency" sheet/section to judge fleet currency.
+        "enabled": True,
+        "cache_dir": "",                # defaults to <jamf_cli.data_dir>/sofa
+        "max_cache_age_hours": 24,      # re-fetch when the cache is older than this
+        "timeout_seconds": 30,          # per-feed curl timeout
+        "platforms": ["macos", "ios", "tvos", "watchos"],
     },
     "school_cli": {
         "enabled": False,
@@ -312,6 +323,27 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "alerts": {"enabled": False},
         "insights": {"enabled": False},
     },
+    # v2.2.0 Phase 3: opt-in scheduled-run webhook digest. OFF by default; the
+    # operator must enable it and supply a provider + https URL. --notify still
+    # works as a URL override for the Python CLI path.
+    "notify": {
+        "enabled": False,
+        "provider": "teams",  # teams | slack
+        "url": "",
+    },
+    # v2.2.0: admin-controlled snapshot lifecycle. OFF by default — raw snapshots
+    # are kept indefinitely (they're a reporting input, and ~/Jamf-Reports often
+    # lives on cloud storage). When enabled, mode "archive" MOVES old snapshots to
+    # the archive folder; "delete" removes them. Summaries untouched unless
+    # include_summaries is true.
+    "retention": {
+        "enabled": False,
+        "mode": "archive",  # archive | delete
+        "snapshot_keep_days": 365,
+        "snapshot_keep_count": 0,
+        "include_summaries": False,
+        "archive_dir": "",
+    },
     "platform": {
         "enabled": False,
         "compliance_benchmarks": [],
@@ -340,6 +372,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "failures_count_column": "",
         "failures_list_column": "",
         "baseline_label": "mSCP Compliance",
+        # Per-baseline list for multi-baseline mSCP/STIG tracking. Each entry is
+        # {name, failures_count_column}. When empty, the engine synthesizes a
+        # single implicit baseline from failures_count_column + baseline_label
+        # so legacy single-baseline configs keep working.
+        "baselines": [],
     },
     "custom_eas": [],
     "sheets": {
@@ -513,6 +550,135 @@ SCHOOL_COLUMN_EXCLUDES: dict[str, list[str]] = {
     "user_name": ["owner"],
 }
 
+# Headers that appear ONLY in a Jamf Pro computer export. Values are pre-normalized
+# (lowercase, single-spaced) for comparison via ``_normalized_text``.
+COMPUTER_CSV_DISCRIMINATORS: frozenset[str] = frozenset({
+    "computer name", "jss computer id", "operating system version",
+    "last check-in", "gatekeeper", "system integrity protection",
+    "filevault 2 status", "firewall enabled", "secure boot level",
+    "processor type", "apple silicon", "boot drive percentage full",
+})
+
+# Headers that appear ONLY in a Jamf Pro mobile-device export. Pre-normalized.
+MOBILE_CSV_DISCRIMINATORS: frozenset[str] = frozenset({
+    "display name", "jss mobile device id", "device id", "imei", "iccid",
+    "jailbreak detected", "shared ipad", "wi-fi mac address",
+    "battery level", "lost mode enabled", "device ownership type",
+    "passcode status",
+})
+
+# Collection-tier model mirroring the Swift engine's CollectionTier.tierMap
+# (app/Sources/JamfReports/Services/CollectionTier.swift). KEEP THESE TWO TABLES
+# IDENTICAL — a kind's tier assignment must match between the Python and Swift
+# collectors so a Python-driven `--tiers` agent behaves the same as a Swift one.
+# Keys are the canonical Swift collect-kind names; collect commands carry the
+# matching kind so `--tiers` can filter by tier. Kinds with no Swift tier (e.g.
+# checkin-status, patch-summaries, classic-policies, Protect commands) are
+# intentionally absent and always collected — see `_command_tier`.
+COLLECTION_TIER_MAP: dict[str, str] = {
+    # Refresh — Overview KPIs + Trends summary
+    "overview": "refresh",
+    "security": "refresh",
+    "inventory-summary": "refresh",
+    "patch-status": "refresh",
+    "policy-status": "refresh",
+    "audit": "refresh",
+    "sofa": "refresh",
+    "patch-release-dates": "refresh",
+    # Inventory — Deep Dive screens
+    "app-status": "inventory",
+    "software-installs": "inventory",
+    "classic-macos-profiles": "inventory",
+    "computer-extension-attributes": "inventory",
+    "mobile-devices-list": "inventory",
+    "compliance-devices": "inventory",
+    "compliance-rules": "inventory",
+    "ddm-status": "inventory",
+    "blueprint-status": "inventory",
+    "computers": "inventory",
+    "policies": "inventory",
+    "scripts": "inventory",
+    "packages": "inventory",
+    "smart-computer-groups": "inventory",
+    "groups": "inventory",
+    "sites": "inventory",
+    "buildings": "inventory",
+    "departments": "inventory",
+    "advanced-mobile-device-searches": "inventory",
+    "classic-computer-groups": "inventory",
+    "classic-mobile-device-groups": "inventory",
+    "categories": "inventory",
+    "classic-ios-profiles": "inventory",
+    "device-enrollment-instances": "inventory",
+    "mobile-device-inventory-details": "inventory",
+    "update-status": "inventory",
+    "device-compliance": "inventory",
+    "ea-results": "inventory",
+    "profile-status": "inventory",
+    # Scan — the two expensive --scan-failures per-device fan-outs only
+    "patch-device-failures": "scan",
+    "update-device-failures": "scan",
+}
+
+# Valid `--tiers` values; mirrors Swift CollectionTier's CaseIterable set.
+COLLECTION_TIER_NAMES: frozenset[str] = frozenset({"refresh", "inventory", "scan"})
+
+
+def _parse_tiers_arg(raw: Optional[str]) -> Optional[frozenset[str]]:
+    """Parse a comma-separated ``--tiers`` value into a validated tier set.
+
+    Mirrors Swift CollectionTier's case-sensitive strictness: an unknown tier
+    name is an error rather than a silent miss. An empty/None value means "no
+    filter" (collect all tiers).
+
+    Args:
+        raw: The raw ``--tiers`` argument value, or None.
+
+    Returns:
+        A frozenset of tier names, or None when no filter was requested.
+
+    Raises:
+        SystemExit: If any token is not a valid CollectionTier name.
+    """
+    if raw is None:
+        return None
+    names = {token.strip() for token in raw.split(",") if token.strip()}
+    if not names:
+        return None
+    unknown = sorted(names - COLLECTION_TIER_NAMES)
+    if unknown:
+        valid = ", ".join(sorted(COLLECTION_TIER_NAMES))
+        raise SystemExit(
+            f"Error: unknown --tiers value(s): {', '.join(unknown)}. Valid: {valid}."
+        )
+    return frozenset(names)
+
+
+# Fuzzy-match candidates for mobile-device scaffold auto-detection.
+MOBILE_COLUMN_HINTS: dict[str, list[str]] = {
+    "device_name": ["display name", "device name"],
+    "serial_number": ["serial number", "serial"],
+    "operating_system": ["os version"],
+    "last_checkin": ["last inventory update", "last check-in", "last checkin"],
+    "email": ["email address", "email"],
+    "model": ["model"],
+    "device_family": ["device family"],
+    "managed": ["managed"],
+    "supervised": ["supervised"],
+}
+
+MOBILE_COLUMN_EXCLUDES: dict[str, list[str]] = {
+    "device_name": ["computer"],
+    "serial_number": [],
+    "operating_system": ["build", "supplemental", "rapid"],
+    "last_checkin": ["enrollment"],
+    "email": [],
+    "model": ["identifier", "number"],
+    "device_family": [],
+    "managed": ["by"],
+    "supervised": [],
+}
+
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
@@ -615,6 +781,317 @@ def strict_parse_failures(value: Any) -> int:
     if result < 0:
         raise ValueError(f"Compliance value is negative: {result}")
     return result
+
+
+# ---------------------------------------------------------------------------
+# mSCP / STIG compliance banding from ea-results (Swift-engine parity)
+# ---------------------------------------------------------------------------
+#
+# Mirrors the Swift engine's MSCPComplianceService + ComplianceBandingService.
+# Band boundaries are fixed here (NOT read from charts.compliance_trend.bands)
+# so a user who customizes chart bands cannot silently break summary/sheet
+# parity with the Swift output. The chart code reuses the config bands; the
+# summary and sheet math bind to these constants.
+
+# Donut-legend order (best -> worst, No Data last) — matches
+# ComplianceBandingService.Band.allCases exactly.
+MSCP_BAND_KEYS = ("pass", "low", "medLow", "medium", "high", "noData")
+MSCP_BAND_LABELS = {
+    "pass": "Pass",
+    "low": "Low",
+    "medLow": "Med-Low",
+    "medium": "Medium",
+    "high": "High",
+    "noData": "No Data",
+}
+MSCP_BAND_RANGES = {
+    # Numeric ranges use en-dashes (U+2013) for exact display parity with the
+    # Swift app (ComplianceBandingService.range); labels only, no thresholds.
+    "pass": "0",
+    "low": "1–10",
+    "medLow": "11–30",
+    "medium": "31–50",
+    "high": ">50",
+    "noData": "—",
+}
+
+
+def _mscp_int_value(value: Any) -> Optional[int]:
+    """Parse an ea-results cell into a failure count, mirroring Swift's intValue.
+
+    Byte-for-byte parity with ``AnyCodable.intValue`` + the ``>= 0`` guard in
+    ``MSCPComplianceService.evaluateBaseline``. A JSON bool, a non-integer
+    string (``"5.0"``, ``"1e3"``, padded), a negative number, or any other type
+    returns None — which the caller routes to the No Data band, exactly as the
+    Swift code does for the absent-key path.
+
+    Args:
+        value: Raw JSON value from an ea-results row's ``value`` field.
+
+    Returns:
+        Non-negative integer failure count, or None for No Data.
+    """
+    # bool is a subclass of int in Python; Swift's intValue returns nil for a
+    # JSON Bool, so exclude it first or `True` would land in the Low band.
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        result = value
+    elif isinstance(value, float):
+        result = int(value)  # truncate toward zero — matches Swift Int(Double)
+    elif isinstance(value, str):
+        # Swift Int(s) accepts only a plain integer literal: no decimals,
+        # no exponent, no surrounding whitespace.
+        if not re.fullmatch(r"[+-]?\d+", value):
+            return None
+        result = int(value)
+    else:
+        return None
+    return result if result >= 0 else None
+
+
+def _mscp_band_key(failures: Optional[int]) -> str:
+    """Return the band key for a failure count (None/negative -> noData).
+
+    Mirrors ``ComplianceBandingService.Band.from(failures:)``.
+    """
+    if failures is None or failures < 0:
+        return "noData"
+    if failures == 0:
+        return "pass"
+    if failures <= 10:
+        return "low"
+    if failures <= 30:
+        return "medLow"
+    if failures <= 50:
+        return "medium"
+    return "high"
+
+
+def _mscp_resolved_baselines(comp_cfg: dict[str, Any]) -> list[dict[str, str]]:
+    """Return the normalized baseline list, mirroring ``resolvedBaselines``.
+
+    Uses ``compliance.baselines`` when non-empty; otherwise synthesizes a single
+    implicit baseline from ``failures_count_column`` + ``baseline_label``.
+    Returns [] when neither is configured.
+
+    Args:
+        comp_cfg: The ``compliance`` config dict.
+
+    Returns:
+        A list of ``{"name", "failures_count_column"}`` dicts.
+    """
+    raw = comp_cfg.get("baselines")
+    resolved: list[dict[str, str]] = []
+    if isinstance(raw, list) and raw:
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            col = str(entry.get("failures_count_column", "") or "").strip()
+            if not col:
+                continue
+            name = str(entry.get("name", "") or "").strip() or "Compliance"
+            resolved.append({"name": name, "failures_count_column": col})
+        return resolved
+
+    col = str(comp_cfg.get("failures_count_column", "") or "").strip()
+    if not col:
+        return []
+    name = str(comp_cfg.get("baseline_label", "") or "").strip() or "Compliance"
+    return [{"name": name, "failures_count_column": col}]
+
+
+def _mscp_row_identity(row: dict[str, Any]) -> Optional[str]:
+    """Return a row's device identity, mirroring Swift ``primaryIdentifier``.
+
+    Fallback chain: ``computer_id ?? serial ?? device ?? computer_name`` —
+    first non-empty value, lowercased. None when all are empty.
+    """
+    for key in ("computer_id", "serial", "device", "computer_name"):
+        candidate = str(row.get(key, "") or "").strip()
+        if candidate:
+            return candidate.lower()
+    return None
+
+
+def _mscp_evaluate_baseline(
+    rows: list[dict[str, Any]], failures_count_column: str
+) -> dict[str, Any]:
+    """Evaluate one baseline over one ea-results snapshot (one universe).
+
+    Mirrors ``MSCPComplianceService.evaluateBaseline``: the device universe is
+    every distinct identity across ALL rows; a device with no parseable row for
+    this baseline's ``ea_name`` is No Data; ``compliancePct = pass /
+    devicesWithData`` (None when devicesWithData == 0).
+
+    Args:
+        rows: Decoded ea-results rows for a single snapshot.
+        failures_count_column: The ``ea_name`` to match (case-insensitive).
+
+    Returns:
+        A dict with ``bands`` (key->count over MSCP_BAND_KEYS), ``noData``,
+        ``total`` (universe size), ``devices_with_data``, ``pass``, and
+        ``compliance_pct`` (float or None).
+    """
+    col = failures_count_column.strip()
+    universe: set[str] = set()
+    failures_by_device: dict[str, int] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        identity = _mscp_row_identity(row)
+        if identity is None:
+            continue
+        universe.add(identity)
+        ea_name = str(row.get("ea_name", "") or "").strip()
+        if ea_name.lower() != col.lower():
+            continue
+        count = _mscp_int_value(row.get("value"))
+        if count is None:
+            # Unparseable / negative -> No Data (no dict entry). Note: a later
+            # parseable row for the same device still wins (last-write-wins);
+            # mirror Swift by only assigning on a parseable value.
+            continue
+        failures_by_device[identity] = count
+
+    bands = {key: 0 for key in MSCP_BAND_KEYS}
+    for identity in universe:
+        bands[_mscp_band_key(failures_by_device.get(identity))] += 1
+    no_data = bands["noData"]
+    devices_with_data = len(universe) - no_data
+    pass_count = sum(1 for c in failures_by_device.values() if c == 0)
+    compliance_pct = (
+        (pass_count / devices_with_data * 100.0) if devices_with_data > 0 else None
+    )
+    return {
+        "bands": bands,
+        "noData": no_data,
+        "total": len(universe),
+        "devices_with_data": devices_with_data,
+        "pass": pass_count,
+        "compliance_pct": compliance_pct,
+    }
+
+
+def _mscp_bands_from_ea_results(
+    config: "Config", bridge: Optional["JamfCLIBridge"]
+) -> Optional[dict[str, Any]]:
+    """Compute per-baseline mSCP bands from the latest cached ea-results.
+
+    Mirrors the Swift summary wiring: returns the per-baseline ``mscpBands`` map
+    (keyed by baseline name) plus the primary baseline's real compliance pct.
+    Returns None when no baseline is configured, the bridge is unavailable, or
+    ea-results yields no usable data — callers then omit ``mscpBands`` and keep
+    the proxy.
+
+    Args:
+        config: Loaded Config instance.
+        bridge: jamf-cli bridge (may be None or unavailable).
+
+    Returns:
+        ``{"bands_map": {name: {pass,...,noData,total}}, "primary_pct": float|None}``
+        or None.
+    """
+    if bridge is None or not bridge.is_available():
+        return None
+    baselines = _mscp_resolved_baselines(config.compliance)
+    if not baselines:
+        return None
+    try:
+        raw = bridge.ea_results_report(include_all=True)
+    except Exception as exc:  # absent report or unexpected shape
+        print(f"  [warn] mSCP bands: ea-results unavailable — omitting mscpBands: {exc}")
+        return None
+    rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+    if not rows:
+        return None
+
+    bands_map: dict[str, dict[str, int]] = {}
+    primary_pct: Optional[float] = None
+    for index, baseline in enumerate(baselines):
+        result = _mscp_evaluate_baseline(rows, baseline["failures_count_column"])
+        if result["total"] <= 0:
+            # Skip baselines with no data seen for their EA — mirrors
+            # mscpBandsMap's `guard result.totalDevices > 0`.
+            if index == 0:
+                primary_pct = None
+            continue
+        counts = dict(result["bands"])
+        counts["total"] = result["total"]
+        bands_map[baseline["name"]] = counts
+        if index == 0:
+            primary_pct = result["compliance_pct"]
+    if not bands_map:
+        return None
+    return {"bands_map": bands_map, "primary_pct": primary_pct}
+
+
+def _snapshot_date_from_path(path: Path) -> datetime:
+    """Extract a timestamp from a snapshot filename, falling back to file mtime.
+
+    Shared by the Compliance Trend sheet and ChartGenerator so dated ea-results
+    snapshots sort identically in both. Handles ``YYYY-MM-DDTHHMMSS``,
+    ``YYYY-MM-DD_HHMMSS``, ``YYYYMMDD_HHMMSS``, ``YYYY-MM-DD``, and ``YYYYMMDD``.
+    """
+    name = path.stem
+    for pattern, fmt in (
+        (r"(\d{4}-\d{2}-\d{2}T\d{6})", "%Y-%m-%dT%H%M%S"),
+        (r"(\d{4}-\d{2}-\d{2}_\d{6})", "%Y-%m-%d_%H%M%S"),
+        (r"(\d{8}T\d{6})", "%Y%m%dT%H%M%S"),
+        (r"(\d{8}_\d{6})", "%Y%m%d_%H%M%S"),
+    ):
+        match = re.search(pattern, name)
+        if not match:
+            continue
+        value = match.group(1)
+        for candidate_fmt in {fmt, fmt.replace("T", "_"), fmt.replace("_", "T")}:
+            try:
+                return datetime.strptime(value, candidate_fmt)
+            except ValueError:
+                continue
+    for pattern, fmt in ((r"(\d{4}-\d{2}-\d{2})", "%Y-%m-%d"), (r"(\d{8})", "%Y%m%d")):
+        match = re.search(pattern, name)
+        if match:
+            try:
+                return datetime.strptime(match.group(1), fmt)
+            except ValueError:
+                continue
+    return datetime.fromtimestamp(path.stat().st_mtime).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+
+def _load_ea_results_snapshots(data_dir: Path) -> list[tuple[datetime, list[dict[str, Any]]]]:
+    """Load all dated ea-results JSON snapshots sorted by timestamp.
+
+    Reads ``<data_dir>/ea-results/*.json``. Skips partial/manifest files and
+    unreadable JSON (warn-only) so a bad historical snapshot never breaks the
+    trend. Each returned snapshot is its own device universe.
+
+    Args:
+        data_dir: jamf-cli data directory.
+
+    Returns:
+        List of ``(date, rows)`` tuples sorted ascending by date.
+    """
+    results_dir = data_dir / "ea-results"
+    if not results_dir.is_dir():
+        return []
+    snapshots: list[tuple[datetime, list[dict[str, Any]]]] = []
+    for path in sorted(results_dir.rglob("*.json")):
+        if ".partial" in path.name or path.name == SNAPSHOT_MANIFEST_FILENAME:
+            continue
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_bytes())
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"  [warn] Skipping unreadable ea-results snapshot {path.name}: {exc}")
+            continue
+        rows = [r for r in data if isinstance(r, dict)] if isinstance(data, list) else []
+        snapshots.append((_snapshot_date_from_path(path), rows))
+    snapshots.sort(key=lambda item: item[0])
+    return snapshots
 
 
 def _now_ts() -> str:
@@ -1391,19 +1868,60 @@ def _default_generate_csv(config: "Config") -> tuple[Optional[Path], Optional[st
     return None, None, " | ".join(notes)
 
 
+def _detect_csv_family_from_headers(header_cols: list[str]) -> Optional[str]:
+    """Detect a CSV's device family by counting export-only discriminator headers.
+
+    Jamf Pro exports computers and mobile devices as separate reports. Each family
+    has headers that appear only in its own export; counting those hits is a
+    deterministic, config-free signal. Returns ``"computers"``, ``"mobile"``, or
+    ``None`` when neither family clearly wins (no hits, or a nonzero tie).
+
+    Args:
+        header_cols: CSV column names (any case/spacing).
+
+    Returns:
+        ``"computers"``, ``"mobile"``, or ``None`` if the family is ambiguous.
+    """
+    normalized = {_normalized_text(item) for item in header_cols}
+    computer_hits = len(COMPUTER_CSV_DISCRIMINATORS & normalized)
+    mobile_hits = len(MOBILE_CSV_DISCRIMINATORS & normalized)
+    if mobile_hits > computer_hits:
+        return "mobile"
+    if computer_hits > mobile_hits:
+        return "computers"
+    return None
+
+
 def _guess_report_family_from_headers(
     config: "Config",
     header_cols: list[str],
 ) -> Optional[str]:
-    """Infer the most likely report family from CSV headers."""
-    best_family: Optional[str] = None
-    best_score = (0, 0)
-    for family_name in REPORT_FAMILY_NAMES:
-        score = _report_family_header_score(config, family_name, header_cols)
-        if score > best_score:
-            best_family = family_name
-            best_score = score
-    return best_family if best_score > (0, 0) else None
+    """Infer the report family from CSV headers, with a compliance refinement.
+
+    Detection is deterministic (see ``_detect_csv_family_from_headers``). When the
+    headers look like a computer export and the configured compliance columns are
+    present, the family is refined to ``"compliance"`` (a computer-shaped CSV with
+    added mSCP failure columns).
+
+    Args:
+        config: Loaded Config instance (used only for compliance refinement).
+        header_cols: CSV column names.
+
+    Returns:
+        ``"computers"``, ``"mobile"``, ``"compliance"``, or ``None``.
+    """
+    family = _detect_csv_family_from_headers(header_cols)
+    if family != "computers":
+        return family
+    normalized = {_normalized_text(item) for item in header_cols}
+    compliance_cols = [
+        str(config.compliance.get("failures_count_column", "") or "").strip(),
+        str(config.compliance.get("failures_list_column", "") or "").strip(),
+    ]
+    present = [col for col in compliance_cols if col and _normalized_text(col) in normalized]
+    if present:
+        return "compliance"
+    return "computers"
 
 
 def _default_historical_dir(
@@ -1748,14 +2266,36 @@ def _normalized_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value).strip().lower())
 
 
-def _column_match_score(header: str, logical: str) -> int:
-    """Return a heuristic scaffold score for a header/logical field pairing."""
+def _column_match_score(
+    header: str,
+    logical: str,
+    hints: Optional[dict[str, list[str]]] = None,
+    excludes: Optional[dict[str, list[str]]] = None,
+) -> int:
+    """Return a heuristic scaffold score for a header/logical field pairing.
+
+    Exact matches score ``200 - hint_index`` so the hint listed first for a
+    logical field wins exact-match ties (e.g. "Last Check-in" before "Last
+    Inventory Update"). Prefix, substring, and reverse-substring tiers stay below
+    any exact match.
+
+    Args:
+        header: CSV column name being scored.
+        logical: Logical field name (key into ``hints``/``excludes``).
+        hints: Hint table to score against; defaults to ``COLUMN_HINTS``.
+        excludes: Exclude table; defaults to ``COLUMN_EXCLUDES``.
+
+    Returns:
+        An integer score (0 when below the match threshold).
+    """
+    hint_table = COLUMN_HINTS if hints is None else hints
+    exclude_table = COLUMN_EXCLUDES if excludes is None else excludes
     normalized = _normalized_text(header)
     score = 0
-    for candidate in COLUMN_HINTS.get(logical, []):
+    for index, candidate in enumerate(hint_table.get(logical, [])):
         candidate_norm = _normalized_text(candidate)
         if normalized == candidate_norm:
-            score = max(score, 100 + len(candidate_norm))
+            score = max(score, 200 - index)
         elif normalized.startswith(candidate_norm):
             score = max(score, 80 + len(candidate_norm))
         elif candidate_norm in normalized:
@@ -1763,7 +2303,7 @@ def _column_match_score(header: str, logical: str) -> int:
         elif len(normalized) >= 8 and normalized in candidate_norm:
             score = max(score, 40 + len(normalized))
 
-    for blocked in COLUMN_EXCLUDES.get(logical, []):
+    for blocked in exclude_table.get(logical, []):
         if _normalized_text(blocked) in normalized:
             score -= 80
 
@@ -1774,15 +2314,28 @@ def _best_header_match(
     headers: list[str],
     logical: str,
     used_headers: Optional[set[str]] = None,
+    hints: Optional[dict[str, list[str]]] = None,
+    excludes: Optional[dict[str, list[str]]] = None,
 ) -> tuple[Optional[str], int]:
-    """Return the best-scoring header for a logical field."""
+    """Return the best-scoring header for a logical field.
+
+    Args:
+        headers: All CSV column names.
+        logical: Logical field name to match.
+        used_headers: Headers already claimed by other fields (skipped).
+        hints: Hint table; defaults to ``COLUMN_HINTS``.
+        excludes: Exclude table; defaults to ``COLUMN_EXCLUDES``.
+
+    Returns:
+        Tuple of (best header or None, score).
+    """
     best_header: Optional[str] = None
     best_score = 0
     reserved = used_headers or set()
     for header in headers:
         if header in reserved:
             continue
-        score = _column_match_score(header, logical)
+        score = _column_match_score(header, logical, hints, excludes)
         if score > best_score:
             best_header = header
             best_score = score
@@ -1813,6 +2366,66 @@ def _best_hint_match(
             best_header = header
             best_score = score
     return best_header if best_score else None
+
+
+def _identity_column_for_family(config: "Config", family_name: Optional[str]) -> str:
+    """Return the identity (device-name) column for a CSV family.
+
+    Used to detect Jamf "export-only" continuation rows, which carry a blank
+    identity cell. Falls back to the canonical Jamf header when the family's
+    mapping is unset.
+
+    Args:
+        config: Loaded Config instance.
+        family_name: ``"mobile"``, ``"computers"``, ``"compliance"``, or None.
+
+    Returns:
+        The configured identity column name, or a sensible default.
+    """
+    if family_name == "mobile":
+        configured = str(config.mobile_columns.get("device_name", "") or "").strip()
+        return configured or "Display Name"
+    configured = str(config.columns.get("computer_name", "") or "").strip()
+    return configured or "Computer Name"
+
+
+def _drop_continuation_rows(df: Any, identity_column: str) -> tuple[Any, int]:
+    """Drop Jamf export-only continuation rows (blank identity cell) from a CSV.
+
+    Jamf "export-only" field exports emit multi-value data (Applications,
+    Certificates, Groups, Printers, Services) as continuation rows whose identity
+    column is blank. These inflate device counts. Rows are only dropped when the
+    identity column is present in the DataFrame.
+
+    Args:
+        df: A pandas DataFrame loaded from a Jamf CSV export.
+        identity_column: The device-name column whose blanks mark continuation rows.
+
+    Returns:
+        Tuple of (filtered DataFrame, number of rows dropped).
+    """
+    if not identity_column or identity_column not in df.columns:
+        return df, 0
+    identity = df[identity_column].fillna("").astype(str).str.strip()
+    keep_mask = identity != ""
+    dropped = int((~keep_mask).sum())
+    if not dropped:
+        return df, 0
+    return df[keep_mask].reset_index(drop=True), dropped
+
+
+def _warn_continuation_rows(dropped: int, remaining: int) -> None:
+    """Print a loud warning when continuation rows were dropped from a CSV."""
+    if dropped <= 0:
+        return
+    print(
+        f"[warn] Ignored {dropped} continuation rows from multi-value export fields"
+        " (Applications, Certificates, Groups, ...)."
+    )
+    print(
+        f"       Device counts use {remaining} unique devices. For cleaner reports,"
+        ' export with "Built-in" fields only.'
+    )
 
 
 def _contains_case_insensitive(series: Any, needle: str) -> Any:
@@ -2731,26 +3344,40 @@ def _emit_summary_json(
         else:
             comp_pct = (compliant / total_devices * 100.0) if total_devices > 0 else 0.0
 
-    # 3. Stale count (30d+)
+    # 3. Stale count (>= stale_days). Canonical stale rule (mirrors Swift):
+    # days_since_checkin >= stale_days; a missing/unparseable checkin is NOT
+    # stale (treated as not-stale, not as stale).
     checkin_col = csv_dash._col("last_checkin")
     stale_days = int(config.thresholds.get("stale_device_days", 30))
     stale_count = 0
     if checkin_col and checkin_col in df.columns:
-        stale_count = int(df[checkin_col].apply(lambda v: (_days_since(v) or 0) > stale_days if v else True).sum())
+        stale_count = int(
+            df[checkin_col]
+            .apply(lambda v: (_days_since(v) or 0) >= stale_days)
+            .sum()
+        )
 
-    # 4. OS Current — None when no OS column or no current-version EA is
-    # configured, mirroring the FileVault metric's missing-vs-zero handling.
+    # 4. OS Current — SOFA-driven: a device is current when its OS version is
+    # the latest release within its own major version per the SOFA feed
+    # (Tahoe 26 -> latest 26.x, Sequoia 15 -> latest 15.x). None when no OS
+    # column is mapped or SOFA data is unavailable, mirroring the FileVault
+    # metric's missing-vs-zero handling. The static config current_versions
+    # list is intentionally no longer used here — it goes stale and misreports.
     os_col = csv_dash._col("operating_system")
     os_pct: Optional[float] = None
-    current_os_versions = []
-    for ea in config.custom_eas:
-        if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
-            current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
-            break
-    if os_col and os_col in df.columns and current_os_versions:
-        os_vals = df[os_col].fillna("").astype(str).str.lower()
-        is_current = os_vals.apply(lambda v: any(v.startswith(cv) for cv in current_os_versions))
-        os_pct = (is_current.sum() / total_devices * 100.0)
+    if os_col and os_col in df.columns:
+        try:
+            latest_per_major = _sofa_latest_per_major(SOFAFeedClient(config))
+            os_pct = _os_current_pct(
+                latest_per_major,
+                ((str(v), 1) for v in df[os_col].fillna("")),
+                total_devices,
+            )
+        except Exception as exc:
+            print(
+                f"  [warn] _emit_summary_json: SOFA OS-currency failed — "
+                f"osCurrentPct omitted (no data): {exc}"
+            )
 
     # 5. CrowdStrike — None when no CrowdStrike agent is configured or its
     # column is absent, so the trend chart skips the point rather than
@@ -2792,6 +3419,9 @@ def _emit_summary_json(
         "totalDevices": int(total_devices),
         "staleCount": int(stale_count),
         "source": "csv",
+        # CSV path always uses the 4-control proxy; real ea-results bands below
+        # flip this to False when they resolve. Matches the Swift summary schema.
+        "complianceIsProxy": True,
     }
     if fv_pct is not None:
         summary_data["fileVaultPct"] = round(fv_pct, 1)
@@ -2803,6 +3433,11 @@ def _emit_summary_json(
         summary_data["patchPct"] = round(patch_pct, 1)
     if comp_pct is not None:
         summary_data["compliancePct"] = round(comp_pct, 1)
+
+    # Real mSCP/STIG bands from ea-results override the CSV-column compliancePct
+    # when a baseline resolves to at least one device with data. Mirrors the
+    # Swift summary wiring (ReportEngine.emitSummaryJSON).
+    _apply_mscp_bands_to_summary(summary_data, config, bridge)
 
     _atomic_write_summary(summary_file, summaries_dir, summary_data)
 
@@ -2947,37 +3582,40 @@ def _build_summary_from_bridge(
     if total_devices == 0:
         return None
 
+    # Canonical stale rule (mirrors Swift #176): days_since_checkin >=
+    # stale_days from the config threshold, NOT the server-side `stale` flag
+    # (~90-100d cadence). Missing/unknown checkin is NOT stale (-1 default).
+    stale_days = int(config.thresholds.get("stale_device_days", 30))
     stale_count = 0
     try:
         comp = bridge.device_compliance() or []
-        stale_count = sum(1 for row in comp if isinstance(row, dict) and row.get("stale"))
+        stale_count = sum(
+            1
+            for row in comp
+            if isinstance(row, dict)
+            and _to_int(row.get("days_since_contact"), -1) >= stale_days
+        )
     except Exception as exc:
         print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
 
+    # OS Current — SOFA-driven (latest release within each device's own major
+    # version). Replaces the stale static config current_versions list. None
+    # when SOFA data or inventory_summary is unavailable.
     os_pct: Optional[float] = None
-    current_os_versions: list[str] = []
-    for ea in config.custom_eas:
-        if ea.get("type") == "version" and "macos" in str(ea.get("name", "")).lower():
-            current_os_versions = [str(v).lower() for v in ea.get("current_versions", [])]
-            break
-    if current_os_versions:
-        try:
+    try:
+        latest_per_major = _sofa_latest_per_major(SOFAFeedClient(config))
+        if latest_per_major:
             inv = bridge.inventory_summary() or []
-            current = 0
-            for row in inv:
-                if not isinstance(row, dict):
-                    continue
-                ver = str(row.get("os_version") or "").lower()
-                count = int(row.get("count") or 0)
-                if any(ver.startswith(cv) for cv in current_os_versions):
-                    current += count
-            if total_devices:
-                os_pct = (current / total_devices) * 100.0
-        except Exception as exc:
-            print(
-                f"  [warn] _build_summary_from_bridge: inventory_summary "
-                f"(os adoption) failed — osCurrentPct omitted (no data): {exc}"
+            versions = (
+                (str(row.get("os_version") or ""), int(row.get("count") or 0))
+                for row in inv if isinstance(row, dict)
             )
+            os_pct = _os_current_pct(latest_per_major, versions, total_devices)
+    except Exception as exc:
+        print(
+            f"  [warn] _build_summary_from_bridge: inventory_summary "
+            f"(os adoption) failed — osCurrentPct omitted (no data): {exc}"
+        )
 
     patch_pct: Optional[float] = None
     try:
@@ -3011,7 +3649,42 @@ def _build_summary_from_bridge(
         summary["osCurrentPct"] = round(os_pct, 1)
     if patch_pct is not None:
         summary["patchPct"] = round(patch_pct, 1)
+
+    # Real mSCP/STIG bands from ea-results. Pure-CLI users get true compliance
+    # banding when a baseline is configured. Mirrors the Swift summary wiring.
+    _apply_mscp_bands_to_summary(summary, config, bridge)
     return summary
+
+
+def _apply_mscp_bands_to_summary(
+    summary: dict[str, Any], config: "Config", bridge: Optional["JamfCLIBridge"]
+) -> None:
+    """Add ``mscpBands`` + real compliancePct to a summary dict when resolvable.
+
+    Shared by the CSV path (``_emit_summary_json``) and the pure-CLI path
+    (``_build_summary_from_bridge``). When a baseline resolves to at least one
+    device with data the primary baseline's pct overrides any existing
+    ``compliancePct`` and ``complianceIsProxy`` is set to False. A failure to
+    read ea-results leaves the summary untouched (per-metric degrade), matching
+    the surrounding optional-metric pattern.
+
+    Args:
+        summary: The summary dict to mutate in place.
+        config: Loaded Config instance.
+        bridge: jamf-cli bridge (may be None or unavailable).
+    """
+    try:
+        result = _mscp_bands_from_ea_results(config, bridge)
+    except Exception as exc:  # never let an ea-results hiccup abort the summary
+        print(f"  [warn] mSCP bands: skipped — {exc}")
+        return
+    if not result:
+        return
+    summary["mscpBands"] = result["bands_map"]
+    primary_pct = result.get("primary_pct")
+    if primary_pct is not None:
+        summary["compliancePct"] = round(primary_pct, 1)
+        summary["complianceIsProxy"] = False
 
 
 def _percent_string_to_float(raw: Any) -> float:
@@ -3625,6 +4298,7 @@ class LogRedactor:
         "username": "user",
         "user_name": "user",
         "user": "user",
+        "operatoruserhost": "user",
         "realname": "user",
         "real_name": "user",
         "email": "email",
@@ -3649,6 +4323,12 @@ class LogRedactor:
     #       without a URL prefix (covers log lines like "connection to
     #       acme-prod.jamfcloud.com failed"). Narrow to well-known TLDs to
     #       avoid false-positives on every dotted path.
+    # NOTE: the `\.[a-z]{2,63}` tail requires an alpha TLD, so URLs whose host
+    # is a bare IP address (e.g. `https://10.0.0.5/JSSResource/...`) are
+    # intentionally NOT matched and pass through un-redacted. On-prem Jamf Pro
+    # reached by IP is common; if your instance is addressed by IP, generate the
+    # diagnostic bundle locally only (do not share it externally) or scrub the
+    # IP by hand before sharing. See README (--keep-hostnames / diagnostic-bundle).
     _HOSTNAME_URL_RE = re.compile(
         r"(https?://)([a-z0-9][a-z0-9\-\.]{1,253}\.[a-z]{2,63})\b",
         re.IGNORECASE,
@@ -3801,10 +4481,10 @@ class LogRedactor:
         self._cache[cache_key] = placeholder
         return placeholder
 
-    def seed_from_workspace(self, workspace: Path) -> int:
+    def seed_from_workspace(self, data_dir: Path) -> int:
         """Harvest device/identity literals from cached jamf-cli JSON.
 
-        Walks ``<workspace>/jamf-cli-data/`` for JSON snapshots and collects
+        Walks the configured jamf-cli data dir for JSON snapshots and collects
         string values under `_PII_JSON_KEYS` keys into per-category literal
         sets, then compiles per-category alternation regexes. `redact_text`
         uses these to redact exact device names, UDIDs, asset tags, etc. from
@@ -3812,12 +4492,12 @@ class LogRedactor:
         names are not regex-patternable.
 
         Args:
-            workspace: Profile workspace directory.
+            data_dir: Resolved jamf-cli data directory (honors
+                ``jamf_cli.data_dir`` config, not the hardcoded default).
 
         Returns:
             Count of distinct literals collected across all categories.
         """
-        data_dir = workspace / "jamf-cli-data"
         if not data_dir.is_dir():
             return 0
         known: dict[str, set[str]] = {}
@@ -4009,6 +4689,16 @@ class Config:
     @property
     def protect(self) -> dict:
         value = self._data.get("protect") or {}
+        return value if isinstance(value, dict) else {}
+
+    @property
+    def notify(self) -> dict:
+        value = self._data.get("notify") or {}
+        return value if isinstance(value, dict) else {}
+
+    @property
+    def retention(self) -> dict:
+        value = self._data.get("retention") or {}
         return value if isinstance(value, dict) else {}
 
     @property
@@ -4879,6 +5569,203 @@ class JamfCLIBridge:
                 print(f"  [warn] Could not save patch-summaries snapshot: {exc}")
         return summaries
 
+    def patch_definitions(self, title_id: str) -> Any:
+        """Fetch patch definitions for one software-title configuration.
+
+        Wraps ``pro patch-software-title-configurations definitions <id>``. The
+        id is positional. ``--page-size 100`` caps the result. jamf-cli's
+        default sort is ``absoluteOrderId:asc``, so the newest version is first
+        (absoluteOrderId "0"). JSON shape:
+          [{"version": "151.0.2", "releaseDate": "2026-05-26T13:48:54Z",
+            "standalone": true, "minimumOperatingSystem": "...",
+            "rebootRequired": false, "killApps": [...],
+            "absoluteOrderId": "0"}, ...]
+
+        Per-title snapshots are saved as
+        ``patch-definitions/patch-definitions_title<id>.json`` so multiple
+        titles never overwrite one another. Falls back to the newest cached
+        per-title snapshot when the live call fails and ``use_cached_data``
+        is True.
+
+        Args:
+            title_id: The software-title configuration id (the ``id`` field
+                returned by ``patch_status()``).
+
+        Returns:
+            Parsed list of definition records, or an empty list when the title
+            id is blank.
+
+        Raises:
+            RuntimeError: When the live call fails and no cached snapshot is
+                available (and ``use_cached_data`` is True), or when caching
+                is disabled.
+        """
+        ident = str(title_id).strip()
+        if not ident:
+            return []
+        safe_ident = re.sub(r"[^0-9A-Za-z._-]", "_", ident)
+        report_type = f"patch-definitions:{safe_ident}"
+        cached_path = self._data_dir / "patch-definitions" / f"patch-definitions_title{safe_ident}.json"
+        args = [
+            "pro", "patch-software-title-configurations", "definitions",
+            ident, "--page-size", "100",
+        ]
+        try:
+            data = self._run(args)
+        except RuntimeError as exc:
+            if not self._use_cached_data or not cached_path.is_file():
+                raise
+            try:
+                raw = cached_path.read_bytes()
+                _verify_snapshot_bytes_against_manifest(
+                    cached_path, raw, strict=self._strict_manifest
+                )
+                cached = json.loads(raw)
+            except (OSError, json.JSONDecodeError) as cache_exc:
+                raise RuntimeError(f"{exc} | cache fallback: {cache_exc}") from exc
+            print(f"  [cache] {cached_path}")
+            self._set_source_info(report_type, "cached-fallback", cached_path)
+            return cached
+
+        self._set_source_info(report_type, "live")
+        if self._save:
+            out_dir = self._data_dir / "patch-definitions"
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                final_path = out_dir / f"patch-definitions_title{safe_ident}.json"
+                tmp_path = final_path.with_suffix(".partial")
+                payload = json.dumps(data, indent=2).encode("utf-8")
+                with open(tmp_path, "wb") as fh:
+                    fh.write(payload)
+                tmp_path.rename(final_path)
+                _rewrite_snapshot_manifest(
+                    out_dir,
+                    pinned={final_path.name: hashlib.sha256(payload).hexdigest()},
+                )
+            except OSError as exc:
+                print(f"  [warn] Could not save patch-definitions snapshot: {exc}")
+        return data
+
+    @staticmethod
+    def _latest_definition_date(definitions: Any, latest_version: str) -> tuple[str, str]:
+        """Return (version, releaseDate) for the title's latest definition.
+
+        Prefers the definition whose ``version`` exactly matches the title's
+        ``latest`` field. Falls back to the ``absoluteOrderId == "0"`` entry
+        (jamf-cli's newest-first default sort), then to the first record.
+
+        Args:
+            definitions: Parsed definitions list from ``patch_definitions``.
+            latest_version: The title's ``latest`` field from patch-status.
+
+        Returns:
+            A ``(version, release_date)`` tuple; both are empty strings when no
+            usable definition is present.
+        """
+        defs = definitions if isinstance(definitions, list) else []
+        records = [d for d in defs if isinstance(d, dict)]
+        if not records:
+            return "", ""
+        target = str(latest_version or "").strip()
+        if target:
+            for rec in records:
+                if str(rec.get("version", "")).strip() == target:
+                    return target, str(rec.get("releaseDate", "") or "").strip()
+        for rec in records:
+            if str(rec.get("absoluteOrderId", "")).strip() == "0":
+                return (
+                    str(rec.get("version", "") or "").strip(),
+                    str(rec.get("releaseDate", "") or "").strip(),
+                )
+        first = records[0]
+        return (
+            str(first.get("version", "") or "").strip(),
+            str(first.get("releaseDate", "") or "").strip(),
+        )
+
+    def collect_patch_release_dates(self) -> list[dict[str, Any]]:
+        """Build and persist the merged patch release-date snapshot.
+
+        Fetches ``patch_status`` for the list of title ids, then
+        ``patch_definitions`` per title, extracts the latest definition's
+        release date, and saves a merged
+        ``patch-release-dates/patch-release-dates_<ts>.json`` snapshot of the
+        shape::
+
+            [{"title_id": "2", "title": "Mozilla Firefox",
+              "latest_version": "151.0.2",
+              "release_date": "2026-05-26T13:48:54Z"}]
+
+        Returns:
+            The merged list (possibly empty).
+
+        Raises:
+            RuntimeError: When the patch-status fetch itself fails (so the
+                caller can log a single skip rather than a half-built snapshot).
+        """
+        status = self.patch_status()
+        titles = status if isinstance(status, list) else []
+        merged: list[dict[str, Any]] = []
+        for item in titles:
+            if not isinstance(item, dict):
+                continue
+            title_id = str(item.get("id", "") or "").strip()
+            if not title_id:
+                continue
+            try:
+                definitions = self.patch_definitions(title_id)
+            except RuntimeError as exc:
+                print(f"  [warn] patch-definitions fetch failed for title {title_id}: {exc}")
+                continue
+            version, release_date = self._latest_definition_date(
+                definitions, str(item.get("latest", "") or "")
+            )
+            if not release_date:
+                continue
+            merged.append({
+                "title_id": title_id,
+                "title": str(item.get("title", "") or ""),
+                "latest_version": version,
+                "release_date": release_date,
+            })
+
+        if self._save:
+            out_dir = self._data_dir / "patch-release-dates"
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                final_path = out_dir / f"patch-release-dates_{_now_ts()}.json"
+                tmp_path = final_path.with_suffix(".partial")
+                payload = json.dumps(merged, indent=2).encode("utf-8")
+                with open(tmp_path, "wb") as fh:
+                    fh.write(payload)
+                tmp_path.rename(final_path)
+                _rewrite_snapshot_manifest(
+                    out_dir,
+                    pinned={final_path.name: hashlib.sha256(payload).hexdigest()},
+                )
+            except OSError as exc:
+                print(f"  [warn] Could not save patch-release-dates snapshot: {exc}")
+        self._set_source_info("patch-release-dates", "live")
+        return merged
+
+    def patch_release_dates(self) -> list[dict[str, Any]]:
+        """Return the newest cached merged patch release-date snapshot.
+
+        Read-only: the merged snapshot is built at ``collect`` time by
+        :meth:`collect_patch_release_dates`. Returns an empty list when no
+        snapshot exists, so the Patch Compliance sheet renders identically to
+        installs without the snapshot (backward compatible).
+        """
+        try:
+            data = self._load_cached_json(
+                ["patch-release-dates"],
+                report_type="patch-release-dates",
+                source_mode="cached",
+            )
+        except RuntimeError:
+            return []
+        return data if isinstance(data, list) else []
+
     def app_status(self) -> Any:
         """Fetch managed app deployment report from jamf-cli pro report app-status."""
         self._require_report_command("app-status", ["app-status", "app_status"])
@@ -5482,6 +6369,382 @@ class JamfCLIBridge:
         if any(token in lowered for token in parse_tokens):
             return "parse_error"
         return "general"
+
+
+# ---------------------------------------------------------------------------
+# SOFA feed client
+# ---------------------------------------------------------------------------
+
+
+SOFA_FEED_URL = "https://sofafeed.macadmins.io/v2/{platform}_data_feed.json"
+
+# The SOFA v2 feed files that actually exist. iPadOS is served by the `ios`
+# feed, so there is no separate `ipados` feed. Values outside this set are
+# rejected before URL interpolation (C5a).
+_SOFA_VALID_PLATFORMS: frozenset[str] = frozenset({"macos", "ios", "tvos", "watchos"})
+
+# Maps SOFA feed platform identifiers to the human-readable label used in the
+# report. iPadOS shares the `ios` feed and is surfaced as a single combined row.
+SOFA_PLATFORM_LABELS: dict[str, str] = {
+    "macos": "macOS",
+    "ios": "iOS / iPadOS",
+    "tvos": "tvOS",
+    "watchos": "watchOS",
+}
+
+
+def _sofa_parse_date(value: Any) -> Optional[date]:
+    """Parse a SOFA release-date string into a :class:`date`.
+
+    SOFA feeds mix two formats: macOS/iOS use full ISO timestamps
+    (``2026-06-01T00:00:00Z``) while tvOS/watchOS use date-only strings
+    (``2026-05-11``). Both are handled.
+
+    Args:
+        value: A SOFA date string, or any value.
+
+    Returns:
+        The parsed :class:`date`, or None when the value is empty or
+        unparseable.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    candidate = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(candidate).date()
+    except ValueError:
+        pass
+    match = re.match(r"(\d{4}-\d{2}-\d{2})", text)
+    if match:
+        try:
+            return datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+class SOFAFeedClient:
+    """Fetches and normalizes the macadmins SOFA OS-version feeds.
+
+    Reads the ``sofa`` config section. Feeds are fetched with ``curl`` (not
+    urllib) because python.org Python on macOS ships without CA certificates
+    configured, so urllib HTTPS fails with ``CERTIFICATE_VERIFY_FAILED``; curl
+    is always present on macOS and uses the system trust store. SSL
+    verification is never disabled.
+
+    Args:
+        config: Loaded :class:`Config` instance.
+        reference_date: Optional "today" override for deterministic
+            ``days_since_release`` computation in tests.
+    """
+
+    def __init__(self, config: "Config", reference_date: Optional[date] = None) -> None:
+        self._config = config
+        sofa_cfg = config.get("sofa") or {}
+        self._enabled = sofa_cfg.get("enabled", True) is not False
+        self._timeout = max(1, _to_int(sofa_cfg.get("timeout_seconds", 30), 30))
+        self._max_cache_age_hours = max(0, _to_int(sofa_cfg.get("max_cache_age_hours", 24), 24))
+        platforms = sofa_cfg.get("platforms") or ["macos", "ios", "tvos", "watchos"]
+        self._platforms = []
+        for raw_platform in platforms:
+            plat = str(raw_platform).strip().lower()
+            if not plat:
+                continue
+            # Allow-list against the SOFA v2 feed files (iPadOS shares the `ios`
+            # feed). Unknown values are dropped before URL interpolation so a
+            # malformed config can't reach an arbitrary fetch URL.
+            if plat not in _SOFA_VALID_PLATFORMS:
+                print(f"  [warn] SOFA: ignoring unknown platform '{plat}'.")
+                continue
+            self._platforms.append(plat)
+        self._reference_date = reference_date or date.today()
+        self._cache_dir = self._resolve_cache_dir(config, sofa_cfg)
+
+    @staticmethod
+    def _resolve_cache_dir(config: "Config", sofa_cfg: dict[str, Any]) -> Path:
+        """Resolve the SOFA cache directory, defaulting to <data_dir>/sofa."""
+        explicit = config.resolve_path("sofa", "cache_dir")
+        if explicit is not None:
+            return explicit
+        data_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+        base = data_dir if data_dir is not None else Path("jamf-cli-data")
+        return base / "sofa"
+
+    @property
+    def enabled(self) -> bool:
+        """Return True when SOFA fetching is enabled in config."""
+        return self._enabled
+
+    @property
+    def platforms(self) -> list[str]:
+        """Return the configured list of SOFA platform identifiers."""
+        return list(self._platforms)
+
+    def _cache_path(self, platform: str) -> Path:
+        return self._cache_dir / f"{platform}_data_feed.json"
+
+    def _cache_is_fresh(self, path: Path) -> bool:
+        """Return True when the cached feed is within the max-age window."""
+        if self._max_cache_age_hours <= 0:
+            return False
+        if not path.is_file():
+            return False
+        age = datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)
+        return age <= timedelta(hours=self._max_cache_age_hours)
+
+    @staticmethod
+    def _load_cached_feed(path: Path) -> Optional[dict[str, Any]]:
+        """Return a parsed cached feed dict, or None when unreadable/invalid."""
+        if not path.is_file():
+            return None
+        try:
+            parsed = json.loads(path.read_bytes())
+        except (OSError, json.JSONDecodeError):
+            return None
+        if isinstance(parsed, dict) and "OSVersions" in parsed:
+            return parsed
+        return None
+
+    def _curl_fetch(self, platform: str) -> dict[str, Any]:
+        """Fetch one feed via curl and return the parsed dict.
+
+        Raises:
+            RuntimeError: On a missing curl binary, non-zero exit, timeout, or
+                output that does not parse as a feed dict with ``OSVersions``.
+        """
+        url = SOFA_FEED_URL.format(platform=platform)
+        try:
+            result = subprocess.run(
+                ["curl", "-s", "-f", "--max-time", str(self._timeout), url],
+                capture_output=True, text=True, check=True,
+                timeout=self._timeout + 5, stdin=subprocess.DEVNULL,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("curl not found") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"curl timed out after {self._timeout}s") from exc
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"curl failed ({exc.returncode})") from exc
+        try:
+            parsed = json.loads(result.stdout or "")
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"SOFA feed is not valid JSON: {exc}") from exc
+        if not isinstance(parsed, dict) or "OSVersions" not in parsed:
+            raise RuntimeError("SOFA feed missing OSVersions key")
+        return parsed
+
+    def fetch(self, platform: str) -> Optional[dict[str, Any]]:
+        """Fetch one platform feed, using cache when fresh and on failure.
+
+        Returns the parsed feed dict, or None when disabled, the platform is
+        not configured, and no usable cache exists. On a live failure, falls
+        back to any cached copy (regardless of age) and prints a note.
+
+        Args:
+            platform: A SOFA platform identifier (``macos``/``ios``/etc.).
+
+        Returns:
+            Parsed feed dict, or None when unavailable.
+        """
+        if not self._enabled:
+            return None
+        plat = str(platform).strip().lower()
+        cache_path = self._cache_path(plat)
+        if self._cache_is_fresh(cache_path):
+            cached = self._load_cached_feed(cache_path)
+            if cached is not None:
+                return cached
+        try:
+            feed = self._curl_fetch(plat)
+        except RuntimeError as exc:
+            cached = self._load_cached_feed(cache_path)
+            if cached is not None:
+                print(f"  [cache] SOFA {plat}: live fetch failed ({exc}); using cached feed")
+                return cached
+            print(f"  [warn] SOFA {plat}: {exc}; no cached feed available")
+            return None
+        self._write_cache(cache_path, feed)
+        return feed
+
+    @staticmethod
+    def _write_cache(path: Path, feed: dict[str, Any]) -> None:
+        """Persist a fetched feed atomically; warn (never raise) on failure."""
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = path.with_suffix(".partial")
+            tmp_path.write_text(json.dumps(feed, indent=2), encoding="utf-8")
+            tmp_path.rename(path)
+        except OSError as exc:
+            print(f"  [warn] Could not cache SOFA feed {path}: {exc}")
+
+    def _normalize_feed(self, platform: str, feed: dict[str, Any]) -> list[dict[str, Any]]:
+        """Reduce one feed to per-OS-family summary rows."""
+        label = SOFA_PLATFORM_LABELS.get(platform, platform)
+        rows: list[dict[str, Any]] = []
+        for entry in feed.get("OSVersions") or []:
+            if not isinstance(entry, dict):
+                continue
+            latest = entry.get("Latest") or {}
+            if not isinstance(latest, dict):
+                continue
+            product = str(latest.get("ProductVersion", "") or "").strip()
+            if not product:
+                continue
+            release_raw = str(latest.get("ReleaseDate", "") or "").strip()
+            parsed = _sofa_parse_date(release_raw)
+            days = (
+                max(0, (self._reference_date - parsed).days)
+                if parsed is not None else None
+            )
+            exploited = latest.get("ActivelyExploitedCVEs") or []
+            rows.append({
+                "platform": label,
+                "os_family": str(entry.get("OSVersion", "") or "").strip(),
+                "product_version": product,
+                "build": str(latest.get("Build", "") or "").strip(),
+                "release_date": parsed.isoformat() if parsed is not None else "",
+                "days_since_release": days,
+                "actively_exploited_cves": len(exploited) if isinstance(exploited, list) else 0,
+                "security_info_url": str(latest.get("SecurityInfo", "") or "").strip(),
+            })
+        return rows
+
+    def latest_versions(self) -> list[dict[str, Any]]:
+        """Return normalized latest-version rows across all enabled platforms.
+
+        One row per OS family per enabled platform. Returns an empty list when
+        SOFA is disabled or no feed could be fetched.
+        """
+        if not self._enabled:
+            return []
+        results: list[dict[str, Any]] = []
+        for plat in self._platforms:
+            feed = self.fetch(plat)
+            if feed is None:
+                continue
+            results.extend(self._normalize_feed(plat, feed))
+        return results
+
+
+def _os_version_tuple(value: Any) -> tuple[int, ...]:
+    """Parse an OS-version string into a numeric component tuple.
+
+    Mirrors the Swift engine's ``SOFAFeedService.versionTuple`` byte-for-byte:
+    trim, split on ``.``, then take the *leading* digits of each component
+    (``"0-rc1"`` → ``0``; a component with no leading digit → ``0``). A trailing
+    build suffix like ``"26.5.1 (25F80)"`` agrees with Swift (the ``"1 "`` head
+    parses to ``1``). A *leading* non-numeric prefix (``"macOS 26.0"``) parses
+    the first component to ``0`` exactly as Swift does — both engines consume
+    bare-numeric OS strings, so this never fires on real data; keeping the
+    behavior identical avoids any cross-engine classification drift.
+
+    Args:
+        value: A raw OS-version string (e.g. ``"15.7.3"``).
+
+    Returns:
+        A tuple of ints (e.g. ``(15, 7, 3)``), empty when the string is blank.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ()
+    parts: list[int] = []
+    for component in text.split("."):
+        if not component:
+            # Swift's split(separator:".") omits empty subsequences; match it so
+            # "26.5." -> (26, 5) and ".5" -> (5,) the same way both engines do.
+            continue
+        digits = ""
+        for ch in component:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def _compare_version_tuples(a: tuple[int, ...], b: tuple[int, ...]) -> int:
+    """Return -1/0/1 comparing two version tuples, zero-padding the shorter.
+
+    Mirrors the Swift engine's ``compareTuples`` so ``"15.7"`` and ``"15.7.0"``
+    compare equal.
+    """
+    for i in range(max(len(a), len(b))):
+        ai = a[i] if i < len(a) else 0
+        bi = b[i] if i < len(b) else 0
+        if ai != bi:
+            return -1 if ai < bi else 1
+    return 0
+
+
+def _sofa_latest_per_major(client: "SOFAFeedClient") -> dict[int, tuple[int, ...]]:
+    """Build a {major-version: latest-version-tuple} map from SOFA macOS rows.
+
+    Filters to the ``macOS`` platform only (Apple's unified versioning means
+    macOS 26 and iOS 26 would otherwise collide on major key 26). When two rows
+    share a major, the numerically greatest version wins. Mirrors the Swift
+    engine's ``latestByMajor`` construction.
+
+    Args:
+        client: A :class:`SOFAFeedClient` instance.
+
+    Returns:
+        Mapping of major version int → latest version tuple. Empty when SOFA
+        data is unavailable.
+    """
+    latest_by_major: dict[int, tuple[int, ...]] = {}
+    for row in client.latest_versions():
+        if str(row.get("platform", "")) != SOFA_PLATFORM_LABELS["macos"]:
+            continue
+        version = _os_version_tuple(row.get("product_version"))
+        if not version:
+            continue
+        major = version[0]
+        existing = latest_by_major.get(major)
+        if existing is None or _compare_version_tuples(version, existing) > 0:
+            latest_by_major[major] = version
+    return latest_by_major
+
+
+def _os_current_pct(
+    latest_per_major: dict[int, tuple[int, ...]],
+    versions: Iterable[tuple[str, int]],
+    total_devices: int,
+) -> Optional[float]:
+    """Compute the SOFA-driven "% of fleet current for its OS major version".
+
+    A device is "current" when its OS version is **>= the latest release within
+    its own major version** per SOFA (e.g. Tahoe 26 → latest ``26.x``; Sequoia
+    15 → latest ``15.x``). The denominator is always ``total_devices`` — devices
+    on a major SOFA does not track (too old) are not current but still count
+    toward the total. Mirrors the Swift engine's ``osCurrentPercent`` exactly
+    (``>=`` comparison via :func:`_compare_version_tuples`, ``total_devices``
+    denominator).
+
+    Args:
+        latest_per_major: Map of major version int → latest version tuple, as
+            built by :func:`_sofa_latest_per_major`.
+        versions: Iterable of ``(raw_os_version, device_count)`` pairs. Use a
+            count of 1 per device for per-device data, or the aggregate count
+            for inventory-summary rows.
+        total_devices: Total fleet size (the denominator).
+
+    Returns:
+        The current-OS percentage (0–100), or None when SOFA data is empty or
+        ``total_devices`` is 0.
+    """
+    if not latest_per_major or total_devices <= 0:
+        return None
+    current = 0
+    for raw_version, count in versions:
+        dev = _os_version_tuple(raw_version)
+        if not dev:
+            continue
+        latest = latest_per_major.get(dev[0])
+        if latest is not None and _compare_version_tuples(dev, latest) >= 0:
+            current += int(count)
+    return current / total_devices * 100.0
 
 
 # ---------------------------------------------------------------------------
@@ -6843,6 +8106,7 @@ class CoreDashboard:
             [
                 ("Mobile Fleet Summary", self._write_mobile_fleet_summary),
                 ("Inventory Summary", self._write_inventory_summary),
+                ("OS Currency", self._write_os_currency),
                 ("Hardware Models", self._write_hardware_models),
                 ("Mobile Inventory", self._write_mobile_inventory),
                 ("Mobile Supervision Status", self._write_mobile_supervision_status),
@@ -6851,6 +8115,8 @@ class CoreDashboard:
                 ("Security Posture", self._write_security),
                 ("Device Security State", self._write_device_security_state),
                 ("Device Compliance", self._write_device_compliance),
+                ("mSCP Compliance", self._write_mscp_compliance),
+                ("Compliance Trend", self._write_mscp_compliance_trend),
                 ("Check-in Health", self._write_checkin_health),
                 ("EA Coverage", self._write_ea_coverage),
                 ("Environment Stats", self._write_env_stats),
@@ -8561,6 +9827,199 @@ class CoreDashboard:
                 _safe_write(ws, row, 2, pct, _pct_format(self._fmts, pct))
                 row += 1
 
+    def _macos_os_counts(self) -> dict[str, int]:
+        """Return {os_version: device_count} for macOS from the security report.
+
+        Mirrors the OS-version distribution in `_write_security`. Returns an
+        empty dict when the security report is unavailable.
+        """
+        try:
+            raw = self._bridge.security_report()
+        except RuntimeError:
+            return {}
+        counts: dict[str, int] = {}
+        for item in raw if isinstance(raw, list) else []:
+            if not isinstance(item, dict) or item.get("section") != "os_version":
+                continue
+            ver = _normalize_os_version(str(item.get("os_version", "") or ""))
+            if ver:
+                counts[ver] = counts.get(ver, 0) + _to_int(item.get("count", 0))
+        return counts
+
+    def _mobile_os_counts(self) -> dict[str, int]:
+        """Return {os_version: device_count} for iOS/iPadOS from mobile inventory."""
+        try:
+            rows, _ = self._mobile_inventory_rows()
+        except RuntimeError:
+            return {}
+        counts: dict[str, int] = {}
+        for row in rows:
+            ver = str(row.get("OS Version", "") or "").strip()
+            if ver:
+                counts[ver] = counts.get(ver, 0) + 1
+        return counts
+
+    @staticmethod
+    def _fleet_currency(latest_version: str, os_counts: dict[str, int]) -> tuple[int, int]:
+        """Return (on_latest, behind) for one OS family against its SOFA latest.
+
+        Counts only devices whose major version matches the family's major
+        version. A device is "on latest" when its full version tuple is >= the
+        family's latest ProductVersion tuple.
+
+        Args:
+            latest_version: The SOFA ProductVersion for this OS family.
+            os_counts: {os_version: count} for the relevant platform's fleet.
+
+        Returns:
+            ``(on_latest, behind)`` device counts within this OS family.
+        """
+        latest_tuple = _version_tuple(latest_version)
+        if not latest_tuple:
+            return 0, 0
+        major = latest_tuple[0]
+        on_latest = 0
+        behind = 0
+        for version, count in os_counts.items():
+            dev_tuple = _version_tuple(version)
+            if not dev_tuple or dev_tuple[0] != major:
+                continue
+            if dev_tuple >= latest_tuple:
+                on_latest += count
+            else:
+                behind += count
+        return on_latest, behind
+
+    @staticmethod
+    def _fleet_eol_count(family_majors: set[int], os_counts: dict[str, int]) -> tuple[int, int]:
+        """Return (eol_devices, eol_version_count) for devices outside all SOFA families.
+
+        Devices whose major version is older than every SOFA-tracked OS family
+        no longer receive security updates — the most critical OS-currency
+        finding. Without this row, an EOL-heavy fleet renders all zeros and the
+        sheet looks broken.
+
+        Args:
+            family_majors: Major version numbers of every SOFA OS family.
+            os_counts: {os_version: count} for the relevant platform's fleet.
+
+        Returns:
+            ``(device_count, distinct_version_count)`` for out-of-support devices.
+        """
+        if not family_majors:
+            return 0, 0
+        oldest_supported = min(family_majors)
+        devices = 0
+        versions = 0
+        for version, count in os_counts.items():
+            dev_tuple = _version_tuple(version)
+            if dev_tuple and dev_tuple[0] < oldest_supported:
+                devices += count
+                versions += 1
+        return devices, versions
+
+    def _write_os_currency(self) -> None:
+        """Write the OS Currency sheet from the SOFA feed joined to fleet counts.
+
+        Always emits the sheet. When SOFA data is unavailable (offline or
+        disabled), writes a single note row rather than raising, so the sheet is
+        never silently omitted.
+        """
+        ws = self._wb.add_worksheet("OS Currency")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        headers = [
+            "Platform", "OS Family", "Latest Version", "Build", "Released",
+            "Days Since Release", "Actively Exploited CVEs",
+            "Fleet On Latest", "Fleet Behind", "% On Latest",
+        ]
+        row = _write_sheet_header(
+            ws,
+            self._t("OS Currency"),
+            f"Source: SOFA (sofa.macadmins.io) | Generated: {ts}",
+            self._fmts,
+            ncols=len(headers),
+        )
+        ws.set_column(0, 1, 18)
+        ws.set_column(2, len(headers) - 1, 16)
+
+        client = SOFAFeedClient(self._config)
+        rows = client.latest_versions()
+        if not rows:
+            _safe_write(
+                ws, row, 0,
+                "SOFA feed unavailable — enable network access or check sofa.enabled",
+                self._fmts["cell"],
+            )
+            return
+
+        for c, h in enumerate(headers):
+            _safe_write(ws, row, c, h, self._fmts["header"])
+        row += 1
+
+        macos_counts = self._macos_os_counts()
+        mobile_counts = self._mobile_os_counts()
+        family_majors: dict[str, set[int]] = {}
+        for entry in rows:
+            major_tuple = _version_tuple(str(entry.get("product_version", "")))
+            if major_tuple:
+                family_majors.setdefault(str(entry.get("platform", "")), set()).add(major_tuple[0])
+        for entry in rows:
+            platform = str(entry.get("platform", ""))
+            latest = str(entry.get("product_version", ""))
+            counts = None
+            if platform == "macOS":
+                counts = macos_counts
+            elif platform == "iOS / iPadOS":
+                counts = mobile_counts
+            _safe_write(ws, row, 0, platform, self._fmts["cell"])
+            _safe_write(ws, row, 1, entry.get("os_family", ""), self._fmts["cell"])
+            _safe_write(ws, row, 2, latest, self._fmts["cell"])
+            _safe_write(ws, row, 3, entry.get("build", ""), self._fmts["cell"])
+            _safe_write(ws, row, 4, entry.get("release_date", ""), self._fmts["cell"])
+            days = entry.get("days_since_release")
+            _safe_write(ws, row, 5, days if days is not None else "—", self._fmts["cell"])
+            cve_count = _to_int(entry.get("actively_exploited_cves", 0))
+            cve_fmt = self._fmts["red"] if cve_count > 0 else self._fmts["cell"]
+            _safe_write(ws, row, 6, cve_count, cve_fmt)
+            if counts is None:
+                _safe_write(ws, row, 7, "—", self._fmts["cell"])
+                _safe_write(ws, row, 8, "—", self._fmts["cell"])
+                _safe_write(ws, row, 9, "—", self._fmts["cell"])
+            else:
+                on_latest, behind = self._fleet_currency(latest, counts)
+                family_total = on_latest + behind
+                pct = on_latest / family_total if family_total > 0 else None
+                _safe_write(ws, row, 7, on_latest, self._fmts["cell"])
+                _safe_write(ws, row, 8, behind, self._fmts["cell"])
+                if pct is not None:
+                    _safe_write(ws, row, 9, pct, _pct_format(self._fmts, pct))
+                else:
+                    _safe_write(ws, row, 9, "—", self._fmts["cell"])
+            row += 1
+
+        # Devices on majors older than every SOFA family receive no security
+        # updates at all — surface them instead of leaving them invisible.
+        eol_sources = [("macOS", macos_counts), ("iOS / iPadOS", mobile_counts)]
+        for platform, counts in eol_sources:
+            eol_devices, eol_versions = self._fleet_eol_count(
+                family_majors.get(platform, set()), counts
+            )
+            if eol_devices <= 0:
+                continue
+            _safe_write(ws, row, 0, platform, self._fmts["cell"])
+            _safe_write(ws, row, 1, "Out of support (EOL)", self._fmts["red"])
+            _safe_write(
+                ws, row, 2,
+                f"{eol_versions} version(s) older than all supported releases",
+                self._fmts["red"],
+            )
+            for col in (3, 4, 5, 6):
+                _safe_write(ws, row, col, "—", self._fmts["cell"])
+            _safe_write(ws, row, 7, 0, self._fmts["cell"])
+            _safe_write(ws, row, 8, eol_devices, self._fmts["red"])
+            _safe_write(ws, row, 9, 0, _pct_format(self._fmts, 0))
+            row += 1
+
     def _write_device_security_state(self) -> None:
         """Write per-device security control state from cached computers-list JSON.
 
@@ -9005,6 +10464,130 @@ class CoreDashboard:
             _safe_write(ws, row, 4, item.get("last_contact", ""), row_fmt)
             _safe_write(ws, row, 5, item.get("days_since_contact", ""), row_fmt)
             _safe_write(ws, row, 6, stale_label, row_fmt)
+            row += 1
+
+    def _write_mscp_compliance(self) -> None:
+        """Write per-baseline mSCP/STIG band distribution from the latest ea-results.
+
+        Sources ``pro report ea-results`` and the configured
+        ``compliance.baselines`` (or the legacy single ``failures_count_column``).
+        Raises RuntimeError to skip when no baseline is configured or no
+        ea-results data resolves — never emits an empty sheet.
+        """
+        baselines = _mscp_resolved_baselines(self._config.compliance)
+        if not baselines:
+            raise RuntimeError("no compliance baseline configured (compliance.baselines)")
+
+        raw = self._bridge.ea_results_report(include_all=True)
+        rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+        if not rows:
+            raise RuntimeError("jamf-cli ea-results returned no rows")
+
+        evaluated = [
+            (b["name"], _mscp_evaluate_baseline(rows, b["failures_count_column"]))
+            for b in baselines
+        ]
+        evaluated = [(name, res) for name, res in evaluated if res["total"] > 0]
+        if not evaluated:
+            raise RuntimeError("ea-results contained no rows for any configured baseline EA")
+
+        ws = self._wb.add_worksheet("mSCP Compliance")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ncols = 2 + len(MSCP_BAND_KEYS) + 3  # name + col + 6 bands + total/eval/pct
+        row = _write_sheet_header(
+            ws,
+            self._t("mSCP Compliance"),
+            f"Source: jamf-cli pro report ea-results --all | Generated: {ts}",
+            self._fmts,
+            ncols=ncols,
+        )
+        headers = (
+            ["Baseline", "Failures Count EA"]
+            + [f"{MSCP_BAND_LABELS[k]} ({MSCP_BAND_RANGES[k]})" for k in MSCP_BAND_KEYS]
+            + ["Evaluated", "Total Devices", "Compliance %"]
+        )
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+        ws.set_column(0, 0, 28)
+        ws.set_column(1, 1, 40)
+        ws.set_column(2, len(headers) - 1, 14)
+
+        for name, res in evaluated:
+            col_i = 0
+            _safe_write(ws, row, col_i, name, self._fmts["cell"])
+            col_i += 1
+            ea_col = next(
+                (b["failures_count_column"] for b in baselines if b["name"] == name), ""
+            )
+            _safe_write(ws, row, col_i, ea_col, self._fmts["cell"])
+            col_i += 1
+            for key in MSCP_BAND_KEYS:
+                _safe_write(ws, row, col_i, res["bands"][key], self._fmts["cell"])
+                col_i += 1
+            _safe_write(ws, row, col_i, res["devices_with_data"], self._fmts["cell"])
+            col_i += 1
+            _safe_write(ws, row, col_i, res["total"], self._fmts["cell"])
+            col_i += 1
+            pct = res["compliance_pct"]
+            if pct is None:
+                _safe_write(ws, row, col_i, "—", self._fmts["cell"])
+            else:
+                frac = pct / 100.0
+                _safe_write(ws, row, col_i, frac, _pct_format(self._fmts, frac))
+            row += 1
+
+    def _write_mscp_compliance_trend(self) -> None:
+        """Write per-date mSCP band counts from dated ea-results snapshots.
+
+        One row per (date, baseline) with the six band counts. Each snapshot is
+        evaluated as its own device universe. Raises RuntimeError to skip when no
+        baseline is configured or fewer than one dated snapshot resolves.
+        """
+        baselines = _mscp_resolved_baselines(self._config.compliance)
+        if not baselines:
+            raise RuntimeError("no compliance baseline configured (compliance.baselines)")
+
+        snapshots = _load_ea_results_snapshots(self._bridge._data_dir)
+        if not snapshots:
+            raise RuntimeError("no dated ea-results snapshots found for trend")
+
+        records: list[tuple[datetime, str, dict[str, int]]] = []
+        for dt, rows in snapshots:
+            if not rows:
+                continue
+            for baseline in baselines:
+                res = _mscp_evaluate_baseline(rows, baseline["failures_count_column"])
+                if res["total"] <= 0:
+                    continue
+                records.append((dt, baseline["name"], res["bands"]))
+        if not records:
+            raise RuntimeError("dated ea-results snapshots contained no usable baseline rows")
+
+        ws = self._wb.add_worksheet("Compliance Trend")
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        headers = ["Date", "Baseline"] + [
+            f"{MSCP_BAND_LABELS[k]} ({MSCP_BAND_RANGES[k]})" for k in MSCP_BAND_KEYS
+        ]
+        row = _write_sheet_header(
+            ws,
+            self._t("Compliance Trend"),
+            f"Source: dated jamf-cli ea-results snapshots | Generated: {ts}",
+            self._fmts,
+            ncols=len(headers),
+        )
+        for col_i, header in enumerate(headers):
+            _safe_write(ws, row, col_i, header, self._fmts["header"])
+        row += 1
+        ws.set_column(0, 0, 18)
+        ws.set_column(1, 1, 28)
+        ws.set_column(2, len(headers) - 1, 14)
+
+        for dt, name, bands in records:
+            _safe_write(ws, row, 0, dt.strftime("%Y-%m-%d"), self._fmts["cell"])
+            _safe_write(ws, row, 1, name, self._fmts["cell"])
+            for offset, key in enumerate(MSCP_BAND_KEYS):
+                _safe_write(ws, row, 2 + offset, bands[key], self._fmts["cell"])
             row += 1
 
     def _write_checkin_health(self) -> None:
@@ -9705,6 +11288,23 @@ class CoreDashboard:
             pass
         release_date_available = bool(release_dates)
 
+        # Attempt to load the merged patch-release-dates snapshot (built at
+        # collect time by collect_patch_release_dates). Keyed by title_id so it
+        # is robust to title-name drift. Absent snapshot → the two appended
+        # columns are omitted and the sheet renders identically to before.
+        rel_by_id: dict[str, dict[str, str]] = {}
+        for entry in self._bridge.patch_release_dates():
+            if not isinstance(entry, dict):
+                continue
+            tid = str(entry.get("title_id", "") or "").strip()
+            if tid:
+                rel_by_id[tid] = {
+                    "latest_version": str(entry.get("latest_version", "") or "").strip(),
+                    "release_date": str(entry.get("release_date", "") or "").strip(),
+                }
+        self._patch_rel_by_id = rel_by_id
+        definitions_available = bool(rel_by_id)
+
         # Attempt to load active-device stats for adjusted columns.
         # Patch-status only has aggregate counts per title; per-device filtering is
         # approximated by scaling with the active-device ratio from device-compliance.
@@ -9727,6 +11327,11 @@ class CoreDashboard:
 
         base_cols = 7 if release_date_available else 6
         ncols = base_cols + (4 if adj_available else 0)
+        # The two definitions columns are appended rightmost so the existing
+        # column offsets above are never disturbed (advisor 2026-06-02).
+        def_start_col = ncols
+        if definitions_available:
+            ncols += 2
         ws = self._wb.add_worksheet("Patch Compliance")
         ts = datetime.now().strftime("%Y-%m-%d %H:%M")
         source_note = (
@@ -9746,6 +11351,8 @@ class CoreDashboard:
         ws.set_column(1, base_cols - 1, 18)
         if adj_available:
             ws.set_column(base_cols, base_cols + 3, 22)
+        if definitions_available:
+            ws.set_column(def_start_col, def_start_col + 1, 18)
         raw_headers = ["Software Title", "On Latest", "On Other", "Total", "Latest Version"]
         adj_headers = ["Adjusted Up To Date", "Adjusted Out Of Date", "Adjusted Total",
                        "Adjusted Completion %"]
@@ -9753,6 +11360,8 @@ class CoreDashboard:
             raw_headers.append("Release Date")
         raw_headers.append("Compliance %")
         headers = raw_headers + (adj_headers if adj_available else [])
+        if definitions_available:
+            headers += ["Latest Released", "Days Behind"]
         for c, h in enumerate(headers):
             _safe_write(ws, row, c, h, self._fmts["header"])
         row += 1
@@ -9803,7 +11412,44 @@ class CoreDashboard:
                     )
                 else:
                     _safe_write(ws, row, adj_start_col + 3, "N/A", self._fmts["cell"])
+
+            if definitions_available:
+                self._write_patch_definition_cells(
+                    ws, row, def_start_col, item, pct_value, secondary
+                )
             row += 1
+
+    def _write_patch_definition_cells(
+        self,
+        ws: Any,
+        row: int,
+        col: int,
+        item: dict[str, Any],
+        pct_value: Optional[float],
+        secondary: int,
+    ) -> None:
+        """Write the appended 'Latest Released' + 'Days Behind' cells for one title.
+
+        'Days Behind' is the day count from the latest release date to today,
+        shown only for titles below 100% compliance; '—' when the title is on
+        latest or has no release-date data.
+        """
+        rel = getattr(self, "_patch_rel_by_id", {}).get(str(item.get("id", "") or "").strip())
+        release_iso = rel.get("release_date", "") if rel else ""
+        parsed = _sofa_parse_date(release_iso)
+        _safe_write(
+            ws, row, col,
+            parsed.isoformat() if parsed is not None else "—",
+            self._fmts["cell"],
+        )
+        below_full = (pct_value is not None and pct_value < 1.0) or (
+            pct_value is None and secondary > 0
+        )
+        if parsed is not None and below_full:
+            days_behind = max(0, (date.today() - parsed).days)
+            _safe_write(ws, row, col + 1, days_behind, self._fmts["cell"])
+        else:
+            _safe_write(ws, row, col + 1, "—", self._fmts["cell"])
 
     def _write_patch_failures(self) -> None:
         # jamf-cli pro report patch-status --scan-failures --output json returns:
@@ -10568,11 +12214,16 @@ class CSVDashboard:
             self._df = primary
             print(f"  Loaded CSV: {len(self._df)} rows, {len(self._df.columns)} columns")
 
+        identity_column = _identity_column_for_family(config, family_name)
+        self._df, dropped_rows = _drop_continuation_rows(self._df, identity_column)
+        _warn_continuation_rows(dropped_rows, len(self._df))
+
         self._prior_df: Optional[pd.DataFrame] = None
         self._prior_label = ""
         if family_name != "mobile" and historical_dir and current_csv_path:
             prior_df, prior_label = _load_prior_snapshot(historical_dir, current_csv_path)
             if prior_df is not None and prior_label:
+                prior_df, _ = _drop_continuation_rows(prior_df, identity_column)
                 self._prior_df = prior_df
                 self._prior_label = prior_label
                 print(f"  Fleet Drift baseline: {prior_label}")
@@ -12387,6 +14038,11 @@ class ChartGenerator:
                     png_paths.append(path)
                     chart_sources.add("jamf-cli snapshots")
 
+            mscp_paths = self._generate_mscp_band_charts()
+            if mscp_paths:
+                png_paths.extend(mscp_paths)
+                chart_sources.add("jamf-cli snapshots")
+
             if not png_paths:
                 print("  [skip] Charts: no CSV or jamf-cli snapshot history found")
                 return [], [], False
@@ -12400,6 +14056,12 @@ class ChartGenerator:
         finally:
             if temp_chart_dir:
                 shutil.rmtree(temp_chart_dir, ignore_errors=True)
+
+    def _drop_snapshot_continuation_rows(self, df: Any) -> Any:
+        """Drop export-only continuation rows so snapshot row counts are device counts."""
+        identity_column = _identity_column_for_family(self._config, self._csv_family_name)
+        filtered, _ = _drop_continuation_rows(df, identity_column)
+        return filtered
 
     def _load_snapshots(self, charts_cfg: dict[str, Any]) -> list[tuple[datetime, Any]]:
         """Load all CSV snapshots sorted by date. Returns list of (date, DataFrame)."""
@@ -12430,6 +14092,7 @@ class ChartGenerator:
                 except Exception as exc:
                     print(f"  [warn] Skipping CSV snapshot {f.name}: {exc}")
                     continue
+                df = self._drop_snapshot_continuation_rows(df)
                 loaded.append(
                     {
                         "date": dt,
@@ -12446,6 +14109,7 @@ class ChartGenerator:
                 df = pd.read_csv(
                     self._csv_path, dtype=str, encoding="utf-8-sig"
                 ).fillna("")
+                df = self._drop_snapshot_continuation_rows(df)
                 loaded.append(
                     {
                         "date": current_dt,
@@ -12873,6 +14537,132 @@ class ChartGenerator:
         print(f"  [chart] {Path(path).name}")
         return path
 
+    def _generate_mscp_band_charts(self) -> list[str]:
+        """Generate per-baseline mSCP band donuts + a band-trend stackplot.
+
+        Reads dated ea-results snapshots from the jamf-cli data dir, evaluates
+        each as its own device universe per configured baseline, then plots:
+          - one donut per baseline from the newest snapshot, and
+          - one stackplot of band counts over time (primary baseline).
+        Returns [] when no baseline is configured or no usable snapshots exist.
+        """
+        if not self._jamf_cli_dir:
+            return []
+        baselines = _mscp_resolved_baselines(self._config.compliance)
+        if not baselines:
+            return []
+        snapshots = _load_ea_results_snapshots(self._jamf_cli_dir)
+        if not snapshots:
+            return []
+
+        # Band colors mirror ComplianceBandingService.Band.colorHex for parity.
+        band_colors = {
+            "pass": "#30D158",
+            "low": "#0A84FF",
+            "medLow": "#E8B614",
+            "medium": "#FF9F0A",
+            "high": "#FF453A",
+            "noData": "#8E8E93",
+        }
+        paths: list[str] = []
+
+        # Donuts from the newest snapshot, one per baseline with data.
+        newest_rows = snapshots[-1][1]
+        for baseline in baselines:
+            res = _mscp_evaluate_baseline(newest_rows, baseline["failures_count_column"])
+            if res["total"] <= 0:
+                continue
+            path = self._plot_mscp_band_donut(baseline["name"], res["bands"], band_colors)
+            if path:
+                paths.append(path)
+
+        # Stackplot of the primary baseline's bands over time.
+        path = self._plot_mscp_band_trend(snapshots, baselines[0], band_colors)
+        if path:
+            paths.append(path)
+        return paths
+
+    def _plot_mscp_band_donut(
+        self, baseline_name: str, bands: dict[str, int], band_colors: dict[str, str]
+    ) -> Optional[str]:
+        """Plot a single baseline's band distribution as a donut. Returns PNG path."""
+        labels = [MSCP_BAND_LABELS[k] for k in MSCP_BAND_KEYS if bands[k] > 0]
+        values = [bands[k] for k in MSCP_BAND_KEYS if bands[k] > 0]
+        colors = [band_colors[k] for k in MSCP_BAND_KEYS if bands[k] > 0]
+        if not values:
+            return None
+
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.pie(
+            values,
+            labels=labels,
+            colors=colors,
+            autopct=lambda pct: f"{pct:.0f}%" if pct >= 3 else "",
+            startangle=90,
+            wedgeprops={"width": 0.42, "edgecolor": "white"},
+        )
+        ax.set_title(f"{baseline_name} — Compliance Bands", fontweight="bold")
+        fig.tight_layout()
+
+        path = self._chart_path(f"mscp_band_donut_{_filename_component(baseline_name)}")
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  [chart] {Path(path).name}")
+        return path
+
+    def _plot_mscp_band_trend(
+        self,
+        snapshots: list[tuple[datetime, list[dict[str, Any]]]],
+        baseline: dict[str, str],
+        band_colors: dict[str, str],
+    ) -> Optional[str]:
+        """Plot the primary baseline's band counts over time. Returns PNG path."""
+        records = []
+        for dt, rows in snapshots:
+            if not rows:
+                continue
+            res = _mscp_evaluate_baseline(rows, baseline["failures_count_column"])
+            if res["total"] <= 0:
+                continue
+            row: dict[str, Any] = {"date": dt}
+            row.update({MSCP_BAND_LABELS[k]: res["bands"][k] for k in MSCP_BAND_KEYS})
+            records.append(row)
+        if not records:
+            return None
+
+        ts = pd.DataFrame(records).groupby("date", as_index=True).sum().sort_index()
+        labels = [MSCP_BAND_LABELS[k] for k in MSCP_BAND_KEYS]
+        colors = [band_colors[k] for k in MSCP_BAND_KEYS]
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        if len(ts.index) == 1:
+            values = [int(ts.iloc[0][label]) for label in labels]
+            ax.bar(labels, values, color=colors)
+            plt.setp(ax.get_xticklabels(), rotation=20, ha="right")
+            ax.set_xlabel("Compliance Band")
+        else:
+            ax.stackplot(
+                ts.index,
+                [ts[label].values for label in labels],
+                labels=labels,
+                colors=colors,
+                alpha=0.85,
+            )
+            ax.set_xlabel("Date")
+            ax.legend(loc="upper left", fontsize=9)
+            self._format_date_axis(ax, ts.index)
+
+        ax.set_title(f"{baseline['name']} — Compliance Bands Over Time", fontweight="bold")
+        ax.set_ylabel("Number of Devices")
+        ax.grid(True, alpha=0.2)
+        fig.tight_layout()
+
+        path = self._chart_path("mscp_band_trend")
+        fig.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  [chart] {Path(path).name}")
+        return path
+
     def _format_date_axis(self, ax: Any, dates: Any) -> None:
         """Apply readable date formatting to a matplotlib x-axis."""
         span = (dates.max() - dates.min()).days if len(dates) > 1 else 0
@@ -13024,13 +14814,41 @@ def _looks_like_ea(header: str) -> bool:
     return False
 
 
-def _suggest_custom_ea_candidates(unmatched_headers: list[str]) -> None:
+# Mobile export-only columns that carry per-item (not per-device) data and make
+# no sense as custom EAs. Matched as exact normalized names or, for the
+# "enrollment method:" prefix, as a startswith.
+_MOBILE_MULTIVALUE_EA_SKIP: frozenset[str] = frozenset({
+    "application title", "application version", "application id",
+    "certificate name", "certificate issuer", "certificate expiration",
+    "certificate id", "group", "profile name", "profile id", "profile version",
+})
+_MOBILE_MULTIVALUE_EA_SKIP_PREFIXES: tuple[str, ...] = ("enrollment method:",)
+
+
+def _is_mobile_multivalue_column(header: str) -> bool:
+    """Return True for mobile export-only multi-value columns unfit as custom EAs."""
+    normalized = _normalized_text(header)
+    if normalized in _MOBILE_MULTIVALUE_EA_SKIP:
+        return True
+    return any(normalized.startswith(prefix) for prefix in _MOBILE_MULTIVALUE_EA_SKIP_PREFIXES)
+
+
+def _suggest_custom_ea_candidates(
+    unmatched_headers: list[str],
+    skip_predicate: Optional[Callable[[str], bool]] = None,
+) -> None:
     """Print custom_eas config suggestions for unmatched columns that look like EAs.
 
     Args:
         unmatched_headers: CSV column names that were not mapped to logical fields.
+        skip_predicate: Optional callable; headers it returns True for are excluded
+            (used to drop mobile per-item multi-value columns).
     """
-    candidates = [(h, _suggest_ea_type(h)) for h in unmatched_headers if _looks_like_ea(h)]
+    candidates = [
+        (h, _suggest_ea_type(h))
+        for h in unmatched_headers
+        if _looks_like_ea(h) and not (skip_predicate and skip_predicate(h))
+    ]
     if not candidates:
         return
 
@@ -13101,6 +14919,13 @@ def _render_scaffold_config(config_data: dict[str, Any], csv_path: Path) -> str:
                 if key in config_data["columns"]:
                     rendered.append(f"  {key}: {_yaml_scalar(config_data['columns'][key])}")
                     continue
+            if nested_match and current_section == "mobile_columns":
+                key = nested_match.group(2)
+                if key in config_data["mobile_columns"]:
+                    rendered.append(
+                        f"  {key}: {_yaml_scalar(config_data['mobile_columns'][key])}"
+                    )
+                    continue
             if nested_match and current_section == "compliance":
                 key = nested_match.group(2)
                 if key in config_data["compliance"]:
@@ -13122,6 +14947,8 @@ def _render_scaffold_config(config_data: dict[str, Any], csv_path: Path) -> str:
 def _interactive_column_mapping(
     headers: list[str],
     matched: dict[str, str],
+    logical_fields: Optional[list[str]] = None,
+    hint_table: Optional[dict[str, list[str]]] = None,
 ) -> dict[str, str]:
     """Walk the user through reviewing and correcting auto-matched column assignments.
 
@@ -13132,6 +14959,8 @@ def _interactive_column_mapping(
     Args:
         headers: All column names from the CSV.
         matched: Auto-matched dict of logical_field -> csv_column (may be empty string).
+        logical_fields: Ordered logical field names; defaults to computer columns.
+        hint_table: Hint table for display; defaults to ``COLUMN_HINTS``.
 
     Returns:
         Updated mapping dict (logical -> csv_column or "").
@@ -13140,7 +14969,8 @@ def _interactive_column_mapping(
         print("[interactive] stdin is not a terminal; using auto-matched results.")
         return matched
 
-    logical_fields = list(DEFAULT_CONFIG["columns"].keys())
+    fields = logical_fields or list(DEFAULT_CONFIG["columns"].keys())
+    hints_for = hint_table if hint_table is not None else COLUMN_HINTS
     result = dict(matched)
 
     print("\nInteractive column mapping")
@@ -13148,14 +14978,14 @@ def _interactive_column_mapping(
     print("  number — choose that column from the list")
     print("  s / 0  — leave this field blank\n")
 
-    for idx, logical in enumerate(logical_fields, 1):
+    for idx, logical in enumerate(fields, 1):
         auto = result.get(logical, "")
         # Available = all headers not already claimed by another field
         others_used = {v for k, v in result.items() if k != logical and v}
         available = [h for h in headers if h not in others_used]
 
-        hints = ", ".join(COLUMN_HINTS.get(logical, []))
-        print(f"[{idx}/{len(logical_fields)}] {logical}  (hints: {hints})")
+        hints = ", ".join(hints_for.get(logical, []))
+        print(f"[{idx}/{len(fields)}] {logical}  (hints: {hints})")
 
         if auto:
             print(f"  Auto-match: {auto!r}  (press Enter to accept)")
@@ -13194,6 +15024,95 @@ def _interactive_column_mapping(
     return result
 
 
+def _scaffold_match_columns(
+    headers: list[str],
+    logical_fields: list[str],
+    hints: dict[str, list[str]],
+    excludes: dict[str, list[str]],
+) -> tuple[dict[str, str], set[str]]:
+    """Match CSV headers to logical fields using the given hint/exclude tables.
+
+    Args:
+        headers: All CSV column names.
+        logical_fields: Logical field names to match (in priority order).
+        hints: Hint table for scoring.
+        excludes: Exclude table for scoring.
+
+    Returns:
+        Tuple of (matched mapping, set of claimed headers).
+    """
+    matched: dict[str, str] = {}
+    used_headers: set[str] = set()
+    for logical in logical_fields:
+        best_header, best_score = _best_header_match(
+            headers, logical, used_headers, hints, excludes
+        )
+        if best_header and best_score > 0:
+            matched[logical] = best_header
+            used_headers.add(best_header)
+    return matched, used_headers
+
+
+def _scaffold_print_summary(matched: dict[str, str], unmatched: list[str]) -> None:
+    """Print the auto-match summary and unmatched-column list for scaffold."""
+    print(f"Auto-matched {len(matched)} logical fields:")
+    for key, value in matched.items():
+        print(f"  {key}: {value!r}")
+    if unmatched:
+        print(f"Unmatched columns ({len(unmatched)}) — add manually to config if needed:")
+        for header in unmatched:
+            print(f"  - {header!r}")
+
+
+def _scaffold_computer_config(
+    headers: list[str], interactive: bool
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Build computer column + compliance matches for a scaffolded config."""
+    matched, used_headers = _scaffold_match_columns(
+        headers, list(DEFAULT_CONFIG["columns"].keys()), COLUMN_HINTS, COLUMN_EXCLUDES
+    )
+    compliance_matches: dict[str, str] = {}
+    for key, hints in _SCAFFOLD_COMPLIANCE_HINTS.items():
+        best_header = _best_hint_match(headers, hints, used_headers)
+        if best_header:
+            compliance_matches[key] = best_header
+            used_headers.add(best_header)
+
+    unmatched = [header for header in headers if header not in used_headers]
+    _scaffold_print_summary(matched, unmatched)
+    if compliance_matches:
+        print("Auto-detected compliance fields:")
+        for key, value in compliance_matches.items():
+            print(f"  compliance.{key}: {value!r}")
+        enabled = len(compliance_matches) == 2
+        print(f"  compliance.enabled: {'true' if enabled else 'false'}")
+    _suggest_custom_ea_candidates(unmatched)
+    if interactive:
+        matched = _interactive_column_mapping(headers, matched)
+    return matched, compliance_matches
+
+
+def _scaffold_mobile_config(headers: list[str], interactive: bool) -> dict[str, str]:
+    """Build mobile column matches for a scaffolded config."""
+    matched, used_headers = _scaffold_match_columns(
+        headers,
+        list(DEFAULT_CONFIG["mobile_columns"].keys()),
+        MOBILE_COLUMN_HINTS,
+        MOBILE_COLUMN_EXCLUDES,
+    )
+    unmatched = [header for header in headers if header not in used_headers]
+    _scaffold_print_summary(matched, unmatched)
+    _suggest_custom_ea_candidates(unmatched, skip_predicate=_is_mobile_multivalue_column)
+    if interactive:
+        matched = _interactive_column_mapping(
+            headers,
+            matched,
+            list(DEFAULT_CONFIG["mobile_columns"].keys()),
+            MOBILE_COLUMN_HINTS,
+        )
+    return matched
+
+
 def cmd_scaffold(
     csv_path: str,
     out_path: str,
@@ -13201,6 +15120,9 @@ def cmd_scaffold(
     profile: Optional[str] = None,
 ) -> None:
     """Auto-generate a starter config.yaml from CSV headers.
+
+    Detects whether the CSV is a Jamf Pro computer or mobile-device export and
+    populates the matching column block, leaving the other block empty.
 
     Args:
         csv_path: Path to the CSV file to inspect.
@@ -13229,60 +15151,41 @@ def cmd_scaffold(
     headers = list(df.columns)
     print(f"Found {len(headers)} columns in CSV.")
 
-    matched: dict[str, str] = {}
-    used_headers: set[str] = set()
-    for logical in DEFAULT_CONFIG["columns"]:
-        best_header, best_score = _best_header_match(headers, logical, used_headers)
-        if best_header and best_score > 0:
-            matched[logical] = best_header
-            used_headers.add(best_header)
-
-    compliance_matches: dict[str, str] = {}
-    for key, hints in _SCAFFOLD_COMPLIANCE_HINTS.items():
-        best_header = _best_hint_match(headers, hints, used_headers)
-        if best_header:
-            compliance_matches[key] = best_header
-            used_headers.add(best_header)
-
-    unmatched = [header for header in headers if header not in used_headers]
-
-    print(f"Auto-matched {len(matched)} logical fields:")
-    for k, v in matched.items():
-        print(f"  {k}: {v!r}")
-    if compliance_matches:
-        print("Auto-detected compliance fields:")
-        for key, value in compliance_matches.items():
-            print(f"  compliance.{key}: {value!r}")
-        if len(compliance_matches) == 2:
-            print("  compliance.enabled: true")
-        else:
-            print(
-                "  compliance.enabled: false (complete the missing column before"
-                " generating)"
-            )
-    if unmatched:
-        print(f"Unmatched columns ({len(unmatched)}) — add manually to config if needed:")
-        for h in unmatched:
-            print(f"  - {h!r}")
-
-    _suggest_custom_ea_candidates(unmatched)
-
-    if interactive:
-        matched = _interactive_column_mapping(headers, matched)
+    family = _detect_csv_family_from_headers(headers)
+    if family == "mobile":
+        print("Detected: Jamf Pro mobile device export")
+    elif family == "computers":
+        print("Detected: Jamf Pro computer export")
+    else:
+        print(
+            "[warn] This CSV does not look like a Jamf Pro computer or mobile device"
+            " export — defaulting to computer columns."
+        )
 
     config_data = copy.deepcopy(DEFAULT_CONFIG)
-    for logical in config_data["columns"]:
-        config_data["columns"][logical] = matched.get(logical, "")
-    config_data["compliance"]["failures_count_column"] = compliance_matches.get(
-        "failures_count_column", ""
-    )
-    config_data["compliance"]["failures_list_column"] = compliance_matches.get(
-        "failures_list_column", ""
-    )
-    config_data["compliance"]["enabled"] = bool(
-        config_data["compliance"]["failures_count_column"]
-        and config_data["compliance"]["failures_list_column"]
-    )
+    if family == "mobile":
+        mobile_matched = _scaffold_mobile_config(headers, interactive)
+        for logical in config_data["mobile_columns"]:
+            config_data["mobile_columns"][logical] = mobile_matched.get(logical, "")
+        for logical in config_data["columns"]:
+            config_data["columns"][logical] = ""
+    else:
+        matched, compliance_matches = _scaffold_computer_config(headers, interactive)
+        for logical in config_data["columns"]:
+            config_data["columns"][logical] = matched.get(logical, "")
+        for logical in config_data["mobile_columns"]:
+            config_data["mobile_columns"][logical] = ""
+        config_data["compliance"]["failures_count_column"] = compliance_matches.get(
+            "failures_count_column", ""
+        )
+        config_data["compliance"]["failures_list_column"] = compliance_matches.get(
+            "failures_list_column", ""
+        )
+        config_data["compliance"]["enabled"] = bool(
+            config_data["compliance"]["failures_count_column"]
+            and config_data["compliance"]["failures_list_column"]
+        )
+
     if profile_value:
         config_data.setdefault("jamf_cli", {})["profile"] = profile_value
 
@@ -13777,8 +15680,21 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                 selected_csv_family = _family_for_csv_path(config, csv_path_obj)
             if selected_csv_family is None:
                 selected_csv_family = _guess_report_family_from_headers(config, headers)
+            if selected_csv_family is None:
+                print(
+                    "  [WARN] This CSV does not look like a Jamf Pro computer or mobile"
+                    " device export — column validation defaults to computer fields."
+                )
+            df, dropped_rows = _drop_continuation_rows(
+                df, _identity_column_for_family(config, selected_csv_family)
+            )
+            _warn_continuation_rows(dropped_rows, len(df))
             mapping = config.mobile_columns if selected_csv_family == "mobile" else config.columns
             mapping_label = "mobile_columns" if selected_csv_family == "mobile" else "columns"
+            hint_table = MOBILE_COLUMN_HINTS if selected_csv_family == "mobile" else COLUMN_HINTS
+            exclude_table = (
+                MOBILE_COLUMN_EXCLUDES if selected_csv_family == "mobile" else COLUMN_EXCLUDES
+            )
             if selected_csv_family:
                 print(f"  Detected CSV family: {selected_csv_family}")
             if selected_csv_family == "mobile" and not any(str(value or "").strip() for value in mapping.values()):
@@ -13792,8 +15708,12 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
                     continue
                 if col in csv_cols:
                     print(f"  [ok] {mapping_label}.{field}: {col!r}")
-                    suggested_col, suggested_score = _best_header_match(headers, field)
-                    configured_score = _column_match_score(col, field)
+                    suggested_col, suggested_score = _best_header_match(
+                        headers, field, hints=hint_table, excludes=exclude_table
+                    )
+                    configured_score = _column_match_score(
+                        col, field, hint_table, exclude_table
+                    )
                     if (
                         suggested_col
                         and suggested_col != col
@@ -14035,21 +15955,9 @@ def cmd_check(config: Config, csv_path: Optional[str] = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _post_teams_notification(
-    webhook_url: str,
-    report_path: Path,
-    sheets_written: int,
-    generated_at: str,
-) -> None:
-    """Post an Adaptive Card summary to a Microsoft Teams incoming webhook.
-
-    Args:
-        webhook_url: Teams incoming webhook URL (from --notify or config).
-        report_path: Path to the generated xlsx file.
-        sheets_written: Total number of sheets written to the workbook.
-        generated_at: Human-readable generation timestamp string.
-    """
-    payload = {
+def _teams_card_payload(title: str, facts: list[tuple[str, str]]) -> dict:
+    """Build a Microsoft Teams Adaptive Card body. Pure — no network."""
+    return {
         "type": "message",
         "attachments": [
             {
@@ -14060,28 +15968,75 @@ def _post_teams_notification(
                     "type": "AdaptiveCard",
                     "version": "1.4",
                     "body": [
-                        {
-                            "type": "TextBlock",
-                            "size": "Large",
-                            "weight": "Bolder",
-                            "text": "Jamf Report Generated",
-                        },
+                        {"type": "TextBlock", "size": "Large", "weight": "Bolder", "text": title},
                         {
                             "type": "FactSet",
-                            "facts": [
-                                {"title": "File", "value": report_path.name},
-                                {"title": "Sheets", "value": str(sheets_written)},
-                                {"title": "Generated", "value": generated_at},
-                            ],
+                            "facts": [{"title": k, "value": v} for k, v in facts],
                         },
                     ],
                 },
             }
         ],
     }
+
+
+def _slack_blocks_payload(title: str, facts: list[tuple[str, str]]) -> dict:
+    """Build a Slack Block Kit message. Pure — no network. ``text`` is the
+    fallback/notification line; blocks render the header + mrkdwn fact list."""
+    fact_lines = "\n".join(f"*{k}:* {v}" for k, v in facts)
+    return {
+        "text": title,
+        "blocks": [
+            {"type": "header", "text": {"type": "plain_text", "text": title}},
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": fact_lines or title},
+            },
+        ],
+    }
+
+
+def _post_webhook_notification(
+    webhook_url: str,
+    report_path: Path,
+    sheets_written: int,
+    generated_at: str,
+    provider: str = "teams",
+    run_status: str = "ok",
+    sheet_failures: int = 0,
+) -> None:
+    """Post a report-generated summary to a Teams or Slack incoming webhook.
+
+    Args:
+        webhook_url: Incoming webhook URL (from --notify or config.notify.url).
+        report_path: Path to the generated xlsx file.
+        sheets_written: Total number of sheets written to the workbook.
+        generated_at: Human-readable generation timestamp string.
+        provider: "teams" (default) or "slack" — selects the payload format.
+        run_status: ``"ok"``, ``"partial"``, or ``"fail"`` — surfaces a degraded
+            run instead of always implying success.
+        sheet_failures: Count of sheets that failed to write; shown when the run
+            is partial.
+    """
+    is_partial = run_status == "partial"
+    title = "Jamf Report Generated (Partial)" if is_partial else "Jamf Report Generated"
+    status_label = "Partial" if is_partial else "Success"
+    facts = [
+        ("File", report_path.name),
+        ("Status", status_label),
+        ("Sheets", str(sheets_written)),
+        ("Generated", generated_at),
+    ]
+    if is_partial:
+        facts.insert(3, ("Sheets failed", str(sheet_failures)))
+    if provider == "slack":
+        payload, label = _slack_blocks_payload(title, facts), "Slack"
+    else:
+        payload, label = _teams_card_payload(title, facts), "Teams"
+
     parsed_url = urllib.parse.urlparse(webhook_url)
     if parsed_url.scheme != "https":
-        print("  [warn] Teams notification skipped: webhook URL must use https://.")
+        print(f"  [warn] {label} notification skipped: webhook URL must use https://.")
         return
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -14093,11 +16048,11 @@ def _post_teams_notification(
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             if resp.status not in (200, 202):
-                print(f"  [warn] Teams webhook returned HTTP {resp.status}; notification may not appear.")
+                print(f"  [warn] {label} webhook returned HTTP {resp.status}; notification may not appear.")
     except urllib.error.URLError as exc:
-        print(f"  [warn] Teams webhook notification failed: {exc}")
+        print(f"  [warn] {label} webhook notification failed: {exc}")
     except Exception as exc:  # best-effort notify must never abort the run
-        print(f"  [warn] Teams webhook notification error: {exc}")
+        print(f"  [warn] {label} webhook notification error: {exc}")
 
 
 def cmd_generate(
@@ -14149,6 +16104,11 @@ def cmd_generate(
             )
         except Exception:
             selected_family_name = None
+    if csv_path_obj is not None and selected_family_name is None:
+        print(
+            "[warn] This CSV does not look like a Jamf Pro computer or mobile device"
+            " export — defaulting to computer inventory sheets."
+        )
     if csv_path_obj is not None and not selected_csv_origin:
         if selected_family_name and _family_for_csv_path(config, csv_path_obj) == selected_family_name:
             selected_csv_origin = f"report_families.{selected_family_name}"
@@ -14528,9 +16488,18 @@ def cmd_generate(
             finished_at=datetime.now(timezone.utc).isoformat(),
             profile=str(config.jamf_cli.get("profile", "") or "").strip() or None,
         )
-    if notify_url:
-        print("  Sending Teams notification...")
-        _post_teams_notification(notify_url, out_path, sheets_written, generated_at)
+    notify_cfg = config.notify
+    notify_provider = str(notify_cfg.get("provider", "teams") or "teams").strip().lower()
+    # --notify is an explicit URL override; otherwise use config.notify when enabled.
+    resolved_notify_url = notify_url or (
+        str(notify_cfg.get("url", "") or "").strip() if notify_cfg.get("enabled") else ""
+    )
+    if resolved_notify_url:
+        print(f"  Sending {notify_provider} notification...")
+        _post_webhook_notification(
+            resolved_notify_url, out_path, sheets_written, generated_at, notify_provider,
+            run_status=run_status, sheet_failures=len(sheet_failures),
+        )
 
     if config.output.get("export_pptx") is True:
         exporter = ReportExporter(
@@ -16781,6 +18750,53 @@ document.querySelectorAll('.tree-search').forEach((input) => {
   </table>
 </div>"""
 
+    def _render_os_currency_card(self) -> str:
+        """Render the SOFA OS-currency table as a card.
+
+        Returns an empty string when SOFA is disabled or no feed is available,
+        so the section is simply absent rather than showing an empty shell.
+        """
+        client = SOFAFeedClient(self._config)
+        rows = client.latest_versions()
+        if not rows:
+            return ""
+        body = ""
+        for entry in rows:
+            days = entry.get("days_since_release")
+            days_label = str(days) if isinstance(days, int) else "—"
+            cve = _to_int(entry.get("actively_exploited_cves", 0))
+            cve_cell = (
+                f"<td class='val-err'>{cve}</td>" if cve > 0 else f"<td>{cve}</td>"
+            )
+            body += (
+                f"<tr><td>{self._html_text(str(entry.get('platform', '')))}</td>"
+                f"<td>{self._html_text(str(entry.get('os_family', '')))}</td>"
+                f"<td>{self._html_text(str(entry.get('product_version', '')))}</td>"
+                f"<td>{self._html_text(str(entry.get('build', '')))}</td>"
+                f"<td>{self._html_text(str(entry.get('release_date', '')))}</td>"
+                f"<td>{self._html_text(days_label)}</td>"
+                f"{cve_cell}</tr>"
+            )
+        return f"""<h3 class="section-title">OS Currency (SOFA)</h3>
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <caption class="sr-only">Latest available Apple OS versions from the SOFA feed.</caption>
+      <thead><tr>
+        <th scope="col">Platform</th>
+        <th scope="col">OS Family</th>
+        <th scope="col">Latest Version</th>
+        <th scope="col">Build</th>
+        <th scope="col">Released</th>
+        <th scope="col">Days Since Release</th>
+        <th scope="col">Actively Exploited CVEs</th>
+      </tr></thead>
+      <tbody>{body}</tbody>
+    </table>
+  </div>
+  <p class="empty-note">Source: SOFA (sofa.macadmins.io) &mdash; latest available Apple OS versions.</p>
+</div>"""
+
     def _render_mobile_inventory_table(
         self,
         rows: list[dict[str, Any]],
@@ -17576,6 +19592,7 @@ document.querySelectorAll('.tree-search').forEach((input) => {
       {self._render_os_distribution_card(os_labels, os_counts)}
     </div>
 
+    {self._render_os_currency_card()}
     {self._render_timeline_section(timeline)}
     {self._render_trends_section(trends)}
     {self._render_flagged_table(flagged, console_url)}
@@ -17835,10 +19852,26 @@ def cmd_pdf(
     return out_path
 
 
+def _command_tier(kind: str) -> Optional[str]:
+    """Return the collection tier for a Swift collect-kind, or None if unmapped.
+
+    Mirrors Swift ``CollectionTier.tier(forReport:)``. None means the kind is not
+    part of the tier model and must always be collected regardless of ``--tiers``.
+
+    Args:
+        kind: Canonical Swift collect-kind name (``""`` for unmapped commands).
+
+    Returns:
+        The tier name (``"refresh"``/``"inventory"``/``"scan"``) or None.
+    """
+    return COLLECTION_TIER_MAP.get(kind) if kind else None
+
+
 def _collect_jamf_cli_commands(
     config: Config,
     bridge: JamfCLIBridge,
     live_overview_allowed: bool,
+    tiers: Optional[frozenset[str]] = None,
 ) -> list[tuple[str, Any]]:
     """Return Jamf Pro snapshot commands collected without CSV input.
 
@@ -17846,12 +19879,20 @@ def _collect_jamf_cli_commands(
     ``jamf_cli.collect_skip`` in config (use jamf-cli report type identifiers,
     e.g. "update-status", "profile-status"). Core inventory commands are not
     skippable because they are required for the primary report sheets.
+
+    Args:
+        config: Active configuration.
+        bridge: jamf-cli bridge used to invoke each command.
+        live_overview_allowed: Whether the live Fleet Overview call may run.
+        tiers: When set, only commands whose Swift collect-kind maps to one of
+            these tiers (plus unmapped commands) are returned; None collects all.
     """
     stale_days = int(config.thresholds.get("stale_device_days", 30))
     skip_types = _normalized_skip_types(config)
 
-    # Each entry: (human label, callable, report-type key).
-    # An empty report-type key means the command is not skippable via collect_skip.
+    # Each entry: (human label, callable, report-type key, Swift collect-kind).
+    # report-type key "" means not skippable via collect_skip; collect-kind ""
+    # means the command has no Swift tier (always collected — see _command_tier).
     inventory_sections = (
         _inventory_computer_sections_without_security()
         if "device-security-state" in skip_types
@@ -17859,55 +19900,61 @@ def _collect_jamf_cli_commands(
     )
     if "device-security-state" in skip_types:
         print("  [skip] SECURITY inventory section: excluded by jamf_cli.collect_skip")
-    candidates: list[tuple[str, Any, str]] = []
+    candidates: list[tuple[str, Any, str, str]] = []
     if live_overview_allowed:
-        candidates.append(("Fleet Overview", bridge.overview, ""))
+        candidates.append(("Fleet Overview", bridge.overview, "", "overview"))
     else:
         print("  [skip] Fleet Overview: live overview disabled in config")
     candidates.extend(
         [
-            ("Computer Inventory", lambda: bridge.computers_list(inventory_sections), ""),
-            ("Inventory Summary", bridge.inventory_summary, ""),
-            ("Hardware Models", bridge.hardware_models, ""),
-            ("Mobile Inventory", bridge.mobile_device_inventory_details, "mobile-details"),
-            ("Mobile Device List", bridge.mobile_devices_list, ""),
-            ("Mobile Config Profiles", bridge.ios_profiles_list, ""),
-            ("Security Posture", bridge.security_report, ""),
-            ("Device Compliance", lambda: bridge.device_compliance(stale_days), ""),
-            ("Check-in Health", bridge.checkin_status, ""),
-            ("EA Coverage", lambda: bridge.ea_results_report(include_all=True), ""),
-            ("EA Definitions", bridge.computer_extension_attributes, ""),
-            ("Software Installs", bridge.software_installs, ""),
-            ("Patch Compliance", bridge.patch_status, ""),
-            ("Patch Summaries", bridge.patch_summaries, ""),
-            ("Patch Failures", bridge.patch_device_failures, "patch-device-failures"),
-            ("Policy Health", bridge.policy_status, ""),
-            ("Profile Status", bridge.profile_status, "profile-status"),
-            ("App Status", bridge.app_status, ""),
-            ("Update Status", bridge.update_status, "update-status"),
-            ("Update Failures", bridge.update_device_failures, "update-device-failures"),
-            ("Group Inventory", bridge.groups, ""),
-            ("Smart Computer Groups", bridge.smart_groups_list, ""),
-            ("Computer Group Inventory", bridge.classic_computer_groups_list, ""),
-            ("Mobile Device Groups", bridge.classic_mobile_device_groups_list, ""),
-            ("Advanced Mobile Searches", bridge.advanced_mobile_device_searches_list, ""),
-            ("Package Lifecycle", bridge.packages, ""),
-            ("Classic Policies", bridge.classic_policies_list, ""),
-            ("macOS Config Profiles", bridge.macos_profiles_list, ""),
-            ("Scripts", bridge.scripts_list, ""),
-            ("Categories", bridge.categories_list, ""),
-            ("Device Enrollments", bridge.device_enrollments_list, ""),
-            ("Sites", bridge.sites_list, ""),
-            ("Buildings", bridge.buildings_list, ""),
-            ("Departments", bridge.departments_list, ""),
+            ("Computer Inventory", lambda: bridge.computers_list(inventory_sections), "", "computers"),
+            ("Inventory Summary", bridge.inventory_summary, "", "inventory-summary"),
+            ("Hardware Models", bridge.hardware_models, "", "inventory-summary"),
+            ("Mobile Inventory", bridge.mobile_device_inventory_details, "mobile-details", "mobile-device-inventory-details"),
+            ("Mobile Device List", bridge.mobile_devices_list, "", "mobile-devices-list"),
+            ("Mobile Config Profiles", bridge.ios_profiles_list, "", "classic-ios-profiles"),
+            ("Security Posture", bridge.security_report, "", "security"),
+            ("Device Compliance", lambda: bridge.device_compliance(stale_days), "", "device-compliance"),
+            ("Check-in Health", bridge.checkin_status, "", ""),
+            ("EA Coverage", lambda: bridge.ea_results_report(include_all=True), "", "ea-results"),
+            ("EA Definitions", bridge.computer_extension_attributes, "", "computer-extension-attributes"),
+            ("Software Installs", bridge.software_installs, "", "software-installs"),
+            ("Patch Compliance", bridge.patch_status, "", "patch-status"),
+            ("Patch Summaries", bridge.patch_summaries, "", ""),
+            ("Patch Release Dates", bridge.collect_patch_release_dates, "patch-definitions", "patch-release-dates"),
+            ("Patch Failures", bridge.patch_device_failures, "patch-device-failures", "patch-device-failures"),
+            ("Policy Health", bridge.policy_status, "", "policy-status"),
+            ("Profile Status", bridge.profile_status, "profile-status", "profile-status"),
+            ("App Status", bridge.app_status, "", "app-status"),
+            ("Update Status", bridge.update_status, "update-status", "update-status"),
+            ("Update Failures", bridge.update_device_failures, "update-device-failures", "update-device-failures"),
+            ("Group Inventory", bridge.groups, "", "groups"),
+            ("Smart Computer Groups", bridge.smart_groups_list, "", "smart-computer-groups"),
+            ("Computer Group Inventory", bridge.classic_computer_groups_list, "", "classic-computer-groups"),
+            ("Mobile Device Groups", bridge.classic_mobile_device_groups_list, "", "classic-mobile-device-groups"),
+            ("Advanced Mobile Searches", bridge.advanced_mobile_device_searches_list, "", "advanced-mobile-device-searches"),
+            ("Package Lifecycle", bridge.packages, "", "packages"),
+            ("Classic Policies", bridge.classic_policies_list, "", ""),
+            ("macOS Config Profiles", bridge.macos_profiles_list, "", "classic-macos-profiles"),
+            ("Scripts", bridge.scripts_list, "", "scripts"),
+            ("Categories", bridge.categories_list, "", "categories"),
+            ("Device Enrollments", bridge.device_enrollments_list, "", "device-enrollment-instances"),
+            ("Sites", bridge.sites_list, "", "sites"),
+            ("Buildings", bridge.buildings_list, "", "buildings"),
+            ("Departments", bridge.departments_list, "", "departments"),
         ]
     )
 
     commands: list[tuple[str, Any]] = []
-    for label, fn, rtype in candidates:
+    for label, fn, rtype, kind in candidates:
         if rtype and rtype in skip_types:
             print(f"  [skip] {label}: excluded by jamf_cli.collect_skip")
             continue
+        if tiers is not None:
+            tier = _command_tier(kind)
+            if tier is not None and tier not in tiers:
+                print(f"  [skip] {label}: tier '{tier}' not in --tiers")
+                continue
         commands.append((label, fn))
     return commands
 
@@ -17952,14 +19999,255 @@ def _archive_collect_csv_inputs(
     return archived
 
 
+def _tier_allows(kind: str, tiers: Optional[frozenset[str]]) -> bool:
+    """Return True if a kind is collected under the given tier selection.
+
+    Unmapped kinds (no Swift tier) are always allowed; mirrors Swift's nil-tier
+    "not part of the tier model" semantics so cheap extras are never dropped.
+
+    Args:
+        kind: Canonical Swift collect-kind name.
+        tiers: Selected tier set, or None to allow everything.
+    """
+    if tiers is None:
+        return True
+    tier = _command_tier(kind)
+    return tier is None or tier in tiers
+
+
+_RETENTION_SKIP_SUBDIRS = {"state", "sofa"}
+
+
+def _retention_archive_root(config: Config) -> Path:
+    """Resolve the raw-snapshot archive root: ``retention.archive_dir`` if set,
+    else ``<base_dir>/_archive``. Distinct from the reports archive.
+
+    An absolute ``archive_dir`` that escapes the workspace root is rejected (logged
+    and replaced with the default) so retention can never move snapshots outside
+    the workspace. Relative paths are joined to the workspace as before.
+    """
+    default = config.base_dir / "_archive"
+    raw = str(config.retention.get("archive_dir", "") or "").strip()
+    if not raw:
+        return default
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        return config.base_dir / path
+    workspace = config.base_dir.resolve()
+    resolved = path.resolve()
+    if resolved == workspace or workspace in resolved.parents:
+        return path
+    print(
+        f"  [warning] retention.archive_dir '{raw}' is outside the workspace root "
+        f"'{config.base_dir}'; falling back to {default}."
+    )
+    return default
+
+
+def _retention_act(path: Path, archive_subpath: str, archive_root: Path, mode: str) -> bool:
+    """Archive (move) or delete one file. Returns True on success; never raises."""
+    try:
+        if mode == "delete":
+            path.unlink()
+            return True
+        dest_dir = archive_root / archive_subpath
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / path.name
+        if dest.exists():
+            dest.unlink()
+        shutil.move(str(path), str(dest))
+        return True
+    except OSError as exc:
+        print(f"  [warn] retention: could not process {path.name}: {exc}")
+        return False
+
+
+def _sweep_snapshot_dir(
+    directory: Path,
+    archive_subpath: str,
+    archive_root: Path,
+    mode: str,
+    keep_days: int,
+    keep_count: int,
+) -> tuple[int, int]:
+    """Archive/delete files in one snapshot dir. A file is kept if EITHER the
+    age horizon (keep_days) or the count floor (keep_count) protects it.
+
+    Returns ``(acted, failed)`` — the number of files successfully processed and
+    the number whose archive/delete raised (already logged by ``_retention_act``).
+    """
+    files = [
+        (entry, entry.stat().st_mtime)
+        for entry in directory.iterdir()
+        if entry.is_file() and not entry.name.startswith(".")
+    ]
+    if not files:
+        return 0, 0
+    files.sort(key=lambda item: item[1], reverse=True)  # newest first
+    cutoff = datetime.now().timestamp() - keep_days * 86_400
+    acted = 0
+    failed = 0
+    for rank, (path, mtime) in enumerate(files):
+        protected_by_count = keep_count > 0 and rank < keep_count
+        protected_by_age = keep_days > 0 and mtime >= cutoff
+        if protected_by_count or protected_by_age:
+            continue
+        if _retention_act(path, archive_subpath, archive_root, mode):
+            acted += 1
+        else:
+            failed += 1
+    return acted, failed
+
+
+def _sweep_snapshots(config: Config) -> int:
+    """Archive or delete old jamf-cli snapshots per the ``retention:`` config.
+
+    OFF by default. Runs at most once per calendar day (marker at the workspace
+    root, OUTSIDE the swept tree). Non-snapshot subdirs (``state``, ``sofa``) and
+    any ``_``-prefixed dir are skipped. Summaries are left alone unless
+    ``include_summaries`` is true. Best-effort — never raises into collect.
+    Mirrors Swift ``SnapshotRetentionService.sweepIfDue``.
+    """
+    retention = config.retention
+    if retention.get("enabled") is not True:
+        return 0
+    mode = str(retention.get("mode", "archive") or "archive").strip().lower()
+    if mode not in ("archive", "delete"):
+        mode = "archive"
+    keep_days = int(retention.get("snapshot_keep_days", 365) or 0)
+    keep_count = max(0, int(retention.get("snapshot_keep_count", 0) or 0))
+    include_summaries = retention.get("include_summaries") is True
+    if keep_days <= 0 and keep_count <= 0:
+        return 0  # nothing would ever be removed
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    marker = config.base_dir / ".retention-last"
+    try:
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() == today:
+            return 0
+    except OSError:
+        pass
+
+    data_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+    if data_dir is None or not data_dir.is_dir():
+        return 0
+    archive_root = _retention_archive_root(config)
+
+    acted = 0
+    failed = 0
+    for sub in sorted(data_dir.iterdir()):
+        if not sub.is_dir():
+            continue
+        if sub.name in _RETENTION_SKIP_SUBDIRS or sub.name.startswith("_"):
+            continue
+        sub_acted, sub_failed = _sweep_snapshot_dir(
+            sub, f"jamf-cli-data/{sub.name}", archive_root, mode, keep_days, keep_count
+        )
+        acted += sub_acted
+        failed += sub_failed
+
+    if include_summaries:
+        hist = config.resolve_path("charts", "historical_csv_dir", default="snapshots")
+        summaries = (hist / "summaries") if hist else None
+        if summaries and summaries.is_dir():
+            sum_acted, sum_failed = _sweep_snapshot_dir(
+                summaries, "summaries", archive_root, mode, keep_days, keep_count
+            )
+            acted += sum_acted
+            failed += sum_failed
+
+    # Only stamp the once-per-day marker when nothing failed, so a transient
+    # archive/delete failure (already logged per-file) retries on the next
+    # collect instead of being short-circuited until tomorrow.
+    if failed == 0:
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(today, encoding="utf-8")
+        except OSError:
+            pass
+    if acted:
+        verb = "archived" if mode == "archive" else "deleted"
+        print(f"  [info] retention: {verb} {acted} snapshot file(s)")
+    return acted
+
+
+# jamf-cli exit 3 = HTTP 401 (mirrors Swift CLIBridge.exitCodeUnauthorized).
+_JAMF_CLI_EXIT_UNAUTHORIZED = 3
+
+
+class JamfAuthError(RuntimeError):
+    """Raised when every live Jamf Pro call in a collect failed and at least one
+    returned HTTP 401 — the profile's credentials are expired or revoked.
+
+    Surfaces a scheduled/manual collect as non-success (exit 1) instead of
+    silently serving stale cache as a fresh snapshot, and is raised before any
+    summary is written so no degraded snapshot persists. Mirrors the Swift
+    ``ReportEngineError.authExpired``. A single 401 among successful calls is NOT
+    this — that falls back to cache.
+    """
+
+    def __init__(self, profile: str, failed_count: int) -> None:
+        self.profile = profile
+        self.failed_count = failed_count
+        super().__init__(
+            f"Authentication failed for profile '{profile}': all {failed_count} live "
+            f"Jamf Pro call(s) returned 401 (expired or revoked credentials) and none "
+            f"succeeded. Re-authenticate with: jamf-cli -p {profile} pro auth token. "
+            f"No snapshot was written."
+        )
+
+
+def _jamf_cli_failure_exit_code(exc: BaseException) -> Optional[int]:
+    """Extract the jamf-cli exit code from a JamfCLIBridge failure RuntimeError.
+
+    ``JamfCLIBridge._run`` raises ``RuntimeError("jamf-cli failed (N): <detail>")``
+    on a non-zero exit. Returns N, or None when the message has a different shape
+    (timeout, binary missing, JSON parse failure) — those are not auth signals.
+    """
+    match = re.match(r"jamf-cli failed \((-?\d+)\)", str(exc))
+    return int(match.group(1)) if match else None
+
+
+def _is_jamf_auth_failure(exc: BaseException) -> bool:
+    """True when a bridge failure indicates HTTP 401 (dead credentials).
+
+    Primary signal is the jamf-cli exit code (3 == 401). The 401/unauthorized
+    keyword fallback covers messages that surface the status without the
+    canonical ``jamf-cli failed (N)`` exit-code prefix.
+    """
+    code = _jamf_cli_failure_exit_code(exc)
+    if code is not None:
+        # A parsed exit code is authoritative: only 3 (HTTP 401) is auth-dead.
+        # A 403 (exit 5) or general failure (exit 1) whose stderr happens to
+        # contain "unauthorized"/"401" is a privilege or other error, NOT dead
+        # credentials — keyword-matching it would misclassify it as auth-dead.
+        return code == _JAMF_CLI_EXIT_UNAUTHORIZED
+    # By-design divergence from the Swift engine (which is exit-code-only): the
+    # keyword fallback is intentional and fires ONLY when no jamf-cli exit code
+    # could be parsed from the message, so it never overrides an authoritative code.
+    text = str(exc).lower()
+    return "401" in text or "unauthorized" in text
+
+
 def _collect_snapshots(
     config: Config,
     csv_path: Optional[str] = None,
     historical_csv_dir: Optional[str] = None,
+    tiers: Optional[frozenset[str]] = None,
 ) -> tuple[int, bool]:
-    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
+    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot.
+
+    Args:
+        config: Active configuration.
+        csv_path: Optional CSV to archive into the historical snapshot dir.
+        historical_csv_dir: Optional override for the CSV snapshot dir.
+        tiers: When set, only collect kinds whose Swift CollectionTier is in this
+            set (unmapped kinds always collected); None collects all tiers.
+    """
     print("--- Collect snapshots ---")
     print(f"  config base dir: {config.base_dir}")
+    if tiers is not None:
+        print(f"  tiers: {', '.join(sorted(tiers))}")
 
     collected = 0
     jamf_cli_enabled = _jamf_cli_enabled(config)
@@ -17989,7 +20277,7 @@ def _collect_snapshots(
                 " lacks auth-method: platform"
             )
     if jamf_cli_enabled and bridge is not None and bridge.is_available():
-        commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed)
+        commands = _collect_jamf_cli_commands(config, bridge, live_overview_allowed, tiers)
         if protect_enabled:
             protect_bridge = _build_protect_bridge(
                 config, save_output=True, use_cached_data=False
@@ -18012,13 +20300,11 @@ def _collect_snapshots(
                     " skipping Protect snapshots."
                 )
         if platform_enabled:
-            commands.extend(
-                [
-                    ("Platform Blueprints", bridge.blueprint_status),
-                    ("Platform DDM Status", bridge.ddm_status),
-                ]
-            )
-            if platform_benchmarks:
+            if _tier_allows("blueprint-status", tiers):
+                commands.append(("Platform Blueprints", bridge.blueprint_status))
+            if _tier_allows("ddm-status", tiers):
+                commands.append(("Platform DDM Status", bridge.ddm_status))
+            if platform_benchmarks and _tier_allows("compliance-rules", tiers):
                 for bench in platform_benchmarks:
                     bench_label = bench[:40]
                     commands.extend(
@@ -18033,23 +20319,87 @@ def _collect_snapshots(
                             ),
                         ]
                     )
-            else:
+            elif not platform_benchmarks:
                 print(
                     "  [skip] Platform Compliance: platform.compliance_benchmarks is empty"
                 )
+        # Scrub credentials from the per-command error echo below: jamf-cli
+        # stderr (carried in the RuntimeError) could in pathological cases
+        # contain a rejected token. Secret patterns only — PII redaction is left
+        # off so the host/endpoint stays visible for debugging.
+        secret_redactor = LogRedactor(
+            redact_hostnames=False,
+            redact_serials=False,
+            redact_emails=False,
+            redact_device_names=False,
+            redact_usernames=False,
+        )
+        live_attempts = 0
+        live_successes = 0
+        auth_failures = 0
         for label, command in commands:
+            # Protect uses separate OAuth2 credentials; a Protect 401 does not mean
+            # the Jamf Pro profile's credentials are dead, so it must not count
+            # toward the Pro auth-dead verdict (mirrors the Swift split where
+            # ReportEngine.collect only sees Pro commands).
+            counts_for_auth = not label.startswith("Protect ")
+            if counts_for_auth:
+                live_attempts += 1
             try:
                 command()
                 collected += 1
+                if counts_for_auth:
+                    live_successes += 1
                 print(f"  [ok] {label}")
             except RuntimeError as exc:
-                print(f"  [skip] {label}: {exc}")
+                if counts_for_auth and _is_jamf_auth_failure(exc):
+                    auth_failures += 1
+                print(f"  [skip] {label}: {secret_redactor.redact_text(str(exc))}")
+        # Auth-dead guard: every live Pro call failed and at least one was a 401 →
+        # credentials are dead. Raise so the scheduled-run status records
+        # success: False and no degraded summary is written (cmd_generate is never
+        # reached). A single 401 among successes does not reach here — it fell back
+        # to cache above. Mirrors Swift ReportEngine.isCollectAuthDead.
+        if live_attempts > 0 and live_successes == 0 and auth_failures > 0:
+            raise JamfAuthError(jamf_cli_profile or "(default)", auth_failures)
     elif jamf_cli_enabled:
         print("  jamf-cli: not found; skipping live snapshot collection.")
     else:
         print("  jamf-cli disabled in config; skipping live snapshot collection.")
 
+    # SOFA feeds are the refresh-tier `sofa` kind in the Swift tier map; gate the
+    # out-of-loop call the same way so `--tiers` without refresh skips it.
+    if _tier_allows("sofa", tiers):
+        collected += _collect_sofa_feeds(config)
+
+    # Snapshot retention (v2.2.0): config-driven, OFF by default, once/day.
+    # Mirrors Swift SnapshotRetentionService.sweepIfDue. Best-effort.
+    _sweep_snapshots(config)
+
     return collected, _archive_collect_csv_inputs(config, csv_path, historical_csv_dir)
+
+
+def _collect_sofa_feeds(config: Config) -> int:
+    """Fetch and cache SOFA OS-currency feeds. Returns the count fetched.
+
+    Respects ``sofa.enabled``. Prints a per-platform result line. Failures for
+    one platform never abort the others.
+    """
+    client = SOFAFeedClient(config)
+    if not client.enabled:
+        print("  [skip] SOFA feeds: disabled in config (sofa.enabled: false)")
+        return 0
+    print("  SOFA OS currency feeds:")
+    fetched = 0
+    for plat in client.platforms:
+        feed = client.fetch(plat)
+        if feed is None:
+            print(f"    [skip] SOFA {plat}: unavailable")
+            continue
+        count = len(feed.get("OSVersions") or [])
+        fetched += 1
+        print(f"    [ok] SOFA {plat} ({count} OS families)")
+    return fetched
 
 
 def cmd_collect(
@@ -18057,10 +20407,20 @@ def cmd_collect(
     csv_path: Optional[str] = None,
     historical_csv_dir: Optional[str] = None,
     summary_json: Optional[str] = None,
+    tiers: Optional[frozenset[str]] = None,
 ) -> None:
-    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot."""
+    """Collect live jamf-cli snapshots and optionally archive a CSV snapshot.
+
+    Args:
+        config: Active configuration.
+        csv_path: Optional CSV to archive into the historical snapshot dir.
+        historical_csv_dir: Optional override for the CSV snapshot dir.
+        summary_json: Optional path to write the machine-readable run summary.
+        tiers: When set, only collect kinds in these CollectionTiers (unmapped
+            kinds always collected); None collects all tiers.
+    """
     summary = _command_summary_base("collect", config)
-    collected, archived = _collect_snapshots(config, csv_path, historical_csv_dir)
+    collected, archived = _collect_snapshots(config, csv_path, historical_csv_dir, tiers)
     if collected == 0 and not archived:
         if not _jamf_cli_enabled(config):
             raise SystemExit(
@@ -18090,6 +20450,7 @@ def cmd_collect(
             "inputs": {
                 "csv": str(selected_csv_path) if selected_csv_path is not None else None,
                 "historical_csv_dir": str(hist_dir_obj) if hist_dir_obj is not None else None,
+                "tiers": sorted(tiers) if tiers is not None else None,
             },
             "counts": {
                 "collected_snapshots": collected,
@@ -19166,8 +21527,22 @@ def cmd_launchagent_run(
     historical_csv_dir: Optional[str],
     status_file: Optional[str],
     notify_url: Optional[str] = None,
+    tiers: Optional[frozenset[str]] = None,
 ) -> None:
-    """Run a scheduled automation workflow from a generated LaunchAgent."""
+    """Run a scheduled automation workflow from a generated LaunchAgent.
+
+    Args:
+        config: Active configuration.
+        mode: Run mode (snapshot-only/jamf-cli-only/jamf-cli-full/csv-assisted/
+            backup); mirrors the Swift ``Schedule.RunMode`` contract.
+        csv_inbox_dir: Optional CSV inbox dir for csv-assisted/snapshot-only.
+        csv_freshness_days: Max age in days for an inbox CSV to be eligible.
+        historical_csv_dir: Optional override for the CSV snapshot dir.
+        status_file: Optional path for the per-run status JSON.
+        notify_url: Optional Teams webhook for completion notifications.
+        tiers: When set, collect modes only collect kinds in these
+            CollectionTiers (unmapped kinds always collected); None collects all.
+    """
     started_at = datetime.now(timezone.utc).isoformat()
     # PR-11 / threat-model T-12: derive the per-log summary filename from
     # status_file so cmd_generate can write a manifest-protected status
@@ -19213,6 +21588,8 @@ def cmd_launchagent_run(
             "generate_inventory_csv": generate_inventory_csv,
             "generate_xlsx": generate_xlsx,
         }
+        if tiers is not None:
+            status["tiers"] = sorted(tiers)
         if mode in {"snapshot-only", "csv-assisted"}:
             selected_csv, selected_family, selected_origin, selection_note = _select_automation_csv(
                 config,
@@ -19231,6 +21608,7 @@ def cmd_launchagent_run(
                 config,
                 snapshot_csv,
                 historical_csv_dir,
+                tiers,
             )
             if collected == 0 and not archived:
                 raise SystemExit(
@@ -19280,7 +21658,7 @@ def cmd_launchagent_run(
                     str(_automation_inventory_out_file(config)),
                 )
                 status["inventory_csv_path"] = str(inventory_path)
-            _collect_snapshots(config, None, historical_csv_dir)
+            _collect_snapshots(config, None, historical_csv_dir, tiers)
             if generate_xlsx:
                 report_path = cmd_generate(
                     config,
@@ -19308,7 +21686,7 @@ def cmd_launchagent_run(
                 raise SystemExit(
                     "Error: csv-assisted mode requires a CSV in the inbox; none found."
                 )
-            _collect_snapshots(config, None, historical_csv_dir)
+            _collect_snapshots(config, None, historical_csv_dir, tiers)
             if generate_inventory_csv:
                 inventory_path = cmd_inventory_csv(config, str(_automation_inventory_out_file(config)))
                 status["inventory_csv_path"] = str(inventory_path)
@@ -19326,6 +21704,11 @@ def cmd_launchagent_run(
             if generate_html:
                 html_path = cmd_html(config, None, no_open=True)
                 status["html_report_path"] = str(html_path)
+        elif mode == "backup":
+            # Mirrors the Swift `Schedule.RunMode.backup` contract: config objects
+            # to the workspace `backups/` dir only — no collect, no report.
+            backup_path = cmd_backup(config)
+            status["backup_path"] = str(backup_path)
         else:
             raise SystemExit(f"Error: unsupported automation mode: {mode}")
     except SystemExit as exc:
@@ -19496,8 +21879,16 @@ def _multi_launchagent_profile_list(
     workspace_root: Optional[str],
     profiles: Optional[str],
     profile_filter: Optional[str],
+    exclude: Optional[str] = None,
 ) -> tuple[Path, list[str]]:
-    """Resolve multi-profile LaunchAgent targets from initialized workspaces."""
+    """Resolve multi-profile LaunchAgent targets from initialized workspaces.
+
+    ``exclude`` is a comma-separated profile list dropped from the resolved
+    set AFTER discovery/filtering. It is a run-time exclusion (discover all,
+    minus excluded), not a positive selection — this preserves the dynamic
+    property that a managed all-profiles agent picks up profiles added later
+    and drops profiles deleted later without rewriting the agent.
+    """
     root = Path(workspace_root or Path.home() / "Jamf-Reports").expanduser().resolve()
 
     def valid_profile(value: str) -> str:
@@ -19522,10 +21913,16 @@ def _multi_launchagent_profile_list(
         if profile_filter:
             names = [name for name in names if fnmatch(name, profile_filter)]
 
+    excluded = {
+        item.strip()
+        for item in (exclude or "").split(",")
+        if item.strip()
+    }
+
     deduped: list[str] = []
     seen: set[str] = set()
     for name in names:
-        if name and name not in seen:
+        if name and name not in seen and name not in excluded:
             deduped.append(name)
             seen.add(name)
     return root, deduped
@@ -19539,6 +21936,7 @@ def _multi_launchagent_run_one(
     csv_freshness_days: int,
     historical_csv_dir: Optional[str],
     notify_url: Optional[str],
+    tiers: Optional[frozenset[str]] = None,
 ) -> dict[str, Any]:
     """Run one profile's LaunchAgent workflow and return a compact result."""
     config_path = workspace_root / profile / "config.yaml"
@@ -19582,6 +21980,7 @@ def _multi_launchagent_run_one(
             per_historical_dir,
             str(status_path),
             notify_url,
+            tiers,
         )
         return {
             "profile": profile,
@@ -19619,10 +22018,14 @@ def cmd_multi_launchagent_run(
     historical_csv_dir: Optional[str],
     status_file: Optional[str],
     notify_url: Optional[str] = None,
+    tiers: Optional[frozenset[str]] = None,
+    exclude: Optional[str] = None,
 ) -> None:
     """Run one automation workflow across initialized profile workspaces."""
     started_at = datetime.now(timezone.utc).isoformat()
-    root, targets = _multi_launchagent_profile_list(workspace_root, profiles, profile_filter)
+    root, targets = _multi_launchagent_profile_list(
+        workspace_root, profiles, profile_filter, exclude
+    )
     status: dict[str, Any] = {
         "command": "multi-launchagent-run",
         "finished_at": None,
@@ -19661,6 +22064,7 @@ def cmd_multi_launchagent_run(
                 csv_freshness_days,
                 historical_csv_dir,
                 notify_url,
+                tiers,
             )
             for profile in targets
         ]
@@ -19678,6 +22082,7 @@ def cmd_multi_launchagent_run(
                     csv_freshness_days,
                     historical_csv_dir,
                     notify_url,
+                    tiers,
                 ): profile
                 for profile in targets
             }
@@ -19695,6 +22100,10 @@ def cmd_multi_launchagent_run(
                         "finished_at": datetime.now(timezone.utc).isoformat(),
                     })
             for future in not_done:
+                # cancel() only prevents a not-yet-started future from running;
+                # it cannot stop a worker thread already executing, so a late-
+                # finishing thread's real result may diverge from the timeout
+                # status recorded here.
                 future.cancel()
                 profile = futures[future]
                 results.append({
@@ -20089,7 +22498,11 @@ def cmd_diagnostic_bundle(
         # Harvest device/identity literals from cached jamf-cli JSON so log
         # redaction strips device names, UDIDs, asset tags, etc. that appear
         # in free-text — not just the regex-patternable serials and hosts.
-        seeded = redactor.seed_from_workspace(workspace)
+        # Honor jamf_cli.data_dir; a custom dir must still be seeded.
+        seed_dir = config.resolve_path("jamf_cli", "data_dir", default="jamf-cli-data")
+        if seed_dir is None:
+            seed_dir = workspace / "jamf-cli-data"
+        seeded = redactor.seed_from_workspace(seed_dir)
         if seeded:
             print(f"  redaction seeded with {seeded} identifier(s) from jamf-cli-data/")
 
@@ -20930,6 +23343,16 @@ def main() -> None:
         help="Automation workflow mode (launchagent commands only)",
     )
     parser.add_argument(
+        "--tiers",
+        metavar="TIER[,TIER...]",
+        help=(
+            "Comma-separated CollectionTiers to collect"
+            f" ({', '.join(sorted(COLLECTION_TIER_NAMES))}); when omitted, all"
+            " tiers are collected. Applies to collect and launchagent-run."
+            " Unmapped/cheap kinds are always collected."
+        ),
+    )
+    parser.add_argument(
         "--profile",
         help=(
             "jamf-cli profile override for Jamf Pro commands; workspace-init target"
@@ -20996,6 +23419,11 @@ def main() -> None:
     parser.add_argument(
         "--multi-filter",
         help="Glob filter for initialized profile workspaces in multi-launchagent-run",
+    )
+    parser.add_argument(
+        "--multi-exclude",
+        help="Comma-separated profiles to exclude from multi-launchagent-run "
+        "(run-time exclusion; the rest are discovered dynamically)",
     )
     parser.add_argument(
         "--multi-sequential",
@@ -21172,6 +23600,8 @@ def main() -> None:
             args.historical_csv_dir,
             args.status_file,
             args.notify,
+            _parse_tiers_arg(args.tiers),
+            args.multi_exclude,
         )
         return
 
@@ -21184,7 +23614,13 @@ def main() -> None:
         if args.command == "check":
             cmd_check(config, args.csv)
         elif args.command == "collect":
-            cmd_collect(config, args.csv, args.historical_csv_dir, args.summary_json)
+            cmd_collect(
+                config,
+                args.csv,
+                args.historical_csv_dir,
+                args.summary_json,
+                _parse_tiers_arg(args.tiers),
+            )
         elif args.command == "inventory-csv":
             cmd_inventory_csv(config, args.out_file)
         elif args.command == "backup":
@@ -21225,6 +23661,7 @@ def main() -> None:
                 args.historical_csv_dir,
                 args.status_file,
                 args.notify,
+                _parse_tiers_arg(args.tiers),
             )
         elif args.command == "html":
             cmd_html(

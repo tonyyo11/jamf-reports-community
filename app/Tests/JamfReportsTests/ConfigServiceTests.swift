@@ -216,6 +216,38 @@ final class ConfigServiceTests: XCTestCase {
         )
     }
 
+    func testSaveRejectsSymlinkedConfigYAML() throws {
+        // Verify rejectSymlinkDestination uses lstat (never follows links) by
+        // replacing config.yaml with a symlink and asserting save throws.
+        let root = try temporaryWorkspaceRoot()
+        let profile = "symlink-test-\(UUID().uuidString.lowercased())"
+        // Write a real config first so the workspace directory exists.
+        try writeConfig("columns: {}\nthresholds: {}\noutput:\n  output_dir: Reports\njamf_cli:\n  data_dir: jamf-cli-data\n",
+                        profile: profile, root: root)
+        let configURL = try ConfigService.configURL(for: profile, workspaceRoot: root)
+        // Replace the real file with a symlink pointing elsewhere.
+        let target = FileManager.default.temporaryDirectory
+            .appendingPathComponent("symlink-target-\(UUID().uuidString).yaml")
+        try "columns: {}".write(to: target, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: target) }
+        try FileManager.default.removeItem(at: configURL)
+        try FileManager.default.createSymbolicLink(at: configURL, withDestinationURL: target)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertThrowsError(
+            try ConfigService.save(
+                profile: profile,
+                state: loaded.state,
+                existingDocument: loaded.document,
+                workspaceRoot: root)
+        ) { error in
+            guard case ConfigService.ConfigError.symlinkDestination = error else {
+                XCTFail("expected symlinkDestination, got \(error)")
+                return
+            }
+        }
+    }
+
     private func temporaryWorkspaceRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("JamfReportsTests-\(UUID().uuidString)", isDirectory: true)

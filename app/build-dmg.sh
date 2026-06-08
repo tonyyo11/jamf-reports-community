@@ -7,8 +7,7 @@
 # Environment:
 #   SIGNING_IDENTITY   codesign identity hash or name (default: auto-pick
 #                      Developer ID Application for team TEAM_ID)
-#   TEAM_ID            Apple Developer team ID to match in keychain
-#                      (default: HH6NWGU4G8 — Anthony Young)
+#   TEAM_ID            Apple Developer team ID to match in keychain (required)
 #   SKIP_NOTARIZE      set to any value to skip notarization (default for debug)
 #   NOTARY_PROFILE     xcrun notarytool keychain profile name (default: JamfReports-Notary)
 #
@@ -40,11 +39,11 @@ if [[ "$CONFIG" == "release" ]]; then
   fi
 fi
 
-# Read marketing version and build number from the built .app's Info.plist.
-# CFBundleShortVersionString = user-facing version (must be N.N or N.N.N).
-# CFBundleVersion           = build number; bumped per beta while marketing
-#                              version stays stable. When they match, this is a
-#                              release build; when they differ, this is a beta.
+# Read marketing version, build number, and release channel from the .app's
+# Info.plist. CFBundleShortVersionString = user-facing semver (N.N or N.N.N).
+# CFBundleVersion = monotonic integer build number. JRReleaseChannel
+# ("release"/"beta") decides artifact naming; a missing key (older .app)
+# defaults to beta so a release is never mislabeled by accident.
 PLIST="$APP_PATH/Contents/Info.plist"
 APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST") || {
   echo "✗ could not read CFBundleShortVersionString from $PLIST" >&2
@@ -54,17 +53,18 @@ APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST") || {
   echo "✗ could not read CFBundleVersion from $PLIST" >&2
   exit 1
 }
+APP_CHANNEL=$(/usr/libexec/PlistBuddy -c "Print :JRReleaseChannel" "$PLIST" 2>/dev/null || echo "beta")
 
 if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
   echo "✗ unexpected CFBundleShortVersionString: '$APP_VERSION' (want N.N or N.N.N)" >&2
   exit 1
 fi
-if [[ ! "$APP_BUILD" =~ ^[0-9A-Za-z._-]+$ ]]; then
-  echo "✗ unexpected CFBundleVersion: '$APP_BUILD'" >&2
+if [[ ! "$APP_BUILD" =~ ^[0-9]+$ ]]; then
+  echo "✗ unexpected CFBundleVersion: '$APP_BUILD' (must be a monotonic integer)" >&2
   exit 1
 fi
 
-if [[ "$APP_BUILD" != "$APP_VERSION" ]]; then
+if [[ "$APP_CHANNEL" != "release" ]]; then
   DMG_OUT="build/JamfReports-${APP_VERSION}-beta${APP_BUILD}.dmg"
   DMG_VOLUME="Jamf Reports ${APP_VERSION} beta ${APP_BUILD}"
 else
@@ -150,10 +150,11 @@ rm -f "$DMG_TMP"
 rm -rf "$DMG_STAGING"
 
 # Resolve signing identity.
-# Match by team ID (e.g. HH6NWGU4G8) inside the Developer ID Application cert
-# name. This is stable across cert renewals — when the cert is renewed, the new
-# cert keeps the same team ID, so the script keeps finding it without edits.
-TEAM_ID="${TEAM_ID:-HH6NWGU4G8}"
+# Match by team ID inside the Developer ID Application cert name. This is stable
+# across cert renewals — when the cert is renewed, the new cert keeps the same
+# team ID, so the script keeps finding it without edits.
+# Set TEAM_ID in the environment; e.g.: export TEAM_ID=XXXXXXXXXX
+TEAM_ID="${TEAM_ID:?set TEAM_ID to your Apple Developer Team ID}"
 if [[ -z "${SIGNING_IDENTITY:-}" ]]; then
   SIGNING_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
     | awk -v team="(${TEAM_ID})" '
@@ -186,13 +187,23 @@ else
 fi
 
 # Notarize when: release mode, real identity, SKIP_NOTARIZE not set.
+# Auth: NOTARY_KEY_PATH/NOTARY_KEY_ID/NOTARY_ISSUER (API key) or keychain profile.
 NOTARY_PROFILE="${NOTARY_PROFILE:-JamfReports-Notary}"
+if [[ -n "${NOTARY_KEY_PATH:-}" ]]; then
+  : "${NOTARY_KEY_ID:?NOTARY_KEY_ID must be set when NOTARY_KEY_PATH is set}"
+  : "${NOTARY_ISSUER:?NOTARY_ISSUER must be set when NOTARY_KEY_PATH is set}"
+  NOTARY_AUTH_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+  NOTARY_AUTH_DESC="API key ${NOTARY_KEY_ID}"
+else
+  NOTARY_AUTH_ARGS=(--keychain-profile "$NOTARY_PROFILE")
+  NOTARY_AUTH_DESC="profile: $NOTARY_PROFILE"
+fi
 if [[ "$CONFIG" == "release" \
       && "$SIGNING_IDENTITY" != "-" \
       && -z "${SKIP_NOTARIZE:-}" ]]; then
-  echo "→ submitting DMG to Apple notary service (profile: $NOTARY_PROFILE)"
+  echo "→ submitting DMG to Apple notary service ($NOTARY_AUTH_DESC)"
   if ! xcrun notarytool submit "$DMG_OUT" \
-       --keychain-profile "$NOTARY_PROFILE" \
+       "${NOTARY_AUTH_ARGS[@]}" \
        --wait; then
     echo "✗ notarization failed" >&2
     exit 1

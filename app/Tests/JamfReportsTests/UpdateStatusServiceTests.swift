@@ -187,6 +187,67 @@ final class UpdateStatusServiceTests: XCTestCase {
         XCTAssertNil(snapshot)
     }
 
+    // MARK: - KPI honesty: scan-failures availability + plan-state failures
+
+    /// Production bug: a summary-only snapshot (no --scan-failures) showed
+    /// "0 failing plans / 0 error devices" while the plan-state donut showed
+    /// thousands of PlanFailed entries. The empty arrays mean "not scanned",
+    /// never "zero failures".
+    func testSummaryOnlySnapshotReportsScanNotAvailable() throws {
+        let json = """
+        [
+          {
+            "total": 864,
+            "status_summary": [{"status": "IDLE", "count": 641}],
+            "plan_total": 4421,
+            "plan_state_summary": [
+              {"state": "PlanFailed", "count": 3724},
+              {"state": "PlanCompleted", "count": 656},
+              {"state": "PlanException", "count": 13},
+              {"state": "PlanCanceled", "count": 4}
+            ]
+          }
+        ]
+        """
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kpi-honesty-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: tmp))
+
+        XCTAssertFalse(snapshot.scanFailuresAvailable)
+        // PlanFailed (3724) + PlanException (13); PlanCanceled is a user
+        // action, not a failure; PlanCompleted is success.
+        XCTAssertEqual(snapshot.plansFailedFromStates, 3737)
+    }
+
+    func testFailuresSnapshotReportsScanAvailable() throws {
+        let json = """
+        [
+          {
+            "total": 100,
+            "status_summary": [{"status": "COMPLETED", "count": 100}],
+            "error_devices": [],
+            "plan_total": 5,
+            "plan_state_summary": [{"state": "PlanCompleted", "count": 5}],
+            "failed_plans": []
+          }
+        ]
+        """
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scan-available-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: tmp))
+
+        // Scan ran and found nothing — "0" is now a true statement.
+        XCTAssertTrue(snapshot.scanFailuresAvailable)
+        XCTAssertEqual(snapshot.plansFailedFromStates, 0)
+        XCTAssertTrue(snapshot.errorDevices.isEmpty)
+    }
+
     // MARK: - CacheSource derivation
 
     func testCacheSourceWithNilSnapshotDate() {

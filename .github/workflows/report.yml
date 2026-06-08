@@ -17,19 +17,21 @@ jobs:
   generate-report:
     name: Generate report
     runs-on: macos-latest   # macOS runner gives access to jamf-cli via Homebrew
+    permissions:
+      contents: read
 
     steps:
       # ------------------------------------------------------------------
       # 1. Check out the repository
       # ------------------------------------------------------------------
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       # ------------------------------------------------------------------
       # 2. Set up Python
       # ------------------------------------------------------------------
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: "3.11"
           cache: pip
@@ -85,14 +87,10 @@ jobs:
           CSV_PATH: ${{ github.event.inputs.csv_path || '' }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         run: |
-          ARGS=""
-          if [ -n "$CSV_PATH" ]; then
-            ARGS="$ARGS --csv \"$CSV_PATH\""
-          fi
-          if [ -n "$TEAMS_WEBHOOK_URL" ]; then
-            ARGS="$ARGS --notify \"$TEAMS_WEBHOOK_URL\""
-          fi
-          eval python3 jamf-reports-community.py generate $ARGS
+          ARGS=()
+          if [ -n "$CSV_PATH" ]; then ARGS+=(--csv "$CSV_PATH"); fi
+          if [ -n "$TEAMS_WEBHOOK_URL" ]; then ARGS+=(--notify "$TEAMS_WEBHOOK_URL"); fi
+          python3 jamf-reports-community.py generate "${ARGS[@]}"
 
       # ------------------------------------------------------------------
       # 7. Upload the Excel report as a workflow artifact.
@@ -100,7 +98,7 @@ jobs:
       #    Adjust retention-days to suit your policy.
       # ------------------------------------------------------------------
       - name: Upload report artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: jamf-report-${{ github.run_number }}
           path: "Generated Reports/*.xlsx"

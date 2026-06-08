@@ -457,12 +457,12 @@ final class HtmlReportTests: XCTestCase {
     func testProvenanceBlockContainsFourFields() {
         let report = makeReport()
         let overview: [[String: Any]] = []
-        let html = report.buildProvenanceBlock(overview: overview, profileName: "cbp-prod")
+        let html = report.buildProvenanceBlock(overview: overview, profileName: "acme-prod")
         XCTAssertTrue(html.contains("Data collected:"), "Must contain collection timestamp")
         XCTAssertTrue(html.contains("Profile:"), "Must contain profile name")
         XCTAssertTrue(html.contains("jamf-cli:"), "Must contain jamf-cli version")
         XCTAssertTrue(html.contains("Enrolled:"), "Must contain enrolled count")
-        XCTAssertTrue(html.contains("cbp-prod"), "Profile name must appear in output")
+        XCTAssertTrue(html.contains("acme-prod"), "Profile name must appear in output")
     }
 
     func testProvenanceBlockEscapesProfileName() {
@@ -485,13 +485,13 @@ final class HtmlReportTests: XCTestCase {
         let prov = Provenance(
             runID: "test-run-id-1234",
             generatedAt: Date(),
-            profile: "cbp-prod",
+            profile: "acme-prod",
             jamfCLIVersion: "1.14.0",
             jamfTenantURL: "https://jamf.example.com",
             operatorUserHost: "user@host"
         )
         let html = report.buildProvenanceBlock(
-            overview: [], profileName: "cbp-prod", provenance: prov
+            overview: [], profileName: "acme-prod", provenance: prov
         )
         XCTAssertTrue(html.contains("Run ID:"), "Must contain Run ID: label")
         XCTAssertTrue(html.contains("test-run-id-1234"), "Must contain the run ID value")
@@ -502,13 +502,13 @@ final class HtmlReportTests: XCTestCase {
         let prov = Provenance(
             runID: UUID().uuidString,
             generatedAt: Date(),
-            profile: "cbp",
+            profile: "acme",
             jamfCLIVersion: nil,
             jamfTenantURL: "https://jamf.example.com",
             operatorUserHost: "user@host"
         )
         let html = report.buildProvenanceBlock(
-            overview: [], profileName: "cbp", provenance: prov
+            overview: [], profileName: "acme", provenance: prov
         )
         XCTAssertTrue(html.contains("Tenant URL:"), "Must render Tenant URL: label")
         XCTAssertTrue(html.contains("https://jamf.example.com"))
@@ -519,13 +519,13 @@ final class HtmlReportTests: XCTestCase {
         let prov = Provenance(
             runID: UUID().uuidString,
             generatedAt: Date(),
-            profile: "cbp",
+            profile: "acme",
             jamfCLIVersion: nil,
             jamfTenantURL: nil,
             operatorUserHost: "user@host"
         )
         let html = report.buildProvenanceBlock(
-            overview: [], profileName: "cbp", provenance: prov
+            overview: [], profileName: "acme", provenance: prov
         )
         XCTAssertFalse(html.contains("Tenant URL:"),
                        "Must not render Tenant URL when jamfTenantURL is nil")
@@ -536,16 +536,16 @@ final class HtmlReportTests: XCTestCase {
         let prov = Provenance(
             runID: UUID().uuidString,
             generatedAt: Date(),
-            profile: "cbp",
+            profile: "acme",
             jamfCLIVersion: nil,
             jamfTenantURL: nil,
-            operatorUserHost: "tonyyo11@macbook"
+            operatorUserHost: "operator@example-host"
         )
         let html = report.buildProvenanceBlock(
-            overview: [], profileName: "cbp", provenance: prov
+            overview: [], profileName: "acme", provenance: prov
         )
         XCTAssertTrue(html.contains("Operator:"), "Must contain Operator: label")
-        XCTAssertTrue(html.contains("tonyyo11@macbook"))
+        XCTAssertTrue(html.contains("operator@example-host"))
     }
 
     func testProvenanceBlockUsesProvenanceCLIVersionOverOverview() {

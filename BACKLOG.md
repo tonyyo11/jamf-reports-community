@@ -22,3 +22,37 @@ The GitHub issue tracker is the live inventory — not this file.
 
 The detailed pre-2.0.0 backlog (organized by source PR) is preserved in this
 file's git history if a specific finding's original context is needed.
+
+## Deferred follow-ups awaiting epic filing (2026-06 review)
+
+Consciously-deferred items from the 2026-06 review. File each into the noted
+epic (or a new issue) and strike it here once tracked on GitHub.
+
+- **Stale-threshold divergence** (epic #104, code hygiene) —
+  `DeviceInventoryService`/`StaleDeviceService` hardcode a 30-day threshold and
+  bucket on `daysSinceContact`, not the config `stale_device_days`. This diverges
+  from the summary path at non-default thresholds; prod runs the default, so
+  non-blocking today.
+- **Patch-compliance metric definition** (epic #104, code hygiene) — patch
+  compliance is reported two ways: device-weighted in the report sheets vs an
+  unweighted per-title average in `summary.json`/Trends. Unifying on
+  device-weighted is a metric-definition decision and would introduce a one-time
+  patch-trend re-baselining step.
+- **SchedulesView delete is not `owns`-guarded** (epic #103, security) — the
+  manual schedule editor's delete path (`LaunchAgentWriter.delete`) has no
+  `ManagedAutomation.owns` check, unlike the consolidation removal
+  (`archiveAndRemove`, which refuses managed labels). Practically unreachable —
+  managed agents are torn down on entry to manual mode — but the two-mode
+  Automation router now makes that table reachable, so add a `!owns` guard to the
+  manual delete for consistency. Non-blocking; no managed agent is visible there
+  in normal flow.
+- **Version-tracking shell logic has no automated coverage** (epic #102, test
+  coverage) — `build-app.sh` RELEASE / BUILD_NUMBER / channel-naming logic is not
+  covered by CI (CI runs pytest + `swift build`, not `.app` packaging). Until it
+  is, the version-bump checklist must run BOTH build modes (beta and `RELEASE=1`)
+  by hand.
+- **"Verify intent" data-flow items** (epic #104, code hygiene) — two items each
+  need an owner decision: (a) the `policy-status-failures` snapshot kind is ~19
+  days stale — intentionally sunset, or lost in a refactor? (b) the empty
+  `computers-list` alias directory — legacy drop to delete, or a documented alias
+  to keep?

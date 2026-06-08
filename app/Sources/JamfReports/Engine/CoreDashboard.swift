@@ -99,10 +99,15 @@ struct CoreDashboard: Sendable {
             ("Protect Insights", writeProtectInsights),
             ("Protect Plans", writeProtectPlans),
             ("Protect Threat Overview", writeProtectThreatOverview),
-            // --- Parity / detail sheets (sheets 38–40) ---
+            // --- Parity / detail sheets (sheets 38–41) ---
             ("Patch Summary Dashboard", writePatchSummaryDashboard),
             ("Device Security State", writeDeviceSecurityState),
             ("Mobile Supervision Status", writeMobileSupervisionStatus),
+            // --- OS currency (sheet 42) ---
+            ("OS Currency", writeOSCurrency),
+            // --- mSCP / STIG compliance (sheets 43–44) ---
+            ("mSCP Compliance", writeMSCPCompliance),
+            ("Compliance Trend", writeComplianceTrend),
         ]
     }
 
@@ -222,7 +227,8 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Security Posture")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Security Posture"),
-                                      subtitle: "Generated: \(ts)", ncols: 5)
+                                      subtitle: snapshotSubtitle(names: ["security"], generated: ts),
+                                      ncols: 5)
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 20)
         ws.setColumnWidth(2, 2, 12)
@@ -288,18 +294,33 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["patch-status"])
         }
 
+        // Load patch release dates if available — added as optional columns.
+        // Uses dataDir directly (already the workspace's jamf-cli-data directory).
+        // Backward compatible: no snapshot → columns render "—".
+        let releaseRows = PatchReleaseDateService.load(dataDir: dataDir)
+        let releaseLookup = PatchReleaseDateService.releaseDateLookup(from: releaseRows)
+        let hasReleaseDates = !releaseLookup.isEmpty
+
+        let ncols = hasReleaseDates ? 8 : 6
         let ws = workbook.addSheet("Patch Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Patch Compliance"),
-                                      subtitle: "Generated: \(ts)", ncols: 6)
+                                      subtitle: snapshotSubtitle(names: ["patch-status", "patch_status"],
+                                                                  generated: ts),
+                                      ncols: ncols)
         ws.setColumnWidth(0, 0, 36)
         ws.setColumnWidth(1, 1, 10)
         ws.setColumnWidth(2, 2, 12)
         ws.setColumnWidth(3, 3, 12)
         ws.setColumnWidth(4, 4, 14)
         ws.setColumnWidth(5, 5, 14)
+        if hasReleaseDates {
+            ws.setColumnWidth(6, 6, 16)
+            ws.setColumnWidth(7, 7, 14)
+        }
 
-        let headers = ["Title", "Latest", "On Latest", "On Other", "Total", "Compliance %"]
+        var headers = ["Title", "Latest", "On Latest", "On Other", "Total", "Compliance %"]
+        if hasReleaseDates { headers += ["Latest Released", "Days Behind"] }
         for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
@@ -310,6 +331,19 @@ struct CoreDashboard: Sendable {
             ws.write(item.onOther, row: row, col: 3, format: .cell)
             ws.write(item.total, row: row, col: 4, format: .cell)
             ws.write(item.compliancePct, row: row, col: 5, format: colorForPctString(item.compliancePct))
+            if hasReleaseDates {
+                let releaseDate = releaseLookup[item.id] ?? ""
+                ws.write(releaseDate.isEmpty ? "\u{2014}" : releaseDate, row: row, col: 6, format: .cell)
+                // "Days Behind" is shown only for titles below 100% compliance,
+                // matching Python's pct_value < 1.0 / secondary > 0 logic.
+                let pct = PatchStatusService.parseCompliancePct(item.compliancePct)
+                let belowFull = pct < 100.0 || item.onOther > 0
+                if belowFull, let days = PatchReleaseDateService.daysBehind(releaseDate: releaseDate) {
+                    ws.write(days, row: row, col: 7, format: .cell)
+                } else {
+                    ws.write("\u{2014}", row: row, col: 7, format: .cell)
+                }
+            }
             row += 1
         }
     }
@@ -322,7 +356,10 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Patch Failures")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Patch Failures"),
-                                      subtitle: "Generated: \(ts)", ncols: 8)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["patch-device-failures", "patch_device_failures"],
+                                          generated: ts),
+                                      ncols: 8)
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 24)
         ws.setColumnWidth(2, 2, 16)
@@ -367,7 +404,10 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Update Status")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Update Status"),
-                                      subtitle: "Generated: \(ts)", ncols: 4)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["update-status", "update_status"],
+                                          generated: ts),
+                                      ncols: 4)
         ws.setColumnWidth(0, 0, 28)
         ws.setColumnWidth(1, 1, 14)
 
@@ -409,7 +449,10 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Update Failures")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Update Failures"),
-                                      subtitle: "Generated: \(ts)", ncols: 8)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["update-device-failures", "update_device_failures"],
+                                          generated: ts),
+                                      ncols: 8)
         ws.setColumnWidth(0, 0, 26)
         ws.setColumnWidth(1, 1, 14)
         ws.setColumnWidth(2, 2, 14)
@@ -502,7 +545,10 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Device Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Device Compliance"),
-                                      subtitle: "Generated: \(ts)", ncols: 5)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["device-compliance", "device_compliance"],
+                                          generated: ts),
+                                      ncols: 5)
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 16)
         ws.setColumnWidth(2, 2, 10)
@@ -603,7 +649,11 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Profile Status")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Profile Status"),
-                                      subtitle: "Generated: \(ts)", ncols: 5)
+                                      subtitle: snapshotSubtitle(
+                                          names: ["classic-macos-profiles", "macos-profiles",
+                                                  "profiles", "profile-status"],
+                                          generated: ts),
+                                      ncols: 5)
         ws.setColumnWidth(0, 0, 8)
         ws.setColumnWidth(1, 1, 36)
         ws.setColumnWidth(2, 2, 18)
@@ -2239,6 +2289,145 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    // MARK: - OS Currency
+    // Source: SOFA cache at `<workspace>/jamf-cli-data/sofa/<platform>_data_feed.json`.
+    // Mirrors Python CoreDashboard._write_os_currency.
+
+    func writeOSCurrency() throws {
+        let noDataNote = "SOFA feed unavailable — enable network access or check sofa.enabled"
+
+        // Load SOFA feeds from this workspace's dataDir directly.
+        // dataDir is already the jamf-cli-data directory for this profile.
+        let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+
+        let ws = workbook.addSheet("OS Currency")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let headers = [
+            "Platform", "OS Family", "Latest Version", "Build", "Released",
+            "Days Since Release", "Actively Exploited CVEs",
+            "Fleet On Latest", "Fleet Behind", "% On Latest",
+        ]
+        var row = ws.writeSheetHeader(
+            title: t("OS Currency"),
+            subtitle: "Source: SOFA (sofa.macadmins.io) | Generated: \(ts)",
+            ncols: headers.count
+        )
+        ws.setColumnWidth(0, 1, 18)
+        ws.setColumnWidth(2, 9, 16)
+
+        guard !sofaSnapshot.rows.isEmpty else {
+            ws.write(noDataNote, row: row, col: 0, format: .cell)
+            return
+        }
+
+        for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+
+        // Build macOS and mobile os_version → count lookups from cached snapshots.
+        let macosCounts = macosOSCounts()
+        let mobileCounts = mobileOSCounts()
+
+        // Collect family majors per platform to detect EOL devices.
+        var familyMajors: [String: Set<Int>] = [:]
+        for entry in sofaSnapshot.rows {
+            let majorTuple = SOFAFeedService.versionTuple(entry.productVersion)
+            if !majorTuple.isEmpty {
+                familyMajors[entry.platform, default: []].insert(majorTuple[0])
+            }
+        }
+
+        for entry in sofaSnapshot.rows {
+            let counts: [String: Int]?
+            switch entry.platform {
+            case "macOS":        counts = macosCounts
+            case "iOS / iPadOS": counts = mobileCounts
+            default:             counts = nil
+            }
+
+            ws.write(entry.platform, row: row, col: 0, format: .cell)
+            ws.write(entry.osFamily, row: row, col: 1, format: .cell)
+            ws.write(entry.productVersion, row: row, col: 2, format: .cell)
+            ws.write(entry.build, row: row, col: 3, format: .cell)
+            ws.write(entry.releaseDate.isEmpty ? "\u{2014}" : entry.releaseDate,
+                     row: row, col: 4, format: .cell)
+            if let days = entry.daysSinceRelease {
+                ws.write(days, row: row, col: 5, format: .cell)
+            } else {
+                ws.write("\u{2014}", row: row, col: 5, format: .cell)
+            }
+            let cveFmt: CellFormat = entry.activelyExploitedCVEs > 0 ? .red : .cell
+            ws.write(entry.activelyExploitedCVEs, row: row, col: 6, format: cveFmt)
+
+            if let counts {
+                let (onLatest, behind) = SOFAFeedService.fleetCurrency(
+                    latestVersion: entry.productVersion, osCounts: counts)
+                let total = onLatest + behind
+                ws.write(onLatest, row: row, col: 7, format: .cell)
+                ws.write(behind, row: row, col: 8, format: .cell)
+                if total > 0 {
+                    let pct = String(format: "%.1f%%", Double(onLatest) / Double(total) * 100)
+                    ws.write(pct, row: row, col: 9, format: .cell)
+                } else {
+                    ws.write("\u{2014}", row: row, col: 9, format: .cell)
+                }
+            } else {
+                for col in 7...9 { ws.write("\u{2014}", row: row, col: col, format: .cell) }
+            }
+            row += 1
+        }
+
+        // EOL row: devices on majors older than every SOFA-tracked major.
+        let eolSources = [("macOS", macosCounts), ("iOS / iPadOS", mobileCounts)]
+        for (platform, counts) in eolSources {
+            let majors = familyMajors[platform] ?? []
+            let (eolDevices, eolVersions) = SOFAFeedService.fleetEOLCount(
+                familyMajors: majors, osCounts: counts)
+            guard eolDevices > 0 else { continue }
+            ws.write(platform, row: row, col: 0, format: .cell)
+            ws.write("Out of support (EOL)", row: row, col: 1, format: .red)
+            let eolLabel = "\(eolVersions) version\(eolVersions == 1 ? "" : "s") older than all supported releases"
+            ws.write(eolLabel, row: row, col: 2, format: .red)
+            for col in 3...6 { ws.write("\u{2014}", row: row, col: col, format: .cell) }
+            ws.write(0, row: row, col: 7, format: .cell)
+            ws.write(eolDevices, row: row, col: 8, format: .red)
+            ws.write("0.0%", row: row, col: 9, format: .cell)
+            row += 1
+        }
+    }
+
+    /// Returns {osVersion: count} for macOS from the cached security report.
+    private func macosOSCounts() -> [String: Int] {
+        guard let items = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
+        else { return [:] }
+        var counts: [String: Int] = [:]
+        for item in items {
+            if case .osVersion(let v) = item {
+                let ver = v.osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !ver.isEmpty else { continue }
+                counts[ver, default: 0] += v.count
+            }
+        }
+        return counts
+    }
+
+    /// Returns {osVersion: count} for iOS/iPadOS from the cached mobile inventory.
+    private func mobileOSCounts() -> [String: Int] {
+        let inventoryDir = dataDir.appendingPathComponent(
+            "mobile-device-inventory-details", isDirectory: true)
+        guard let url = FileManager.newestJSONFile(in: inventoryDir),
+              let data = try? Data(contentsOf: url),
+              let items = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
+        else { return [:] }
+        var counts: [String: Int] = [:]
+        for item in items {
+            let ver = (item.general?.osVersion ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !ver.isEmpty else { continue }
+            counts[ver, default: 0] += 1
+        }
+        return counts
+    }
+
     // MARK: - Protect Plans / Threat Overview helpers
 
     /// Format a list of named objects or bare strings into a comma-joined string.
@@ -2403,10 +2592,17 @@ struct CoreDashboard: Sendable {
     /// Pure render helper: write metric rows from `metrics` into `ws`.
     /// Emits "—" for any nil field. Extracted for testability — test exercises
     /// this directly without touching the snapshot loader.
-    func renderExecutiveSummaryRows(into ws: Worksheet, metrics m: ExecutiveSummaryMetrics) {
+    ///
+    /// - Parameter subtitle: Sheet subtitle, typically built by `writeExecutiveSummary`
+    ///   using `snapshotSubtitle` so the data-age label reflects the actual snapshot date.
+    func renderExecutiveSummaryRows(
+        into ws: Worksheet,
+        metrics m: ExecutiveSummaryMetrics,
+        subtitle: String = "Fleet KPIs · KPI source: security + patch-status + device-compliance"
+    ) {
         var row = ws.writeSheetHeader(
             title: t("Executive Summary"),
-            subtitle: "Fleet KPIs · Generated: \(ISO8601DateFormatter().string(from: Date()))",
+            subtitle: subtitle,
             ncols: 2
         )
         ws.setColumnWidth(0, 0, 36)
@@ -2435,7 +2631,8 @@ struct CoreDashboard: Sendable {
             ("FileVault Coverage", fmtPct(m.fileVaultPct)),
             ("SIP Coverage", fmtPct(m.sipPct)),
             ("Firewall Coverage", fmtPct(m.firewallPct)),
-            ("Stale — Recent (0–30d)", fmtInt(m.recentCount)),
+            // "Recent" (0–30d) is healthy — only Offline/Inactive/Dormant are stale.
+            ("Recent (0–30d)", fmtInt(m.recentCount)),
             ("Stale — Offline (31–90d)", fmtInt(m.offlineCount)),
             ("Stale — Inactive (91–180d)", fmtInt(m.inactiveCount)),
             ("Stale — Dormant (180d+)", fmtInt(m.dormantCount)),
@@ -2466,8 +2663,20 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["security", "patch-status",
                                                            "device-compliance"])
         }
+
+        // Build the subtitle with a "Data as of" clause when any headline KPI snapshot
+        // predates today (skip-expensive preset). Only the three headline-KPI kinds are
+        // checked — "inventory-summary" is always-run (today) and would suppress the
+        // clause permanently if included.
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let subtitle = snapshotSubtitle(
+            names: ["security", "patch-status", "patch_status", "device-compliance"],
+            generated: ts,
+            prefix: "KPI source: security + patch-status + device-compliance"
+        )
+
         let ws = workbook.addSheet("Executive Summary")
-        renderExecutiveSummaryRows(into: ws, metrics: metrics)
+        renderExecutiveSummaryRows(into: ws, metrics: metrics, subtitle: subtitle)
     }
 
     // MARK: - Cover sheet
@@ -2610,6 +2819,10 @@ struct CoreDashboard: Sendable {
             "Protect Computers": "Protect-enrolled computers with plan, status, and "
                 + "access grants.",
             "Protect Insights": "Protect insight pass/fail counts by section.",
+            "mSCP Compliance": "Per-baseline band distribution: No Data / Pass / Low / "
+                + "Med-Low / Medium / High with count and percent.",
+            "Compliance Trend": "Historical band counts per snapshot date for the "
+                + "primary configured baseline.",
         ]
     }
 
@@ -2873,6 +3086,51 @@ struct CoreDashboard: Sendable {
         return try JSONSerialization.jsonObject(with: data)
     }
 
+    /// Return the modification date of the newest snapshot file for `names`, or nil
+    /// when no file exists. Used by `snapshotSubtitle` to surface the data age.
+    func latestSnapshotDate(names: [String]) -> Date? {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        for name in names {
+            let subdir = dataDir.appendingPathComponent(name, isDirectory: true)
+            if fm.fileExists(atPath: subdir.path),
+               let files = try? fm.contentsOfDirectory(
+                at: subdir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+               ) {
+                candidates.append(contentsOf: files.filter {
+                    $0.pathExtension == "json"
+                    && $0.lastPathComponent != SnapshotManifest.fileName
+                })
+            }
+        }
+        return candidates.compactMap {
+            (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate
+        }.max()
+    }
+
+    /// Build a sheet subtitle that includes a "Data as of" clause when the
+    /// snapshot was not collected on today's run (snapshot date != today).
+    ///
+    /// - Parameters:
+    ///   - names: Snapshot kind names, passed directly to `latestSnapshotDate`.
+    ///   - generated: The current run timestamp, typically from `ISO8601DateFormatter`.
+    ///   - prefix: Optional label prefix to prepend (e.g. "Threshold: 30 days | ").
+    /// - Returns: A subtitle string with an embedded data-age notice when the
+    ///            snapshot predates the current run by at least one calendar day.
+    func snapshotSubtitle(names: [String], generated: String, prefix: String = "") -> String {
+        let base = "\(prefix.isEmpty ? "" : "\(prefix) | ")Generated: \(generated)"
+        guard let snapDate = latestSnapshotDate(names: names) else { return base }
+        let cal = Calendar.current
+        guard !cal.isDateInToday(snapDate) else { return base }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyy-MM-dd"
+        return "\(base) | Data as of: \(df.string(from: snapDate))"
+    }
+
     // MARK: - Value coercions
 
     private func asInt(_ value: Any?) -> Int? {
@@ -2916,6 +3174,173 @@ struct CoreDashboard: Sendable {
         if num >= 95 { return .green }
         if num >= 80 { return .yellow }
         return .red
+    }
+
+    // MARK: - mSCP Compliance sheet
+    // Source: `ea-results` snapshots + `compliance.baselines` config.
+
+    /// Per-baseline band-distribution table.
+    ///
+    /// One block per configured baseline. Each block shows a header row (total
+    /// systems / devices-evaluated / compliance % / rule count if configured)
+    /// followed by six band rows (No Data → High) with Count and Percent columns.
+    /// Skips when no baseline is configured or no ea-results snapshot is available.
+    func writeMSCPCompliance() throws {
+        let baselines = config.compliance?.resolvedBaselines ?? []
+        guard !baselines.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results (no baselines configured)"])
+        }
+
+        guard let eaData = try? loadLatestJSONData(names: ["ea-results"]),
+              let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData),
+              !eaRows.isEmpty
+        else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results"])
+        }
+
+        let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: baselines)
+        let hasAnyData = results.contains { $0.devicesWithData > 0 }
+        guard hasAnyData else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results"])
+        }
+
+        let ws = workbook.addSheet("mSCP Compliance")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(
+            title: t("mSCP Compliance"),
+            subtitle: "Generated: \(ts)", ncols: 3
+        )
+        ws.setColumnWidth(0, 0, 24)
+        ws.setColumnWidth(1, 1, 10)
+        ws.setColumnWidth(2, 2, 10)
+
+        for result in results {
+            writeMSCPBaselineBlock(ws: ws, row: &row, result: result)
+            row += 1
+        }
+    }
+
+    /// Write one baseline block (header + 6 band rows) into `ws` at `row`.
+    private func writeMSCPBaselineBlock(
+        ws: Worksheet,
+        row: inout Int,
+        result: MSCPComplianceService.BaselineResult
+    ) {
+        // Baseline header — name from config (not from user data in the snapshot).
+        ws.write(result.name, row: row, col: 0, format: .header)
+        row += 1
+
+        // Summary row: total / evaluated / compliance % / rule count
+        let compliancePctStr: String
+        if let pct = result.compliancePct {
+            compliancePctStr = String(format: "%.1f%%", pct)
+        } else {
+            compliancePctStr = "\u{2014}"
+        }
+        let summaryPairs: [(String, String)] = [
+            ("Total Systems", "\(result.totalDevices)"),
+            ("Devices Evaluated", "\(result.devicesWithData)"),
+            ("Compliance %", compliancePctStr),
+        ]
+        for (label, value) in summaryPairs {
+            ws.write(label, row: row, col: 0, format: .cell)
+            ws.write(value, row: row, col: 1, format: .cell)
+            row += 1
+        }
+
+        // Band distribution header
+        ws.write("Band", row: row, col: 0, format: .header)
+        ws.write("Count", row: row, col: 1, format: .header)
+        ws.write("Percent", row: row, col: 2, format: .header)
+        row += 1
+
+        // No Data row first (spec: No Data → Pass → Low → Med-Low → Medium → High).
+        let total = result.totalDevices
+        let noDataPct = total > 0 ? Double(result.noDataCount) / Double(total) * 100 : 0
+        ws.write("No Data", row: row, col: 0, format: .cell)
+        ws.write(result.noDataCount, row: row, col: 1, format: .cell)
+        ws.write(String(format: "%.1f%%", noDataPct), row: row, col: 2, format: .cell)
+        row += 1
+
+        // bands is in Band.allCases order: pass, low, medLow, medium, high, noData
+        // (noData is the last element but we rendered it first, so skip index 5).
+        let bandLabels = ["Pass (0)", "Low (1\u{2013}10)", "Med-Low (11\u{2013}30)",
+                          "Medium (31\u{2013}50)", "High (>50)"]
+        let bandFormats: [CellFormat] = [.green, .cell, .yellow, .yellow, .red]
+        let nonNoDataBands = result.bands.filter { $0.label != "No Data" }
+        for (idx, band) in nonNoDataBands.enumerated() {
+            let label = idx < bandLabels.count ? bandLabels[idx] : band.label
+            let fmt = idx < bandFormats.count ? bandFormats[idx] : .cell
+            ws.write(label, row: row, col: 0, format: fmt)
+            ws.write(band.count, row: row, col: 1, format: fmt)
+            ws.write(String(format: "%.1f%%", band.pct), row: row, col: 2, format: fmt)
+            row += 1
+        }
+    }
+
+    // MARK: - Compliance Trend sheet
+    // Source: dated `ea-results` snapshots under dataDir.
+
+    /// Historical band counts per snapshot date for the primary configured baseline.
+    ///
+    /// Uses `MSCPChartDataBuilder.buildSeries` against the `ea-results/` subdir of
+    /// `dataDir`. Summaries are not loaded here (CoreDashboard has no profile/path
+    /// to the summaries dir); the builder's ea-results source provides full fidelity.
+    /// Skips when no baseline is configured or fewer than one dated snapshot exists.
+    func writeComplianceTrend() throws {
+        let baselines = config.compliance?.resolvedBaselines ?? []
+        guard !baselines.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results (no baselines configured)"])
+        }
+
+        guard let primary = baselines.first else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results"])
+        }
+
+        // buildSeries reads ea-results/ under dataDir; pass summaries:[] since
+        // CoreDashboard has no access to the profile's summaries directory.
+        let points = MSCPChartDataBuilder.buildSeries(
+            baseline: primary,
+            dataDir: dataDir,
+            summaries: []
+        )
+        guard !points.isEmpty else {
+            throw CoreDashboardError.noCachedData(names: ["ea-results"])
+        }
+
+        let ws = workbook.addSheet("Compliance Trend")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(
+            title: t("Compliance Trend — \(primary.name)"),
+            subtitle: "Generated: \(ts)", ncols: 7
+        )
+        ws.setColumnWidth(0, 0, 14)
+        ws.setColumnWidth(1, 6, 12)
+
+        let headers = ["Date", "Pass (0)", "Low (1\u{2013}10)", "Med-Low (11\u{2013}30)",
+                       "Medium (31\u{2013}50)", "High (>50)", "Total"]
+        for (col, header) in headers.enumerated() {
+            ws.write(header, row: row, col: col, format: .header)
+        }
+        row += 1
+
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.locale = Locale(identifier: "en_US_POSIX")
+
+        for point in points {
+            let counts = point.counts
+            let total = counts.pass + counts.low + counts.medLow
+                + counts.medium + counts.high + counts.noData
+            ws.write(df.string(from: point.date), row: row, col: 0, format: .cell)
+            ws.write(counts.pass,   row: row, col: 1, format: .cell)
+            ws.write(counts.low,    row: row, col: 2, format: .cell)
+            ws.write(counts.medLow, row: row, col: 3, format: .cell)
+            ws.write(counts.medium, row: row, col: 4, format: .cell)
+            ws.write(counts.high,   row: row, col: 5, format: .cell)
+            ws.write(total,         row: row, col: 6, format: .cell)
+            row += 1
+        }
     }
 }
 

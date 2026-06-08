@@ -11,8 +11,6 @@ readonly APP_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../build/JamfRepor
 readonly TEMP_DIR="$(mktemp -d)"
 readonly ZIP_PATH="${TEMP_DIR}/JamfReports.zip"
 
-trap "rm -rf -- \"$TEMP_DIR\"" EXIT
-
 if [[ ! -d "$APP_PATH" ]]; then
   echo "✗ App bundle not found: $APP_PATH" >&2
   exit 1
@@ -37,7 +35,7 @@ echo
 echo "→ Submitting to Apple notarization..."
 echo "  (Using profile: $NOTARY_PROFILE)"
 NOTARY_OUTPUT=$(mktemp)
-trap "rm -f -- \"$NOTARY_OUTPUT\" \"$TEMP_DIR\" -rf" EXIT
+trap 'rm -rf -- "$TEMP_DIR" "$NOTARY_OUTPUT"' EXIT
 
 if ! xcrun notarytool submit \
   --keychain-profile "$NOTARY_PROFILE" \

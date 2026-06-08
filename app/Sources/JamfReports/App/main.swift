@@ -11,12 +11,97 @@ import SwiftUI
 // When --all-profiles is also present, discover all local profiles via
 // ProfileService.discoverLocal() and run the cycle for each in sequence.
 
+/// Emit one consolidated fleet CSV per configured `report_group` after an
+/// all-profiles reports run. No-op when no groups are configured. Best-effort:
+/// a failed group logs a warning and never fails the overall run. Lookback for
+/// the delta columns follows the report cadence (daily 1d / weekly 7d /
+/// monthly 30d).
+///
+/// `record` receives `[warn]` messages for failures so callers can route them
+/// to a `ScheduledRunRecorder` when one is in scope.
+@Sendable
+private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in }) {
+    let policy = AutomationPolicy.current()
+    guard !policy.reportGroups.isEmpty else { return }
+    let lookback: Int = {
+        switch policy.reportsCadence {
+        case .daily:   return 1
+        case .monthly: return 30
+        case .weekly, .off: return 7
+        }
+    }()
+    let stamp = ExportNaming.timestamp()
+    for group in policy.reportGroups {
+        do {
+            if let url = try FleetReportEmitter.emit(
+                group: group, lookbackDays: lookback, timestamp: stamp
+            ) {
+                print("[ok] consolidated fleet report: \(url.lastPathComponent)")
+            }
+        } catch {
+            let message = "[warn] consolidated report for '\(group.name)' failed: \(error.localizedDescription)"
+            fputs(message + "\n", stderr)
+            record(message)
+        }
+    }
+}
+
+/// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
+/// is enabled with a usable https URL. Best-effort — never affects the run.
+///
+/// `sheetFailures` > 0 sets Status to "Partial" and appends a "Sheets failed"
+/// fact so degraded runs are not misreported as successes.
+/// `recorder` receives a `[warn]` line when the post fails, making the failure
+/// visible in Run History rather than only in `~/Library/Logs`.
+@Sendable
+private func notifyScheduledRun(
+    config: ReportConfig?,
+    profile: String,
+    mode: Schedule.RunMode,
+    artifact: String?,
+    sheetFailures: Int = 0,
+    recorder: ScheduledRunRecorder?
+) async {
+    guard let notify = config?.notify, notify.isUsable else { return }
+    let statusValue = sheetFailures > 0 ? "Partial" : "Success"
+    var facts: [WebhookNotifier.Fact] = [
+        .init(label: "Profile", value: profile),
+        .init(label: "Run", value: mode.displayTitle),
+        .init(label: "Status", value: statusValue),
+    ]
+    if sheetFailures > 0 {
+        facts.append(.init(label: "Sheets failed", value: "\(sheetFailures)"))
+    }
+    if let artifact { facts.append(.init(label: "Report", value: artifact)) }
+    let sent = await WebhookNotifier.send(
+        config: notify, title: "Jamf Report — \(profile)", facts: facts
+    )
+    if !sent {
+        let message = "[warn] webhook notification failed for '\(profile)'"
+        fputs(message + "\n", stderr)
+        recorder?.record(message)
+    }
+}
+
+/// The installed jamf-cli version when it is present but below the supported
+/// floor; nil when jamf-cli is absent (optional) or meets the floor. Uses the
+/// nonisolated probe so it is callable from the headless `@Sendable` runner
+/// without a MainActor hop.
+@Sendable
+private func jamfCLIVersionBelowFloor() -> String? {
+    guard let binary = ExecutableLocator.locate("jamf-cli"),
+          let installed = JamfCLIInstaller.installedVersion(at: binary),
+          JamfCLIInstaller.isBelowMinimumSupported(installed) else { return nil }
+    return installed
+}
+
 @Sendable
 private func scheduledRunSingle(
     profile: String,
     mode: Schedule.RunMode,
     tiers: Set<CollectionTier>?,
-    verbose: Bool
+    verbose: Bool,
+    label: String?
 ) async -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
@@ -42,9 +127,67 @@ private func scheduledRunSingle(
         }
     }
 
+    // Per-run record in <workspace>/automation/ — this is what Run History
+    // and the Schedules "Last Run" column read. The launchd stdout/stderr
+    // redirect to ~/Library/Logs/JamfReports/<label>/ is unchanged (raw
+    // stream capture); the recorder is the structured per-run record.
+    // Legacy plists without --label fall back to a profile+mode label so
+    // their runs are recorded too.
+    let runLabel = label ?? "\(LaunchAgentWriter.labelPrefix).\(profile).\(mode.rawValue)"
+    let recorder = ScheduledRunRecorder(workspace: workspace, label: runLabel)
+    if recorder == nil {
+        fputs("[warn] could not open run record in automation/logs — run will not appear in Run History\n", stderr)
+    }
+
     let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
+        recorder?.record(line.text)
         if verbose || line.level != .info {
             print(line.text)
+        }
+    }
+
+    // Version-floor preflight (v2.2.0 Phase 3): abort loudly when an installed
+    // jamf-cli is below the supported floor, before any collect/backup, so a
+    // scheduled run never silently writes data from an unsupported binary.
+    // jamf-cli-only generates from cache and never calls jamf-cli, so it is
+    // exempt; an absent jamf-cli is also exempt (the collect path handles it).
+    if mode != .jamfCLIOnly, let belowVersion = jamfCLIVersionBelowFloor() {
+        let message = "[error] jamf-cli \(belowVersion) is below the supported floor "
+            + "\(JamfCLIInstaller.minimumSupportedVersion) — aborting '\(profile)' to avoid "
+            + "writing data from an unsupported binary. Run: brew upgrade jamf-cli"
+        fputs(message + "\n", stderr)
+        recorder?.record(message)
+        recorder?.finish(exitCode: 1)
+        return 1
+    }
+
+    // Backup mode (v2.2.0): export configuration objects; no collect, no
+    // generate. Retention prunes scheduled backups beyond the newest 10 and
+    // sweeps abandoned .tmp-* staging dirs.
+    if mode == .backup {
+        do {
+            let bridge = CLIBridge()
+            let exit = try await bridge.backup(
+                profile: profile,
+                label: "scheduled-\(BackupMaintenance.dateStamp())",
+                onLine: onLine
+            )
+            if exit == 0 {
+                BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
+            }
+            let message = exit == 0
+                ? "[ok] scheduled backup complete for '\(profile)'"
+                : "[error] scheduled backup failed for '\(profile)': exit \(exit)"
+            if exit == 0 { print(message) } else { fputs(message + "\n", stderr) }
+            recorder?.record(message)
+            recorder?.finish(exitCode: exit)
+            return exit
+        } catch {
+            let message = "[error] scheduled backup failed for '\(profile)': \(error.localizedDescription)"
+            fputs(message + "\n", stderr)
+            recorder?.record(message)
+            recorder?.finish(exitCode: 1)
+            return 1
         }
     }
 
@@ -53,7 +196,10 @@ private func scheduledRunSingle(
     let resolvedCSV: URL?
     if mode == .csvAssisted {
         guard let csv = CLIBridge.newestCSV(in: profile) else {
-            fputs("[error] csv-assisted requires a CSV in csv-inbox/ — none found for '\(profile)'\n", stderr)
+            let message = "[error] csv-assisted requires a CSV in csv-inbox/ — none found for '\(profile)'"
+            fputs(message + "\n", stderr)
+            recorder?.record(message)
+            recorder?.finish(exitCode: 1)
             return 1
         }
         resolvedCSV = csv
@@ -62,6 +208,21 @@ private func scheduledRunSingle(
     } else {
         resolvedCSV = nil
     }
+
+    // Load config once, before collect (routing needs it) and before generate.
+    // Failure degrades collect routing to Jamf Pro and still fails generate
+    // with the real error (ConfigLoader.LoadError) so the recorded run shows
+    // a meaningful message. nil config in routing logs loudly and uses Pro.
+    let configURL = workspace.appendingPathComponent("config.yaml")
+    let routingConfig: ReportConfig? = {
+        guard let loaded = try? ConfigLoader.load(from: configURL) else {
+            AppLogger.schedule.warning(
+                "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+            )
+            return nil
+        }
+        return loaded
+    }()
 
     do {
         // jamf-cli-only generates from cache only — no collect, no fresh API calls.
@@ -74,10 +235,12 @@ private func scheduledRunSingle(
             // the mode default: snapshot-only → Refresh only (PR-22 T-10),
             // the generate modes → all tiers.
             let resolvedTiers = tiers ?? mode.defaultTiers
-            try await ReportEngine.collect(
+            // Route to the correct collect function(s) based on profile product type.
+            // Scheduled collects never bypass the once-per-day guard (force: false).
+            try await CollectRouter.run(
                 profile: profile,
-                workspacePaths: WorkspacePaths.self,
                 tiers: resolvedTiers,
+                config: routingConfig,
                 onLine: onLine
             )
             // Tighten permissions on collected snapshots immediately after
@@ -87,22 +250,40 @@ private func scheduledRunSingle(
         }
         // snapshot-only stops after collect; summary.json is already written.
         if mode == .snapshotOnly {
-            print("[ok] scheduled snapshot complete for '\(profile)' — Trends updated")
+            let message = "[ok] scheduled snapshot complete for '\(profile)' — Trends updated"
+            print(message)
+            recorder?.record(message)
+            await notifyScheduledRun(
+                config: routingConfig, profile: profile, mode: mode,
+                artifact: nil, recorder: recorder
+            )
+            recorder?.finish(exitCode: 0)
             return 0
         }
 
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        let config = try ConfigLoader.load(from: configURL)
+        let config = try routingConfig ?? ConfigLoader.load(from: configURL)
         let dataDir = try WorkspacePaths.dataDir(for: profile)
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
-        try await engine.generate(csvURL: resolvedCSV, outputURL: outputURL)
-        print("[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)")
+        let failures = try await engine.generate(csvURL: resolvedCSV, outputURL: outputURL)
+        let message = "[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)"
+        print(message)
+        recorder?.record(message)
         // Tighten permissions on generated report and any newly written files.
         await WorkspacePermissionHardener.tighten(profile: profile)
+        await notifyScheduledRun(
+            config: config, profile: profile, mode: mode,
+            artifact: outputURL.lastPathComponent,
+            sheetFailures: failures.count,
+            recorder: recorder
+        )
+        recorder?.finish(exitCode: 0, artifacts: [outputURL])
         return 0
     } catch {
-        fputs("[error] '\(profile)': \(error.localizedDescription)\n", stderr)
+        let message = "[error] '\(profile)': \(error.localizedDescription)"
+        fputs(message + "\n", stderr)
+        recorder?.record(message)
+        recorder?.finish(exitCode: 1)
         return 1
     }
 }
@@ -136,24 +317,57 @@ private func scheduledRun(profile: String) async -> Int32 {
         return parsed.isEmpty ? nil : parsed
     }()
 
+    // --label <agent-label> names the per-run record in automation/ so Run
+    // History and the Schedules screen attribute the run to its schedule.
+    // Absent on plists written before the recorder existed; the run is then
+    // recorded under a profile+mode fallback label.
+    let label: String? = {
+        guard let idx = args.firstIndex(of: "--label"), idx + 1 < args.count,
+              LaunchAgentWriter.isValidLabel(args[idx + 1]) else {
+            return nil
+        }
+        return args[idx + 1]
+    }()
+
     if allProfiles {
-        let profiles = ProfileService.discoverLocal()
+        // --exclude-profiles <csv> drops profiles from the run-time-discovered
+        // set (run-time exclusion — never a positive --multi-profiles list, so
+        // a managed all-profiles agent still picks up profiles added later).
+        let excludeArg: String? = {
+            guard let idx = args.firstIndex(of: "--exclude-profiles"), idx + 1 < args.count else {
+                return nil
+            }
+            return args[idx + 1]
+        }()
+        let excluded = ProfileService.parseExclusions(excludeArg)
+        let profiles = ProfileService.applyingExclusions(
+            ProfileService.discoverLocal(), excluding: excluded
+        )
         guard !profiles.isEmpty else {
             fputs("[error] --all-profiles: no local profiles found\n", stderr)
             return 1
         }
+        if !excluded.isEmpty {
+            fputs("[info] --all-profiles excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
+        }
         var anyFailed = false
         for p in profiles {
             let code = await scheduledRunSingle(
-                profile: p.name, mode: mode, tiers: tiers, verbose: verbose
+                profile: p.name, mode: mode, tiers: tiers, verbose: verbose, label: label
             )
             if code != 0 { anyFailed = true }
+        }
+        // v2.2.0 Phase 4: after the per-profile reports run, emit one
+        // consolidated fleet report per configured group. Only for
+        // report-generating modes — the freshness/scan snapshot agents skip it.
+        if mode == .jamfCLIOnly || mode == .jamfCLIFull || mode == .csvAssisted {
+            emitConsolidatedReports()
         }
         return anyFailed ? 1 : 0
     }
 
     return await scheduledRunSingle(
-        profile: profile, mode: mode, tiers: tiers, verbose: verbose
+        profile: profile, mode: mode, tiers: tiers, verbose: verbose, label: label
     )
 }
 

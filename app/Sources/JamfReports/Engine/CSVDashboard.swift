@@ -106,10 +106,12 @@ struct CSVDashboard: Sendable {
 
     let config: ReportConfig
     let columns: [String]   // CSV header row
-    let rows: [CSVRow]       // all data rows
+    let rows: [CSVRow]       // data rows (continuation rows already dropped)
     let workbook: Workbook
     /// Prior snapshot for Fleet Drift sheet. Loaded at init time so the sheet plan is stable.
     let priorSnapshot: PriorCSVLoader.Result?
+    /// Detected device family of the CSV. Computed from headers at init time.
+    let csvFamily: CSVFamily?
 
     private var orgName: String { config.branding?.resolvedOrgName ?? "" }
 
@@ -128,11 +130,44 @@ struct CSVDashboard: Sendable {
     ///   - workbook: Target workbook.
     ///   - currentCSVURL: URL of the current CSV (used for Fleet Drift deduplication).
     init?(config: ReportConfig, csvData: Data, workbook: Workbook, currentCSVURL: URL? = nil) {
-        guard let (cols, rows) = try? CSVParser.parse(csvData) else { return nil }
+        guard let (cols, parsedRows) = try? CSVParser.parse(csvData) else { return nil }
         self.config = config
         self.columns = cols
-        self.rows = rows
         self.workbook = workbook
+
+        // Detect CSV family from headers before dropping rows (family drives identity column).
+        let family = CSVFamilyDetector.detect(headers: cols)
+        self.csvFamily = family
+
+        // Drop Jamf "export-only" continuation rows (blank identity cell).
+        // These are emitted for multi-value fields (Applications, Certificates, Groups…).
+        // Identity column: device_name for mobile, computer_name for computers/unknown.
+        let identityColName: String?
+        if family == .mobile {
+            identityColName = config.mobileColumns?.deviceName
+                .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+                ?? "Display Name"
+        } else {
+            identityColName = config.columns?.columnName(for: .computerName)
+                .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+                ?? "Computer Name"
+        }
+
+        if let idCol = identityColName, cols.contains(idCol) {
+            let filtered = parsedRows.filter { row in
+                let val = row[idCol] ?? ""
+                return !val.trimmingCharacters(in: .whitespaces).isEmpty
+            }
+            let dropped = parsedRows.count - filtered.count
+            if dropped > 0 {
+                engineLog.info(
+                    "[info] Dropped \(dropped) continuation row(s) from multi-value export fields."
+                )
+            }
+            self.rows = filtered
+        } else {
+            self.rows = parsedRows
+        }
 
         // Load prior snapshot for Fleet Drift if historical_csv_dir is configured.
         if let historicalDirStr = config.charts?.historicalCsvDir,
@@ -153,14 +188,16 @@ struct CSVDashboard: Sendable {
     /// reorder existing sheets without updating `SheetOrderTests.swift` (which pins this
     /// contract) and verifying that the new order is intentional.
     ///
-    /// **Config-gated sheets:**
-    /// - "Security Agents" — included only when `securityAgents` is non-empty
-    ///   (`security_agents` list in `config.yaml`).
+    /// **Family routing:**
+    /// - `.mobile` CSV → only Mobile Device Inventory + Mobile Stale Devices + custom EAs.
+    /// - `.computers` (or nil/ambiguous) CSV → computer sheets; mobile sheets only when
+    ///   the family is nil (undetectable) AND `config.mobileColumns?.deviceName` is set
+    ///   (preserves legacy behavior for undetectable CSVs).
+    ///
+    /// **Other config-gated sheets:**
+    /// - "Security Agents" — included only when `securityAgents` is non-empty.
     /// - "Compliance" — included only when `config.compliance?.isEnabled == true`.
-    /// - "Mobile Device Inventory" / "Mobile Stale Devices" — included only when
-    ///   `config.mobileColumns?.deviceName` is configured.
-    /// - "Fleet Drift" — included only when a prior snapshot was successfully loaded from
-    ///   the historical CSV directory.
+    /// - "Fleet Drift" — included only when a prior snapshot was successfully loaded.
     /// - Custom EA sheets — one per entry in `config.customEas`, appended after the above.
     /// - "EA Warnings" — included only when unmapped EA columns were detected.
     ///
@@ -168,26 +205,37 @@ struct CSVDashboard: Sendable {
     /// custom-EA loop if it is config-optional. Update `SheetOrderTests.swift` to assert
     /// the new expected order.
     var sheetPlan: [(name: String, write: () -> Void)] {
-        var plan: [(String, () -> Void)] = [
-            ("Device Inventory", writeDeviceInventory),
-            ("Stale Devices", writeStaleDevices),
-            ("Security Controls", writeSecurityControls),
-        ]
-        if securityAgents.isEmpty == false {
-            plan.append(("Security Agents", writeSecurityAgents))
-        }
-        if config.compliance?.isEnabled == true {
-            plan.append(("Compliance", writeCompliance))
-        }
-        // Mobile sheets are included when mobile_columns.device_name is configured.
-        if config.mobileColumns?.deviceName != nil {
+        var plan: [(String, () -> Void)] = []
+
+        if csvFamily == .mobile {
+            // Mobile CSV: only mobile sheets.
             plan.append(("Mobile Device Inventory", writeMobileInventoryCSV))
             plan.append(("Mobile Stale Devices", writeMobileStaleCSV))
+        } else {
+            // Computer CSV or ambiguous: computer sheets.
+            plan += [
+                ("Device Inventory", writeDeviceInventory),
+                ("Stale Devices", writeStaleDevices),
+                ("Security Controls", writeSecurityControls),
+            ]
+            if securityAgents.isEmpty == false {
+                plan.append(("Security Agents", writeSecurityAgents))
+            }
+            if config.compliance?.isEnabled == true {
+                plan.append(("Compliance", writeCompliance))
+            }
+            // For undetectable (nil family) CSVs with mobile_columns configured,
+            // include mobile sheets as well (legacy behavior).
+            if csvFamily == nil, config.mobileColumns?.deviceName != nil {
+                plan.append(("Mobile Device Inventory", writeMobileInventoryCSV))
+                plan.append(("Mobile Stale Devices", writeMobileStaleCSV))
+            }
+            // Fleet Drift is only available for computer-family CSVs.
+            if let prior = priorSnapshot {
+                plan.append(("Fleet Drift", { self.writeFleetDrift(prior: prior) }))
+            }
         }
-        // Fleet Drift sheet is included only when a prior snapshot was successfully loaded.
-        if let prior = priorSnapshot {
-            plan.append(("Fleet Drift", { self.writeFleetDrift(prior: prior) }))
-        }
+
         for ea in config.customEas ?? [] {
             let name = ea.name
             plan.append((name, { self.writeCustomEA(ea) }))

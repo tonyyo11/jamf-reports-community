@@ -7,6 +7,178 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-08
+
+### Added (v2.2.0 cycle)
+
+- Multi-product onboarding: the Jamf Pro connection step offers Standard
+  OAuth2 or Platform Gateway authentication (account.jamf.com API client +
+  tenant ID — unlocks Blueprints, Compliance Benchmarks, and DDM Reports). A
+  new optional "Add Products" step connects Jamf Protect (OAuth2) and Jamf
+  School (Network ID + API key); both can also be added later from the
+  Sources screen. All credential prompts run through jamf-cli's guided setup
+  with the same keychain-backed security model as Jamf Pro.
+- OS Currency reporting via the [SOFA](https://sofa.macadmins.io) feed: both
+  engines now know the latest available macOS, iOS/iPadOS, tvOS, and watchOS
+  versions (version, build, release date, days since release, actively
+  exploited CVE count). A new "OS Currency" sheet/section joins this against
+  the fleet — devices on the latest release, devices behind, and a red
+  "Out of support (EOL)" row for devices older than every supported release.
+  The app's Updates screen shows the same latest-version data. SOFA fetches
+  are cached and degrade gracefully offline; a `sofa:` config block controls
+  the feed (disable for air-gapped servers).
+- Patch release dates: collection now captures each patch title's latest
+  version release date (`jamf-cli pro patch-software-title-configurations
+  definitions`). The Patch Compliance sheet and the app's Patch screen gain
+  "Latest Released" / "Days Behind" columns — groundwork for adoption-lag
+  trend charts.
+- mSCP/STIG compliance real banding: when a `compliance.baselines` entry
+  maps an EA column containing per-device failure counts, both engines derive
+  real pass/low/medium/high distribution bands instead of the four-control
+  proxy (FileVault/SIP/Firewall/Gatekeeper). New "mSCP Compliance" and
+  "Compliance Trend" workbook sheets display band donuts and trend stackplots;
+  the Compliance Posture screen shows real band distribution and per-device
+  pass/fail status.
+- Mobile-device CSV scaffolding: `scaffold` (Python CLI) and "Re-scaffold from
+  CSV" / onboarding (app) now detect whether a CSV is a Jamf Pro computer or
+  mobile-device export and populate the matching column mappings (`columns:`
+  or `mobile_columns:`) — never both. Mobile exports get their own column
+  hints (Display Name, OS Version, Jailbreak Detected as a suggested EA, …).
+- Scheduled configuration backups: a new "Configuration Backup" schedule mode
+  runs `jamf-cli pro backup` on a cadence, keeps the newest 10 scheduled
+  backups, and sweeps abandoned backup staging folders. Backup runs appear in
+  Run History like any other schedule.
+- Overview score cards are no longer capped at 4 — choose any combination of
+  the 9 metrics, and the selection now persists across launches.
+- Launch freshness sweep: per-device data (Patch / Updates / EA results) older
+  than a week surfaces a "Refresh now" prompt on the Overview screen, and
+  Health Audit data older than a week refreshes automatically in the
+  background. Heavy collections never run without the prompt's button —
+  on-prem servers are not hammered at launch.
+- "Include Health Audit" toggle in the Generate flow (both the Generate sheet
+  and the Overview quick-generate): runs `jamf-cli pro audit` before
+  generating so audit-derived report content is current.
+- Exports and reports now carry a tenant + timestamp in every filename:
+  `patch-compliance-<profile>-<date_time>.csv`,
+  `report_<profile>_<date_time>.xlsx`, etc. Exports a second apart no longer
+  overwrite each other, and reports remain attributable outside their
+  workspace folder.
+- Report sidecar archives: Excel, HTML, PDF, and CSV reports now write
+  accompanying `.sha256` and `.manifest` metadata files for integrity checks and
+  run attribution.
+- Smart Groups and Computer/Mobile Groups collection: a new `groups` collection
+  kind fetches jamf-cli 1.18+ smart-group templates and group lists (smart and
+  static), fixing a stale-data issue where Group Hygiene and Computer Group
+  Inventory sheets vanished on fresh profile installs awaiting first collect.
+  Groups is included in the Standard collection tier.
+- Per-sheet "Data as of" dates: every workbook sheet now displays the
+  collection timestamp of the snapshot it reads (or empty state if the kind is
+  missing), so stale data is visually identifiable without checking the
+  report filename.
+- First-run-of-day summary.json: when `summary_<today>.json` already exists,
+  the collect step upgrades a stale proxy summary (4-control mSCP proxy) to
+  real mSCP banding if a baseline EA is now configured.
+- Managed automation ("set policy, not cron jobs"): a new **Automation** screen
+  replaces hand-built per-profile schedules with a small set of global policies.
+  Turn on "Manage automation" and the app keeps every profile's jamf-cli data
+  fresh daily (everything except the two heavy per-device scans), runs a weekly
+  deep scan, generates reports on your chosen cadence (Off / Daily / Weekly /
+  Monthly), and optionally takes a weekly configuration backup — all across
+  every profile, adjusting automatically as profiles are added or removed (the
+  agents resolve the profile set at run time). A shared run time staggers the
+  jobs so on-prem Jamf Pro isn't hit all at once, and a per-profile exclusion
+  list skips a dummy/test tenant. **Off by default** — existing schedules are
+  untouched until you opt in.
+- Catch-up-on-wake: if a Mac sleeps through the scheduled run, the app collects
+  the day's freshness snapshot on the next launch or wake (once per calendar
+  day), so Trends and reports don't silently fall behind on laptops.
+- Opt-in webhook digest: a scheduled run can post a short "report generated"
+  summary to a Microsoft Teams **or** Slack incoming webhook. Configure it under
+  `notify:` (provider + https URL) in config.yaml — **off by default**; the
+  Python CLI also accepts `--notify <url>` as an override.
+- Report groups + consolidated fleet report: group profiles together (combine
+  prod/dev/sandbox into one "fleet", or make one group per customer) and each
+  group emits a consolidated report — aggregated KPIs with **period-over-period
+  delta columns**. Percentages are device-weighted across the group; counts are
+  summed. Profiles in no group keep their per-profile report.
+- Version-floor preflight: a scheduled run now aborts loudly (with a clear Run
+  History entry) when the installed jamf-cli is below the supported floor,
+  instead of silently writing data from an unsupported binary.
+- `--exclude-profiles` (app `--all-profiles` runner) and `--multi-exclude`
+  (Python `multi-launchagent-run`) skip named profiles from a multi-profile run
+  at run time; the Python multi-runner also forwards `--tiers`.
+- Admin-controlled snapshot retention (`retention:` config, both engines):
+  **off by default — raw snapshots are kept indefinitely** (they're a reporting
+  input for per-device history, and `~/Jamf-Reports` often lives on cloud
+  storage). When enabled, `mode: archive` (default) **moves** old snapshots to
+  an archive folder — still on disk, you decide whether to trash them — and
+  `mode: delete` removes them. Tunable by age (`snapshot_keep_days`) and/or
+  newest-N (`snapshot_keep_count`); trend summaries are never touched unless
+  `include_summaries: true`. The sweep now runs once/day on every collect path,
+  including headless scheduled runs.
+
+### Changed (v2.2.0 cycle)
+
+- Snapshot cleanup is now opt-in. Previously the app deleted raw snapshots older
+  than 90 days, but only while it was open. It now keeps everything by default
+  and only archives/deletes when you enable `retention:` — so per-device raw
+  history (e.g. mSCP day-over-day) survives, and headless servers no longer grow
+  unbounded once retention is configured.
+
+- The **Schedules** tab is now **Automation** — the global policy screen above.
+  (Migration that consolidates any existing hand-built schedules into the new
+  model lands in a follow-up; until then existing schedules continue to run.)
+
+- Stability Index and Compliance Benchmark now compute on jamf-cli-only
+  tenants: missing components drop out and the remaining weights renormalize
+  (the same approach the Security Score uses). The Compliance Benchmark trend
+  is fed by a control-gap proxy (FileVault/SIP/Firewall/Gatekeeper), labeled
+  as a proxy in the UI until a real compliance EA is configured.
+- "CrowdStrike Installed/Connected" labels are gone: the EDR metric is named
+  after your configured `security_agents` entry (e.g. "CrowdStrike Falcon
+  Installed"), or the generic "EDR Agent" when none is configured.
+- The per-device risk model's "Nessus Disconnected" factor is now a
+  config-driven "Security Agent Disconnected" check: it reads the EA column
+  and connected value from your first `security_agents` entry, labels the
+  finding with that agent's name, and — for the first time — actually
+  triggers when the agent reports disconnected. With no agent configured the
+  factor stays dormant.
+- OS Updates KPIs no longer report "0 failing plans" when the failure scan
+  simply hasn't run — the count derives from plan states (matching the donut)
+  and Error Devices shows "—" until a `--scan-failures` snapshot exists.
+
+### Fixed (v2.2.0 cycle)
+
+- Onboarding's Continue button now enables while typing the client secret —
+  previously the secure field only registered its value after pressing
+  Return or clicking away, leaving the button greyed out (RC1 feedback).
+- Jamf Pro 11.28 computer CSV exports were detected as mobile-device exports
+  in both engines (Jamf added `Managed`/`Supervised` to computer exports),
+  generating Mobile Device Inventory/Stale sheets and silently skipping
+  Security Controls and Compliance. CSV family detection now counts
+  family-unique header discriminators (Computer Name, JSS Computer ID,
+  FileVault 2 Status, … vs Display Name, JSS Mobile Device ID, IMEI, …) and
+  no longer depends on which config sections are filled in.
+- Jamf "export-only field" CSVs (multi-value Applications / Certificates /
+  Groups / Printers data) inflated device counts: each multi-value item adds
+  a continuation row with a blank identity cell, so a 97-device export counted
+  as 607 devices in Security Controls percentages. Continuation rows are now
+  dropped at load with a warning, in report generation, column checks, trend
+  charts, and Fleet Drift comparisons.
+- `scaffold` mapped `last_checkin` to "Last Inventory Update" even when the
+  export contains "Last Check-in" — exact-match ties now follow hint priority
+  order, so the MDM check-in timestamp wins over the inventory recon date.
+- Corrupt `config.yaml` files written by pre-May-2026 GUI builds
+  (`security_agents: []` followed by orphaned entries) are repaired on load
+  and healed on the next save. Previously every config section after the
+  corruption point was silently ignored.
+- "Export Findings" on the Health Audit screen silently did nothing when the
+  chosen folder was outside Documents/Downloads/Desktop. Save-panel choices
+  are now honored everywhere, and write failures show an error.
+- Run History now records native scheduled and manual runs (it previously
+  only saw legacy Python-era logs), and the Schedules screen's "Last Run"
+  column populates after each run.
+
 ### Added
 
 - In-app diagnostic bundle: Settings → Diagnostics gains a "Generate diagnostic
@@ -54,6 +226,10 @@ versions in this repository map to git tags.
 - "Full Instance Report" template: a new template containing every workbook sheet
   and every HTML section, now the default for app report generation. Executive and
   the other focused templates remain available in the picker.
+- Custom report template: the Generate sheet now offers a "Custom" template picker
+  where you select which sheets to include in a single-sheet or subset report. The
+  selected sheet list persists across launches, so repeat jobs use your preferred
+  subset automatically.
 - Five workbook sheets ported from the Python engine: Patch Summary Dashboard,
   Mobile Supervision Status, Device Security State, Protect Plans, and Protect
   Threat Overview.

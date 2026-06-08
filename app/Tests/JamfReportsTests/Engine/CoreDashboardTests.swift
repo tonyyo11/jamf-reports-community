@@ -313,6 +313,10 @@ final class CoreDashboardTests: XCTestCase {
             // Protect (optional)
             "Protect Overview", "Protect Alerts", "Protect Computers", "Protect Insights",
             "Protect Plans", "Protect Threat Overview",
+            // OS currency
+            "OS Currency",
+            // mSCP / STIG compliance
+            "mSCP Compliance", "Compliance Trend",
         ]
         for name in expected {
             XCTAssertTrue(names.contains(name), "Sheet plan missing: \(name)")

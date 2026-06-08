@@ -33,6 +33,57 @@ final class AuditHygieneTests: XCTestCase {
         XCTAssertEqual(findings[1].severity, "OK")
     }
 
+    // MARK: - affectedDisplay
+
+    /// CRITICAL/WARNING findings with affected==0 must display "—" because
+    /// `pro audit` is an instance-config check with no per-device breakdown;
+    /// "0 affected" next to CRITICAL would mislead operators into thinking
+    /// no remediation is required.
+    func testAffectedDisplayDashForNonOKZero() {
+        let critical = AuditFinding(
+            name: "FileVault Unencrypted",
+            affected: 0,
+            category: "Encryption",
+            recommendation: "Enable FileVault",
+            severity: "CRITICAL"
+        )
+        XCTAssertEqual(critical.affectedDisplay, "—")
+
+        let warning = AuditFinding(
+            name: "Outdated OS Version",
+            affected: 0,
+            category: "Update",
+            recommendation: "Install latest OS",
+            severity: "WARNING"
+        )
+        XCTAssertEqual(warning.affectedDisplay, "—")
+    }
+
+    /// OK findings with affected==0 must display "0" because the control
+    /// passed; "—" here would hide a meaningful zero.
+    func testAffectedDisplayZeroForOKFindings() {
+        let ok = AuditFinding(
+            name: "Audit record generation",
+            affected: 0,
+            category: "Logging",
+            recommendation: "Ensure auditd is running",
+            severity: "OK"
+        )
+        XCTAssertEqual(ok.affectedDisplay, "0")
+    }
+
+    /// Findings with a non-zero affected count always display the integer.
+    func testAffectedDisplayNumericForNonZero() {
+        let critical = AuditFinding(
+            name: "Audit failure halt",
+            affected: 52,
+            category: "Logging",
+            recommendation: "Configure audit_failure_halt",
+            severity: "CRITICAL"
+        )
+        XCTAssertEqual(critical.affectedDisplay, "52")
+    }
+
     func testUnusedGroupDecoding() throws {
         let json = """
         [

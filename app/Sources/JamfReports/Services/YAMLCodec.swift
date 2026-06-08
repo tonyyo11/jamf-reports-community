@@ -38,6 +38,12 @@ enum YAMLCodec {
     struct YAMLDocument: Equatable, Sendable {
         var originalText: String
         var root: YAMLValue
+        /// Keys whose values were reconstructed from the corrupt
+        /// `key: []` + orphaned `- item` pattern (written by GUI builds
+        /// prior to the compact-sequence parser fix). Empty for well-formed
+        /// documents. Callers should log a warning and re-save to heal the
+        /// underlying file.
+        var repairedKeys: Set<String> = []
     }
 
     enum CodecError: Error, LocalizedError {
@@ -54,7 +60,7 @@ enum YAMLCodec {
         var parser = Parser(text: text)
         let root = parser.parseBlock(indent: 0)
         guard case .mapping = root else { throw CodecError.invalidTopLevel }
-        return YAMLDocument(originalText: text, root: root)
+        return YAMLDocument(originalText: text, root: root, repairedKeys: parser.repairedKeys)
     }
 
     static func emptyDocument() -> YAMLDocument {
@@ -100,6 +106,10 @@ enum YAMLCodec {
     private static func topLevelKey(in line: String) -> String? {
         guard !line.isEmpty,
               line.first != " ",
+              // Sequence items are never top-level keys. Treating them as
+              // keys made endOfTopLevelBlock stop at orphaned `- name:` lines,
+              // which preserved (and duplicated) corrupt content on re-encode.
+              !line.hasPrefix("- "),
               !line.trimmingCharacters(in: .whitespaces).hasPrefix("#"),
               let parsed = parseKeyValue(line) else {
             return nil
@@ -209,12 +219,18 @@ enum YAMLCodec {
             || value.rangeOfCharacter(from: special) != nil
             || value.first?.isWhitespace == true
             || value.last?.isWhitespace == true
+            || value.contains("\n") || value.contains("\r")
             || ["true", "false", "null", "~"].contains(value.lowercased())
             || Int(value) != nil
         guard needsQuote else { return value }
+        // Escape in order: backslash first, then other special chars.
+        // \n and \r are always escaped so a value containing a literal newline
+        // cannot break the YAML line structure even when wrapped in quotes.
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
         return "\"\(escaped)\""
     }
 
@@ -286,6 +302,9 @@ extension YAMLCodec.YAMLValue {
 private struct Parser {
     private let lines: [String]
     private var index = 0
+    /// Keys whose orphaned `- item` lines were re-attached during parsing.
+    /// See `YAMLCodec.YAMLDocument.repairedKeys`.
+    private(set) var repairedKeys: Set<String> = []
 
     init(text: String) {
         self.lines = text.components(separatedBy: .newlines)
@@ -312,7 +331,24 @@ private struct Parser {
             let line = lines[index]
             let currentIndent = indentation(of: line)
             let trimmed = trimmedContent(line)
-            if currentIndent < indent || trimmed.hasPrefix("- ") { break }
+            if currentIndent < indent { break }
+            if trimmed.hasPrefix("- ") {
+                // Sequence items at this mapping's own indent. Well-formed
+                // documents never reach here (zero-indent sequences under a
+                // bare `key:` are consumed by the peek path below), so this
+                // is the corrupt `key: []` + orphaned `- item` pattern from
+                // pre-fix GUI builds. Repair by attaching the items to the
+                // previous key when it holds an empty/null value; otherwise
+                // drop them — either way, keep parsing so the keys after the
+                // orphans are not silently lost.
+                let orphans = parseSequence(indent: currentIndent)
+                if let last = entries.indices.last,
+                   entries[last].value == .sequence([]) || entries[last].value == .scalar(.null) {
+                    entries[last].value = .sequence(orphans)
+                    repairedKeys.insert(entries[last].key)
+                }
+                continue
+            }
             guard currentIndent == indent else {
                 index += 1
                 continue

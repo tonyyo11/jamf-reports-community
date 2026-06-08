@@ -19,6 +19,10 @@ struct DevicesView: View {
     @State private var sortOrder = [KeyPathComparator(\DeviceInventoryRecord.displayName)]
     @State private var isExportingCSV = false
     @State private var exportError: String?
+    /// Per-device EA values for the configured security agent's column, keyed
+    /// by lowercased device identifiers. Feeds the security-agent risk factor
+    /// (v3.5's hardcoded "Nessus" check, now driven by security_agents config).
+    @State private var agentStatusLookup: [String: String] = [:]
     // Tracks the Devices page width so the inventory table can hide low-priority
     // columns under 1200pt — avoids truncation on 13" displays.
     @State private var pageWidth: CGFloat = 1400
@@ -86,7 +90,7 @@ struct DevicesView: View {
                 // via the configurable RiskScoringService. Note: the inline
                 // `device.risk` enum is a legacy heuristic; this is the
                 // authoritative scorer used by the new Priority Action List.
-                let risk = Self.priorityRisk(for: device)
+                let risk = priorityRisk(for: device)
                 return risk.level >= .high
             }
         }.sorted(using: sortOrder)
@@ -95,8 +99,24 @@ struct DevicesView: View {
     /// Authoritative per-device risk via `RiskScoringService`. Memoizing
     /// would help if the filter cost showed up in profiling, but the live
     /// table re-renders on selection change rather than per filter pass.
-    static func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
-        RiskScoringService.score(input: .from(record: device))
+    private func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
+        RiskScoringService.score(input: .from(record: device, agentCheck: agentCheck(for: device)))
+    }
+
+    /// The device's status against the tenant's configured security agent, or
+    /// nil when no agent is configured / no EA value exists for this device.
+    private func agentCheck(for device: DeviceInventoryRecord) -> RiskScoringService.SecurityAgentCheck? {
+        guard !agentStatusLookup.isEmpty,
+              let agent = workspace.configState.securityAgents.first(where: {
+                  !$0.column.trimmingCharacters(in: .whitespaces).isEmpty
+              }) else {
+            return nil
+        }
+        let keys = [device.serial, device.jamfID ?? "", device.name]
+            .map { $0.lowercased() }
+            .filter { !$0.isEmpty }
+        guard let value = keys.compactMap({ agentStatusLookup[$0] }).first else { return nil }
+        return .init(value: value, connectedValue: agent.connectedValue)
     }
 
     private var selectedDevice: DeviceInventoryRecord? {
@@ -735,7 +755,10 @@ struct DevicesView: View {
     /// directly into the per-device drill.
     @ViewBuilder
     private func priorityRiskSection(for device: DeviceInventoryRecord) -> some View {
-        let risk = Self.priorityRisk(for: device)
+        let risk = priorityRisk(for: device)
+        // Configured security-agent name labels the agent factor
+        // (e.g. "Nessus Agent Disconnected" instead of the generic label).
+        let agentName = workspace.edrAgentName
         if !risk.triggered.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -750,7 +773,7 @@ struct DevicesView: View {
                     ForEach(risk.triggered, id: \.factor) { entry in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
-                                Text(entry.factor.displayLabel)
+                                Text(entry.factor.displayLabel(agentName: agentName))
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
                                 if let detail = entry.detail {
@@ -759,15 +782,15 @@ struct DevicesView: View {
                                 Spacer()
                                 Pill(text: "+\(entry.points)", tone: .warn)
                             }
-                            Text(entry.factor.remediation)
+                            Text(entry.factor.remediation(agentName: agentName))
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                         .padding(.vertical, 3)
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(
-                            "\(entry.factor.displayLabel), \(entry.points) points. " +
-                            "Remediation: \(entry.factor.remediation)"
+                            "\(entry.factor.displayLabel(agentName: agentName)), \(entry.points) points. " +
+                            "Remediation: \(entry.factor.remediation(agentName: agentName))"
                         )
                     }
                 }
@@ -907,6 +930,20 @@ struct DevicesView: View {
         if selectedID == nil || !loaded.devices.contains(where: { $0.id == selectedID }) {
             selectedID = loaded.devices.first?.id
         }
+
+        // Security-agent risk factor: build the per-device EA lookup for the
+        // first configured agent. Empty when none configured or no ea-results
+        // snapshot exists — the factor then never triggers.
+        let agentColumn = workspace.configState.securityAgents
+            .first { !$0.column.trimmingCharacters(in: .whitespaces).isEmpty }?
+            .column ?? ""
+        if !demoMode, !agentColumn.isEmpty {
+            agentStatusLookup = await Task.detached(priority: .userInitiated) {
+                RiskScoringService.agentStatusLookup(profile: profile, eaColumn: agentColumn)
+            }.value
+        } else {
+            agentStatusLookup = [:]
+        }
         isLoading = false
     }
 
@@ -963,18 +1000,15 @@ struct DevicesView: View {
     @MainActor
     private func exportFilteredCSV() async {
         let panel = NSSavePanel()
-        let dateStr = ISO8601DateFormatter.string(
-            from: Date(), timeZone: .current,
-            formatOptions: [.withFullDate]
+        panel.nameFieldStringValue = ExportNaming.filename(
+            kind: "devices", profile: workspace.profile, ext: "csv"
         )
-        panel.nameFieldStringValue = "devices-\(workspace.profile)-\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.canCreateDirectories = true
+        // The save panel is the user's explicit, per-action consent for this
+        // exact path — no additional allow-list gate (matches every other
+        // export flow: Patch, Runs, Reports, chart PNGs).
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard SystemActions.userExportTargetIsAllowed(url) else {
-            exportError = "Choose a location in Documents, Downloads, or Desktop."
-            return
-        }
         isExportingCSV = true
         defer { isExportingCSV = false }
         let rows = filteredDevices

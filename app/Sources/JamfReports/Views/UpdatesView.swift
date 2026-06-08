@@ -9,6 +9,9 @@ struct UpdatesView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: UpdateStatusService.Snapshot = .empty
     @State private var hasLoaded = false
+    /// Latest OS versions from cached SOFA feeds. Empty until the first collect that
+    /// fetches SOFA — view renders nothing new when empty.
+    @State private var sofaRows: [SOFAFeedService.OSFamilyRow] = []
 
     /// `pro sg` templates the Updates dashboard offers as actionable
     /// remediations. Loaded once per profile. `nil` until the feature-detect
@@ -55,6 +58,9 @@ struct UpdatesView: View {
                 }
                 if !snapshot.errorDevices.isEmpty {
                     errorDevicesCard
+                }
+                if !sofaRows.isEmpty {
+                    sofaLatestCard
                 }
             }
         }
@@ -158,6 +164,11 @@ struct UpdatesView: View {
         snapshot = workspace.demoMode
             ? Self.demoSnapshot
             : UpdateStatusService.load(profile: workspace.profile)
+        if !workspace.demoMode,
+           let dir = try? WorkspacePaths.dataDir(for: workspace.profile) {
+            let sofaSnap = SOFAFeedService.load(dataDir: dir)
+            sofaRows = sofaSnap.rows
+        }
     }
 
     private static let demoSnapshot = UpdateStatusService.Snapshot(
@@ -217,7 +228,8 @@ struct UpdatesView: View {
                             lastEvent: "2026-05-08T22:40:00Z")
         ],
         sourceFile: nil,
-        snapshotDate: Date()
+        snapshotDate: Date(),
+        scanFailuresAvailable: true
     )
 
     // MARK: - Computed values
@@ -226,12 +238,22 @@ struct UpdatesView: View {
         snapshot.planStateBreakdown.first { $0.label == "PlanCompleted" }?.count ?? 0
     }
 
+    /// From plan_state_summary — always present, and always the same number
+    /// the plan-state donut shows. (The failedPlans array only exists after a
+    /// --scan-failures run; counting it rendered "0 failing plans" next to a
+    /// donut showing thousands of PlanFailed states.)
     private var failingPlansCount: Int {
-        snapshot.failedPlans.count
+        snapshot.plansFailedFromStates
     }
 
-    private var errorDevicesCount: Int {
-        snapshot.errorDevices.count
+    private var errorDevicesValue: String {
+        snapshot.scanFailuresAvailable ? "\(snapshot.errorDevices.count)" : "—"
+    }
+
+    private var errorDevicesSubtitle: String {
+        snapshot.scanFailuresAvailable
+            ? "Device-level failures"
+            : "Failure scan not run"
     }
 
     // MARK: - Sections
@@ -262,12 +284,12 @@ struct UpdatesView: View {
             StatTile(
                 label: "Failing Plans",
                 value: "\(failingPlansCount)",
-                sub: "Requiring intervention"
+                sub: "Failed or exception state"
             )
             StatTile(
                 label: "Error Devices",
-                value: "\(errorDevicesCount)",
-                sub: "Device-level failures"
+                value: errorDevicesValue,
+                sub: errorDevicesSubtitle
             )
             StatTile(
                 label: "Plans Completed",
@@ -568,6 +590,57 @@ struct UpdatesView: View {
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+
+    // MARK: - SOFA OS Latest Versions
+
+    /// Shows the latest OS version per platform from the cached SOFA feed.
+    /// Renders only when SOFA data has been collected — no error state when absent.
+    @ViewBuilder
+    private var sofaLatestCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "OS Latest Versions")
+                ForEach(sofaRows, id: \.osFamily) { row in
+                    HStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.osFamily)
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Text(row.platform)
+                                .font(.caption)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                        Spacer(minLength: 8)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(row.productVersion)
+                                .font(Theme.Fonts.mono(12, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                            if let days = row.daysSinceRelease {
+                                Text("\(days)d ago")
+                                    .font(Theme.Fonts.mono(10.5))
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                            } else if !row.releaseDate.isEmpty {
+                                Text(String(row.releaseDate.prefix(10)))
+                                    .font(Theme.Fonts.mono(10.5))
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                            }
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        "\(row.osFamily): \(row.productVersion)" +
+                        (row.daysSinceRelease.map { ", released \($0) days ago" } ?? "")
+                    )
+                    if row.osFamily != sofaRows.last?.osFamily {
+                        Divider()
+                    }
+                }
+                Text("Source: SOFA (sofa.macadmins.io)")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+        }
     }
 }
 

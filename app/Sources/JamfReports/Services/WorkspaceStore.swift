@@ -14,7 +14,17 @@ final class WorkspaceStore {
     var customEAs: [CustomEA]
     var columnMappings: [ColumnMapping]
     var demoMode: Bool
-    var selectedScoreCards: [TrendSeries.Metric]
+    /// Overview score-card selection. Persisted across launches (UserDefaults) —
+    /// before v2.2.0 this reset to the default four metrics on every start.
+    var selectedScoreCards: [TrendSeries.Metric] {
+        didSet { Self.persistScoreCards(selectedScoreCards) }
+    }
+    /// Heavy collection tiers (.inventory / .scan) whose newest snapshot is
+    /// older than `heavyTierStaleDays`. Drives the Overview "data is stale —
+    /// refresh now?" prompt. Heavy tiers are never collected automatically
+    /// (per-device queries can stall on-prem Jamf Pro); the prompt's button
+    /// is the only trigger.
+    var staleHeavyTiers: [CollectionTier] = []
     var jamfCLIPath: String?
     var jamfCLIVersion: String?
     var jamfCLIInstallSource: String?
@@ -56,6 +66,31 @@ final class WorkspaceStore {
     /// dependency, and tests need to read it from `tearDown` (which
     /// XCTestCase requires to be non-MainActor-isolated).
     nonisolated static let forceDemoModeKey = "com.jamfreports.forceDemoMode"
+
+    // MARK: Score-card selection persistence
+
+    /// UserDefaults key for the Overview score-card selection (comma-separated
+    /// `TrendSeries.Metric` raw values — same serialization style as `TabVisibility`).
+    nonisolated static let scoreCardsKey = "com.jamfreports.selectedScoreCards"
+
+    nonisolated static func persistScoreCards(_ metrics: [TrendSeries.Metric]) {
+        UserDefaults.standard.set(
+            metrics.map(\.rawValue).joined(separator: ","),
+            forKey: scoreCardsKey
+        )
+    }
+
+    /// nil when nothing was persisted yet (first launch) or the stored value
+    /// contains no recognizable metrics — callers fall back to the default set.
+    nonisolated static func loadPersistedScoreCards() -> [TrendSeries.Metric]? {
+        guard let raw = UserDefaults.standard.string(forKey: scoreCardsKey), !raw.isEmpty else {
+            return nil
+        }
+        let metrics = raw.split(separator: ",").compactMap {
+            TrendSeries.Metric(rawValue: String($0))
+        }
+        return metrics.isEmpty ? nil : metrics
+    }
 
     /// True when the active profile has a `config.yaml` on disk under
     /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
@@ -101,6 +136,15 @@ final class WorkspaceStore {
         let label = configState.baselineLabel.trimmingCharacters(in: .whitespaces)
         if !label.isEmpty { return label }
         return configState.complianceBenchmarks.first(where: { !$0.isEmpty })
+    }
+
+    /// The first configured security agent's name (e.g. "CrowdStrike Falcon"),
+    /// used to label the EDR metric across the UI. Nil when no security_agents
+    /// are configured — surfaces fall back to the generic "EDR Agent" label.
+    var edrAgentName: String? {
+        configState.securityAgents
+            .first { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }?
+            .name
     }
 
     // MARK: Column label / required metadata
@@ -160,7 +204,8 @@ final class WorkspaceStore {
         self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
-        self.selectedScoreCards = [.stability, .activeDevices, .fileVault, .compliance]
+        self.selectedScoreCards = Self.loadPersistedScoreCards()
+            ?? [.stability, .activeDevices, .fileVault, .compliance]
         let jamfCLI = JamfCLIInstaller.currentInstallation()
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
@@ -303,7 +348,7 @@ final class WorkspaceStore {
         workspaceInitMessage = "Workspace initialized · collecting jamf-cli snapshots…"
         let collectExit: Int32
         do {
-            collectExit = try await bridge.collect(profile: profile) { _ in }
+            collectExit = try await bridge.collect(profile: profile, force: true) { _ in }
         } catch {
             isInitializingWorkspace = false
             workspaceInitMessage = "Workspace initialized · collect failed · \(error.localizedDescription)"
@@ -676,7 +721,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .trends:            "Trends"
         case .audit:             "Health Audit"
         case .reports:           "Generated"
-        case .schedules:         "Schedules"
+        case .schedules:         "Automation"
         case .runs:              "Run History"
         case .config:            "Config"
         case .customize:         "Customize"
@@ -708,7 +753,7 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .trends:            "chart.line.uptrend.xyaxis"
         case .audit:             "shield.checkered"
         case .reports:           "doc.text"
-        case .schedules:         "clock"
+        case .schedules:         "gearshape.2"
         case .runs:              "terminal"
         case .config:            "wrench.and.screwdriver"
         case .customize:         "sparkles"
@@ -737,7 +782,6 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .fleet:     "multi"
         case .trends:    "26w"
         case .reports:   "47"
-        case .schedules: "5"
         default:         nil
         }
     }

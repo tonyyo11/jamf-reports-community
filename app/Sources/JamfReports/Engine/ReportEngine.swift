@@ -103,9 +103,15 @@ struct ReportEngine: Sendable {
         }
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
+        // Standalone PNGs land next to the xlsx via ExportNaming conventions.
         if config.charts?.isEnabled == true,
            let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
-            renderChartSheet(workbook: workbook, summariesDir: summariesDir)
+            renderChartSheet(
+                workbook: workbook,
+                summariesDir: summariesDir,
+                pngOutputDir: outputURL.deletingLastPathComponent(),
+                profile: profile
+            )
         }
 
         // Write the workbook atomically.
@@ -211,6 +217,28 @@ struct ReportEngine: Sendable {
                 AppLogger.engine.warning("\(msg, privacy: .private)")
                 print(msg)
                 onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+                // Skip sidecar move when the xlsx move failed — sidecars without
+                // a workbook in the archive are uninformative.
+                continue
+            }
+            // Move sibling sidecar files (sha256 + manifest.txt) alongside the
+            // xlsx so they don't accumulate as orphans in the reports root.
+            // Failures are best-effort: warn and continue rather than block rotation.
+            let sidecarExts = ["sha256", "manifest.txt"]
+            for ext in sidecarExts {
+                let sidecar = file.appendingPathExtension(ext)
+                guard fm.fileExists(atPath: sidecar.path) else { continue }
+                let sidecarDest = archiveDir.appendingPathComponent(sidecar.lastPathComponent)
+                do {
+                    if fm.fileExists(atPath: sidecarDest.path) {
+                        try fm.removeItem(at: sidecarDest)
+                    }
+                    try fm.moveItem(at: sidecar, to: sidecarDest)
+                } catch {
+                    let msg = "[warn] Could not archive sidecar \(sidecar.lastPathComponent): \(error)"
+                    AppLogger.engine.warning("\(msg, privacy: .private)")
+                    onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+                }
             }
         }
     }
@@ -258,8 +286,9 @@ struct ReportEngine: Sendable {
     /// Write `summary_YYYY-MM-DD.json` to `summariesDir` from cached jamf-cli snapshots.
     ///
     /// Skips if a valid same-day file already exists (first run of day wins, matching Python
-    /// default non-force behavior). Fields that require CSV data (compliancePct, crowdstrikePct)
-    /// are omitted so TrendStore skips them rather than rendering a flat 0% line.
+    /// default non-force behavior). compliancePct is the control-gap proxy (flagged via
+    /// complianceIsProxy) when per-device security data exists; crowdstrikePct still requires
+    /// CSV/EA data and is omitted so TrendStore skips it rather than rendering a flat 0% line.
     ///
     /// - Parameters:
     ///   - summariesDir: Directory to write the summary file into.
@@ -285,16 +314,24 @@ struct ReportEngine: Sendable {
         let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
 
         if fm.fileExists(atPath: summaryFile.path),
-           let data = try? Data(contentsOf: summaryFile),
-           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let existingData = try? Data(contentsOf: summaryFile),
+           let obj = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any],
            obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
-            // Same-day summary already valid — leave the existing file untouched
-            // so its mtime reflects the first run that produced it. Log an [info]
-            // line so operators investigating "Refresh didn't clear staleness"
-            // can see this is the reason a fresh file wasn't written.
-            let msg = "[info] summary_\(today).json already exists — leaving existing file in place"
-            AppLogger.engine.info("\(msg, privacy: .public)")
-            onLine?(.init(timestamp: Date(), level: .info, text: msg))
+            // Same-day summary is valid. Check whether a fresh build would be strictly
+            // better (proxy→real mSCP upgrade, or mscpBands newly populated). If not,
+            // keep the existing file so its mtime reflects the first run.
+            if let fresh = buildSummaryFromCLI(date: today, provenance: provenance),
+               let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
+               Self.freshSummaryIsBetter(existing: existing, fresh: fresh) {
+                let upgradeMsg = "[info] summary_\(today).json upgraded (proxy→real mSCP)"
+                AppLogger.engine.info("\(upgradeMsg, privacy: .public)")
+                onLine?(.init(timestamp: Date(), level: .info, text: upgradeMsg))
+                writeSummaryFile(fresh, to: summaryFile, onLine: onLine)
+            } else {
+                let msg = "[info] summary_\(today).json already exists — leaving existing file in place"
+                AppLogger.engine.info("\(msg, privacy: .public)")
+                onLine?(.init(timestamp: Date(), level: .info, text: msg))
+            }
             return
         }
 
@@ -311,12 +348,48 @@ struct ReportEngine: Sendable {
             return
         }
 
+        writeSummaryFile(summary, to: summaryFile, onLine: onLine)
+    }
+
+    // MARK: - Summary upgrade helpers
+
+    /// Returns true when `fresh` is strictly better than `existing` — meaning it
+    /// should overwrite a same-day summary that would otherwise be kept.
+    ///
+    /// "Better" means at least one of:
+    /// - `existing.complianceIsProxy == true` AND `fresh.complianceIsProxy == false`
+    ///   (real mSCP data is now available where before only the 4-control proxy was), OR
+    /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`.
+    ///
+    /// Never returns true when the fresh run would downgrade (real→proxy, or bands dropped),
+    /// preserving the PR-18 protection against partial-collect clobbering a good summary.
+    static func freshSummaryIsBetter(existing: DailySummary, fresh: DailySummary) -> Bool {
+        if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
+        let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
+        let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
+        if !existingHasBands && freshHasBands { return true }
+        // A later same-day collect that now sees stale devices where the earlier
+        // one recorded zero (on a non-empty fleet) is strictly better — the
+        // earlier run's stale source (device-compliance) was empty/degraded,
+        // e.g. after a transient auth failure that fell back to incomplete data.
+        // Upgrade only; a real count (existing > 0) is never downgraded to 0, so
+        // a genuinely zero-stale tenant is unaffected.
+        if existing.staleCount == 0, existing.totalDevices > 0, fresh.staleCount > 0 { return true }
+        return false
+    }
+
+    /// Encode and atomically write `summary` to `url`, logging the outcome to `onLine`.
+    private func writeSummaryFile(
+        _ summary: DailySummary,
+        to url: URL,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             let data = try encoder.encode(summary)
-            try data.write(to: summaryFile, options: .atomic)
-            let msg = "[ok] wrote \(summaryFile.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
+            try data.write(to: url, options: .atomic)
+            let msg = "[ok] wrote \(url.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
             AppLogger.engine.info("\(msg, privacy: .public)")
             onLine?(.init(timestamp: Date(), level: .ok, text: msg))
         } catch {
@@ -350,12 +423,22 @@ struct ReportEngine: Sendable {
         var sipCount: Int?
         var firewallCount: Int?
         var gatekeeperCount: Int?
+        // Compliance proxy (control-gap derivation, same rules as
+        // CompliancePostureService): % of devices failing zero of the four
+        // baseline controls. Gives the Compliance Benchmark trend and the
+        // Stability Index a real signal on jamf-cli-only tenants where no
+        // compliance EA / CSV source exists. Marked complianceIsProxy so the
+        // UI labels it honestly.
+        var complianceProxyPct: Double? = nil
 
-        // Security report: total_devices + per-control counts
+        // Security report: total_devices + per-control counts + per-device
+        // sections (decoded once, used for both the summary and the proxy).
         if let secData = cachedData(kind: "security"),
            let items = try? JSONDecoder().decode([SecurityReportItem].self, from: secData) {
+            var deviceGapCounts: [Int] = []
             for item in items {
-                if case .summary(let s) = item {
+                switch item {
+                case .summary(let s):
                     totalDevices = s.data.totalDevices ?? 0
                     fileVaultCount = s.data.fileVaultEncrypted
                     sipCount = s.data.sipEnabled
@@ -368,8 +451,17 @@ struct ReportEngine: Sendable {
                         fileVaultPct = Double(enc) / Double(totalDevices) * 100.0
                     }
                     // If neither source is available fileVaultPct remains nil.
+                case .device(let device):
+                    if let gaps = CompliancePostureService.deviceGapCount(device) {
+                        deviceGapCounts.append(gaps)
+                    }
+                default:
                     break
                 }
+            }
+            if !deviceGapCounts.isEmpty {
+                let compliant = deviceGapCounts.filter { $0 == 0 }.count
+                complianceProxyPct = Double(compliant) / Double(deviceGapCounts.count) * 100.0
             }
         }
 
@@ -382,32 +474,45 @@ struct ReportEngine: Sendable {
 
         guard totalDevices > 0 else { return nil }
 
-        // Stale count from device-compliance
+        // Stale count from device-compliance, using `daysSinceCheckin >= resolvedStaleDays`
+        // with the config threshold (default 30 days). The server-side `stale` flag uses a
+        // ~90-100d cadence and is intentionally avoided here. Note: this path only unified
+        // the summary-writer threshold (#176); DeviceInventoryService and StaleDeviceService
+        // still hardcode 30 and use `daysSinceContact` — counts agree at the default config
+        // but diverge with a non-default threshold (follow-up: parameterize those services).
+        let staleDaysThreshold = config.thresholds?.resolvedStaleDays ?? 30
         var staleCount = 0
         if let compData = cachedData(kind: "device-compliance"),
            let rows = try? JSONDecoder().decode([DeviceComplianceRow].self, from: compData) {
-            staleCount = rows.filter { $0.stale == true }.count
+            staleCount = rows.filter {
+                ($0.daysSinceCheckin ?? 0) >= staleDaysThreshold
+            }.count
         }
 
-        // OS current % — requires current_versions config; nil when unconfigured or
-        // inventory data is absent (not the same as 0%).
+        // OS current % — SOFA-driven: a device is "current" when its OS version is
+        // >= the latest release for its own major version per the SOFA macOS feed.
+        // Falls back to nil (not 0%) when the SOFA cache or inventory-summary is absent.
         var osCurrentPct: Double? = nil
-        let currentVersions: [String] = config.customEas?
-            .first { $0.type == .version && $0.name.lowercased().contains("macos") }
-            .flatMap { $0.currentVersions }?.map { $0.lowercased() } ?? []
-
-        if !currentVersions.isEmpty,
-           let invData = cachedData(kind: "inventory-summary"),
+        if let invData = cachedData(kind: "inventory-summary"),
            let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData),
            totalDevices > 0 {
-            let current = rows
-                .filter { row in currentVersions.contains { row.osVersion.lowercased().hasPrefix($0) } }
-                .reduce(0) { $0 + $1.count }
-            osCurrentPct = Double(current) / Double(totalDevices) * 100.0
+            let osCounts = Dictionary(rows.map { ($0.osVersion, $0.count) }, uniquingKeysWith: +)
+            let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+            let macOSRows = sofaSnapshot.rows.filter { $0.platform == "macOS" }
+            osCurrentPct = Self.osCurrentPercent(
+                macOSRows: macOSRows, osCounts: osCounts, totalDevices: totalDevices)
         }
 
-        // Patch % — average compliance_pct across patch-status rows; nil when
-        // patch-status data is absent (not the same as 0%).
+        // Patch % — unweighted mean of per-title compliance_pct across patch-status
+        // rows; nil when patch-status data is absent (not the same as 0%).
+        //
+        // `compactMap` excludes titles that carry a nil or unparseable
+        // compliance_pct (e.g. patch titles with no enrolled devices yet).
+        // Those titles are not counted in the denominator, so `patchPct` is the
+        // average title compliance for titles that *have* data. It is NOT a
+        // device-weighted fleet compliance figure. The displayed label "Patch
+        // Compliance" should be read as "average per-title compliance", not as
+        // the fraction of devices on the latest patch version.
         var patchPct: Double? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {
@@ -415,6 +520,27 @@ struct ReportEngine: Sendable {
             if !values.isEmpty {
                 patchPct = values.reduce(0, +) / Double(values.count)
             }
+        }
+
+        // Real mSCP compliance from ea-results — overrides the proxy when the
+        // primary baseline resolves to at least one device with data.
+        // `devicesWithData == 0` → primary.compliancePct is nil → proxy kept.
+        var complianceFinalPct: Double? = complianceProxyPct
+        var complianceIsRealData = false
+        var mscpBandsSnapshot: [String: MSCPBandCounts]? = nil
+        let eaBaselines = config.compliance?.resolvedBaselines ?? []
+        if !eaBaselines.isEmpty,
+           let eaData = try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir),
+           let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData) {
+            let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
+            if let primary = results.first, let realPct = primary.compliancePct {
+                complianceFinalPct = realPct
+                complianceIsRealData = true
+            }
+            // Map all baseline results into the mscpBands summary field so the
+            // trend chart has per-date band data from the first collect onward.
+            let bandsMap = Self.mscpBandsMap(from: results)
+            if !bandsMap.isEmpty { mscpBandsSnapshot = bandsMap }
         }
 
         // Derive per-control percentages and the weighted v3.5 security
@@ -444,11 +570,24 @@ struct ReportEngine: Sendable {
             .reduce(0, +)
         let p1 = gatekeeperCount.map { totalDevices - $0 } ?? 0
 
+        // complianceIsProxy:
+        //   nil   — no compliance data at all (neither proxy nor real)
+        //   true  — 4-control proxy from security report
+        //   false — real mSCP failure-count data from ea-results
+        let complianceIsProxy: Bool?
+        if complianceIsRealData {
+            complianceIsProxy = false
+        } else if complianceProxyPct != nil {
+            complianceIsProxy = true
+        } else {
+            complianceIsProxy = nil
+        }
+
         return DailySummary(
             date: date,
             totalDevices: totalDevices,
             fileVaultPct: fileVaultPct.map(round1),
-            compliancePct: nil,
+            compliancePct: complianceFinalPct.map(round1),
             staleCount: staleCount,
             osCurrentPct: osCurrentPct.map(round1),
             crowdstrikePct: nil,
@@ -459,8 +598,97 @@ struct ReportEngine: Sendable {
             gatekeeperPct: gatekeeperPct.map(round1),
             securityScore: securityScore.map(round1),
             actionItemsP0: fileVaultCount != nil ? p0 : nil,
-            actionItemsP1: gatekeeperCount.map { _ in p1 }
+            actionItemsP1: gatekeeperCount.map { _ in p1 },
+            complianceIsProxy: complianceIsProxy,
+            mscpBands: mscpBandsSnapshot
         )
+    }
+
+    /// Map `MSCPComplianceService.BaselineResult` array → `[baselineName: MSCPBandCounts]`
+    /// for persistence in `summary.json`.
+    ///
+    /// Skips baselines with zero total devices (no data seen for that baseline's EA).
+    static func mscpBandsMap(from results: [MSCPComplianceService.BaselineResult]) -> [String: MSCPBandCounts] {
+        var out: [String: MSCPBandCounts] = [:]
+        for result in results {
+            guard result.totalDevices > 0 else { continue }
+            out[result.name] = bandCountsFromBands(result.bands, noData: result.noDataCount)
+        }
+        return out
+    }
+
+    /// Extract raw integer counts from `[ComplianceBand]` (which carries computed pct
+    /// alongside count). Band order matches `ComplianceBandingService.Band.allCases`:
+    /// pass, low, medLow, medium, high, noData.
+    private static func bandCountsFromBands(
+        _ bands: [ComplianceBand],
+        noData: Int
+    ) -> MSCPBandCounts {
+        // bands is always 6 elements in Band.allCases order: pass, low, medLow, medium, high, noData.
+        // Index them defensively.
+        func count(at index: Int) -> Int { index < bands.count ? bands[index].count : 0 }
+        return MSCPBandCounts(
+            pass: count(at: 0),
+            low: count(at: 1),
+            medLow: count(at: 2),
+            medium: count(at: 3),
+            high: count(at: 4),
+            noData: noData
+        )
+    }
+
+    /// Compute OS-currency percentage from SOFA macOS rows and the fleet OS histogram.
+    ///
+    /// A device is "current" when its full OS version tuple is >= the latest release for
+    /// its own major version in the SOFA feed (e.g., a Sequoia device is current iff on
+    /// 15.7.7; a Tahoe device iff on 26.5.1). Devices on a major that SOFA does not
+    /// track are excluded from both the numerator and denominator, so a transition fleet
+    /// with devices on two majors still returns a meaningful percentage.
+    ///
+    /// Returns nil when `macOSRows` is empty (SOFA cache absent) or `totalDevices` is 0.
+    ///
+    /// Exposed as `static` for unit testability — callers pass in the data rather than
+    /// relying on `self.dataDir`, so tests need no temp dir.
+    static func osCurrentPercent(
+        macOSRows: [SOFAFeedService.OSFamilyRow],
+        osCounts: [String: Int],
+        totalDevices: Int
+    ) -> Double? {
+        guard !macOSRows.isEmpty, totalDevices > 0 else { return nil }
+        // Build latest-version-per-major from SOFA macOS rows.
+        // When two rows share a major (e.g., two macOS 15 entries), keep the
+        // numerically greatest product version — that is the true latest.
+        var latestByMajor: [Int: String] = [:]
+        for row in macOSRows {
+            let tuple = SOFAFeedService.versionTuple(row.productVersion)
+            guard let major = tuple.first else { continue }
+            if let existing = latestByMajor[major] {
+                let existingTuple = SOFAFeedService.versionTuple(existing)
+                // Compare component-by-component; keep the greater version.
+                let len = max(tuple.count, existingTuple.count)
+                var newer = false
+                for i in 0..<len {
+                    let a = i < tuple.count ? tuple[i] : 0
+                    let b = i < existingTuple.count ? existingTuple[i] : 0
+                    if a != b { newer = a > b; break }
+                }
+                if newer { latestByMajor[major] = row.productVersion }
+            } else {
+                latestByMajor[major] = row.productVersion
+            }
+        }
+        guard !latestByMajor.isEmpty else { return nil }
+        // Count devices whose version >= their major's SOFA latest.
+        // fleetCurrency internally filters osCounts to the given major, so
+        // iterating all entries and summing onLatest cannot double-count a device
+        // (each device OS version maps to exactly one major).
+        var currentCount = 0
+        for (_, familyLatest) in latestByMajor {
+            let (onLatest, _) = SOFAFeedService.fleetCurrency(
+                latestVersion: familyLatest, osCounts: osCounts)
+            currentCount += onLatest
+        }
+        return Double(currentCount) / Double(totalDevices) * 100.0
     }
 
     private func pct(of count: Int?, total: Int) -> Double? {
@@ -489,124 +717,248 @@ struct ReportEngine: Sendable {
     ///   (using `ChartPalette.majorVersionColors`).
     /// - `charts.compliance_trend.bands` — uses band labels/colors for compliance stacked area.
     /// - `charts.device_state_trend.enabled` — renders managed/stale trend line chart.
-    func renderChartSheet(workbook: Workbook, summariesDir: URL) {
+    /// - `compliance.baselines` — when configured, appends mSCP/STIG compliance donut(s) and
+    ///   a band trend stackplot even when the summaries dir is empty (first-run case).
+    ///
+    /// - Parameters:
+    ///   - workbook: Workbook to append the "Charts" sheet to.
+    ///   - summariesDir: Directory containing `summary_*.json` files.
+    ///   - pngOutputDir: When non-nil, standalone PNG files are written here alongside
+    ///     the xlsx using `ExportNaming` conventions.
+    ///   - profile: Profile slug used in `ExportNaming` filenames. Defaults to "".
+    func renderChartSheet(
+        workbook: Workbook,
+        summariesDir: URL,
+        pngOutputDir: URL? = nil,
+        profile: String = ""
+    ) {
         let summaries = SummaryJSONParser.parseDirectory(summariesDir)
             .sorted { $0.parsedDate < $1.parsedDate }
-        guard !summaries.isEmpty else { return }
+        let baselines = config.compliance?.resolvedBaselines ?? []
+
+        // Load the mSCP baseline data for the current snapshot — needed even when
+        // summaries is empty (first-run case: ea-results exists, summary not yet written).
+        let eaData = try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir)
+        let eaRows = eaData.flatMap { try? JSONDecoder().decode([EAResultRow].self, from: $0) }
+        let mscpResults: [MSCPComplianceService.BaselineResult] = {
+            guard !baselines.isEmpty, let rows = eaRows else { return [] }
+            return MSCPComplianceService.evaluate(rows: rows, baselines: baselines)
+        }()
+        let hasMSCPData = mscpResults.contains { $0.devicesWithData > 0 }
+
+        // Only open the sheet when there's something to render.
+        guard !summaries.isEmpty || hasMSCPData else { return }
 
         let ws = workbook.addSheet("Charts")
         ws.setColumnWidth(0, 0, 30)
         var embedRow = 0
 
         // --- Fleet size trend ---
-        let fleetPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            guard s.totalDevices > 0 else { return nil }
-            return (s.parsedDate, Double(s.totalDevices))
-        }
-        if !fleetPoints.isEmpty {
-            let series = ChartSeries(label: "Total Devices",
-                                     color: ChartPalette.color(for: 0), points: fleetPoints)
-            if let png = ChartRenderer.lineChart(series: [series], title: "Fleet Size Trend") {
-                ws.insertImage(row: embedRow, col: 0, data: png, filename: "fleet_trend.png")
-                embedRow += 20
+        if !summaries.isEmpty {
+            let fleetPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                guard s.totalDevices > 0 else { return nil }
+                return (s.parsedDate, Double(s.totalDevices))
             }
-        }
-
-        // --- FileVault / patch trend (security metrics) ---
-        let fvPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            guard let pct = s.fileVaultPct else { return nil }
-            return (s.parsedDate, pct)
-        }
-        let patchPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-            guard let pct = s.patchPct else { return nil }
-            return (s.parsedDate, pct)
-        }
-        var secSeries: [ChartSeries] = []
-        if !fvPoints.isEmpty {
-            secSeries.append(ChartSeries(label: "FileVault %",
-                                         color: ChartPalette.color(for: 1), points: fvPoints))
-        }
-        if !patchPoints.isEmpty {
-            secSeries.append(ChartSeries(label: "Patch Compliance %",
-                                         color: ChartPalette.color(for: 2), points: patchPoints))
-        }
-        if !secSeries.isEmpty {
-            if let png = ChartRenderer.lineChart(series: secSeries,
-                                                  title: "Security Metric Trends",
-                                                  yLabel: "Percent") {
-                ws.insertImage(row: embedRow, col: 0, data: png, filename: "security_trend.png")
-                embedRow += 20
-            }
-        }
-
-        // --- Device state trend (managed / stale) ---
-        if config.charts?.deviceStateTrend?.enabled == true {
-            let stalePoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-                return (s.parsedDate, Double(s.staleCount))
-            }
-            if !stalePoints.isEmpty {
-                let series = ChartSeries(label: "Stale Devices",
-                                         color: ChartPalette.color(for: 3), points: stalePoints)
-                if let png = ChartRenderer.lineChart(series: [series],
-                                                      title: "Stale Device Count Trend") {
-                    ws.insertImage(row: embedRow, col: 0, data: png, filename: "stale_trend.png")
+            if !fleetPoints.isEmpty {
+                let series = ChartSeries(label: "Total Devices",
+                                         color: ChartPalette.color(for: 0), points: fleetPoints)
+                if let png = ChartRenderer.lineChart(series: [series], title: "Fleet Size Trend") {
+                    ws.insertImage(row: embedRow, col: 0, data: png, filename: "fleet_trend.png")
                     embedRow += 20
+                    writePNG(png, kind: "fleet-trend", profile: profile, to: pngOutputDir)
                 }
             }
-        }
 
-        // --- Compliance trend (stacked area with configurable bands) ---
-        if let bands = config.charts?.complianceTrend?.bands, !bands.isEmpty {
-            let bandSeries: [ChartSeries] = bands.enumerated().compactMap { (idx, band) -> ChartSeries? in
-                let color = cgColorFromHex(band.color) ?? ChartPalette.color(for: idx)
-                let pts = summaries.compactMap { s -> (date: Date, value: Double)? in
-                    guard let pct = s.compliancePct else { return nil }
-                    let within = pct >= Double(band.minFailures) && pct <= Double(band.maxFailures)
-                    return within ? (s.parsedDate, 1.0) : nil
-                }
-                return pts.isEmpty ? nil : ChartSeries(label: band.label, color: color, points: pts)
+            // --- FileVault / patch trend (security metrics) ---
+            let fvPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                guard let pct = s.fileVaultPct else { return nil }
+                return (s.parsedDate, pct)
             }
-            if !bandSeries.isEmpty {
-                if let png = ChartRenderer.stackedAreaChart(series: bandSeries,
-                                                             title: "Compliance Band Distribution") {
-                    ws.insertImage(row: embedRow, col: 0, data: png,
-                                   filename: "compliance_bands.png")
+            let patchPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                guard let pct = s.patchPct else { return nil }
+                return (s.parsedDate, pct)
+            }
+            var secSeries: [ChartSeries] = []
+            if !fvPoints.isEmpty {
+                secSeries.append(ChartSeries(label: "FileVault %",
+                                             color: ChartPalette.color(for: 1), points: fvPoints))
+            }
+            if !patchPoints.isEmpty {
+                secSeries.append(ChartSeries(label: "Patch Compliance %",
+                                             color: ChartPalette.color(for: 2), points: patchPoints))
+            }
+            if !secSeries.isEmpty {
+                if let png = ChartRenderer.lineChart(series: secSeries,
+                                                      title: "Security Metric Trends",
+                                                      yLabel: "Percent") {
+                    ws.insertImage(row: embedRow, col: 0, data: png, filename: "security_trend.png")
                     embedRow += 20
+                    writePNG(png, kind: "security-trend", profile: profile, to: pngOutputDir)
+                }
+            }
+
+            // --- Device state trend (managed / stale) ---
+            if config.charts?.deviceStateTrend?.enabled == true {
+                let stalePoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                    (s.parsedDate, Double(s.staleCount))
+                }
+                if !stalePoints.isEmpty {
+                    let series = ChartSeries(label: "Stale Devices",
+                                             color: ChartPalette.color(for: 3), points: stalePoints)
+                    if let png = ChartRenderer.lineChart(series: [series],
+                                                          title: "Stale Device Count Trend") {
+                        ws.insertImage(row: embedRow, col: 0, data: png, filename: "stale_trend.png")
+                        embedRow += 20
+                        writePNG(png, kind: "stale-trend", profile: profile, to: pngOutputDir)
+                    }
+                }
+            }
+
+            // --- Compliance trend (stacked area with configurable bands) ---
+            if let bands = config.charts?.complianceTrend?.bands, !bands.isEmpty {
+                let bandSeries: [ChartSeries] = bands.enumerated().compactMap { (idx, band) in
+                    let color = cgColorFromHex(band.color) ?? ChartPalette.color(for: idx)
+                    let pts = summaries.compactMap { s -> (date: Date, value: Double)? in
+                        guard let pct = s.compliancePct else { return nil }
+                        let within = pct >= Double(band.minFailures) && pct <= Double(band.maxFailures)
+                        return within ? (s.parsedDate, 1.0) : nil
+                    }
+                    return pts.isEmpty ? nil : ChartSeries(label: band.label, color: color, points: pts)
+                }
+                if !bandSeries.isEmpty {
+                    if let png = ChartRenderer.stackedAreaChart(
+                        series: bandSeries, title: "Compliance Band Distribution"
+                    ) {
+                        ws.insertImage(row: embedRow, col: 0, data: png,
+                                       filename: "compliance_bands.png")
+                        embedRow += 20
+                        writePNG(png, kind: "compliance-bands", profile: profile, to: pngOutputDir)
+                    }
+                }
+            }
+
+            // --- OS adoption (per-major when enabled) ---
+            if config.charts?.osAdoption?.perMajorCharts == true {
+                var majorData: [String: Double] = [:]
+                if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary",
+                                                                  dataDir: dataDir),
+                   let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
+                    let total = rows.reduce(0) { $0 + $1.count }
+                    for invRow in rows {
+                        let major = String(invRow.osVersion.prefix(while: { $0.isNumber }))
+                        majorData[major, default: 0] += Double(invRow.count)
+                    }
+                    if total > 0 {
+                        majorData = majorData.mapValues { $0 / Double(total) * 100 }
+                    }
+                } else if let pct = summaries.last?.osCurrentPct {
+                    majorData["Current"] = pct
+                    majorData["Other"] = max(0, 100 - pct)
+                }
+                if !majorData.isEmpty {
+                    let sortedMajor = majorData.sorted { $0.key > $1.key }
+                    let barData = BarChartData(
+                        categories: sortedMajor.map(\.key),
+                        values: sortedMajor.map(\.value),
+                        colors: sortedMajor.map { ChartPalette.colorForMajorVersion($0.key) }
+                    )
+                    if let png = ChartRenderer.barChart(data: barData,
+                                                         title: "OS Adoption by Major Version") {
+                        ws.insertImage(row: embedRow, col: 0, data: png, filename: "os_adoption.png")
+                        embedRow += 20
+                        writePNG(png, kind: "os-adoption", profile: profile, to: pngOutputDir)
+                    }
                 }
             }
         }
 
-        // --- OS adoption (per-major when enabled) ---
-        if config.charts?.osAdoption?.perMajorCharts == true {
-            var majorData: [String: Double] = [:]
-            if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary",
-                                                              dataDir: dataDir),
-               let rows = try? JSONDecoder().decode([InventorySummaryRow].self, from: invData) {
-                let total = rows.reduce(0) { $0 + $1.count }
-                for invRow in rows {
-                    let major = String(invRow.osVersion.prefix(while: { $0.isNumber }))
-                    majorData[major, default: 0] += Double(invRow.count)
-                }
-                if total > 0 {
-                    majorData = majorData.mapValues { $0 / Double(total) * 100 }
-                }
-            } else if let pct = summaries.last?.osCurrentPct {
-                majorData["Current"] = pct
-                majorData["Other"] = max(0, 100 - pct)
-            }
-            if !majorData.isEmpty {
-                let sortedMajor = majorData.sorted { $0.key > $1.key }
-                let barData = BarChartData(
-                    categories: sortedMajor.map(\.key),
-                    values: sortedMajor.map(\.value),
-                    colors: sortedMajor.map { ChartPalette.colorForMajorVersion($0.key) }
-                )
-                if let png = ChartRenderer.barChart(data: barData,
-                                                     title: "OS Adoption by Major Version") {
-                    ws.insertImage(row: embedRow, col: 0, data: png, filename: "os_adoption.png")
-                }
+        // --- mSCP/STIG compliance charts (appended after existing 5) ---
+        embedRow = renderMSCPCharts(
+            workbook: workbook, ws: ws, embedRow: embedRow,
+            mscpResults: mscpResults, baselines: baselines, summaries: summaries,
+            profile: profile, pngOutputDir: pngOutputDir
+        )
+        _ = embedRow  // final row count not needed outside this scope
+    }
+
+    /// Renders mSCP/STIG compliance charts and embeds them in `ws`.
+    ///
+    /// Separated from `renderChartSheet` to keep line count per function ≤100.
+    /// Returns the updated `embedRow` value so the caller can continue appending.
+    private func renderMSCPCharts(
+        workbook: Workbook,
+        ws: Worksheet,
+        embedRow startRow: Int,
+        mscpResults: [MSCPComplianceService.BaselineResult],
+        baselines: [ComplianceBaselineConfig],
+        summaries: [DailySummary],
+        profile: String,
+        pngOutputDir: URL?
+    ) -> Int {
+        var embedRow = startRow
+        guard !mscpResults.isEmpty else { return embedRow }
+
+        for (idx, result) in mscpResults.enumerated() {
+            guard result.devicesWithData > 0 else { continue }
+
+            // Build donut slices (No Data → Pass → Low → Med-Low → Medium → High).
+            let slices = MSCPChartDataBuilder.toDonutSlices(result: result)
+            // Skip when no slice has any count (baseline produced purely empty data).
+            guard slices.contains(where: { $0.count > 0 }) else { continue }
+
+            let baseline = idx < baselines.count ? baselines[idx] : nil
+            var footer = "Total systems: \(result.totalDevices)"
+            if let rc = baseline?.ruleCount { footer += " · Baseline: \(rc) auditable rules" }
+
+            // Per spec: all six legend rows rendered ("No Data: N (P%)", "Pass (0): N (P%)", …).
+            let donutTitle = "Compliance Donut — \(result.name) All Devices"
+            if let png = ChartRenderer.donutChart(slices: slices,
+                                                   title: donutTitle, footer: footer) {
+                let fname = "mscp-donut-\(idx).png"
+                ws.insertImage(row: embedRow, col: 0, data: png, filename: fname)
+                embedRow += 20
+                writePNG(png, kind: "mscp-donut-\(sanitizeForFilename(result.name))",
+                         profile: profile, to: pngOutputDir)
             }
         }
+
+        // Band trend stackplot — uses primary baseline (first with data).
+        guard let primaryBaseline = baselines.first,
+              let primaryResult = mscpResults.first, primaryResult.devicesWithData > 0
+        else { return embedRow }
+
+        let points = MSCPChartDataBuilder.buildSeries(
+            baseline: primaryBaseline, dataDir: dataDir, summaries: summaries)
+        guard !points.isEmpty else { return embedRow }
+
+        let stackSeries = MSCPChartDataBuilder.toStackedSeries(points: points)
+        let trendTitle = "mSCP/STIG Compliance Trend — \(primaryBaseline.name)"
+        if let png = ChartRenderer.stackedAreaChart(series: stackSeries, title: trendTitle) {
+            ws.insertImage(row: embedRow, col: 0, data: png, filename: "mscp-band-trend.png")
+            embedRow += 20
+            writePNG(png, kind: "mscp-band-trend", profile: profile, to: pngOutputDir)
+        }
+
+        return embedRow
+    }
+
+    /// Write a PNG to `dir` using `ExportNaming` conventions.
+    /// No-ops when `dir` is nil. Logs a warning on write failure; xlsx embed is unaffected.
+    private func writePNG(_ png: Data, kind: String, profile: String, to dir: URL?) {
+        guard let dir else { return }
+        let name = ExportNaming.filename(kind: kind, profile: profile, ext: "png")
+        let url = dir.appendingPathComponent(name)
+        do {
+            try png.write(to: url, options: .atomic)
+        } catch {
+            AppLogger.engine.warning(
+                "[warn] PNG export failed for \(kind, privacy: .public): \(error)"
+            )
+        }
+    }
+
+    private func sanitizeForFilename(_ s: String) -> String {
+        ExportNaming.sanitize(s).prefix(32).description
     }
 
     /// Parse a hex color string (#RRGGBB) into a `CGColor`. Returns nil on malformed input.
@@ -775,6 +1127,7 @@ struct ReportEngine: Sendable {
         "scripts",
         "packages",
         "smart-computer-groups",
+        "groups",
         "sites",
         "buildings",
         "departments",
@@ -785,6 +1138,11 @@ struct ReportEngine: Sendable {
         "classic-ios-profiles",
         "device-enrollment-instances",
         "mobile-device-inventory-details",
+        // Health audit — cheap single call; see collect command matrix entry above.
+        "audit",
+        // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
+        "sofa",
+        "patch-release-dates",
     ]
 
     /// Fetch jamf-cli snapshots for `profile`, filtered by:
@@ -794,6 +1152,10 @@ struct ReportEngine: Sendable {
     ///   narrows to `[.refresh]` so only cheap KPI commands run.
     /// - `skipExpensive` (PR-16): when true, removes the four cold-tier
     ///   per-device commands regardless of cadence. Settings toggle.
+    /// - `force`: when `false` (the default), skips the entire collection loop
+    ///   if a valid `summary_<today>.json` already exists for the profile —
+    ///   i.e., a full collect already completed today. Passes `force: true` for
+    ///   ad-hoc Refresh so manual refreshes are never skipped.
     /// - Cadence (PR-22 T-8): per-report time-since-last-run check; uses
     ///   `CadenceResolver.resolve` for policy and `StateFileStore` for the
     ///   last-success timestamp. State is written on successful save so a
@@ -809,19 +1171,77 @@ struct ReportEngine: Sendable {
     /// - `[skip] <kind>: tier <t> not selected` — T-9 tier filter
     /// - `[skip] <kind>: not due (last: ..., cadence: ...)` — T-8 cadence
     /// - `[info] skipping per-device commands (...)` — PR-16 skipExpensive
+    /// - `[info] already collected today — skipping (use Refresh to force)` — once-per-day guard
+    /// One jamf-cli command's outcome in the collect loop, for the auth-dead verdict.
+    struct CollectOutcome: Equatable, Sendable {
+        let kind: String
+        let exitCode: Int32
+    }
+
+    /// Whether a collect's per-command outcomes mean the profile's credentials are
+    /// dead (vs a partial failure that should fall back to cache).
+    ///
+    /// Auth-dead requires BOTH: zero successful live calls (no `exit 0` with a
+    /// non-empty body) AND at least one `exit 3` (HTTP 401 — expired/revoked).
+    /// A single 401 among successes is NOT auth-dead: a working call proves auth is
+    /// alive, so the 401 is transient/per-endpoint and falls back to cache. Chronic
+    /// non-auth failures (Platform-API 404 → exit 1 on on-prem) carry no 401 and
+    /// cannot trip this on their own. An empty outcome set (no auth-bearing command
+    /// ran) is never auth-dead.
+    static func isCollectAuthDead(_ outcomes: [CollectOutcome]) -> Bool {
+        guard !outcomes.isEmpty else { return false }
+        // exit 0 proves the credential was accepted (auth precedes the response
+        // body), so it counts as a success even with an empty body — mirrors the
+        // Python tally, which counts any non-raising call. A single such success
+        // means auth is alive, so a co-occurring 401 is transient, not auth-dead.
+        let anySuccess = outcomes.contains { $0.exitCode == 0 }
+        let anyAuthFailure = outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
+        return !anySuccess && anyAuthFailure
+    }
+
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         skipExpensive: Bool = false,
+        force: Bool = false,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
-        guard let bin = ExecutableLocator.locate("jamf-cli") else {
-            throw ReportEngineError.jamfCLINotFound
-        }
         guard ProfileService.isValid(profile) else {
             throw ReportEngineError.invalidProfile(profile)
         }
+
+        // Snapshot retention (v2.2.0): config-driven, OFF by default, once per
+        // calendar day. Placed before the early-return guard so it runs on any
+        // collect path (headless scheduled, app refresh, ad-hoc, catch-up); its
+        // own marker keeps it idempotent. Best-effort — never fails the collect.
+        SnapshotRetentionService.sweepIfDue(profile: profile, onLine: onLine)
+
+        // Once-per-day collect guard: skip the expensive jamf-cli loop when a valid
+        // summary for today already exists, unless the caller passes force: true.
+        // Placed before the jamf-cli binary check so it short-circuits without
+        // requiring jamf-cli to be installed (testable without the binary).
+        // Mirrors the emitSummaryJSON first-run-of-day check (required keys: date,
+        // totalDevices, source). Ad-hoc Refresh paths pass force: true so they are
+        // never gated by a prior scheduled collect.
+        if !force, let summariesDir = try? workspacePaths.summariesDir(for: profile) {
+            let today = SummaryJSONParser.dateFormatter.string(from: Date())
+            let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
+            if FileManager.default.fileExists(atPath: summaryFile.path),
+               let data = try? Data(contentsOf: summaryFile),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
+                let msg = "[info] already collected today — skipping (use Refresh to force)"
+                AppLogger.engine.info("\(msg, privacy: .public)")
+                onLine(.init(timestamp: Date(), level: .info, text: msg))
+                return
+            }
+        }
+
+        guard let bin = ExecutableLocator.locate("jamf-cli") else {
+            throw ReportEngineError.jamfCLINotFound
+        }
+
         let dataDir = try workspacePaths.dataDir(for: profile)
         // Respect use_cached_data: when false, a failed collect is fatal for that kind.
         // File-missing is a legitimate first-run state and defaults to true.
@@ -886,6 +1306,7 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "packages", "list", "--output", "json"], "packages"),
             (["-p", profile, "pro", "computer-groups-smart-groups", "list", "--output", "json"],
              "smart-computer-groups"),
+            (["-p", profile, "pro", "groups", "list", "--output", "json"], "groups"),
             (["-p", profile, "pro", "sites", "list", "--output", "json"], "sites"),
             (["-p", profile, "pro", "buildings", "list", "--output", "json"], "buildings"),
             (["-p", profile, "pro", "departments", "list", "--output", "json"], "departments"),
@@ -903,6 +1324,10 @@ struct ReportEngine: Sendable {
              "device-enrollment-instances"),
             (["-p", profile, "pro", "mobile-device-inventory-details", "list", "--output", "json"],
              "mobile-device-inventory-details"),
+            // Health audit — single cheap server call; matches CLIBridge.audit() shape that
+            // AuditView, HealthCheckView, and WorkspaceStore+Refresh all consume as "audit".
+            // audit-platform-checks omitted: no Swift reader for that kind yet.
+            (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
         ]
 
         let plannedCommands: [(args: [String], kind: String)]
@@ -944,6 +1369,7 @@ struct ReportEngine: Sendable {
 
         let bridge = CLIBridge()
         var didFetchPrior = false
+        var outcomes: [CollectOutcome] = []
         for (args, kind) in plannedCommands {
             // T-9 tier filter: drop kinds outside the selected tier set.
             // An unmapped kind has no tier and is always allowed — the
@@ -1000,6 +1426,11 @@ struct ReportEngine: Sendable {
                 captureResult = nil
             }
             guard let (exitCode, data) = captureResult else { continue }
+            // Record every command with a known exit code for the auth-dead verdict
+            // after the loop. Launch failures (nil captureResult, already warned and
+            // continued) carry no exit code and are not auth signals, so they are
+            // intentionally excluded.
+            outcomes.append(CollectOutcome(kind: kind, exitCode: exitCode))
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 // T-8: record success so the cadence boundary advances.
@@ -1021,6 +1452,49 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // Auth-dead guard: every live jamf-cli call failed and at least one returned
+        // 401 (exit 3) → the profile's credentials are expired/revoked. Surface as a
+        // throw so the scheduled-run catch records exit 1 (not a silent success
+        // serving stale cache), and abort BEFORE SOFA/summary so no degraded snapshot
+        // is written. A single 401 among successes does not reach here — it took the
+        // cache-fallback branch above. Skipped when use_cached_data=false (that path
+        // already threw collectFailed on the first failure).
+        if Self.isCollectAuthDead(outcomes) {
+            let authFailures = outcomes.filter {
+                $0.exitCode == CLIBridge.exitCodeUnauthorized
+            }.count
+            let msg = "[error] auth failed for '\(profile)': \(authFailures) live call(s) " +
+                "returned 401 and none succeeded — re-authenticate " +
+                "(jamf-cli -p \(profile) pro auth token). No snapshot written."
+            AppLogger.engine.error("\(msg, privacy: .public)")
+            onLine(.init(timestamp: Date(), level: .fail, text: msg))
+            throw ReportEngineError.authExpired(profile: profile, failedCount: authFailures)
+        }
+
+        // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
+        // is in the requested tiers. Light network fetch — always in the Refresh tier
+        // so snapshot-only and full runs both capture it.
+        if let sofaTier = CollectionTier.tier(forReport: "sofa"), tiers.contains(sofaTier) {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] collecting sofa for \(profile)"))
+            let (_, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
+            for w in sofaWarnings {
+                onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(w)"))
+            }
+            onLine(.init(timestamp: Date(), level: .ok, text: "[ok] sofa: feeds refreshed"))
+        }
+
+        // Patch release dates: collect per-title definitions after patch-status.
+        // Gated on the "patch-release-dates" kind being in the requested tiers
+        // AND patch-status having been collected (so the title list exists).
+        if let prdTier = CollectionTier.tier(forReport: "patch-release-dates"),
+           tiers.contains(prdTier) {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] collecting patch-release-dates for \(profile)"))
+            await collectPatchReleaseDates(
+                profile: profile, bin: bin, dataDir: dataDir, onLine: onLine)
+        }
+
         // PR-20: also emit summary.json from collect so the snapshot-only schedule
         // mode populates Trends without requiring a workbook generation. Skipped
         // when config is missing (fresh workspace pre-init) — generate() is the
@@ -1035,6 +1509,100 @@ struct ReportEngine: Sendable {
             )
             let engine = ReportEngine(config: config, dataDir: dataDir)
             engine.emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
+        }
+    }
+
+    // MARK: - Patch release date collection
+
+    /// Fetch per-title patch definitions from jamf-cli and write the merged
+    /// `patch-release-dates_<ts>.json` snapshot.
+    ///
+    /// Reads the current patch-status snapshot for the title list, then runs
+    /// `pro patch-software-title-configurations definitions <id>` for each title.
+    /// Mirrors Python's `JamfCLIBridge.collect_patch_release_dates`.
+    /// Non-fatal: warn and skip titles that fail rather than aborting the run.
+    private static func collectPatchReleaseDates(
+        profile: String,
+        bin: URL,
+        dataDir: URL,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async {
+        // Read patch-status snapshot to get title list.
+        guard let patchData = try? loadLatestSnapshotData(kind: "patch-status", dataDir: dataDir),
+              let patchItems = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData)
+        else {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] patch-release-dates: no patch-status snapshot; skipping"))
+            return
+        }
+
+        let bridge = CLIBridge()
+        var merged: [[String: String]] = []
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        let ts = formatter.string(from: Date())
+
+        for patchItem in patchItems {
+            let titleId = patchItem.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !titleId.isEmpty else { continue }
+            // Sanitize id for filename — mirrors Python's `re.sub(r"[^0-9A-Za-z._-]", "_", id)`.
+            let safeId = titleId.unicodeScalars.map { c -> Character in
+                let ch = Character(c)
+                if ch.isLetter || ch.isNumber || ch == "." || ch == "_" || ch == "-" {
+                    return ch
+                }
+                return "_"
+            }.reduce("") { $0 + String($1) }
+
+            let args = ["-p", profile, "pro", "patch-software-title-configurations",
+                        "definitions", titleId, "--page-size", "100", "--output", "json"]
+            let captureResult = try? await bridge.runAndCapture(
+                executable: bin, arguments: args,
+                environment: CLIBridge.environmentForJamfCLI(), onLine: { _ in })
+            guard let (exitCode, data) = captureResult, exitCode == 0, !data.isEmpty else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[warn] patch-definitions: title \(titleId) failed — skipping"))
+                continue
+            }
+
+            // Cache per-title definition file.
+            let defsDir = dataDir.appendingPathComponent("patch-definitions", isDirectory: true)
+            try? FileManager.default.createDirectory(at: defsDir, withIntermediateDirectories: true)
+            let cacheFile = defsDir.appendingPathComponent(
+                "patch-definitions_title\(safeId).json")
+            try? data.write(to: cacheFile)
+
+            // Extract latest definition date.
+            guard let definitions = try? JSONSerialization.jsonObject(with: data)
+                    as? [[String: Any]]
+            else { continue }
+            let (version, releaseDate) = PatchReleaseDateService.latestDefinitionDate(
+                definitions: definitions, latestVersion: patchItem.latest)
+            guard !releaseDate.isEmpty else { continue }
+            merged.append([
+                "title_id": titleId,
+                "title": patchItem.title,
+                "latest_version": version,
+                "release_date": releaseDate,
+            ])
+        }
+
+        // Write merged snapshot.
+        do {
+            let outDir = dataDir.appendingPathComponent("patch-release-dates", isDirectory: true)
+            try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+            let outFile = outDir.appendingPathComponent("patch-release-dates_\(ts).json")
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted]
+            let payload = try encoder.encode(merged)
+            try payload.write(to: outFile)
+            onLine(.init(timestamp: Date(), level: .ok,
+                         text: "[ok] patch-release-dates: \(merged.count) title(s)"))
+        } catch {
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] patch-release-dates: could not write snapshot — " +
+                               error.localizedDescription))
         }
     }
 
@@ -1452,6 +2020,15 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // Include the profile in the filename so reports remain attributable
+        // to their tenant once moved out of the workspace folder.
+        // `report_prod_2026-06-01_120000.xlsx`, not `report_2026-06-01_120000.xlsx`.
+        let namedStem: String = {
+            guard let profile else { return stem }
+            let sanitized = ExportNaming.sanitize(profile)
+            return sanitized.isEmpty ? stem : "\(stem)_\(sanitized)"
+        }()
+
         let shouldTimestamp = config.output?.timestampOutputs ?? true
         if shouldTimestamp {
             let formatter = ISO8601DateFormatter()
@@ -1460,9 +2037,9 @@ struct ReportEngine: Sendable {
                 .replacingOccurrences(of: ":", with: "")
                 .replacingOccurrences(of: "-", with: "-")
                 .replacingOccurrences(of: "T", with: "_")
-            return outDir.appendingPathComponent("\(stem)_\(ts).xlsx")
+            return outDir.appendingPathComponent("\(namedStem)_\(ts).xlsx")
         } else {
-            return outDir.appendingPathComponent("\(stem).xlsx")
+            return outDir.appendingPathComponent("\(namedStem).xlsx")
         }
     }
 
@@ -1639,10 +2216,19 @@ struct ReportEngine: Sendable {
     }
 
     private static func csvEscape(_ value: String) -> String {
-        if value.contains(",") || value.contains("\"") || value.contains("\n") {
-            return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        // Formula-injection neutralization: tab-prefix cells beginning with =, +, -, @.
+        // Mirrors PatchStatusService.csvField and Python's _csv_injection_safe.
+        var field = value
+        if let first = field.first, "=+-@".contains(first) {
+            field = "\t" + field
         }
-        return value
+        guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
+        return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// Internal entry point for injection-guard testing — mirrors `testableScaffoldMappings`.
+    static func testableCSVEscape(_ value: String) -> String {
+        csvEscape(value)
     }
 
     // MARK: - Column scaffold helpers
@@ -1911,6 +2497,15 @@ enum ReportEngineError: Error, LocalizedError {
     case snapshotParseError(String)
     /// Raised during collect when `use_cached_data=false` and a live call fails.
     case collectFailed(kind: String, exitCode: Int32)
+    /// Raised at the end of collect when every live jamf-cli call failed and at
+    /// least one returned HTTP 401 (exit 3) — the profile's credentials are dead
+    /// (expired or revoked) and need re-auth. Surfaces the run as non-success so a
+    /// scheduled job records exit 1 (not a silent success serving stale cache), and
+    /// is thrown BEFORE summary emission so no degraded snapshot is written. A 401
+    /// among successful calls is NOT this — that falls back to cache per
+    /// `use_cached_data`. Chronic non-auth failures (Platform-API 404 → exit 1 on
+    /// on-prem) carry no 401 and cannot trip this on their own.
+    case authExpired(profile: String, failedCount: Int)
     /// PR-10 / threat-model T-11: raised at run start when
     /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
     /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
@@ -1937,6 +2532,10 @@ enum ReportEngineError: Error, LocalizedError {
             return "No cached snapshot found for '\(kind)'. Run collect first."
         case .collectFailed(let kind, let code):
             return "Collect failed for '\(kind)' (exit \(code)). Set use_cached_data: true to allow fallback."
+        case .authExpired(let p, let n):
+            return "Authentication failed for profile '\(p)': all \(n) live Jamf Pro call(s) " +
+                "returned 401 (expired or revoked credentials) and none succeeded. " +
+                "Re-authenticate with: jamf-cli -p \(p) pro auth token. No snapshot was written."
         case .snapshotIntegrityViolation(let summary, let dataDir):
             var parts: [String] = []
             if summary.mismatch > 0 { parts.append("\(summary.mismatch) hash mismatch") }

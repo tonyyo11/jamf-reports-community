@@ -49,6 +49,18 @@ enum LaunchAgentWriter {
         return ["--tiers", csv]
     }
 
+    /// `--exclude-profiles <csv>` arguments for a multi-profile schedule, or
+    /// `[]` when the schedule excludes nothing. Only valid profile slugs are
+    /// emitted; the CSV is sorted for byte-stable plists. main.swift re-parses
+    /// and re-validates the value, so this is a convenience, not a trust gate.
+    private static func excludeArguments(for schedule: Schedule) -> [String] {
+        let valid = (schedule.excludedProfiles ?? [])
+            .filter(ProfileService.isValid)
+            .sorted()
+        guard !valid.isEmpty else { return [] }
+        return ["--exclude-profiles", valid.joined(separator: ",")]
+    }
+
     /// Write a LaunchAgent plist that invokes `JamfReports --scheduled-run --profile <slug>`
     /// directly.
     ///
@@ -90,6 +102,9 @@ enum LaunchAgentWriter {
                 execPath, "--scheduled-run",
                 "--profile", schedule.profile,
                 "--mode", schedule.mode.rawValue,
+                // --label names the per-run record (ScheduledRunRecorder) so
+                // Run History attributes runs to this schedule.
+                "--label", agentLabel,
             ] + tierArguments(for: schedule),
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
@@ -424,9 +439,12 @@ enum LaunchAgentWriter {
                 "--scheduled-run",
                 "--profile", schedule.profile,
                 "--mode", schedule.mode.rawValue,
+                // --label names the per-run record (ScheduledRunRecorder) so
+                // Run History attributes runs to this schedule.
+                "--label", agentLabel,
             ] + tierArguments(for: schedule) + [
                 "--all-profiles",
-            ],
+            ] + excludeArguments(for: schedule),
             "WorkingDirectory": ProfileService.workspacesRoot().path,
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
@@ -962,8 +980,13 @@ enum LaunchAgentWriter {
         return URL(fileURLWithPath: expanded).standardizedFileURL
     }
 
+    /// True when `url` is itself a symlink. Uses `attributesOfItem` (lstat — never
+    /// follows) so it is reliable on a freshly constructed URL.
+    /// `URL.resourceValues(.isSymbolicLinkKey)` follows the link on a fresh URL,
+    /// which is the same bug already fixed in `DiagnosticBundleService.isSymlink`.
     private static func isSymlink(_ url: URL) -> Bool {
-        (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes?[.type] as? FileAttributeType) == .typeSymbolicLink
     }
 
     private static func isPath(_ path: String, inside root: String) -> Bool {

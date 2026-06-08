@@ -468,6 +468,77 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertTrue(LaunchAgentWriter.isExpectedMultiWorkingDirectory(workingDir))
     }
 
+    /// A managed multi schedule with `excludedProfiles` writes
+    /// `--exclude-profiles <csv>` after `--all-profiles`, dropping invalid
+    /// slugs and sorting the CSV for byte-stable plists.
+    func testNativeMultiWriteEmitsExcludeProfilesFlag() throws {
+        var scheduleObj = schedule(name: "Test-Multi-Exclude")
+        scheduleObj.multiTarget = MultiTarget(scope: .all)
+        scheduleObj.excludedProfiles = ["sandbox", "Dummy-INVALID", "alpha"]  // invalid dropped
+        guard let agentLabel = LaunchAgentWriter.label(for: scheduleObj) else {
+            return XCTFail("Expected a valid multi label")
+        }
+        let tempExec = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fake-jamf-reports-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tempExec.path, contents: Data("#!/bin/sh\nexit 0\n".utf8))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: tempExec.path
+        )
+        defer { try? FileManager.default.removeItem(at: tempExec) }
+
+        let plan = try LaunchAgentWriter.nativeMultiWrite(
+            for: scheduleObj, executableURL: tempExec, load: false
+        )
+        defer {
+            try? FileManager.default.removeItem(at: plan.plistURL)
+            let logDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+            try? FileManager.default.removeItem(at: logDir)
+        }
+
+        let data = try Data(contentsOf: plan.plistURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        )
+        let args = try XCTUnwrap(plist["ProgramArguments"] as? [String])
+        XCTAssertTrue(args.contains("--all-profiles"))
+        let idx = try XCTUnwrap(args.firstIndex(of: "--exclude-profiles"))
+        XCTAssertEqual(args[idx + 1], "alpha,sandbox", "sorted, invalid slug dropped")
+    }
+
+    /// No exclusions → no flag (run-time discovery covers every profile).
+    func testNativeMultiWriteOmitsExcludeProfilesWhenEmpty() throws {
+        var scheduleObj = schedule(name: "Test-Multi-NoExclude")
+        scheduleObj.multiTarget = MultiTarget(scope: .all)
+        XCTAssertNil(scheduleObj.excludedProfiles)
+        guard let agentLabel = LaunchAgentWriter.label(for: scheduleObj) else {
+            return XCTFail("Expected a valid multi label")
+        }
+        let tempExec = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fake-jamf-reports-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tempExec.path, contents: Data("#!/bin/sh\nexit 0\n".utf8))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: tempExec.path
+        )
+        defer { try? FileManager.default.removeItem(at: tempExec) }
+
+        let plan = try LaunchAgentWriter.nativeMultiWrite(
+            for: scheduleObj, executableURL: tempExec, load: false
+        )
+        defer {
+            try? FileManager.default.removeItem(at: plan.plistURL)
+            let logDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+            try? FileManager.default.removeItem(at: logDir)
+        }
+        let data = try Data(contentsOf: plan.plistURL)
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        )
+        let args = try XCTUnwrap(plist["ProgramArguments"] as? [String])
+        XCTAssertFalse(args.contains("--exclude-profiles"))
+    }
+
     // MARK: - #4: nativeManualRunPlan round-trip (Epic #102)
 
     /// `nativeManualRunPlan` is the path-validation core of the "Run now" flow;

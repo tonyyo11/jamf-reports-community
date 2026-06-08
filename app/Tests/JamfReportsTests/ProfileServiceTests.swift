@@ -68,6 +68,34 @@ final class ProfileServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - Run-time exclusion (--exclude-profiles)
+
+    func testParseExclusionsTrimsAndValidates() {
+        XCTAssertEqual(ProfileService.parseExclusions("dummy, harbor ,"), ["dummy", "harbor"])
+        XCTAssertEqual(ProfileService.parseExclusions(nil), [])
+        XCTAssertEqual(ProfileService.parseExclusions(""), [])
+        // Invalid slugs (uppercase, dots) are dropped, not passed through.
+        XCTAssertEqual(ProfileService.parseExclusions("Dummy,ok-1,a.b"), ["ok-1"])
+    }
+
+    func testApplyingExclusionsDropsOnlyNamedProfiles() {
+        let profiles = ["alpha", "beta", "dummy"].map {
+            JamfCLIProfile(name: $0, url: "(local)", schedules: 0, status: .idle)
+        }
+        let kept = ProfileService.applyingExclusions(profiles, excluding: ["dummy"])
+        XCTAssertEqual(kept.map(\.name), ["alpha", "beta"])
+    }
+
+    func testApplyingExclusionsEmptySetIsIdentity() {
+        let profiles = ["alpha", "beta"].map {
+            JamfCLIProfile(name: $0, url: "(local)", schedules: 0, status: .idle)
+        }
+        XCTAssertEqual(
+            ProfileService.applyingExclusions(profiles, excluding: []).map(\.name),
+            ["alpha", "beta"]
+        )
+    }
+
     // MARK: - API scope tests
 
     func testScopeDefaultsToLimitedWhenNothingPersisted() {

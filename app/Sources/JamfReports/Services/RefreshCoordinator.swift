@@ -37,15 +37,6 @@ final class RefreshCoordinator {
     /// Debounce task for profile-switch refresh.
     private var profileSwitchDebounce: Task<Void, Never>?
 
-    /// Last successful snapshot-retention sweep per profile. The `.refresh`
-    /// completion path triggers a sweep only when 24 h have elapsed since the
-    /// previous one — without this guard, a noisy environment that refreshes
-    /// many times a day would re-sweep on every successful refresh.
-    private var lastRetentionSweep: [String: Date] = [:]
-
-    /// Minimum gap between automatic retention sweeps for a given profile.
-    private let retentionSweepCooldown: TimeInterval = 86_400  // 24 hours
-
     private let policy: RefreshPolicy
     private let bridge: CLIBridge
 
@@ -140,10 +131,13 @@ final class RefreshCoordinator {
 
         // Backfill only the requested tier — a profile-switch refresh should
         // not pull every list endpoint and per-device scan (PR-22 T-9 tier set).
+        // force: true bypasses the once-per-day guard; the coordinator already
+        // gates on staleness, so the guard is redundant and would silently no-op
+        // a user-triggered profile-switch refresh that ran after a scheduled collect.
         let exitCode: Int32
         do {
             exitCode = try await bridge.collect(
-                profile: profile, tiers: [tier], onLine: CLIBridge.noOpOnLine
+                profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine
             )
         } catch {
             failureCounts[key, default: 0] += 1
@@ -156,14 +150,11 @@ final class RefreshCoordinator {
         if exitCode == 0 {
             failureCounts[key] = 0
             lastSuccessfulRefresh[profile] = Date()
-            // Retention sweep was historically gated on the `.cold` tier,
-            // which `RefreshCoordinator` never actually drove — so it never
-            // ran. PR-23 T-16 moves it to the `.refresh` success path. The
-            // tier is just the trigger; the 24 h cooldown is the real rate
-            // limit, so firing on `.refresh` does not over-sweep.
-            if tier == .refresh {
-                runRetentionSweepIfDue(profile: profile)
-            }
+            // Snapshot retention now lives in ReportEngine.collect
+            // (SnapshotRetentionService.sweepIfDue) so it runs once/day on every
+            // collect path — headless scheduled runs included — and honors the
+            // config (OFF by default). The old hardcoded delete-at-90-days sweep
+            // here only ran while the app was open; it is removed.
         } else {
             failureCounts[key, default: 0] += 1
             let consecutive = failureCounts[key, default: 0]
@@ -173,23 +164,6 @@ final class RefreshCoordinator {
         }
     }
 
-    /// Sweep `<profile>/jamf-cli-data/*` if the per-profile cooldown has elapsed.
-    /// No-ops within 24 h of the previous sweep to keep the hot path cheap.
-    private func runRetentionSweepIfDue(profile: String) {
-        let now = Date()
-        if let last = lastRetentionSweep[profile],
-           now.timeIntervalSince(last) < retentionSweepCooldown {
-            return
-        }
-        lastRetentionSweep[profile] = now
-        do {
-            _ = try SnapshotRetentionService.sweep(profile: profile)
-        } catch {
-            AppLogger.engine.warning(
-                "RefreshCoordinator: retention sweep for '\(profile)' failed: \(error)"
-            )
-        }
-    }
 
     /// Returns `true` when the newest snapshot for `tier` is older than the
     /// staleness threshold, or when no snapshot exists at all.

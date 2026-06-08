@@ -17,6 +17,23 @@ struct AuditFinding: Identifiable, Codable {
         ].joined(separator: "|")
     }
 
+    /// Human-readable affected count.
+    ///
+    /// `pro audit` is an instance-config check, not a per-device scan. It
+    /// reports `affected: 0` for CRITICAL/WARNING findings when the audit
+    /// source has no per-device breakdown — not because zero devices are
+    /// affected. Displaying "0" alongside CRITICAL would mislead operators
+    /// into thinking no remediation is needed. We show "—" in those cases
+    /// so the severity still prompts action while being honest that the
+    /// per-device count comes from Security Posture, not this audit source.
+    ///
+    /// OK findings legitimately carry `affected: 0` (the control passed)
+    /// and are excluded from this substitution.
+    var affectedDisplay: String {
+        if affected == 0 && severity.uppercased() != "OK" { return "—" }
+        return "\(affected)"
+    }
+
     enum CodingKeys: String, CodingKey {
         case name, affected, category, recommendation, severity
     }
@@ -294,7 +311,12 @@ struct AuditView: View {
                             Text(f.category.capitalized).font(.footnote)
                         }
                         TableColumn("Affected", value: \.affected) { f in
-                            AffectedBar(value: f.affected, maxValue: maxAffected, tone: pillTone(f.severity))
+                            AffectedBar(
+                                value: f.affected,
+                                maxValue: maxAffected,
+                                tone: pillTone(f.severity),
+                                displayText: f.affectedDisplay
+                            )
                         }
                         TableColumn("Recommendation") { f in
                             HStack(spacing: 8) {
@@ -351,7 +373,7 @@ struct AuditView: View {
                                 }
                                 Spacer()
                                 Pill(text: finding.category, tone: .muted)
-                                Mono(text: "\(finding.affected) affected")
+                                Mono(text: "\(finding.affectedDisplay) affected")
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 9)
@@ -633,18 +655,20 @@ struct AuditView: View {
     @MainActor
     private func exportFindings() async {
         let panel = NSSavePanel()
-        let dateStr = ISO8601DateFormatter.string(
-            from: Date(), timeZone: .current,
-            formatOptions: [.withFullDate]
+        panel.nameFieldStringValue = ExportNaming.filename(
+            kind: "audit-findings", profile: workspace.profile, ext: "csv"
         )
-        panel.nameFieldStringValue = "audit-findings-\(workspace.profile)-\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.canCreateDirectories = true
+        // The save panel is the user's explicit, per-action consent for this
+        // exact path — no additional allow-list gate. (The old gate silently
+        // rejected anything outside Documents/Downloads/Desktop, which is why
+        // "Export Findings" appeared to do nothing on network shares and
+        // custom folders.)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard SystemActions.userExportTargetIsAllowed(url) else { return }
         let header = "Severity,Name,Category,Affected,Recommendation\n"
         let body = findings.map { f in
-            [f.severity, f.name, f.category, "\(f.affected)", f.recommendation]
+            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
                 .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
                 .joined(separator: ",")
         }.joined(separator: "\n")
@@ -853,6 +877,8 @@ private struct AffectedBar: View {
     let value: Int
     let maxValue: Int
     let tone: Pill.Tone
+    /// When set, replaces the numeric label (bar width still reflects `value`).
+    var displayText: String? = nil
 
     private var fraction: CGFloat {
         guard maxValue > 0 else { return 0 }
@@ -875,7 +901,7 @@ private struct AffectedBar: View {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .fill(fillColor)
                 .frame(width: value == 0 ? 0 : max(4, 80 * fraction), height: 16)
-            Text("\(value)")
+            Text(displayText ?? "\(value)")
                 // Pinned: fixed 80×16 gauge — the numeral must not scale
                 // with Dynamic Type or it clips the bar.
                 .font(.custom("IBM Plex Mono", size: 11).weight(.semibold))
@@ -900,7 +926,7 @@ private struct FindingDetailPopover: View {
                     HStack(spacing: 6) {
                         Pill(text: finding.severity, tone: tone)
                         Pill(text: finding.category, tone: .muted)
-                        Mono(text: "\(finding.affected) affected")
+                        Mono(text: "\(finding.affectedDisplay) affected")
                     }
                 }
                 Spacer()

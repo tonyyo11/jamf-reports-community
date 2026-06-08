@@ -61,14 +61,19 @@ enum DemoData {
         ) ?? 0
     }
 
+    /// Demo data for mSCP band trend represents total devices with data.
+    /// Grows from 460 to 520 devices over the 26-week period.
+    private static let mscpBandTrend = trend(start: 460, end: 520, jitter: 8)
+
     static let trends: [TrendSeries.Metric: [Double]] = [
-        .stability:   stabilityTrend,
-        .fileVault:   fileVaultTrend,
-        .compliance:  complianceTrend,
-        .stale:       staleTrend,
-        .osCurrent:   osCurrentTrend,
-        .crowdstrike: crowdstrikeTrend,
-        .patch:       patchTrend,
+        .stability:       stabilityTrend,
+        .fileVault:       fileVaultTrend,
+        .compliance:      complianceTrend,
+        .stale:           staleTrend,
+        .osCurrent:       osCurrentTrend,
+        .edrAgent:        crowdstrikeTrend,
+        .patch:           patchTrend,
+        .mscpBandTrend:   mscpBandTrend,
     ]
 
     static let osDistribution: [OSDistribution] = [

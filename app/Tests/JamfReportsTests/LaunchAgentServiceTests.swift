@@ -420,6 +420,43 @@ final class LaunchAgentServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - Archive redaction (scrub secret args before archiving a plist)
+
+    func testRedactedPlistDataScrubsNotifyWebhook() throws {
+        let url = try writePlist([
+            "Label": "\(prefix).dummy.notify-sched",
+            "ProgramArguments": [
+                "/usr/local/bin/jamf-cli-reports", "launchagent-run",
+                "--mode", "snapshot-only",
+                "--notify", "https://example.webhook.office.com/secret-token-xyz",
+            ],
+        ])
+        let data = try XCTUnwrap(
+            LaunchAgentService.redactedPlistData(at: url),
+            "a plist carrying --notify must be redacted, not copied verbatim")
+        let plist = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+                as? [String: Any])
+        let args = try XCTUnwrap(plist["ProgramArguments"] as? [String])
+        XCTAssertFalse(args.contains { $0.contains("secret-token") },
+                       "the webhook URL must not survive into the archive copy")
+        let notifyIdx = try XCTUnwrap(args.firstIndex(of: "--notify"))
+        XCTAssertEqual(args[notifyIdx + 1], "<redacted-on-archive>")
+        XCTAssertTrue(args.contains("snapshot-only"), "non-secret args are preserved")
+    }
+
+    func testRedactedPlistDataReturnsNilWhenNoSecret() throws {
+        let url = try writePlist([
+            "Label": "\(prefix).dummy.plain-sched",
+            "ProgramArguments": [
+                "/usr/local/bin/jamf-cli-reports", "launchagent-run",
+                "--mode", "snapshot-only",
+            ],
+        ])
+        XCTAssertNil(LaunchAgentService.redactedPlistData(at: url),
+                     "a plist with no secret args is copied verbatim (nil = no redaction)")
+    }
+
     private func writePlist(_ plist: [String: Any]) throws -> URL {
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

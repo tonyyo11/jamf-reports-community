@@ -17,6 +17,9 @@ struct ContentView: View {
     @AppStorage("sidebarMode") private var sidebarModeRaw: String = SidebarMode.expanded.rawValue
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
+    /// Drives the Automation tab's breadcrumb: "POLICY" in managed mode,
+    /// "SCHEDULES" when the operator manages hand-built agents directly.
+    @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
 
     private var sidebarMode: SidebarMode {
         get { SidebarMode(rawValue: sidebarModeRaw) ?? .expanded }
@@ -97,6 +100,20 @@ struct ContentView: View {
             // registered. Both no-op in demo mode.
             workspace.registerForegroundRefresh()
             workspace.triggerRefresh(for: workspace.profile)
+            // v2.2.0 launch freshness sweep: surface a prompt for heavy-tier
+            // data older than a week (never auto-collected — on-prem safety)
+            // and silently refresh week-old audit data (config analysis,
+            // cheap). Both no-op in demo mode.
+            await workspace.checkHeavyTierStaleness()
+            await workspace.autoRefreshAuditIfStale()
+            // v2.2.0 managed automation: reconcile the policy-driven
+            // all-profiles agents. No-op unless the operator opted in
+            // (AutomationPolicy.isManaged); no-op in demo mode.
+            await workspace.reconcileManagedAutomation()
+            // Catch-up backstop: collect today's freshness snapshot if the
+            // scheduled run was missed (e.g. asleep at 06:00). No-op when
+            // already collected today or automation is unmanaged.
+            await workspace.catchUpCollectIfNeeded()
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
         .animation(.snappy, value: workspace.toast != nil)
@@ -112,7 +129,7 @@ struct ContentView: View {
         case .trends:            TrendsView()
         case .audit:             AuditView()
         case .reports:           ReportsView()
-        case .schedules:         SchedulesView()
+        case .schedules:         AutomationTab()
         case .runs:              RunsView()
         case .config:            ConfigView()
         case .customize:         CustomizeView()
@@ -143,7 +160,7 @@ struct ContentView: View {
         case .deviceLookup:      "LOOKUP"
         case .trends:            TrendRange(rawValue: defaultTrendRangeRaw)?.rawValue ?? TrendRange.w4.rawValue
         case .audit:             "HEALTH & HYGIENE"
-        case .schedules:         "LAUNCHAGENT"
+        case .schedules:         AutomationPolicy.parse(automationPolicyRaw).isManaged ? "POLICY" : "SCHEDULES"
         case .runs:              "STDOUT"
         case .config:            "CONFIG.YAML"
         case .customize:         "SHEETS"

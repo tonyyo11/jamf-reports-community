@@ -111,11 +111,12 @@ are no other Python files. Do not create additional modules — keep it single-f
 | `JamfCLIBridge` | Subprocess wrapper for jamf-cli pro/protect commands. Saves JSON output to `jamf-cli-data/`. Optional — gracefully no-ops if jamf-cli is absent. Supports `profile` for multi-tenant use. Falls back to latest cached JSON when live calls fail (`use_cached_data=True`). |
 | `SchoolCLIBridge` | Subclass of `JamfCLIBridge` for `jamf-cli school` commands. Same caching/fallback infrastructure. Methods: `overview`, `devices_list`, `device_groups_list`, `users_list`, `groups_list`, `classes_list`, `apps_list`, `profiles_list`, `locations_list`. |
 | `CoreDashboard` | Generates sheets from jamf-cli data: Fleet Overview, Mobile Fleet Summary, Inventory Summary, Mobile Inventory, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Profile Status, Mobile Config Profiles, App Status, Patch Compliance, Patch Failures, Update Status, Update Failures, Smart Groups, Advanced Mobile Searches, Computer Group Inventory, Mobile Device Groups. No CSV required. |
-| `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Generates: Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance, plus one sheet per `custom_eas` entry. |
+| `CSVDashboard` | Generates sheets from a Jamf Pro CSV export. Only runs when `--csv` is provided. Routes by detected CSV family: computer CSVs → Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance + `custom_eas` sheets; mobile CSVs → Mobile Device Inventory, Mobile Stale Devices. Export-only continuation rows are dropped before counting. |
 | `SchoolDashboard` | Generates sheets from Jamf School data (jamf-cli school or CSV export). Sheets: Device Inventory, OS Versions, Device Status, Stale Devices (CSV-driven); School Overview, Device Groups, Users, Classes, Apps, Profiles, Locations (bridge-driven). |
 | `SchoolColumnMapper` | Resolves `school_columns` config field names → Jamf School CSV column names. Same interface as `ColumnMapper`. |
 | `ChartGenerator` | Generates matplotlib PNG charts and embeds them in the xlsx. Skipped if matplotlib is not installed (`HAS_MATPLOTLIB` flag). |
 | `HtmlReport` | Generates a self-contained HTML instance report from jamf-cli data. Adapts the design from work from @DevliegereM. Fetches overview, security, and all list-type resources (policies, profiles, scripts, packages, smart groups, org data). Uses inline SVG charts; self-contained, no CDN dependency, no new Python dependencies. |
+| `SOFAFeedClient` | Fetches macadmins SOFA v2 feeds (latest macOS/iOS/iPadOS/tvOS/watchOS versions + release dates) via curl subprocess (NOT urllib — python.org installs lack SSL certs). Caches to `<jamf_cli.data_dir>/sofa/`; stale-cache fallback when offline. Config: `sofa:` block. Feeds the "OS Currency" sheet and HTML section. ReleaseDate parsing handles both ISO timestamps (macOS/iOS) and date-only strings (tvOS/watchOS). |
 
 ### Key top-level functions
 
@@ -128,7 +129,9 @@ are no other Python files. Do not create additional modules — keep it single-f
 | `_archive_csv_snapshot(csv_path, hist_dir)` | Copies the current CSV into the historical snapshot dir with a timestamp |
 | `_semantic_warnings(config, df)` | Checks for likely column mapping mistakes before writing |
 | `_school_csv_load(csv_path)` | Loads a Jamf School CSV export, auto-detecting semicolon vs comma delimiter |
-| `cmd_scaffold(csv_path, out_path)` | Reads CSV headers, fuzzy-matches via `COLUMN_HINTS`/`COLUMN_EXCLUDES`, writes starter `config.yaml` |
+| `cmd_scaffold(csv_path, out_path)` | Detects the CSV family, then fuzzy-matches via `COLUMN_HINTS`/`COLUMN_EXCLUDES` (computers) or `MOBILE_COLUMN_HINTS`/`MOBILE_COLUMN_EXCLUDES` (mobile), writes starter `config.yaml` |
+| `_detect_csv_family_from_headers(headers)` | Config-free CSV family detection: counts hits against `COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS`; returns "computers", "mobile", or None |
+| `_drop_continuation_rows(df, identity_column)` | Drops Jamf export-only multi-value continuation rows (blank identity cell) so device counts stay per-device |
 | `cmd_check(config, csv_path)` | Validates jamf-cli auth and all configured column names against actual CSV headers |
 | `cmd_generate(config, csv_path, out_file, historical_csv_dir)` | Main entry point — builds xlsx, generates charts |
 | `cmd_html(config, out_file, no_open)` | Builds the self-contained HTML instance report via `HtmlReport` |
@@ -141,11 +144,26 @@ are no other Python files. Do not create additional modules — keep it single-f
 
 ### Scaffold semantic matching
 
-`COLUMN_HINTS` / `COLUMN_EXCLUDES` — Jamf Pro CSV auto-detection.
+`COLUMN_HINTS` / `COLUMN_EXCLUDES` — Jamf Pro computer CSV auto-detection.
+`MOBILE_COLUMN_HINTS` / `MOBILE_COLUMN_EXCLUDES` — Jamf Pro mobile-device CSV auto-detection.
 `SCHOOL_COLUMN_HINTS` / `SCHOOL_COLUMN_EXCLUDES` — Jamf School CSV auto-detection.
 
 Each maps logical field names to known-good/bad header substrings. The `EXCLUDES` dict
 prevents false positives (e.g., "Name" must not match "LocationName" for `device_name`).
+Exact-match ties follow hint list order (earlier hint wins).
+
+### CSV family detection
+
+Jamf Pro exports computers and mobile devices as separate reports — never mixed.
+`COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS` are curated sets of headers that
+appear ONLY in that family's exports (verified against Jamf Pro 11.28). Detection counts
+discriminator hits per family; the higher count wins; zero/tie returns None (caller defaults
+to computers with a warning). Do NOT add headers that appear in both export types (e.g.
+`Managed`, `Supervised`, `Serial Number`, `Model`, `Last Inventory Update` are shared).
+The Swift port lives in `CSVFamilyDetector.swift` — keep both tables identical.
+
+Jamf "export-only field" exports add multi-value continuation rows (blank identity cell);
+these are dropped at load everywhere device counting happens.
 
 ### CLI commands
 
@@ -199,7 +217,8 @@ python3 jamf-reports-community.py launchagent-run   --mode MODE [--csv-inbox-dir
                                                     [--notify WEBHOOK_URL]
 python3 jamf-reports-community.py multi-launchagent-run --multi-profiles PROFILES
                                                         [--multi-filter FILTER]
-                                                        [--multi-sequential]
+                                                        [--multi-exclude PROFILES]
+                                                        [--multi-sequential] [--tiers TIERS]
 
 # Jamf School (jamf-cli 1.7+)
 python3 jamf-reports-community.py school-generate [--config config.yaml]
@@ -355,6 +374,45 @@ output:
   keep_latest_runs: 10           # how many timestamped runs to keep in output_dir
 ```
 
+### notify config (v2.2.0 — opt-in webhook digest)
+
+```yaml
+notify:
+  enabled: false        # OFF by default
+  provider: "teams"     # teams | slack
+  url: ""               # https:// incoming webhook URL
+```
+
+Read by `cmd_generate` (Python) and `NotifyConfig` (Swift). `--notify <url>` is a
+URL override for the Python CLI; provider still comes from config. Report
+*grouping* is NOT a config.yaml key — `report_groups` lives on the app-level
+`AutomationPolicy` (`@AppStorage`), edited in `AutomationView`.
+
+### retention config (v2.2.0 — admin-controlled snapshot lifecycle)
+
+```yaml
+retention:
+  enabled: false           # OFF by default — raw snapshots kept indefinitely
+  mode: "archive"          # archive (move to archive_dir) | delete
+  snapshot_keep_days: 365  # age horizon (<=0 disables the age rule)
+  snapshot_keep_count: 0   # newest-N floor per kind (0 = none)
+  include_summaries: false # leave the durable trend summaries alone
+  archive_dir: ""          # default <workspace>/_archive (distinct from output.archive_dir)
+```
+
+Raw `jamf-cli-data/<kind>/` snapshots are a reporting input (per-device
+day-over-day history), so retention is **off by default** — nothing is removed.
+When enabled, a file is kept if EITHER the age horizon or the count floor
+protects it. Non-snapshot subdirs (`state`, `sofa`) and `_`-prefixed dirs are
+never swept. Swift: `SnapshotRetentionService.sweepIfDue` runs at the top of
+`ReportEngine.collect` (once/day via a `.retention-last` marker at the workspace
+root, OUTSIDE the swept tree) — covering every collect path including headless
+scheduled runs; the old RefreshCoordinator delete-at-90d sweep was removed.
+Python: `_sweep_snapshots` in `_collect_snapshots`, same model. **Behavior
+change:** existing app users move from auto-pruned-at-90d to keep-everything.
+Per-device raw-history *rendering* (reading dated raw snapshots, not just
+summaries) is a planned follow-up; retention makes the raw durable for it.
+
 ### security_agents format
 
 `security_agents` is a **list**, not a dict. `connected_value` is a case-insensitive
@@ -453,9 +511,9 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. `runNow(profile:mode:)` is the canonical Schedule-mode dispatcher — see Schedule mode contract below. |
 | `WorkspacePaths` | Typed, profile-validated path constants under `~/Jamf-Reports/<profile>/`. All path construction goes through here. |
 | `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
-| `LaunchAgentService` | Discovers and parses existing `~/Library/LaunchAgents/com.jamfreports.*.plist` jobs. |
+| `LaunchAgentService` | Discovers and parses existing `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist` jobs. |
 | `LaunchAgentWriter` | Generates LaunchAgent plists and writes them atomically. |
-| `OnboardingFlow` | Orchestrates first-run: jamf-cli auth via `stdin`, profile creation, workspace init, first collect/generate run. |
+| `OnboardingFlow` | Orchestrates first-run: jamf-cli auth via PTY-driven `stdin`, profile creation, workspace init, first collect/generate run. Supports four connection flows: Jamf Pro OAuth2 (`config add-profile`), Platform Gateway (`config add-profile --auth-method platform --tenant-id`), Jamf Protect (`protect setup`), Jamf School (`school setup`). Protect/School are optional "Add Products" additions (also reachable post-onboarding from SourcesView via `ProductConnectSheetView`); success wires `protect.enabled/profile` and `school_cli.enabled/profile` into config.yaml. Secrets: PTY stdin only, redacted output, cleared after use; `SecureSecretField` reports a has-text Bool (never content) so the Continue button enables while typing. |
 | `ConfigService` | Reads and writes `config.yaml` within a profile workspace. |
 | `TrendStore` | Loads `summary.json` snapshots from `snapshots/computers/summaries/`; feeds the Trends screen charts. |
 | `DeviceInventoryService` | Reads cached device inventory JSON from the workspace. |
@@ -479,20 +537,39 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `MobileFleetService` | Reads `mobile-devices-list/` (light) + `mobile-device-inventory-details/` (rich) + `classic-ios-profiles/`. Surfaces iOS/iPadOS KPIs, OS distribution, compliance signals. |
 | `LegacyHistoryImporter` | One-shot import from v3.5's `fleet_health_metrics_history.json` into the workspace's summaries dir. Translates snake_case + yyyyMMdd → camelCase + yyyy-MM-dd; idempotent unless overwriteExisting=true. Triggered from SettingsView. |
 | `DiagnosticBundleService` | Native port of Python `cmd_diagnostic_bundle`. Stages recent logs, last-N summaries, redacted config, a workspace tree, and version metadata into a zip under `~/Jamf-Reports/<profile>/diagnostics/` (an allow-listed dir, so `SystemActions.reveal` accepts it). Never executes the bundled script. `DiagnosticRedactor` reproduces the Python redaction behavior: always-on credential patterns, exact-key JSON redaction, and HMAC-SHA256 `<kind>-<8hex>` PII placeholders (per-instance random salt — stable within one bundle only, by design). Powers SettingsView's "Generate diagnostic bundle now". |
+| `ScheduledRunRecorder` | (v2.2.0) Writes the per-run artifacts the Run History screen and Schedules "Last Run" column read: `automation/logs/<label>.<timestamp>.log` + `automation/<label>_status.json`. Used by the headless `--scheduled-run` path, which both launchd and the GUI "Run now" button invoke. Prunes its own logs at 50 per workspace; never touches legacy `.out.log`/`.err.log` files. |
+| `ExportNaming` | (v2.2.0) Single filename convention for exports and engine reports: `<kind>-<profile>-<yyyy-MM-dd_HHmmss>.<ext>`. Used by every CSV/PNG export site and `ReportEngine.resolveOutputURL` (reports become `report_<profile>_<timestamp>.xlsx`). |
+| `BackupMaintenance` | (v2.2.0) Housekeeping for `backups/`: keeps the newest 10 scheduled backups (manual backups never pruned — identified by the `scheduled-` manifest label prefix) and sweeps abandoned `.tmp-*` staging dirs older than 24h. |
+| `SnapshotFreshness` | Decides fresh / stale / no-snapshots for a data dir by newest-file mtime. Gates the Overview "skip collect when fresh" path and the launch freshness sweep. |
+| `RefreshDebouncer` | Debounce helper extracted from the refresh path for testability. |
+| `CSVFamilyDetector` | Detects whether a Jamf Pro CSV export contains computers or mobile devices via family-unique discriminator headers (ported verbatim from Python `COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS` — keep both tables identical). Used by ScaffoldService and CSVDashboard sheet routing. |
+| `SOFAFeedService` | Swift counterpart of Python's `SOFAFeedClient`. Reads/writes the shared `jamf-cli-data/sofa/` cache (URLSession fetch, atomic writes). Feeds the OS Currency sheet/section, UpdatesView latest-version card, and ReportEngine.collect (refresh tier; kinds `sofa` + `patch-release-dates` in knownCollectKinds). |
+| `PatchReleaseDateService` | Reads the merged `patch-release-dates` snapshot (`[{title_id, title, latest_version, release_date}]`, written by both engines' collect). Latest-definition matching: exact version → absoluteOrderId 0 → first. Feeds Patch Compliance sheet + PatchView Released/Days Behind columns. |
+| `MSCPComplianceService` | (v2.2.0) Derives real per-device mSCP/STIG compliance band distributions from `ea-results` snapshots. Reads per-baseline failure counts, buckets devices into Pass/Low/Med-Low/Medium/High/No Data bands, and computes pass percentage. Replaces the four-control proxy when configured via `compliance.baselines`. Used by CompliancePostureView donut and MSCPChartDataBuilder for trend charting. |
+| `MSCPChartDataBuilder` | (v2.2.0) Builds historical per-baseline mSCP/STIG compliance band time-series by merging dated `ea-results` snapshots and `summary.json` daily mscpBands. Used by TrendsView to render the compliance band stackplot trend chart. |
+| `CollectRouter` | (v2.2.0) Dispatches a collect run to the right engine function(s) by profile **product type** (`ProfileProductType.detect` from config): Jamf School → `ReportEngine.schoolCollect`; Jamf Pro → `ReportEngine.collect`, then `protectCollect` if `protect.enabled` (Protect augments Pro; its failure is non-fatal). Closures default to the real statics; tests inject spies. The scheduled-run path and catch-up-on-wake both route through it. |
+| `ManagedAutomation` | (v2.2.0) Owns the global "managed" all-profiles LaunchAgents derived from `AutomationPolicy`. `reconcile` is declarative and scoped to a **reserved EXACT label set** (`managed-freshness`/`-scan`/`-reports`/`-backup` → `<prefix>.multi.managed-*`); `owns(_:)` is exact membership, NEVER a prefix match, so a user's hand-built multi-schedule can't be removed. Pure `desiredSchedules`/`plan`/`owns` are unit-tested; the thin `reconcile` executes through injectable install/remove closures (no real `launchctl` in tests). Idempotent (signature-skips unchanged), force-reinstalls, and tears agents down when `isManaged` flips off. Called from `WorkspaceStore.reconcileManagedAutomation` on app launch (no-op in demo / when unmanaged). |
+| `WebhookNotifier` | (v2.2.0) Opt-in scheduled-run webhook digest. Pure Teams adaptive-card and Slack Block Kit payload builders + a thin best-effort `URLSession` send that never throws into the run; gated on `NotifyConfig.isUsable` (enabled + https URL). Posts after a successful snapshot-only collect and after a successful generate in the scheduled-run path. Python twin: `_post_webhook_notification` / `_teams_card_payload` / `_slack_blocks_payload`. |
+| `FleetRollup` | (v2.2.0) Pure aggregator of a report group's per-profile `DailySummary` KPIs into consolidated metrics with period-over-period deltas. Percentages are **device-weighted** (Σ(pct × devices) / Σ(devices)); counts are summed. The caller passes one latest summary per profile plus the matching prior-period summary. |
+| `FleetReportEmitter` | (v2.2.0) Emits a `ReportGroup`'s consolidated report as a `Metric,Current,Previous,Delta` CSV (formula-injection-safe by construction; group name only in the filename) under `_fleet-reports/` in the workspaces root. `priorSummary` selects the delta baseline by lookback (daily 1d / weekly 7d / monthly 30d). `main.swift`'s all-profiles **reports** run emits one CSV per group after the per-profile loop. |
+
+**Managed automation model (v2.2.0 — "set policy, not cron jobs").** `AutomationPolicy` (Models/AutomationPolicy.swift) is a single app-level `@AppStorage` JSON value (key `automationPolicy`, lenient `decodeIfPresent` so a new field never wipes a saved policy). `isManaged` is the master switch and **defaults off** — until the operator opts in via `AutomationView` (Phase 5) or the deferred Phase 6 migration, `ManagedAutomation.reconcile` installs and removes nothing. The managed agents are `--all-profiles` plists that resolve the profile set at run time, so adding/removing a profile auto-adjusts with no agent rewrite; `excludedProfiles` is enforced as a run-time exclusion (discover all, minus excluded — never a positive `--multi-profiles` list). `report_groups` (a `[ReportGroup]` on `AutomationPolicy`, NOT in config.yaml) drives the consolidated fleet report. The opt-in webhook digest lives in config.yaml's `notify:` block (`NotifyConfig`). Catch-up-on-wake (`WorkspaceStore.catchUpCollectIfNeeded`, launch + `willBecomeActive`) collects the day's freshness snapshot if a scheduled run was missed, gated by the Phase-1 once-per-day `force:false` collect guard.
 
 **Tab visibility model.** Every non-core sidebar tab is toggleable via SettingsView → Sidebar Visibility. Backed by `@AppStorage("hiddenTabs")` parsed/serialized through `TabVisibility`. Core tabs (`Tab.isCoreTab` — Overview, Devices, Sources, Settings, Onboarding) are filtered out at the toggle UI level and protected at the model level (toggling a core tab is a no-op). Sidebar groups with all-hidden contents auto-collapse so the layout never shows orphan headers. Visibility is a per-user UX preference, not workspace-bound.
 
-**Report templates.** `Engine/Templates/` defines the `ReportTemplate` protocol plus the shipping templates (Full Instance Report, Executive, Operational, Compliance, Asset, Security Posture, School), resolved by `TemplateResolver`. Each template lists its `includedSheets` (`SheetID` raw values must match `CoreDashboard.sheetPlan` names exactly) and `htmlSections` (`SectionID` → `HtmlReport.buildSectionMap`). **`FullInstanceTemplate` (`full-instance`) is the default** for both GUI generation (GenerateSheet) and engine-level `generateAll`/`generate` calls; it includes every sheet and section. Adding a new sheet/section: add the enum case, register the builder, and add it to FullInstanceTemplate (a test asserts FullInstanceTemplate covers all SectionID cases).
+**Report templates.** `Engine/Templates/` defines the `ReportTemplate` protocol plus the shipping templates (Full Instance Report, Executive, Operational, Compliance, Asset, Security Posture, School, Custom), resolved by `TemplateResolver`. Each template lists its `includedSheets` (`SheetID` raw values must match `CoreDashboard.sheetPlan` names exactly) and `htmlSections` (`SectionID` → `HtmlReport.buildSectionMap`). **`FullInstanceTemplate` (`full-instance`) is the default** for both GUI generation (GenerateSheet) and engine-level `generateAll`/`generate` calls; it includes every sheet and section. `CustomTemplate` (`custom`) lets users select any subset of sheets for single-sheet or focused reports, with the selected sheet list persisted in AppStorage. Adding a new sheet/section: add the enum case, register the builder, and add it to FullInstanceTemplate (a test asserts FullInstanceTemplate covers all SectionID cases).
 
 **Snapshot key contract (Swift HTML report).** `HtmlReport` loads cached snapshots by the canonical on-disk names that `ReportEngine.collect` writes — `computers`, `policies`, `smart-computer-groups`, `patch-device-failures` — with the older alternate names kept as fallback aliases in `loadJSONList(kinds:)` calls. When adding a section that reads a new kind, the kind must also be added to the collect command matrix and `knownCollectKinds` in `ReportEngine.swift` (and `CollectionTier` if it should participate in tiered collection); otherwise the section will silently render its empty-state placeholder forever.
 
 **Compliance benchmark label.** UI surfaces never hardcode a benchmark name. `TrendSeries.Metric.compliance`'s default label is "Compliance Benchmark"; `WorkspaceStore.complianceBenchmarkLabel` overrides it from `compliance.baseline_label` or the first `platform.compliance_benchmarks` entry in the workspace config. mSCP baseline identifiers and the framework preset pickers keep real benchmark names — those are data/user choices, not labels the app asserts.
 
+**EDR agent label (v2.2.0).** Same rule for security-agent vendor names. `TrendSeries.Metric.edrAgent` / `SecurityScore.Metric.edrAgent` default to "EDR Agent Installed/Connected"; `WorkspaceStore.edrAgentName` overrides from the first `security_agents` entry. Both enums keep the legacy `"crowdstrike"` raw value for persisted-selection and summary.json schema compatibility — do not rename the raw value or the `crowdstrikePct` JSON field.
+
 **Convention:** New jamf-cli command wrappers go through the `CLICommand` enum and `CLIExecutor` protocol (`Services/CLICommand.swift`), not bespoke `CLIBridge` methods. Existing helpers (`generate`, `collect`, `audit`, `deviceDetail`, …) stay as-is per `.claude/plans/ADR-W21-clicommand-enum.md` (Hybrid scope).
 
-#### Schedule mode contract (PR-20 / PR-21)
+#### Schedule mode contract (PR-20 / PR-21; backup added in v2.2.0)
 
-`Schedule.RunMode` has four cases; each is strict and operationally distinct.
+`Schedule.RunMode` has five cases; each is strict and operationally distinct.
 Both the GUI "Run now" path (`CLIBridge.runNow(profile:mode:)`) and the
 LaunchAgent path (`main.swift --scheduled-run --mode <rawValue>`) honor the
 same contract — they share `CLIBridge.newestCSV(in:)` so CSV lookup is
@@ -504,6 +581,7 @@ identical between the two.
 | `.jamfCLIOnly` (`jamf-cli-only`)   | `ReportEngine.generate` only — uses cached snapshots; NO collect            | No (no collect)  |
 | `.jamfCLIFull` (`jamf-cli-full`)   | collect + generate; no CSV                                                  | Yes              |
 | `.csvAssisted` (`csv-assisted`)    | collect + generate; **requires** a CSV in `csv-inbox/` — hard-fails if none | Yes              |
+| `.backup` (`backup`)               | `jamf-cli pro backup` only — config objects to `backups/`; no collect, no report | No          |
 
 LaunchAgent plists written before PR-20 omit `--mode`; both the parser
 (`LaunchAgentService.parse` line 185) and `main.swift` (`scheduledRun`
@@ -536,12 +614,17 @@ Named constants in `CLIBridge`. Reference: jamf-cli Error Handling & Exit Codes 
 
 The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data.
 
-#### Key views (39 Swift view files as of v2.1.0; tables last synced at v2.0 — see Views/ and Services/ for the current set)
+#### Key views (41 Swift view files as of v2.2.0; tables last synced at v2.0 — see Views/ and Services/ for the current set)
 
 Core: `Sidebar`, `Titlebar`, `OverviewView`, `FleetOverviewView`, `DevicesView`,
-`DeviceLookupView`, `TrendsView`, `ReportsView`, `BackupsView`, `SchedulesView`,
+`DeviceLookupView`, `TrendsView`, `ReportsView`, `BackupsView`, `AutomationView`,
 `RunsView`, `ConfigView`, `CustomizeView`, `SourcesView`, `AuditView`,
 `OnboardingView`, `SettingsView`
+
+`AutomationView` (v2.2.0, DRAFT pending visual sign-off) is the "set policy"
+screen bound to `AutomationPolicy`; the `Tab.schedules` case now routes to it
+(label "Automation"). `SchedulesView` remains compiled but **unrouted** pending
+the deferred Phase 6 migration that consolidates existing hand-built schedules.
 
 Posture group: `SecurityPostureView` (weighted score ring + per-control KPIs +
 P0/P1/P2 action items + OS donut), `CompliancePostureView` (compliance band
@@ -592,11 +675,24 @@ swift run JamfReports              # launch (debug)
 
 # Produce a runnable .app bundle (ad-hoc signed, local dev use)
 ./build-app.sh release             # → app/build/JamfReports.app
+
+# A public release (vs a beta): set RELEASE=1
+RELEASE=1 ./build-app.sh release   # stamps JRReleaseChannel=release
 ```
 
 For distribution to other Macs: sign with a Developer ID certificate, notarize via
 `xcrun notarytool`, and staple with `xcrun stapler staple`. These steps are currently
 manual and not integrated into `build-app.sh`.
+
+**Version model.** `MARKETING_VERSION` in `build-app.sh` is the single source of
+truth for the user-facing semver (`CFBundleShortVersionString`); keep it in sync with
+`AppVersionState.fallbackVersion` (`AppVersionDriftTests` enforces this). `CFBundleVersion`
+is always a monotonic integer (git commit count) — never set it to the marketing version.
+Release-vs-beta is signalled by `RELEASE=1` → `JRReleaseChannel` in `Info.plist`, which
+`build-dmg.sh`/`build-pkg.sh` read to decide artifact naming (`-betaN` suffix for betas).
+To bump: change `MARKETING_VERSION`, roll `CHANGELOG.md`, tag `vX.Y.Z`; the build number
+takes care of itself. `.jamf-cli-tracked-version` is a separate axis (the jamf-cli
+dependency floor), unrelated to app versioning.
 
 #### Swift code conventions
 
@@ -883,7 +979,6 @@ jamf-reports-community/
 ├── LICENSE                     # MIT — canonical; mirrored to app/Sources/JamfReports/Resources/
 ├── NOTICE.md                   # Trademark/affiliation notice — canonical; mirrored to Resources
 ├── THIRD_PARTY_NOTICES.md      # Third-party attribution — canonical; mirrored to Resources
-├── PROJECT_CONTEXT.md          # Session context, known issues, enhancement backlog
 ├── requirements.txt            # xlsxwriter, pandas, pyyaml, matplotlib
 ├── requirements-dev.txt        # pytest and dev tools
 ├── docs/wiki/                  # GitHub Wiki source files
@@ -898,7 +993,6 @@ jamf-reports-community/
 │   ├── build-app.sh            # Produces app/build/JamfReports.app with ad-hoc signing
 │   ├── python-runtime.lock     # Pinned python-build-standalone release + SHA256 checksums
 │   ├── requirements-runtime.txt # Packages bundled in the private Python runtime
-│   ├── SECURITY_AUDIT.md       # Security audit findings and mitigations
 │   ├── scripts/
 │   │   └── build-python-runtime.sh  # Downloads + packages the private Python runtime
 │   ├── iconset/                # App icon source and build script

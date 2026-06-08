@@ -191,4 +191,83 @@ final class GenerateSheetStateTests: XCTestCase {
         XCTAssertEqual(count, 0)
         XCTAssertNil(message, "empty result (nothing requested) must return nil message")
     }
+
+    // MARK: - Custom template selection
+
+    func testDefaultSelectedTemplateIDIsFullInstance() {
+        let state = GenerateSheetState()
+        XCTAssertEqual(state.selectedTemplateID, FullInstanceTemplate().identifier)
+    }
+
+    func testCustomSelectedSheetsStartsEmpty() {
+        let state = GenerateSheetState()
+        XCTAssertTrue(state.customSelectedSheets.isEmpty)
+    }
+
+    func testResolvedTemplateWithNonCustomTemplate() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "executive"
+        let template = state.resolvedTemplate
+        XCTAssertEqual(template.identifier, "executive")
+        XCTAssertTrue(template is ExecutiveTemplate)
+    }
+
+    func testResolvedTemplateWithCustomTemplateAndSheets() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "custom"
+        state.customSelectedSheets = [.executiveSummary, .securityPosture]
+        let template = state.resolvedTemplate
+        XCTAssertEqual(template.identifier, "custom")
+        if let customTemplate = template as? CustomTemplate {
+            XCTAssertEqual(Set(customTemplate.includedSheets), Set([.executiveSummary, .securityPosture]))
+        } else {
+            XCTFail("Expected CustomTemplate, got \(type(of: template))")
+        }
+    }
+
+    func testResolvedTemplateWithCustomTemplateAndEmptySheetsFallsBackToExecutive() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "custom"
+        state.customSelectedSheets = []
+        let template = state.resolvedTemplate
+        XCTAssertEqual(template.identifier, "executive")
+        XCTAssertTrue(template is ExecutiveTemplate)
+    }
+
+    func testCanGenerateWithCustomTemplateAndSheets() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "custom"
+        state.customSelectedSheets = [.executiveSummary]
+        XCTAssertTrue(state.canGenerate)
+    }
+
+    func testCanGenerateFalseWithCustomTemplateAndNoSheets() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "custom"
+        state.customSelectedSheets = []
+        XCTAssertFalse(state.canGenerate)
+    }
+
+    func testCanGenerateWithNonCustomTemplate() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "executive"
+        XCTAssertTrue(state.canGenerate) // Should not be affected by custom sheet requirement
+    }
+
+    func testCustomSelectedSheetsRoundTripUserDefaults() {
+        // Clear any existing value
+        UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
+
+        let state = GenerateSheetState()
+        let selectedSheets: Set<SheetID> = [.executiveSummary, .securityPosture, .patchCompliance]
+
+        state.customSelectedSheets = selectedSheets
+
+        // Create a new state instance to test persistence
+        let newState = GenerateSheetState()
+        XCTAssertEqual(newState.customSelectedSheets, selectedSheets)
+
+        // Clean up
+        UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
+    }
 }

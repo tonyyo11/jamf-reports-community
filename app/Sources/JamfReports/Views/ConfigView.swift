@@ -341,6 +341,14 @@ private struct ColumnsTab: View {
             do {
                 let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
                 try ScaffoldService.writeConfig(to: configOut, result: result, profile: profile)
+                let familyLabel = result.family == .mobile ? "mobile device export" : "computer export"
+                let matched = (result.family == .mobile ? result.mobileColumns : result.columns).count
+                await MainActor.run {
+                    workspace.toast = Toast(
+                        message: "Detected \(familyLabel) — mapped \(matched) column(s)",
+                        style: .success
+                    )
+                }
                 workspace.reloadFromDisk()
             } catch {
                 await MainActor.run {
@@ -1063,6 +1071,7 @@ private struct EACard: View {
 private struct ScoringTab: View {
     @AppStorage(ScoringConfig.storageKey) private var raw: String = ""
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(WorkspaceStore.self) private var workspace
 
     private var config: ScoringConfig {
         raw.isEmpty ? ScoringConfig() : ScoringConfig.parse(raw)
@@ -1106,9 +1115,9 @@ private struct ScoringTab: View {
                         weightRow("Firewall Enabled",
                                   value: Binding(get: { Int(config.weights.firewall) },
                                                  set: { v in update { $0.firewall = Double(v) } }))
-                        weightRow("CrowdStrike Connected",
-                                  value: Binding(get: { Int(config.weights.crowdstrike) },
-                                                 set: { v in update { $0.crowdstrike = Double(v) } }))
+                        weightRow("\(workspace.edrAgentName ?? "EDR Agent") Connected",
+                                  value: Binding(get: { Int(config.weights.edrAgent) },
+                                                 set: { v in update { $0.edrAgent = Double(v) } }))
                         weightRow("mSCP Compliance",
                                   value: Binding(get: { Int(config.weights.mscp) },
                                                  set: { v in update { $0.mscp = Double(v) } }))
@@ -1131,7 +1140,7 @@ private struct ScoringTab: View {
 
     private var totalWeight: Double {
         let w = config.weights
-        return w.fileVault + w.sip + w.firewall + w.crowdstrike +
+        return w.fileVault + w.sip + w.firewall + w.edrAgent +
                w.mscp + w.xprotect + w.cve + w.secureBoot
     }
 

@@ -19,20 +19,34 @@ struct SecurityScore: Sendable, Equatable {
     let appliedWeights: [Metric: Double]
 
     enum Metric: String, CaseIterable, Sendable, Hashable {
-        case fileVault, sip, firewall, crowdstrike, mscp,
-             xprotect, cve, secureBoot
+        // .edrAgent keeps the legacy "crowdstrike" raw value — the v3.5 parity
+        // identifier. The user-visible label is config-driven via
+        // `displayLabel(edrAgentName:)`; the generic fallback names no vendor.
+        case fileVault, sip, firewall
+        case edrAgent = "crowdstrike"
+        case mscp, xprotect, cve, secureBoot
 
         var displayLabel: String {
             switch self {
             case .fileVault:  return "FileVault Encryption"
             case .sip:        return "System Integrity Protection"
             case .firewall:   return "Firewall Enabled"
-            case .crowdstrike: return "CrowdStrike Connected"
+            case .edrAgent:   return "EDR Agent Connected"
             case .mscp:       return "mSCP Compliance"
             case .xprotect:   return "XProtect Current"
             case .cve:        return "CVE Clean"
             case .secureBoot: return "Secure Boot (Full)"
             }
+        }
+
+        /// Tenant-specific label: the configured security agent's name (e.g.
+        /// "CrowdStrike Falcon Connected") for `.edrAgent`; the static label
+        /// for everything else.
+        func displayLabel(edrAgentName: String?) -> String {
+            if case .edrAgent = self, let name = edrAgentName, !name.isEmpty {
+                return "\(name) Connected"
+            }
+            return displayLabel
         }
     }
 
@@ -92,7 +106,7 @@ struct ScoringConfig: Sendable, Equatable {
             fileVault: parts[0] ?? d.fileVault,
             sip: parts[1] ?? d.sip,
             firewall: parts[2] ?? d.firewall,
-            crowdstrike: parts[3] ?? d.crowdstrike,
+            edrAgent: parts[3] ?? d.edrAgent,
             mscp: parts[4] ?? d.mscp,
             xprotect: parts[5] ?? d.xprotect,
             cve: parts[6] ?? d.cve,
@@ -102,7 +116,7 @@ struct ScoringConfig: Sendable, Equatable {
 
     func serialize() -> String {
         let w = weights
-        return [w.fileVault, w.sip, w.firewall, w.crowdstrike,
+        return [w.fileVault, w.sip, w.firewall, w.edrAgent,
                 w.mscp, w.xprotect, w.cve, w.secureBoot]
             .map { String(format: "%g", $0) }
             .joined(separator: ",")
@@ -116,7 +130,9 @@ struct SecurityScoreWeights: Sendable, Equatable {
     var fileVault: Double
     var sip: Double
     var firewall: Double
-    var crowdstrike: Double
+    /// Weight for the EDR/security-agent metric (slot 4 of the positional
+    /// @AppStorage serialization — the order is frozen for compatibility).
+    var edrAgent: Double
     var mscp: Double
     var xprotect: Double
     var cve: Double
@@ -126,7 +142,7 @@ struct SecurityScoreWeights: Sendable, Equatable {
         fileVault: 15,
         sip: 15,
         firewall: 15,
-        crowdstrike: 10,
+        edrAgent: 10,
         mscp: 20,
         xprotect: 5,
         cve: 15,
@@ -138,7 +154,7 @@ struct SecurityScoreWeights: Sendable, Equatable {
         case .fileVault:  return fileVault
         case .sip:        return sip
         case .firewall:   return firewall
-        case .crowdstrike: return crowdstrike
+        case .edrAgent:   return edrAgent
         case .mscp:       return mscp
         case .xprotect:   return xprotect
         case .cve:        return cve
@@ -230,7 +246,11 @@ struct DeviceRisk: Sendable, Equatable {
         case activeCVE
         case secureBootMedium
         case staleOffline
-        case nessusDisconnected
+        /// A configured `security_agents` entry's EA reports the agent as not
+        /// connected. v3.5 hardcoded this to Nessus; the agent (and its EA
+        /// column + connected value) is now whatever config.yaml defines.
+        /// The raw value keeps the legacy name for v3.5-parity traceability.
+        case securityAgentDisconnected = "nessusDisconnected"
         case bootstrapMissing
 
         var displayLabel: String {
@@ -247,9 +267,19 @@ struct DeviceRisk: Sendable, Equatable {
             case .activeCVE:          return "Active CVE With Exploits"
             case .secureBootMedium:   return "Secure Boot: Medium Security"
             case .staleOffline:       return "Stale Device (Offline)"
-            case .nessusDisconnected: return "Nessus Disconnected"
+            case .securityAgentDisconnected: return "Security Agent Disconnected"
             case .bootstrapMissing:   return "Bootstrap Token Missing"
             }
+        }
+
+        /// Tenant-specific label: the configured security agent's name (e.g.
+        /// "Nessus Agent Disconnected") for `.securityAgentDisconnected`; the
+        /// static label for everything else.
+        func displayLabel(agentName: String?) -> String {
+            if case .securityAgentDisconnected = self, let name = agentName, !name.isEmpty {
+                return "\(name) Disconnected"
+            }
+            return displayLabel
         }
 
         var remediation: String {
@@ -266,9 +296,18 @@ struct DeviceRisk: Sendable, Equatable {
             case .activeCVE:          return "Apply pending macOS updates to clear active exploit."
             case .secureBootMedium:   return "Upgrade Secure Boot to Full Security."
             case .staleOffline:       return "User outreach — locate device, force check-in."
-            case .nessusDisconnected: return "Re-link Nessus agent via standard policy."
+            case .securityAgentDisconnected: return "Re-link the security agent via its deployment policy."
             case .bootstrapMissing:   return "Re-enroll device (profiles renew enrollment)."
             }
+        }
+
+        /// Tenant-specific remediation for `.securityAgentDisconnected`; the
+        /// static remediation for everything else.
+        func remediation(agentName: String?) -> String {
+            if case .securityAgentDisconnected = self, let name = agentName, !name.isEmpty {
+                return "Re-link \(name) via its deployment policy."
+            }
+            return remediation
         }
     }
 }
@@ -290,7 +329,9 @@ struct RiskFactorWeights: Sendable, Equatable {
     var activeCVE: Int
     var secureBootMedium: Int
     var staleOffline: Int
-    var nessusDisconnected: Int
+    /// Points when the configured security agent reports disconnected
+    /// (v3.5's "Nessus disconnected" factor, now config-driven).
+    var securityAgentDisconnected: Int
     var bootstrapMissing: Int
     /// Boot drive fullness threshold (percent). Defaults to 95%.
     var bootDriveFullThresholdPct: Int
@@ -310,7 +351,7 @@ struct RiskFactorWeights: Sendable, Equatable {
         activeCVE: 10,
         secureBootMedium: 5,
         staleOffline: 5,
-        nessusDisconnected: 5,
+        securityAgentDisconnected: 5,
         bootstrapMissing: 4,
         bootDriveFullThresholdPct: 95
     )

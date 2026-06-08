@@ -72,6 +72,125 @@ extension WorkspaceStore {
         coordinator.observeProfileSwitch(profileSlug)
     }
 
+    // MARK: Heavy-tier staleness (launch prompt)
+
+    /// Age threshold (days) past which heavy-tier data triggers the Overview
+    /// refresh prompt and audit data auto-refreshes on launch.
+    nonisolated static let heavyTierStaleDays = 7
+
+    /// Populate `staleHeavyTiers` with the .inventory / .scan tiers whose
+    /// newest probe-kind snapshot is older than `heavyTierStaleDays`.
+    ///
+    /// Heavy tiers are never auto-collected — per-device queries can stall
+    /// on-prem Jamf Pro for minutes. The Overview prompt's button is the only
+    /// trigger (`runHeavyTierRefresh`).
+    func checkHeavyTierStaleness() async {
+        guard canRefresh(profileSlug: profile) else {
+            staleHeavyTiers = []
+            return
+        }
+        let activeProfile = profile
+        let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
+        let stale = await Task.detached(priority: .utility) {
+            Self.staleTiers(profile: activeProfile, olderThan: threshold)
+        }.value
+        // Profile may have switched while the probe ran off-actor.
+        guard profile == activeProfile else { return }
+        staleHeavyTiers = stale
+    }
+
+    /// Collect the currently-stale heavy tiers, then clear the prompt.
+    /// Surfaces progress through `globalStatus` and a completion toast.
+    func runHeavyTierRefresh() async {
+        let tiers = staleHeavyTiers
+        guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
+        let activeProfile = profile
+        let labels = tiers.map(\.displayName).joined(separator: " + ")
+        globalStatus = "refreshing \(labels) data · profile=\(activeProfile)"
+        defer { globalStatus = nil }
+        do {
+            let exit = try await CLIBridge().collect(
+                profile: activeProfile, tiers: Set(tiers), force: true,
+                onLine: CLIBridge.noOpOnLine
+            )
+            if exit == 0 {
+                staleHeavyTiers = []
+                toast = Toast(message: "\(labels) data refreshed", style: .success)
+            } else {
+                toast = Toast(
+                    message: "Refresh finished with exit \(exit) — see Runs for details",
+                    style: .danger
+                )
+            }
+        } catch {
+            toast = Toast(message: "Refresh failed — \(error.localizedDescription)", style: .danger)
+        }
+    }
+
+    /// Run a Health Audit in the background when the cached audit snapshot is
+    /// older than `heavyTierStaleDays`. Part of the launch-time freshness
+    /// sweep — audit is a configuration-analysis call (no per-device
+    /// enumeration), so unlike the heavy tiers it is safe to run unprompted.
+    func autoRefreshAuditIfStale() async {
+        guard canRefresh(profileSlug: profile) else { return }
+        let activeProfile = profile
+        let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
+        let auditIsStale = await Task.detached(priority: .utility) {
+            Self.newestSnapshotAge(profile: activeProfile, kind: "audit")
+                .map { $0 >= threshold } ?? true
+        }.value
+        guard auditIsStale, profile == activeProfile else { return }
+
+        AppLogger.cli.info(
+            "Launch freshness sweep: audit data older than \(Self.heavyTierStaleDays) days — refreshing"
+        )
+        do {
+            _ = try await CLIBridge().audit(
+                profile: activeProfile, category: nil, onLine: CLIBridge.noOpOnLine
+            )
+        } catch {
+            AppLogger.cli.warning(
+                "Launch audit refresh failed: \(error.localizedDescription, privacy: .private)"
+            )
+        }
+    }
+
+    /// Heavy tiers whose newest probe-kind snapshot is older than `threshold`.
+    /// A tier with no snapshots at all is NOT reported — that's the
+    /// not-yet-collected state, which the per-page empty states already cover.
+    nonisolated static func staleTiers(
+        profile: String,
+        olderThan threshold: TimeInterval
+    ) -> [CollectionTier] {
+        [CollectionTier.inventory, .scan].filter { tier in
+            guard let age = newestSnapshotAge(profile: profile, kind: tier.stalenessProbeKind) else {
+                return false
+            }
+            return age >= threshold
+        }
+    }
+
+    /// Age in seconds of the newest .json snapshot under
+    /// `<workspace>/jamf-cli-data/<kind>/`, or nil when none exist.
+    nonisolated static func newestSnapshotAge(profile: String, kind: String) -> TimeInterval? {
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return nil }
+        let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+        let newest = entries
+            .filter { $0.pathExtension == "json" }
+            .compactMap {
+                (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate
+            }
+            .max()
+        guard let newest else { return nil }
+        return Date().timeIntervalSince(newest)
+    }
+
     // MARK: App-foreground registration
 
     /// Register for `NSApplication.willBecomeActiveNotification` so the
@@ -94,6 +213,10 @@ extension WorkspaceStore {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.triggerRefresh(for: self.profile)
+                // Catch-up-on-wake: if the Mac slept through the scheduled
+                // freshness run, collect today's snapshot now. Once-per-day
+                // guarded; no-op unless managed freshness is on.
+                await self.catchUpCollectIfNeeded()
             }
         }
         objc_setAssociatedObject(

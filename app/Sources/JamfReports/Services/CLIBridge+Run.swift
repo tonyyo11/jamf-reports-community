@@ -26,7 +26,8 @@ extension CLIBridge {
         }
         switch mode {
         case .snapshotOnly:
-            return try await collect(profile: profile, onLine: onLine)
+            // GUI "Run now" is always ad-hoc — bypass the once-per-day guard.
+            return try await collect(profile: profile, force: true, onLine: onLine)
         case .jamfCLIOnly:
             return try await generate(profile: profile, csvPath: nil, onLine: onLine)
         case .jamfCLIFull:
@@ -41,6 +42,19 @@ extension CLIBridge {
                 throw CLIBridgeError.csvMissing(profile: profile)
             }
             return try await collectThenGenerate(profile: profile, csvPath: csv.path, onLine: onLine)
+        case .backup:
+            // Scheduled/manual configuration backup — no collect, no report.
+            // Retention keeps the newest N scheduled backups; manual backups
+            // from BackupsView (no "scheduled-" prefix) are never pruned.
+            let exit = try await backup(
+                profile: profile,
+                label: "scheduled-\(BackupMaintenance.dateStamp())",
+                onLine: onLine
+            )
+            if exit == 0 {
+                BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
+            }
+            return exit
         }
     }
 

@@ -10,13 +10,16 @@ import Foundation
 ///   (cloud). Safe to schedule frequently — small payloads, no per-device
 ///   enumeration.
 /// - `inventory`: list-type endpoints that feed the Deep Dive screens
-///   (Policies, Profiles, Apps, Mobile, EA metadata). Default cadence:
-///   weekly (on-prem) / every 2 days (cloud). Moderate cost.
-/// - `scan`: full per-device or otherwise server-expensive reports
-///   (ea-results --all, *-scan-failures, profile-status, update-status).
-///   Default cadence: weekly (both presets). The on-prem preset hard-
-///   excludes update-status entirely (server-killer on memory-constrained
-///   instances).
+///   (Policies, Profiles, Apps, Mobile, EA metadata, per-device posture
+///   without the expensive --scan-failures fan-out). Default cadence:
+///   daily (automation model). Moderate cost; safe to schedule daily
+///   alongside the Refresh tier.
+/// - `scan`: the two `--scan-failures` per-device fan-out queries only
+///   (`patch-device-failures`, `update-device-failures`). These drive
+///   the Patch Failures and Update Failures sheets and are the only
+///   commands that enumerate every failing device in detail. Default
+///   cadence: weekly (both presets) — daily = refresh+inventory,
+///   weekly = scan.
 ///
 /// Drives both `ReportEngine.collect`'s per-report cadence filter and the
 /// `RefreshCoordinator` staleness model (PR-23 T-16). See
@@ -82,7 +85,7 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         switch self {
         case .refresh:   return "overview"
         case .inventory: return "computers"
-        case .scan:      return "ea-results"
+        case .scan:      return "update-device-failures"
         }
     }
 
@@ -100,6 +103,13 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "inventory-summary":              .refresh,
         "patch-status":                   .refresh,
         "policy-status":                  .refresh,
+        // Single cheap server call; WorkspaceStore+Refresh already probes "audit" for
+        // staleness, so keeping it fresh is required at the refresh cadence.
+        "audit":                          .refresh,
+        // SOFA OS currency feeds — cheap network fetch, no jamf-cli required.
+        "sofa":                           .refresh,
+        // Merged patch release dates — lightweight post-patch-status step.
+        "patch-release-dates":            .refresh,
 
         // Inventory — Deep Dive screens
         "app-status":                     .inventory,
@@ -116,6 +126,7 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "scripts":                        .inventory,
         "packages":                       .inventory,
         "smart-computer-groups":              .inventory,
+        "groups":                             .inventory,
         "sites":                              .inventory,
         "buildings":                          .inventory,
         "departments":                        .inventory,
@@ -127,12 +138,17 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "device-enrollment-instances":        .inventory,
         "mobile-device-inventory-details":    .inventory,
 
-        // Scan — per-device / server-expensive
+        // Inventory (continued) — per-device posture without --scan-failures fan-out
+        "update-status":                  .inventory,
+        "device-compliance":              .inventory,
+        "ea-results":                     .inventory,
+        "profile-status":                 .inventory,
+
+        // Scan — the two --scan-failures per-device fan-outs only.
+        // These enumerate every failing device in detail and are the only
+        // commands that trigger jamf-cli's expensive per-device API calls.
+        // Daily automation runs refresh+inventory; scan runs weekly only.
         "patch-device-failures":          .scan,
-        "update-status":                  .scan,
         "update-device-failures":         .scan,
-        "device-compliance":              .scan,
-        "ea-results":                     .scan,
-        "profile-status":                 .scan,
     ]
 }

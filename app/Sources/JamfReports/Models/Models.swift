@@ -118,6 +118,9 @@ struct Schedule: Identifiable, Sendable {
         case jamfCLIOnly   = "jamf-cli-only"
         case jamfCLIFull   = "jamf-cli-full"
         case csvAssisted   = "csv-assisted"
+        /// v2.2.0: scheduled `jamf-cli pro backup` — exports configuration
+        /// objects into the workspace's backups/ folder. No collect, no report.
+        case backup        = "backup"
         var id: String { rawValue }
 
         var displayTitle: String {
@@ -126,6 +129,7 @@ struct Schedule: Identifiable, Sendable {
             case .jamfCLIOnly: "Generate from cached data"
             case .jamfCLIFull: "Refresh + Generate"
             case .csvAssisted: "Refresh + Generate (CSV required)"
+            case .backup: "Configuration Backup"
             }
         }
 
@@ -139,6 +143,8 @@ struct Schedule: Identifiable, Sendable {
                 "Runs collect to refresh jamf-cli data, then generates a workbook. No CSV input. Use this for a self-contained scheduled run that does not depend on a CSV export."
             case .csvAssisted:
                 "Runs collect, then combines the newest CSV in csv-inbox/ with cached jamf-cli data. The run fails if no CSV is available — use this when CSV data is required (e.g. for custom inventory columns jamf-cli can't reach)."
+            case .backup:
+                "Runs jamf-cli pro backup to export Jamf Pro configuration objects (policies, profiles, scripts, groups) into the workspace's backups folder. Keeps the last 10 scheduled backups. No data collection, no report."
             }
         }
 
@@ -150,13 +156,16 @@ struct Schedule: Identifiable, Sendable {
         ///
         /// `jamf-cli-only` does not collect at all, so its tier set is
         /// moot — it returns all tiers as a harmless default; the form
-        /// hides the tier picker for this mode.
+        /// hides the tier picker for this mode. `backup` never collects;
+        /// its empty tier set keeps the tier picker hidden too.
         var defaultTiers: Set<CollectionTier> {
             switch self {
             case .snapshotOnly:
                 return [.refresh]
             case .jamfCLIOnly, .jamfCLIFull, .csvAssisted:
                 return Set(CollectionTier.allCases)
+            case .backup:
+                return []
             }
         }
     }
@@ -195,6 +204,12 @@ struct Schedule: Identifiable, Sendable {
     /// PR-23 omit the `--tiers` flag, and `main.swift` defaults a missing
     /// value to all tiers so their behavior is unchanged.
     var tiers: Set<CollectionTier>? = nil
+    /// Profiles excluded from a multi-profile (`--all-profiles`) run. Emitted
+    /// as `--exclude-profiles <csv>` by `nativeMultiWrite` so the managed
+    /// freshness/scan agents can skip a dummy/test tenant. Empty/nil → no flag
+    /// (run-time discovery picks up every profile). Ignored for single-profile
+    /// schedules.
+    var excludedProfiles: [String]? = nil
 
     var isMulti: Bool { multiTarget != nil }
     var profileDisplayLabel: String { multiTarget?.displayLabel ?? profile }
@@ -877,11 +892,21 @@ struct TokenStatus: Sendable, Codable {
 
 struct TrendSeries: Identifiable, Sendable {
     enum Metric: String, CaseIterable, Identifiable, Sendable {
-        case stability, activeDevices, compliance, fileVault, osCurrent, crowdstrike, stale, patch
+        // .edrAgent keeps the legacy "crowdstrike" raw value so persisted
+        // score-card selections and the summary.json field name stay valid.
+        // The user-visible name is config-driven (security_agents → first
+        // entry's name); the generic fallback is "EDR Agent Installed".
+        case stability, activeDevices, compliance, fileVault, osCurrent
+        case edrAgent = "crowdstrike"
+        case stale, patch
         /// v3.5 weighted security score (0–100). Populated from
         /// LegacyHistoryImporter and from future Swift ReportEngine runs that
         /// emit the field in summary.json.
         case securityScore
+        /// Per-baseline mSCP compliance band trend. Shows stacked-area chart
+        /// of device counts by compliance band (Pass/Low/Medium/High) over time.
+        /// Only appears in TrendsView metric picker when mscpBands history exists.
+        case mscpBandTrend
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
@@ -890,34 +915,37 @@ struct TrendSeries: Identifiable, Sendable {
             case .compliance:    return "Compliance Benchmark"
             case .fileVault:     return "FileVault Encryption"
             case .osCurrent:     return "On Current macOS"
-            case .crowdstrike:   return "CrowdStrike Installed"
+            case .edrAgent:      return "EDR Agent Installed"
             case .stale:         return "Stale Devices (30d+)"
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
+            case .mscpBandTrend: return "mSCP Compliance Bands"
             }
         }
 
-        /// Returns the compliance-specific label when `benchmarkLabel` is set and
-        /// non-empty; otherwise returns the metric's static `displayLabel`.
-        /// Only `.compliance` is overridable — other metrics are not affected.
-        func displayLabel(benchmarkLabel: String?) -> String {
+        /// Returns the tenant-specific label when one is configured; otherwise
+        /// the metric's static `displayLabel`. `.compliance` follows
+        /// `compliance.baseline_label`; `.edrAgent` follows the first
+        /// `security_agents` entry's name (e.g. "CrowdStrike Falcon Installed").
+        func displayLabel(benchmarkLabel: String?, edrAgentName: String? = nil) -> String {
             if case .compliance = self, let b = benchmarkLabel, !b.isEmpty { return b }
+            if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) Installed" }
             return displayLabel
         }
         var unit: String {
             switch self {
-            case .stale, .activeDevices: return ""
+            case .stale, .activeDevices, .mscpBandTrend: return ""
             default: return "%"
             }
         }
         var minY: Double {
             switch self {
-            case .activeDevices: return 0
+            case .activeDevices, .mscpBandTrend: return 0
             case .stability:     return 40
             case .compliance:    return 40
             case .fileVault:     return 60
             case .osCurrent:     return 30
-            case .crowdstrike:   return 70
+            case .edrAgent:      return 70
             case .stale:         return 0
             case .patch:         return 40
             case .securityScore: return 60
@@ -927,6 +955,7 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .activeDevices: return 1000
             case .stale:         return 60
+            case .mscpBandTrend: return 500  // Per-band device count max
             default:             return 100
             }
         }
@@ -937,27 +966,69 @@ struct TrendSeries: Identifiable, Sendable {
             case .compliance:    return 0xC9970A
             case .fileVault:     return 0x30D158
             case .osCurrent:     return 0x0A84FF
-            case .crowdstrike:   return 0x3A8A8A
+            case .edrAgent:      return 0x3A8A8A
             case .stale:         return 0xFF9F0A
             case .patch:         return 0xBF5AF2
             case .securityScore: return 0xFF453A
+            case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
             }
         }
     }
 
+    /// Composite fleet-stability score: compliance 0.4 + patch 0.4 +
+    /// stale-device pressure 0.2, with drop-missing-and-renormalize weighting
+    /// (the same approach as `SecurityScoreCalculator`). Tenants without a
+    /// compliance source — the common jamf-cli-only case — still get a
+    /// comparable index from patch + stale instead of a permanent "—".
+    ///
+    /// Returns nil only when both compliance and patch are unavailable;
+    /// stale pressure alone is not a meaningful stability signal.
     static func stabilityIndex(
         compliancePct: Double?,
         patchPct: Double?,
         staleCount: Int,
         totalDevices: Int
     ) -> Double? {
-        guard let compliancePct, let patchPct else { return nil }
+        guard compliancePct != nil || patchPct != nil else { return nil }
         let stalePct = totalDevices > 0
             ? (Double(staleCount) / Double(totalDevices)) * 100
             : 0
         let staleInverse = 100 - stalePct
-        let raw = 0.4 * compliancePct + 0.4 * patchPct + 0.2 * staleInverse
+
+        var components: [(value: Double, weight: Double)] = [(staleInverse, 0.2)]
+        if let compliancePct { components.append((compliancePct, 0.4)) }
+        if let patchPct { components.append((patchPct, 0.4)) }
+
+        let totalWeight = components.reduce(0) { $0 + $1.weight }
+        let raw = components.reduce(0) { $0 + $1.value * ($1.weight / totalWeight) }
         return min(max(raw, 0), 100)
+    }
+
+    /// Human-readable description of which components feed the stability
+    /// index, for the metric detail page. Nil when the index itself is nil.
+    ///
+    /// When `compliancePct` is present and `complianceIsProxy` is true, appends
+    /// a note that the compliance component is a 4-control proxy rather than a
+    /// real mSCP failure-count source, so operators understand the index is
+    /// partially estimated.
+    static func stabilityBasis(
+        compliancePct: Double?,
+        patchPct: Double?,
+        complianceIsProxy: Bool? = nil
+    ) -> String? {
+        let proxyNote: String = compliancePct != nil && complianceIsProxy == true
+            ? " Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data."
+            : ""
+        switch (compliancePct != nil, patchPct != nil) {
+        case (true, true):
+            return "Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)"
+        case (false, true):
+            return "Composite of patch posture and stale-device pressure (compliance not collected)."
+        case (true, false):
+            return "Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)"
+        case (false, false):
+            return nil
+        }
     }
 
     var id: String { metric.rawValue }
@@ -981,4 +1052,73 @@ extension DailySummary {
 enum TrendRange: String, CaseIterable, Identifiable, Sendable {
     case w4 = "W4", w12 = "W12", w26 = "W26", w52 = "W52", all = "All"
     var id: String { rawValue }
+}
+
+// MARK: - Sheet grouping for custom template selection
+
+/// Groups report sheets into logical categories for the custom template picker.
+struct CustomSheetGroup: Sendable {
+    let name: String
+    let sheets: [SheetID]
+
+    /// All sheet groups organized by functional area.
+    /// Order matches the sidebar grouping in the main app for consistency.
+    static let allGroups: [CustomSheetGroup] = [
+        CustomSheetGroup(name: "Executive", sheets: [
+            .executiveSummary,
+            .cover,
+            .fleetOverview,
+            .auditSummary,
+        ]),
+        CustomSheetGroup(name: "Posture", sheets: [
+            .securityPosture,
+            .compliancePosture,
+            .deviceCompliance,
+            .mscpCompliance,
+            .complianceTrend,
+        ]),
+        CustomSheetGroup(name: "Operations", sheets: [
+            .patchCompliance,
+            .patchFailures,
+            .patchSummaryDashboard,
+            .updateStatus,
+            .updateFailures,
+            .policyHealth,
+            .profileStatus,
+            .mobileConfigProfiles,
+            .eaCoverage,
+            .eaDefinitions,
+            .ddmStatus,
+            .blueprintStatus,
+        ]),
+        CustomSheetGroup(name: "Fleet", sheets: [
+            .inventorySummary,
+            .hardwareModels,
+            .mobileFleetSummary,
+            .mobileInventory,
+            .mobileSupervisionStatus,
+            .checkinHealth,
+            .activeDevices,
+            .groupHygiene,
+            .smartGroups,
+            .environmentStats,
+        ]),
+        CustomSheetGroup(name: "Security", sheets: [
+            .deviceSecurityState,
+            .protectOverview,
+            .protectAlerts,
+            .protectComputers,
+            .protectInsights,
+            .protectPlans,
+            .protectThreatOverview,
+        ]),
+        CustomSheetGroup(name: "System", sheets: [
+            .osCurrency,
+            .appStatus,
+            .softwareInstalls,
+            .packageLifecycle,
+            .complianceDevices,
+            .complianceRules,
+        ]),
+    ]
 }

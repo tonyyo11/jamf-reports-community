@@ -118,6 +118,19 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue((out["username"] as? String ?? "").hasPrefix("user-"))
     }
 
+    func testOperatorUserHostRedactedInSummaryJSON() {
+        // operatorUserHost ("user@machine") is not caught by the email regex (no TLD)
+        // or any other pattern; it must be covered by piiJSONKeys["operatoruserhost"].
+        let r = DiagnosticRedactor()
+        let json: [String: Any] = ["operatorUserHost": "jdoe@macbook-pro", "totalDevices": 3]
+        guard let out = r.redactJSON(json) as? [String: Any] else { return XCTFail("not a dict") }
+        XCTAssertTrue(
+            (out["operatorUserHost"] as? String ?? "").hasPrefix("user-"),
+            "operatorUserHost must be placeholdered; got: \(out["operatorUserHost"] ?? "nil")"
+        )
+        XCTAssertEqual(out["totalDevices"] as? Int, 3, "non-PII key must survive")
+    }
+
     func testUdidIpOrgAlwaysRedactedRegardlessOfKeepFlags() {
         let r = secretsOnlyRedactor() // every category keep-flag is off
         let json: [String: Any] = [

@@ -81,6 +81,10 @@ final class DiagnosticRedactor {
         "ipaddress": "ip", "ip_address": "ip",
         "username": "user", "user_name": "user", "user": "user",
         "realname": "user", "real_name": "user",
+        // operatorUserHost is "username@hostname-first-label"; the email regex
+        // won't match (no TLD) and no other pattern covers name@machine.
+        // Redact the full value under the "user" category.
+        "operatoruserhost": "user",
         "email": "email", "emailaddress": "email", "email_address": "email",
         "building": "org", "department": "org", "room": "org", "position": "org",
     ]

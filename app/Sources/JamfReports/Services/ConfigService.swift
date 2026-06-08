@@ -146,6 +146,11 @@ enum ConfigService {
 
         let text = try String(contentsOf: url, encoding: .utf8)
         let document = try YAMLCodec.decode(text)
+        if !document.repairedKeys.isEmpty {
+            AppLogger.engine.warning(
+                "ConfigService: repaired malformed sequence(s) under \(document.repairedKeys.sorted().joined(separator: ", "), privacy: .public) in config.yaml — saving from the Config screen heals the file"
+            )
+        }
         try rejectCredentialKeys(in: document.root)
         return LoadedConfig(document: document, state: state(from: document))
     }
@@ -342,6 +347,9 @@ enum ConfigService {
     }
 
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
+        // ProfileService.isValid enforces the slug regex (^[a-z0-9][a-z0-9._-]*$),
+        // which is the real path-traversal control. `standardizedFileURL` already
+        // collapses any `..` components, so no separate guard is needed.
         guard ProfileService.isValid(profile) else {
             throw ConfigError.invalidProfile(profile)
         }
@@ -356,16 +364,16 @@ enum ConfigService {
             .appendingPathComponent("config.yaml", isDirectory: false)
             .standardizedFileURL
 
-        guard !config.pathComponents.contains(where: { $0.contains("..") }) else {
-            throw ConfigError.pathTraversal
-        }
         return config
     }
 
     private static func rejectSymlinkDestination(_ url: URL) throws {
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
-        let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
-        if values.isSymbolicLink == true {
+        // Use lstat (attributesOfItem) rather than URL.resourceValues so the check
+        // is reliable on a freshly constructed URL — same fix as DiagnosticBundleService.
+        // Returns nil for non-existent paths, so no separate fileExists guard needed;
+        // dangling symlinks (exist as links but target absent) are also caught.
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        if (attributes?[.type] as? FileAttributeType) == .typeSymbolicLink {
             throw ConfigError.symlinkDestination(url)
         }
     }

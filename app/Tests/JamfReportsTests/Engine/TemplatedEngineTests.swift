@@ -71,8 +71,9 @@ final class TemplatedEngineTests: XCTestCase {
 
     func testAllTemplatesAreReachable() {
         let templates = TemplateResolver.allTemplates
-        XCTAssertEqual(templates.count, 7)
+        XCTAssertEqual(templates.count, 8)
         let ids = Set(templates.map(\.identifier))
+        XCTAssertTrue(ids.contains("custom"))
         XCTAssertTrue(ids.contains("full-instance"))
         XCTAssertTrue(ids.contains("executive"))
         XCTAssertTrue(ids.contains("operational"))
@@ -336,12 +337,37 @@ final class TemplatedEngineTests: XCTestCase {
 
     @MainActor
     func testGenerateSheetStateTemplateResolutionRoundTrips() {
+        // Skip "custom": resolvedTemplate reads UserDefaults for sheet selection; an
+        // empty selection falls back to "executive", so the round-trip only holds when
+        // the key is pre-seeded. The deeper fix is injecting UserDefaults into
+        // GenerateSheetState, but that refactor is deferred. The seeded round-trip is
+        // covered separately in testGenerateSheetStateCustomRoundTripWithNonEmptySelection.
         let state = GenerateSheetState()
-        for template in TemplateResolver.allTemplates {
+        for template in TemplateResolver.allTemplates where template.identifier != "custom" {
             state.selectedTemplateID = template.identifier
             XCTAssertEqual(state.resolvedTemplate.identifier, template.identifier,
                            "resolvedTemplate must match selectedTemplateID for '\(template.identifier)'")
         }
+    }
+
+    /// Verifies the "custom" round-trip when UserDefaults carries a non-empty selection.
+    @MainActor
+    func testGenerateSheetStateCustomRoundTripWithNonEmptySelection() {
+        // Seed the persisted key, clean it up in every exit path.
+        UserDefaults.standard.set(
+            SheetID.executiveSummary.rawValue,
+            forKey: GenerateSheetState.customSheetsKey
+        )
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
+
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "custom"
+        let resolved = state.resolvedTemplate
+        XCTAssertEqual(resolved.identifier, "custom",
+                       "resolvedTemplate must be 'custom' when selectedTemplateID is 'custom' " +
+                       "and a non-empty sheet selection is persisted")
+        XCTAssertTrue(resolved is CustomTemplate,
+                      "resolvedTemplate must be a CustomTemplate, got \(type(of: resolved))")
     }
 
     @MainActor

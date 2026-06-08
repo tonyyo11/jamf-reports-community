@@ -1,0 +1,66 @@
+{
+  "SchemaVersion": "2026.04.11.2",
+  "Version": "2.0",
+  "UpdateHash": "e17f0bc58449413f3b0458f859f8ed9b2de8a5a0575a8002a0f67e5ce8a18db3",
+  "LastCheck": "2026-06-02T08:08:40.443859702+00:00",
+  "OSVersions": [
+    {
+      "OSVersion": "26",
+      "Latest": {
+        "ProductVersion": "26.5",
+        "Build": "23T6570",
+        "ReleaseDate": "2026-05-11T00:00:00Z",
+        "ExpirationDate": "2026-08-31",
+        "SecurityInfo": "https://support.apple.com/en-us/127110",
+        "UniqueCVEsCount": 61,
+        "ActivelyExploitedCVEs": []
+      },
+      "SecurityReleases": [
+        {
+          "ProductVersion": "26.5.1",
+          "ReleaseDate": "2026-06-01T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        },
+        {
+          "ProductVersion": "26.5",
+          "ReleaseDate": "2026-05-11T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        },
+        {
+          "ProductVersion": "26.4.2",
+          "ReleaseDate": "2026-04-22T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        }
+      ]
+    },
+    {
+      "OSVersion": "18",
+      "Latest": {
+        "ProductVersion": "18.7.8",
+        "Build": "22H6352",
+        "ReleaseDate": "2026-04-22T00:00:00Z",
+        "ExpirationDate": "2026-08-31",
+        "SecurityInfo": "https://support.apple.com/en-us/127003",
+        "UniqueCVEsCount": 1,
+        "ActivelyExploitedCVEs": []
+      },
+      "SecurityReleases": [
+        {
+          "ProductVersion": "18.7.9",
+          "ReleaseDate": "2026-05-11T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        },
+        {
+          "ProductVersion": "18.7.8",
+          "ReleaseDate": "2026-04-22T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        },
+        {
+          "ProductVersion": "18.7.7",
+          "ReleaseDate": "2026-03-24T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        }
+      ]
+    }
+  ]
+}

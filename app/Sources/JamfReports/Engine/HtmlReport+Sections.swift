@@ -1716,7 +1716,51 @@ extension HtmlReport {
                 scripts: scripts
             ),
             .timeline: buildTimelineSection(),
+            .osCurrency: buildOSCurrencySection(),
         ]
+    }
+
+    // MARK: - OS Currency section
+
+    /// Build the OS Currency HTML section from cached SOFA feeds.
+    /// Renders a summary table; renders a note row when no feeds are cached.
+    func buildOSCurrencySection() -> String {
+        let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+        guard !sofaSnapshot.rows.isEmpty else {
+            let note = "SOFA feed unavailable — run Collect to refresh or check network access."
+            return "<div class=\"section\" id=\"os-currency\"><h2>OS Currency</h2>" +
+                   "<p class=\"note\">\(HtmlSectionFormatters.escapeHTML(note))</p></div>"
+        }
+
+        // HTML section shows SOFA latest data only — fleet counts require the
+        // security/mobile-inventory snapshots, which are not joined here.
+        let headers = ["Platform", "OS Family", "Latest Version", "Released",
+                       "Days Since Release", "CVEs Exploited"]
+        var rowsHTML = ""
+        for entry in sofaSnapshot.rows {
+            let days = entry.daysSinceRelease.map { String($0) } ?? "—"
+            let released = entry.releaseDate.isEmpty ? "—" : entry.releaseDate
+            let cveStyle = entry.activelyExploitedCVEs > 0 ? " style=\"color:var(--red)\"" : ""
+            rowsHTML += "<tr>"
+            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(entry.platform))</td>"
+            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(entry.osFamily))</td>"
+            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(entry.productVersion))</td>"
+            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(released))</td>"
+            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(days))</td>"
+            rowsHTML += "<td\(cveStyle)>\(entry.activelyExploitedCVEs)</td>"
+            rowsHTML += "</tr>"
+        }
+
+        let headerCells = headers
+            .map { "<th>\(HtmlSectionFormatters.escapeHTML($0))</th>" }
+            .joined()
+        return "<div class=\"section\" id=\"os-currency\">" +
+               "<h2>OS Currency</h2>" +
+               "<p class=\"note\">Source: SOFA (sofa.macadmins.io)</p>" +
+               "<div class=\"table-wrapper\"><table>" +
+               "<thead><tr>\(headerCells)</tr></thead>" +
+               "<tbody>\(rowsHTML)</tbody>" +
+               "</table></div></div>"
     }
 
 }

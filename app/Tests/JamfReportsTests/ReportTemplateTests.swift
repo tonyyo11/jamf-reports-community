@@ -246,6 +246,7 @@ final class ReportTemplateTests: XCTestCase {
 
     /// Every SectionID must appear in FullInstanceTemplate.htmlSections so new
     /// sections can never be silently omitted from the full report.
+    /// The SheetID equivalent lives in MSCPComplianceSheetsTests.testFullInstanceTemplateCoversAllSheetIDs.
     func testFullInstanceTemplateHtmlSectionsCoversAllSectionIDs() {
         let templateSections = Set(FullInstanceTemplate().htmlSections)
         let allSections = Set(SectionID.allCases)
@@ -267,5 +268,126 @@ final class ReportTemplateTests: XCTestCase {
             "full-instance",
             "FullInstanceTemplate must be the first template in TemplateResolver.allTemplates"
         )
+    }
+
+    // MARK: - CustomTemplate
+
+    func testCustomTemplateIdentifier() {
+        XCTAssertEqual(CustomTemplate(includedSheets: [.cover]).identifier, "custom")
+    }
+
+    func testCustomTemplateSingleSheet() {
+        let template = CustomTemplate(includedSheets: [.executiveSummary])
+        XCTAssertEqual(template.includedSheets, [.executiveSummary])
+    }
+
+    func testCustomTemplateMultipleSheets() {
+        let sheets: [SheetID] = [.executiveSummary, .securityPosture, .patchCompliance]
+        let template = CustomTemplate(includedSheets: sheets)
+        XCTAssertEqual(template.includedSheets, sheets)
+    }
+
+    func testCustomTemplatePreservesSheetOrder() {
+        let sheets: [SheetID] = [.patchCompliance, .executiveSummary, .securityPosture]
+        let template = CustomTemplate(includedSheets: sheets)
+        XCTAssertEqual(template.includedSheets, sheets) // Order preserved
+    }
+
+    func testCustomTemplateEmptySheets() {
+        let template = CustomTemplate(includedSheets: [])
+        XCTAssertTrue(template.includedSheets.isEmpty)
+    }
+
+    func testCustomTemplateHtmlSectionsIncludesKpiTiles() {
+        let template = CustomTemplate(includedSheets: [.executiveSummary])
+        XCTAssertTrue(template.htmlSections.contains(.kpiTiles))
+    }
+
+    func testCustomTemplateHtmlSectionsIncludesOrgInfo() {
+        let template = CustomTemplate(includedSheets: [.executiveSummary])
+        XCTAssertTrue(template.htmlSections.contains(.orgInfo))
+    }
+
+    func testCustomTemplateEmptyHtmlSectionsWhenNoSheets() {
+        let template = CustomTemplate(includedSheets: [])
+        XCTAssertTrue(template.htmlSections.isEmpty)
+    }
+
+    // MARK: - CustomTemplate.htmlSections switch-arm coverage
+
+    /// Parametric test: each switch arm in `CustomTemplate.htmlSections` maps its
+    /// trigger sheet to its expected SectionID(s). Tests every non-`default` arm,
+    /// guarding against transposed or missing SectionIDs in a custom HTML report.
+    func testCustomTemplateHtmlSectionsSheetMappings() {
+        // (triggerSheet, expectedSections) — based on the switch in CustomTemplate.htmlSections
+        let cases: [(SheetID, [SectionID])] = [
+            (.executiveSummary,   [.execSummary]),
+            (.securityPosture,    [.securityTiles]),
+            (.compliancePosture,  [.complianceBands]),
+            (.patchCompliance,    [.patchBar, .patchQueue]),
+            (.patchFailures,      [.patchBar, .patchQueue]),
+            (.auditSummary,       [.auditEvidence]),
+            (.inventorySummary,   [.assetMap]),
+            (.hardwareModels,     [.assetMap]),
+            (.osCurrency,         [.osAdoptionChart, .osCurrency]),
+            (.policyHealth,       [.policyTable]),
+            (.profileStatus,      [.profileTable]),
+            (.mobileConfigProfiles, [.profileTable]),
+            (.protectOverview,    [.protectAlerts, .insightsDrift]),
+            (.protectAlerts,      [.protectAlerts, .insightsDrift]),
+            (.protectComputers,   [.protectAlerts, .insightsDrift]),
+            (.protectInsights,    [.protectAlerts, .insightsDrift]),
+        ]
+
+        for (sheet, expectedSections) in cases {
+            let template = CustomTemplate(includedSheets: [sheet])
+            let sections = template.htmlSections
+            for expected in expectedSections {
+                XCTAssertTrue(
+                    sections.contains(expected),
+                    "CustomTemplate([.\(sheet.rawValue)]).htmlSections missing .\(expected.rawValue)"
+                )
+            }
+        }
+    }
+
+    /// A sheet with no specific HTML mapping (the `default` arm) should yield
+    /// only the always-on sections: kpiTiles, fleetSummary, and orgInfo.
+    func testCustomTemplateHtmlSectionsDefaultArmYieldsOnlyAlwaysOnSections() {
+        // .cover has no HTML mapping (hits the default arm)
+        let template = CustomTemplate(includedSheets: [.cover])
+        let sections = Set(template.htmlSections)
+        XCTAssertTrue(sections.contains(.kpiTiles))
+        XCTAssertTrue(sections.contains(.fleetSummary))
+        XCTAssertTrue(sections.contains(.orgInfo))
+        // No other sections should be added for a default-arm sheet
+        XCTAssertEqual(sections.count, 3,
+            "Default-arm sheet should produce exactly 3 always-on sections, got \(sections.count): "
+            + sections.map(\.rawValue).sorted().joined(separator: ", "))
+    }
+
+    // MARK: - TemplateResolver custom support
+
+    func testResolveCustomWithSheets() {
+        let sheets: [SheetID] = [.executiveSummary, .securityPosture]
+        let template = TemplateResolver.resolveCustom(sheets: sheets)
+        XCTAssertEqual(template.identifier, "custom")
+        if let customTemplate = template as? CustomTemplate {
+            XCTAssertEqual(customTemplate.includedSheets, sheets)
+        } else {
+            XCTFail("Expected CustomTemplate, got \(type(of: template))")
+        }
+    }
+
+    func testResolveCustomWithEmptySheetsFallsBackToExecutive() {
+        let template = TemplateResolver.resolveCustom(sheets: [])
+        XCTAssertEqual(template.identifier, "executive")
+        XCTAssertTrue(template is ExecutiveTemplate)
+    }
+
+    func testResolveCustomIdentifierFallsBackToExecutive() {
+        let template = TemplateResolver.resolve(identifier: "custom")
+        XCTAssertEqual(template.identifier, "executive")
+        XCTAssertTrue(template is ExecutiveTemplate)
     }
 }

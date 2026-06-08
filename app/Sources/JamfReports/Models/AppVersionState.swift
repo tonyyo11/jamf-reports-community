@@ -4,11 +4,17 @@ import Foundation
 /// Compares against `UserDefaults` so the banner shows exactly once per version upgrade.
 @MainActor
 struct AppVersionState {
-    // Version string: pull from the bundle when available, fall back to a hard-coded constant
-    // so tests (which have no app bundle) still compile and behave correctly.
+    /// Compile-time fallback semver, used when there is no app bundle (tests,
+    /// `swift run`). MUST equal `MARKETING_VERSION` in `build-app.sh` — a test
+    /// (`AppVersionDriftTests`) enforces this so a half-finished version bump
+    /// fails CI instead of shipping a stale fallback.
+    static let fallbackVersion = "2.2.0"
+
+    // Version string: pull from the bundle when available, fall back to the
+    // compile-time constant so tests (which have no app bundle) still behave.
     static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? "2.1.0"
+            ?? fallbackVersion
     }
 
     private static let defaultsKey = "lastSeenAppVersion"

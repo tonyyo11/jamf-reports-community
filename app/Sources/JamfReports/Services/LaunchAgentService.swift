@@ -167,6 +167,144 @@ enum LaunchAgentService {
         return removed.sorted()
     }
 
+    /// Result of a consolidation removal.
+    struct ConsolidationRemovalResult: Sendable {
+        let removed: [String]
+        let rejected: [String]
+        let archiveDir: URL?
+    }
+
+    /// Archive, then remove, the hand-built (NON-managed) LaunchAgents named by
+    /// `labels` — the consolidation path that retires schedules the managed
+    /// policy now duplicates.
+    ///
+    /// Safety, in order:
+    /// 1. Any reserved managed label (`ManagedAutomation.owns`) is REFUSED — the
+    ///    exact inverse of the managed-reconcile guard, so this path can only
+    ///    ever retire a user-built agent the operator confirmed.
+    /// 2. Each plist is copied to
+    ///    `<workspacesRoot>/_archived-launchagents/<label>.<ts>.plist` BEFORE
+    ///    bootout + delete (recoverable, matching the snapshot retention
+    ///    archive-not-delete model). A failed archive aborts that label's
+    ///    removal — recoverability first, nothing is lost on a mis-click.
+    static func archiveAndRemove(labels: [String]) -> ConsolidationRemovalResult {
+        let archiveDir = ProfileService.workspacesRoot()
+            .appendingPathComponent("_archived-launchagents", isDirectory: true)
+        var removed: [String] = []
+        var rejected: [String] = []
+        var didArchive = false
+        for label in labels {
+            guard !ManagedAutomation.owns(label) else {
+                AppLogger.schedule.warning(
+                    "archiveAndRemove refused managed label \(label, privacy: .public)")
+                rejected.append(label)
+                continue
+            }
+            guard LaunchAgentWriter.isValidLabel(label), let url = agentURL(forLabel: label) else {
+                rejected.append(label)
+                continue
+            }
+            guard archivePlist(at: url, label: label, into: archiveDir) else {
+                rejected.append(label)  // archive failed → do not delete.
+                continue
+            }
+            didArchive = true
+            let bootoutStatus = bootout(label)
+            if bootoutStatus != 0 {
+                // Non-zero is usually "no such process" — the agent was never
+                // bootstrapped this session — and the plist removal below still
+                // retires it. Logged so a genuinely stuck agent is diagnosable.
+                AppLogger.schedule.info(
+                    "bootout \(label, privacy: .public) exited \(bootoutStatus) (agent likely not loaded; plist removed regardless)")
+            }
+            do {
+                try FileManager.default.removeItem(at: url)
+                removed.append(label)
+            } catch {
+                rejected.append(label)
+            }
+        }
+        return ConsolidationRemovalResult(
+            removed: removed.sorted(), rejected: rejected.sorted(),
+            archiveDir: didArchive ? archiveDir : nil
+        )
+    }
+
+    /// Resolve the on-disk plist URL whose `Label` matches `label`. Prefers the
+    /// `<label>.plist` filename convention, then falls back to scanning.
+    private static func agentURL(forLabel label: String) -> URL? {
+        let direct = agentsDir.appendingPathComponent("\(label).plist")
+        if FileManager.default.fileExists(atPath: direct.path), plistLabel(direct) == label {
+            return direct
+        }
+        return launchAgentEntries()
+            .first { $0.pathExtension == "plist" && plistLabel($0) == label }
+    }
+
+    private static let archiveTimestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd_HHmmss"
+        return f
+    }()
+
+    /// CLI flags whose following ProgramArguments value is a secret and must be
+    /// redacted before the plist is archived. Only `--notify` carries one today:
+    /// the Python launchagent writer embeds a Teams/Slack incoming-webhook URL
+    /// (a posting credential) in ProgramArguments. The archive lives under the
+    /// workspaces root, which operators commonly host on a cloud share — so the
+    /// URL is scrubbed in the COPY. The live plist in LaunchAgents is untouched;
+    /// restoring it means re-adding the webhook.
+    private static let secretArgFlags: Set<String> = ["--notify"]
+
+    private static func archivePlist(at url: URL, label: String, into dir: URL) -> Bool {
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let stamp = archiveTimestampFormatter.string(from: Date())
+            let dest = dir.appendingPathComponent("\(label).\(stamp).plist")
+            if let redacted = redactedPlistData(at: url) {
+                try redacted.write(to: dest, options: .atomic)
+            } else {
+                try FileManager.default.copyItem(at: url, to: dest)
+            }
+            return true
+        } catch {
+            AppLogger.schedule.error(
+                "archivePlist failed for \(label, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    /// Returns plist `Data` with secret arg values redacted, or nil when the
+    /// plist has no secrets to redact or can't be parsed — in which case the
+    /// caller copies it verbatim, preserving behavior for non-secret plists.
+    /// Internal (not private) so the redaction is directly unit-testable.
+    static func redactedPlistData(at url: URL) -> Data? {
+        guard let data = try? Data(contentsOf: url),
+              let parsed = try? PropertyListSerialization.propertyList(
+                  from: data, options: [], format: nil),
+              var plist = parsed as? [String: Any],
+              var args = plist["ProgramArguments"] as? [String] else {
+            return nil
+        }
+        var redacted = false
+        var i = 0
+        while i + 1 < args.count {
+            if secretArgFlags.contains(args[i]) {
+                args[i + 1] = "<redacted-on-archive>"
+                redacted = true
+                i += 2
+            } else {
+                i += 1
+            }
+        }
+        guard redacted else { return nil }
+        plist["ProgramArguments"] = args
+        return try? PropertyListSerialization.data(
+            fromPropertyList: plist, format: .xml, options: 0)
+    }
+
     // MARK: - Private
 
     private static func launchAgentEntries() -> [URL] {
@@ -461,6 +599,7 @@ enum LaunchAgentService {
             case .jamfCLIOnly: return "Jamf CLI Report"
             case .jamfCLIFull: return "Full Automation"
             case .csvAssisted: return "CSV Assisted"
+            case .backup: return "Configuration Backup"
             }
         }
         return slug.replacingOccurrences(of: "-", with: " ").capitalized

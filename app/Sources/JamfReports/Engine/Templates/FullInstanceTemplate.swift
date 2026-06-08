@@ -53,6 +53,8 @@ struct FullInstanceTemplate: ReportTemplate {
             // Device security & supervision detail
             .deviceSecurityState,
             .mobileSupervisionStatus,
+            // OS currency
+            .osCurrency,
             // Platform / DDM
             .complianceDevices,
             .complianceRules,
@@ -65,6 +67,9 @@ struct FullInstanceTemplate: ReportTemplate {
             .protectInsights,
             .protectPlans,
             .protectThreatOverview,
+            // mSCP / STIG compliance
+            .mscpCompliance,
+            .complianceTrend,
         ]
     }
 
@@ -95,6 +100,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .protectAlerts,
             .insightsDrift,
             .orgInfo,
+            .osCurrency,
         ]
     }
 

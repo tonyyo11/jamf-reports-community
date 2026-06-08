@@ -132,8 +132,9 @@ final class CadenceResolverTests: XCTestCase {
         let cfg = CollectCadenceConfig(preset: .cloud)
         XCTAssertEqual(
             CadenceResolver.resolve(report: "update-status", config: cfg),
-            .seconds(604_800),
-            "Cloud has no hard exclusions — update-status falls through to scan tier weekly"
+            .seconds(172_800),
+            "update-status moved scan -> inventory (scan = only the two --scan-failures "
+                + "fan-outs); cloud inventory = 2 days"
         )
     }
 

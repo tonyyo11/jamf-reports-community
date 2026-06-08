@@ -75,16 +75,83 @@ final class TrendStoreTests: XCTestCase {
         SummaryJSONParser.dateFormatter.string(from: date)
     }
 
+    // MARK: - stabilityIndex sourcing tests
+
+    /// Regression guard for the prod observation (2026-06-06) where the Overview
+    /// Stability Index tile displayed a prior-day value.
+    ///
+    /// Root cause: TrendStore had not been reloaded after a same-day proxy→real mSCP
+    /// summary upgrade, so `filteredSummaries.last` still held the pre-upgrade summary.
+    /// The stability tile and every other score-card tile share the identical TrendStore
+    /// path — all tiles were equally stale.
+    ///
+    /// This test proves the sourcing is correct: `values(metric: .stability).last` is
+    /// computed live from the most-recent summary's stored fields (not a separate persisted
+    /// value), so a TrendStore loaded from the updated summary yields the correct index.
+    func testStabilityTileReflectsMostRecentSummaryInputs() throws {
+        // Day 1: proxy compliance = 96.8% (before mSCP config typo fix)
+        let day1 = DailySummary(
+            date: "2026-06-05",
+            totalDevices: 659,
+            fileVaultPct: 98.8,
+            compliancePct: 96.8,
+            staleCount: 166,
+            osCurrentPct: 36.3,
+            crowdstrikePct: nil,
+            patchPct: 36.3,
+            complianceIsProxy: true
+        )
+        // Day 2: real compliance = 66.9% (after mSCP config typo fix + summary upgrade)
+        let day2 = DailySummary(
+            date: "2026-06-06",
+            totalDevices: 659,
+            fileVaultPct: 98.8,
+            compliancePct: 66.9,
+            staleCount: 166,
+            osCurrentPct: 36.3,
+            crowdstrikePct: nil,
+            patchPct: 36.3,
+            complianceIsProxy: false
+        )
+
+        // A TrendStore loaded with both summaries must show day2's stability as the
+        // current (last) value, not day1's.
+        let store = TrendStore(summaries: [day1, day2], range: .all)
+
+        let stabilityValues = store.values(metric: .stability)
+        XCTAssertEqual(stabilityValues.count, 2, "both days must have stability data")
+
+        let current = try XCTUnwrap(stabilityValues.last)
+        let expectedCurrent = try XCTUnwrap(
+            TrendSeries.stabilityIndex(
+                compliancePct: day2.compliancePct,
+                patchPct: day2.patchPct,
+                staleCount: day2.staleCount,
+                totalDevices: day2.totalDevices
+            )
+        )
+        XCTAssertEqual(current, expectedCurrent, accuracy: 0.01,
+            "tile must reflect today's summary inputs; got \(current), want \(expectedCurrent)")
+
+        // Confirm it is NOT the prior-day value.
+        let staleValue = try XCTUnwrap(
+            TrendSeries.stabilityIndex(
+                compliancePct: day1.compliancePct,
+                patchPct: day1.patchPct,
+                staleCount: day1.staleCount,
+                totalDevices: day1.totalDevices
+            )
+        )
+        XCTAssertGreaterThan(abs(current - staleValue), 1.0,
+            "tile must not reflect yesterday's proxy-compliance inputs")
+    }
+
     // MARK: - stabilityIndex tests
 
     func testStabilityIndexCalculation() throws {
         // Normal case: compliance=90, patch=80, stale=10/100
         let idx1 = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: 80, staleCount: 10, totalDevices: 100)
         XCTAssertEqual(try XCTUnwrap(idx1), 86.0, accuracy: 0.1)
-
-        // compliancePct is nil -> returns nil
-        let idx2 = TrendSeries.stabilityIndex(compliancePct: nil, patchPct: 80, staleCount: 10, totalDevices: 100)
-        XCTAssertNil(idx2)
 
         // staleCount = 0, staleInverse = 100
         let idx3 = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: 80, staleCount: 0, totalDevices: 100)
@@ -101,6 +168,85 @@ final class TrendStoreTests: XCTestCase {
         // All terrible -> 0
         let idx6 = TrendSeries.stabilityIndex(compliancePct: 0, patchPct: 0, staleCount: 100, totalDevices: 100)
         XCTAssertEqual(try XCTUnwrap(idx6), 0.0, accuracy: 0.1)
+    }
+
+    /// Production bug: jamf-cli-only tenants never have compliancePct, so the
+    /// old `guard let compliancePct, let patchPct` returned nil forever and the
+    /// Stability Index tile showed "—" with "0 summaries". Missing components
+    /// now drop out and the remaining weights renormalize.
+    func testStabilityIndexRenormalizesWhenComplianceMissing() throws {
+        // patch=80 (weight 0.4→2/3), staleInverse=90 (weight 0.2→1/3)
+        let idx = TrendSeries.stabilityIndex(compliancePct: nil, patchPct: 80, staleCount: 10, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx), 80.0 * 2 / 3 + 90.0 / 3, accuracy: 0.1)
+    }
+
+    func testStabilityIndexRenormalizesWhenPatchMissing() throws {
+        // compliance=90 (2/3), staleInverse=100 (1/3)
+        let idx = TrendSeries.stabilityIndex(compliancePct: 90, patchPct: nil, staleCount: 0, totalDevices: 100)
+        XCTAssertEqual(try XCTUnwrap(idx), 90.0 * 2 / 3 + 100.0 / 3, accuracy: 0.1)
+    }
+
+    func testStabilityIndexNilWhenBothHealthSignalsMissing() {
+        // Stale pressure alone is not a stability signal.
+        let idx = TrendSeries.stabilityIndex(compliancePct: nil, patchPct: nil, staleCount: 0, totalDevices: 100)
+        XCTAssertNil(idx)
+    }
+
+    func testStabilityBasisDescribesAvailableComponents() {
+        XCTAssertEqual(
+            TrendSeries.stabilityBasis(compliancePct: 90, patchPct: 80),
+            "Composite of compliance, patch posture, and stale-device pressure."
+        )
+        XCTAssertEqual(
+            TrendSeries.stabilityBasis(compliancePct: nil, patchPct: 80),
+            "Composite of patch posture and stale-device pressure (compliance not collected)."
+        )
+        XCTAssertNil(TrendSeries.stabilityBasis(compliancePct: nil, patchPct: nil))
+    }
+
+    // MARK: - stabilityBasis proxy propagation
+
+    /// When the compliance component is present and proxy-backed (4-control
+    /// proxy from the security report), the stability basis must append a note
+    /// so operators understand the index is partially estimated.
+    func testStabilityBasisAppendProxyNoteWhenComplianceIsProxy() {
+        let basis = TrendSeries.stabilityBasis(
+            compliancePct: 75,
+            patchPct: 80,
+            complianceIsProxy: true
+        )
+        XCTAssertNotNil(basis)
+        XCTAssertTrue(
+            basis!.contains("4-control proxy"),
+            "proxy note must mention '4-control proxy'; got: \(basis!)"
+        )
+    }
+
+    /// When compliance is real mSCP data (proxy == false), no proxy note.
+    func testStabilityBasisNoProxyNoteWhenComplianceIsReal() {
+        let basis = TrendSeries.stabilityBasis(
+            compliancePct: 88,
+            patchPct: 92,
+            complianceIsProxy: false
+        )
+        XCTAssertEqual(
+            basis,
+            "Composite of compliance, patch posture, and stale-device pressure."
+        )
+    }
+
+    /// When compliance is missing entirely, proxy flag is irrelevant and must
+    /// not produce a proxy note (there is no compliance component to qualify).
+    func testStabilityBasisNoProxyNoteWhenComplianceMissing() {
+        let basis = TrendSeries.stabilityBasis(
+            compliancePct: nil,
+            patchPct: 80,
+            complianceIsProxy: true
+        )
+        XCTAssertFalse(
+            basis?.contains("4-control proxy") == true,
+            "proxy note must be omitted when compliance is not feeding the index"
+        )
     }
 
     // MARK: - chartDomain tests

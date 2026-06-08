@@ -64,6 +64,17 @@ struct BackupsView: View {
             Text("This cannot be undone.")
         }
         .task(id: workspace.profile) {
+            // Sweep abandoned .tmp-* staging dirs (interrupted backups) before
+            // listing — production accumulated one that was months old.
+            if !workspace.demoMode {
+                let removed = BackupMaintenance.cleanStaleTempDirs(profile: workspace.profile)
+                if !removed.isEmpty {
+                    workspace.toast = Toast(
+                        message: "Removed \(removed.count) abandoned backup staging folder\(removed.count == 1 ? "" : "s")",
+                        style: .success
+                    )
+                }
+            }
             reload()
         }
     }

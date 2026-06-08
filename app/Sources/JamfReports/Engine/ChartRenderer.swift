@@ -31,13 +31,23 @@ enum ChartPalette {
     ]
 
     /// Compliance band colors, matching `DEFAULT_CONFIG["charts"]["compliance_trend"]["bands"]`.
+    /// Order: Pass, Low, Med-Low, Medium, High (5 entries — no No-Data here).
     static let complianceBandColors: [CGColor] = [
-        CGColor(red: 0.267, green: 0.447, blue: 0.769, alpha: 1), // Pass
-        CGColor(red: 0.180, green: 0.620, blue: 0.341, alpha: 1), // Low
-        CGColor(red: 1.000, green: 0.792, blue: 0.188, alpha: 1), // Med-Low
-        CGColor(red: 0.941, green: 0.486, blue: 0.129, alpha: 1), // Medium
-        CGColor(red: 0.753, green: 0.224, blue: 0.169, alpha: 1), // High
+        CGColor(red: 0.267, green: 0.447, blue: 0.769, alpha: 1), // Pass  — blue
+        CGColor(red: 0.180, green: 0.620, blue: 0.341, alpha: 1), // Low   — green
+        CGColor(red: 1.000, green: 0.792, blue: 0.188, alpha: 1), // Med-Low — gold
+        CGColor(red: 0.941, green: 0.486, blue: 0.129, alpha: 1), // Medium — orange
+        CGColor(red: 0.753, green: 0.224, blue: 0.169, alpha: 1), // High  — red
     ]
+
+    /// Grey for "No Data" slices in the compliance donut.
+    static let noDataColor: CGColor = CGColor(red: 0.557, green: 0.557, blue: 0.576, alpha: 1)
+
+    /// Compliance band colors extended with No-Data grey (6 entries for donut use).
+    /// Order: Pass, Low, Med-Low, Medium, High, No-Data.
+    static var complianceBandColorsWithNoData: [CGColor] {
+        complianceBandColors + [noDataColor]
+    }
 
     static func color(for index: Int) -> CGColor {
         let count = seriesColors.count
@@ -129,6 +139,165 @@ enum ChartRenderer {
         return renderToPNG(size: size) { ctx in
             drawBarChart(ctx: ctx, data: data, size: size, title: title)
         }
+    }
+
+    // MARK: - Donut / ring chart
+
+    /// A single slice in a donut chart.
+    struct DonutSlice: Sendable, Identifiable {
+        let label: String
+        let count: Int
+        let pct: Double
+        let color: CGColor
+
+        var id: String { label }
+    }
+
+    /// Render a donut (ring) chart with a right-side legend.
+    ///
+    /// Legend rows show `"<label>: N (P%)"` for each slice, top-to-bottom.
+    ///
+    /// - Parameters:
+    ///   - slices: Ordered slices (non-zero at render time; caller filters zeros).
+    ///   - title: Chart title rendered above the ring.
+    ///   - footer: Optional footer below the ring (e.g. "Total systems: N").
+    ///   - size: Output dimensions in points.
+    /// - Returns: PNG `Data`, or nil on rendering failure.
+    static func donutChart(
+        slices: [DonutSlice],
+        title: String,
+        footer: String? = nil,
+        size: CGSize = CGSize(width: 900, height: 480)
+    ) -> Data? {
+        // Require at least one slice with a positive total to avoid divide-by-zero.
+        let total = slices.reduce(0) { $0 + $1.count }
+        guard !slices.isEmpty, total > 0 else { return nil }
+        return renderToPNG(size: size) { ctx in
+            drawDonutChart(ctx: ctx, slices: slices, title: title, footer: footer,
+                           size: size, total: total)
+        }
+    }
+
+    // MARK: - Donut drawing
+
+    private static func drawDonutChart(
+        ctx: CGContext,
+        slices: [DonutSlice],
+        title: String,
+        footer: String?,
+        size: CGSize,
+        total: Int
+    ) {
+        let legendWidth: CGFloat = 260
+        let ringAreaWidth = size.width - legendWidth
+        let centerX = ringAreaWidth / 2
+        let centerY = size.height / 2 + 10
+        let outerR: CGFloat = min(ringAreaWidth, size.height) * 0.38
+        let innerR = outerR * 0.55
+
+        // Title
+        drawTitle(ctx: ctx, title: title, size: CGSize(width: ringAreaWidth, height: size.height))
+
+        // Draw slices
+        var startAngle: CGFloat = -.pi / 2  // Start at top (12 o'clock)
+        for slice in slices {
+            let fraction = Double(slice.count) / Double(total)
+            let sweep = CGFloat(fraction * 2 * .pi)
+            let endAngle = startAngle + sweep
+            let mid = startAngle + sweep / 2
+
+            ctx.move(to: CGPoint(x: centerX, y: centerY))
+            ctx.addArc(center: CGPoint(x: centerX, y: centerY),
+                       radius: outerR, startAngle: startAngle, endAngle: endAngle,
+                       clockwise: false)
+            ctx.closePath()
+            ctx.setFillColor(slice.color)
+            ctx.fillPath()
+
+            // Separate each slice with a thin white gap
+            ctx.move(to: CGPoint(x: centerX, y: centerY))
+            ctx.addArc(center: CGPoint(x: centerX, y: centerY),
+                       radius: outerR + 1, startAngle: startAngle - 0.005,
+                       endAngle: startAngle + 0.005, clockwise: false)
+            ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+            ctx.fillPath()
+
+            // Slice value label (only when slice is large enough)
+            if fraction > 0.07 {
+                let lx = centerX + (outerR + innerR) / 2 * cos(mid)
+                let ly = centerY + (outerR + innerR) / 2 * sin(mid)
+                let labelStr = slice.count >= 1000
+                    ? "\(slice.count / 1000)k"
+                    : "\(slice.count)"
+                drawText(ctx: ctx, text: labelStr,
+                         at: CGPoint(x: lx, y: ly),
+                         fontSize: 9,
+                         color: CGColor(red: 1, green: 1, blue: 1, alpha: 1),
+                         alignment: .center)
+            }
+            startAngle = endAngle
+        }
+
+        // Punch out inner circle (donut hole)
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fillEllipse(in: CGRect(
+            x: centerX - innerR, y: centerY - innerR,
+            width: innerR * 2, height: innerR * 2
+        ))
+
+        // Center text: total
+        drawText(ctx: ctx, text: "Total",
+                 at: CGPoint(x: centerX, y: centerY - 8),
+                 fontSize: 10,
+                 color: CGColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1),
+                 alignment: .center)
+        drawText(ctx: ctx, text: "\(total)",
+                 at: CGPoint(x: centerX, y: centerY + 8),
+                 fontSize: 14,
+                 color: CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
+                 alignment: .center, bold: true)
+
+        // Legend on the right
+        drawDonutLegend(ctx: ctx, slices: slices, total: total,
+                        startX: ringAreaWidth + 16, startY: 60, maxWidth: legendWidth - 20)
+
+        // Footer
+        if let footer {
+            drawText(ctx: ctx, text: footer,
+                     at: CGPoint(x: size.width / 2, y: size.height - 10),
+                     fontSize: 9,
+                     color: CGColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1),
+                     alignment: .center)
+        }
+    }
+
+    private static func drawDonutLegend(
+        ctx: CGContext,
+        slices: [DonutSlice],
+        total: Int,
+        startX: CGFloat,
+        startY: CGFloat,
+        maxWidth: CGFloat
+    ) {
+        let rowHeight: CGFloat = 22
+        let swatchSize: CGFloat = 11
+        let labelColor = CGColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1)
+
+        for (idx, slice) in slices.enumerated() {
+            let y = startY + CGFloat(idx) * rowHeight
+            // Swatch
+            ctx.setFillColor(slice.color)
+            ctx.fill(CGRect(x: startX, y: y - swatchSize + 2,
+                            width: swatchSize, height: swatchSize))
+            // Count + percent label: "No Data: N (P%)"
+            let pctStr = String(format: "%.0f%%", slice.pct)
+            let legend = "\(slice.label): \(slice.count) (\(pctStr))"
+            drawText(ctx: ctx, text: legend,
+                     at: CGPoint(x: startX + swatchSize + 5, y: y - 2),
+                     fontSize: 9, color: labelColor, alignment: .left)
+            _ = total  // passed for future use (e.g., total label)
+        }
+        _ = maxWidth  // available for future layout (e.g., text truncation)
     }
 
     // MARK: - Core rendering

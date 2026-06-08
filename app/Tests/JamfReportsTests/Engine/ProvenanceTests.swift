@@ -19,11 +19,11 @@ final class ProvenanceTests: XCTestCase {
 
     func testCurrentProvenanceProfilePassedThrough() async {
         let prov = await Provenance.current(
-            profile: "cbp-prod",
+            profile: "acme-prod",
             jamfCLIURL: nil,
             dataDir: URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
         )
-        XCTAssertEqual(prov.profile, "cbp-prod")
+        XCTAssertEqual(prov.profile, "acme-prod")
     }
 
     func testCurrentProvenanceCapturesOperatorUserHost() async {
@@ -122,10 +122,10 @@ final class ProvenanceTests: XCTestCase {
         let original = Provenance(
             runID: UUID().uuidString,
             generatedAt: Date(timeIntervalSince1970: 1_746_000_000),
-            profile: "cbp-prod",
+            profile: "acme-prod",
             jamfCLIVersion: "1.14.0",
             jamfTenantURL: "https://jamf.example.com",
-            operatorUserHost: "tonyyo11@laptop"
+            operatorUserHost: "operator@example-host"
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -169,7 +169,7 @@ final class ProvenanceTests: XCTestCase {
         let prov = Provenance(
             runID: "abc-123",
             generatedAt: Date(timeIntervalSince1970: 1_746_000_000),
-            profile: "cbp",
+            profile: "acme",
             jamfCLIVersion: "1.14.0",
             jamfTenantURL: nil,
             operatorUserHost: "user@host"
@@ -190,7 +190,7 @@ final class ProvenanceTests: XCTestCase {
         let decoded = try JSONDecoder().decode(DailySummary.self, from: data)
 
         XCTAssertEqual(decoded.provenance?.runID, "abc-123")
-        XCTAssertEqual(decoded.provenance?.profile, "cbp")
+        XCTAssertEqual(decoded.provenance?.profile, "acme")
         XCTAssertEqual(decoded.provenance?.jamfCLIVersion, "1.14.0")
     }
 

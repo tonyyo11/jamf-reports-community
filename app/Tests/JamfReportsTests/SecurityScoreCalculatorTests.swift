@@ -14,7 +14,7 @@ final class SecurityScoreCalculatorTests: XCTestCase {
                 .fileVault: 647,
                 .sip: 655,
                 .firewall: 655,
-                .crowdstrike: 635,
+                .edrAgent: 635,
                 .mscp: 625,           // ≈ 95.4% mscp_score_pct × 655
                 .xprotect: 566,
                 .cve: 636,
@@ -51,8 +51,8 @@ final class SecurityScoreCalculatorTests: XCTestCase {
 
         XCTAssertEqual(score.value, 100.0, accuracy: 0.01)
         XCTAssertEqual(score.grade, .aPlus)
-        XCTAssertEqual(Set(score.missing), Set([.crowdstrike, .mscp]))
-        XCTAssertNil(score.appliedWeights[.crowdstrike])
+        XCTAssertEqual(Set(score.missing), Set([.edrAgent, .mscp]))
+        XCTAssertNil(score.appliedWeights[.edrAgent])
         XCTAssertNil(score.appliedWeights[.mscp])
     }
 
@@ -72,14 +72,14 @@ final class SecurityScoreCalculatorTests: XCTestCase {
     func testZeroWeightMetricIsExcludedFromScoreAndMissingList() {
         let weights = SecurityScoreWeights(
             fileVault: 15, sip: 15, firewall: 15,
-            crowdstrike: 0,                       // explicitly disabled
+            edrAgent: 0,                       // explicitly disabled
             mscp: 20, xprotect: 5, cve: 15, secureBoot: 5
         )
         let input = SecurityScoreCalculator.Input(
             totalDevices: 100,
             compliantCounts: [
                 .fileVault: 100, .sip: 100, .firewall: 100,
-                .crowdstrike: 0,                  // operator disabled it
+                .edrAgent: 0,                  // operator disabled it
                 .mscp: 100, .xprotect: 100, .cve: 100, .secureBoot: 100
             ]
         )
@@ -87,8 +87,8 @@ final class SecurityScoreCalculatorTests: XCTestCase {
         let score = SecurityScoreCalculator.score(input: input, weights: weights)
 
         XCTAssertEqual(score.value, 100.0, accuracy: 0.01)
-        XCTAssertFalse(score.available.contains(.crowdstrike))
-        XCTAssertFalse(score.missing.contains(.crowdstrike))
+        XCTAssertFalse(score.available.contains(.edrAgent))
+        XCTAssertFalse(score.missing.contains(.edrAgent))
     }
 
     func testInputFromSummaryReversesPercentagesIntoCounts() {
@@ -113,7 +113,7 @@ final class SecurityScoreCalculatorTests: XCTestCase {
         XCTAssertEqual(input.totalDevices, 655)
         XCTAssertEqual(input.compliantCounts[.fileVault], 647)
         XCTAssertEqual(input.compliantCounts[.sip], 655)
-        XCTAssertEqual(input.compliantCounts[.crowdstrike], 635)
+        XCTAssertEqual(input.compliantCounts[.edrAgent], 635)
         XCTAssertNil(input.compliantCounts[.xprotect],
                      "Summary without xprotectPct should omit, not zero")
         XCTAssertNil(input.compliantCounts[.cve])

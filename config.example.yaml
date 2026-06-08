@@ -261,6 +261,10 @@ jamf_cli:
   #
   # Supported values:
   #   patch-device-failures   `pro report patch-status --scan-failures`
+  #   patch-definitions       per-title `patch-software-title-configurations
+  #                           definitions` fetches that build the patch
+  #                           release-date snapshot (Patch Compliance "Latest
+  #                           Released"/"Days Behind" columns go absent).
   #   profile-status          `pro report profile-status`
   #   update-status           `pro report update-status`
   #   update-device-failures  `pro report update-status --scan-failures`
@@ -280,6 +284,37 @@ jamf_cli:
   #   - update-device-failures
   #   - device-security-state
   #   - mobile-details
+
+
+# ---------------------------------------------------------------------------
+# SOFA OS currency feed (optional)
+# ---------------------------------------------------------------------------
+# SOFA (https://sofa.macadmins.io) publishes the latest available Apple OS
+# versions. The "OS Currency" workbook sheet and the HTML "OS Currency" card
+# join this feed against your fleet's OS-version distribution to show how
+# current each platform is. Feeds are fetched with curl (the system trust
+# store), so no extra Python packages are required.
+sofa:
+  # Set false to disable all SOFA fetches (e.g. air-gapped servers). The OS
+  # Currency sheet still renders, with a single "feed unavailable" note row.
+  enabled: true
+
+  # Where to cache the downloaded feeds. Blank defaults to
+  # <jamf_cli.data_dir>/sofa. Relative paths resolve from this config file.
+  cache_dir: ""
+
+  # Re-fetch a feed only when its cached copy is older than this many hours.
+  max_cache_age_hours: 24
+
+  # Per-feed curl timeout, in seconds.
+  timeout_seconds: 30
+
+  # Which feeds to fetch. iPadOS shares the "ios" feed.
+  platforms:
+    - macos
+    - ios
+    - tvos
+    - watchos
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +426,38 @@ protect:
 
 
 # =============================================================================
+# WEBHOOK NOTIFICATIONS (opt-in)
+# =============================================================================
+# Post a short "report generated" digest to a Microsoft Teams or Slack incoming
+# webhook after a scheduled run. OFF by default — set enabled: true and supply a
+# provider + https URL. The Python CLI also accepts --notify <url> as an
+# override (provider still read from here). Never commit a real webhook URL.
+notify:
+  enabled: false
+  provider: "teams"   # teams | slack
+  url: ""             # https:// incoming webhook URL
+
+# =============================================================================
+# SNAPSHOT RETENTION (admin-controlled; OFF by default)
+# =============================================================================
+# Raw jamf-cli snapshots under jamf-cli-data/ are a reporting input (per-device
+# day-over-day / week-over-week history, especially mSCP) — not just disk cost.
+# By default NOTHING is ever removed, so the full raw history stays available
+# (ideal when ~/Jamf-Reports lives on cloud/SharePoint storage). Turn this on
+# only if you want the app to manage disk for you.
+#
+# mode: "archive" MOVES old snapshots to the archive folder (still on disk — you
+# decide whether to trash them); "delete" removes them. Summaries (the durable
+# trend source) are never touched unless include_summaries is true.
+retention:
+  enabled: false             # OFF — keep everything
+  mode: "archive"            # archive | delete
+  snapshot_keep_days: 365    # archive/delete raw snapshots older than this (<=0 = no age rule)
+  snapshot_keep_count: 0     # always keep at least N newest per kind (0 = no count floor)
+  include_summaries: false   # leave the trend summaries alone
+  archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir)
+
+# =============================================================================
 # JAMF PLATFORM API
 # =============================================================================
 # Preview workbook support for jamf-cli builds that expose Platform API report
@@ -478,10 +545,32 @@ compliance:
   enabled: true
   baseline_label: "mSCP Compliance"
   # EA column containing the integer count of failed rules.
+  # Used as the single-baseline shorthand when `baselines` is absent.
   failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5"
   # EA column containing the pipe-delimited list of failed rule IDs.
   # Example cell value: "os_filevault_enable|os_screensaver_timeout|..."
   failures_list_column: "Compliance - Failed mSCP Result List - NIST 800-53r5"
+
+  # Per-baseline list for multi-baseline mSCP/STIG tracking.
+  # When present, drives real per-device compliance banding from ea-results
+  # instead of the 4-control security-report proxy.
+  #
+  # The first entry is the "primary" baseline: its Pass % surfaces in the daily
+  # summary, the Compliance Benchmark trend chart, and the Stability Index.
+  # Additional entries are evaluated but do not affect the trend today.
+  #
+  # failures_count_column must match the `ea_name` field in your ea-results
+  # snapshot exactly (case-insensitive match at query time).
+  #
+  # When `baselines` is empty, the engine synthesizes a single baseline from
+  # failures_count_column + baseline_label above — no migration needed.
+  baselines: []
+  # Example multi-baseline configuration (uncomment and edit to enable):
+  # baselines:
+  #   - name: "NIST 800-53r5"
+  #     failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+  #   - name: "DISA STIG"
+  #     failures_count_column: "Compliance - Failed mSCP Results Count - DISA STIG"
 
 
 # =============================================================================

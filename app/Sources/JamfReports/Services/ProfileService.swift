@@ -173,6 +173,34 @@ enum ProfileService {
         return profiles.sorted(by: profileSort)
     }
 
+    // MARK: - Run-time exclusion (--exclude-profiles)
+
+    /// Parse a comma-separated `--exclude-profiles` value into a validated set
+    /// of profile slugs. Whitespace-trimmed; empty and invalid tokens dropped.
+    static func parseExclusions(_ raw: String?) -> Set<String> {
+        guard let raw else { return [] }
+        return Set(
+            raw.split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter(isValid)
+        )
+    }
+
+    /// Drop `excluded` profiles from `profiles` (run-time exclusion).
+    ///
+    /// The managed `--all-profiles` runner discovers the full profile set at
+    /// run time and then removes the excluded slugs here — it never swaps to an
+    /// explicit positive list, which would break the dynamic property that a
+    /// single managed agent picks up profiles added later and drops profiles
+    /// deleted later without being rewritten.
+    static func applyingExclusions(
+        _ profiles: [JamfCLIProfile],
+        excluding excluded: Set<String>
+    ) -> [JamfCLIProfile] {
+        guard !excluded.isEmpty else { return profiles }
+        return profiles.filter { !excluded.contains($0.name) }
+    }
+
     /// Remove one local workspace folder under `~/Jamf-Reports/<profile>`.
     /// This never edits jamf-cli credentials or profiles; it only removes the
     /// app's local workspace directory after path-boundary validation.

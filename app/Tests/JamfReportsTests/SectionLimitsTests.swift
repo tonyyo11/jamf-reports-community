@@ -49,7 +49,7 @@ final class SectionLimitsTests: XCTestCase {
     // MARK: - Defaults when block absent
 
     func testDefaultProtectAlertsIs25() throws {
-        let c = try config(yaml: "columns:\n  computer_name: Name")
+        _ = try config(yaml: "columns:\n  computer_name: Name")
         let limits = HTMLSectionLimits()
         XCTAssertEqual(limits.resolvedProtectAlerts, 25)
     }

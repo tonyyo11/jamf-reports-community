@@ -71,23 +71,46 @@ final class CollectionTierLookupTests: XCTestCase {
         }
     }
 
-    /// Scan tier: per-device or otherwise server-expensive reports. Pinned
-    /// because mistakenly putting one of these in Refresh would cause
-    /// snapshot-only to call expensive endpoints — exactly the on-prem
-    /// failure mode PR-22 is trying to prevent.
-    func testScanTierContains() {
-        let scan: Set<String> = [
-            "ea-results",
-            "device-compliance",
+    /// Scan tier: exactly the two `--scan-failures` per-device fan-out queries.
+    /// Pinned so no additional expensive commands creep into the daily automation
+    /// path and so daily (refresh+inventory) vs weekly (scan) stays expressible
+    /// via `--tiers`.
+    func testScanTierContainsExactly() {
+        let expectedScan: Set<String> = [
             "patch-device-failures",
             "update-device-failures",
-            "update-status",            // per-device update plans — server-killer on on-prem
-            "profile-status",           // per-device MDM command enumeration
         ]
-        for kind in scan {
+        // Every expected kind must be in .scan.
+        for kind in expectedScan {
             XCTAssertEqual(
                 CollectionTier.tier(forReport: kind), .scan,
-                "\(kind) must be in the Scan tier (server-expensive)"
+                "\(kind) must be in the Scan tier"
+            )
+        }
+        // The .scan set must contain ONLY those two kinds — no extras.
+        let actualScan = Set(CollectionTier.mappedKinds.filter {
+            CollectionTier.tier(forReport: $0) == .scan
+        })
+        XCTAssertEqual(
+            actualScan, expectedScan,
+            "Scan tier must contain exactly patch-device-failures and update-device-failures. " +
+            "Extra: \(actualScan.subtracting(expectedScan).sorted()). " +
+            "Missing: \(expectedScan.subtracting(actualScan).sorted())."
+        )
+    }
+
+    /// The four formerly-scan kinds must now be in Inventory (daily-safe).
+    func testFormerScanKindsAreNowInventory() {
+        let movedToInventory: Set<String> = [
+            "update-status",
+            "device-compliance",
+            "ea-results",
+            "profile-status",
+        ]
+        for kind in movedToInventory {
+            XCTAssertEqual(
+                CollectionTier.tier(forReport: kind), .inventory,
+                "\(kind) must be in the Inventory tier (daily-safe, no --scan-failures fan-out)"
             )
         }
     }
@@ -106,6 +129,36 @@ final class CollectionTierLookupTests: XCTestCase {
                 "\(kind) must be in the Inventory tier"
             )
         }
+    }
+
+    /// `audit` must be collected and in the Refresh tier. AuditView,
+    /// HealthCheckView, and WorkspaceStore+Refresh all consume the "audit"
+    /// snapshot; without this entry the scheduled Swift collect never writes
+    /// the directory, leaving the audit manifest.json permanently stale.
+    func testAuditKindIsCollectedAndRefreshTiered() {
+        XCTAssertTrue(
+            ReportEngine.knownCollectKinds.contains("audit"),
+            "'audit' must be in knownCollectKinds so collect writes the snapshot"
+        )
+        XCTAssertEqual(
+            CollectionTier.tier(forReport: "audit"), .refresh,
+            "'audit' is a cheap single server call — must be Refresh tiered"
+        )
+    }
+
+    /// `groups` must be collected (in knownCollectKinds) and assigned to the
+    /// Inventory tier. Both `writeGroupHygiene` and `writeSmartGroups` read
+    /// from the `groups` snapshot directory; without this entry collect never
+    /// writes the directory and those sheets silently vanish on a fresh deploy.
+    func testGroupsKindIsCollectedAndInventoryTiered() {
+        XCTAssertTrue(
+            ReportEngine.knownCollectKinds.contains("groups"),
+            "'groups' must be in knownCollectKinds so collect writes the snapshot"
+        )
+        XCTAssertEqual(
+            CollectionTier.tier(forReport: "groups"), .inventory,
+            "'groups' is a list-type endpoint — must be Inventory tiered"
+        )
     }
 
     // MARK: - Conformance

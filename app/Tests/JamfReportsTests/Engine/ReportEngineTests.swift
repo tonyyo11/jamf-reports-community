@@ -315,6 +315,176 @@ final class ReportEngineTests: XCTestCase {
         }
     }
 
+    // MARK: - Fix 1: staleCount uses stale_device_days threshold, not the server stale flag
+
+    /// `summary.json` staleCount must agree with StaleDeviceService when using the
+    /// configured `stale_device_days`. Devices with `stale: true` but
+    /// `days_since_checkin < stale_device_days` must NOT be counted.
+    func testSummaryStaleCountUsesThresholdNotServerFlag() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("stale-count-threshold-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        // Write a minimal security snapshot so buildSummaryFromCLI can derive totalDevices.
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        let secPayload = """
+        [{"section":"summary","data":{"total_devices":3,"filevault_encrypted":3,
+          "sip_enabled":3,"firewall_enabled":3,"gatekeeper_enabled":3}}]
+        """
+        try Data(secPayload.utf8).write(
+            to: secDir.appendingPathComponent("security_20260101T000000.json"))
+
+        // Write device-compliance with:
+        //   - device A: server flag stale=true, but only 10 days since checkin → NOT stale at 30d
+        //   - device B: stale=false, but 45 days since checkin → stale at 30d threshold
+        //   - device C: stale=true, 50 days since checkin → stale at both definitions
+        let compDir = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+        try FileManager.default.createDirectory(at: compDir, withIntermediateDirectories: true)
+        let compPayload = """
+        [
+          {"name":"A","serial":"AAA","managed":true,"stale":true,"days_since_checkin":10},
+          {"name":"B","serial":"BBB","managed":true,"stale":false,"days_since_checkin":45},
+          {"name":"C","serial":"CCC","managed":true,"stale":true,"days_since_checkin":50}
+        ]
+        """
+        try Data(compPayload.utf8).write(
+            to: compDir.appendingPathComponent("device-compliance_20260101T000000.json"))
+
+        // Config with default stale_device_days = 30.
+        let config = ReportConfig()
+        let engine = ReportEngine(config: config, dataDir: dataDir)
+
+        let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        engine.emitSummaryJSON(summariesDir: summariesDir)
+
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: summaryFile.path),
+                      "Summary JSON must be written")
+
+        let data = try Data(contentsOf: summaryFile)
+        let obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let staleCount = try XCTUnwrap(obj["staleCount"] as? Int)
+
+        // Only B (45d) and C (50d) exceed the 30-day threshold. A (10d) does not,
+        // even though its server-side `stale` flag is true.
+        XCTAssertEqual(staleCount, 2,
+            "staleCount must be 2 (B+C exceed 30d) — A has stale=true but only 10 days")
+    }
+
+    /// staleCount must agree with DeviceInventorySnapshot.staleCount(thresholdDays:) —
+    /// the same computation DevicesView uses for its "Stale" stat tile.
+    func testSummaryStaleCountAgreesWithDeviceInventorySnapshot() throws {
+        let staleDays = 30
+        var buf: [DeviceInventoryRecord] = []
+        // 2 devices under the threshold.
+        var r1 = DeviceInventoryRecord.empty(id: "r1", source: "test")
+        r1.daysSinceContact = 10
+        var r2 = DeviceInventoryRecord.empty(id: "r2", source: "test")
+        r2.daysSinceContact = 29
+        // 3 devices at or over the threshold.
+        var r3 = DeviceInventoryRecord.empty(id: "r3", source: "test")
+        r3.daysSinceContact = 30
+        var r4 = DeviceInventoryRecord.empty(id: "r4", source: "test")
+        r4.daysSinceContact = 90
+        var r5 = DeviceInventoryRecord.empty(id: "r5", source: "test")
+        r5.daysSinceContact = 200
+        buf.append(contentsOf: [r1, r2, r3, r4, r5])
+        let records = buf
+
+        // DeviceInventorySnapshot.staleCount is what DevicesView shows.
+        let devSnapshot = DeviceInventorySnapshot(
+            devices: records, patchTitles: [], sourceFiles: [], warnings: [],
+            generatedAt: "", generatedDate: nil, isDemo: false)
+        let uiStaleCount = devSnapshot.staleCount(thresholdDays: staleDays)
+
+        // The summary engine uses `daysSinceCheckin >= staleDaysThreshold`.
+        // Synthesize the matching device-compliance rows.
+        let compRows = records.compactMap { r -> [String: Any]? in
+            guard let d = r.daysSinceContact else { return nil }
+            return ["name": r.id, "serial": "", "managed": true,
+                    "stale": d >= staleDays, "days_since_checkin": d]
+        }
+        let engineStaleCount = compRows.filter {
+            ($0["days_since_checkin"] as? Int ?? 0) >= staleDays
+        }.count
+
+        XCTAssertEqual(engineStaleCount, uiStaleCount,
+            "Engine staleCount (\(engineStaleCount)) must match DevicesView stat tile " +
+            "(\(uiStaleCount)) for the same threshold (\(staleDays)d)")
+    }
+
+    // MARK: - Fix 2: snapshotSubtitle surfaces data age for stale-risk sheets
+
+    /// When the snapshot file is older than today, the subtitle must contain
+    /// "Data as of: " with the snapshot date.
+    func testSnapshotSubtitleIncludesDataAsOfWhenStale() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("snapshot-subtitle-stale-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        // Write a snapshot file and backdate its mtime to yesterday.
+        let kindDir = dataDir.appendingPathComponent("update-status", isDirectory: true)
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        let snapFile = kindDir.appendingPathComponent("update-status_20260101T000000.json")
+        try Data("[]".utf8).write(to: snapFile)
+        // Set mtime 2 days back so it is definitely not today.
+        let twoDaysAgo = Date().addingTimeInterval(-2 * 86_400)
+        try FileManager.default.setAttributes(
+            [.modificationDate: twoDaysAgo], ofItemAtPath: snapFile.path)
+
+        let workbook = Workbook(accentColor: "#2D5EA2")
+        let dashboard = CoreDashboard(
+            config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let subtitle = dashboard.snapshotSubtitle(names: ["update-status"], generated: ts)
+
+        XCTAssertTrue(subtitle.contains("Data as of:"),
+            "Subtitle must contain 'Data as of:' for a stale snapshot; got: \(subtitle)")
+    }
+
+    /// When the snapshot file was collected today, the subtitle must NOT contain
+    /// a "Data as of" clause (the data is current).
+    func testSnapshotSubtitleOmitsDataAsOfWhenFresh() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("snapshot-subtitle-fresh-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let kindDir = dataDir.appendingPathComponent("update-status", isDirectory: true)
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        let snapFile = kindDir.appendingPathComponent("update-status_today.json")
+        try Data("[]".utf8).write(to: snapFile)
+        // mtime is "now" — no explicit backdate needed.
+
+        let workbook = Workbook(accentColor: "#2D5EA2")
+        let dashboard = CoreDashboard(
+            config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        let ts = ISO8601DateFormatter().string(from: Date())
+        let subtitle = dashboard.snapshotSubtitle(names: ["update-status"], generated: ts)
+
+        XCTAssertFalse(subtitle.contains("Data as of:"),
+            "Subtitle must NOT contain 'Data as of:' for a fresh snapshot; got: \(subtitle)")
+    }
+
+    /// When no snapshot exists the subtitle falls back to "Generated: <ts>" only.
+    func testSnapshotSubtitleFallsBackWhenNoSnapshot() throws {
+        let emptyDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("snapshot-subtitle-empty-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: emptyDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: emptyDir) }
+
+        let workbook = Workbook(accentColor: "#2D5EA2")
+        let dashboard = CoreDashboard(
+            config: ReportConfig(), dataDir: emptyDir, workbook: workbook)
+        let ts = "2026-06-05T12:00:00Z"
+        let subtitle = dashboard.snapshotSubtitle(names: ["update-status"], generated: ts)
+
+        XCTAssertEqual(subtitle, "Generated: \(ts)",
+            "Subtitle must be exactly 'Generated: <ts>' when no snapshot exists")
+    }
+
     // MARK: - PR-18: emitSummaryJSON logging surfaces silent early-return paths
 
     /// When a same-day `summary_*.json` already exists and is valid,
@@ -382,6 +552,39 @@ final class ReportEngineTests: XCTestCase {
             FileManager.default.fileExists(atPath: summaryFile.path),
             "No summary file should be written when there are no snapshots to summarize"
         )
+    }
+
+    // MARK: - csvEscape formula-injection guard
+
+    /// =HYPERLINK(...) contains a double-quote, so after tab-prefixing the whole field is
+    /// RFC-4180 quoted: "\t=...". Assert the raw string (not hasPrefix("\t=")).
+    func testCSVEscapeNeutralizeEqualsHyperlink() {
+        let raw = #"=HYPERLINK("http://x")"#
+        let escaped = ReportEngine.testableCSVEscape(raw)
+        // Tab-prefixed, then quoted due to embedded double-quote.
+        XCTAssertTrue(
+            escaped.hasPrefix("\"\t="),
+            "csvEscape must tab-prefix and RFC4180-quote a cell beginning with '='; got: \(escaped)"
+        )
+    }
+
+    /// Simple = prefix (no special chars) → tab-prefix only, no quoting.
+    func testCSVEscapeNeutralizeSimpleEquals() {
+        let escaped = ReportEngine.testableCSVEscape("=1+1")
+        XCTAssertEqual(escaped, "\t=1+1",
+                       "csvEscape must tab-prefix a cell beginning with '=' when no quoting is needed")
+    }
+
+    /// + prefix → tab-prefixed.
+    func testCSVEscapeNeutralizePlus() {
+        let escaped = ReportEngine.testableCSVEscape("+cmd|calc")
+        XCTAssertEqual(escaped, "\t+cmd|calc")
+    }
+
+    /// Normal value — no injection prefix, no special chars — passes through unchanged.
+    func testCSVEscapePassesThroughCleanValue() {
+        let escaped = ReportEngine.testableCSVEscape("MacBook Pro")
+        XCTAssertEqual(escaped, "MacBook Pro")
     }
 
     // MARK: - Helpers

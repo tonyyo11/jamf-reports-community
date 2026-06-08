@@ -22,6 +22,9 @@ struct ReportConfig: Decodable, Sendable {
     var branding: BrandingConfig?
     var platform: PlatformConfig?
     var protect: ProtectConfig?
+    var schoolCli: SchoolCLIConfig?
+    var notify: NotifyConfig?
+    var retention: RetentionConfig?
     var html: HTMLReportConfig?
     /// PR-22 T-3: per-report cadence + preset overrides. Top-level (not
     /// nested under `jamf_cli`) because the GUI's new Cadence tab edits it
@@ -45,6 +48,9 @@ struct ReportConfig: Decodable, Sendable {
         case branding
         case platform
         case protect
+        case schoolCli = "school_cli"
+        case notify
+        case retention
         case html
         case collectCadence = "collect_cadence"
     }
@@ -388,12 +394,48 @@ enum ComplianceFramework: String, CaseIterable, Codable, Sendable {
 
 // MARK: - compliance
 
+/// A single mSCP/STIG baseline entry under `compliance.baselines`.
+///
+/// `failuresCountColumn` is the EA name whose integer value is the per-device
+/// failure count for this baseline. Must match the `ea_name` field in
+/// `ea-results` snapshots exactly (case-sensitive).
+///
+/// `ruleCount` is reserved for future use (e.g. compliance percentage relative
+/// to total rules). Nothing reads it in the foundation increment; declare it now
+/// so the on-disk config format is stable and parsers can round-trip it without
+/// data loss.
+struct ComplianceBaselineConfig: Decodable, Sendable {
+    var name: String
+    var failuresCountColumn: String
+    /// Total rule count for this baseline. Reserved — not read by any engine
+    /// path in the foundation increment.
+    var ruleCount: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case failuresCountColumn = "failures_count_column"
+        case ruleCount = "rule_count"
+    }
+}
+
 struct ComplianceConfig: Decodable, Sendable {
     var enabled: Bool?
     var failuresCountColumn: String?   // key is `failures_count_column`
     var failuresListColumn: String?    // key is `failures_list_column`
     var baselineLabel: String?
     var framework: String?             // key is `framework`; surfaces in Compliance Posture sheet
+    /// Per-baseline list for multi-baseline mSCP/STIG tracking.
+    ///
+    /// When non-empty, each entry maps a baseline label to the EA column that
+    /// carries its per-device failure count. The first entry is the "primary"
+    /// baseline: its data drives `compliancePct` in the daily summary and the
+    /// Compliance Benchmark trend.
+    ///
+    /// Backward compat: when absent, `MSCPComplianceService` synthesizes a
+    /// single baseline from `failures_count_column` + `baseline_label` (the
+    /// pre-baselines config shape). If both are absent the service returns no
+    /// real-data result and the proxy remains active.
+    var baselines: [ComplianceBaselineConfig]?
 
     private enum CodingKeys: String, CodingKey {
         case enabled
@@ -401,6 +443,7 @@ struct ComplianceConfig: Decodable, Sendable {
         case failuresListColumn = "failures_list_column"
         case baselineLabel = "baseline_label"
         case framework
+        case baselines
     }
 
     var isEnabled: Bool { enabled ?? false }
@@ -430,6 +473,24 @@ struct ComplianceConfig: Decodable, Sendable {
         if let parsed = parsedFramework { return parsed.rawValue }
         let raw = framework?.trimmingCharacters(in: .whitespaces) ?? ""
         return raw.isEmpty ? "Not configured" : raw
+    }
+
+    /// Normalized baseline list for `MSCPComplianceService`.
+    ///
+    /// Returns `baselines` when non-empty. Otherwise synthesizes a single
+    /// entry from the legacy `failures_count_column` + `baseline_label`
+    /// fields. Returns `[]` when neither is configured.
+    var resolvedBaselines: [ComplianceBaselineConfig] {
+        if let list = baselines, !list.isEmpty { return list }
+        guard let col = failuresCountColumn,
+              !col.trimmingCharacters(in: .whitespaces).isEmpty
+        else { return [] }
+        let label = baselineLabel?.trimmingCharacters(in: .whitespaces)
+        return [ComplianceBaselineConfig(
+            name: label.flatMap { $0.isEmpty ? nil : $0 } ?? "Compliance",
+            failuresCountColumn: col,
+            ruleCount: nil
+        )]
     }
 }
 
@@ -671,6 +732,91 @@ struct ProtectConfig: Decodable, Sendable {
     var isEnabled: Bool { enabled ?? false }
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data/protect" }
+}
+
+// MARK: - school_cli
+
+/// Configuration for Jamf School integration.
+/// School uses API-key auth (no bearer token), managed by jamf-cli via a named `--profile`.
+/// When `enabled` is false (or absent), all school commands are skipped and the profile
+/// is treated as Jamf Pro for collect routing. Written by `OnboardingFlow.writeSchoolConfig`.
+struct SchoolCLIConfig: Decodable, Sendable {
+    var enabled: Bool?
+    var profile: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, profile
+    }
+
+    var isEnabled: Bool { enabled ?? false }
+    var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
+}
+
+// MARK: - notify (opt-in webhook digest)
+
+/// `notify:` block — opt-in scheduled-run webhook digest. OFF by default; the
+/// operator must set `enabled: true`, a `provider`, and an `https://` `url`.
+struct NotifyConfig: Decodable, Sendable {
+    enum Provider: String, Decodable, Sendable, CaseIterable { case teams, slack }
+
+    var enabled: Bool?
+    var provider: String?
+    var url: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, provider, url
+    }
+
+    var isEnabled: Bool { enabled ?? false }
+    var resolvedProvider: Provider {
+        Provider(rawValue: (provider ?? "teams").lowercased()) ?? .teams
+    }
+    var resolvedURL: String { url?.trimmingCharacters(in: .whitespaces) ?? "" }
+    /// Usable only when enabled AND a usable https URL is present — the gate
+    /// every send path checks so an off/misconfigured block silently no-ops.
+    var isUsable: Bool { isEnabled && resolvedURL.lowercased().hasPrefix("https://") }
+}
+
+// MARK: - retention (snapshot archive/cleanup)
+
+/// `retention:` block — admin-controlled snapshot lifecycle (v2.2.0).
+///
+/// **OFF by default** — raw jamf-cli snapshots are kept indefinitely so per-device
+/// history stays available (the old jamf_reports_cli generated graphs from raw
+/// data, not just summaries). When enabled, the default mode is `archive`: old
+/// snapshots are MOVED to an archive folder (still on disk; the admin decides
+/// whether to trash them), not deleted. `delete` mode removes them outright.
+/// Summaries (the durable trend source) are never touched unless
+/// `include_summaries` is explicitly true.
+struct RetentionConfig: Decodable, Sendable {
+    enum Mode: String, Decodable, Sendable, CaseIterable { case archive, delete }
+
+    var enabled: Bool?
+    var mode: String?
+    var snapshotKeepDays: Int?
+    var snapshotKeepCount: Int?
+    var includeSummaries: Bool?
+    var archiveDir: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case mode
+        case snapshotKeepDays = "snapshot_keep_days"
+        case snapshotKeepCount = "snapshot_keep_count"
+        case includeSummaries = "include_summaries"
+        case archiveDir = "archive_dir"
+    }
+
+    var isEnabled: Bool { enabled ?? false }
+    var resolvedMode: Mode { Mode(rawValue: (mode ?? "archive").lowercased()) ?? .archive }
+    /// Snapshots older than this many days are archived/deleted. <= 0 disables
+    /// the age rule (keep all by age). Default 365.
+    var keepDays: Int { snapshotKeepDays ?? 365 }
+    /// Always keep at least this many newest files per kind regardless of age.
+    /// 0 = no count floor. Default 0.
+    var keepCount: Int { max(0, snapshotKeepCount ?? 0) }
+    var includesSummaries: Bool { includeSummaries ?? false }
+    var resolvedArchiveDir: String { archiveDir?.trimmingCharacters(in: .whitespaces) ?? "" }
 }
 
 // MARK: - exceptions (list, not dict)

@@ -133,6 +133,6 @@ final class PostureViewsRenderTests: XCTestCase {
         )
         XCTAssertFalse(score.available.isEmpty)
         XCTAssertTrue(score.missing.contains(.mscp))
-        XCTAssertTrue(score.missing.contains(.crowdstrike))
+        XCTAssertTrue(score.missing.contains(.edrAgent))
     }
 }

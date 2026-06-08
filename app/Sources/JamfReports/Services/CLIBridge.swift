@@ -644,9 +644,14 @@ final class CLIBridge {
     /// Defaults to all three — the GUI manual-refresh path wants everything
     /// that's due. `RefreshCoordinator` passes `[.refresh]` for its
     /// profile-switch backfill so it doesn't pull every list endpoint.
+    ///
+    /// `force: true` bypasses the once-per-day guard in `ReportEngine.collect`
+    /// so ad-hoc Refresh calls always fetch fresh data. Scheduled collects
+    /// (via `main.swift --scheduled-run`) pass `force: false` (the default).
     func collect(
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
+        force: Bool = false,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -660,12 +665,26 @@ final class CLIBridge {
         // Scheduled collects run from main.swift and pass skipExpensive=false
         // unconditionally — the toggle only affects manual GUI refreshes.
         let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
+        // Load config for product-type routing. Failure degrades to Jamf Pro
+        // (same behaviour as before the router existed) and logs loudly.
+        let config: ReportConfig? = {
+            guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
+            let url = workspace.appendingPathComponent("config.yaml")
+            let loaded = try? ConfigLoader.load(from: url)
+            if loaded == nil {
+                AppLogger.cli.warning(
+                    "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+                )
+            }
+            return loaded
+        }()
         do {
-            try await ReportEngine.collect(
+            try await CollectRouter.run(
                 profile: profile,
-                workspacePaths: WorkspacePaths.self,
                 tiers: tiers,
                 skipExpensive: skipExpensive,
+                force: force,
+                config: config,
                 onLine: onLine
             )
             tightenOnSuccess(0, profile: profile)
@@ -691,7 +710,9 @@ final class CLIBridge {
         // Auth is checked inside collect(); skipping a separate probe here avoids calling
         // jamf-cli pro auth token twice for the combined collect+generate flow.
         onLine(.init(timestamp: Date(), level: .info, text: "[info] collecting jamf-cli snapshots for \(profile)"))
-        let collectExit = try await collect(profile: profile, onLine: onLine)
+        // force: true — collectThenGenerate is always a GUI "Run now" action; the
+        // once-per-day guard must not silently skip a user-triggered collect+generate.
+        let collectExit = try await collect(profile: profile, force: true, onLine: onLine)
         guard collectExit == 0 else { return collectExit }
 
         onLine(.init(timestamp: Date(), level: .info, text: "[info] generating report from cached snapshots"))

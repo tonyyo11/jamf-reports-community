@@ -26,6 +26,10 @@ struct SchedulesView: View {
     @State private var now = Date()
     private let countdownTick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
+    // Shared with AutomationView: flipping this on re-routes (via AutomationTab)
+    // to the managed-policy editor and reconciles the managed agents.
+    @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
+
     @State private var query = ""
 
     private var filteredSchedules: [Schedule] {
@@ -50,6 +54,7 @@ struct SchedulesView: View {
     var body: some View {
         PageScaffold(spacing: 14) {
             header
+            managedModeCard
             if let message = workspace.launchAgentCleanupMessage {
                 legacyCleanupBanner(message)
             }
@@ -88,6 +93,41 @@ struct SchedulesView: View {
             Text(writeError ?? "Unknown error")
         }
         .onReceive(countdownTick) { now = $0 }
+    }
+
+    // MARK: - Managed-mode switch
+
+    /// The master "Manage automation" toggle, mirrored from AutomationView so the
+    /// operator can switch from hand-built schedules to the managed policy without
+    /// losing access to the switch. Flipping it on re-routes (AutomationTab) and
+    /// the policy editor's reconcile installs the managed agents.
+    private var managedModeCard: some View {
+        Card {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Managed automation").font(.headline)
+                    Text("Off — you manage these schedules yourself. Turn on to let the app keep "
+                        + "every profile fresh and generate reports automatically, on one policy.")
+                        .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                }
+                Spacer()
+                Toggle("", isOn: managedModeBinding)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .disabled(workspace.demoMode)
+            }
+        }
+    }
+
+    private var managedModeBinding: Binding<Bool> {
+        Binding(
+            get: { AutomationPolicy.parse(automationPolicyRaw).isManaged },
+            set: { isOn in
+                var policy = AutomationPolicy.parse(automationPolicyRaw)
+                policy.isManaged = isOn
+                automationPolicyRaw = policy.serialize()
+            }
+        )
     }
 
     // MARK: - Header
