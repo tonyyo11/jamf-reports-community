@@ -98,14 +98,31 @@ enum SnapshotRetentionService {
     /// Resolved raw-snapshot archive root: `retention.archive_dir` if set, else
     /// `<workspace>/_archive`. Distinct from the reports archive
     /// (`output.archive_dir`) so the two never collide.
+    ///
+    /// Absolute `archive_dir` values are confined to `ProfileService.workspacesRoot()`.
+    /// An out-of-bounds absolute path is rejected with a warning and falls back to the
+    /// default, matching the allow-list idiom used by `SystemActions`.
     static func resolvedArchiveRoot(config: RetentionConfig?, workspace: URL) -> URL {
+        let defaultArchive = workspace.appendingPathComponent("_archive", isDirectory: true)
         let raw = config?.resolvedArchiveDir ?? ""
-        guard !raw.isEmpty else {
-            return workspace.appendingPathComponent("_archive", isDirectory: true)
-        }
+        guard !raw.isEmpty else { return defaultArchive }
         let expanded = (raw as NSString).expandingTildeInPath
-        if expanded.hasPrefix("/") { return URL(fileURLWithPath: expanded, isDirectory: true) }
-        return workspace.appendingPathComponent(expanded, isDirectory: true)
+        guard expanded.hasPrefix("/") else {
+            // Relative path — join to workspace; always confined by construction.
+            return workspace.appendingPathComponent(expanded, isDirectory: true)
+        }
+        // Absolute path: confine to workspacesRoot using the SystemActions allow-list idiom.
+        let candidate = URL(fileURLWithPath: expanded, isDirectory: true)
+            .resolvingSymlinksInPath()
+        let allowedRoot = ProfileService.workspacesRoot()
+            .resolvingSymlinksInPath().path
+        if candidate.path == allowedRoot || candidate.path.hasPrefix(allowedRoot + "/") {
+            return URL(fileURLWithPath: expanded, isDirectory: true)
+        }
+        AppLogger.engine.warning(
+            "SnapshotRetentionService: archive_dir '\(expanded, privacy: .public)' is outside workspacesRoot — falling back to default _archive"
+        )
+        return defaultArchive
     }
 
     private static func loadRetentionConfig(workspace: URL) -> RetentionConfig? {
@@ -148,6 +165,8 @@ enum SnapshotRetentionService {
         }
 
         if let summariesDir {
+            // WARNING: when mode == .delete this permanently removes durable trend summaries.
+            // Both include_summaries and enabled must be explicitly opted into (both default false).
             acted += sweepDirectory(
                 summariesDir, archiveSubpath: "summaries",
                 archiveRoot: archiveRoot, policy: policy, now: now, fm: fm, onLine: onLine

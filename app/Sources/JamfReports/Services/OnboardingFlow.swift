@@ -408,6 +408,12 @@ final class OnboardingFlow {
             protectConnectionError = FlowError.missingJamfCLI.localizedDescription
             return
         }
+        // S1: reject http:// URLs before any secret reaches the PTY.
+        // Mirrors the Platform Gateway guard at registerPlatformGatewayProfile().
+        guard isProtectURLValid else {
+            protectConnectionError = FlowError.invalidJamfURL.localizedDescription
+            return
+        }
 
         isConnectingProtect = true
         defer { isConnectingProtect = false }
@@ -464,6 +470,12 @@ final class OnboardingFlow {
             schoolConnectionError = FlowError.missingJamfCLI.localizedDescription
             return
         }
+        // S1: reject http:// URLs before any secret reaches the PTY.
+        // Mirrors the Platform Gateway guard at registerPlatformGatewayProfile().
+        guard isSchoolURLValid else {
+            schoolConnectionError = FlowError.invalidJamfURL.localizedDescription
+            return
+        }
 
         isConnectingSchool = true
         defer { isConnectingSchool = false }
@@ -518,8 +530,20 @@ final class OnboardingFlow {
     }
 
     /// stdin bytes for OAuth2 profile registration (clientID\nclientSecret\n).
+    ///
+    /// Bytes are appended directly to avoid creating a temporary String that holds
+    /// the secret in plaintext. The returned Data is wiped via `resetBytes` in the
+    /// caller's `defer`. Residual COW limitation: the `clientSecret` String property
+    /// itself may survive in a CoW-shared buffer after `clearClientSecret()`; the
+    /// authoritative zero of the actually-transmitted bytes is the `stdinData.resetBytes`
+    /// defer in `registerOAuth2Profile`.
     static func proOAuth2Stdin(clientID: String, clientSecret: String) -> Data {
-        Data((clientID + "\n" + clientSecret + "\n").utf8)
+        var data = Data()
+        data.append(contentsOf: clientID.utf8)
+        data.append(0x0A)
+        data.append(contentsOf: clientSecret.utf8)
+        data.append(0x0A)
+        return data
     }
 
     /// Arguments for `jamf-cli config add-profile` using Platform Gateway auth.
@@ -534,8 +558,15 @@ final class OnboardingFlow {
     }
 
     /// stdin bytes for Platform Gateway profile registration (clientID\nclientSecret\n).
+    ///
+    /// See `proOAuth2Stdin` for the COW residual-limitation note that applies equally here.
     static func platformGatewayStdin(clientID: String, clientSecret: String) -> Data {
-        Data((clientID + "\n" + clientSecret + "\n").utf8)
+        var data = Data()
+        data.append(contentsOf: clientID.utf8)
+        data.append(0x0A)
+        data.append(contentsOf: clientSecret.utf8)
+        data.append(0x0A)
+        return data
     }
 
     /// Arguments for `jamf-cli protect setup`.
@@ -547,8 +578,15 @@ final class OnboardingFlow {
     }
 
     /// stdin bytes for Protect setup (clientID\nclientSecret\n).
+    ///
+    /// See `proOAuth2Stdin` for the COW residual-limitation note that applies equally here.
     static func protectStdin(clientID: String, clientSecret: String) -> Data {
-        Data((clientID + "\n" + clientSecret + "\n").utf8)
+        var data = Data()
+        data.append(contentsOf: clientID.utf8)
+        data.append(0x0A)
+        data.append(contentsOf: clientSecret.utf8)
+        data.append(0x0A)
+        return data
     }
 
     /// Arguments for `jamf-cli school setup`.
@@ -560,10 +598,19 @@ final class OnboardingFlow {
     }
 
     /// stdin bytes for School setup (networkID\napiKey\nn\n).
-    /// The trailing "n\n" is a defensive answer to the optional
+    ///
+    /// The trailing `n\n` is a defensive answer to the optional
     /// "Configure Platform API access?" prompt.
+    ///
+    /// See `proOAuth2Stdin` for the COW residual-limitation note that applies equally here.
     static func schoolStdin(networkID: String, apiKey: String) -> Data {
-        Data((networkID + "\n" + apiKey + "\nn\n").utf8)
+        var data = Data()
+        data.append(contentsOf: networkID.utf8)
+        data.append(0x0A)
+        data.append(contentsOf: apiKey.utf8)
+        data.append(0x0A)
+        data.append(contentsOf: "n\n".utf8)
+        return data
     }
 
     /// Sanitize a human-readable display name into a valid profile slug.
@@ -811,6 +858,8 @@ final class OnboardingFlow {
     }
 
     var isGatewayURLValid: Bool { normalizedURL(gatewayURL.trimmed) != nil }
+    var isProtectURLValid: Bool { normalizedURL(protectURL.trimmed) != nil }
+    var isSchoolURLValid: Bool { normalizedURL(schoolURL.trimmed) != nil }
 
     private var normalizedJamfURL: URL? { normalizedURL(jamfURL.trimmed) }
 

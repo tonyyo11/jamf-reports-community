@@ -66,13 +66,18 @@ enum WebhookNotifier {
 
     /// Post `facts` under `title` to the configured webhook. No-op when the
     /// config is not usable (off / no https URL). Never throws.
-    static func send(config: NotifyConfig, title: String, facts: [Fact]) async {
-        guard config.isUsable, let url = URL(string: config.resolvedURL) else { return }
+    ///
+    /// Returns `true` when the post is a no-op (webhook disabled) or succeeds
+    /// with a 2xx response. Returns `false` on encode failure, non-2xx, or
+    /// network error so callers can record a warning in the run audit trail.
+    @discardableResult
+    static func send(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
+        guard config.isUsable, let url = URL(string: config.resolvedURL) else { return true }
         guard let body = payload(provider: config.resolvedProvider, title: title, facts: facts) else {
             AppLogger.cli.warning(
                 "WebhookNotifier: failed to encode \(config.resolvedProvider.rawValue, privacy: .public) payload"
             )
-            return
+            return false
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -83,11 +88,14 @@ enum WebhookNotifier {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 AppLogger.cli.warning("WebhookNotifier: webhook returned HTTP \(http.statusCode)")
+                return false
             }
+            return true
         } catch {
             AppLogger.cli.warning(
                 "WebhookNotifier: post failed: \(error.localizedDescription, privacy: .private)"
             )
+            return false
         }
     }
 }

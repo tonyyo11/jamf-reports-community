@@ -34,10 +34,13 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     private let started: Date
     private let label: String
 
-    /// Returns nil when the automation directories cannot be created or the
-    /// log file cannot be opened — the run proceeds without recording rather
-    /// than failing.
+    /// Returns nil when the label is not a valid LaunchAgent label, when the
+    /// automation directories cannot be created, or when the log file cannot
+    /// be opened — the run proceeds without recording rather than failing.
     init?(workspace: URL, label: String, now: Date = Date()) {
+        // Reject labels that fail the LaunchAgent validation so a
+        // caller-side omission cannot write to an attacker-influenced path.
+        guard LaunchAgentWriter.isValidLabel(label) else { return nil }
         self.started = now
         self.label = label
 

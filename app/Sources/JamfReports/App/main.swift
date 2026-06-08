@@ -16,8 +16,11 @@ import SwiftUI
 /// a failed group logs a warning and never fails the overall run. Lookback for
 /// the delta columns follows the report cadence (daily 1d / weekly 7d /
 /// monthly 30d).
+///
+/// `record` receives `[warn]` messages for failures so callers can route them
+/// to a `ScheduledRunRecorder` when one is in scope.
 @Sendable
-private func emitConsolidatedReports() {
+private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in }) {
     let policy = AutomationPolicy.current()
     guard !policy.reportGroups.isEmpty else { return }
     let lookback: Int = {
@@ -36,31 +39,48 @@ private func emitConsolidatedReports() {
                 print("[ok] consolidated fleet report: \(url.lastPathComponent)")
             }
         } catch {
-            fputs(
-                "[warn] consolidated report for '\(group.name)' failed: \(error.localizedDescription)\n",
-                stderr
-            )
+            let message = "[warn] consolidated report for '\(group.name)' failed: \(error.localizedDescription)"
+            fputs(message + "\n", stderr)
+            record(message)
         }
     }
 }
 
 /// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
 /// is enabled with a usable https URL. Best-effort — never affects the run.
+///
+/// `sheetFailures` > 0 sets Status to "Partial" and appends a "Sheets failed"
+/// fact so degraded runs are not misreported as successes.
+/// `recorder` receives a `[warn]` line when the post fails, making the failure
+/// visible in Run History rather than only in `~/Library/Logs`.
 @Sendable
 private func notifyScheduledRun(
     config: ReportConfig?,
     profile: String,
     mode: Schedule.RunMode,
-    artifact: String?
+    artifact: String?,
+    sheetFailures: Int = 0,
+    recorder: ScheduledRunRecorder?
 ) async {
     guard let notify = config?.notify, notify.isUsable else { return }
+    let statusValue = sheetFailures > 0 ? "Partial" : "Success"
     var facts: [WebhookNotifier.Fact] = [
         .init(label: "Profile", value: profile),
         .init(label: "Run", value: mode.displayTitle),
-        .init(label: "Status", value: "Success"),
+        .init(label: "Status", value: statusValue),
     ]
+    if sheetFailures > 0 {
+        facts.append(.init(label: "Sheets failed", value: "\(sheetFailures)"))
+    }
     if let artifact { facts.append(.init(label: "Report", value: artifact)) }
-    await WebhookNotifier.send(config: notify, title: "Jamf Report — \(profile)", facts: facts)
+    let sent = await WebhookNotifier.send(
+        config: notify, title: "Jamf Report — \(profile)", facts: facts
+    )
+    if !sent {
+        let message = "[warn] webhook notification failed for '\(profile)'"
+        fputs(message + "\n", stderr)
+        recorder?.record(message)
+    }
 }
 
 /// The installed jamf-cli version when it is present but below the supported
@@ -233,7 +253,10 @@ private func scheduledRunSingle(
             let message = "[ok] scheduled snapshot complete for '\(profile)' — Trends updated"
             print(message)
             recorder?.record(message)
-            await notifyScheduledRun(config: routingConfig, profile: profile, mode: mode, artifact: nil)
+            await notifyScheduledRun(
+                config: routingConfig, profile: profile, mode: mode,
+                artifact: nil, recorder: recorder
+            )
             recorder?.finish(exitCode: 0)
             return 0
         }
@@ -242,14 +265,17 @@ private func scheduledRunSingle(
         let dataDir = try WorkspacePaths.dataDir(for: profile)
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
-        try await engine.generate(csvURL: resolvedCSV, outputURL: outputURL)
+        let failures = try await engine.generate(csvURL: resolvedCSV, outputURL: outputURL)
         let message = "[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)"
         print(message)
         recorder?.record(message)
         // Tighten permissions on generated report and any newly written files.
         await WorkspacePermissionHardener.tighten(profile: profile)
         await notifyScheduledRun(
-            config: config, profile: profile, mode: mode, artifact: outputURL.lastPathComponent
+            config: config, profile: profile, mode: mode,
+            artifact: outputURL.lastPathComponent,
+            sheetFailures: failures.count,
+            recorder: recorder
         )
         recorder?.finish(exitCode: 0, artifacts: [outputURL])
         return 0
