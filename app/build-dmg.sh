@@ -7,8 +7,7 @@
 # Environment:
 #   SIGNING_IDENTITY   codesign identity hash or name (default: auto-pick
 #                      Developer ID Application for team TEAM_ID)
-#   TEAM_ID            Apple Developer team ID to match in keychain
-#                      (default: HH6NWGU4G8 — Anthony Young)
+#   TEAM_ID            Apple Developer team ID to match in keychain (required)
 #   SKIP_NOTARIZE      set to any value to skip notarization (default for debug)
 #   NOTARY_PROFILE     xcrun notarytool keychain profile name (default: JamfReports-Notary)
 #
@@ -151,10 +150,11 @@ rm -f "$DMG_TMP"
 rm -rf "$DMG_STAGING"
 
 # Resolve signing identity.
-# Match by team ID (e.g. HH6NWGU4G8) inside the Developer ID Application cert
-# name. This is stable across cert renewals — when the cert is renewed, the new
-# cert keeps the same team ID, so the script keeps finding it without edits.
-TEAM_ID="${TEAM_ID:-HH6NWGU4G8}"
+# Match by team ID inside the Developer ID Application cert name. This is stable
+# across cert renewals — when the cert is renewed, the new cert keeps the same
+# team ID, so the script keeps finding it without edits.
+# Set TEAM_ID in the environment; e.g.: export TEAM_ID=XXXXXXXXXX
+TEAM_ID="${TEAM_ID:?set TEAM_ID to your Apple Developer Team ID}"
 if [[ -z "${SIGNING_IDENTITY:-}" ]]; then
   SIGNING_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
     | awk -v team="(${TEAM_ID})" '

@@ -12,8 +12,7 @@
 # Environment:
 #   INSTALLER_IDENTITY   productsign identity (default: auto-pick Developer ID
 #                        Installer for team TEAM_ID)
-#   TEAM_ID              Apple Developer team ID to match in keychain
-#                        (default: HH6NWGU4G8 — Anthony Young)
+#   TEAM_ID              Apple Developer team ID to match in keychain (required)
 #   SKIP_NOTARIZE        set to any value to skip notarization (default for debug)
 #   NOTARY_PROFILE       xcrun notarytool keychain profile name
 #                        (default: JamfReports-Notary)
@@ -141,7 +140,8 @@ productbuild \
 
 # Resolve Developer ID Installer identity.
 # Match by team ID inside the cert name — stable across cert renewals.
-TEAM_ID="${TEAM_ID:-HH6NWGU4G8}"
+# Set TEAM_ID in the environment; e.g.: export TEAM_ID=XXXXXXXXXX
+TEAM_ID="${TEAM_ID:?set TEAM_ID to your Apple Developer Team ID}"
 if [[ -z "${INSTALLER_IDENTITY:-}" ]]; then
   INSTALLER_IDENTITY=$(security find-identity -v 2>/dev/null \
     | awk -v team="(${TEAM_ID})" '

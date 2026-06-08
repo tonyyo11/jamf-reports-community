@@ -17,6 +17,8 @@ jobs:
   generate-report:
     name: Generate report
     runs-on: macos-latest   # macOS runner gives access to jamf-cli via Homebrew
+    permissions:
+      contents: read
 
     steps:
       # ------------------------------------------------------------------
@@ -85,14 +87,10 @@ jobs:
           CSV_PATH: ${{ github.event.inputs.csv_path || '' }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
         run: |
-          ARGS=""
-          if [ -n "$CSV_PATH" ]; then
-            ARGS="$ARGS --csv \"$CSV_PATH\""
-          fi
-          if [ -n "$TEAMS_WEBHOOK_URL" ]; then
-            ARGS="$ARGS --notify \"$TEAMS_WEBHOOK_URL\""
-          fi
-          eval python3 jamf-reports-community.py generate $ARGS
+          ARGS=()
+          if [ -n "$CSV_PATH" ]; then ARGS+=(--csv "$CSV_PATH"); fi
+          if [ -n "$TEAMS_WEBHOOK_URL" ]; then ARGS+=(--notify "$TEAMS_WEBHOOK_URL"); fi
+          python3 jamf-reports-community.py generate "${ARGS[@]}"
 
       # ------------------------------------------------------------------
       # 7. Upload the Excel report as a workflow artifact.
