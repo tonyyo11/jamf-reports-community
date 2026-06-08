@@ -4298,6 +4298,7 @@ class LogRedactor:
         "username": "user",
         "user_name": "user",
         "user": "user",
+        "operatoruserhost": "user",
         "realname": "user",
         "real_name": "user",
         "email": "email",
@@ -6377,6 +6378,11 @@ class JamfCLIBridge:
 
 SOFA_FEED_URL = "https://sofafeed.macadmins.io/v2/{platform}_data_feed.json"
 
+# The SOFA v2 feed files that actually exist. iPadOS is served by the `ios`
+# feed, so there is no separate `ipados` feed. Values outside this set are
+# rejected before URL interpolation (C5a).
+_SOFA_VALID_PLATFORMS: frozenset[str] = frozenset({"macos", "ios", "tvos", "watchos"})
+
 # Maps SOFA feed platform identifiers to the human-readable label used in the
 # report. iPadOS shares the `ios` feed and is surfaced as a single combined row.
 SOFA_PLATFORM_LABELS: dict[str, str] = {
@@ -6440,9 +6446,18 @@ class SOFAFeedClient:
         self._timeout = max(1, _to_int(sofa_cfg.get("timeout_seconds", 30), 30))
         self._max_cache_age_hours = max(0, _to_int(sofa_cfg.get("max_cache_age_hours", 24), 24))
         platforms = sofa_cfg.get("platforms") or ["macos", "ios", "tvos", "watchos"]
-        self._platforms = [
-            str(p).strip().lower() for p in platforms if str(p).strip()
-        ]
+        self._platforms = []
+        for raw_platform in platforms:
+            plat = str(raw_platform).strip().lower()
+            if not plat:
+                continue
+            # Allow-list against the SOFA v2 feed files (iPadOS shares the `ios`
+            # feed). Unknown values are dropped before URL interpolation so a
+            # malformed config can't reach an arbitrary fetch URL.
+            if plat not in _SOFA_VALID_PLATFORMS:
+                print(f"  [warn] SOFA: ignoring unknown platform '{plat}'.")
+                continue
+            self._platforms.append(plat)
         self._reference_date = reference_date or date.today()
         self._cache_dir = self._resolve_cache_dir(config, sofa_cfg)
 
@@ -15987,6 +16002,8 @@ def _post_webhook_notification(
     sheets_written: int,
     generated_at: str,
     provider: str = "teams",
+    run_status: str = "ok",
+    sheet_failures: int = 0,
 ) -> None:
     """Post a report-generated summary to a Teams or Slack incoming webhook.
 
@@ -15996,13 +16013,22 @@ def _post_webhook_notification(
         sheets_written: Total number of sheets written to the workbook.
         generated_at: Human-readable generation timestamp string.
         provider: "teams" (default) or "slack" — selects the payload format.
+        run_status: ``"ok"``, ``"partial"``, or ``"fail"`` — surfaces a degraded
+            run instead of always implying success.
+        sheet_failures: Count of sheets that failed to write; shown when the run
+            is partial.
     """
-    title = "Jamf Report Generated"
+    is_partial = run_status == "partial"
+    title = "Jamf Report Generated (Partial)" if is_partial else "Jamf Report Generated"
+    status_label = "Partial" if is_partial else "Success"
     facts = [
         ("File", report_path.name),
+        ("Status", status_label),
         ("Sheets", str(sheets_written)),
         ("Generated", generated_at),
     ]
+    if is_partial:
+        facts.insert(3, ("Sheets failed", str(sheet_failures)))
     if provider == "slack":
         payload, label = _slack_blocks_payload(title, facts), "Slack"
     else:
@@ -16471,7 +16497,8 @@ def cmd_generate(
     if resolved_notify_url:
         print(f"  Sending {notify_provider} notification...")
         _post_webhook_notification(
-            resolved_notify_url, out_path, sheets_written, generated_at, notify_provider
+            resolved_notify_url, out_path, sheets_written, generated_at, notify_provider,
+            run_status=run_status, sheet_failures=len(sheet_failures),
         )
 
     if config.output.get("export_pptx") is True:
@@ -19993,12 +20020,28 @@ _RETENTION_SKIP_SUBDIRS = {"state", "sofa"}
 
 def _retention_archive_root(config: Config) -> Path:
     """Resolve the raw-snapshot archive root: ``retention.archive_dir`` if set,
-    else ``<base_dir>/_archive``. Distinct from the reports archive."""
+    else ``<base_dir>/_archive``. Distinct from the reports archive.
+
+    An absolute ``archive_dir`` that escapes the workspace root is rejected (logged
+    and replaced with the default) so retention can never move snapshots outside
+    the workspace. Relative paths are joined to the workspace as before.
+    """
+    default = config.base_dir / "_archive"
     raw = str(config.retention.get("archive_dir", "") or "").strip()
-    if raw:
-        path = Path(raw).expanduser()
-        return path if path.is_absolute() else (config.base_dir / path)
-    return config.base_dir / "_archive"
+    if not raw:
+        return default
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        return config.base_dir / path
+    workspace = config.base_dir.resolve()
+    resolved = path.resolve()
+    if resolved == workspace or workspace in resolved.parents:
+        return path
+    print(
+        f"  [warning] retention.archive_dir '{raw}' is outside the workspace root "
+        f"'{config.base_dir}'; falling back to {default}."
+    )
+    return default
 
 
 def _retention_act(path: Path, archive_subpath: str, archive_root: Path, mode: str) -> bool:
@@ -20026,19 +20069,24 @@ def _sweep_snapshot_dir(
     mode: str,
     keep_days: int,
     keep_count: int,
-) -> int:
+) -> tuple[int, int]:
     """Archive/delete files in one snapshot dir. A file is kept if EITHER the
-    age horizon (keep_days) or the count floor (keep_count) protects it."""
+    age horizon (keep_days) or the count floor (keep_count) protects it.
+
+    Returns ``(acted, failed)`` — the number of files successfully processed and
+    the number whose archive/delete raised (already logged by ``_retention_act``).
+    """
     files = [
         (entry, entry.stat().st_mtime)
         for entry in directory.iterdir()
         if entry.is_file() and not entry.name.startswith(".")
     ]
     if not files:
-        return 0
+        return 0, 0
     files.sort(key=lambda item: item[1], reverse=True)  # newest first
     cutoff = datetime.now().timestamp() - keep_days * 86_400
     acted = 0
+    failed = 0
     for rank, (path, mtime) in enumerate(files):
         protected_by_count = keep_count > 0 and rank < keep_count
         protected_by_age = keep_days > 0 and mtime >= cutoff
@@ -20046,7 +20094,9 @@ def _sweep_snapshot_dir(
             continue
         if _retention_act(path, archive_subpath, archive_root, mode):
             acted += 1
-    return acted
+        else:
+            failed += 1
+    return acted, failed
 
 
 def _sweep_snapshots(config: Config) -> int:
@@ -20084,28 +20134,37 @@ def _sweep_snapshots(config: Config) -> int:
     archive_root = _retention_archive_root(config)
 
     acted = 0
+    failed = 0
     for sub in sorted(data_dir.iterdir()):
         if not sub.is_dir():
             continue
         if sub.name in _RETENTION_SKIP_SUBDIRS or sub.name.startswith("_"):
             continue
-        acted += _sweep_snapshot_dir(
+        sub_acted, sub_failed = _sweep_snapshot_dir(
             sub, f"jamf-cli-data/{sub.name}", archive_root, mode, keep_days, keep_count
         )
+        acted += sub_acted
+        failed += sub_failed
 
     if include_summaries:
         hist = config.resolve_path("charts", "historical_csv_dir", default="snapshots")
         summaries = (hist / "summaries") if hist else None
         if summaries and summaries.is_dir():
-            acted += _sweep_snapshot_dir(
+            sum_acted, sum_failed = _sweep_snapshot_dir(
                 summaries, "summaries", archive_root, mode, keep_days, keep_count
             )
+            acted += sum_acted
+            failed += sum_failed
 
-    try:
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(today, encoding="utf-8")
-    except OSError:
-        pass
+    # Only stamp the once-per-day marker when nothing failed, so a transient
+    # archive/delete failure (already logged per-file) retries on the next
+    # collect instead of being short-circuited until tomorrow.
+    if failed == 0:
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(today, encoding="utf-8")
+        except OSError:
+            pass
     if acted:
         verb = "archived" if mode == "archive" else "deleted"
         print(f"  [info] retention: {verb} {acted} snapshot file(s)")
@@ -20163,6 +20222,9 @@ def _is_jamf_auth_failure(exc: BaseException) -> bool:
         # contain "unauthorized"/"401" is a privilege or other error, NOT dead
         # credentials — keyword-matching it would misclassify it as auth-dead.
         return code == _JAMF_CLI_EXIT_UNAUTHORIZED
+    # By-design divergence from the Swift engine (which is exit-code-only): the
+    # keyword fallback is intentional and fires ONLY when no jamf-cli exit code
+    # could be parsed from the message, so it never overrides an authoritative code.
     text = str(exc).lower()
     return "401" in text or "unauthorized" in text
 
@@ -22038,6 +22100,10 @@ def cmd_multi_launchagent_run(
                         "finished_at": datetime.now(timezone.utc).isoformat(),
                     })
             for future in not_done:
+                # cancel() only prevents a not-yet-started future from running;
+                # it cannot stop a worker thread already executing, so a late-
+                # finishing thread's real result may diverge from the timeout
+                # status recorded here.
                 future.cancel()
                 profile = futures[future]
                 results.append({
