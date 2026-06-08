@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-08
+
 ### Added (v2.2.0 cycle)
 
 - Multi-product onboarding: the Jamf Pro connection step offers Standard
