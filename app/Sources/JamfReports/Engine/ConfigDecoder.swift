@@ -950,8 +950,51 @@ enum ConfigLoader {
             switch self {
             case .fileNotFound(let u): return "config.yaml not found at \(u.path)"
             case .encodingError(let u): return "Could not read config.yaml at \(u.path)"
-            case .decodeError(let ctx, let e): return "Config decode failed (\(ctx)): \(e.localizedDescription)"
+            case .decodeError(let ctx, let e):
+                if let detail = ConfigLoader.describeDecodingFailure(e) {
+                    return "Config decode failed (\(ctx)): \(detail)"
+                }
+                return "Config decode failed (\(ctx)): \(e.localizedDescription)"
             }
+        }
+
+        /// The YAML key path + problem, when the underlying error is a
+        /// `DecodingError` — e.g. `charts.compliance_trend.bands[0]: missing
+        /// 'label'`. Nil for non-decoding failures.
+        var keyPathDetail: String? {
+            guard case .decodeError(_, let underlying) = self else { return nil }
+            return ConfigLoader.describeDecodingFailure(underlying)
+        }
+    }
+
+    /// Render a `DecodingError` as a YAML key path plus a one-phrase problem
+    /// statement. The decoder always knows exactly where it gave up — "the
+    /// file may be corrupt" threw that information away (#181 field report).
+    static func describeDecodingFailure(_ error: Error) -> String? {
+        guard let decoding = error as? DecodingError else { return nil }
+        func path(_ keys: [CodingKey]) -> String {
+            let joined = keys.map { key in
+                key.intValue.map { "[\($0)]" } ?? key.stringValue
+            }.joined(separator: ".")
+            return joined.replacingOccurrences(of: ".[", with: "[")
+        }
+        switch decoding {
+        case .keyNotFound(let key, let context):
+            let location = path(context.codingPath)
+            return location.isEmpty
+                ? "missing '\(key.stringValue)'"
+                : "\(location): missing '\(key.stringValue)'"
+        case .typeMismatch(_, let context):
+            return "\(path(context.codingPath)): value has the wrong type"
+        case .valueNotFound(_, let context):
+            return "\(path(context.codingPath)): null where a value is required"
+        case .dataCorrupted(let context):
+            let location = path(context.codingPath)
+            return location.isEmpty
+                ? "file is not valid YAML"
+                : "\(location): invalid value"
+        @unknown default:
+            return nil
         }
     }
 

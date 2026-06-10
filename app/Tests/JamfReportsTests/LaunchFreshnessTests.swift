@@ -59,8 +59,9 @@ final class LaunchFreshnessTests: XCTestCase {
         let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
         // .inventory probe kind = "computers" (8 days old → stale). ea-results is
         // now inventory-tier too, but inventory probes "computers", so the old
-        // 8-day computers file still makes inventory stale. .scan now probes
-        // update-device-failures (absent here → never-collected, not reported).
+        // 8-day computers file still makes inventory stale. .scan probes
+        // update-device-failures (absent here → never-collected, which #181
+        // also reports as stale on an existing workspace).
         let computersDir = dataDir.appendingPathComponent("computers", isDirectory: true)
         let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
@@ -77,24 +78,67 @@ final class LaunchFreshnessTests: XCTestCase {
 
         let stale = WorkspaceStore.staleTiers(profile: profile, olderThan: 7 * 86_400)
 
-        XCTAssertEqual(stale, [.inventory], "computers (8d) makes inventory stale; scan never-collected")
+        XCTAssertEqual(stale, [.inventory, .scan],
+                       "computers (8d) makes inventory stale; never-collected scan is stale too (#181)")
     }
 
-    func testStaleTiersIgnoresNeverCollectedTiers() throws {
+    /// #181: a workspace that exists but has never collected reports BOTH heavy
+    /// tiers as stale, so the Overview prompt is reachable on a fresh
+    /// workspace. (Inverts the pre-2.2.1 behavior, which treated never-collected
+    /// as not-stale and left a new user with no collect affordance at all.)
+    func testStaleTiersReportsNeverCollectedTiersWhenWorkspaceExists() throws {
         let profile = "stalen\(Int.random(in: 10_000...99_999))"
         guard let root = WorkspacePathGuard.root(for: profile) else {
             throw XCTSkip("workspace root unavailable for test profile")
         }
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        // Workspace exists but has no snapshots at all → nothing reported
-        // (the per-page empty states cover the never-collected case).
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("jamf-cli-data", isDirectory: true),
             withIntermediateDirectories: true
         )
 
         let stale = WorkspaceStore.staleTiers(profile: profile, olderThan: 7 * 86_400)
-        XCTAssertTrue(stale.isEmpty)
+        XCTAssertEqual(stale, [.inventory, .scan],
+                       "never-collected tiers must surface the prompt on an existing workspace")
+    }
+
+    /// #181 boundary: no workspace directory at all → nothing reported. The
+    /// Overview "Configuration incomplete" init banner owns that state; the
+    /// heavy-tier prompt must not stack on top of it.
+    func testStaleTiersEmptyWhenWorkspaceMissing() {
+        let profile = "stalem\(Int.random(in: 10_000...99_999))"
+        XCTAssertFalse(WorkspaceStore.workspaceExists(profile: profile))
+        XCTAssertTrue(WorkspaceStore.staleTiers(profile: profile, olderThan: 7 * 86_400).isEmpty)
+    }
+
+    /// "Attempted but produced no data": a fresh snapshot in ANY kind proves a
+    /// recent collect, so a stale tier with no probe snapshot at all is
+    /// classified no-data (drives the "couldn't be collected" prompt copy).
+    func testTiersWithNoDataRequiresRecentCollectEvidence() throws {
+        let profile = "stalend\(Int.random(in: 10_000...99_999))"
+        guard let root = WorkspacePathGuard.root(for: profile) else {
+            throw XCTSkip("workspace root unavailable for test profile")
+        }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let computersDir = root.appendingPathComponent(
+            "jamf-cli-data/computers", isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
+
+        // No snapshots anywhere → no evidence of a collect → nothing classified.
+        XCTAssertTrue(
+            WorkspaceStore.tiersWithNoData(profile: profile, among: [.inventory, .scan]).isEmpty
+        )
+
+        // A fresh computers snapshot → recent collect; the scan probe kind
+        // (update-device-failures) is absent → scan produced no data.
+        try "[]".write(
+            to: computersDir.appendingPathComponent("computers_now.json"),
+            atomically: true, encoding: .utf8
+        )
+        let noData = WorkspaceStore.tiersWithNoData(profile: profile, among: [.inventory, .scan])
+        XCTAssertEqual(noData, [.scan],
+                       "inventory's probe (computers) has data; scan's does not")
     }
 
     func testNewestSnapshotAgeNilForMissingKind() {

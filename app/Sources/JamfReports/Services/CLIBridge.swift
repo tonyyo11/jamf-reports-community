@@ -451,9 +451,7 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else {
-            throw CLIBridgeError.configLoadFailed(path: configURL.path)
-        }
+        let config = try loadConfig(at: configURL, onLine: onLine)
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -525,7 +523,7 @@ final class CLIBridge {
     private func loadConfig(
         at url: URL,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) -> ReportConfig? {
+    ) throws -> ReportConfig {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return ReportConfig()
         }
@@ -535,7 +533,11 @@ final class CLIBridge {
             let msg = "[error] config.yaml parse failed — aborting: \(error.localizedDescription)"
             AppLogger.cli.error("\(msg, privacy: .private)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
-            return nil
+            throw CLIBridgeError.configLoadFailed(
+                path: url.path,
+                detail: (error as? ConfigLoader.LoadError)?.keyPathDetail
+                    ?? ConfigLoader.describeDecodingFailure(error)
+            )
         }
     }
 
@@ -580,9 +582,7 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else {
-            throw CLIBridgeError.configLoadFailed(path: configURL.path)
-        }
+        let config = try loadConfig(at: configURL, onLine: onLine)
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -1057,9 +1057,7 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else {
-            throw CLIBridgeError.configLoadFailed(path: configURL.path)
-        }
+        let config = try loadConfig(at: configURL, onLine: onLine)
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
@@ -1128,15 +1126,24 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else {
-            throw CLIBridgeError.configLoadFailed(path: configURL.path)
-        }
+        let config = try loadConfig(at: configURL, onLine: onLine)
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] could not resolve data_dir for \(profile)"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let outputURL = URL(fileURLWithPath: outFile)
+        // Epic #103: refuse sensitive destinations before creating directories —
+        // a future non-UI caller (scheduled run, agent) could otherwise create
+        // arbitrary directory trees. Deny-list rather than a workspace
+        // allow-list on purpose: the sole UI caller is an NSSavePanel, and a
+        // strict allow-list would silently re-break user-chosen export
+        // destinations (the B-04 regression PR #161 removed).
+        guard !WorkspacePaths.isSensitiveAbsolutePath(outputURL) else {
+            onLine(.init(timestamp: Date(), level: .fail,
+                text: "[error] refusing to write PDF into a sensitive path: \(outputURL.path)"))
+            throw CLIBridgeError.directoryOperationFailed(path: outputURL.path)
+        }
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -1192,9 +1199,7 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let configURL = workspace.appendingPathComponent("config.yaml")
-        guard let config = loadConfig(at: configURL, onLine: onLine) else {
-            throw CLIBridgeError.configLoadFailed(path: configURL.path)
-        }
+        let config = try loadConfig(at: configURL, onLine: onLine)
         let outputURL: URL
         if let path = outFile {
             outputURL = URL(fileURLWithPath: path)
@@ -1529,7 +1534,7 @@ final class CLIBridge {
         guard FileManager.default.fileExists(atPath: configURL.path) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] config.yaml not found — run workspace-init first"))
-            throw CLIBridgeError.configLoadFailed(path: configURL.path)
+            throw CLIBridgeError.configLoadFailed(path: configURL.path, detail: nil)
         }
         do {
             let config = try ConfigLoader.load(from: configURL)
@@ -1594,7 +1599,11 @@ final class CLIBridge {
         } catch {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(error.localizedDescription)"))
-            throw CLIBridgeError.configLoadFailed(path: workspace.appendingPathComponent("config.yaml").path)
+            throw CLIBridgeError.configLoadFailed(
+                path: workspace.appendingPathComponent("config.yaml").path,
+                detail: (error as? ConfigLoader.LoadError)?.keyPathDetail
+                    ?? ConfigLoader.describeDecodingFailure(error)
+            )
         }
     }
 

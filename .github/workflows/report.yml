@@ -83,12 +83,19 @@ jobs:
       #    Remove or skip this step if jamf-cli is not in use.
       # ------------------------------------------------------------------
       - name: Authenticate jamf-cli
-        if: ${{ secrets.JAMF_URL != '' }}
+        # The `secrets` context is not available in step-level `if:` —
+        # referencing it there makes GitHub reject the entire workflow file
+        # (a zero-job failed run on every push). Gate inside the script via
+        # the env binding instead.
         env:
           JAMF_URL: ${{ secrets.JAMF_URL }}
           JAMF_CLIENT_ID: ${{ secrets.JAMF_CLIENT_ID }}
           JAMF_CLIENT_SECRET: ${{ secrets.JAMF_CLIENT_SECRET }}
         run: |
+          if [ -z "$JAMF_URL" ]; then
+            echo "JAMF_URL secret not set — skipping jamf-cli auth"
+            exit 0
+          fi
           jamf-cli pro setup \
             --url "$JAMF_URL" \
             --client-id "$JAMF_CLIENT_ID" \

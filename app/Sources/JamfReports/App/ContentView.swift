@@ -14,6 +14,10 @@ struct ContentView: View {
     /// the app mid-onboarding, the chooser shows again on next launch,
     /// which is the right behaviour: they didn't commit to a path.
     @State private var userPickedOnboarding = false
+    /// Secondary onboarding (#181 follow-on): how the setup screen was
+    /// dismissed. A completed setup re-offers if every workspace is later
+    /// wiped (on-disk state IS first launch again); a skip is permanent.
+    @AppStorage(ExistingCLISetupFlow.outcomeKey) private var existingCLISetupOutcomeRaw = ""
     @AppStorage("sidebarMode") private var sidebarModeRaw: String = SidebarMode.expanded.rawValue
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
@@ -36,9 +40,26 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Theme.Colors.winBG.ignoresSafeArea())
             }
+        } else if showExistingCLISetup {
+            // Secondary onboarding: jamf-cli profiles exist (so the connection
+            // onboarding never runs) but no profile has a workspace yet —
+            // walk through automation setup + the first collection instead of
+            // dropping into an empty shell (#181).
+            ExistingCLISetupView(profileNames: workspace.profiles.map(\.name))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.Colors.winBG.ignoresSafeArea())
         } else {
             shell
         }
+    }
+
+    private var showExistingCLISetup: Bool {
+        ExistingCLISetupFlow.shouldOffer(
+            profileCount: workspace.profiles.count,
+            initializedProfileCount: workspace.initializedProfiles.count,
+            demoMode: workspace.demoMode,
+            outcome: ExistingCLISetupFlow.storedOutcome()
+        )
     }
 
     private var shell: some View {

@@ -25,6 +25,11 @@ final class WorkspaceStore {
     /// (per-device queries can stall on-prem Jamf Pro); the prompt's button
     /// is the only trigger.
     var staleHeavyTiers: [CollectionTier] = []
+    /// Subset of `staleHeavyTiers` whose probe kind has NO snapshot even
+    /// though the workspace collected recently — the last collect attempted
+    /// them and produced no data (e.g. a tenant with no update plans), as
+    /// opposed to data that has simply aged out. Drives honest prompt copy.
+    var heavyTiersWithNoData: Set<CollectionTier> = []
     var jamfCLIPath: String?
     var jamfCLIVersion: String?
     var jamfCLIInstallSource: String?
@@ -314,6 +319,50 @@ final class WorkspaceStore {
         }
         return nil
     }
+
+    /// Move an unparseable `config.yaml` aside and reseed the default from the
+    /// bundled example — the "start from scratch" recovery for a config the
+    /// engine cannot read (#181). The broken file is never deleted: it is kept
+    /// beside the new one as `config.yaml.broken-<timestamp>` for diffing.
+    /// Returns a user-facing error message, or nil on success.
+    func restoreDefaultConfig() async -> String? {
+        guard !demoMode else { return nil }
+        guard let workspaceURL = ProfileService.workspaceURL(for: profile) else {
+            return "Invalid profile name."
+        }
+        let config = workspaceURL.appendingPathComponent("config.yaml")
+        let stamp = Self.backupStampFormatter.string(from: Date())
+        let backupName = "config.yaml.broken-\(stamp)"
+        do {
+            if FileManager.default.fileExists(atPath: config.path) {
+                try FileManager.default.moveItem(
+                    at: config, to: workspaceURL.appendingPathComponent(backupName)
+                )
+            }
+            let exit = try await CLIBridge().initializeWorkspace(
+                profile: profile, onLine: CLIBridge.noOpOnLine
+            )
+            guard exit == 0, FileManager.default.fileExists(atPath: config.path) else {
+                return "Could not reseed the default config — your old file is preserved "
+                    + "as \(backupName)."
+            }
+        } catch {
+            return error.localizedDescription
+        }
+        configError = nil
+        reloadFromDisk()
+        toast = Toast(
+            message: "Default config restored — old file kept as \(backupName)",
+            style: .success
+        )
+        return nil
+    }
+
+    private static let backupStampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
 
     /// Call `ScaffoldService.writeMinimalConfig` first so the user gets a workspace
     /// even without jamf-cli auth, then optionally chain a `collect` call when

@@ -91,12 +91,14 @@ extension WorkspaceStore {
         }
         let activeProfile = profile
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
-        let stale = await Task.detached(priority: .utility) {
-            Self.staleTiers(profile: activeProfile, olderThan: threshold)
+        let (stale, noData) = await Task.detached(priority: .utility) {
+            let stale = Self.staleTiers(profile: activeProfile, olderThan: threshold)
+            return (stale, Self.tiersWithNoData(profile: activeProfile, among: stale))
         }.value
         // Profile may have switched while the probe ran off-actor.
         guard profile == activeProfile else { return }
         staleHeavyTiers = stale
+        heavyTiersWithNoData = noData
     }
 
     /// Collect the currently-stale heavy tiers, then clear the prompt.
@@ -125,6 +127,47 @@ extension WorkspaceStore {
         } catch {
             toast = Toast(message: "Refresh failed — \(error.localizedDescription)", style: .danger)
         }
+    }
+
+    /// First full collect for a never-fetched workspace (#181) — the
+    /// StaleDataBanner "Collect now" action. Runs every tier so the user gets
+    /// a complete starting point (dashboards + the first trend data point)
+    /// from one click, then re-probes heavy-tier staleness so the prompt
+    /// clears honestly. Failures surface as a toast instead of the silent
+    /// RefreshCoordinator backoff that left issue #181's reporter stranded.
+    func runFirstCollect() async {
+        guard canRefresh(profileSlug: profile) else { return }
+        let activeProfile = profile
+        globalStatus = "collecting jamf-cli data · profile=\(activeProfile)"
+        defer { globalStatus = nil }
+        do {
+            let exit = try await CLIBridge().collect(
+                profile: activeProfile, tiers: Set(CollectionTier.allCases), force: true,
+                onLine: CLIBridge.noOpOnLine
+            )
+            if exit == 0 {
+                toast = Toast(message: "First collection complete", style: .success)
+            } else if exit == CLIBridge.exitCodeUnauthorized {
+                toast = Toast(
+                    message: "Collect failed — jamf-cli credentials expired; re-authenticate "
+                        + "from Settings → Connections",
+                    style: .danger
+                )
+            } else {
+                // Exit 1 here is usually partial per-kind failures, not auth —
+                // blaming auth sent the #181 field tester to the wrong page.
+                toast = Toast(
+                    message: "Collect finished with errors (exit \(exit)) — see Run History "
+                        + "for the failing commands",
+                    style: .danger
+                )
+            }
+        } catch {
+            toast = Toast(
+                message: "Collect failed — \(error.localizedDescription)", style: .danger
+            )
+        }
+        await checkHeavyTierStaleness()
     }
 
     /// Run a Health Audit in the background when the cached audit snapshot is
@@ -164,10 +207,55 @@ extension WorkspaceStore {
     ) -> [CollectionTier] {
         [CollectionTier.inventory, .scan].filter { tier in
             guard let age = newestSnapshotAge(profile: profile, kind: tier.stalenessProbeKind) else {
-                return false
+                // #181: never-collected counts as stale once the workspace
+                // directory exists — the prompt is the only heavy-collect
+                // affordance a fresh workspace has. A missing workspace is the
+                // Overview init banner's job, not this prompt's.
+                return workspaceExists(profile: profile)
             }
             return age >= threshold
         }
+    }
+
+    /// Among `tiers`, those whose probe kind has no snapshot at all even
+    /// though the workspace collected recently — i.e. the last collect
+    /// attempted them and produced no data, as opposed to never-attempted or
+    /// aged-out data. Lets the prompt say "couldn't be collected" instead of
+    /// the contradictory "missing" right after a successful first collect.
+    nonisolated static func tiersWithNoData(
+        profile: String, among tiers: [CollectionTier]
+    ) -> Set<CollectionTier> {
+        guard workspaceCollectedRecently(profile: profile) else { return [] }
+        return Set(tiers.filter {
+            newestSnapshotAge(profile: profile, kind: $0.stalenessProbeKind) == nil
+        })
+    }
+
+    /// True when any snapshot kind has a file newer than `interval` —
+    /// evidence that a collect ran recently.
+    nonisolated static func workspaceCollectedRecently(
+        profile: String, within interval: TimeInterval = 86_400
+    ) -> Bool {
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                  at: dataDir, includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles]
+              ) else { return false }
+        return entries.contains { entry in
+            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            else { return false }
+            guard let age = newestSnapshotAge(profile: profile, kind: entry.lastPathComponent)
+            else { return false }
+            return age <= interval
+        }
+    }
+
+    /// True when the profile's workspace directory exists on disk.
+    nonisolated static func workspaceExists(profile: String) -> Bool {
+        guard let root = ProfileService.workspaceURL(for: profile) else { return false }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
     }
 
     /// Age in seconds of the newest .json snapshot under

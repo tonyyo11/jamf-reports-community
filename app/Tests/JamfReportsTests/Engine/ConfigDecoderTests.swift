@@ -4,6 +4,54 @@ import XCTest
 
 final class ConfigDecoderTests: XCTestCase {
 
+    // MARK: - Seed-file invariant (#181 field report)
+
+    /// `ensureWorkspace` seeds new workspaces from the bundled
+    /// `config.example.yaml`; if ConfigLoader cannot parse that file, every
+    /// fresh workspace is born broken ("config.yaml could not be parsed").
+    /// This pins the invariant against the real repo file.
+    func testConfigLoaderParsesTheShippedExampleConfig() throws {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        var example: URL?
+        for _ in 0..<8 {
+            let candidate = dir.appendingPathComponent("config.example.yaml")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                example = candidate
+                break
+            }
+            dir = dir.deletingLastPathComponent()
+        }
+        guard let example else {
+            throw XCTSkip("config.example.yaml not found above \(#filePath)")
+        }
+
+        XCTAssertNoThrow(
+            try ConfigLoader.load(from: example),
+            "the workspace seed file must parse with the app's own loader"
+        )
+    }
+
+    /// The recovery card shows WHERE the decode failed — pin the key-path
+    /// rendering against the exact failure from the #181 field report.
+    func testDecodeFailureCarriesYAMLKeyPath() {
+        let yaml = """
+        charts:
+          compliance_trend:
+            bands:
+              - {min_failures: 0, max_failures: 0, color: "#4472C4"}
+        """
+        do {
+            _ = try ConfigLoader.loadFromString(yaml)
+            XCTFail("band without 'label' must fail to decode")
+        } catch let error as ConfigLoader.LoadError {
+            let detail = error.keyPathDetail
+            XCTAssertEqual(detail, "charts.compliance_trend.bands[0]: missing 'label'",
+                           "key path must name the exact location; got: \(detail ?? "nil")")
+        } catch {
+            XCTFail("expected LoadError, got \(error)")
+        }
+    }
+
     // MARK: - withDefaults()
 
     func testWithDefaultsFillsMissingFields() {

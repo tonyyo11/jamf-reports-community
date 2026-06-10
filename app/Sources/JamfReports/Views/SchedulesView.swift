@@ -625,6 +625,16 @@ struct SchedulesView: View {
             showWriteError = true
             return
         }
+        // Epic #103: the manual editor must never remove a managed agent —
+        // parity with LaunchAgentService.archiveAndRemove's refusal. Normally
+        // unreachable (managed agents are torn down on entry to manual mode),
+        // but the two-mode Automation router makes this table reachable.
+        guard !ManagedAutomation.owns(label) else {
+            writeError = "\(schedule.name) is a managed automation agent — "
+                + "turn off Manage automation to remove it."
+            showWriteError = true
+            return
+        }
         Task {
             _ = await LaunchAgentWriter.unload(label)
             do {

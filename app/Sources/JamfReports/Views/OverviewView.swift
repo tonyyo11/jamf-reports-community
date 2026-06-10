@@ -14,6 +14,8 @@ struct OverviewView: View {
     @State private var isRunning = false
     /// True while the heavy-tier "Refresh now" prompt's collection is running.
     @State private var isRefreshingHeavyTiers = false
+    /// True while the never-fetched banner's "Collect now" first collect runs (#181).
+    @State private var isRunningFirstCollect = false
     /// When enabled, "Generate Report" runs a Health Audit before generating so
     /// audit-derived workbook content is current. Shared with GenerateSheet.
     @AppStorage("includeAuditInGenerate") private var includeAuditInGenerate = false
@@ -63,13 +65,22 @@ struct OverviewView: View {
                     // PR-13: shared StaleDataBanner surfaces freshness above
                     // the KPI grid. Suppressed in demo mode (canonical demo
                     // dataset is intentionally static). Renders nothing when
-                    // source is .fresh.
+                    // source is .fresh. #181: never-fetched gains a "Collect
+                    // now" action that runs the full first collect.
                     if !workspace.demoMode {
-                        StaleDataBanner(source: trendStore.cacheSource)
+                        StaleDataBanner(
+                            source: trendStore.cacheSource,
+                            onCollect: { runFirstCollect() },
+                            isCollecting: isRunningFirstCollect
+                        )
                     }
-                    // v2.2.0: heavy-tier (per-device) data older than a week.
-                    // Never auto-collected — the button is the only trigger.
-                    if !workspace.demoMode, !workspace.staleHeavyTiers.isEmpty {
+                    // v2.2.0: heavy-tier (per-device) data missing or older
+                    // than a week. Never auto-collected — the button is the
+                    // only trigger. Hidden while the never-fetched banner is
+                    // up: its "Collect now" already runs every tier, so a
+                    // second prompt would be a redundant warn surface.
+                    if !workspace.demoMode, !workspace.staleHeavyTiers.isEmpty,
+                       trendStore.cacheSource != .neverFetchedLive {
                         heavyTierStalePrompt
                     }
                     statRow
@@ -168,8 +179,29 @@ struct OverviewView: View {
     }
 
     private var heavyTierStaleMessage: String {
-        let names = workspace.staleHeavyTiers.map(\.displayName).joined(separator: " and ")
-        return "\(names) data is more than a week old — Patch, Updates, and EA dashboards show stale values."
+        let tiers = workspace.staleHeavyTiers
+        let names = tiers.map(\.displayName).joined(separator: " and ")
+        // All stale tiers produced no data in a recent collect → "missing"
+        // would contradict the just-succeeded collection (#181 field report).
+        if !tiers.isEmpty, workspace.heavyTiersWithNoData.isSuperset(of: tiers) {
+            return "\(names) data couldn't be collected in the last run — the tenant may "
+                + "not return it (e.g. no update plans). Retry, or check Run History."
+        }
+        return "\(names) data is missing or more than a week old — "
+            + "Patch, Updates, and EA dashboards show stale values."
+    }
+
+    /// #181: the never-fetched banner's "Collect now". Full first collect via
+    /// the workspace, then reload the trend store so the banner clears as soon
+    /// as the first summary.json lands.
+    private func runFirstCollect() {
+        guard !isRunningFirstCollect else { return }
+        Task {
+            isRunningFirstCollect = true
+            defer { isRunningFirstCollect = false }
+            await workspace.runFirstCollect()
+            trendStore.reload()
+        }
     }
 
     /// Pops the current drill-down off the NavigationStack. Called by breadcrumb

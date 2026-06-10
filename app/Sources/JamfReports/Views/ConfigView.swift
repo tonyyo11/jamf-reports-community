@@ -44,6 +44,10 @@ struct ConfigView: View {
     @State private var saveStatus: SaveStatus = .idle
     @State private var saveTask: Task<Void, Never>?
     @State private var triggerColumnsCheck = false
+    /// Key-path detail from the report engine's strict parse, when it fails
+    /// on a file the lenient GUI editor tolerates (#181 recovery card).
+    @State private var engineParseDetail: String?
+    @State private var showRestoreConfirm = false
 
     var body: some View {
         PageScaffold(spacing: 16) {
@@ -52,12 +56,8 @@ struct ConfigView: View {
                 selection: $tab,
                 options: ConfigTab.allCases.map { ($0, $0.label, $0.icon) }
             )
-            if let err = workspace.configError {
-                Text(err)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Colors.danger)
-                    .padding(.horizontal, 4)
-                    .accessibilityLabel("Configuration error: \(err)")
+            if let problem = configProblem {
+                configRecoveryCard(problem)
             }
             tabContent
         }
@@ -66,6 +66,84 @@ struct ConfigView: View {
                 try await workspace.loadConfig()
             } catch {
                 workspace.configError = error.localizedDescription
+            }
+            refreshEngineParseStatus()
+        }
+        .confirmationDialog(
+            "Restore the default config.yaml?",
+            isPresented: $showRestoreConfirm, titleVisibility: .visible
+        ) {
+            Button("Restore default", role: .destructive) {
+                Task {
+                    if let failure = await workspace.restoreDefaultConfig() {
+                        workspace.toast = Toast(message: failure, style: .danger)
+                    }
+                    refreshEngineParseStatus()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your current file is kept beside the new one as "
+                + "config.yaml.broken-<timestamp> — nothing is deleted. Column mappings "
+                + "and customizations will need to be re-applied.")
+        }
+    }
+
+    /// The first config problem to surface: the GUI editor's load error, or —
+    /// when the editor copes but the report engine cannot parse the file —
+    /// the engine decoder's key-path detail (#181).
+    private var configProblem: String? {
+        workspace.configError ?? engineParseDetail
+    }
+
+    /// Re-run the engine's strict parse and keep its key-path detail for the
+    /// recovery card. The GUI's lenient YAMLCodec can tolerate a file that
+    /// still breaks report generation, so both checks matter.
+    private func refreshEngineParseStatus() {
+        guard !workspace.demoMode,
+              let url = ProfileService.workspaceURL(for: workspace.profile)?
+                  .appendingPathComponent("config.yaml"),
+              FileManager.default.fileExists(atPath: url.path) else {
+            engineParseDetail = nil
+            return
+        }
+        do {
+            _ = try ConfigLoader.load(from: url)
+            engineParseDetail = nil
+        } catch let error as ConfigLoader.LoadError {
+            engineParseDetail = error.keyPathDetail ?? error.localizedDescription
+        } catch {
+            engineParseDetail = error.localizedDescription
+        }
+    }
+
+    private func configRecoveryCard(_ problem: String) -> some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.danger)
+                        .accessibilityHidden(true)
+                    Text("Configuration file problem")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                }
+                Text(problem)
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(Theme.Colors.dangerSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Configuration error: \(problem)")
+                HStack(spacing: 8) {
+                    PNPButton(title: "Open config.yaml", icon: "doc.text", size: .sm) {
+                        if let url = ProfileService.workspaceURL(for: workspace.profile)?
+                            .appendingPathComponent("config.yaml") {
+                            SystemActions.open(url)
+                        }
+                    }
+                    PNPButton(title: "Restore default config…", style: .danger, size: .sm) {
+                        showRestoreConfirm = true
+                    }
+                }
             }
         }
     }

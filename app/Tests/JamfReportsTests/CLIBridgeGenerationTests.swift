@@ -21,6 +21,16 @@ import XCTest
 @MainActor
 final class CLIBridgeGenerationTests: XCTestCase {
 
+    /// collect/generate entry points auto-create a workspace for the fake
+    /// profile via ensureWorkspace — remove it so test runs don't leak
+    /// directories into the real ~/Jamf-Reports (#181 field report found one).
+    override func tearDownWithError() throws {
+        if let root = ProfileService.workspaceURL(for: "jrc-test-no-such-profile-xyzzy") {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try super.tearDownWithError()
+    }
+
     // MARK: - GenerateAllResult struct semantics
 
     func testEmptyResultIsAllSucceededTrue() {
