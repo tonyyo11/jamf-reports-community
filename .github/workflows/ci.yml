@@ -25,7 +25,11 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        # requirements-dev.lock.txt is a uv --universal --generate-hashes lockfile
+        # covering Python 3.11+ with multi-platform wheel hashes. pip's
+        # --require-hashes mode verifies every downloaded artifact against the
+        # recorded hash, preventing silent supply-chain substitution.
+        run: pip install --require-hashes -r requirements-dev.lock.txt
 
       - name: Compile
         run: python3 -c "import py_compile; py_compile.compile('jamf-reports-community.py', doraise=True)"
@@ -63,3 +67,28 @@ jobs:
       - name: Run Swift tests
         working-directory: app
         run: swift test
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+
+      # shellcheck is pre-installed on ubuntu-latest GitHub-hosted runners.
+      # bash mode is the project convention for zsh scripts (shellcheck has no
+      # native zsh mode; bash mode catches the vast majority of issues).
+      # --severity=error ensures only true errors (not style warnings like
+      # SC2155 declare/assign) fail the job, keeping CI green on the existing
+      # codebase while blocking new regressions.
+      - name: Run shellcheck
+        run: |
+          shellcheck --shell=bash --severity=error \
+            app/build-app.sh \
+            app/scripts/release.sh \
+            app/scripts/package-dmg.sh \
+            app/scripts/notarize-release.sh \
+            app/scripts/sign-release.sh \
+            scripts/build-release.sh
