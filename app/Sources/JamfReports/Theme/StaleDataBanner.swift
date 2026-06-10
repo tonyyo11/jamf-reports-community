@@ -18,11 +18,21 @@ import SwiftUI
 ///
 /// The `.neverFetchedLive` case closes the PR-7 BACKLOG CONSIDER about the
 /// banner always firing on first install.
+///
+/// Issue #181: the never-fetched copy says "run Collect" but nothing in the
+/// GUI was labeled Collect. Callers that can run a collect pass `onCollect`;
+/// the banner then renders a "Collect now" button alongside the message for
+/// `.neverFetchedLive`. Callers without a collect context omit it and keep
+/// the informational banner unchanged.
 struct StaleDataBanner: View {
     let source: CacheSource
+    var onCollect: (() -> Void)?
+    var isCollecting: Bool
 
-    init(source: CacheSource) {
+    init(source: CacheSource, onCollect: (() -> Void)? = nil, isCollecting: Bool = false) {
         self.source = source
+        self.onCollect = onCollect
+        self.isCollecting = isCollecting
     }
 
     var body: some View {
@@ -34,7 +44,19 @@ struct StaleDataBanner: View {
                 Text(message)
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.warn)
-                Spacer(minLength: 0)
+                Spacer(minLength: showsCollectButton ? 8 : 0)
+                if showsCollectButton {
+                    PNPButton(
+                        title: isCollecting ? "Collecting…" : "Collect now",
+                        icon: isCollecting ? "hourglass" : "arrow.down.circle",
+                        size: .sm
+                    ) {
+                        guard !isCollecting else { return }
+                        onCollect?()
+                    }
+                    .disabled(isCollecting)
+                    .help("Fetch live jamf-cli data for this profile now.")
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -49,6 +71,13 @@ struct StaleDataBanner: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(message)
         }
+    }
+
+    /// The Collect button renders only for `.neverFetchedLive` with a handler:
+    /// a stale-but-present cache still drives every dashboard, so the steady
+    /// `.stale` state stays informational. Public for tests.
+    var showsCollectButton: Bool {
+        source == .neverFetchedLive && onCollect != nil
     }
 
     /// Public for tests — lets us assert the rendered copy without standing
@@ -90,6 +119,20 @@ struct StaleDataBanner: View {
 
 #Preview("Never fetched live") {
     StaleDataBanner(source: .neverFetchedLive)
+        .padding()
+        .frame(width: 400)
+        .background(Theme.Colors.winBG)
+}
+
+#Preview("Never fetched live — Collect action") {
+    StaleDataBanner(source: .neverFetchedLive, onCollect: {})
+        .padding()
+        .frame(width: 400)
+        .background(Theme.Colors.winBG)
+}
+
+#Preview("Never fetched live — collecting") {
+    StaleDataBanner(source: .neverFetchedLive, onCollect: {}, isCollecting: true)
         .padding()
         .frame(width: 400)
         .background(Theme.Colors.winBG)

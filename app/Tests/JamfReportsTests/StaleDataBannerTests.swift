@@ -83,6 +83,37 @@ final class StaleDataBannerTests: XCTestCase {
         )
     }
 
+    // MARK: - #181: Collect-now action
+
+    /// The button renders only for `.neverFetchedLive` AND only when the
+    /// caller supplies a handler — informational call sites stay unchanged.
+    func testCollectButtonShownOnlyForNeverFetchedWithHandler() {
+        XCTAssertTrue(
+            StaleDataBanner(source: .neverFetchedLive, onCollect: {}).showsCollectButton,
+            "never-fetched + handler must surface the Collect now button (#181)"
+        )
+        XCTAssertFalse(
+            StaleDataBanner(source: .neverFetchedLive).showsCollectButton,
+            "no handler → informational banner, as before"
+        )
+        XCTAssertFalse(
+            StaleDataBanner(source: .stale(at: Date()), onCollect: {}).showsCollectButton,
+            "stale cache still drives dashboards — steady state stays informational"
+        )
+        XCTAssertFalse(
+            StaleDataBanner(source: .fresh, onCollect: {}).showsCollectButton
+        )
+    }
+
+    /// The never-fetched copy mentions "run Collect"; with the #181 button the
+    /// words now match a visible control. Pin the copy so a reword keeps them
+    /// aligned.
+    func testNeverFetchedCopyStillNamesCollect() {
+        let banner = StaleDataBanner(source: .neverFetchedLive, onCollect: {})
+        XCTAssertTrue(banner.message.contains("Collect"),
+                      "banner copy and button label must keep naming the same action")
+    }
+
     // MARK: - #12: .stale(at:) relative time is always finite (Epic #102)
     //
     // DeviceLookupView.staleSince feeds StaleDataBanner(.stale(at:)) only when

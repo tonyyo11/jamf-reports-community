@@ -127,6 +127,38 @@ extension WorkspaceStore {
         }
     }
 
+    /// First full collect for a never-fetched workspace (#181) — the
+    /// StaleDataBanner "Collect now" action. Runs every tier so the user gets
+    /// a complete starting point (dashboards + the first trend data point)
+    /// from one click, then re-probes heavy-tier staleness so the prompt
+    /// clears honestly. Failures surface as a toast instead of the silent
+    /// RefreshCoordinator backoff that left issue #181's reporter stranded.
+    func runFirstCollect() async {
+        guard canRefresh(profileSlug: profile) else { return }
+        let activeProfile = profile
+        globalStatus = "collecting jamf-cli data · profile=\(activeProfile)"
+        defer { globalStatus = nil }
+        do {
+            let exit = try await CLIBridge().collect(
+                profile: activeProfile, tiers: Set(CollectionTier.allCases), force: true,
+                onLine: CLIBridge.noOpOnLine
+            )
+            if exit == 0 {
+                toast = Toast(message: "First collection complete", style: .success)
+            } else {
+                toast = Toast(
+                    message: "Collect failed (exit \(exit)) — check jamf-cli auth on the Sources page",
+                    style: .danger
+                )
+            }
+        } catch {
+            toast = Toast(
+                message: "Collect failed — \(error.localizedDescription)", style: .danger
+            )
+        }
+        await checkHeavyTierStaleness()
+    }
+
     /// Run a Health Audit in the background when the cached audit snapshot is
     /// older than `heavyTierStaleDays`. Part of the launch-time freshness
     /// sweep — audit is a configuration-analysis call (no per-device
@@ -164,10 +196,22 @@ extension WorkspaceStore {
     ) -> [CollectionTier] {
         [CollectionTier.inventory, .scan].filter { tier in
             guard let age = newestSnapshotAge(profile: profile, kind: tier.stalenessProbeKind) else {
-                return false
+                // #181: never-collected counts as stale once the workspace
+                // directory exists — the prompt is the only heavy-collect
+                // affordance a fresh workspace has. A missing workspace is the
+                // Overview init banner's job, not this prompt's.
+                return workspaceExists(profile: profile)
             }
             return age >= threshold
         }
+    }
+
+    /// True when the profile's workspace directory exists on disk.
+    nonisolated static func workspaceExists(profile: String) -> Bool {
+        guard let root = ProfileService.workspaceURL(for: profile) else { return false }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
     }
 
     /// Age in seconds of the newest .json snapshot under
