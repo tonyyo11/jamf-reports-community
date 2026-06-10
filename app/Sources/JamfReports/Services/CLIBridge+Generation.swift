@@ -20,8 +20,10 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     case invalidProfile(String)
     /// The workspace directory does not exist for the given profile.
     case workspaceMissing(profile: String)
-    /// `config.yaml` exists but could not be parsed.
-    case configLoadFailed(path: String)
+    /// `config.yaml` exists but could not be parsed. `detail` carries the
+    /// decoder's YAML key path + problem (never a filesystem path) so the
+    /// user can locate the misconfiguration without log spelunking (#181).
+    case configLoadFailed(path: String, detail: String?)
     /// `.csvAssisted` mode requires a CSV in `csv-inbox/` but none was found.
     case csvMissing(profile: String)
     /// jamf-cli executable was not found on the system.
@@ -45,9 +47,15 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             return "Invalid profile name '\(slug)'."
         case .workspaceMissing(let profile):
             return "Workspace not found for profile '\(profile)'."
-        case .configLoadFailed:
-            // Path omitted: may contain the home directory.
-            return "config.yaml could not be parsed — the file may be corrupt."
+        case .configLoadFailed(_, let detail):
+            // Path omitted: may contain the home directory. The detail is a
+            // YAML key path from the decoder, safe to display.
+            if let detail {
+                return "config.yaml could not be parsed — \(detail). Fix it on the Config "
+                    + "page, or restore the default config from there."
+            }
+            return "config.yaml could not be parsed — the file may be corrupt. The Config "
+                + "page can restore the default config."
         case .csvMissing(let profile):
             return "csv-assisted mode requires a CSV in csv-inbox/ for profile '\(profile)' — none found."
         case .executableNotFound:

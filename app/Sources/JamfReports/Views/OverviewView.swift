@@ -179,7 +179,14 @@ struct OverviewView: View {
     }
 
     private var heavyTierStaleMessage: String {
-        let names = workspace.staleHeavyTiers.map(\.displayName).joined(separator: " and ")
+        let tiers = workspace.staleHeavyTiers
+        let names = tiers.map(\.displayName).joined(separator: " and ")
+        // All stale tiers produced no data in a recent collect → "missing"
+        // would contradict the just-succeeded collection (#181 field report).
+        if !tiers.isEmpty, workspace.heavyTiersWithNoData.isSuperset(of: tiers) {
+            return "\(names) data couldn't be collected in the last run — the tenant may "
+                + "not return it (e.g. no update plans). Retry, or check Run History."
+        }
         return "\(names) data is missing or more than a week old — "
             + "Patch, Updates, and EA dashboards show stale values."
     }

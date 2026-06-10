@@ -91,12 +91,14 @@ extension WorkspaceStore {
         }
         let activeProfile = profile
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
-        let stale = await Task.detached(priority: .utility) {
-            Self.staleTiers(profile: activeProfile, olderThan: threshold)
+        let (stale, noData) = await Task.detached(priority: .utility) {
+            let stale = Self.staleTiers(profile: activeProfile, olderThan: threshold)
+            return (stale, Self.tiersWithNoData(profile: activeProfile, among: stale))
         }.value
         // Profile may have switched while the probe ran off-actor.
         guard profile == activeProfile else { return }
         staleHeavyTiers = stale
+        heavyTiersWithNoData = noData
     }
 
     /// Collect the currently-stale heavy tiers, then clear the prompt.
@@ -212,6 +214,39 @@ extension WorkspaceStore {
                 return workspaceExists(profile: profile)
             }
             return age >= threshold
+        }
+    }
+
+    /// Among `tiers`, those whose probe kind has no snapshot at all even
+    /// though the workspace collected recently — i.e. the last collect
+    /// attempted them and produced no data, as opposed to never-attempted or
+    /// aged-out data. Lets the prompt say "couldn't be collected" instead of
+    /// the contradictory "missing" right after a successful first collect.
+    nonisolated static func tiersWithNoData(
+        profile: String, among tiers: [CollectionTier]
+    ) -> Set<CollectionTier> {
+        guard workspaceCollectedRecently(profile: profile) else { return [] }
+        return Set(tiers.filter {
+            newestSnapshotAge(profile: profile, kind: $0.stalenessProbeKind) == nil
+        })
+    }
+
+    /// True when any snapshot kind has a file newer than `interval` —
+    /// evidence that a collect ran recently.
+    nonisolated static func workspaceCollectedRecently(
+        profile: String, within interval: TimeInterval = 86_400
+    ) -> Bool {
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                  at: dataDir, includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles]
+              ) else { return false }
+        return entries.contains { entry in
+            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            else { return false }
+            guard let age = newestSnapshotAge(profile: profile, kind: entry.lastPathComponent)
+            else { return false }
+            return age <= interval
         }
     }
 

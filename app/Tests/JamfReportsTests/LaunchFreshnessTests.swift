@@ -111,6 +111,36 @@ final class LaunchFreshnessTests: XCTestCase {
         XCTAssertTrue(WorkspaceStore.staleTiers(profile: profile, olderThan: 7 * 86_400).isEmpty)
     }
 
+    /// "Attempted but produced no data": a fresh snapshot in ANY kind proves a
+    /// recent collect, so a stale tier with no probe snapshot at all is
+    /// classified no-data (drives the "couldn't be collected" prompt copy).
+    func testTiersWithNoDataRequiresRecentCollectEvidence() throws {
+        let profile = "stalend\(Int.random(in: 10_000...99_999))"
+        guard let root = WorkspacePathGuard.root(for: profile) else {
+            throw XCTSkip("workspace root unavailable for test profile")
+        }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let computersDir = root.appendingPathComponent(
+            "jamf-cli-data/computers", isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
+
+        // No snapshots anywhere → no evidence of a collect → nothing classified.
+        XCTAssertTrue(
+            WorkspaceStore.tiersWithNoData(profile: profile, among: [.inventory, .scan]).isEmpty
+        )
+
+        // A fresh computers snapshot → recent collect; the scan probe kind
+        // (update-device-failures) is absent → scan produced no data.
+        try "[]".write(
+            to: computersDir.appendingPathComponent("computers_now.json"),
+            atomically: true, encoding: .utf8
+        )
+        let noData = WorkspaceStore.tiersWithNoData(profile: profile, among: [.inventory, .scan])
+        XCTAssertEqual(noData, [.scan],
+                       "inventory's probe (computers) has data; scan's does not")
+    }
+
     func testNewestSnapshotAgeNilForMissingKind() {
         XCTAssertNil(WorkspaceStore.newestSnapshotAge(
             profile: "definitely-not-a-real-profile-xyz", kind: "audit"
