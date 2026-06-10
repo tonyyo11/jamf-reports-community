@@ -91,6 +91,31 @@ Full-project security review of v2.2.0 conducted post-release using Anthropic's 
   dry-run, serials parsing, device selection), webhook https-gating, LaunchAgent plist
   permissions, and output-archive sidecar rotation.
 
+- **Snapshot symlink containment** — `newestJSONFile` (the shared newest-snapshot
+  reader) now canonicalizes directory entries and skips symlinks that resolve outside
+  the snapshot directory. PDF export refuses sensitive output paths (system and dotfile
+  directories) before creating directories. The manual schedule editor refuses to delete
+  managed automation agents, matching the consolidation flow's existing guard.
+
+### Added
+
+- **Setup screen for existing jamf-cli users (#181)** — first launch with jamf-cli
+  already configured (profiles exist, so connection onboarding never ran) now opens a
+  guided setup instead of an empty dashboard: pick the profiles to set up, choose the
+  automated scan policy (daily freshness collect, weekly deep scan, report cadence,
+  run time), then run workspace init and a first collection per profile so dashboards
+  populate and Trends gets its starting data point. Skippable; shows at most once.
+
+### Fixed
+
+- **"Run Collect" had no Collect button (#181)** — the "No live data fetched yet"
+  banner now carries a **Collect now** button on the Overview page that runs the full
+  first collection, shows progress, and surfaces failures as a toast (previously a
+  failed background refresh was silent). Never-collected per-device data now also
+  surfaces the heavy-tier "Refresh now" prompt, which previously only appeared once
+  week-old data already existed — a brand-new workspace had no collect affordance at
+  all.
+
 ## [2.2.0] - 2026-06-08
 
 ### Added (v2.2.0 cycle)

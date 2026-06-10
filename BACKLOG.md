@@ -38,14 +38,6 @@ epic (or a new issue) and strike it here once tracked on GitHub.
   unweighted per-title average in `summary.json`/Trends. Unifying on
   device-weighted is a metric-definition decision and would introduce a one-time
   patch-trend re-baselining step.
-- **SchedulesView delete is not `owns`-guarded** (epic #103, security) — the
-  manual schedule editor's delete path (`LaunchAgentWriter.delete`) has no
-  `ManagedAutomation.owns` check, unlike the consolidation removal
-  (`archiveAndRemove`, which refuses managed labels). Practically unreachable —
-  managed agents are torn down on entry to manual mode — but the two-mode
-  Automation router now makes that table reachable, so add a `!owns` guard to the
-  manual delete for consistency. Non-blocking; no managed agent is visible there
-  in normal flow.
 - **Version-tracking shell logic has no automated coverage** (epic #102, test
   coverage) — `build-app.sh` RELEASE / BUILD_NUMBER / channel-naming logic is not
   covered by CI (CI runs pytest + `swift build`, not `.app` packaging). Until it
