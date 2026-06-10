@@ -12,11 +12,11 @@ final class PlatformCapabilityServiceTests: XCTestCase {
     func testParseReturnsTrueForPlatformProfile() {
         let json = """
         [
-          {"name": "harbor", "url": "https://gw", "auth-method": "platform", "default": true}
+          {"name": "lighthouse", "url": "https://gw", "auth-method": "platform", "default": true}
         ]
         """
         let result = PlatformCapabilityService.parseAuthMethod(
-            data: Data(json.utf8), profile: "harbor"
+            data: Data(json.utf8), profile: "lighthouse"
         )
         XCTAssertTrue(result)
     }
@@ -60,7 +60,7 @@ final class PlatformCapabilityServiceTests: XCTestCase {
 
     func testParseReturnsFalseOnMalformedJSON() {
         let result = PlatformCapabilityService.parseAuthMethod(
-            data: Data("not-json".utf8), profile: "harbor"
+            data: Data("not-json".utf8), profile: "lighthouse"
         )
         XCTAssertFalse(result)
     }
@@ -68,11 +68,11 @@ final class PlatformCapabilityServiceTests: XCTestCase {
     func testParseReturnsFalseWhenAuthMethodMissing() {
         let json = """
         [
-          {"name": "harbor", "default": true}
+          {"name": "lighthouse", "default": true}
         ]
         """
         let result = PlatformCapabilityService.parseAuthMethod(
-            data: Data(json.utf8), profile: "harbor"
+            data: Data(json.utf8), profile: "lighthouse"
         )
         XCTAssertFalse(result)
     }
@@ -81,12 +81,12 @@ final class PlatformCapabilityServiceTests: XCTestCase {
 
     func testIsAvailableReturnsTrueForPlatformProfile() async {
         let json = """
-        [{"name": "harbor", "auth-method": "platform", "default": true}]
+        [{"name": "lighthouse", "auth-method": "platform", "default": true}]
         """
         let executor = CountingExecutor(canned: .success(Data(json.utf8)))
         let service = PlatformCapabilityService(executor: executor)
 
-        let available = await service.isAvailable(for: "harbor")
+        let available = await service.isAvailable(for: "lighthouse")
         XCTAssertTrue(available)
         XCTAssertEqual(executor.callCount, 1)
     }
@@ -97,32 +97,32 @@ final class PlatformCapabilityServiceTests: XCTestCase {
         ))
         let service = PlatformCapabilityService(executor: executor)
 
-        let available = await service.isAvailable(for: "harbor")
+        let available = await service.isAvailable(for: "lighthouse")
         XCTAssertFalse(available)
     }
 
     func testIsAvailableCachesPerProfile() async {
         let json = """
-        [{"name": "harbor", "auth-method": "platform", "default": true}]
+        [{"name": "lighthouse", "auth-method": "platform", "default": true}]
         """
         let executor = CountingExecutor(canned: .success(Data(json.utf8)))
         let service = PlatformCapabilityService(executor: executor)
 
-        _ = await service.isAvailable(for: "harbor")
-        _ = await service.isAvailable(for: "harbor")
+        _ = await service.isAvailable(for: "lighthouse")
+        _ = await service.isAvailable(for: "lighthouse")
         XCTAssertEqual(executor.callCount, 1, "repeat lookups should hit the cache")
     }
 
     func testRefreshDropsCachedResult() async {
         let json = """
-        [{"name": "harbor", "auth-method": "platform", "default": true}]
+        [{"name": "lighthouse", "auth-method": "platform", "default": true}]
         """
         let executor = CountingExecutor(canned: .success(Data(json.utf8)))
         let service = PlatformCapabilityService(executor: executor)
 
-        _ = await service.isAvailable(for: "harbor")
+        _ = await service.isAvailable(for: "lighthouse")
         service.refresh()
-        _ = await service.isAvailable(for: "harbor")
+        _ = await service.isAvailable(for: "lighthouse")
         XCTAssertEqual(executor.callCount, 2, "refresh() must force a re-probe")
     }
 }

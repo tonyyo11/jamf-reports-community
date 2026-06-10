@@ -19,7 +19,7 @@ final class SmartGroupApplyServiceTests: XCTestCase {
 
         recording.next = .success(Data(#"{"id": 1, "name": "X", "member_count": 0, "created": true}"#.utf8))
         _ = try await service.apply(
-            profile: "harbor",
+            profile: "lighthouse",
             templateSlug: "stale-checkin",
             smartGroupName: "Stale 90d",
             params: [:],
@@ -28,7 +28,7 @@ final class SmartGroupApplyServiceTests: XCTestCase {
         )
         XCTAssertEqual(
             recording.invocations.last,
-            ["-p", "harbor", "pro", "sg", "apply",
+            ["-p", "lighthouse", "pro", "sg", "apply",
              "--template", "stale-checkin",
              "--name", "Stale 90d",
              "--yes",

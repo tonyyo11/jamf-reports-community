@@ -55,12 +55,12 @@ def test_generate_mobile_csv_workbook(
     tmp_path: Path,
     jrc,
 ) -> None:
-    config = config_factory("harbor-mobile.yaml")
+    config = config_factory("mobile-insights.yaml")
     config._data["charts"]["enabled"] = True
     config._data["charts"]["embed_in_xlsx"] = True
     config._data["charts"]["os_adoption"]["enabled"] = True
-    csv_path = fixtures_root / "csv" / "harbor_mobile_insights_all_devices.csv"
-    out_path = tmp_path / "harbor-mobile-report.xlsx"
+    csv_path = fixtures_root / "csv" / "mobile_insights_devices.csv"
+    out_path = tmp_path / "mobile-insights-report.xlsx"
 
     report_path = jrc.cmd_generate(config, str(csv_path), str(out_path))
 

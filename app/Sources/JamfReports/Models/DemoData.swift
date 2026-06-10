@@ -117,7 +117,7 @@ enum DemoData {
         .init(name: "Daily Snapshot Collection", profile: "meridian-prod", schedule: "Daily · 06:00",
               cadence: "daily", mode: .snapshotOnly, next: "Apr 26, 06:00", last: "Apr 25, 06:01",
               lastStatus: .ok, artifacts: [], enabled: true),
-        .init(name: "Monthly Compliance Brief", profile: "harboredu", schedule: "1st · 06:00",
+        .init(name: "Monthly Compliance Brief", profile: "meridianedu", schedule: "1st · 06:00",
               cadence: "monthly", mode: .jamfCLIFull, next: "May 1, 06:00", last: "Apr 1, 06:14",
               lastStatus: .ok, artifacts: ["xlsx", "html", "csv"], enabled: true),
         .init(name: "Mobile Inventory (iPad)", profile: "meridian-prod", schedule: "Weekdays · 07:30",
@@ -134,7 +134,7 @@ enum DemoData {
         // disassembled (`strings` would otherwise show real `*.jamfcloud.com`
         // hosts that map to live Jamf infrastructure — security audit TA-03).
         .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok),
-        .init(name: "harboredu",     url: "harbor.jamfcloud.example",   schedules: 1, status: .ok),
+        .init(name: "meridianedu",     url: "meridian.jamfcloud.example",   schedules: 1, status: .ok),
         .init(name: "dummy",         url: "sandbox.jamfcloud.example",  schedules: 1, status: .idle),
         .init(name: "prod",          url: "prod-msp.jamfcloud.example", schedules: 0, status: .idle),
     ]

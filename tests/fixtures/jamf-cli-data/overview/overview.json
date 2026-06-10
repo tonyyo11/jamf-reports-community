@@ -25,7 +25,7 @@
   {
     "resource": "Server URL",
     "section": "Instance",
-    "value": "https://dummy.jamfcloud.com"
+    "value": "https://example.jamfcloud.com"
   },
   {
     "resource": "Jamf Pro Version",
