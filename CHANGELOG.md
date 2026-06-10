@@ -104,7 +104,16 @@ Full-project security review of v2.2.0 conducted post-release using Anthropic's 
   guided setup instead of an empty dashboard: pick the profiles to set up, choose the
   automated scan policy (daily freshness collect, weekly deep scan, report cadence,
   run time), then run workspace init and a first collection per profile so dashboards
-  populate and Trends gets its starting data point. Skippable; shows at most once.
+  populate and Trends gets its starting data point. The collection step shows a live
+  per-command tally ("12 collected, 1 failed · fetching ea-results…") instead of an
+  opaque spinner. Skippable; shows at most once.
+
+- **Config recovery on the Config page (#181)** — when config.yaml cannot be parsed,
+  a recovery card names the exact problem location (e.g.
+  `charts.compliance_trend.bands[0]: missing 'label'`) with two actions: open the file,
+  or restore the default config. Restoring keeps the old file beside the new one as
+  `config.yaml.broken-<timestamp>` — nothing is deleted. Generate failures carry the
+  same key-path detail instead of "the file may be corrupt".
 
 ### Fixed
 
@@ -114,7 +123,17 @@ Full-project security review of v2.2.0 conducted post-release using Anthropic's 
   failed background refresh was silent). Never-collected per-device data now also
   surfaces the heavy-tier "Refresh now" prompt, which previously only appeared once
   week-old data already existed — a brand-new workspace had no collect affordance at
-  all.
+  all. When per-device data was attempted in the last collect but produced no data
+  (e.g. a tenant with no update plans), the prompt now says "couldn't be collected in
+  the last run" rather than the contradictory "missing".
+
+- **App-seeded config.yaml was unparseable (#181)** — the engine's YAML reader could
+  not parse flow-style collections (`{label: "Pass", min_failures: 0}`), the exact
+  form the bundled config.example.yaml uses for compliance bands — so every workspace
+  the app initialized failed "config.yaml could not be parsed" on generate. Flow-style
+  mappings and sequences (nested, quote-aware) now parse; a regression test pins the
+  seed file as loadable. Collect-failure toasts also stop blaming credentials for
+  non-auth exits (only exit 3 is an auth failure).
 
 ## [2.2.0] - 2026-06-08
 
