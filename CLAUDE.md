@@ -911,13 +911,13 @@ cd /path/to/jamf-reports-community
 python3 -c "import py_compile; py_compile.compile('jamf-reports-community.py', doraise=True)"
 
 # Scaffold from test CSV (semantic matching should produce correct mappings)
-python3 jamf-reports-community.py scaffold --csv "Jamf Reports/97 Computers.csv"
+python3 jamf-reports-community.py scaffold --csv "tests/fixtures/csv/jamf1128_computers.csv"
 
 # Validate column mapping
-python3 jamf-reports-community.py check --csv "Jamf Reports/97 Computers.csv"
+python3 jamf-reports-community.py check --csv "tests/fixtures/csv/jamf1128_computers.csv"
 
 # Generate report (CSV only — no jamf-cli needed)
-python3 jamf-reports-community.py generate --csv "Jamf Reports/97 Computers.csv"
+python3 jamf-reports-community.py generate --csv "tests/fixtures/csv/jamf1128_computers.csv"
 
 # Collect jamf-cli snapshots (requires jamf-cli auth, or use dummy profile)
 python3 jamf-reports-community.py collect
@@ -934,8 +934,8 @@ All six commands should exit without errors before any change is considered read
 ### Automated fixtures
 
 Committed automated-test fixtures now live under `tests/fixtures/`. They are derived from
-Jamf-provided fake/demo data from the local `Dummy/` and `Harbor/` workspaces, not
-production or employer/client data, and are approved for commit.
+synthetic demo-tenant data fabricated for the test suite, not production or
+employer/client data, and are approved for commit.
 
 Keep the committed fixture corpus curated:
 
@@ -943,6 +943,8 @@ Keep the committed fixture corpus curated:
 - keep dated filenames only in `tests/fixtures/snapshots/` where chart/trend logic needs them
 - keep one latest-good jamf-cli JSON sample per command shape unless a regression needs more
 - do not commit generated `.xlsx` or chart PNG outputs
+- **fixture hygiene:** committed fixtures must be synthetic (no real serials, UDIDs, bypass
+  codes, or hostnames; use TEST-NET IPs, 555 phone numbers, example.* domains)
 
 Run automated tests with:
 
@@ -985,16 +987,11 @@ jamf-reports-community/
 ├── tests/                      # Python pytest suite
 │   ├── fixtures/               # Committed test data (CSV, jamf-cli JSON, snapshots)
 │   └── test_*.py               # One file per feature area
-├── Jamf Reports/               # Test CSV (gitignored except the dummy CSV)
-│   └── 97 Computers.csv        # 96 sanitized dummy devices
+├── tests/fixtures/csv/         # Committed test CSV fixtures (jamf1128_computers.csv, jamf1128_mobile.csv, jamf1128_school.csv)
 ├── app/                        # Native macOS SwiftUI app
 │   ├── Package.swift           # SwiftPM manifest (executable target, macOS 14+, Swift 6)
 │   ├── JamfReports.entitlements
 │   ├── build-app.sh            # Produces app/build/JamfReports.app with ad-hoc signing
-│   ├── python-runtime.lock     # Pinned python-build-standalone release + SHA256 checksums
-│   ├── requirements-runtime.txt # Packages bundled in the private Python runtime
-│   ├── scripts/
-│   │   └── build-python-runtime.sh  # Downloads + packages the private Python runtime
 │   ├── iconset/                # App icon source and build script
 │   ├── Sources/JamfReports/
 │   │   ├── App/                # @main entry point, ContentView

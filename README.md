@@ -100,7 +100,7 @@ python3 jamf-reports-community.py collect               # refresh jamf-cli snaps
 python3 jamf-reports-community.py scaffold              # generate a starter config.yaml from a CSV
 python3 jamf-reports-community.py check                 # validate config.yaml against a CSV
 python3 jamf-reports-community.py export-reports        # write filtered CSV slices per config
-python3 jamf-reports-community.py patch-managed         # bulk set managed/unmanaged state via REST API
+python3 jamf-reports-community.py patch-managed         # bulk set managed/unmanaged state (requires Computers → Update privilege)
 python3 jamf-reports-community.py multi-launchagent-run # run collect+generate across multiple profiles
 ```
 
