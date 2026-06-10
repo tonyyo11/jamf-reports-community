@@ -167,16 +167,41 @@ struct ExistingCLISetupView: View {
     }
 
     private func statusRow(_ name: String) -> some View {
-        HStack(spacing: 8) {
-            statusIcon(flow.statuses[name] ?? .pending)
-            Text(name).font(.callout)
-            if case .failed(let reason) = flow.statuses[name] {
-                Text("— \(reason)")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Colors.dangerSoft)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                statusIcon(flow.statuses[name] ?? .pending)
+                Text(name).font(.callout)
+                if case .failed(let reason) = flow.statuses[name] {
+                    Text("— \(reason)")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.dangerSoft)
+                }
+                if let summary = flow.kindSummaries[name],
+                   flow.statuses[name] != .collecting {
+                    Text("· \(summary.summary)")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            // Live tally while this profile collects — the first collection
+            // walks ~30 jamf-cli commands and can run for minutes; without
+            // motion users assume it hung (#181 field feedback).
+            if flow.statuses[name] == .collecting {
+                Text(collectingCaption)
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .padding(.leading, 28)
+            }
         }
+    }
+
+    private var collectingCaption: String {
+        var caption = flow.progress.summary
+        if let kind = flow.progress.currentKind {
+            caption += " · fetching \(kind)…"
+        }
+        return caption
     }
 
     @ViewBuilder

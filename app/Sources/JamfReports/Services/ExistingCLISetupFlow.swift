@@ -24,6 +24,23 @@ final class ExistingCLISetupFlow {
         case failed(String)
     }
 
+    /// Live tally of the collect stream, parsed from the engine's per-kind
+    /// log lines so the user sees motion during a multi-minute first collect
+    /// instead of an opaque spinner.
+    struct CollectProgress: Equatable {
+        var currentKind: String?
+        var collected = 0
+        var failed = 0
+        var skipped = 0
+
+        var summary: String {
+            var parts = ["\(collected) collected"]
+            if failed > 0 { parts.append("\(failed) failed") }
+            if skipped > 0 { parts.append("\(skipped) skipped") }
+            return parts.joined(separator: ", ")
+        }
+    }
+
     /// UserDefaults key set when the user completes or skips the setup, so the
     /// screen never re-appears. Everything it does remains reachable later
     /// (Overview Collect now, Automation tab), so skipping loses nothing.
@@ -45,6 +62,10 @@ final class ExistingCLISetupFlow {
     private(set) var statuses: [String: ProfileStatus] = [:]
     private(set) var isRunning = false
     private(set) var didComplete = false
+    /// Progress of the profile currently collecting (sequential, so one at a time).
+    private(set) var progress = CollectProgress()
+    /// Final per-profile tallies, rendered next to the finished status rows.
+    private(set) var kindSummaries: [String: CollectProgress] = [:]
 
     init(profileNames: [String]) {
         self.profileNames = profileNames
@@ -107,13 +128,15 @@ final class ExistingCLISetupFlow {
     /// actionable message into the status row.
     ///
     /// `initialize` / `collect` default to the real `CLIBridge` calls; tests
-    /// inject spies.
+    /// inject spies. The collect closure receives an onLine sink — the engine's
+    /// per-kind log stream — which feeds `progress` for the live UI.
     func run(
         initialize: @escaping (String) async throws -> Int32 = { profile in
             try await CLIBridge().initializeWorkspace(profile: profile, onLine: CLIBridge.noOpOnLine)
         },
-        collect: @escaping (String) async throws -> Int32 = { profile in
-            try await CLIBridge().collect(profile: profile, force: true, onLine: CLIBridge.noOpOnLine)
+        collect: @escaping (String, @escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32 = {
+            profile, onLine in
+            try await CLIBridge().collect(profile: profile, force: true, onLine: onLine)
         }
     ) async {
         guard !isRunning else { return }
@@ -129,7 +152,15 @@ final class ExistingCLISetupFlow {
                     continue
                 }
                 statuses[name] = .collecting
-                let collectExit = try await collect(name)
+                progress = CollectProgress()
+                let collectExit = try await collect(name) { [weak self] line in
+                    Task { @MainActor in self?.ingest(line.text) }
+                }
+                // Let queued ingest hops land before snapshotting the tally —
+                // the last few [ok] lines arrive as unstructured MainActor
+                // tasks and would otherwise be cut off the final summary.
+                await Task.yield()
+                kindSummaries[name] = progress
                 statuses[name] = collectExit == 0
                     ? .done
                     : .failed(Self.collectFailureReason(exit: collectExit))
@@ -138,6 +169,25 @@ final class ExistingCLISetupFlow {
             }
         }
         didComplete = true
+    }
+
+    /// Parse one engine log line into the live tally. Line shapes (from
+    /// `ReportEngine.collect`): `[info] collecting <kind> for <profile>`,
+    /// `[ok] <kind>: N bytes`, `[warn] <kind>: …`, `[skip] <kind>: …`.
+    /// Anything else (subprocess output, SOFA notes) is ignored.
+    func ingest(_ text: String) {
+        if text.hasPrefix("[info] collecting ") {
+            let rest = text.dropFirst("[info] collecting ".count)
+            progress.currentKind = rest.split(separator: " ").first.map(String.init)
+        } else if text.hasPrefix("[ok] ") {
+            progress.collected += 1
+            progress.currentKind = nil
+        } else if text.hasPrefix("[warn] ") {
+            progress.failed += 1
+            progress.currentKind = nil
+        } else if text.hasPrefix("[skip] ") {
+            progress.skipped += 1
+        }
     }
 
     /// Only exit 3 means dead credentials; exit 1 is usually partial per-kind

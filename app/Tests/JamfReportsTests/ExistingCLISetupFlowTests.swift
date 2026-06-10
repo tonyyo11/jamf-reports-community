@@ -36,7 +36,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
 
         await flow.run(
             initialize: { initialized.append($0); return 0 },
-            collect: { collected.append($0); return 0 }
+            collect: { name, _ in collected.append(name); return 0 }
         )
 
         XCTAssertEqual(initialized, ["alpha", "beta"], "sequential, discovery order")
@@ -55,7 +55,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
 
         await flow.run(
             initialize: { initialized.append($0); return 0 },
-            collect: { _ in 0 }
+            collect: { _, _ in 0 }
         )
 
         XCTAssertEqual(initialized, ["beta"])
@@ -69,7 +69,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
 
         await flow.run(
             initialize: { $0 == "alpha" ? 1 : 0 },
-            collect: { collected.append($0); return 0 }
+            collect: { name, _ in collected.append(name); return 0 }
         )
 
         XCTAssertEqual(collected, ["beta"], "failed init must not attempt a collect")
@@ -81,7 +81,7 @@ final class ExistingCLISetupFlowTests: XCTestCase {
     func testCollectFailureCarriesActionableMessage() async {
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
 
-        await flow.run(initialize: { _ in 0 }, collect: { _ in 3 })
+        await flow.run(initialize: { _ in 0 }, collect: { _, _ in 3 })
 
         guard case .failed(let reason)? = flow.statuses["alpha"] else {
             return XCTFail("expected .failed, got \(String(describing: flow.statuses["alpha"]))")
@@ -95,10 +95,59 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         struct Boom: LocalizedError { var errorDescription: String? { "boom" } }
         let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
 
-        await flow.run(initialize: { _ in throw Boom() }, collect: { _ in 0 })
+        await flow.run(initialize: { _ in throw Boom() }, collect: { _, _ in 0 })
 
         XCTAssertEqual(flow.statuses["alpha"], .failed("boom"))
         XCTAssertTrue(flow.didComplete)
+    }
+
+    // MARK: - Collect progress parsing
+
+    func testIngestTracksKindLifecycle() {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
+
+        flow.ingest("[info] collecting computers for alpha")
+        XCTAssertEqual(flow.progress.currentKind, "computers")
+
+        flow.ingest("[ok] computers: 18342 bytes")
+        XCTAssertEqual(flow.progress.collected, 1)
+        XCTAssertNil(flow.progress.currentKind, "completed kind clears the live label")
+
+        flow.ingest("[info] collecting update-device-failures for alpha")
+        flow.ingest("[warn] update-device-failures: exit 1 — skipped (using cached)")
+        XCTAssertEqual(flow.progress.failed, 1)
+
+        flow.ingest("[skip] profile-status: tier scan not selected")
+        XCTAssertEqual(flow.progress.skipped, 1)
+
+        XCTAssertEqual(flow.progress.summary, "1 collected, 1 failed, 1 skipped")
+    }
+
+    func testIngestIgnoresNonKindLines() {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
+        flow.ingest("some raw subprocess output")
+        flow.ingest("{\"totalCount\": 3}")
+        XCTAssertEqual(flow.progress, ExistingCLISetupFlow.CollectProgress())
+    }
+
+    func testRunRecordsPerProfileKindSummary() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
+
+        await flow.run(
+            initialize: { _ in 0 },
+            collect: { _, onLine in
+                onLine(CLIBridge.LogLine(timestamp: Date(), level: .info,
+                               text: "[info] collecting computers for alpha"))
+                onLine(CLIBridge.LogLine(timestamp: Date(), level: .ok,
+                               text: "[ok] computers: 100 bytes"))
+                // The onLine sink hops to the MainActor; yield so the ingest
+                // tasks land before the collect closure returns.
+                await Task.yield()
+                return 0
+            }
+        )
+
+        XCTAssertEqual(flow.kindSummaries["alpha"]?.collected, 1)
     }
 
     // MARK: - configuredPolicy
