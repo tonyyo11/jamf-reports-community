@@ -1,7 +1,3 @@
-# Note: Python runtime updates (app/python-runtime.lock) are intentionally a manual
-# process. Bumping the pinned python-build-standalone release requires fetching and
-# verifying SHA256 sums for both arm64 and x86_64 tarballs, which is gated by human
-# review for supply-chain safety. There is no companion auto-bump workflow.
 name: Update jamf-cli tracked version
 on:
   schedule:

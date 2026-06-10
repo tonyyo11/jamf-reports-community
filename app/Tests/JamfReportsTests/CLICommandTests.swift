@@ -23,10 +23,10 @@ final class CLICommandTests: XCTestCase {
     }
 
     func testProAuthTokenArgv() {
-        let command = CLICommand.proAuthToken(profile: "harbor")
+        let command = CLICommand.proAuthToken(profile: "lighthouse")
         XCTAssertEqual(
             command.argv,
-            ["-p", "harbor", "pro", "auth", "token", "--output", "json", "--no-input"]
+            ["-p", "lighthouse", "pro", "auth", "token", "--output", "json", "--no-input"]
         )
     }
 
@@ -49,36 +49,36 @@ final class CLICommandTests: XCTestCase {
     // MARK: - Smart-group templates (jamf-cli PR #205, target release TBD)
 
     func testProSmartGroupTemplatesArgv() {
-        let command = CLICommand.proSmartGroupTemplates(profile: "harbor")
+        let command = CLICommand.proSmartGroupTemplates(profile: "lighthouse")
         XCTAssertEqual(
             command.argv,
-            ["-p", "harbor", "pro", "sg", "templates", "--output", "json"]
+            ["-p", "lighthouse", "pro", "sg", "templates", "--output", "json"]
         )
     }
 
     func testProSmartGroupPreviewArgvNoParams() {
         let command = CLICommand.proSmartGroupPreview(
-            profile: "harbor",
+            profile: "lighthouse",
             templateSlug: "stale-checkin",
             params: [:]
         )
         XCTAssertEqual(
             command.argv,
-            ["-p", "harbor", "pro", "sg", "preview", "--template", "stale-checkin", "--output", "json"]
+            ["-p", "lighthouse", "pro", "sg", "preview", "--template", "stale-checkin", "--output", "json"]
         )
     }
 
     func testProSmartGroupPreviewArgvSortsParamsDeterministically() {
         // Insertion-order-independent: same dict in any iteration order produces the same argv.
         let command = CLICommand.proSmartGroupPreview(
-            profile: "harbor",
+            profile: "lighthouse",
             templateSlug: "os-version-below",
             params: ["version": "15.0", "platform": "macOS"]
         )
         // Sorted alphabetically: --platform=… before --version=…
         XCTAssertEqual(
             command.argv,
-            ["-p", "harbor", "pro", "sg", "preview", "--template", "os-version-below",
+            ["-p", "lighthouse", "pro", "sg", "preview", "--template", "os-version-below",
              "--platform=macOS", "--version=15.0",
              "--output", "json"]
         )
@@ -86,7 +86,7 @@ final class CLICommandTests: XCTestCase {
 
     func testProSmartGroupApplyArgvIncludesYesAndOptionalFlags() {
         let command = CLICommand.proSmartGroupApply(
-            profile: "harbor",
+            profile: "lighthouse",
             templateSlug: "not-encrypted",
             smartGroupName: "Unencrypted Macs (outreach)",
             params: [:],
@@ -95,7 +95,7 @@ final class CLICommandTests: XCTestCase {
         )
         XCTAssertEqual(
             command.argv,
-            ["-p", "harbor", "pro", "sg", "apply",
+            ["-p", "lighthouse", "pro", "sg", "apply",
              "--template", "not-encrypted",
              "--name", "Unencrypted Macs (outreach)",
              "--recalculate",
@@ -106,7 +106,7 @@ final class CLICommandTests: XCTestCase {
 
     func testProSmartGroupApplyArgvDryRunOmitsRecalculate() {
         let command = CLICommand.proSmartGroupApply(
-            profile: "harbor",
+            profile: "lighthouse",
             templateSlug: "stale-checkin",
             smartGroupName: "Stale 90d",
             params: [:],
@@ -115,7 +115,7 @@ final class CLICommandTests: XCTestCase {
         )
         XCTAssertEqual(
             command.argv,
-            ["-p", "harbor", "pro", "sg", "apply",
+            ["-p", "lighthouse", "pro", "sg", "apply",
              "--template", "stale-checkin",
              "--name", "Stale 90d",
              "--dry-run",
@@ -139,10 +139,10 @@ final class CLICommandTests: XCTestCase {
     }
 
     func testProSmartGroupVerifyTemplatesArgv() {
-        let command = CLICommand.proSmartGroupVerifyTemplates(profile: "harbor")
+        let command = CLICommand.proSmartGroupVerifyTemplates(profile: "lighthouse")
         XCTAssertEqual(
             command.argv,
-            ["-p", "harbor", "pro", "sg", "verify-templates", "--output", "json"]
+            ["-p", "lighthouse", "pro", "sg", "verify-templates", "--output", "json"]
         )
     }
 

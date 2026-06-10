@@ -16,7 +16,7 @@ extension WorkspaceStore {
     /// Returns the install/remove actions it applied (empty when nothing
     /// changed) so callers can surface confirmation.
     @discardableResult
-    func reconcileManagedAutomation() async -> [ManagedAutomation.Action] {
+    func reconcileManagedAutomation() async -> [ManagedAutomation.ActionOutcome] {
         guard !demoMode else { return [] }
         return await ManagedAutomation.reconcile(policy: AutomationPolicy.current())
     }

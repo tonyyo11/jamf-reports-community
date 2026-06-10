@@ -87,3 +87,88 @@ final class CollectAuthDeadVerdictTests: XCTestCase {
         XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
     }
 }
+
+// MARK: - isCollectDead verdict
+
+/// Spec for `ReportEngine.isCollectDead` — the total-outage guard that catches
+/// all-fail runs with no 401 signals (server unreachable, jamf-cli broken, etc.)
+/// and prevents them from falling through to SOFA + `emitSummaryJSON` with stale data.
+final class CollectDeadVerdictTests: XCTestCase {
+
+    private func outcome(_ kind: String, _ exit: Int32) -> ReportEngine.CollectOutcome {
+        ReportEngine.CollectOutcome(kind: kind, exitCode: exit)
+    }
+
+    /// Every live call fails non-zero with no 401 at all → total outage, collect-dead.
+    func testAllFailNoAuth_isCollectDead() {
+        let outcomes = [
+            outcome("overview", 1),
+            outcome("security", 1),
+            outcome("patch-status", 4),
+            outcome("policy-status", 5),
+        ]
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+    }
+
+    /// All non-zero exits, some are exit 6 (rate-limited) → still collect-dead.
+    func testAllFailRateLimited_isCollectDead() {
+        let outcomes = [
+            outcome("overview", 6),
+            outcome("security", 6),
+        ]
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+    }
+
+    /// All calls fail with 401 included — auth-dead wins at the call site; isCollectDead
+    /// would also be true for its own criterion (no exit-0). Both verdicts fire but
+    /// auth-dead is checked FIRST at the call site, so this test documents the
+    /// relationship: when auth-dead is true, collect-dead is also true.
+    func testAllFailWithOne401_collectDeadIsAlsoTrue() {
+        let outcomes = [
+            outcome("security", 3),
+            outcome("patch-status", 3),
+            outcome("inventory-summary", 1),
+        ]
+        // Auth-dead wins at call site — but isCollectDead is also true.
+        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+    }
+
+    /// One success + failures → partial failure, cache is warmed; neither verdict fires.
+    func testOneSuccessPlusFailures_isNotCollectDead() {
+        let outcomes = [
+            outcome("overview", 0),
+            outcome("security", 1),
+            outcome("patch-status", 4),
+        ]
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+    }
+
+    /// All calls succeed → not collect-dead.
+    func testAllSuccess_isNotCollectDead() {
+        let outcomes = [
+            outcome("overview", 0),
+            outcome("security", 0),
+            outcome("computers", 0),
+        ]
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+    }
+
+    /// An empty outcome set (no live calls attempted, e.g. tier skipped everything)
+    /// is never collect-dead — there is no evidence of a failure.
+    func testEmpty_isNotCollectDead() {
+        XCTAssertFalse(ReportEngine.isCollectDead([]))
+    }
+
+    /// A single exit-0 among otherwise-all-failures → cache is warmed; not collect-dead.
+    func testSingleSuccessAmongManyFailures_isNotCollectDead() {
+        let outcomes = [
+            outcome("overview", 0),
+            outcome("security", 1),
+            outcome("patch-status", 1),
+            outcome("policy-status", 1),
+            outcome("inventory-summary", 1),
+        ]
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+    }
+}

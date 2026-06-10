@@ -169,12 +169,32 @@ xattr -cr "$APP_OUT"
 # identity is in use, `--timestamp` is required for notarization.
 if [[ -z "${SIGNING_IDENTITY:-}" ]]; then
   if [[ "$CONFIG" == "release" ]]; then
-    SIGNING_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-      | awk -F'"' '/Developer ID Application/ {print $2; exit}')
-    if [[ -z "$SIGNING_IDENTITY" ]]; then
-      echo "⚠ no Developer ID Application identity found; falling back to ad-hoc" >&2
-      echo "  (release build will not be notarizable)" >&2
-      SIGNING_IDENTITY="-"
+    if [[ -n "${TEAM_ID:-}" ]]; then
+      # TEAM_ID is set — select the identity whose subject contains the Team ID
+      # (format: "Developer ID Application: Name (TEAMID)"). Fail loudly if none
+      # match so a wrong TEAM_ID doesn't silently fall through to a different cert.
+      SIGNING_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F'"' '/Developer ID Application/ {print $2}' \
+        | grep "(${TEAM_ID})" | head -1)
+      if [[ -z "$SIGNING_IDENTITY" ]]; then
+        echo "✗ no Developer ID Application identity found for TEAM_ID=${TEAM_ID}" >&2
+        echo "  Available identities:" >&2
+        security find-identity -v -p codesigning 2>/dev/null | grep "Developer ID Application" >&2
+        exit 1
+      fi
+    else
+      # No TEAM_ID — auto-pick the first available Developer ID Application cert.
+      # This is ambiguous when multiple certs are installed; set TEAM_ID to be explicit.
+      SIGNING_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+      if [[ -z "$SIGNING_IDENTITY" ]]; then
+        echo "⚠ no Developer ID Application identity found; falling back to ad-hoc" >&2
+        echo "  (release build will not be notarizable)" >&2
+        SIGNING_IDENTITY="-"
+      else
+        echo "⚠ TEAM_ID not set — auto-selected first Developer ID Application identity" >&2
+        echo "  Set TEAM_ID=<your-team-id> to select explicitly and silence this warning" >&2
+      fi
     fi
   else
     SIGNING_IDENTITY="-"

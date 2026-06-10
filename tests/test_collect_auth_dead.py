@@ -117,9 +117,102 @@ def test_protect_401_does_not_trip_pro_verdict(jrc, config_factory, monkeypatch)
     assert collected == 1
 
 
-def test_chronic_404_only_does_not_raise(jrc, config_factory, monkeypatch):
+def test_all_fail_no_auth_raises_collect_error(jrc, config_factory, monkeypatch):
+    """Total outage: every live Pro call fails, none is a 401, zero succeed →
+    JamfCollectError (not JamfAuthError). Closes the gap where an all-fail-no-401
+    run fell through to cmd_generate and froze a degraded summary from cache."""
     config = config_factory("dummy.yaml")
-    commands = [("Compliance Devices", _raise(1, "404")), ("DDM Status", _raise(1, "404"))]
+    commands = [("Compliance Devices", _raise(1, "404")), ("DDM Status", _raise(4, "not found"))]
+    _wire_collect(jrc, monkeypatch, commands)
+    with pytest.raises(jrc.JamfCollectError):
+        jrc._collect_snapshots(config)
+
+
+def test_all_fail_mixed_codes_no_auth_raises_collect_error(jrc, config_factory, monkeypatch):
+    """A mix of non-auth failure codes (general/403/429) with zero successes is
+    still a total outage → JamfCollectError."""
+    config = config_factory("dummy.yaml")
+    commands = [
+        ("Security", _raise(5, "forbidden")),
+        ("Patch Status", _raise(6, "rate limited")),
+        ("Inventory", _raise(1, "connection refused")),
+    ]
+    _wire_collect(jrc, monkeypatch, commands)
+    with pytest.raises(jrc.JamfCollectError):
+        jrc._collect_snapshots(config)
+
+
+def test_collect_error_is_not_auth_error(jrc):
+    """JamfCollectError and JamfAuthError are distinct sibling RuntimeErrors so a
+    caller can tell a credential problem from a connectivity outage."""
+    assert issubclass(jrc.JamfCollectError, RuntimeError)
+    assert not issubclass(jrc.JamfCollectError, jrc.JamfAuthError)
+    assert not issubclass(jrc.JamfAuthError, jrc.JamfCollectError)
+
+
+def test_partial_success_with_failures_does_not_raise(jrc, config_factory, monkeypatch):
+    """At least one success means a partial collect — falls back to cache for the
+    failed kinds, never raising the collect-dead verdict."""
+    config = config_factory("dummy.yaml")
+    commands = [
+        ("Overview", _ok()),
+        ("Compliance Devices", _raise(1, "404")),
+        ("Patch Status", _raise(4, "not found")),
+    ]
     _wire_collect(jrc, monkeypatch, commands)
     collected, _archived = jrc._collect_snapshots(config)
-    assert collected == 0  # nothing collected, but no 401 → no raise
+    assert collected == 1
+
+
+def test_auth_flavor_still_raises_auth_error_not_collect(jrc, config_factory, monkeypatch):
+    """When at least one failure is a 401 and none succeed, the auth verdict wins
+    over the generic collect verdict (auth-dead is the more specific diagnosis)."""
+    config = config_factory("dummy.yaml")
+    commands = [("Security", _raise(3, "unauthorized")), ("Patch Status", _raise(1, "404"))]
+    _wire_collect(jrc, monkeypatch, commands)
+    with pytest.raises(jrc.JamfAuthError):
+        jrc._collect_snapshots(config)
+
+
+def test_protect_only_failure_does_not_raise(jrc, config_factory, monkeypatch):
+    """A Protect-only failure (separate OAuth2) among Pro successes must not trip
+    either verdict — Protect does not count toward the Pro outage tally."""
+    config = config_factory("dummy.yaml")
+    commands = [("Overview", _ok()), ("Protect Overview", _raise(1, "down"))]
+    _wire_collect(jrc, monkeypatch, commands)
+    collected, _archived = jrc._collect_snapshots(config)
+    assert collected == 1
+
+
+# --- School collect all-fail verdict -----------------------------------------
+
+class _FakeSchoolBridge:
+    """Stub school bridge whose every fetcher raises — a total outage."""
+
+    _data_dir = "/tmp/jrc-school-test"
+    _profile = "schooltest"
+
+    def is_available(self):
+        return True
+
+    def _fail(self, *_a, **_k):
+        raise RuntimeError("jamf-cli failed (1): connection refused")
+
+    overview = devices_list = device_groups_list = _fail
+    users_list = groups_list = classes_list = _fail
+    apps_list = profiles_list = locations_list = _fail
+
+
+def test_school_collect_all_fail_exits_nonzero(jrc, config_factory, monkeypatch, tmp_path):
+    """cmd_school_collect previously recorded status 'partial' and exited 0 even at
+    0/9 collected. An all-failed school collect must now raise SystemExit and write
+    a 'fail' summary instead of reporting success on an empty result."""
+    config = config_factory("dummy.yaml")
+    monkeypatch.setattr(jrc, "_build_school_bridge", lambda *_a, **_k: _FakeSchoolBridge())
+    summary_json = tmp_path / "school-summary.json"
+    with pytest.raises(SystemExit):
+        jrc.cmd_school_collect(config, str(summary_json))
+    import json
+    written = json.loads(summary_json.read_text(encoding="utf-8"))
+    assert written["status"] == "fail"
+    assert written["counts"]["collected_snapshots"] == 0

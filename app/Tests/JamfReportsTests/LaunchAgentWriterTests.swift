@@ -17,7 +17,7 @@ final class LaunchAgentWriterTests: XCTestCase {
         let valid = [
             "\(prefix).dummy",
             "\(prefix).dummy.daily",
-            "\(prefix).harbor-edu_v2",
+            "\(prefix).fixture-edu_v2",
             "\(prefix).school-test.weekly-mon",
         ]
         for label in valid {

@@ -107,30 +107,53 @@ struct PolicyHealthService: Sendable {
         var snapshotDate: Date?
 
         // Load policy data
-        if let policyURL,
-           FileManager.default.fileExists(atPath: policyURL.path),
-           let policyData = try? Data(contentsOf: policyURL),
-           let policyReports = try? JSONDecoder().decode([PolicyStatusReport].self, from: policyData),
-           let firstReport = policyReports.first {
-            summary = firstReport.summary
-            findings = firstReport.configFindings
-            sourceFile = policyURL
-            snapshotDate = (try? policyURL.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate
+        if let policyURL, FileManager.default.fileExists(atPath: policyURL.path) {
+            if let policyData = try? Data(contentsOf: policyURL) {
+                if let policyReports = try? JSONDecoder().decode(
+                    [PolicyStatusReport].self, from: policyData
+                ), let firstReport = policyReports.first {
+                    summary = firstReport.summary
+                    findings = firstReport.configFindings
+                    sourceFile = policyURL
+                    snapshotDate = (try? policyURL.resourceValues(
+                        forKeys: [.contentModificationDateKey]))?
+                        .contentModificationDate
+                } else {
+                    AppLogger.engine.warning(
+                        "PolicyHealthService: failed to decode policy-status file \(policyURL.lastPathComponent, privacy: .public)"
+                    )
+                }
+            } else {
+                AppLogger.engine.warning(
+                    "PolicyHealthService: could not read policy-status file \(policyURL.lastPathComponent, privacy: .public)"
+                )
+            }
         }
 
         // Load profile data
-        if let profileURL,
-           FileManager.default.fileExists(atPath: profileURL.path),
-           let profileData = try? Data(contentsOf: profileURL),
-           let decodedProfiles = try? JSONDecoder().decode([ProfileStatusRow].self, from: profileData) {
-            profiles = decodedProfiles
+        if let profileURL, FileManager.default.fileExists(atPath: profileURL.path) {
+            if let profileData = try? Data(contentsOf: profileURL) {
+                if let decodedProfiles = try? JSONDecoder().decode(
+                    [ProfileStatusRow].self, from: profileData
+                ) {
+                    profiles = decodedProfiles
 
-            // Use profile timestamp if we don't have a policy timestamp
-            if sourceFile == nil {
-                sourceFile = profileURL
-                snapshotDate = (try? profileURL.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate
+                    // Use profile timestamp if we don't have a policy timestamp
+                    if sourceFile == nil {
+                        sourceFile = profileURL
+                        snapshotDate = (try? profileURL.resourceValues(
+                            forKeys: [.contentModificationDateKey]))?
+                            .contentModificationDate
+                    }
+                } else {
+                    AppLogger.engine.warning(
+                        "PolicyHealthService: failed to decode profile-status file \(profileURL.lastPathComponent, privacy: .public)"
+                    )
+                }
+            } else {
+                AppLogger.engine.warning(
+                    "PolicyHealthService: could not read profile-status file \(profileURL.lastPathComponent, privacy: .public)"
+                )
             }
         }
 

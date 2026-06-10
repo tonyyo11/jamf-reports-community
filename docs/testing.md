@@ -6,10 +6,10 @@ backed by a committed fixture corpus) and `swift test` for the macOS app (see
 
 ## Fixture Provenance
 
-The committed fixtures under [`tests/fixtures/`](../tests/fixtures/README.md) come from
-Jamf-provided fake/demo data sourced from the local `Dummy/` and `Harbor/` workspaces.
-They are safe to commit because they are not production, employer, customer, or client
-data.
+The committed fixtures under [`tests/fixtures/`](../tests/fixtures/README.md) are
+synthetic demo-tenant data, fabricated for tests. They are safe to commit because they
+are not production, employer, customer, or client data, and every identifying value
+(serials, UDIDs, MACs, IPs, emails, hostnames) is a clearly synthetic placeholder.
 
 The repo intentionally commits curated fixtures, not full workspaces:
 
@@ -65,19 +65,36 @@ as the merge-time source of truth.
 
 ## How To Refresh Fixture Data
 
-Use `Dummy/` and `Harbor/` as source workspaces, then promote a minimal subset into
-`tests/fixtures/`.
+Regenerate fixtures from a local demo workspace, scrub identifying values per the
+checklist below, and promote a minimal subset into `tests/fixtures/`. Never commit
+real tenant exports.
+
+### Scrub checklist
+
+Before committing any refreshed fixture, replace every identifying value:
+
+- Activation Lock bypass codes: blank, always.
+- Serial numbers: synthetic, non-Apple-checkable values (`FXTR0001XX` style).
+- UDIDs: synthetic (`00008101-FIXTURE0000NNNN` style, or fresh random UUIDs).
+- MAC addresses: locally administered synthetic values (`02:00:00:...`).
+- IP addresses: TEST-NET ranges only (`203.0.113.x`).
+- Phone numbers: 555 exchange only (e.g. `612-555-0147`).
+- Emails, domains, hostnames: `example.*` only (e.g. `student01@example.edu`,
+  `https://example.jamfcloud.com`).
+- Management IDs and similar GUIDs: freshly generated values, never tenant originals.
+- Tenant, org, and location names: clearly fictional placeholders.
 
 ### CSV fixtures
 
-1. Export or refresh the source CSV in `Dummy/Jamf Reports/...` or `Harbor/Jamf Reports/...`.
-2. Replace the matching committed fixture file while keeping the committed filename stable.
-3. Re-run `pytest`.
+1. Export or refresh the source CSV in a local demo workspace.
+2. Scrub identifying values per the checklist above.
+3. Replace the matching committed fixture file while keeping the committed filename stable.
+4. Re-run `pytest`.
 
 Example pattern:
 
 ```text
-Dummy/Jamf Reports/Pro/All Macs_04052026.csv
+<local demo workspace>/Jamf Reports/Pro/All Macs_04052026.csv
   -> tests/fixtures/csv/dummy_all_macs.csv
 ```
 
@@ -85,17 +102,18 @@ Stable names keep test references clean and avoid churn from timestamped filenam
 
 ### jamf-cli JSON fixtures
 
-1. Refresh the local `Dummy/jamf-cli-data/` cache with a new `collect` run or whatever
-   source command produced the improved JSON shape.
-2. For each command you want covered, replace the committed fixture with the newest
+1. Refresh a local demo workspace's `jamf-cli-data/` cache with a new `collect` run or
+   whatever source command produced the improved JSON shape.
+2. Scrub identifying values per the checklist above.
+3. For each command you want covered, replace the committed fixture with the newest
    useful sample and keep the committed filename stable.
-3. Keep one sample per command shape unless a version-specific regression requires more
+4. Keep one sample per command shape unless a version-specific regression requires more
    than one shape.
 
 Example pattern:
 
 ```text
-Dummy/jamf-cli-data/patch-status/patch-status_2026-04-12T194331927561.json
+<local demo workspace>/jamf-cli-data/patch-status/patch-status_2026-04-12T194331927561.json
   -> tests/fixtures/jamf-cli-data/patch-status/patch-status.json
 ```
 
@@ -105,8 +123,8 @@ Trend charts need dated snapshots. The filename date is part of the behavior und
 
 Use this pattern when you want to build fresh trend data:
 
-1. Keep a per-family source export in `Dummy/` or `Harbor/`.
-2. Copy the export into `tests/fixtures/snapshots/<family>/`.
+1. Keep a per-family source export in a local demo workspace.
+2. Scrub it per the checklist above, then copy it into `tests/fixtures/snapshots/<family>/`.
 3. Give it a stable dated name such as `dummy_all_macs_2026-04-12.csv`.
 4. Keep at least two dated snapshots when you want line or stacked-area trend coverage.
 
@@ -122,7 +140,7 @@ case you care about instead of broadening every existing fixture.
 
 Do not commit:
 
-- full `Dummy/` or `Harbor/` histories
+- full demo-workspace histories or raw (unscrubbed) tenant exports
 - generated `.xlsx` outputs
 - generated chart PNGs
 - `.DS_Store`

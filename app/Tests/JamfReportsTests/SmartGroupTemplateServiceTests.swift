@@ -56,11 +56,11 @@ final class SmartGroupTemplateServiceTests: XCTestCase {
         ]
         """
         let executor = MockCLIExecutor(canned: [
-            (.proSmartGroupTemplates(profile: "harbor"), .success(Data(json.utf8))),
+            (.proSmartGroupTemplates(profile: "lighthouse"), .success(Data(json.utf8))),
         ])
         let service = SmartGroupTemplateService(executor: executor)
 
-        let templates = try await service.listTemplates(profile: "harbor")
+        let templates = try await service.listTemplates(profile: "lighthouse")
 
         XCTAssertEqual(templates.count, 3)
         // Sort: compliance < mdm < updates alphabetically by category, then by slug.

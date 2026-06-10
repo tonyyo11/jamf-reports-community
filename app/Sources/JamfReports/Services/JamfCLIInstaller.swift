@@ -468,7 +468,10 @@ final class JamfCLIInstaller {
     }
 
     private static func homebrewLinkedJamfCLI(using brew: URL) -> URL? {
-        let result = runProcessSync(executable: brew, arguments: ["--prefix", "jamf-cli"])
+        let result = runProcessSync(
+            executable: brew, arguments: ["--prefix", "jamf-cli"],
+            environment: environmentForBrew()
+        )
         guard result.exitCode == 0 else { return nil }
         let prefix = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prefix.isEmpty else { return nil }
@@ -482,7 +485,8 @@ final class JamfCLIInstaller {
         guard let brew = brewExecutable(for: installation) else {
             return UpdateResult(succeeded: false, message: "Homebrew install detected, but brew was not found.")
         }
-        let update = await runProcess(executable: brew, arguments: ["update"])
+        let brewEnv = environmentForBrew()
+        let update = await runProcess(executable: brew, arguments: ["update"], environment: brewEnv)
         guard update.exitCode == 0 else {
             return UpdateResult(
                 succeeded: false,
@@ -490,7 +494,9 @@ final class JamfCLIInstaller {
             )
         }
 
-        let outdated = await runProcess(executable: brew, arguments: ["outdated", "--quiet", "jamf-cli"])
+        let outdated = await runProcess(
+            executable: brew, arguments: ["outdated", "--quiet", "jamf-cli"], environment: brewEnv
+        )
         let output = outdated.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         if output.isEmpty {
             return UpdateResult(
@@ -505,7 +511,8 @@ final class JamfCLIInstaller {
         guard let brew = brewExecutable(for: installation) else {
             return UpdateResult(succeeded: false, message: "Homebrew install detected, but brew was not found.")
         }
-        let update = await runProcess(executable: brew, arguments: ["update"])
+        let brewEnv = environmentForBrew()
+        let update = await runProcess(executable: brew, arguments: ["update"], environment: brewEnv)
         guard update.exitCode == 0 else {
             return UpdateResult(
                 succeeded: false,
@@ -513,7 +520,9 @@ final class JamfCLIInstaller {
             )
         }
 
-        let upgrade = await runProcess(executable: brew, arguments: ["upgrade", "jamf-cli"])
+        let upgrade = await runProcess(
+            executable: brew, arguments: ["upgrade", "jamf-cli"], environment: brewEnv
+        )
         guard upgrade.exitCode == 0 else {
             return UpdateResult(
                 succeeded: false,
@@ -863,7 +872,8 @@ final class JamfCLIInstaller {
         if lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") {
             let extract = await runProcess(
                 executable: URL(fileURLWithPath: "/usr/bin/tar"),
-                arguments: ["-xzf", downloaded.path, "-C", directory.path]
+                arguments: ["-xzf", downloaded.path, "-C", directory.path],
+                environment: environmentForArchiveTool()
             )
             guard extract.exitCode == 0 else {
                 throw NSError(
@@ -878,7 +888,8 @@ final class JamfCLIInstaller {
         if lower.hasSuffix(".zip") {
             let extract = await runProcess(
                 executable: URL(fileURLWithPath: "/usr/bin/unzip"),
-                arguments: ["-q", downloaded.path, "-d", directory.path]
+                arguments: ["-q", downloaded.path, "-d", directory.path],
+                environment: environmentForArchiveTool()
             )
             guard extract.exitCode == 0 else {
                 throw NSError(
@@ -916,7 +927,10 @@ final class JamfCLIInstaller {
             return
         }
 
-        let listing = await runProcess(executable: executable, arguments: arguments)
+        let listing = await runProcess(
+            executable: executable, arguments: arguments,
+            environment: environmentForArchiveTool()
+        )
         guard listing.exitCode == 0 else {
             throw NSError(
                 domain: "JamfCLIInstaller",
@@ -1035,11 +1049,43 @@ final class JamfCLIInstaller {
             .compactMap { Int($0) }
     }
 
+    /// Minimal environment for Homebrew subprocess invocations. Pins the same
+    /// PATH base as `CLIBridge.environmentForJamfCLI` (covering Homebrew prefixes
+    /// for both Apple Silicon and Intel), passes HOME/LANG/TMPDIR from the parent,
+    /// and allow-lists all HOMEBREW_*-prefixed variables so users with non-default
+    /// Homebrew configurations (e.g. custom HOMEBREW_CELLAR, HOMEBREW_REPOSITORY,
+    /// HOMEBREW_NO_AUTO_UPDATE) are not broken. No other parent env keys are passed.
+    private static func environmentForBrew() -> [String: String] {
+        let parent = ProcessInfo.processInfo.environment
+        var env: [String: String] = [
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
+            "LANG": parent["LANG"] ?? "en_US.UTF-8",
+            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
+        ]
+        for (key, value) in parent where key.hasPrefix("HOMEBREW_") {
+            env[key] = value
+        }
+        return env
+    }
+
+    /// Minimal environment for archive-tool subprocess invocations (tar, unzip,
+    /// ditto). No HOMEBREW_* passthrough needed for these system tools.
+    private static func environmentForArchiveTool() -> [String: String] {
+        let parent = ProcessInfo.processInfo.environment
+        return [
+            "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": parent["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path,
+            "LANG": parent["LANG"] ?? "en_US.UTF-8",
+            "TMPDIR": parent["TMPDIR"] ?? "/tmp",
+        ]
+    }
+
     /// SF-10: `environment` is opt-in because callers run a mix of brew, tar,
     /// unzip, and jamf-cli — each needs a different env scope. Pass
-    /// `CLIBridge.environmentForJamfCLI()` for jamf-cli invocations, leave
-    /// nil to inherit the parent (current behavior for brew/tar/unzip, where
-    /// the parent's PATH is required to find Homebrew prefixes).
+    /// `CLIBridge.environmentForJamfCLI()` for jamf-cli invocations,
+    /// `environmentForBrew()` for Homebrew, `environmentForArchiveTool()` for
+    /// tar/unzip. Leave nil only when a caller genuinely needs the full parent env.
     private static func runProcessSync(
         executable: URL,
         arguments: [String],

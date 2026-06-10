@@ -1346,17 +1346,36 @@ def _archive_old_output_runs(
         for path in paths:
             family_archive_dir = archive_dir / family_base
             family_archive_dir.mkdir(parents=True, exist_ok=True)
-            dest = family_archive_dir / path.name
-            if dest.exists():
-                dest = family_archive_dir / f"{path.stem}_{_file_stamp()}{path.suffix}"
-            try:
-                shutil.move(str(path), str(dest))
-            except OSError as e:
-                print(f"[warning] could not archive {path}: {e}")
-                continue
-            moved.append(dest)
+            # Move the report plus its integrity sidecars (`<name>.sha256`,
+            # `<name>.manifest`) together so a verifier never finds an orphaned
+            # sidecar in the output dir or a report missing its checksum.
+            for item in _output_run_files_with_sidecars(path):
+                dest = family_archive_dir / item.name
+                if dest.exists():
+                    dest = family_archive_dir / f"{item.stem}_{_file_stamp()}{item.suffix}"
+                try:
+                    shutil.move(str(item), str(dest))
+                except OSError as e:
+                    print(f"[warning] could not archive {item}: {e}")
+                    continue
+                moved.append(dest)
 
     return moved
+
+
+def _output_run_files_with_sidecars(report_path: Path) -> list[Path]:
+    """Return ``report_path`` plus any existing ``.sha256``/``.manifest`` sidecars.
+
+    Sidecars are named by appending the suffix to the full report filename
+    (e.g. ``report.xlsx`` -> ``report.xlsx.sha256``). Only sidecars that exist on
+    disk are returned; the report itself is always first.
+    """
+    files = [report_path]
+    for sidecar_suffix in (".sha256", ".manifest"):
+        sidecar = report_path.with_name(report_path.name + sidecar_suffix)
+        if sidecar.is_file():
+            files.append(sidecar)
+    return files
 
 
 def _cli_path(path_value: Optional[str]) -> Optional[Path]:
@@ -2112,6 +2131,48 @@ def _find_jamf_cli_binary() -> Optional[str]:
                 print(f"[info] using JAMFCLI_PATH override: {path}")
             return path
     return None
+
+
+# Proxy variables a jamf-cli HTTPS call legitimately needs, passed through
+# verbatim from the parent environment when present. Lowercase variants are
+# honored too (some shells/tools set only those).
+_JAMF_CLI_PROXY_PASSTHROUGH: tuple[str, ...] = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+)
+
+
+def _jamf_cli_env() -> dict[str, str]:
+    """Return a minimal allow-list environment for jamf-cli subprocesses.
+
+    The parent process environment can carry injection vectors that change a
+    child's behavior — most notably ``DYLD_INSERT_LIBRARIES`` (dylib injection)
+    and ``SSL_CERT_FILE`` / ``SSL_CERT_DIR`` (redirecting TLS trust). Rather than
+    inherit the full environment, jamf-cli is run with only the variables it
+    needs: ``PATH`` (with a sane default if unset so the binary and its helpers
+    still resolve), ``HOME`` (jamf-cli reads its keychain/config under it),
+    ``LANG``, ``TMPDIR``, ``USER``, plus any HTTP(S)/NO proxy variables. Mirrors
+    the Swift twin ``CLIBridge.environmentForJamfCLI()``.
+
+    Returns:
+        A new environment dict suitable for ``subprocess.run(env=...)``.
+    """
+    env: dict[str, str] = {
+        "PATH": os.environ.get("PATH") or "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+    for name in ("HOME", "LANG", "TMPDIR", "USER"):
+        value = os.environ.get(name)
+        if value is not None:
+            env[name] = value
+    for name in _JAMF_CLI_PROXY_PASSTHROUGH:
+        value = os.environ.get(name)
+        if value is not None:
+            env[name] = value
+    return env
 
 
 def _jamf_cli_enabled(config: "Config") -> bool:
@@ -3235,6 +3296,112 @@ def _archive_csv_snapshot(csv_path: str, historical_dir: str) -> tuple[Optional[
     return dest, True
 
 
+def _fresh_summary_is_better(existing: dict[str, Any], fresh: dict[str, Any]) -> bool:
+    """Return True when ``fresh`` should overwrite a same-day ``existing`` summary.
+
+    Upgrade-only parity with the Swift ``ReportEngine.freshSummaryIsBetter``. A
+    later same-day run is "better" — and only then is the first-run-of-day skip
+    overridden — when at least one of:
+
+    * ``existing`` used the 4-control compliance proxy (``complianceIsProxy``
+      truthy) and ``fresh`` now has real mSCP data (``complianceIsProxy`` false), OR
+    * ``existing`` has no ``mscpBands`` (absent/empty) and ``fresh`` has non-empty
+      ``mscpBands``, OR
+    * ``existing.staleCount == 0`` on a non-empty fleet
+      (``existing.totalDevices > 0``) while ``fresh.staleCount > 0`` — the earlier
+      run's stale source was empty/degraded (e.g. a transient failure).
+
+    Never returns True for a downgrade (real→proxy, bands dropped, or a real
+    non-zero stale count replaced by zero), preserving the protection against a
+    partial collect clobbering a good summary.
+    """
+    if existing.get("complianceIsProxy") and fresh.get("complianceIsProxy") is False:
+        return True
+    existing_has_bands = bool(existing.get("mscpBands"))
+    fresh_has_bands = bool(fresh.get("mscpBands"))
+    if not existing_has_bands and fresh_has_bands:
+        return True
+    if (
+        int(existing.get("staleCount", 0) or 0) == 0
+        and int(existing.get("totalDevices", 0) or 0) > 0
+        and int(fresh.get("staleCount", 0) or 0) > 0
+    ):
+        return True
+    return False
+
+
+def _read_existing_summary(summary_file: Path) -> Optional[dict[str, Any]]:
+    """Return the validated existing same-day summary dict, or None.
+
+    None means there is no valid same-day summary to preserve — the file is
+    absent, unreadable, not JSON, not an object, or missing the required keys.
+    A non-None return is a summary the first-run-of-day skip would keep unless a
+    fresh run is strictly better (see :func:`_fresh_summary_is_better`). Prints
+    the same regeneration diagnostics the prior inline guard emitted.
+    """
+    if not summary_file.exists():
+        return None
+    try:
+        existing = json.loads(summary_file.read_text(encoding="utf-8"))
+        required_keys = {"date", "totalDevices", "source"}
+        if not isinstance(existing, dict):
+            raise ValueError("top-level JSON is not an object")
+        missing = required_keys - existing.keys()
+        if missing:
+            raise ValueError(f"missing required keys: {sorted(missing)}")
+    except json.JSONDecodeError as exc:
+        print(
+            f"  [warn] Existing summary {summary_file} is corrupt — not "
+            f"valid JSON ({exc}); regenerating"
+        )
+        return None
+    except (OSError, UnicodeDecodeError) as exc:
+        print(
+            f"  [warn] Existing summary {summary_file} could not be read "
+            f"({exc}); regenerating"
+        )
+        return None
+    except ValueError as exc:
+        print(
+            f"  [warn] Existing summary {summary_file} is valid JSON but "
+            f"incomplete ({exc}); regenerating"
+        )
+        return None
+    return existing
+
+
+def _persist_summary_with_upgrade(
+    summary_file: Path,
+    summaries_dir: Path,
+    fresh: dict[str, Any],
+    existing: Optional[dict[str, Any]],
+    date_str: str,
+    *,
+    force: bool,
+) -> None:
+    """Write ``fresh`` unless a valid same-day ``existing`` should be preserved.
+
+    With ``force`` the fresh summary always wins. Otherwise the first-run-of-day
+    summary is kept unless ``fresh`` is strictly better per
+    :func:`_fresh_summary_is_better` (e.g. proxy→real mSCP, or a degraded
+    zero-stale run is replaced by one that sees stale devices).
+    """
+    if existing is not None and not force:
+        if _fresh_summary_is_better(existing, fresh):
+            print(
+                f"  [note] Trend summary for {date_str} exists but the new run is "
+                f"better (real compliance/bands or recovered stale count); replacing "
+                f"({summary_file})"
+            )
+        else:
+            print(
+                f"  [note] Trend summary for {date_str} already exists; "
+                f"re-run with --force-summary to overwrite ({summary_file})"
+            )
+            return
+    _atomic_write_summary(summary_file, summaries_dir, fresh)
+
+
 def _emit_summary_json(
     config: Config,
     csv_dash: Optional[CSVDashboard],
@@ -3264,48 +3431,20 @@ def _emit_summary_json(
     date_str = datetime.now().strftime("%Y-%m-%d")
     summary_file = summaries_dir / f"summary_{date_str}.json"
 
-    if summary_file.exists() and not force:
-        # Validate existing file before skipping.
-        try:
-            existing = json.loads(summary_file.read_text(encoding="utf-8"))
-            required_keys = {"date", "totalDevices", "source"}
-            if not isinstance(existing, dict):
-                raise ValueError("top-level JSON is not an object")
-            missing = required_keys - existing.keys()
-            if missing:
-                raise ValueError(f"missing required keys: {sorted(missing)}")
-        # Ordering: JSONDecodeError and UnicodeDecodeError are ValueError
-        # subclasses and must precede the bare ValueError arm. OSError is not a
-        # ValueError subclass — it shares the UnicodeDecodeError arm because both
-        # mean the file "could not be read".
-        except json.JSONDecodeError as exc:
-            print(
-                f"  [warn] Existing summary {summary_file} is corrupt — not "
-                f"valid JSON ({exc}); regenerating"
-            )
-        except (OSError, UnicodeDecodeError) as exc:
-            print(
-                f"  [warn] Existing summary {summary_file} could not be read "
-                f"({exc}); regenerating"
-            )
-        except ValueError as exc:
-            print(
-                f"  [warn] Existing summary {summary_file} is valid JSON but "
-                f"incomplete ({exc}); regenerating"
-            )
-        else:
-            print(
-                f"  [note] Trend summary for {date_str} already exists; "
-                f"re-run with --force-summary to overwrite ({summary_file})"
-            )
-            return
+    # Capture any valid same-day summary up front. The write decision is deferred
+    # to _persist_summary_with_upgrade so a fresh run that is strictly better
+    # (proxy→real mSCP, recovered stale count) can replace a degraded first run of
+    # the day instead of being skipped — parity with Swift freshSummaryIsBetter.
+    existing = None if force else _read_existing_summary(summary_file)
 
     df = getattr(csv_dash, "_df", None) if csv_dash else None
     if df is None:
         summary_data = _build_summary_from_bridge(config, bridge, date_str)
         if summary_data is None:
             return
-        _atomic_write_summary(summary_file, summaries_dir, summary_data)
+        _persist_summary_with_upgrade(
+            summary_file, summaries_dir, summary_data, existing, date_str, force=force
+        )
         return
 
     total_devices = len(df)
@@ -3439,7 +3578,9 @@ def _emit_summary_json(
     # Swift summary wiring (ReportEngine.emitSummaryJSON).
     _apply_mscp_bands_to_summary(summary_data, config, bridge)
 
-    _atomic_write_summary(summary_file, summaries_dir, summary_data)
+    _persist_summary_with_upgrade(
+        summary_file, summaries_dir, summary_data, existing, date_str, force=force
+    )
 
 
 def _emit_per_log_summary_json(
@@ -4253,6 +4394,13 @@ class LogRedactor:
             ),
             r"\1REDACTED_WEBHOOK_URL\3",
         ),
+        # Bare argv form: `--notify https://…` — the LaunchAgent ProgramArguments
+        # array and command echoes carry the webhook URL as a CLI flag value, not
+        # as a `webhook_url:` config key, so the pattern above can't reach it.
+        (
+            re.compile(r"(--notify[=\s]+)(https?://\S+)"),
+            r"\1REDACTED_WEBHOOK_URL",
+        ),
     ]
 
     # JSON keys that always have their value replaced regardless of the value's
@@ -4846,7 +4994,7 @@ class JamfCLIBridge:
             result = subprocess.run(
                 [self._binary, "version", "-o", "json"],
                 capture_output=True, text=True, timeout=10,
-                check=False, stdin=subprocess.DEVNULL,
+                check=False, stdin=subprocess.DEVNULL, env=_jamf_cli_env(),
             )
         except (OSError, subprocess.TimeoutExpired):
             return None
@@ -4883,6 +5031,7 @@ class JamfCLIBridge:
                 check=True,
                 timeout=30,
                 stdin=subprocess.DEVNULL,
+                env=_jamf_cli_env(),
             )
             entries = json.loads(result.stdout or "[]")
             if not isinstance(entries, list):
@@ -5023,6 +5172,7 @@ class JamfCLIBridge:
                 check=True,
                 timeout=30,
                 stdin=subprocess.DEVNULL,
+                env=_jamf_cli_env(),
             )
         except (subprocess.SubprocessError, PermissionError):
             self._report_commands_cache = set()
@@ -5166,6 +5316,7 @@ class JamfCLIBridge:
             result = subprocess.run(
                 cmd, capture_output=True, text=True, check=True,
                 timeout=effective_timeout, stdin=subprocess.DEVNULL,
+                env=_jamf_cli_env(),
             )
         except subprocess.TimeoutExpired as e:
             raise RuntimeError(
@@ -6516,7 +6667,10 @@ class SOFAFeedClient:
         url = SOFA_FEED_URL.format(platform=platform)
         try:
             result = subprocess.run(
-                ["curl", "-s", "-f", "--max-time", str(self._timeout), url],
+                # --max-redirs 0 is explicit defense in depth: curl never follows
+                # redirects without -L, but pinning it to 0 documents and enforces
+                # that a redirect to an attacker-chosen host is refused.
+                ["curl", "-s", "-f", "--max-redirs", "0", "--max-time", str(self._timeout), url],
                 capture_output=True, text=True, check=True,
                 timeout=self._timeout + 5, stdin=subprocess.DEVNULL,
             )
@@ -6892,7 +7046,10 @@ def _legacy_benchmark_slug(title: str) -> str:
 def _benchmark_slug(title: str) -> str:
     """Return a collision-resistant filesystem-safe slug from a benchmark title."""
     normalized = _legacy_benchmark_slug(title) or "benchmark"
-    digest = hashlib.sha1(str(title).encode("utf-8")).hexdigest()[:8]
+    # SHA-256 (truncated to 8 hex chars) — the slug only needs collision
+    # resistance for filesystem-safe names, not a hardened MAC, but SHA-1 is
+    # avoided on principle. Length and format are unchanged.
+    digest = hashlib.sha256(str(title).encode("utf-8")).hexdigest()[:8]
     stem = normalized[:39].rstrip("-") or "benchmark"
     return f"{stem}-{digest}"
 
@@ -7212,6 +7369,7 @@ class ProtectCLIBridge(JamfCLIBridge):
                 check=True,
                 timeout=30,
                 stdin=subprocess.DEVNULL,
+                env=_jamf_cli_env(),
             )
         except (subprocess.SubprocessError, PermissionError):
             self._protect_commands_cache = set()
@@ -16452,9 +16610,7 @@ def cmd_generate(
     # Emit trend summary JSON only after xlsxwriter has finalized the workbook.
     _emit_summary_json(config, csv_dash, bridge, hist_dir, force=force_summary)
     if archive_enabled:
-        archive_dir = config.resolve_path("output", "archive_dir")
-        if archive_dir is None:
-            archive_dir = out_path.parent / "archive"
+        archive_dir = _resolve_output_archive_dir(config, out_path)
         family_base = _strip_timestamp_suffix(out_path.stem)
         archived_paths = _archive_old_output_runs(
             out_path.parent,
@@ -19706,9 +19862,7 @@ def cmd_html(
     report.generate()
     archived_paths: list[Path] = []
     if archive_enabled:
-        archive_dir = config.resolve_path("output", "archive_dir")
-        if archive_dir is None:
-            archive_dir = out_path.parent / "archive"
+        archive_dir = _resolve_output_archive_dir(config, out_path)
         family_base = _strip_timestamp_suffix(out_path.stem)
         archived_paths = _archive_old_output_runs(
             out_path.parent,
@@ -20044,6 +20198,42 @@ def _retention_archive_root(config: Config) -> Path:
     return default
 
 
+def _archive_dir_escapes_workspace(resolved: Path, workspace: Path) -> bool:
+    """Return True when ``resolved`` is neither the workspace nor inside it."""
+    return resolved != workspace and workspace not in resolved.parents
+
+
+def _resolve_output_archive_dir(config: "Config", out_path: Path) -> Path:
+    """Resolve ``output.archive_dir`` with a workspace-containment guard.
+
+    Returns the configured archive dir when it resolves inside the workspace
+    root, the default ``<out_path.parent>/archive`` when unset, and falls back to
+    that default (with a warning) when a configured absolute path escapes the
+    workspace — so a report archive sweep can never move output files outside the
+    workspace. Mirrors the retention guard in ``_retention_archive_root``.
+
+    Args:
+        config: Active configuration (its ``base_dir`` is the workspace root).
+        out_path: The report output path; its parent anchors the default.
+
+    Returns:
+        The archive directory Path to use.
+    """
+    default = out_path.parent / "archive"
+    configured = config.resolve_path("output", "archive_dir")
+    if configured is None:
+        return default
+    workspace = Path(config.base_dir).resolve()
+    if _archive_dir_escapes_workspace(Path(configured).resolve(), workspace):
+        raw = str(config.get("output", "archive_dir", default="") or "")
+        print(
+            f"  [warning] output.archive_dir '{raw}' is outside the workspace root "
+            f"'{config.base_dir}'; falling back to {default}."
+        )
+        return default
+    return Path(configured)
+
+
 def _retention_act(path: Path, archive_subpath: str, archive_root: Path, mode: str) -> bool:
     """Archive (move) or delete one file. Returns True on success; never raises."""
     try:
@@ -20194,6 +20384,29 @@ class JamfAuthError(RuntimeError):
             f"Jamf Pro call(s) returned 401 (expired or revoked credentials) and none "
             f"succeeded. Re-authenticate with: jamf-cli -p {profile} pro auth token. "
             f"No snapshot was written."
+        )
+
+
+class JamfCollectError(RuntimeError):
+    """Raised when every live Jamf Pro call in a collect failed but NONE was a 401.
+
+    This is the total-outage sibling of :class:`JamfAuthError`: the server is
+    unreachable or chronically failing (timeouts, 404/403/429, general errors),
+    not a credential problem. Like the auth verdict it is raised before any
+    summary is written so a scheduled/manual collect records ``success: False``
+    instead of freezing a today-stamped summary from stale cache and reporting a
+    Success webhook. A partial failure (at least one live call succeeded) does
+    NOT reach here — that falls back to cache as before.
+    """
+
+    def __init__(self, profile: str, failed_count: int) -> None:
+        self.profile = profile
+        self.failed_count = failed_count
+        super().__init__(
+            f"Collect failed for profile '{profile}': all {failed_count} live Jamf Pro "
+            f"call(s) failed and none succeeded — the server is unreachable or in chronic "
+            f"failure (not an authentication problem). No snapshot was written. Check "
+            f"network connectivity and that jamf-cli can reach the Jamf Pro server."
         )
 
 
@@ -20362,6 +20575,15 @@ def _collect_snapshots(
         # to cache above. Mirrors Swift ReportEngine.isCollectAuthDead.
         if live_attempts > 0 and live_successes == 0 and auth_failures > 0:
             raise JamfAuthError(jamf_cli_profile or "(default)", auth_failures)
+        # Collect-dead guard: every live Pro call failed but none was a 401 —
+        # total outage / chronic failure rather than dead credentials. Raise so
+        # the scheduled-run status records success: False and no degraded summary
+        # is written. Without this, an all-fail-no-401 run would fall through to
+        # cmd_generate and freeze a today-stamped summary from stale cache, then
+        # report a Success webhook. A partial failure (>=1 success) never reaches
+        # here — it falls back to cache as before.
+        if live_attempts > 0 and live_successes == 0:
+            raise JamfCollectError(jamf_cli_profile or "(default)", live_attempts)
     elif jamf_cli_enabled:
         print("  jamf-cli: not found; skipping live snapshot collection.")
     else:
@@ -20590,6 +20812,7 @@ def cmd_backup(config: Config, label: Optional[str] = None) -> Path:
             check=True,
             timeout=timeout,
             stdin=subprocess.DEVNULL,
+            env=_jamf_cli_env(),
         )
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout).strip()
@@ -20766,9 +20989,7 @@ def _inventory_base_rows(
 
 def _archive_inventory_output(config: Config, out_path: Path, keep_latest_runs: int) -> None:
     """Archive older inventory CSV exports according to output settings."""
-    archive_dir = config.resolve_path("output", "archive_dir")
-    if archive_dir is None:
-        archive_dir = out_path.parent / "archive"
+    archive_dir = _resolve_output_archive_dir(config, out_path)
     family_base = _strip_timestamp_suffix(out_path.stem)
     archived_paths = _archive_old_output_runs(
         out_path.parent,
@@ -21366,6 +21587,20 @@ def _launchagent_program_arguments(
     return args
 
 
+def _redacted_program_args(program_arguments: list[str]) -> list[str]:
+    """Return a copy of the args with the ``--notify`` value masked.
+
+    The value following ``--notify`` is an incoming webhook URL — a posting
+    credential whose path identifies the tenant. Returned for display/echo only;
+    the real value still goes into the generated plist.
+    """
+    redacted = list(program_arguments)
+    for i, arg in enumerate(redacted[:-1]):
+        if arg == "--notify":
+            redacted[i + 1] = "<redacted>"
+    return redacted
+
+
 def _automation_output_flags(config: Config) -> tuple[bool, bool, bool]:
     """Return configured automation output flags as (xlsx, html, inventory_csv)."""
     automation_cfg = config.automation
@@ -21380,8 +21615,13 @@ def _launchagent_previous_plist_path(plist_path: Path) -> Path:
     return plist_path.with_name(f".{plist_path.name}.previous")
 
 
-def _write_launchagent_bytes(path: Path, payload: bytes, mode: int = 0o644) -> None:
-    """Atomically write bytes to a LaunchAgent-adjacent file."""
+def _write_launchagent_bytes(path: Path, payload: bytes, mode: int = 0o600) -> None:
+    """Atomically write bytes to a LaunchAgent-adjacent file.
+
+    Defaults to owner-only (0o600) because the plist's ``ProgramArguments`` can
+    embed a ``--notify`` webhook URL — a posting credential whose path leaks the
+    tenant. Callers writing non-sensitive sidecars may pass an explicit ``mode``.
+    """
     temp_path: Optional[Path] = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -21428,9 +21668,12 @@ def _write_launchagent_plist(
     }
     plist_path.parent.mkdir(parents=True, exist_ok=True)
     previous_path = _launchagent_previous_plist_path(plist_path)
-    mode = 0o644
+    # Owner-only: the plist may carry a --notify webhook credential. If an
+    # existing plist preserved a wider mode, clamp off group/other bits rather
+    # than inheriting a world-readable plist written by an older version.
+    mode = 0o600
     if plist_path.exists():
-        mode = plist_path.stat().st_mode & 0o777
+        mode = plist_path.stat().st_mode & 0o700
         _write_launchagent_bytes(previous_path, plist_path.read_bytes(), mode)
     else:
         previous_path.unlink(missing_ok=True)
@@ -21853,7 +22096,7 @@ def cmd_launchagent_setup(
     print(f"  status file: {status_path}")
     if disabled:
         print("  enabled: false")
-    print(f"  command: {shlex.join(program_arguments)}")
+    print(f"  command: {shlex.join(_redacted_program_args(program_arguments))}")
     isolation_guidance = _profile_isolation_guidance(config)
     if isolation_guidance:
         print("  profile isolation guidance:")
@@ -22425,6 +22668,8 @@ def _bundle_collect_versions(
             text=True,
             timeout=10,
             check=False,
+            stdin=subprocess.DEVNULL,
+            env=_jamf_cli_env(),
         )
         if result.returncode == 0:
             jamf_version = (result.stdout or result.stderr or "").strip().splitlines()[0]
@@ -22518,6 +22763,16 @@ def cmd_diagnostic_bundle(
         output_path = Path.home() / "Desktop" / f"jamf-reports-diagnostic-{profile_slug}-{ts}.zip"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # The bundle can carry redacted-but-still-sensitive material (workspace
+    # layout, config structure, log excerpts); restrict the containing dir and
+    # the zip to the owner. The dir chmod is best-effort — a shared standard
+    # location like ~/Desktop must not be clamped, so only tighten dirs we
+    # plausibly created under the workspace's diagnostics tree.
+    try:
+        if output_path.parent.name == "diagnostics":
+            os.chmod(output_path.parent, 0o700)
+    except OSError:
+        pass
 
     manifest_files: list[dict[str, Any]] = []
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -22542,6 +22797,12 @@ def cmd_diagnostic_bundle(
             "files": manifest_files,
         }
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+
+    # Owner-only on the finished zip regardless of where it landed.
+    try:
+        os.chmod(output_path, 0o600)
+    except OSError:
+        pass
 
     print(f"Wrote diagnostic bundle: {output_path}")
     print(f"  {len(manifest_files)} files bundled.")
@@ -22735,9 +22996,15 @@ def cmd_school_collect(config: Config, summary_json: Optional[str] = None) -> No
         print("All school snapshots collected successfully.")
     else:
         print(f"{len(fetchers) - len(errors)}/{len(fetchers)} snapshots collected.")
+    # A total failure (every fetcher errored, zero collected) is "fail", not
+    # "partial" — surface it as a non-zero exit so a scheduled school collect
+    # records failure rather than reporting success on an empty result. A
+    # partial result (>=1 collected) stays "partial" and exits 0.
+    all_failed = bool(errors) and not collected
+    run_status = "fail" if all_failed else ("partial" if errors else "ok")
     summary.update(
         {
-            "status": "partial" if errors else "ok",
+            "status": run_status,
             "outputs": [],
             "counts": {
                 "requested_snapshots": len(fetchers),
@@ -22752,8 +23019,14 @@ def cmd_school_collect(config: Config, summary_json: Optional[str] = None) -> No
             },
         }
     )
-    _finish_command_summary(summary, status="partial" if errors else "ok")
+    _finish_command_summary(summary, status=run_status)
     _write_summary_json(summary_json, summary)
+    if all_failed:
+        raise SystemExit(
+            f"Error: all {len(fetchers)} school snapshots failed to collect — "
+            f"the server is unreachable or jamf-cli school auth is invalid. "
+            f"No snapshot was written."
+        )
 
 
 def cmd_school_generate(
@@ -23103,7 +23376,7 @@ def _parse_jamf_cli_pro_commands(binary: str) -> set[str]:
     try:
         result = subprocess.run(
             [binary, "pro", "--help"], capture_output=True, text=True,
-            timeout=10, check=False, stdin=subprocess.DEVNULL,
+            timeout=10, check=False, stdin=subprocess.DEVNULL, env=_jamf_cli_env(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return set()
@@ -23136,7 +23409,7 @@ def _capability_jamf_cli_matrix() -> dict[str, Any]:
     try:
         result = subprocess.run(
             [binary, "--version"], capture_output=True, text=True,
-            timeout=10, check=False, stdin=subprocess.DEVNULL,
+            timeout=10, check=False, stdin=subprocess.DEVNULL, env=_jamf_cli_env(),
         )
         if result.returncode == 0:
             text = (result.stdout or result.stderr or "").strip()

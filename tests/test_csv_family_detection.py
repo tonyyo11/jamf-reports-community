@@ -54,7 +54,7 @@ def test_no_discriminator_headers_returns_none(jrc) -> None:
 
 
 def test_school_csv_is_not_misdetected(jrc, fixtures_root: Path) -> None:
-    headers = _headers(fixtures_root / "csv" / "harboredu_school_devices.csv", sep=";")
+    headers = _headers(fixtures_root / "csv" / "school_devices.csv", sep=";")
     assert jrc._detect_csv_family_from_headers(headers) is None
 
 

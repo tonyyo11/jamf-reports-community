@@ -256,6 +256,13 @@ enum LaunchAgentService {
     /// workspaces root, which operators commonly host on a cloud share — so the
     /// URL is scrubbed in the COPY. The live plist in LaunchAgents is untouched;
     /// restoring it means re-adding the webhook.
+    ///
+    /// MAINTENANCE CONTRACT: this set must stay in sync with the credential-bearing
+    /// flag vocabulary of `LaunchAgentWriter.nativeSingleWrite` and
+    /// `nativeMultiWrite`. Any future flag that embeds a credential (API key,
+    /// webhook URL, bearer token, etc.) in ProgramArguments MUST be added here,
+    /// or it will ship unredacted into workspace archives (potentially on a
+    /// cloud share). One flag per entry; the flag name only — not the value slot.
     private static let secretArgFlags: Set<String> = ["--notify"]
 
     private static func archivePlist(at url: URL, label: String, into dir: URL) -> Bool {

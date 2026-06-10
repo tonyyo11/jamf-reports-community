@@ -343,7 +343,7 @@ _PREFIX = "com.github.tonyyo11.jamf-reports-community"
     [
         f"{_PREFIX}.dummy",
         f"{_PREFIX}.dummy.daily",
-        f"{_PREFIX}.harbor-edu_v2",
+        f"{_PREFIX}.fixture-edu_v2",
         f"{_PREFIX}.school-test.weekly-mon",
     ],
 )

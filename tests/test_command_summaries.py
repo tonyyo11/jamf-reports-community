@@ -92,7 +92,7 @@ def test_school_generate_writes_summary_json(jrc, fixtures_root, tmp_path) -> No
     """school-generate can summarize workbook output and written sheets."""
     config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
     config._data["output"]["output_dir"] = str(tmp_path / "Generated Reports")
-    csv_path = str(fixtures_root / "csv" / "harboredu_school_devices.csv")
+    csv_path = str(fixtures_root / "csv" / "school_devices.csv")
     out_file = str(tmp_path / "school_report.xlsx")
     summary_path = tmp_path / "school-generate-summary.json"
 
@@ -408,7 +408,7 @@ def test_school_generate_failed_sheet_reports_status_partial(
     """school-generate emits partial-success status when a sheet writer crashes."""
     config = jrc.Config(str(fixtures_root / "config" / "school_test.yaml"))
     config._data["output"]["output_dir"] = str(tmp_path / "Generated Reports")
-    csv_path = str(fixtures_root / "csv" / "harboredu_school_devices.csv")
+    csv_path = str(fixtures_root / "csv" / "school_devices.csv")
     out_file = str(tmp_path / "school_report.xlsx")
     summary_path = tmp_path / "school-partial-summary.json"
 

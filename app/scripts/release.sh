@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-cd "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
 
 # Require all release variables upfront
 : "${RELEASE_VERSION:?RELEASE_VERSION env var not set (e.g. 2.1.0)}"

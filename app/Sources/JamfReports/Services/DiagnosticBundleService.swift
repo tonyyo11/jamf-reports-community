@@ -408,7 +408,16 @@ enum DiagnosticBundleService {
         options: DiagnosticBundleOptions, now: Date
     ) throws -> URL {
         let fm = FileManager.default
-        try fm.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        // 0o700: diagnostic output is per-user sensitive; no group/world read.
+        try fm.createDirectory(
+            at: outputDir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
+        )
+        // createDirectory attributes are a no-op when the directory already
+        // exists (e.g. created 0o755 by an earlier app version) — tighten it.
+        try? fm.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o700))], ofItemAtPath: outputDir.path
+        )
         let stamp = timestamp(now)
         // Random suffix so a second app instance's defer-cleanup can't wipe this
         // run's staging mid-write if two bundles start in the same clock second.
@@ -416,7 +425,11 @@ enum DiagnosticBundleService {
         let staging = outputDir.appendingPathComponent(
             ".staging-\(stamp)-\(token)", isDirectory: true)
         try? fm.removeItem(at: staging)
-        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        // 0o700: staging dir holds unzipped sensitive content.
+        try fm.createDirectory(
+            at: staging, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: NSNumber(value: Int16(0o700))]
+        )
         defer { try? fm.removeItem(at: staging) }
 
         let redactor: DiagnosticRedactor? = options.redact ? makeRedactor(options) : nil
@@ -434,6 +447,20 @@ enum DiagnosticBundleService {
             "jamf-reports-diagnostic-\(profileSlug)-\(stamp).zip")
         try? fm.removeItem(at: zipURL)
         try archive(staging: staging, to: zipURL)
+        // 0o600: zip holds potentially sensitive diagnostic content; restrict to
+        // owner-read/write only. Best-effort: a failure to chmod is not fatal
+        // (the zip was written and is still usable), but is logged.
+        do {
+            try fm.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))],
+                ofItemAtPath: zipURL.path
+            )
+        } catch {
+            let msg = error.localizedDescription
+            AppLogger.engine.warning(
+                "DiagnosticBundle: chmod zip failed: \(msg, privacy: .public)"
+            )
+        }
         return zipURL
     }
 
@@ -698,16 +725,26 @@ enum DiagnosticBundleService {
     }
 
     private static func jamfCLIVersion() -> String {
-        let candidates = ["/opt/homebrew/bin/jamf-cli", "/usr/local/bin/jamf-cli"]
-        for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
-            let result = runProcess(path, ["--version"], timeout: 10)
-            guard result.code == 0 else { continue }
-            let text = result.stdout.isEmpty ? result.stderr : result.stdout
-            if let first = text.split(separator: "\n").first {
-                return first.trimmingCharacters(in: .whitespaces)
-            }
+        // Use the same locator every CLIBridge spawn uses so we get the canonical
+        // binary (handles Homebrew cellar symlinks, custom PATH installs, etc.)
+        // rather than hard-coded paths that may miss the actual installation.
+        guard let binary = ExecutableLocator.locate("jamf-cli") else {
+            return "not installed"
         }
-        return "not installed"
+        // Apply the codesign gate before running the binary, mirroring
+        // JamfCLIInstaller.installedVersion(at:). On gate failure, omit the
+        // version — running an untrusted binary for a diagnostic bundle is not
+        // worth the security risk.
+        if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
+            return "unavailable (codesign gate rejected binary)"
+        }
+        let result = runProcess(binary.path, ["--version"], timeout: 10)
+        guard result.code == 0 else { return "unavailable (exit \(result.code))" }
+        let text = result.stdout.isEmpty ? result.stderr : result.stdout
+        if let first = text.split(separator: "\n").first {
+            return first.trimmingCharacters(in: .whitespaces)
+        }
+        return "unavailable"
     }
 
     private static func appVersion() -> String {

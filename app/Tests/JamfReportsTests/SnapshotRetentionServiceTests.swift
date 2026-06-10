@@ -176,4 +176,101 @@ final class SnapshotRetentionServiceTests: XCTestCase {
         XCTAssertEqual(pol.keepCount, 5)
         XCTAssertTrue(pol.isActive)
     }
+
+    // MARK: - SweepWithResult failure tracking
+
+    /// `sweepWithResult` returns acted=1, failed=0 on a clean archive.
+    func testSweepWithResult_cleanSweepReturnsZeroFailed() throws {
+        try writeSnapshot(kind: "computers", name: "old.json", ageDays: 400)
+        try writeSnapshot(kind: "computers", name: "new.json", ageDays: 1)
+        let result = SnapshotRetentionService.sweepWithResult(
+            dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
+            policy: policy(mode: .archive, keepDays: 365)
+        )
+        XCTAssertEqual(result.acted, 1)
+        XCTAssertEqual(result.failed, 0)
+    }
+
+    /// `sweepWithResult` returns acted=0, failed=0 when no files are due.
+    func testSweepWithResult_nothingDueIsAllZero() throws {
+        try writeSnapshot(kind: "computers", name: "recent.json", ageDays: 5)
+        let result = SnapshotRetentionService.sweepWithResult(
+            dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
+            policy: policy(mode: .delete, keepDays: 365)
+        )
+        XCTAssertEqual(result.acted, 0)
+        XCTAssertEqual(result.failed, 0)
+    }
+
+    // MARK: - Marker stamping conditioned on clean sweep
+
+    /// `sweep` (the public API) still returns acted count and archive works correctly
+    /// regardless of the marker logic — the existing archive/delete tests above cover this.
+    /// These tests verify the `sweepWithResult` result struct propagates correctly
+    /// through the failure-count channel.
+
+    /// When a delete fails (file made read-only), sweepWithResult reports failed > 0.
+    func testSweepWithResult_deleteFailureIsCountedInFailed() throws {
+        let oldFile = try writeSnapshot(kind: "computers", name: "old.json", ageDays: 400)
+        // Make the file's parent directory read-only so the delete cannot succeed.
+        let dir = oldFile.deletingLastPathComponent()
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o555))], ofItemAtPath: dir.path
+        )
+        defer {
+            // Restore permissions so tearDown can clean up.
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: dir.path
+            )
+        }
+        let result = SnapshotRetentionService.sweepWithResult(
+            dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
+            policy: policy(mode: .delete, keepDays: 30)
+        )
+        XCTAssertEqual(result.acted, 0)
+        XCTAssertGreaterThan(result.failed, 0, "permission-denied delete must be counted as a failure")
+    }
+
+    /// Failure messages are routed through `onLine` so run logs surface them.
+    func testActFailureIsEmittedThroughOnLine() throws {
+        let oldFile = try writeSnapshot(kind: "computers", name: "old.json", ageDays: 400)
+        let dir = oldFile.deletingLastPathComponent()
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o555))], ofItemAtPath: dir.path
+        )
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: dir.path
+            )
+        }
+
+        let collector = RetentionLineCollector()
+        _ = SnapshotRetentionService.sweepWithResult(
+            dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
+            policy: policy(mode: .delete, keepDays: 30),
+            onLine: { line in collector.append(line.text) }
+        )
+        let lines = collector.texts
+        XCTAssertTrue(
+            lines.contains { $0.contains("[warn]") && $0.contains("retention") },
+            "a failure through onLine must contain [warn] and 'retention': got \(lines)"
+        )
+    }
+}
+
+/// Thread-safe collector for streamed log-line text. The `onLine` closure is
+/// `@Sendable`, so a plainly captured `var` is not allowed under Swift 6.
+private final class RetentionLineCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _texts: [String] = []
+
+    func append(_ text: String) {
+        lock.lock(); defer { lock.unlock() }
+        _texts.append(text)
+    }
+
+    var texts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return _texts
+    }
 }

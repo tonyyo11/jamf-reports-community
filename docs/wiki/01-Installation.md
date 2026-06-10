@@ -84,6 +84,13 @@ publish a canonical required-privileges list — Jamf's
 reference is the authoritative privilege catalog. Do not use a full-administrator API
 client for scheduled reporting.
 
+**Exception: the `patch-managed` command.** The `patch-managed` CLI command issues PATCH
+writes to bulk-update managed/unmanaged status on computers. It requires additional
+privilege: **Computers → Update**. This is the only write-path command in the project; it
+is optional and disabled by default. If you use `patch-managed`, create a separate API
+role granted to read the initial inventory plus write to Computers, and use that credential
+only for that command.
+
 ## Verify
 
 Confirm a profile resolves and authenticates:

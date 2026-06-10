@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 
-SCHOOL_CSV = "harboredu_school_devices.csv"
+SCHOOL_CSV = "school_devices.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +95,8 @@ def test_school_column_mapper_extract(jrc, fixtures_root) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_school_scaffold_matches_harboredu_columns(jrc, fixtures_root) -> None:
-    """All 18 school_columns fields should auto-match the HarborEdu CSV."""
+def test_school_scaffold_matches_school_csv_columns(jrc, fixtures_root) -> None:
+    """All 18 school_columns fields should auto-match the school devices CSV."""
     csv_path = fixtures_root / "csv" / SCHOOL_CSV
     df = jrc._school_csv_load(str(csv_path))
     headers = list(df.columns)

@@ -35,9 +35,9 @@ def _bridge_with_binary(jrc, monkeypatch, *, profile: str = "") -> Any:
 
 
 def test_has_platform_auth_true_when_profile_uses_platform_auth(monkeypatch, jrc) -> None:
-    bridge = _bridge_with_binary(jrc, monkeypatch, profile="harbor")
+    bridge = _bridge_with_binary(jrc, monkeypatch, profile="lighthouse")
     output = json.dumps([
-        {"name": "harbor", "url": "https://gw", "auth-method": "platform", "default": True},
+        {"name": "lighthouse", "url": "https://gw", "auth-method": "platform", "default": True},
     ])
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: _make_completed(output))
 
@@ -78,7 +78,7 @@ def test_has_platform_auth_false_when_jamf_cli_missing(monkeypatch, jrc) -> None
 
 
 def test_has_platform_auth_false_when_subprocess_raises(monkeypatch, jrc) -> None:
-    bridge = _bridge_with_binary(jrc, monkeypatch, profile="harbor")
+    bridge = _bridge_with_binary(jrc, monkeypatch, profile="lighthouse")
 
     def raise_called_process_error(*_args, **_kwargs):
         raise subprocess.CalledProcessError(returncode=1, cmd=["jamf-cli"], stderr="boom")
@@ -88,9 +88,9 @@ def test_has_platform_auth_false_when_subprocess_raises(monkeypatch, jrc) -> Non
 
 
 def test_has_platform_auth_caches_result(monkeypatch, jrc) -> None:
-    bridge = _bridge_with_binary(jrc, monkeypatch, profile="harbor")
+    bridge = _bridge_with_binary(jrc, monkeypatch, profile="lighthouse")
     output = json.dumps([
-        {"name": "harbor", "url": "https://gw", "auth-method": "platform", "default": True},
+        {"name": "lighthouse", "url": "https://gw", "auth-method": "platform", "default": True},
     ])
     call_count = {"n": 0}
 

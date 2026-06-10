@@ -80,10 +80,20 @@ struct MSCPComplianceService: Sendable {
               let dataDir = try? WorkspacePaths.dataDir(for: profile)
         else { return [] }
         let resultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: resultsDir),
-              let data = try? Data(contentsOf: url),
-              let rows = try? JSONDecoder().decode([EAResultRow].self, from: data)
-        else { return [] }
+        guard let url = FileManager.newestJSONFile(in: resultsDir) else { return [] }
+
+        guard let data = try? Data(contentsOf: url) else {
+            AppLogger.engine.warning(
+                "MSCPComplianceService: could not read ea-results file \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
+        guard let rows = try? JSONDecoder().decode([EAResultRow].self, from: data) else {
+            AppLogger.engine.warning(
+                "MSCPComplianceService: failed to decode ea-results file \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
         return evaluate(rows: rows, baselines: baselines)
     }
 

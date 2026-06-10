@@ -31,7 +31,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
         let tmpl = template ?? self.template()
         return SmartGroupApplySheetViewModel(
             template: tmpl,
-            profile: "harbor",
+            profile: "lighthouse",
             templateService: SmartGroupTemplateService(executor: previewExecutor),
             applyService: SmartGroupApplyService(executor: applyExecutor ?? previewExecutor)
         )
@@ -59,7 +59,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
 
     func testLoadPreviewSuccessTransitionsToPreviewReady() async {
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "stale-checkin", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "stale-checkin", params: [:]),
              .success(Data(#"{"body": {"name": "x"}, "estimated_match_count": 3}"#.utf8))),
         ])
         let vm = makeViewModel(previewExecutor: executor)
@@ -74,7 +74,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
 
     func testLoadPreviewFeatureMissingTransitionsToPreviewFailed() async {
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "stale-checkin", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "stale-checkin", params: [:]),
              .failure(CLIExecutorError.binaryNotFound("jamf-cli"))),
         ])
         let vm = makeViewModel(previewExecutor: executor)
@@ -89,7 +89,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
 
     func testLoadPreviewUnknownTemplateSurfacesUsefulMessage() async {
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "stale-checkin", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "stale-checkin", params: [:]),
              .failure(CLIExecutorError.nonZeroExit(code: 2, stderr: "Error: unknown template: stale-checkin"))),
         ])
         let vm = makeViewModel(previewExecutor: executor)
@@ -112,7 +112,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
 
     func testCanApplyTrueOncePreviewReady() async {
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "stale-checkin", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "stale-checkin", params: [:]),
              .success(Data(#"{"body": {}, "estimated_match_count": 0}"#.utf8))),
         ])
         let vm = makeViewModel(previewExecutor: executor)
@@ -122,7 +122,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
 
     func testCanApplyFalseWhenNameIsBlank() async {
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "stale-checkin", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "stale-checkin", params: [:]),
              .success(Data(#"{}"#.utf8))),
         ])
         let vm = makeViewModel(previewExecutor: executor)
@@ -137,7 +137,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
         )
         let tmpl = template(slug: "os-version-below", params: [param])
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "os-version-below", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "os-version-below", params: [:]),
              .success(Data(#"{}"#.utf8))),
         ])
         let vm = makeViewModel(template: tmpl, previewExecutor: executor)
@@ -164,10 +164,10 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
 
     func testApplySuccessTransitionsToApplied() async {
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "stale-checkin", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "stale-checkin", params: [:]),
              .success(Data(#"{}"#.utf8))),
             (.proSmartGroupApply(
-                profile: "harbor", templateSlug: "stale-checkin",
+                profile: "lighthouse", templateSlug: "stale-checkin",
                 smartGroupName: "Stale Checkin (Jamf Reports)", params: [:],
                 recalculate: false, dryRun: false
              ),
@@ -188,10 +188,10 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
     func testApplyAPIErrorPreservesPreviewInFailedPhase() async {
         let previewJSON = Data(#"{"body": {"name": "x"}, "estimated_match_count": 5}"#.utf8)
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "stale-checkin", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "stale-checkin", params: [:]),
              .success(previewJSON)),
             (.proSmartGroupApply(
-                profile: "harbor", templateSlug: "stale-checkin",
+                profile: "lighthouse", templateSlug: "stale-checkin",
                 smartGroupName: "Stale Checkin (Jamf Reports)", params: [:],
                 recalculate: false, dryRun: false
              ),
@@ -226,7 +226,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
     func testApplyNoOpsWhenCanApplyIsFalse() async {
         // Preview ready but name is blank → canApply false → apply() is no-op.
         let executor = StubExecutor(canned: [
-            (.proSmartGroupPreview(profile: "harbor", templateSlug: "stale-checkin", params: [:]),
+            (.proSmartGroupPreview(profile: "lighthouse", templateSlug: "stale-checkin", params: [:]),
              .success(Data(#"{}"#.utf8))),
         ])
         let vm = makeViewModel(previewExecutor: executor)
@@ -248,7 +248,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
         let tmpl = template(slug: "os-version-below", params: [param])
         let vm = SmartGroupApplySheetViewModel(
             template: tmpl,
-            profile: "harbor",
+            profile: "lighthouse",
             templateService: SmartGroupTemplateService(executor: StubExecutor(canned: [])),
             applyService: SmartGroupApplyService(executor: StubExecutor(canned: []))
         )
@@ -260,7 +260,7 @@ final class SmartGroupApplySheetViewModelTests: XCTestCase {
         let tmpl = template(slug: "stale-checkin")
         let vm = SmartGroupApplySheetViewModel(
             template: tmpl,
-            profile: "harbor",
+            profile: "lighthouse",
             templateService: SmartGroupTemplateService(executor: StubExecutor(canned: [])),
             applyService: SmartGroupApplyService(executor: StubExecutor(canned: [])),
             suggestedName: "Outreach: Stale 90d"

@@ -79,17 +79,17 @@ elif demo_mode == "xlsx":
     config = jrc.Config(str(repo_dir / "tests/fixtures/config/dummy.yaml"))
     jrc.cmd_generate(config, None, str(out_dir / "jamf-pro-cached.xlsx"))
 elif demo_mode == "mobile":
-    config = jrc.Config(str(repo_dir / "tests/fixtures/config/harbor-mobile.yaml"))
+    config = jrc.Config(str(repo_dir / "tests/fixtures/config/mobile-insights.yaml"))
     jrc.cmd_generate(
         config,
-        str(repo_dir / "tests/fixtures/csv/harbor_mobile_insights_all_devices.csv"),
+        str(repo_dir / "tests/fixtures/csv/mobile_insights_devices.csv"),
         str(out_dir / "jamf-pro-mobile-csv.xlsx"),
     )
 elif demo_mode == "school":
     config = jrc.Config(str(repo_dir / "tests/fixtures/config/school_test.yaml"))
     jrc.cmd_school_generate(
         config,
-        csv_path=str(repo_dir / "tests/fixtures/csv/harboredu_school_devices.csv"),
+        csv_path=str(repo_dir / "tests/fixtures/csv/school_devices.csv"),
         out_file=str(out_dir / "jamf-school-csv.xlsx"),
     )
 else:

@@ -11,7 +11,7 @@ final class ProfileServiceTests: XCTestCase {
             "a",
             "0",
             "dummy",
-            "harbor-edu",
+            "fixture-edu",
             "school-test",
             "profile_01",
             "tenant-1-prod",
@@ -71,7 +71,7 @@ final class ProfileServiceTests: XCTestCase {
     // MARK: - Run-time exclusion (--exclude-profiles)
 
     func testParseExclusionsTrimsAndValidates() {
-        XCTAssertEqual(ProfileService.parseExclusions("dummy, harbor ,"), ["dummy", "harbor"])
+        XCTAssertEqual(ProfileService.parseExclusions("dummy, lighthouse ,"), ["dummy", "lighthouse"])
         XCTAssertEqual(ProfileService.parseExclusions(nil), [])
         XCTAssertEqual(ProfileService.parseExclusions(""), [])
         // Invalid slugs (uppercase, dots) are dropped, not passed through.

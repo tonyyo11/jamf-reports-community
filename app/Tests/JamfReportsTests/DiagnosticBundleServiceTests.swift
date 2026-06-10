@@ -280,6 +280,31 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertEqual(policy["enabled"] as? Bool, true)
     }
 
+    func testBuildBundleOutputDirIs0o700AndZipIs0o600() throws {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace.root) }
+        let outputDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: outputDir) }
+
+        let zip = try DiagnosticBundleService.buildBundle(
+            sources: workspace.sources, outputDir: outputDir,
+            profileSlug: "perms", options: .init(), now: Date())
+
+        let fm = FileManager.default
+
+        // Output directory must be 0o700 (owner-only rwx).
+        let dirAttrs = try fm.attributesOfItem(atPath: outputDir.path)
+        let dirMode = (dirAttrs[.posixPermissions] as? Int) ?? 0
+        XCTAssertEqual(dirMode & 0o777, 0o700,
+            "outputDir expected 0o700, got \(String(dirMode, radix: 8))")
+
+        // Zip file must be 0o600 (owner-only rw).
+        let zipAttrs = try fm.attributesOfItem(atPath: zip.path)
+        let zipMode = (zipAttrs[.posixPermissions] as? Int) ?? 0
+        XCTAssertEqual(zipMode & 0o777, 0o600,
+            "zip expected 0o600, got \(String(zipMode, radix: 8))")
+    }
+
     func testGenerateRejectsInvalidProfile() {
         XCTAssertThrowsError(try DiagnosticBundleService.generate(profile: "Bad Name!"))
     }

@@ -135,7 +135,13 @@ struct GroupInventoryService: Sendable {
     private static func loadSearches(
         from url: URL?, success: inout Bool
     ) -> [AdvancedMobileSearchRow] {
-        guard let url, let data = try? Data(contentsOf: url) else { return [] }
+        guard let url else { return [] }
+        guard let data = try? Data(contentsOf: url) else {
+            AppLogger.engine.warning(
+                "GroupInventoryService: could not read advanced-mobile-device-searches file \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
         if let envelope = try? JSONDecoder().decode(AdvancedMobileSearchEnvelope.self, from: data) {
             success = true
             return envelope.results
@@ -149,7 +155,13 @@ struct GroupInventoryService: Sendable {
     private static func loadClassicGroups(
         from url: URL?, kind: String, success: inout Bool
     ) -> [ClassicGroupRow] {
-        guard let url, let data = try? Data(contentsOf: url) else { return [] }
+        guard let url else { return [] }
+        guard let data = try? Data(contentsOf: url) else {
+            AppLogger.engine.warning(
+                "GroupInventoryService: could not read \(kind, privacy: .public) file \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
         if let groups = try? JSONDecoder().decode([ClassicGroupRow].self, from: data) {
             success = true
             return groups

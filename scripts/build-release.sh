@@ -44,3 +44,12 @@ rm -f "$ARCHIVE_PATH"
 )
 
 echo "Created release bundle: $ARCHIVE_PATH"
+
+# Generate SHA256SUMS alongside the archive so downstream verifiers can
+# confirm integrity without relying solely on GitHub's download endpoint.
+SUMS_PATH="$DIST_DIR/SHA256SUMS"
+(
+  cd "$DIST_DIR"
+  shasum -a 256 "$ARCHIVE_BASENAME" > SHA256SUMS
+)
+echo "Created checksum file:   $SUMS_PATH"

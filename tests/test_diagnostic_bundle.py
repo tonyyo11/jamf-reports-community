@@ -631,3 +631,25 @@ def test_bundle_seeds_redactor_and_strips_device_names_from_logs(jrc, tmp_path):
         log = zf.read("logs/run.log").decode("utf-8")
     assert "Canary-MacBook-X1" not in log
     assert "device-" in log
+
+
+def test_bundle_zip_is_owner_only(jrc, mock_workspace, tmp_path):
+    """The finished diagnostic zip is chmod'd 0o600 regardless of where it lands."""
+    import stat
+    config = _make_config(jrc, mock_workspace)
+    output = tmp_path / "bundle.zip"
+    jrc.cmd_diagnostic_bundle(config, output_path=output)
+    mode = stat.S_IMODE(output.stat().st_mode)
+    assert mode == 0o600
+    assert not (mode & 0o077)  # no group/other access
+
+
+def test_bundle_diagnostics_dir_is_owner_only(jrc, mock_workspace, tmp_path):
+    """When the output lands in a 'diagnostics' dir, that dir is tightened to 0o700."""
+    import stat
+    config = _make_config(jrc, mock_workspace)
+    diag_dir = tmp_path / "diagnostics"
+    output = diag_dir / "bundle.zip"
+    jrc.cmd_diagnostic_bundle(config, output_path=output)
+    mode = stat.S_IMODE(diag_dir.stat().st_mode)
+    assert mode == 0o700

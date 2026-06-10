@@ -34,7 +34,7 @@ final class ProfileSlugDotRejectionTests: XCTestCase {
     func testIsValidAcceptsUndottedProfiles() {
         // Sanity: the tightening must not over-reject legitimate slugs.
         let valid = [
-            "a", "0", "dummy", "harbor-edu", "profile_01",
+            "a", "0", "dummy", "fixture-edu", "profile_01",
             "tenant-1-prod", "school-test",
         ]
         for profile in valid {

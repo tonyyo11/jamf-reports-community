@@ -7,6 +7,90 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Security
+
+Full-project security review of v2.2.0 conducted post-release using Anthropic's Claude
+(Fable 5 model) with an eight-lens multi-agent methodology; all findings below addressed.
+
+- **Collect-dead verdict (both engines)** — a collect where every live jamf-cli call
+  fails (for any reason: outage, unreachable server, chronic errors) now aborts loudly
+  before any summary is written, instead of building a today-stamped summary from stale
+  cache and reporting success. The existing auth-dead verdict (all calls failed and at
+  least one returned 401) keeps its specific re-authenticate guidance. Jamf School
+  collects gained the same verdict — a dead School tenant no longer reports success
+  forever. Partial failures still fall back to cached data as before.
+
+- **Same-day summary upgrade parity (Python)** — the Python engine now upgrades an
+  existing same-day `summary.json` when a re-run produces strictly better data
+  (proxy→real compliance, missing→present mSCP bands, degraded zero stale count→real),
+  matching the Swift engine. A degraded morning run no longer freezes wrong trend data
+  for the rest of the day.
+
+- **Scheduled partial-generate visibility (app)** — per-sheet failure lines from a
+  scheduled generate now reach the run log and Run History, a `[partial]` summary line
+  is recorded, and the run status file gains a `sheet_failures` count. Previously a
+  partial workbook recorded a clean success and the failures went only to launchd
+  stdout.
+
+- **Failure webhook digest (both engines' scheduled path, app-side)** — when the opt-in
+  Teams/Slack webhook is configured, a failed scheduled run now posts a "Failed" digest;
+  previously the webhook only ever posted on success, so a dead-credentials night was
+  indistinguishable from a quiet night.
+
+- **Managed automation outcomes (app)** — LaunchAgent install/remove results are now
+  captured per action; the Automation screen toast reports real outcomes ("N applied,
+  M failed — see log") instead of always showing success for planned actions.
+
+- **LaunchAgent plist hardening (Python parity)** — `launchagent-setup` now writes
+  plists with `0600` permissions (the app already did), redacts the `--notify` webhook
+  URL from its printed command summary, and the diagnostic-bundle redactor now catches
+  the bare `--notify <url>` argv form in logs.
+
+- **jamf-cli subprocess environment pinning (Python parity)** — the Python engine now
+  launches jamf-cli with an allow-listed environment (PATH/HOME/LANG/TMPDIR + proxy
+  variables), closing the `DYLD_INSERT_LIBRARIES`/`SSL_CERT_FILE` injection vector the
+  app already closed. The app's Homebrew/archive-tool subprocesses got the same pinning.
+
+- **Workspace output confinement** — `output.archive_dir` values that resolve outside
+  the workspace root are rejected with a warning and fall back to the default archive
+  location, matching the existing `retention.archive_dir` guard.
+
+- **Diagnostic bundle permissions** — diagnostic staging and output directories are
+  created `0700` and the final zip is `0600`; the in-app diagnostic version probe now
+  passes the same codesign gate as every other jamf-cli invocation.
+
+- **Retention sweep loudness (app)** — the once-per-day retention marker is only
+  written after a clean sweep (a failed sweep retries next collect, matching Python),
+  and per-file failures now appear in the run log.
+
+- **Dashboard decode-failure logging (app)** — a snapshot file that exists but fails to
+  decode now logs a warning naming the service and file across all dashboard data
+  services, instead of rendering the same empty state as a fresh workspace.
+
+- **Supply chain** — `app/Package.resolved` is now committed (pinning ZIPFoundation at
+  0.9.19); CI installs Python dependencies with `pip install --require-hashes` from the
+  hash-pinned lockfiles; a new shellcheck job lints all build/release scripts; the
+  report workflow verifies jamf-cli's Developer ID Team ID via `codesign` before any
+  credential reaches it.
+
+- **Release pipeline integrity** — the canonical `release.sh` pipeline now signs,
+  notarizes, and staples the DMG container (previously only the standalone build-dmg
+  script did); `SHA256SUMS` is generated and published with release assets; the release
+  workflow validates its version input; `build-app.sh` constrains signing-identity
+  selection to `TEAM_ID` when set.
+
+- **Test fixtures fully synthetic** — demo-tenant data was removed from committed
+  fixtures: Activation Lock bypass codes blanked, serials/UDIDs/MAC addresses/management
+  IDs replaced with synthetic values, TEST-NET IPs, 555 phone numbers, and example.*
+  domains/hostnames throughout. A fixture-hygiene checklist now gates future fixture
+  refreshes.
+
+- **Security test coverage** — new suites covering the file-open/reveal path allow-list
+  (including symlink-escape rejection), onboarding secret handling (stdin-only delivery,
+  clearing, https-only URL guards), `patch-managed` (the only write path to Jamf Pro:
+  dry-run, serials parsing, device selection), webhook https-gating, LaunchAgent plist
+  permissions, and output-archive sidecar rotation.
+
 ## [2.2.0] - 2026-06-08
 
 ### Added (v2.2.0 cycle)
@@ -1132,8 +1216,8 @@ HTML instance report (Python CLI and macOS app):
 - Extended the config and documentation surface to cover Jamf School mappings and
   workflows.
 - Documented the committed fixture corpus as the supported no-credentials demo path for
-  the community repo and replaced README workspace examples that implied local `Dummy/`
-  or `Harbor/` directories.
+  the community repo and replaced README workspace examples that implied local demo
+  workspaces.
 
 ### Fixed
 
