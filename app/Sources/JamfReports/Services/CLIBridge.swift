@@ -1137,6 +1137,17 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         let outputURL = URL(fileURLWithPath: outFile)
+        // Epic #103: refuse sensitive destinations before creating directories —
+        // a future non-UI caller (scheduled run, agent) could otherwise create
+        // arbitrary directory trees. Deny-list rather than a workspace
+        // allow-list on purpose: the sole UI caller is an NSSavePanel, and a
+        // strict allow-list would silently re-break user-chosen export
+        // destinations (the B-04 regression PR #161 removed).
+        guard !WorkspacePaths.isSensitiveAbsolutePath(outputURL) else {
+            onLine(.init(timestamp: Date(), level: .fail,
+                text: "[error] refusing to write PDF into a sensitive path: \(outputURL.path)"))
+            throw CLIBridgeError.directoryOperationFailed(path: outputURL.path)
+        }
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {

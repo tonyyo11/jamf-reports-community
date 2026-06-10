@@ -56,4 +56,40 @@ final class FileSystemHelpersTests: XCTestCase {
         let result = FileManager.newestJSONFile(in: tempDir)
         XCTAssertEqual(result?.lastPathComponent, "visible.json")
     }
+
+    /// Epic #103: a symlink planted in the directory must not let readers
+    /// follow it outside — even when it is the newest entry.
+    func testSymlinkEscapingDirectoryIsRefused() throws {
+        let outsideDir = tempDir.deletingLastPathComponent()
+            .appendingPathComponent("outside-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: outsideDir) }
+        let target = outsideDir.appendingPathComponent("secret.json")
+        try "{}".write(to: target, atomically: true, encoding: .utf8)
+
+        let inside = tempDir.appendingPathComponent("real.json")
+        try "{}".write(to: inside, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-60)], ofItemAtPath: inside.path
+        )
+        let link = tempDir.appendingPathComponent("planted.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        let result = FileManager.newestJSONFile(in: tempDir)
+        XCTAssertEqual(result?.lastPathComponent, "real.json",
+                       "escaping symlink must be skipped, not followed")
+    }
+
+    /// A symlink that stays inside the directory remains usable — containment,
+    /// not a blanket symlink ban.
+    func testSymlinkWithinDirectoryIsAllowed() throws {
+        let real = tempDir.appendingPathComponent("real.json")
+        try "{}".write(to: real, atomically: true, encoding: .utf8)
+        let link = tempDir.appendingPathComponent("alias.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+
+        let result = FileManager.newestJSONFile(in: tempDir)
+        XCTAssertEqual(result?.lastPathComponent, "real.json",
+                       "in-dir symlink resolves to its target and is kept")
+    }
 }
