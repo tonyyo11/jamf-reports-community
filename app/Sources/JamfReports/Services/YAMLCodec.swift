@@ -440,6 +440,11 @@ private struct Parser {
 
             if rest.isEmpty {
                 values.append(parseBlock(indent: indent + 2))
+            } else if rest.hasPrefix("{") || rest.hasPrefix("[") {
+                // Flow-style item (`- {label: …}`). Must run before
+                // parseKeyValue, which would otherwise split on the first
+                // colon inside the braces and fabricate a `{label` key.
+                values.append(parseScalar(rest))
             } else if let parsed = YAMLCodec.parseKeyValue(stripInlineComment(rest)) {
                 var entries = [YAMLCodec.YAMLEntry(
                     key: parsed.key,
@@ -471,6 +476,19 @@ private struct Parser {
         let value = stripInlineComment(raw).trimmingCharacters(in: .whitespaces)
         if value == "[]" { return .sequence([]) }
         if value == "{}" { return .mapping(.init(entries: [])) }
+        // Flow-style collections — `{label: "Pass", min_failures: 0}` /
+        // `[a, b]`. config.example.yaml's compliance bands ship in this form,
+        // so the block-only parser turned every seeded workspace's config
+        // unparseable ("config.yaml could not be parsed", #181 field report).
+        // Malformed flow text falls through to a plain string scalar.
+        if value.hasPrefix("{"), value.hasSuffix("}"), value.count >= 2,
+           let mapping = parseFlowMapping(value) {
+            return mapping
+        }
+        if value.hasPrefix("["), value.hasSuffix("]"), value.count >= 2,
+           let sequence = parseFlowSequence(value) {
+            return sequence
+        }
         if value == "null" || value == "~" { return .scalar(.null) }
         if value.lowercased() == "true" { return .scalar(.bool(true)) }
         if value.lowercased() == "false" { return .scalar(.bool(false)) }
@@ -482,6 +500,79 @@ private struct Parser {
             return .scalar(.string(String(value.dropFirst().dropLast())))
         }
         return .scalar(.string(value))
+    }
+
+    /// Parse `{key: value, key: value}`. Returns nil when any part is not a
+    /// `key: value` pair, so almost-flow text degrades to a string scalar
+    /// instead of silently dropping content.
+    private func parseFlowMapping(_ value: String) -> YAMLCodec.YAMLValue? {
+        let inner = String(value.dropFirst().dropLast())
+        var entries: [YAMLCodec.YAMLEntry] = []
+        for part in splitFlowParts(inner) {
+            let trimmed = part.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            guard let parsed = YAMLCodec.parseKeyValue(trimmed), !parsed.value.isEmpty else {
+                return nil
+            }
+            entries.append(.init(key: unquoteFlowKey(parsed.key), value: parseScalar(parsed.value)))
+        }
+        return .mapping(.init(entries: entries))
+    }
+
+    /// Parse `[a, b, {k: v}]`. Elements recurse through `parseScalar`, so
+    /// nested flow collections work.
+    private func parseFlowSequence(_ value: String) -> YAMLCodec.YAMLValue? {
+        let inner = String(value.dropFirst().dropLast())
+        var values: [YAMLCodec.YAMLValue] = []
+        for part in splitFlowParts(inner) {
+            let trimmed = part.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            values.append(parseScalar(trimmed))
+        }
+        return .sequence(values)
+    }
+
+    /// Split flow-collection content on top-level commas — commas inside
+    /// quotes or nested `{}` / `[]` do not split.
+    private func splitFlowParts(_ inner: String) -> [String] {
+        var parts: [String] = []
+        var current = ""
+        var depth = 0
+        var inSingle = false
+        var inDouble = false
+        var previous: Character?
+        for char in inner {
+            if char == "'", !inDouble { inSingle.toggle() }
+            if char == "\"", !inSingle, previous != "\\" { inDouble.toggle() }
+            if !inSingle, !inDouble {
+                switch char {
+                case "{", "[": depth += 1
+                case "}", "]": depth -= 1
+                case "," where depth == 0:
+                    parts.append(current)
+                    current = ""
+                    previous = char
+                    continue
+                default: break
+                }
+            }
+            current.append(char)
+            previous = char
+        }
+        if !current.trimmingCharacters(in: .whitespaces).isEmpty {
+            parts.append(current)
+        }
+        return parts
+    }
+
+    private func unquoteFlowKey(_ key: String) -> String {
+        if key.hasPrefix("\""), key.hasSuffix("\""), key.count >= 2 {
+            return unescapeDoubleQuoted(String(key.dropFirst().dropLast()))
+        }
+        if key.hasPrefix("'"), key.hasSuffix("'"), key.count >= 2 {
+            return String(key.dropFirst().dropLast())
+        }
+        return key
     }
 
     private func unescapeDoubleQuoted(_ value: String) -> String {

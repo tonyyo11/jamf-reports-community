@@ -4,6 +4,33 @@ import XCTest
 
 final class ConfigDecoderTests: XCTestCase {
 
+    // MARK: - Seed-file invariant (#181 field report)
+
+    /// `ensureWorkspace` seeds new workspaces from the bundled
+    /// `config.example.yaml`; if ConfigLoader cannot parse that file, every
+    /// fresh workspace is born broken ("config.yaml could not be parsed").
+    /// This pins the invariant against the real repo file.
+    func testConfigLoaderParsesTheShippedExampleConfig() throws {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        var example: URL?
+        for _ in 0..<8 {
+            let candidate = dir.appendingPathComponent("config.example.yaml")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                example = candidate
+                break
+            }
+            dir = dir.deletingLastPathComponent()
+        }
+        guard let example else {
+            throw XCTSkip("config.example.yaml not found above \(#filePath)")
+        }
+
+        XCTAssertNoThrow(
+            try ConfigLoader.load(from: example),
+            "the workspace seed file must parse with the app's own loader"
+        )
+    }
+
     // MARK: - withDefaults()
 
     func testWithDefaultsFillsMissingFields() {

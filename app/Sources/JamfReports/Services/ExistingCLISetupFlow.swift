@@ -132,11 +132,19 @@ final class ExistingCLISetupFlow {
                 let collectExit = try await collect(name)
                 statuses[name] = collectExit == 0
                     ? .done
-                    : .failed("collect exited \(collectExit) — check jamf-cli auth")
+                    : .failed(Self.collectFailureReason(exit: collectExit))
             } catch {
                 statuses[name] = .failed(error.localizedDescription)
             }
         }
         didComplete = true
+    }
+
+    /// Only exit 3 means dead credentials; exit 1 is usually partial per-kind
+    /// failures, and blaming auth for it sends the user to the wrong page.
+    nonisolated static func collectFailureReason(exit: Int32) -> String {
+        exit == CLIBridge.exitCodeUnauthorized
+            ? "jamf-cli credentials expired — re-authenticate this profile"
+            : "collect exited \(exit) — see Run History for the failing commands"
     }
 }

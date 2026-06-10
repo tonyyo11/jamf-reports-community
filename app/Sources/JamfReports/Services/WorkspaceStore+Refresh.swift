@@ -145,9 +145,18 @@ extension WorkspaceStore {
             )
             if exit == 0 {
                 toast = Toast(message: "First collection complete", style: .success)
-            } else {
+            } else if exit == CLIBridge.exitCodeUnauthorized {
                 toast = Toast(
-                    message: "Collect failed (exit \(exit)) — check jamf-cli auth on the Sources page",
+                    message: "Collect failed — jamf-cli credentials expired; re-authenticate "
+                        + "from Settings → Connections",
+                    style: .danger
+                )
+            } else {
+                // Exit 1 here is usually partial per-kind failures, not auth —
+                // blaming auth sent the #181 field tester to the wrong page.
+                toast = Toast(
+                    message: "Collect finished with errors (exit \(exit)) — see Run History "
+                        + "for the failing commands",
                     style: .danger
                 )
             }
