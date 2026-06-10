@@ -7,7 +7,7 @@
 set -euo pipefail
 
 readonly NOTARY_PROFILE="${1:?Keychain profile name required (run: xcrun notarytool store-credentials)}"
-readonly APP_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../build/JamfReports.app" && pwd -P)"
+readonly APP_PATH="$(cd -- "$(dirname -- "$0")/../build/JamfReports.app" && pwd -P)"
 readonly TEMP_DIR="$(mktemp -d)"
 readonly ZIP_PATH="${TEMP_DIR}/JamfReports.zip"
 
@@ -47,8 +47,10 @@ if ! xcrun notarytool submit \
   exit 1
 fi
 
-# Parse notarization result
-if ! grep -q "Notarization successful" "$NOTARY_OUTPUT"; then
+# Parse notarization result. notarytool (unlike the legacy altool) prints
+# "status: Accepted" on success and "status: Invalid" on rejection — the submit
+# exit code above is authoritative, this is the belt-and-suspenders status check.
+if ! grep -q "status: Accepted" "$NOTARY_OUTPUT"; then
   echo "✗ Notarization rejected or timed out" >&2
   cat "$NOTARY_OUTPUT" >&2
   exit 1

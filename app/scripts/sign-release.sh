@@ -8,7 +8,7 @@
 set -euo pipefail
 
 readonly DEVELOPER_ID_APP="${1:?Developer ID Application identity required (e.g. 'Developer ID Application: Tony Young (XXXXXXXXXX)')}"
-readonly APP_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../build/JamfReports.app" && pwd -P)"
+readonly APP_PATH="$(cd -- "$(dirname -- "$0")/../build/JamfReports.app" && pwd -P)"
 
 if [[ ! -d "$APP_PATH" ]]; then
   echo "✗ App bundle not found: $APP_PATH" >&2
@@ -36,7 +36,7 @@ if [[ -d "$APP_PATH/Contents/Frameworks" ]]; then
       --verbose=4 \
       --force \
       --options runtime \
-      --entitlements "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)/JamfReports.entitlements" \
+      --entitlements "$(cd -- "$(dirname -- "$0")/.." && pwd -P)/JamfReports.entitlements" \
       --sign "$DEVELOPER_ID_APP" \
       "$framework"
   done
@@ -62,7 +62,7 @@ codesign \
   --verbose=4 \
   --force \
   --options runtime \
-  --entitlements "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)/JamfReports.entitlements" \
+  --entitlements "$(cd -- "$(dirname -- "$0")/.." && pwd -P)/JamfReports.entitlements" \
   --sign "$DEVELOPER_ID_APP" \
   "$APP_PATH/Contents/MacOS/JamfReports"
 

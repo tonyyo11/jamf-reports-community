@@ -9,8 +9,8 @@
 set -euo pipefail
 
 readonly VERSION="${1:?Version required (e.g. 2.1.0)}"
-readonly APP_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../build/JamfReports.app" && pwd -P)"
-readonly WORK_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+readonly APP_PATH="$(cd -- "$(dirname -- "$0")/../build/JamfReports.app" && pwd -P)"
+readonly WORK_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
 readonly STAGING_DIR="${WORK_DIR}/build/.dmg-staging"
 
 if [[ ! -d "$APP_PATH" ]]; then
