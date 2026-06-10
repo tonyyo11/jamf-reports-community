@@ -12,7 +12,7 @@ import SwiftUI
 struct ExistingCLISetupView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
-    @AppStorage(ExistingCLISetupFlow.dismissedKey) private var dismissed = false
+    @AppStorage(ExistingCLISetupFlow.outcomeKey) private var outcomeRaw = ""
     @State private var flow: ExistingCLISetupFlow
     @State private var isFinishing = false
 
@@ -241,7 +241,9 @@ struct ExistingCLISetupView: View {
             Text("Not now?")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
-            Button("Skip — set up later from the dashboard") { dismissed = true }
+            Button("Skip — set up later from the dashboard") {
+                outcomeRaw = ExistingCLISetupFlow.SetupOutcome.skipped.rawValue
+            }
                 .buttonStyle(.link)
                 .font(.footnote)
                 .disabled(flow.isRunning || isFinishing)
@@ -272,7 +274,7 @@ struct ExistingCLISetupView: View {
     }
 
     /// Persist the automation policy (when enabled), reconcile the managed
-    /// agents, and only then flip the dismissed flag that re-routes
+    /// agents, and only then record the completed outcome that re-routes
     /// ContentView to the shell — an unawaited reconcile would race the view
     /// swap (see the AutomationTab relocation note, 6101086).
     private func finish() {
@@ -287,7 +289,7 @@ struct ExistingCLISetupView: View {
             }
             workspace.reloadFromDisk()
             isFinishing = false
-            dismissed = true
+            outcomeRaw = ExistingCLISetupFlow.SetupOutcome.completed.rawValue
         }
     }
 }

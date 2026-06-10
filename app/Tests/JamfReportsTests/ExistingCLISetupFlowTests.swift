@@ -11,20 +11,50 @@ final class ExistingCLISetupFlowTests: XCTestCase {
 
     func testShouldOfferOnlyForUninitializedRealProfiles() {
         XCTAssertTrue(ExistingCLISetupFlow.shouldOffer(
-            profileCount: 2, initializedProfileCount: 0, demoMode: false, dismissed: false
+            profileCount: 2, initializedProfileCount: 0, demoMode: false, outcome: nil
         ))
         XCTAssertFalse(ExistingCLISetupFlow.shouldOffer(
-            profileCount: 0, initializedProfileCount: 0, demoMode: false, dismissed: false
+            profileCount: 0, initializedProfileCount: 0, demoMode: false, outcome: nil
         ), "no profiles → the connection onboarding owns first launch")
         XCTAssertFalse(ExistingCLISetupFlow.shouldOffer(
-            profileCount: 2, initializedProfileCount: 1, demoMode: false, dismissed: false
+            profileCount: 2, initializedProfileCount: 1, demoMode: false, outcome: nil
         ), "any initialized workspace means the app is already set up")
         XCTAssertFalse(ExistingCLISetupFlow.shouldOffer(
-            profileCount: 2, initializedProfileCount: 0, demoMode: true, dismissed: false
+            profileCount: 2, initializedProfileCount: 0, demoMode: true, outcome: nil
         ), "demo mode never shows real setup")
+    }
+
+    /// State derives from real artifacts, not progress flags: a COMPLETED
+    /// setup re-offers when every workspace is wiped (the disk is first-launch
+    /// again), while an explicit SKIP stays respected forever.
+    func testShouldOfferDistinguishesCompletedFromSkipped() {
+        XCTAssertTrue(ExistingCLISetupFlow.shouldOffer(
+            profileCount: 2, initializedProfileCount: 0, demoMode: false, outcome: .completed
+        ), "wipe after a completed setup → re-offer")
         XCTAssertFalse(ExistingCLISetupFlow.shouldOffer(
-            profileCount: 2, initializedProfileCount: 0, demoMode: false, dismissed: true
-        ), "completed or skipped → never again")
+            profileCount: 2, initializedProfileCount: 1, demoMode: false, outcome: .completed
+        ), "completed and workspaces intact → shell")
+        XCTAssertFalse(ExistingCLISetupFlow.shouldOffer(
+            profileCount: 2, initializedProfileCount: 0, demoMode: false, outcome: .skipped
+        ), "skip is a permanent choice — never nag")
+    }
+
+    /// Pre-2.2.1 field builds stored a Bool under the legacy key; it maps to
+    /// `.completed` so those installs gain the re-offer-on-wipe behavior.
+    func testStoredOutcomeHonorsLegacyBoolKey() {
+        let suite = "ExistingCLISetupFlowTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertNil(ExistingCLISetupFlow.storedOutcome(defaults: defaults))
+
+        defaults.set(true, forKey: ExistingCLISetupFlow.legacyDismissedKey)
+        XCTAssertEqual(ExistingCLISetupFlow.storedOutcome(defaults: defaults), .completed)
+
+        defaults.set(ExistingCLISetupFlow.SetupOutcome.skipped.rawValue,
+                     forKey: ExistingCLISetupFlow.outcomeKey)
+        XCTAssertEqual(ExistingCLISetupFlow.storedOutcome(defaults: defaults), .skipped,
+                       "the new key wins over the legacy Bool")
     }
 
     // MARK: - run loop

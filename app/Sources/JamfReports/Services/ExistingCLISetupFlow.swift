@@ -41,10 +41,34 @@ final class ExistingCLISetupFlow {
         }
     }
 
-    /// UserDefaults key set when the user completes or skips the setup, so the
-    /// screen never re-appears. Everything it does remains reachable later
-    /// (Overview Collect now, Automation tab), so skipping loses nothing.
-    static let dismissedKey = "existingCLISetupDismissed"
+    /// How the setup screen was dismissed. The distinction matters for
+    /// re-offering: a COMPLETED setup created workspaces, so if the user later
+    /// wipes ~/Jamf-Reports the on-disk state is first-launch again and the
+    /// screen re-offers (state derives from real artifacts, not progress
+    /// flags). An explicit SKIP is a choice — never nag again; everything the
+    /// screen does stays reachable (Overview Collect now, Automation tab).
+    enum SetupOutcome: String {
+        case completed
+        case skipped
+    }
+
+    /// UserDefaults key holding the `SetupOutcome` raw value ("" = never seen).
+    nonisolated static let outcomeKey = "existingCLISetupOutcome"
+
+    /// Pre-2.2.1 builds stored a Bool under this key; treated as `.completed`
+    /// when the new key is unset so field-test installs keep their semantics.
+    nonisolated static let legacyDismissedKey = "existingCLISetupDismissed"
+
+    /// Resolve the stored outcome, honoring the legacy Bool.
+    nonisolated static func storedOutcome(
+        defaults: UserDefaults = .standard
+    ) -> SetupOutcome? {
+        if let raw = defaults.string(forKey: outcomeKey),
+           let outcome = SetupOutcome(rawValue: raw) {
+            return outcome
+        }
+        return defaults.bool(forKey: legacyDismissedKey) ? .completed : nil
+    }
 
     /// jamf-cli profiles discovered at launch, in discovery order.
     let profileNames: [String]
@@ -80,15 +104,18 @@ final class ExistingCLISetupFlow {
     // MARK: - Trigger
 
     /// True when the secondary setup should replace the main shell: real
-    /// (non-demo) launch, jamf-cli profiles exist, none of them has an
-    /// initialized workspace, and the user hasn't completed or skipped it.
+    /// (non-demo) launch, jamf-cli profiles exist, and none of them has an
+    /// initialized workspace. A prior `.completed` outcome does NOT block —
+    /// reaching zero initialized workspaces again means the user wiped
+    /// ~/Jamf-Reports, and the on-disk state IS first launch. Only an
+    /// explicit `.skipped` suppresses the screen permanently.
     nonisolated static func shouldOffer(
         profileCount: Int,
         initializedProfileCount: Int,
         demoMode: Bool,
-        dismissed: Bool
+        outcome: SetupOutcome?
     ) -> Bool {
-        !demoMode && !dismissed && profileCount > 0 && initializedProfileCount == 0
+        !demoMode && outcome != .skipped && profileCount > 0 && initializedProfileCount == 0
     }
 
     // MARK: - Automation policy

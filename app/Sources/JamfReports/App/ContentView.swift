@@ -14,9 +14,10 @@ struct ContentView: View {
     /// the app mid-onboarding, the chooser shows again on next launch,
     /// which is the right behaviour: they didn't commit to a path.
     @State private var userPickedOnboarding = false
-    /// Secondary onboarding (#181 follow-on): set once the existing-jamf-cli
-    /// setup screen is completed or skipped, so it shows at most once.
-    @AppStorage(ExistingCLISetupFlow.dismissedKey) private var existingCLISetupDismissed = false
+    /// Secondary onboarding (#181 follow-on): how the setup screen was
+    /// dismissed. A completed setup re-offers if every workspace is later
+    /// wiped (on-disk state IS first launch again); a skip is permanent.
+    @AppStorage(ExistingCLISetupFlow.outcomeKey) private var existingCLISetupOutcomeRaw = ""
     @AppStorage("sidebarMode") private var sidebarModeRaw: String = SidebarMode.expanded.rawValue
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
     @AppStorage("hiddenTabs") private var hiddenTabsRaw: String = ""
@@ -57,7 +58,7 @@ struct ContentView: View {
             profileCount: workspace.profiles.count,
             initializedProfileCount: workspace.initializedProfiles.count,
             demoMode: workspace.demoMode,
-            dismissed: existingCLISetupDismissed
+            outcome: ExistingCLISetupFlow.storedOutcome()
         )
     }
 
