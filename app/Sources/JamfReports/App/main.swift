@@ -17,8 +17,11 @@ import SwiftUI
 /// the delta columns follows the report cadence (daily 1d / weekly 7d /
 /// monthly 30d).
 ///
-/// `record` receives `[warn]` messages for failures so callers can route them
-/// to a `ScheduledRunRecorder` when one is in scope.
+/// Failures are written to a bounded `_fleet-reports/fleet-reports.log` under
+/// the workspaces root (appended, truncated when > 1 MB) AND to stderr. The
+/// `record` callback is kept for callers that also want the line in a
+/// `ScheduledRunRecorder`, but per-profile recorders are finished by the time
+/// this runs in the all-profiles path, so the log file is the durable record.
 @Sendable
 private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in }) {
     let policy = AutomationPolicy.current()
@@ -41,8 +44,46 @@ private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in
         } catch {
             let message = "[warn] consolidated report for '\(group.name)' failed: \(error.localizedDescription)"
             fputs(message + "\n", stderr)
+            appendFleetLog(message)
             record(message)
         }
+    }
+}
+
+/// Append one line to `_fleet-reports/fleet-reports.log` under the workspaces
+/// root. Truncates the file when it exceeds 1 MB to keep it bounded.
+/// Best-effort — never throws.
+@Sendable
+private func appendFleetLog(_ message: String) {
+    let logURL = FleetReportEmitter.consolidatedDir()
+        .appendingPathComponent("fleet-reports.log")
+    let fm = FileManager.default
+    do {
+        try fm.createDirectory(
+            at: logURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let line = ISO8601DateFormatter().string(from: Date()) + " " + message + "\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if fm.fileExists(atPath: logURL.path) {
+            // Truncate if already over 1 MB before appending.
+            let attrs = try? fm.attributesOfItem(atPath: logURL.path)
+            let size = attrs?[.size] as? Int ?? 0
+            if size > 1_048_576 {
+                try data.write(to: logURL, options: .atomic)
+                return
+            }
+            let handle = try FileHandle(forWritingTo: logURL)
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try handle.close()
+        } else {
+            try data.write(to: logURL, options: .atomic)
+        }
+    } catch {
+        AppLogger.schedule.warning(
+            "appendFleetLog: could not write fleet-reports.log: \(error.localizedDescription, privacy: .public)"
+        )
     }
 }
 
@@ -78,6 +119,36 @@ private func notifyScheduledRun(
     )
     if !sent {
         let message = "[warn] webhook notification failed for '\(profile)'"
+        fputs(message + "\n", stderr)
+        recorder?.record(message)
+    }
+}
+
+/// Post a failure webhook digest for a run that threw before generating a
+/// report. Only the error's localizedDescription is sent — never URLs,
+/// tokens, credentials, or device/user PII (ReportEngine errors carry
+/// operational strings only, not secret material).
+/// Best-effort — never throws.
+@Sendable
+private func notifyScheduledRunFailure(
+    config: ReportConfig?,
+    profile: String,
+    mode: Schedule.RunMode,
+    errorDescription: String,
+    recorder: ScheduledRunRecorder?
+) async {
+    guard let notify = config?.notify, notify.isUsable else { return }
+    let facts: [WebhookNotifier.Fact] = [
+        .init(label: "Profile", value: profile),
+        .init(label: "Run", value: mode.displayTitle),
+        .init(label: "Status", value: "Failed"),
+        .init(label: "Error", value: errorDescription),
+    ]
+    let sent = await WebhookNotifier.sendFailed(
+        config: notify, title: "Jamf Report — \(profile)", facts: facts
+    )
+    if !sent {
+        let message = "[warn] failure webhook notification failed for '\(profile)'"
         fputs(message + "\n", stderr)
         recorder?.record(message)
     }
@@ -249,8 +320,12 @@ private func scheduledRunSingle(
             await WorkspacePermissionHardener.tighten(profile: profile)
         }
         // snapshot-only stops after collect; summary.json is already written.
+        // Only Jamf Pro collect (via ReportEngine.collect) writes summary.json;
+        // School collect does not — avoid a false "Trends updated" claim for School.
         if mode == .snapshotOnly {
-            let message = "[ok] scheduled snapshot complete for '\(profile)' — Trends updated"
+            let detected = ProfileProductType.detect(from: routingConfig)
+            let trendsSuffix = detected.type == .jamfPro ? " — Trends updated" : ""
+            let message = "[ok] scheduled snapshot complete for '\(profile)'\(trendsSuffix)"
             print(message)
             recorder?.record(message)
             await notifyScheduledRun(
@@ -265,7 +340,18 @@ private func scheduledRunSingle(
         let dataDir = try WorkspacePaths.dataDir(for: profile)
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
-        let failures = try await engine.generate(csvURL: resolvedCSV, outputURL: outputURL)
+        // Thread onLine so per-sheet [fail] lines reach the recorder and Run History,
+        // not just the console. The recorder is Sendable (NSLock-backed); the closure
+        // captures it as an optional so the recorder being nil is a no-op.
+        let failures = try await engine.generate(
+            csvURL: resolvedCSV,
+            outputURL: outputURL,
+            onLine: onLine
+        )
+        if !failures.isEmpty {
+            let partialMsg = "[partial] \(failures.count) sheet failure(s) — see lines above"
+            recorder?.record(partialMsg)
+        }
         let message = "[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)"
         print(message)
         recorder?.record(message)
@@ -277,13 +363,20 @@ private func scheduledRunSingle(
             sheetFailures: failures.count,
             recorder: recorder
         )
-        recorder?.finish(exitCode: 0, artifacts: [outputURL])
+        recorder?.finish(exitCode: 0, sheetFailures: failures.count, artifacts: [outputURL])
         return 0
     } catch {
-        let message = "[error] '\(profile)': \(error.localizedDescription)"
+        let errorDesc = error.localizedDescription
+        let message = "[error] '\(profile)': \(errorDesc)"
         fputs(message + "\n", stderr)
         recorder?.record(message)
         recorder?.finish(exitCode: 1)
+        // Post failure digest — best-effort, after recorder is finished so the
+        // webhook send latency never blocks the exit path.
+        await notifyScheduledRunFailure(
+            config: routingConfig, profile: profile, mode: mode,
+            errorDescription: errorDesc, recorder: nil
+        )
         return 1
     }
 }

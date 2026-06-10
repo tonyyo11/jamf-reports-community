@@ -35,6 +35,13 @@ enum SnapshotRetentionService {
     /// never be on a snapshot-retention horizon.
     static let nonSnapshotSubdirs: Set<String> = ["state", "sofa"]
 
+    /// Result of a `sweepIfDue` call — separates acted count from failure count
+    /// so the caller can decide whether to stamp the once-per-day marker.
+    struct SweepResult: Sendable {
+        let acted: Int
+        let failed: Int
+    }
+
     private static let dayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -61,6 +68,16 @@ enum SnapshotRetentionService {
     /// Sweep at most once per calendar day, only when retention is enabled.
     /// Reads config + marker itself, so every collect path can call it safely;
     /// best-effort (never throws into the collect).
+    ///
+    /// The once-per-day `.retention-last` marker is stamped **only when the sweep
+    /// completed with zero per-file failures**, matching the Python twin's behaviour.
+    /// A partially-failed sweep leaves the marker unwritten so the next collect
+    /// retries it — consistent with the archive-not-delete ethos.
+    ///
+    /// Per-file failures (archive move or delete errors) are surfaced through the
+    /// `onLine` channel so the run log shows them rather than silently swallowing them.
+    ///
+    /// Returns the number of files successfully acted on.
     @discardableResult
     static func sweepIfDue(
         profile: String,
@@ -82,17 +99,30 @@ enum SnapshotRetentionService {
         let archiveRoot = resolvedArchiveRoot(config: config, workspace: workspace)
         let summariesDir = pol.includeSummaries ? try? WorkspacePaths.summariesDir(for: profile) : nil
 
-        let acted = sweep(
+        let result = sweepWithResult(
             dataDir: dataDir, summariesDir: summariesDir,
             archiveRoot: archiveRoot, policy: pol, now: now, onLine: onLine
         )
-        try? today.write(to: marker, atomically: true, encoding: .utf8)
-        if acted > 0 {
+
+        // Stamp the marker only when the sweep completed with zero per-file failures.
+        // A partially-failed sweep leaves the marker unwritten so the next collect
+        // retries — mirrors the Python twin.
+        if result.failed == 0 {
+            try? today.write(to: marker, atomically: true, encoding: .utf8)
+        } else {
+            onLine(.init(
+                timestamp: now, level: .warn,
+                text: "[warn] retention: \(result.failed) file(s) could not be " +
+                    "\(pol.mode == .archive ? "archived" : "deleted") for \(profile) — " +
+                    "will retry next collect"
+            ))
+        }
+        if result.acted > 0 {
             let verb = pol.mode == .archive ? "archived" : "deleted"
             onLine(.init(timestamp: now, level: .info,
-                         text: "[info] retention: \(verb) \(acted) snapshot file(s) for \(profile)"))
+                         text: "[info] retention: \(verb) \(result.acted) snapshot file(s) for \(profile)"))
         }
-        return acted
+        return result.acted
     }
 
     /// Resolved raw-snapshot archive root: `retention.archive_dir` if set, else
@@ -137,6 +167,10 @@ enum SnapshotRetentionService {
     /// Sweep every snapshot kind under `dataDir` (skipping non-snapshot subdirs
     /// and any `_`-prefixed dir), plus `summariesDir` when provided. Returns the
     /// number of files archived/deleted.
+    ///
+    /// This is the externally-testable entry point. For the internal `sweepIfDue`
+    /// flow, `sweepWithResult` is used so the once-per-day marker stamping can be
+    /// conditioned on zero failures.
     @discardableResult
     static func sweep(
         dataDir: URL,
@@ -146,9 +180,27 @@ enum SnapshotRetentionService {
         now: Date = Date(),
         onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
     ) -> Int {
-        guard policy.isActive else { return 0 }
+        sweepWithResult(
+            dataDir: dataDir, summariesDir: summariesDir,
+            archiveRoot: archiveRoot, policy: policy, now: now, onLine: onLine
+        ).acted
+    }
+
+    /// Like `sweep`, but returns both the number of files acted on AND the number of
+    /// per-file failures (archive-move or delete errors). Used by `sweepIfDue` to
+    /// decide whether to stamp the once-per-day marker.
+    static func sweepWithResult(
+        dataDir: URL,
+        summariesDir: URL?,
+        archiveRoot: URL,
+        policy: Policy,
+        now: Date = Date(),
+        onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
+    ) -> SweepResult {
+        guard policy.isActive else { return SweepResult(acted: 0, failed: 0) }
         let fm = FileManager.default
-        var acted = 0
+        var totalActed = 0
+        var totalFailed = 0
 
         let subdirs = (try? fm.contentsOfDirectory(
             at: dataDir, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles
@@ -158,21 +210,25 @@ enum SnapshotRetentionService {
             else { continue }
             let name = subdir.lastPathComponent
             if nonSnapshotSubdirs.contains(name) || name.hasPrefix("_") { continue }
-            acted += sweepDirectory(
+            let dirResult = sweepDirectory(
                 subdir, archiveSubpath: "jamf-cli-data/\(name)",
                 archiveRoot: archiveRoot, policy: policy, now: now, fm: fm, onLine: onLine
             )
+            totalActed += dirResult.acted
+            totalFailed += dirResult.failed
         }
 
         if let summariesDir {
             // WARNING: when mode == .delete this permanently removes durable trend summaries.
             // Both include_summaries and enabled must be explicitly opted into (both default false).
-            acted += sweepDirectory(
+            let summaryResult = sweepDirectory(
                 summariesDir, archiveSubpath: "summaries",
                 archiveRoot: archiveRoot, policy: policy, now: now, fm: fm, onLine: onLine
             )
+            totalActed += summaryResult.acted
+            totalFailed += summaryResult.failed
         }
-        return acted
+        return SweepResult(acted: totalActed, failed: totalFailed)
     }
 
     private static func sweepDirectory(
@@ -183,11 +239,11 @@ enum SnapshotRetentionService {
         now: Date,
         fm: FileManager,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
-    ) -> Int {
+    ) -> SweepResult {
         let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
         guard let entries = try? fm.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: keys, options: .skipsHiddenFiles
-        ) else { return 0 }
+        ) else { return SweepResult(acted: 0, failed: 0) }
 
         let files: [(url: URL, modified: Date)] = entries.compactMap { url in
             let vals = try? url.resourceValues(forKeys: Set(keys))
@@ -195,13 +251,14 @@ enum SnapshotRetentionService {
             else { return nil }
             return (url, modified)
         }
-        guard !files.isEmpty else { return 0 }
+        guard !files.isEmpty else { return SweepResult(acted: 0, failed: 0) }
 
         // Newest first → index == rank.
         let sorted = files.sorted { $0.modified > $1.modified }
         let cutoff = now.addingTimeInterval(-Double(policy.keepDays) * 86_400)
 
         var acted = 0
+        var failed = 0
         for (rank, entry) in sorted.enumerated() {
             // Keep a file if EITHER rule protects it: within the count floor
             // (N newest) OR within the age horizon. Act only when neither does.
@@ -211,12 +268,17 @@ enum SnapshotRetentionService {
             if act(on: entry.url, archiveSubpath: archiveSubpath, archiveRoot: archiveRoot,
                    policy: policy, fm: fm, onLine: onLine) {
                 acted += 1
+            } else {
+                failed += 1
             }
         }
-        return acted
+        return SweepResult(acted: acted, failed: failed)
     }
 
     /// Archive (move) or delete one file. Returns true on success.
+    ///
+    /// Failures are emitted through `onLine` (as well as `AppLogger`) so the run log
+    /// shows them rather than silently swallowing them.
     private static func act(
         on url: URL,
         archiveSubpath: String,
@@ -229,9 +291,15 @@ enum SnapshotRetentionService {
         case .delete:
             do { try fm.removeItem(at: url); return true }
             catch {
+                let name = url.lastPathComponent
+                let desc = error.localizedDescription
                 AppLogger.engine.warning(
-                    "SnapshotRetentionService: delete failed for \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    "SnapshotRetentionService: delete failed for \(name, privacy: .public): \(desc, privacy: .public)"
                 )
+                onLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: "[warn] retention: delete failed for \(name): \(desc)"
+                ))
                 return false
             }
         case .archive:
@@ -243,9 +311,15 @@ enum SnapshotRetentionService {
                 try fm.moveItem(at: url, to: dest)
                 return true
             } catch {
+                let name = url.lastPathComponent
+                let desc = error.localizedDescription
                 AppLogger.engine.warning(
-                    "SnapshotRetentionService: archive failed for \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    "SnapshotRetentionService: archive failed for \(name, privacy: .public): \(desc, privacy: .public)"
                 )
+                onLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: "[warn] retention: archive failed for \(name): \(desc)"
+                ))
                 return false
             }
         }

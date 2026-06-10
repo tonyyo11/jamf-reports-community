@@ -261,9 +261,13 @@ struct MobileFleetService: Sendable {
     private static func loadDeviceList(
         from url: URL?, success: inout Bool
     ) -> [MobileDeviceListRow] {
-        guard let url,
-              let data = try? Data(contentsOf: url)
-        else { return [] }
+        guard let url else { return [] }
+        guard let data = try? Data(contentsOf: url) else {
+            AppLogger.engine.warning(
+                "MobileFleetService: could not read mobile-devices-list file \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
         guard let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) else {
             AppLogger.engine.warning(
                 "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .public)"
@@ -277,9 +281,13 @@ struct MobileFleetService: Sendable {
     private static func loadDeviceInventory(
         from url: URL?, success: inout Bool
     ) -> [MobileDeviceInventoryItem] {
-        guard let url,
-              let data = try? Data(contentsOf: url)
-        else { return [] }
+        guard let url else { return [] }
+        guard let data = try? Data(contentsOf: url) else {
+            AppLogger.engine.warning(
+                "MobileFleetService: could not read mobile-device-inventory-details file \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
         guard let devices = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data) else {
             AppLogger.engine.warning(
                 "MobileFleetService: failed to decode mobile-device-inventory-details at \(url.lastPathComponent, privacy: .public)"
@@ -293,9 +301,13 @@ struct MobileFleetService: Sendable {
     private static func loadProfiles(
         from url: URL?, success: inout Bool
     ) -> [MobileConfigProfileRow] {
-        guard let url,
-              let data = try? Data(contentsOf: url)
-        else { return [] }
+        guard let url else { return [] }
+        guard let data = try? Data(contentsOf: url) else {
+            AppLogger.engine.warning(
+                "MobileFleetService: could not read classic-ios-profiles file \(url.lastPathComponent, privacy: .public)"
+            )
+            return []
+        }
         if let profiles = try? JSONDecoder().decode([MobileConfigProfileRow].self, from: data) {
             success = true
             return profiles

@@ -153,6 +153,21 @@ enum ManagedAutomation {
         return actions.sorted(by: actionSort)
     }
 
+    // MARK: - Reconcile outcomes
+
+    /// The result of executing one reconcile action. Carries the action that was
+    /// attempted, whether it succeeded, and a human-readable reason when it did not.
+    struct ActionOutcome: Sendable {
+        let action: Action
+        let succeeded: Bool
+        let failureReason: String?
+
+        var isInstall: Bool {
+            if case .install = action { return true }
+            return false
+        }
+    }
+
     // MARK: - Reconcile (thin executor)
 
     /// Apply the policy: discover profiles, plan, and execute installs/removes.
@@ -162,45 +177,105 @@ enum ManagedAutomation {
     /// The `install`/`remove`/`discover`/`installed` closures default to the
     /// production implementations; tests inject spies so no real `launchctl`
     /// runs.
+    ///
+    /// Returns per-action outcomes so callers can surface real results rather
+    /// than counting planned actions. `Action` is not `Equatable` by design —
+    /// callers pattern-match `outcome.action`.
     @discardableResult
     static func reconcile(
         policy: AutomationPolicy,
         force: Bool = false,
         discover: () -> [JamfCLIProfile] = ProfileService.discoverLocal,
         installed: () -> [Schedule] = LaunchAgentService.list,
-        install: @Sendable (Schedule) async -> Int32 = defaultInstall,
-        remove: @Sendable (String) async -> Void = defaultRemove
-    ) async -> [Action] {
+        install: @Sendable (Schedule) async -> (Int32, String?),
+        remove: @Sendable (String) async -> String?
+    ) async -> [ActionOutcome] {
         let profiles = discover()
         let excluded = Set(policy.excludedProfiles)
         let baseProfile = profiles.first { !excluded.contains($0.name) }?.name
         let actions = plan(
             for: policy, installed: installed(), baseProfile: baseProfile, force: force
         )
+        var outcomes: [ActionOutcome] = []
         for action in actions {
             switch action {
             case .install(let sched):
-                let code = await install(sched)
-                if code != 0 {
-                    AppLogger.cli.warning(
-                        "ManagedAutomation: install of \(sched.name, privacy: .public) returned \(code)"
+                let (code, reason) = await install(sched)
+                let succeeded = (code == 0)
+                if !succeeded {
+                    let name = sched.name
+                    let detail = reason ?? "exit \(code)"
+                    AppLogger.cli.error(
+                        "install \(name, privacy: .public) failed: \(detail, privacy: .public)"
                     )
                 }
+                outcomes.append(
+                    ActionOutcome(action: action, succeeded: succeeded, failureReason: reason))
             case .remove(let label):
-                await remove(label)
+                let reason = await remove(label)
+                let succeeded = (reason == nil)
+                if !succeeded {
+                    let detail = reason ?? "unknown error"
+                    AppLogger.cli.error(
+                        "remove \(label, privacy: .public) failed: \(detail, privacy: .public)"
+                    )
+                }
+                outcomes.append(
+                    ActionOutcome(action: action, succeeded: succeeded, failureReason: reason))
             }
         }
-        return actions
+        return outcomes
     }
 
-    static let defaultInstall: @Sendable (Schedule) async -> Int32 = { schedule in
-        (try? await CLIBridge().setupLaunchAgent(schedule, load: true) { _ in }) ?? -1
+    /// Convenience overload with the legacy `(Int32, Void)` closure signatures,
+    /// used by call sites that only need the [Action] count for backward compat.
+    @discardableResult
+    static func reconcile(
+        policy: AutomationPolicy,
+        force: Bool = false,
+        discover: () -> [JamfCLIProfile] = ProfileService.discoverLocal,
+        installed: () -> [Schedule] = LaunchAgentService.list
+    ) async -> [ActionOutcome] {
+        await reconcile(
+            policy: policy, force: force, discover: discover, installed: installed,
+            install: defaultInstall, remove: defaultRemove
+        )
     }
 
-    static let defaultRemove: @Sendable (String) async -> Void = { label in
-        guard owns(label) else { return }  // defence in depth: never delete a non-managed label.
-        _ = await LaunchAgentWriter.unload(label)
-        try? LaunchAgentWriter.delete(label)
+    /// Default install closure: captures the error reason string so the reconcile
+    /// caller can surface it instead of silently substituting -1.
+    static let defaultInstall: @Sendable (Schedule) async -> (Int32, String?) = { schedule in
+        do {
+            let code = try await CLIBridge().setupLaunchAgent(schedule, load: true) { _ in }
+            return (code, code != 0 ? "launchctl exit \(code)" : nil)
+        } catch {
+            return (-1, error.localizedDescription)
+        }
+    }
+
+    /// Default remove closure: captures unload exit-code and delete errors so
+    /// callers know whether the agent actually left disk.
+    static let defaultRemove: @Sendable (String) async -> String? = { label in
+        guard owns(label) else {
+            // Defence in depth: reconcile plan should never produce this, but guard anyway.
+            return "refused — label '\(label)' is not owned by managed automation"
+        }
+        let unloadCode = await LaunchAgentWriter.unload(label)
+        if unloadCode != 0 {
+            // Non-zero is expected when the agent was never loaded (e.g. disabled);
+            // log at info level rather than treating it as a hard failure.
+            // Non-zero from bootout is normal when the agent was never loaded;
+            // treat as informational, not an error.
+            AppLogger.schedule.info(
+                "bootout \(label, privacy: .public) exit \(unloadCode, privacy: .public)"
+            )
+        }
+        do {
+            try LaunchAgentWriter.delete(label)
+            return nil  // success
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     // MARK: - Per-kind mapping

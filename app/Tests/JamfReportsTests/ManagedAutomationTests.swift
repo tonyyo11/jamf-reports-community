@@ -207,32 +207,91 @@ final class ManagedAutomationTests: XCTestCase {
         let installs = CallBox()
         let removes = CallBox()
 
-        let actions = await ManagedAutomation.reconcile(
+        let outcomes = await ManagedAutomation.reconcile(
             policy: p,
             discover: { [JamfCLIProfile(name: "alpha", url: "(local)", schedules: 0, status: .idle)] },
             installed: { [] },
-            install: { schedule in installs.add(schedule.launchAgentLabel ?? schedule.name); return 0 },
-            remove: { label in removes.add(label) }
+            install: { schedule in installs.add(schedule.launchAgentLabel ?? schedule.name); return (0, nil) },
+            remove: { label in removes.add(label); return nil }
         )
 
         XCTAssertEqual(installs.count, 3, "freshness + scan + reports installed")
         XCTAssertEqual(removes.count, 0)
-        XCTAssertEqual(actions.count, 3)
+        XCTAssertEqual(outcomes.count, 3)
+        XCTAssertTrue(outcomes.allSatisfy(\.succeeded), "all outcomes succeed when closures return success")
     }
 
     func testReconcileIsNoOpForUnmanagedWithNoInstalled() async {
         let installs = CallBox()
         let removes = CallBox()
-        let actions = await ManagedAutomation.reconcile(
+        let outcomes = await ManagedAutomation.reconcile(
             policy: AutomationPolicy(),
             discover: { self.managedProfiles(["alpha"]) },
             installed: { [] },
-            install: { _ in installs.add("x"); return 0 },
-            remove: { _ in removes.add("x") }
+            install: { _ in installs.add("x"); return (0, nil) },
+            remove: { _ in removes.add("x"); return nil }
         )
-        XCTAssertTrue(actions.isEmpty)
+        XCTAssertTrue(outcomes.isEmpty)
         XCTAssertEqual(installs.count, 0)
         XCTAssertEqual(removes.count, 0)
+    }
+
+    // MARK: - Outcome propagation
+
+    func testReconcileOutcomesCarryFailureReasons() async {
+        var p = AutomationPolicy(); p.isManaged = true
+        // All three installs fail with distinct reasons.
+        let outcomes = await ManagedAutomation.reconcile(
+            policy: p,
+            discover: { [JamfCLIProfile(name: "alpha", url: "(local)", schedules: 0, status: .idle)] },
+            installed: { [] },
+            install: { _ in return (1, "permission denied") },
+            remove: { _ in return nil }
+        )
+        XCTAssertEqual(outcomes.count, 3)
+        XCTAssertTrue(outcomes.allSatisfy { !$0.succeeded })
+        XCTAssertTrue(outcomes.allSatisfy { $0.failureReason == "permission denied" })
+        XCTAssertTrue(outcomes.allSatisfy(\.isInstall))
+    }
+
+    func testReconcileOutcomesMixedSuccessAndFailure() async {
+        var p = AutomationPolicy(); p.isManaged = true
+        p.backupsEnabled = true
+        let callCount = CallBox()
+        // First two calls succeed, remaining fail.
+        let outcomes = await ManagedAutomation.reconcile(
+            policy: p,
+            discover: { [JamfCLIProfile(name: "alpha", url: "(local)", schedules: 0, status: .idle)] },
+            installed: { [] },
+            install: { sched in
+                callCount.add(sched.name)
+                let n = callCount.count
+                return n <= 2 ? (0, nil) : (1, "disk full")
+            },
+            remove: { _ in return nil }
+        )
+        let succeeded = outcomes.filter(\.succeeded)
+        let failed = outcomes.filter { !$0.succeeded }
+        XCTAssertEqual(succeeded.count, 2)
+        XCTAssertEqual(failed.count, 2)
+        XCTAssertTrue(failed.allSatisfy { $0.failureReason == "disk full" })
+    }
+
+    func testReconcileRemoveOutcomeCarriesReason() async {
+        var on = AutomationPolicy(); on.isManaged = true
+        let installed = ManagedAutomation.desiredSchedules(for: on, baseProfile: "alpha")
+        // Turn managed off → plan produces removes for every installed agent.
+        let outcomes = await ManagedAutomation.reconcile(
+            policy: AutomationPolicy(),
+            discover: { [JamfCLIProfile(name: "alpha", url: "(local)", schedules: 0, status: .idle)] },
+            installed: { installed },
+            install: { _ in return (0, nil) },
+            remove: { _ in return "bootout failed" }
+        )
+        XCTAssertFalse(outcomes.isEmpty)
+        XCTAssertTrue(outcomes.allSatisfy { !$0.isInstall })
+        XCTAssertTrue(outcomes.allSatisfy { !$0.succeeded })
+        XCTAssertTrue(outcomes.allSatisfy { $0.failureReason == "bootout failed" })
     }
 }
 

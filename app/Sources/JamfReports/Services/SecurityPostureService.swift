@@ -85,9 +85,18 @@ struct SecurityPostureService: Sendable {
     // MARK: - Internals
 
     private static func decode(at url: URL) -> Snapshot? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data)
-        else { return nil }
+        guard let data = try? Data(contentsOf: url) else {
+            AppLogger.engine.warning(
+                "SecurityPostureService: could not read security file \(url.lastPathComponent, privacy: .public)"
+            )
+            return nil
+        }
+        guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data) else {
+            AppLogger.engine.warning(
+                "SecurityPostureService: failed to decode security file \(url.lastPathComponent, privacy: .public)"
+            )
+            return nil
+        }
 
         var summary: SecuritySummaryData?
         var osVersions: [Snapshot.OSVersion] = []

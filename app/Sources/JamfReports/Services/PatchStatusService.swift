@@ -107,19 +107,36 @@ struct PatchStatusService: Sendable {
         }
 
         guard let titlesData = try? Data(contentsOf: titlesURL) else {
+            AppLogger.engine.warning(
+                "PatchStatusService: could not read patch-status file \(titlesURL.lastPathComponent, privacy: .public)"
+            )
             return nil
         }
 
-        guard let titles = try? JSONDecoder().decode([PatchStatusRow].self, from: titlesData) else {
+        guard let titles = (try? JSONDecoder().decode([PatchStatusRow].self, from: titlesData)) else {
+            AppLogger.engine.warning(
+                "PatchStatusService: failed to decode patch-status file \(titlesURL.lastPathComponent, privacy: .public)"
+            )
             return nil
         }
 
         var failures: [PatchFailureRow] = []
-        if let failuresURL,
-           FileManager.default.fileExists(atPath: failuresURL.path),
-           let failuresData = try? Data(contentsOf: failuresURL),
-           let decodedFailures = try? JSONDecoder().decode([PatchFailureRow].self, from: failuresData) {
-            failures = decodedFailures
+        if let failuresURL, FileManager.default.fileExists(atPath: failuresURL.path) {
+            if let failuresData = try? Data(contentsOf: failuresURL) {
+                if let decodedFailures = try? JSONDecoder().decode(
+                    [PatchFailureRow].self, from: failuresData
+                ) {
+                    failures = decodedFailures
+                } else {
+                    AppLogger.engine.warning(
+                        "PatchStatusService: failed to decode patch-device-failures file \(failuresURL.lastPathComponent, privacy: .public)"
+                    )
+                }
+            } else {
+                AppLogger.engine.warning(
+                    "PatchStatusService: could not read patch-device-failures file \(failuresURL.lastPathComponent, privacy: .public)"
+                )
+            }
         }
 
         let mtime = (try? titlesURL.resourceValues(forKeys: [.contentModificationDateKey]))?

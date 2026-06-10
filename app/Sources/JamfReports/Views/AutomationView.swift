@@ -29,20 +29,44 @@ struct AutomationTab: View {
     private func reconcileOnPolicyChange() async {
         guard !workspace.demoMode else { return }
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
-        let actions = await workspace.reconcileManagedAutomation()
-        guard !actions.isEmpty else { return }
+        let outcomes = await workspace.reconcileManagedAutomation()
+        guard !outcomes.isEmpty else { return }
         // Reflect the install/remove in any visible schedule list (the manual
         // SchedulesView table reads workspace.schedules) so the table doesn't
         // show agents the reconcile just added or removed until a manual refresh.
         workspace.reloadFromDisk()
-        let installs = actions.filter { if case .install = $0 { return true }; return false }.count
-        let removes = actions.count - installs
+
+        let succeeded = outcomes.filter(\.succeeded)
+        let failed = outcomes.filter { !$0.succeeded }
+        let installs = succeeded.filter(\.isInstall).count
+        let removes = succeeded.count - installs
+
         var parts: [String] = []
         if installs > 0 { parts.append("\(installs) installed") }
         if removes > 0 { parts.append("\(removes) removed") }
-        workspace.toast = Toast(
-            message: "Automation applied — \(parts.joined(separator: ", "))", style: .success
-        )
+
+        if failed.isEmpty {
+            workspace.toast = Toast(
+                message: "Automation applied — \(parts.joined(separator: ", "))", style: .success
+            )
+        } else {
+            let suffix = parts.isEmpty ? "" : "\(parts.joined(separator: ", ")), "
+            workspace.toast = Toast(
+                message: "Automation applied — \(suffix)\(failed.count) failed — see log",
+                style: .danger
+            )
+            for outcome in failed {
+                let label: String
+                switch outcome.action {
+                case .install(let sched): label = sched.launchAgentLabel ?? sched.name
+                case .remove(let lbl): label = lbl
+                }
+                let reason = outcome.failureReason ?? "unknown error"
+                AppLogger.schedule.error(
+                    "Reconcile failure for \(label, privacy: .public): \(reason, privacy: .public)"
+                )
+            }
+        }
     }
 }
 

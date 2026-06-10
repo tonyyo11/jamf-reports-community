@@ -1199,6 +1199,25 @@ struct ReportEngine: Sendable {
         return !anySuccess && anyAuthFailure
     }
 
+    /// Whether a collect's per-command outcomes represent a total outage where live
+    /// calls were attempted but ALL failed (any non-zero exit code) with zero successes
+    /// and no HTTP 401 signals.
+    ///
+    /// This catches the case where the server is unreachable, jamf-cli is broken, or
+    /// every call exits non-zero for reasons unrelated to auth (exit 1 network error,
+    /// exit 4 not-found, exit 5 permission denied, exit 6 rate-limited). Without this
+    /// guard such a run would fall through to SOFA + `emitSummaryJSON`, writing a
+    /// today-stamped summary built entirely from stale cache and marking the run as
+    /// success. Auth-dead (`isCollectAuthDead`) is checked first at the call site, so
+    /// this function is only reached when no 401 was present.
+    ///
+    /// Returns false for an empty outcome set (no live calls were attempted) and for any
+    /// outcome set that includes at least one `exit 0` success.
+    static func isCollectDead(_ outcomes: [CollectOutcome]) -> Bool {
+        guard !outcomes.isEmpty else { return false }
+        return !outcomes.contains { $0.exitCode == 0 }
+    }
+
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
@@ -1453,12 +1472,14 @@ struct ReportEngine: Sendable {
         }
 
         // Auth-dead guard: every live jamf-cli call failed and at least one returned
-        // 401 (exit 3) → the profile's credentials are expired/revoked. Surface as a
-        // throw so the scheduled-run catch records exit 1 (not a silent success
-        // serving stale cache), and abort BEFORE SOFA/summary so no degraded snapshot
-        // is written. A single 401 among successes does not reach here — it took the
-        // cache-fallback branch above. Skipped when use_cached_data=false (that path
-        // already threw collectFailed on the first failure).
+        // 401 (exit 3) → the profile's credentials are expired/revoked. Checked FIRST
+        // so a total outage with 401s surfaces as an auth error (actionable: re-auth)
+        // rather than as a generic dead-collect. Surface as a throw so the scheduled-run
+        // catch records exit 1 (not a silent success serving stale cache), and abort
+        // BEFORE SOFA/summary so no degraded snapshot is written. A single 401 among
+        // successes does not reach here — it took the cache-fallback branch above.
+        // Skipped when use_cached_data=false (that path already threw collectFailed on
+        // the first failure).
         if Self.isCollectAuthDead(outcomes) {
             let authFailures = outcomes.filter {
                 $0.exitCode == CLIBridge.exitCodeUnauthorized
@@ -1469,6 +1490,20 @@ struct ReportEngine: Sendable {
             AppLogger.engine.error("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             throw ReportEngineError.authExpired(profile: profile, failedCount: authFailures)
+        }
+
+        // Total-outage guard: all live calls failed (any non-zero exit), no 401 signals
+        // and no successes → server unreachable or jamf-cli broken. Without this guard
+        // the run falls through to SOFA + emitSummaryJSON and records Success while
+        // serving entirely stale cache. Abort BEFORE SOFA/summary for the same reason
+        // as auth-dead: no degraded snapshot should be promoted as fresh data.
+        if Self.isCollectDead(outcomes) {
+            let failedCount = outcomes.count
+            let msg = "[error] all \(failedCount) live jamf-cli call(s) failed for '\(profile)' " +
+                "(server unreachable or jamf-cli broken) — no snapshot written."
+            AppLogger.engine.error("\(msg, privacy: .public)")
+            onLine(.init(timestamp: Date(), level: .fail, text: msg))
+            throw ReportEngineError.collectDead(profile: profile, failedCount: failedCount)
         }
 
         // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
@@ -1831,6 +1866,11 @@ struct ReportEngine: Sendable {
     /// Run all jamf-cli school collect commands and save JSON snapshots.
     ///
     /// Mirrors the Python `cmd_school_collect` function.
+    ///
+    /// Throws `ReportEngineError.collectDead` when commands were attempted and none
+    /// succeeded, so a dead School tenant does not silently record Success forever.
+    /// Partial failures (≥1 success) warn and continue — the same fallback-to-cache
+    /// policy as the Jamf Pro collect path.
     static func schoolCollect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
@@ -1859,6 +1899,7 @@ struct ReportEngine: Sendable {
         ]
 
         let bridge = CLIBridge()
+        var schoolOutcomes: [CollectOutcome] = []
         for (args, kind) in commands {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
@@ -1875,6 +1916,7 @@ struct ReportEngine: Sendable {
                 schoolResult = nil
             }
             guard let (exitCode, data) = schoolResult else { continue }
+            schoolOutcomes.append(CollectOutcome(kind: kind, exitCode: exitCode))
             if exitCode == 0, !data.isEmpty {
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -1883,6 +1925,20 @@ struct ReportEngine: Sendable {
                 onLine(.init(timestamp: Date(), level: .warn,
                              text: "[warn] \(kind): exit \(exitCode) — skipped"))
             }
+        }
+
+        // Total-outage guard for School: commands were attempted but none succeeded.
+        // Without this, a dead School tenant silently records Success on every run.
+        // Checked after the full loop (same as Jamf Pro collect) so partial failures
+        // still warm the cache. Launch-failures (nil schoolResult) are excluded from
+        // schoolOutcomes intentionally — they carry no exit code signal.
+        if Self.isCollectDead(schoolOutcomes) {
+            let failedCount = schoolOutcomes.count
+            let msg = "[error] all \(failedCount) live jamf-cli school call(s) failed for " +
+                "'\(profile)' — server unreachable or credentials broken. No snapshot written."
+            AppLogger.engine.error("\(msg, privacy: .public)")
+            onLine(.init(timestamp: Date(), level: .fail, text: msg))
+            throw ReportEngineError.collectDead(profile: profile, failedCount: failedCount)
         }
     }
 
@@ -2506,6 +2562,14 @@ enum ReportEngineError: Error, LocalizedError {
     /// `use_cached_data`. Chronic non-auth failures (Platform-API 404 → exit 1 on
     /// on-prem) carry no 401 and cannot trip this on their own.
     case authExpired(profile: String, failedCount: Int)
+    /// Raised at the end of collect when live calls were attempted, ALL failed
+    /// (any non-zero exit code), and none returned HTTP 401 — the server is
+    /// unreachable, jamf-cli is broken, or every endpoint returned a non-auth
+    /// error. Like `authExpired`, this is thrown BEFORE SOFA refresh and
+    /// `emitSummaryJSON` so no stale-cache summary is promoted as fresh data.
+    /// Partial failures (≥1 success) do NOT reach this — they warm the cache
+    /// and the run continues normally.
+    case collectDead(profile: String, failedCount: Int)
     /// PR-10 / threat-model T-11: raised at run start when
     /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
     /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
@@ -2536,6 +2600,10 @@ enum ReportEngineError: Error, LocalizedError {
             return "Authentication failed for profile '\(p)': all \(n) live Jamf Pro call(s) " +
                 "returned 401 (expired or revoked credentials) and none succeeded. " +
                 "Re-authenticate with: jamf-cli -p \(p) pro auth token. No snapshot was written."
+        case .collectDead(let p, let n):
+            return "All \(n) live jamf-cli call(s) failed for profile '\(p)' (server unreachable " +
+                "or jamf-cli broken). No snapshot was written. Check network connectivity and " +
+                "jamf-cli health, then re-run collect."
         case .snapshotIntegrityViolation(let summary, let dataDir):
             var parts: [String] = []
             if summary.mismatch > 0 { parts.append("\(summary.mismatch) hash mismatch") }

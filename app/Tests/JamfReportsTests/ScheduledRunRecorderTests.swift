@@ -143,4 +143,68 @@ final class ScheduledRunRecorderTests: XCTestCase {
         let bogus = URL(fileURLWithPath: "/dev/null/not-a-dir")
         XCTAssertNil(ScheduledRunRecorder(workspace: bogus, label: label))
     }
+
+    // MARK: - sheet_failures additive key (Fix 1 / Fix 5c)
+
+    func testFinishWithSheetFailuresWritesAdditiveKey() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        recorder.finish(exitCode: 0, sheetFailures: 3)
+
+        let data = try Data(contentsOf: recorder.statusURL)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(payload["sheet_failures"] as? Int, 3)
+        // success is still true when exit code is 0, even with sheet failures.
+        XCTAssertEqual(payload["success"] as? Bool, true)
+    }
+
+    func testFinishWithZeroSheetFailuresDefaultsToZero() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        recorder.finish(exitCode: 0)
+
+        let data = try Data(contentsOf: recorder.statusURL)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(payload["sheet_failures"] as? Int, 0)
+    }
+
+    func testFinishWithSheetFailuresRecordsPartialLineInLog() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        // Simulate the main.swift partial-line path: record it before finish.
+        recorder.record("[partial] 2 sheet failure(s) — see lines above")
+        recorder.finish(exitCode: 0, sheetFailures: 2)
+
+        let text = try String(contentsOf: recorder.logURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("[partial] 2 sheet failure(s)"),
+                      "partial line must appear in log")
+    }
+
+    // MARK: - Stale status removal on write failure (Fix 5b)
+
+    func testStaleStatusRemovedWhenWriteFails() throws {
+        let workspace = try makeWorkspace()
+        let automationDir = workspace.appendingPathComponent("automation", isDirectory: true)
+        try FileManager.default.createDirectory(at: automationDir, withIntermediateDirectories: true)
+
+        // Pre-seed a stale status file at the recorder's statusURL location.
+        let staleStatusURL = automationDir.appendingPathComponent("\(label)_status.json")
+        let staleData = Data("{\"success\":true,\"exit_code\":0,\"label\":\"stale\"}".utf8)
+        try staleData.write(to: staleStatusURL)
+
+        // Create a recorder whose statusURL resolves to staleStatusURL.
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        XCTAssertEqual(recorder.statusURL, staleStatusURL)
+
+        // Verify the stale file is there before finish.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staleStatusURL.path))
+
+        // Normal finish should replace (not remove) the status file.
+        recorder.finish(exitCode: 1)
+        let data = try Data(contentsOf: staleStatusURL)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // After finish, the file should contain the NEW run's data, not the stale data.
+        XCTAssertEqual(payload["exit_code"] as? Int, 1)
+        XCTAssertNotEqual(payload["label"] as? String, "stale")
+    }
 }

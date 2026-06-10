@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Writes the per-run artifacts that Run History and the Schedules screen read.
 ///
@@ -33,6 +34,9 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     private var handle: FileHandle?
     private let started: Date
     private let label: String
+    /// Guards the one-time "dropped line" warning so we emit it only once per
+    /// recorder instance rather than flooding the log on every subsequent line.
+    private var hasWarnedHandleGone = false
 
     /// Returns nil when the label is not a valid LaunchAgent label, when the
     /// automation directories cannot be created, or when the log file cannot
@@ -74,11 +78,22 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         record("[info] run started \(ISO8601DateFormatter().string(from: now)) for \(label)")
     }
 
-    /// Append one line to the per-run log.
+    /// Append one line to the per-run log. When the log handle is gone (already
+    /// closed by `finish`), emits one `AppLogger.schedule.warning` per recorder
+    /// instance so the loss is visible in Console.app.
     func record(_ text: String) {
         lock.lock()
         defer { lock.unlock() }
-        guard let handle, let data = (text + "\n").data(using: .utf8) else { return }
+        guard let handle else {
+            if !hasWarnedHandleGone {
+                hasWarnedHandleGone = true
+                AppLogger.schedule.warning(
+                    "ScheduledRunRecorder: log handle gone for \(self.label, privacy: .public) — line dropped"
+                )
+            }
+            return
+        }
+        guard let data = (text + "\n").data(using: .utf8) else { return }
         handle.write(data)
     }
 
@@ -87,7 +102,11 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     /// `artifacts` are output files the run produced (workbook, HTML, CSV);
     /// they map to the `xlsx_report_path` / `html_report_path` /
     /// `inventory_csv_path` keys `LaunchAgentService.artifactLabels` reads.
-    func finish(exitCode: Int32, artifacts: [URL] = []) {
+    ///
+    /// `sheetFailures` is written as an additive `sheet_failures` key in the
+    /// status JSON (0 when omitted). Existing parsers that do not read this key
+    /// are unaffected.
+    func finish(exitCode: Int32, sheetFailures: Int = 0, artifacts: [URL] = []) {
         let seconds = max(0, Int(Date().timeIntervalSince(started).rounded()))
         record("[info] exit \(exitCode) after \(seconds)s")
 
@@ -96,18 +115,20 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         handle = nil
         lock.unlock()
 
-        writeStatusJSON(exitCode: exitCode, artifacts: artifacts)
+        writeStatusJSON(exitCode: exitCode, sheetFailures: sheetFailures, artifacts: artifacts)
         Self.pruneRunLogs(in: logURL.deletingLastPathComponent(), keep: Self.maxRunLogs)
     }
 
     // MARK: - Status JSON
 
-    private func writeStatusJSON(exitCode: Int32, artifacts: [URL]) {
+    private func writeStatusJSON(exitCode: Int32, sheetFailures: Int, artifacts: [URL]) {
         var payload: [String: Any] = [
             "finished_at": ISO8601DateFormatter().string(from: Date()),
             "success": exitCode == 0,
             "exit_code": Int(exitCode),
             "label": label,
+            // Additive key — parsers that don't read it are unaffected.
+            "sheet_failures": sheetFailures,
         ]
         for url in artifacts {
             switch url.pathExtension.lowercased() {
@@ -139,7 +160,23 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             }
             _ = try fm.replaceItemAt(statusURL, withItemAt: tempURL)
         } catch {
+            // Temp file cleanup (best-effort).
             try? fm.removeItem(at: tempURL)
+            // The stale status file (if any) now has the PREVIOUS run's data.
+            // Remove it so absence is unambiguous — a missing file is better
+            // than wrong data masquerading as current.
+            if fm.fileExists(atPath: statusURL.path) {
+                do {
+                    try fm.removeItem(at: statusURL)
+                } catch let removeError {
+                    AppLogger.schedule.error(
+                        "ScheduledRunRecorder: failed to remove stale status JSON for \(self.label, privacy: .public): \(removeError.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+            AppLogger.schedule.error(
+                "ScheduledRunRecorder: writeStatusJSON failed for \(self.label, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
