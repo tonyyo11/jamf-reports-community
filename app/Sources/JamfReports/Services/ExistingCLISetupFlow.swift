@@ -163,7 +163,23 @@ final class ExistingCLISetupFlow {
         },
         collect: @escaping (String, @escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32 = {
             profile, onLine in
-            try await CLIBridge().collect(profile: profile, force: true, onLine: onLine)
+            // Recorded so `collectFailureReason`'s "see Run History" points at
+            // a log that actually exists for this run.
+            let recorder = ProfileService.workspaceURL(for: profile).flatMap {
+                ScheduledRunRecorder(workspace: $0, label: WorkspaceStore.firstCollectRunLabel)
+            }
+            do {
+                let exit = try await CLIBridge().collect(profile: profile, force: true) { line in
+                    recorder?.record(line.text)
+                    onLine(line)
+                }
+                recorder?.finish(exitCode: exit)
+                return exit
+            } catch {
+                recorder?.record("[error] \(error.localizedDescription)")
+                recorder?.finish(exitCode: 1)
+                throw error
+            }
         }
     ) async {
         guard !isRunning else { return }
