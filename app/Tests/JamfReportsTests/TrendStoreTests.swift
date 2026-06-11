@@ -464,4 +464,17 @@ private struct TrendStoreTestEnv {
             ofItemAtPath: file.path
         )
     }
+
+    func testStabilityIndexDropsStaleComponentWhenUnknown() {
+        // staleCount nil must not contribute a perfect "no stale devices"
+        // score — the index renormalizes over compliance + patch only.
+        let withUnknownStale = TrendSeries.stabilityIndex(
+            compliancePct: 80, patchPct: 60, staleCount: nil, totalDevices: 100)
+        XCTAssertEqual(withUnknownStale ?? -1, 70.0, accuracy: 0.01)
+
+        let withMeasuredZero = TrendSeries.stabilityIndex(
+            compliancePct: 80, patchPct: 60, staleCount: 0, totalDevices: 100)
+        XCTAssertEqual(withMeasuredZero ?? -1, 76.0, accuracy: 0.01,
+                       "a measured zero still earns the stale component")
+    }
 }

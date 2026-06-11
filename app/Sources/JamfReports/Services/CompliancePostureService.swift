@@ -134,8 +134,12 @@ struct CompliancePostureService: Sendable {
     /// Returns nil only if the row has no status fields at all (treated as
     /// "No Data" by the banding service).
     static func deviceGapCount(_ device: SecurityDevice) -> Int? {
-        let hasAny = device.fileVault != nil || device.sip != nil ||
-                     device.firewall != nil || device.gatekeeper != nil
+        // A control only participates when its value is actually measured —
+        // "NOT_COLLECTED"/"UNKNOWN" used to count as failing, which made the
+        // compliance proxy report a measured 0% on tenants where the security
+        // report simply hadn't gathered some controls.
+        let hasAny = knownValue(device.fileVault) != nil || knownValue(device.sip) != nil ||
+                     device.firewall != nil || knownValue(device.gatekeeper) != nil
         guard hasAny else { return nil }
         var count = 0
         if isFileVaultFailing(device) { count += 1 }
@@ -145,16 +149,26 @@ struct CompliancePostureService: Sendable {
         return count
     }
 
+    /// Uppercased value, or nil when the report marks the control unmeasured.
+    static func knownValue(_ v: String?) -> String? {
+        guard let v else { return nil }
+        let up = v.uppercased()
+        if up.isEmpty || up == "NOT_COLLECTED" || up == "NOT COLLECTED" || up == "UNKNOWN" {
+            return nil
+        }
+        return up
+    }
+
     static func isFileVaultFailing(_ d: SecurityDevice) -> Bool {
-        guard let v = d.fileVault else { return false }
-        return !v.uppercased().contains("ENCRYPTED") ||
-               v.uppercased().contains("NOT_ENCRYPTED") ||
-               v.uppercased() == "UNENCRYPTED"
+        guard let up = knownValue(d.fileVault) else { return false }
+        return !up.contains("ENCRYPTED") ||
+               up.contains("NOT_ENCRYPTED") ||
+               up == "UNENCRYPTED"
     }
 
     static func isSIPFailing(_ d: SecurityDevice) -> Bool {
-        guard let v = d.sip else { return false }
-        return v.uppercased() != "ENABLED"
+        guard let up = knownValue(d.sip) else { return false }
+        return up != "ENABLED"
     }
 
     static func isFirewallFailing(_ d: SecurityDevice) -> Bool {
@@ -163,10 +177,9 @@ struct CompliancePostureService: Sendable {
     }
 
     static func isGatekeeperFailing(_ d: SecurityDevice) -> Bool {
-        guard let v = d.gatekeeper else { return false }
-        let up = v.uppercased()
         // ENABLED, APP_STORE, APP_STORE_AND_IDENTIFIED_DEVELOPERS all count as
-        // passing. DISABLED, UNKNOWN, or empty count as failing.
-        return up.contains("DISABLED") || up.isEmpty || up == "UNKNOWN"
+        // passing; only an explicit DISABLED fails. Unmeasured is unknown.
+        guard let up = knownValue(d.gatekeeper) else { return false }
+        return up.contains("DISABLED")
     }
 }

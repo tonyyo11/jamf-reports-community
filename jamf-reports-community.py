@@ -3307,6 +3307,8 @@ def _fresh_summary_is_better(existing: dict[str, Any], fresh: dict[str, Any]) ->
       truthy) and ``fresh`` now has real mSCP data (``complianceIsProxy`` false), OR
     * ``existing`` has no ``mscpBands`` (absent/empty) and ``fresh`` has non-empty
       ``mscpBands``, OR
+    * ``existing`` has no ``staleCount`` key (unknown) and ``fresh`` measured
+      one, OR
     * ``existing.staleCount == 0`` on a non-empty fleet
       (``existing.totalDevices > 0``) while ``fresh.staleCount > 0`` — the earlier
       run's stale source was empty/degraded (e.g. a transient failure).
@@ -3321,8 +3323,11 @@ def _fresh_summary_is_better(existing: dict[str, Any], fresh: dict[str, Any]) ->
     fresh_has_bands = bool(fresh.get("mscpBands"))
     if not existing_has_bands and fresh_has_bands:
         return True
+    if "staleCount" not in existing and "staleCount" in fresh:
+        return True
     if (
-        int(existing.get("staleCount", 0) or 0) == 0
+        existing.get("staleCount") is not None
+        and int(existing.get("staleCount") or 0) == 0
         and int(existing.get("totalDevices", 0) or 0) > 0
         and int(fresh.get("staleCount", 0) or 0) > 0
     ):
@@ -3727,17 +3732,20 @@ def _build_summary_from_bridge(
     # stale_days from the config threshold, NOT the server-side `stale` flag
     # (~90-100d cadence). Missing/unknown checkin is NOT stale (-1 default).
     stale_days = int(config.thresholds.get("stale_device_days", 30))
-    stale_count = 0
+    # None (key omitted) when device-compliance is unavailable — unknown is
+    # not zero, and an emitted 0 renders as a measured "0 stale devices".
+    stale_count: Optional[int] = None
     try:
-        comp = bridge.device_compliance() or []
-        stale_count = sum(
-            1
-            for row in comp
-            if isinstance(row, dict)
-            and _to_int(row.get("days_since_contact"), -1) >= stale_days
-        )
+        comp = bridge.device_compliance()
+        if comp is not None:
+            stale_count = sum(
+                1
+                for row in comp
+                if isinstance(row, dict)
+                and _to_int(row.get("days_since_contact"), -1) >= stale_days
+            )
     except Exception as exc:
-        print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
+        print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount omitted (unknown): {exc}")
 
     # OS Current — SOFA-driven (latest release within each device's own major
     # version). Replaces the stale static config current_versions list. None
@@ -3781,9 +3789,24 @@ def _build_summary_from_bridge(
     summary: dict[str, Any] = {
         "date": date_str,
         "totalDevices": int(total_devices),
-        "staleCount": int(stale_count),
         "source": "jamf-cli",
     }
+    if stale_count is not None:
+        summary["staleCount"] = int(stale_count)
+    # R4 parity with Swift: which of the digest's inputs were fetched live this
+    # run vs served from an older cached snapshot vs absent entirely.
+    sources: dict[str, str] = {}
+    mode_map = {"live": "live", "cached-fallback": "cache", "cached": "cache"}
+    # Best-effort metadata — a bridge without source tracking (test doubles,
+    # cached-only flows) just omits the map; it must never fail the summary.
+    get_source = getattr(bridge, "source_info", None)
+    if callable(get_source):
+        for kind in ("security", "device-compliance", "inventory-summary",
+                     "patch-status", "ea-results"):
+            mode = (get_source(kind) or {}).get("mode")
+            sources[kind] = mode_map.get(mode, "absent")
+    if sources:
+        summary["collectionSources"] = sources
     if fv_pct is not None:
         summary["fileVaultPct"] = round(fv_pct, 1)
     if os_pct is not None:

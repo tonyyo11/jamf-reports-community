@@ -986,16 +986,18 @@ struct TrendSeries: Identifiable, Sendable {
     static func stabilityIndex(
         compliancePct: Double?,
         patchPct: Double?,
-        staleCount: Int,
+        staleCount: Int?,
         totalDevices: Int
     ) -> Double? {
         guard compliancePct != nil || patchPct != nil else { return nil }
-        let stalePct = totalDevices > 0
-            ? (Double(staleCount) / Double(totalDevices)) * 100
-            : 0
-        let staleInverse = 100 - stalePct
 
-        var components: [(value: Double, weight: Double)] = [(staleInverse, 0.2)]
+        var components: [(value: Double, weight: Double)] = []
+        // Unknown is not fresh: an unmeasured fleet must not contribute a
+        // perfect stale score — the component drops and the rest renormalize.
+        if let staleCount, totalDevices > 0 {
+            let stalePct = (Double(staleCount) / Double(totalDevices)) * 100
+            components.append((100 - stalePct, 0.2))
+        }
         if let compliancePct { components.append((compliancePct, 0.4)) }
         if let patchPct { components.append((patchPct, 0.4)) }
 
@@ -1014,18 +1016,21 @@ struct TrendSeries: Identifiable, Sendable {
     static func stabilityBasis(
         compliancePct: Double?,
         patchPct: Double?,
-        complianceIsProxy: Bool? = nil
+        complianceIsProxy: Bool? = nil,
+        staleMeasured: Bool = true
     ) -> String? {
         let proxyNote: String = compliancePct != nil && complianceIsProxy == true
             ? " Compliance component is a 4-control proxy — configure a Compliance EA for true mSCP data."
             : ""
+        let staleNote = staleMeasured
+            ? "" : " Stale-device pressure not measured (no device-compliance snapshot)."
         switch (compliancePct != nil, patchPct != nil) {
         case (true, true):
-            return "Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)"
+            return "Composite of compliance, patch posture, and stale-device pressure.\(proxyNote)\(staleNote)"
         case (false, true):
-            return "Composite of patch posture and stale-device pressure (compliance not collected)."
+            return "Composite of patch posture and stale-device pressure (compliance not collected).\(staleNote)"
         case (true, false):
-            return "Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)"
+            return "Composite of compliance and stale-device pressure (patch data not collected).\(proxyNote)\(staleNote)"
         case (false, false):
             return nil
         }

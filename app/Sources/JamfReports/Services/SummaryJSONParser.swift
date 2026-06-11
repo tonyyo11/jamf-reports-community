@@ -44,7 +44,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
              complianceIsProxy,
              // Per-baseline band counts for mSCP/STIG compliance trend charts.
              // Key = baseline name; value = band distribution for that date.
-             mscpBands
+             mscpBands,
+             // R4: which of the digest's input kinds came from this collect
+             // (live), an older snapshot (cache), or nowhere (absent).
+             collectionSources
     }
 
     var id: String { date }
@@ -57,7 +60,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// Decoded as nil so `TrendStore.values(metric:)` skips the point rather
     /// than emitting a misleading 0%.
     let compliancePct: Double?
-    let staleCount: Int
+    /// Omitted when `device-compliance` was never collected — unknown is not
+    /// zero. Surfaces render "—" and the stability index drops the stale
+    /// component rather than treating an unmeasured fleet as fully fresh.
+    let staleCount: Int?
     /// Omitted when source data is absent or fails to decode; nil propagates to
     /// TrendStore so the chart skips the point rather than emitting a misleading 0%.
     let osCurrentPct: Double?
@@ -96,6 +102,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// Per-baseline mSCP band counts for trend charts.
     /// Key = baseline name (e.g. "NIST 800-53r5"). Absent in legacy summaries.
     let mscpBands: [String: MSCPBandCounts]?
+    /// Per-input-kind provenance of this digest: kind -> "live" | "cache" |
+    /// "absent". Absent in legacy summaries and generate-time rewrites.
+    let collectionSources: [String: String]?
 
     var parsedDate: Date {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
@@ -106,7 +115,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         totalDevices: Int,
         fileVaultPct: Double?,
         compliancePct: Double?,
-        staleCount: Int,
+        staleCount: Int?,
         osCurrentPct: Double?,
         crowdstrikePct: Double?,
         patchPct: Double?,
@@ -126,7 +135,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         actionItemsP2: Int? = nil,
         noBaselineActive: Int? = nil,
         complianceIsProxy: Bool? = nil,
-        mscpBands: [String: MSCPBandCounts]? = nil
+        mscpBands: [String: MSCPBandCounts]? = nil,
+        collectionSources: [String: String]? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -153,6 +163,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.noBaselineActive = noBaselineActive
         self.complianceIsProxy = complianceIsProxy
         self.mscpBands = mscpBands
+        self.collectionSources = collectionSources
     }
 
     init(from decoder: Decoder) throws {
@@ -161,7 +172,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         totalDevices = try container.decode(Int.self, forKey: .totalDevices)
         fileVaultPct = try container.decodeIfPresent(Double.self, forKey: .fileVaultPct)
         compliancePct = try container.decodeIfPresent(Double.self, forKey: .compliancePct)
-        staleCount = try container.decode(Int.self, forKey: .staleCount)
+        staleCount = try container.decodeIfPresent(Int.self, forKey: .staleCount)
         osCurrentPct = try container.decodeIfPresent(Double.self, forKey: .osCurrentPct)
         crowdstrikePct = try container.decodeIfPresent(Double.self, forKey: .crowdstrikePct)
         patchPct = try container.decodeIfPresent(Double.self, forKey: .patchPct)
@@ -183,6 +194,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         complianceIsProxy = try container.decodeIfPresent(Bool.self, forKey: .complianceIsProxy)
         mscpBands = try container.decodeIfPresent(
             [String: MSCPBandCounts].self, forKey: .mscpBands)
+        collectionSources = try container.decodeIfPresent(
+            [String: String].self, forKey: .collectionSources)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -191,7 +204,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encode(totalDevices, forKey: .totalDevices)
         try container.encodeIfPresent(fileVaultPct, forKey: .fileVaultPct)
         try container.encodeIfPresent(compliancePct, forKey: .compliancePct)
-        try container.encode(staleCount, forKey: .staleCount)
+        try container.encodeIfPresent(staleCount, forKey: .staleCount)
         try container.encodeIfPresent(osCurrentPct, forKey: .osCurrentPct)
         try container.encodeIfPresent(crowdstrikePct, forKey: .crowdstrikePct)
         try container.encodeIfPresent(patchPct, forKey: .patchPct)
@@ -212,6 +225,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(noBaselineActive, forKey: .noBaselineActive)
         try container.encodeIfPresent(complianceIsProxy, forKey: .complianceIsProxy)
         try container.encodeIfPresent(mscpBands, forKey: .mscpBands)
+        try container.encodeIfPresent(collectionSources, forKey: .collectionSources)
     }
 }
 

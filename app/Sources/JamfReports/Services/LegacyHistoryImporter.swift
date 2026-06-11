@@ -192,7 +192,7 @@ struct LegacyHistoryImporter: Sendable {
             // the existing `compliancePct` slot so TrendsView's compliance
             // line plots the legacy data immediately.
             compliancePct: entry.mscpScorePct,
-            staleCount: 0,    // not tracked in legacy history JSON
+            staleCount: nil,  // not tracked in legacy history JSON — unknown, not zero
             osCurrentPct: 0,  // not tracked
             crowdstrikePct: pct(of: entry.crowdstrikeConnected, total: entry.totalDevices),
             patchPct: 0,      // not tracked

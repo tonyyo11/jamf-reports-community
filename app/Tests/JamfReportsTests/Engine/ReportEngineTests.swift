@@ -616,4 +616,18 @@ final class ReportEngineTests: XCTestCase {
             .deletingLastPathComponent()   // worktree root
             .appendingPathComponent("tests/fixtures")
     }
+
+    // MARK: - Snapshot JSON gate
+
+    /// Cobra prints parent help + exit 0 for unknown subcommands; that output
+    /// must never be saved as a snapshot (it poisoned classic-macos-profiles
+    /// when the upstream command was renamed).
+    func testIsJSONSnapshotRejectsCobraHelpText() {
+        let helpText = Data("Commands for interacting with Jamf Pro\n\nUsage:\n  jamf-cli pro [command]\n".utf8)
+        XCTAssertFalse(ReportEngine.isJSONSnapshot(helpText))
+
+        XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("[]".utf8)))
+        XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("{\"a\": 1}".utf8)))
+        XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("[{\"id\": 1}]".utf8)))
+    }
 }

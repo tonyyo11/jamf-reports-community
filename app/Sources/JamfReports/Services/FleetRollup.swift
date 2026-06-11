@@ -43,7 +43,7 @@ struct FleetRollup: Sendable, Equatable {
     ) -> FleetRollup {
         let metrics: [Metric] = [
             sumMetric("devices", "Devices", current, previous) { Double($0.totalDevices) },
-            sumMetric("stale", "Stale Devices", current, previous) { Double($0.staleCount) },
+            sumMetric("stale", "Stale Devices", current, previous) { Double($0.staleCount ?? 0) },
             weightedMetric("compliance", "Compliance %", current, previous, \.compliancePct),
             weightedMetric("fileVault", "FileVault %", current, previous, \.fileVaultPct),
             weightedMetric("patch", "Patch %", current, previous, \.patchPct),

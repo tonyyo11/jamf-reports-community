@@ -2,7 +2,8 @@
 
 The summary builder emits `[warn]` log lines when individual bridge calls raise
 and OMITS the affected metric's key from the emitted JSON. `totalDevices` and
-`staleCount` are always present; the percentage metrics (`fileVaultPct`,
+is always present; `staleCount` is omitted when device-compliance is
+unavailable (unknown is not zero); the percentage metrics (`fileVaultPct`,
 `osCurrentPct`, `patchPct`) are conditional. A failed bridge call leaves the
 metric unmeasured, so its key is dropped rather than written as a false 0.0 —
 the Swift `DailySummary` decoder treats a missing key as nil and skips the
@@ -128,11 +129,11 @@ def test_inventory_summary_failure_defaults_total_devices_and_warns(jrc, fixture
 
 
 # -------------------------------------------------------------------
-# device_compliance failure → staleCount stays 0, warn emitted.
+# device_compliance failure → staleCount omitted (unknown, not zero), warn emitted.
 # -------------------------------------------------------------------
 
 
-def test_device_compliance_failure_defaults_stale_count_and_warns(jrc, fixtures_root, capsys) -> None:
+def test_device_compliance_failure_omits_stale_count_and_warns(jrc, fixtures_root, capsys) -> None:
     config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
 
     class BoomBridge(_BaselineBridge):
@@ -143,10 +144,12 @@ def test_device_compliance_failure_defaults_stale_count_and_warns(jrc, fixtures_
     captured = capsys.readouterr()
 
     assert summary is not None
-    assert summary["staleCount"] == 0, "staleCount must default to 0 when device_compliance raises"
+    assert "staleCount" not in summary, (
+        "staleCount must be omitted when device_compliance raises — unknown is not zero"
+    )
     assert "[warn]" in captured.out
     assert "device_compliance failed" in captured.out
-    assert "staleCount defaulting to 0" in captured.out
+    assert "staleCount omitted (unknown)" in captured.out
 
 
 # -------------------------------------------------------------------
