@@ -1,12 +1,25 @@
 import Foundation
 
-/// Reads the latest `pro report policy-status` and `pro classic-macos-profiles list`
+/// Reads the latest `pro report policy-status` and `pro report profile-status`
 /// snapshots from the workspace's jamf-cli data directory and prepares them for
 /// the `PolicyProfileView`. Decoupled from the SwiftUI view so it stays unit-testable.
 ///
 /// The view consumes a single `Snapshot` value containing both policy status
-/// (for KPIs and findings table) and profile deployment status (for profile health).
+/// (for KPIs and findings table) and profile assignment failures.
 struct PolicyHealthService: Sendable {
+
+    /// One per-profile failure row, with identity assigned at load time —
+    /// stable and unique by construction (#185: a per-access computed id
+    /// aborts SwiftUI Table on macOS 26).
+    struct ProfileFailure: Identifiable, Sendable, Equatable {
+        let id: String
+        let name: String
+        let deviceType: String
+        let errors: Int
+        let devices: Int
+        let lastError: String
+        let topError: String
+    }
 
     /// Everything the PolicyProfileView needs from both policy and profile snapshots.
     /// `nil` sourceFile and snapshotDate mean "data not present" — the view should
@@ -14,7 +27,8 @@ struct PolicyHealthService: Sendable {
     struct Snapshot: Sendable, Equatable {
         let summary: PolicyStatusSummary?
         let findings: [PolicyFinding]
-        let profiles: [ProfileStatusRow]
+        let profiles: [ProfileFailure]
+        let profileSummary: ProfileFailureSummary?
         let sourceFile: URL?
         let snapshotDate: Date?
 
@@ -27,32 +41,26 @@ struct PolicyHealthService: Sendable {
             return counts
         }
 
-        var totalProfiles: Int {
-            profiles.count
+        /// True when a profile-status snapshot decoded — distinguishes "no
+        /// data collected" (empty state) from "zero failures" (healthy state).
+        var hasProfileData: Bool {
+            profileSummary != nil || !profiles.isEmpty
         }
 
-        var pendingProfiles: Int {
-            profiles.filter { profile in
-                guard let status = profile.managementStatus else { return false }
-                return status.lowercased().contains("pending")
-            }.count
+        var profileTotalErrors: Int {
+            profileSummary?.totalErrors ?? profiles.reduce(0) { $0 + $1.errors }
         }
 
-        var installedProfiles: Int {
-            profiles.filter { profile in
-                guard let status = profile.managementStatus else { return false }
-                return status.lowercased().contains("installed") ||
-                       status.lowercased().contains("success")
-            }.count
+        var profilesWithFailures: Int {
+            profileSummary?.uniqueProfiles ?? profiles.count
         }
 
-        var failedProfiles: Int {
-            profiles.filter { profile in
-                guard let status = profile.managementStatus else { return false }
-                let lower = status.lowercased()
-                return lower.contains("failed") || lower.contains("removed") ||
-                       lower.contains("error")
-            }.count
+        var profileDevicesAffected: Int {
+            profileSummary?.uniqueDevices ?? 0
+        }
+
+        var profileLookbackDays: Int? {
+            profileSummary?.days
         }
 
         /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
@@ -65,6 +73,7 @@ struct PolicyHealthService: Sendable {
             summary: nil,
             findings: [],
             profiles: [],
+            profileSummary: nil,
             sourceFile: nil,
             snapshotDate: nil
         )
@@ -75,7 +84,8 @@ struct PolicyHealthService: Sendable {
             lhs.summary?.disabled == rhs.summary?.disabled &&
             lhs.summary?.configFindings == rhs.summary?.configFindings &&
             lhs.findings.count == rhs.findings.count &&
-            lhs.profiles.count == rhs.profiles.count &&
+            lhs.profiles == rhs.profiles &&
+            lhs.profileSummary == rhs.profileSummary &&
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate
         }
@@ -102,7 +112,8 @@ struct PolicyHealthService: Sendable {
     static func load(policyURL: URL?, profileURL: URL?) -> Snapshot? {
         var summary: PolicyStatusSummary?
         var findings: [PolicyFinding] = []
-        var profiles: [ProfileStatusRow] = []
+        var profiles: [ProfileFailure] = []
+        var profileSummary: ProfileFailureSummary?
         var sourceFile: URL?
         var snapshotDate: Date?
 
@@ -133,10 +144,11 @@ struct PolicyHealthService: Sendable {
         // Load profile data
         if let profileURL, FileManager.default.fileExists(atPath: profileURL.path) {
             if let profileData = try? Data(contentsOf: profileURL) {
-                if let decodedProfiles = try? JSONDecoder().decode(
-                    [ProfileStatusRow].self, from: profileData
-                ) {
-                    profiles = decodedProfiles
+                if let envelopes = try? JSONDecoder().decode(
+                    [ProfileStatusEnvelope].self, from: profileData
+                ), let envelope = envelopes.first {
+                    profileSummary = envelope.summary
+                    profiles = failureRows(from: envelope.failures ?? [])
 
                     // Use profile timestamp if we don't have a policy timestamp
                     if sourceFile == nil {
@@ -158,12 +170,13 @@ struct PolicyHealthService: Sendable {
         }
 
         // Return nil if we have no data at all
-        guard summary != nil || !profiles.isEmpty else { return nil }
+        guard summary != nil || profileSummary != nil || !profiles.isEmpty else { return nil }
 
         return Snapshot(
             summary: summary,
             findings: findings,
             profiles: profiles,
+            profileSummary: profileSummary,
             sourceFile: sourceFile,
             snapshotDate: snapshotDate
         )
@@ -171,4 +184,23 @@ struct PolicyHealthService: Sendable {
 
     // MARK: - Internals
 
+    /// Map decoded failure rows to view rows. Rows with neither an id nor a
+    /// name are dropped (a shape mismatch decodes all-Optional structs as
+    /// all-nil — the #185 phantom row); the index prefix makes ids unique
+    /// even when two profiles share a name.
+    static func failureRows(from rows: [ProfileFailureRow]) -> [ProfileFailure] {
+        rows.enumerated().compactMap { index, row in
+            let rawId = row.profileId?.stringValue
+            guard row.name != nil || rawId != nil else { return nil }
+            return ProfileFailure(
+                id: "\(index)-\(rawId ?? row.name ?? "")",
+                name: row.name ?? "Profile \(rawId ?? "?")",
+                deviceType: row.deviceType ?? "—",
+                errors: row.errors?.intValue ?? 0,
+                devices: row.devices?.intValue ?? 0,
+                lastError: row.lastError ?? "",
+                topError: row.topError ?? ""
+            )
+        }
+    }
 }

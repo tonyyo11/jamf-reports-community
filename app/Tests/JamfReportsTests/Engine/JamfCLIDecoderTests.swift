@@ -492,18 +492,35 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[1].membershipCount?.stringValue, "5")
     }
 
-    // MARK: - ProfileStatusRow
+    // MARK: - ProfileStatusEnvelope
 
-    func testProfileStatusRowDecoding() throws {
+    /// Real `pro report profile-status` shape — the pre-2.2.2 decoder targeted
+    /// a flat shape jamf-cli never emits, which decoded the envelope as one
+    /// all-nil row and crashed the Profiles table (#185).
+    func testProfileStatusEnvelopeDecoding() throws {
         let json = """
-        [{"id":7,"name":"WiFi Profile","category":"Network","site":"Main",
-          "management_status":"Installed","error_count":0}]
+        [{"summary":{"total_errors":12,"unique_profiles":2,"unique_devices":9,"days":30,
+                     "devices_high_failure":1,"devices_high_pending":0},
+          "failures":[{"device_type":"Computer","name":"WiFi Profile","id":"7",
+                       "errors":10,"devices":8,"last_error":"2026-06-10",
+                       "top_error":"Payload could not be installed"},
+                      {"device_type":"Mobile Device","name":"VPN","id":3,
+                       "errors":2,"devices":1,"last_error":"2026-06-09","top_error":"Timeout"}],
+          "device_failures":[],"device_pending":[]}]
         """
-        let rows = try JSONDecoder().decode([ProfileStatusRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].name, "WiFi Profile")
-        XCTAssertEqual(rows[0].category, "Network")
-        XCTAssertEqual(rows[0].managementStatus, "Installed")
-        XCTAssertEqual(rows[0].errorCount?.intValue, 0)
+        let envelopes = try JSONDecoder().decode([ProfileStatusEnvelope].self, from: Data(json.utf8))
+        let envelope = try XCTUnwrap(envelopes.first)
+        XCTAssertEqual(envelope.summary?.totalErrors, 12)
+        XCTAssertEqual(envelope.summary?.uniqueProfiles, 2)
+        XCTAssertEqual(envelope.summary?.uniqueDevices, 9)
+        XCTAssertEqual(envelope.summary?.days, 30)
+        let failures = try XCTUnwrap(envelope.failures)
+        XCTAssertEqual(failures.count, 2)
+        XCTAssertEqual(failures[0].name, "WiFi Profile")
+        XCTAssertEqual(failures[0].profileId?.stringValue, "7")
+        XCTAssertEqual(failures[0].errors?.intValue, 10)
+        XCTAssertEqual(failures[1].profileId?.stringValue, "3", "id arrives as Int or String")
+        XCTAssertEqual(failures[1].deviceType, "Mobile Device")
     }
 
     // MARK: - CheckinStatusRow
