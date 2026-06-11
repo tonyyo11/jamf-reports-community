@@ -25,7 +25,7 @@ struct MobileFleetView: View {
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
-                StaleDataBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource)
             }
 
             if !snapshot.isDetected {
@@ -74,7 +74,9 @@ struct MobileFleetView: View {
 
     private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
 
-    private static func makeDemoSnapshot() -> MobileFleetService.Snapshot {
+    // nonisolated: evaluated from the static-let initializer, which Swift 6.0
+    // treats as a nonisolated context (6.1+ tolerates the isolated call).
+    private nonisolated static func makeDemoSnapshot() -> MobileFleetService.Snapshot {
         let devices: [MobileDeviceInventoryItem] = (1...25).map(makeDemoDevice)
         let profiles: [MobileConfigProfileRow] = makeDemoProfiles()
         return MobileFleetService.Snapshot(
@@ -87,15 +89,15 @@ struct MobileFleetView: View {
         )
     }
 
-    private static let demoOwnershipTypes: [String] = [
+    private nonisolated(unsafe) static let demoOwnershipTypes: [String] = [
         "Institutional", "UserEnrollment",
         "AccountDrivenUserEnrollment", "AccountDrivenDeviceEnrollment",
     ]
 
-    private static let demoOSVersions: [String] = ["18.2.1", "18.1.1", "17.6.1"]
-    private static let demoDepartments: [String] = ["IT", "Sales", "Marketing"]
+    private nonisolated(unsafe) static let demoOSVersions: [String] = ["18.2.1", "18.1.1", "17.6.1"]
+    private nonisolated(unsafe) static let demoDepartments: [String] = ["IT", "Sales", "Marketing"]
 
-    private static func makeDemoDevice(index i: Int) -> MobileDeviceInventoryItem {
+    private nonisolated static func makeDemoDevice(index i: Int) -> MobileDeviceInventoryItem {
         let isIPad = i <= 15
         let kind = isIPad ? "iPad" : "iPhone"
         let displayName = "\(kind)-Demo-\(String(format: "%03d", i))"
@@ -137,7 +139,7 @@ struct MobileFleetView: View {
         )
     }
 
-    private static func makeDemoProfiles() -> [MobileConfigProfileRow] {
+    private nonisolated static func makeDemoProfiles() -> [MobileConfigProfileRow] {
         let raw: [(String, String, String)] = [
             ("1", "Corporate WiFi", "Network"), ("2", "MDM Enrollment", "Device"),
             ("3", "Email Configuration", "Exchange"), ("4", "Security Baseline", "Security"),

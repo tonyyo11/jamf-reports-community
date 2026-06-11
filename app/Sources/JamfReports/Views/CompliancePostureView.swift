@@ -41,7 +41,7 @@ struct CompliancePostureView: View {
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
-                StaleDataBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource)
             }
 
             // Show proxy note only when using proxy compliance (no mSCP baselines)

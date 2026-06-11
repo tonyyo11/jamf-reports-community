@@ -374,8 +374,18 @@ struct SourcesView: View {
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
-                    .frame(minHeight: 200)
+                    // Sized to the actual rows — a tall fixed frame renders
+                    // empty filler rows that read as missing data.
+                    .frame(height: min(CGFloat(families.count) * 28 + 34, 200))
                     .scrollContentBackground(.hidden)
+                    Text("Families appear as snapshot types are archived: summaries "
+                        + "(daily trend data, written by every collect) plus dated computers, "
+                        + "mobile, compliance, and patching archives created when CSV exports "
+                        + "are snapshotted. A jamf-cli-only workspace typically shows only "
+                        + "summaries.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

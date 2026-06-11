@@ -17,7 +17,7 @@ struct ConfigView: View {
             case .eas:        "Custom EAs"
             case .thresholds: "Thresholds"
             case .platform:   "Platform API"
-            case .output:     "Output"
+            case .output:     "Output & Branding"
             case .scoring:    "Scoring"
             }
         }

@@ -83,6 +83,11 @@ struct OverviewView: View {
                        trendStore.cacheSource != .neverFetchedLive {
                         heavyTierStalePrompt
                     }
+                    // R1: these KPI cards render the daily digest, not live
+                    // inventory — say so, and flag cached/missing inputs (R4).
+                    if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
+                        ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
+                    }
                     statRow
                     if workspace.demoMode {
                         osAndRules

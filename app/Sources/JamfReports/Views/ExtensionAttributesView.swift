@@ -36,7 +36,7 @@ struct ExtensionAttributesView: View {
                 lastModified: snapshot.snapshotDate
             )
             if !workspace.demoMode {
-                StaleDataBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource)
             }
             if snapshot.totalEAs == 0 {
                 emptyState
@@ -199,7 +199,7 @@ struct ExtensionAttributesView: View {
             EmptyStateView(
                 systemImage: "slider.horizontal.below.rectangle",
                 title: "No Extension Attribute data yet",
-                message: "Run `jamf-cli pro report ea-results --all` (Sources tab → Refresh) and this screen will populate."
+                message: "Use Collect now in the banner above — or run `jamf-cli pro report ea-results --all` — and this screen will populate."
             )
         }
     }

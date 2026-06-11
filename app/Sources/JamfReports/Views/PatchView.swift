@@ -26,7 +26,7 @@ struct PatchView: View {
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
-                StaleDataBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource)
             }
             if snapshot.totalTitles == 0 {
                 emptyState
@@ -92,7 +92,7 @@ struct PatchView: View {
             EmptyStateView(
                 systemImage: "shippingbox",
                 title: "No patch data yet",
-                message: "Run `jamf-cli pro report patch-status` (Sources tab → Refresh) and this screen will populate."
+                message: "Use Collect now in the banner above — or run `jamf-cli pro report patch-status` — and this screen will populate."
             )
         }
     }

@@ -27,7 +27,7 @@ struct DDMBlueprintView: View {
         PageScaffold {
             DDMBlueprintView.header()
             if !workspace.demoMode && lockState == .unlockedWithData {
-                StaleDataBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource)
             }
             content
         }

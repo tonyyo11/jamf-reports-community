@@ -132,4 +132,58 @@ final class FleetOverviewFilterTests: XCTestCase {
         XCTAssertEqual(issueCount, 3)
         XCTAssertEqual(cleanCount, 2)
     }
+
+    // MARK: - Issue reasons (#184)
+
+    func testIssueReasonsNameEveryTrippedCondition() {
+        let summary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 100,
+            fileVaultPct: 82,
+            compliancePct: 88,
+            staleCount: 5,
+            osCurrentPct: 75,
+            crowdstrikePct: 95,
+            patchPct: 60
+        )
+        let reasons = fleetProfileIssueReasons(summary)
+        XCTAssertEqual(reasons.count, 3)
+        XCTAssertTrue(reasons.contains { $0.contains("5 stale devices") })
+        XCTAssertTrue(reasons.contains { $0.contains("FileVault 82.0%") })
+        XCTAssertTrue(reasons.contains { $0.contains("Patch 60.0%") })
+    }
+
+    func testIssueReasonsEmptyForCleanSummary() {
+        let summary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 100,
+            fileVaultPct: 98,
+            compliancePct: 88,
+            staleCount: 0,
+            osCurrentPct: 75,
+            crowdstrikePct: 95,
+            patchPct: 85
+        )
+        XCTAssertTrue(fleetProfileIssueReasons(summary).isEmpty)
+    }
+
+    func testIssueReasonsForMissingSummary() {
+        XCTAssertEqual(fleetProfileIssueReasons(nil), ["No summary collected yet"])
+    }
+
+    func testIssueDestinationsRouteToActionableTabs() {
+        let summary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 100,
+            fileVaultPct: 82,
+            compliancePct: 88,
+            staleCount: 5,
+            osCurrentPct: 75,
+            crowdstrikePct: 95,
+            patchPct: 60
+        )
+        XCTAssertEqual(fleetProfileIssues(summary).map(\.tab),
+                       [.outreach, .securityPosture, .patch])
+        XCTAssertEqual(fleetProfileIssues(nil).first?.tab, .overview)
+    }
 }
