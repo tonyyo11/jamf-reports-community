@@ -1010,6 +1010,15 @@ that reveal org-specific EA naming conventions.
 `CHANGELOG.md` tracks user-visible changes. Update `Unreleased` whenever a change affects
 end users, and roll those notes into a versioned section when cutting a release tag.
 
+**Changelog and release-notes style:** plain-language summaries of what changed for the
+user — a one-line framing paragraph, then grouped concise bullets (Added/Fixed/Security).
+No SHAs, file paths, or class names unless the user needs them to act; technical detail
+belongs in commit messages. GitHub release notes follow the same voice with themed
+sections and a downloads table — always replace the auto-generated per-PR notes
+(`gh release edit --notes-file`), and never @-mention the maintainer or contributors.
+The v2.2.1 CHANGELOG section and release page are the reference examples
+(style modeled on Macjutsu/super).
+
 ---
 
 ## Reference: v3.6 Production Script
