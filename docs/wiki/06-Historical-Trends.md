@@ -26,7 +26,8 @@ Every collect or generate run writes one `summary.json` file to:
 Each file is a per-day aggregate — date, total devices, compliance percentage, FileVault
 percentage, patch percentage, and related metrics. The Trends screen reads this directory;
 one file equals one point on the timeline. The first run of a given day writes that day's
-summary; later runs the same day leave it in place.
+summary; later runs the same day leave it in place. See [Data Provenance](11-Data-Provenance)
+for details on where each metric comes from.
 
 Because the cadence determines the granularity, **build the collection cadence first**
 (see [Scheduling & Automation](05-Scheduling-and-Automation)). Weekly collection produces

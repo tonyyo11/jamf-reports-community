@@ -7,6 +7,71 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- The Fleet Overview "N Issues" badge now opens a popover listing each flagged
+  profile and exactly what tripped it; clicking a profile opens its drill-down,
+  which gains an "Issues on this profile" card explaining every condition and
+  linking to the screen where it can be acted on.
+- Health Audit findings gain "Take action" buttons that open the screen holding
+  the records behind the finding (Security Posture, Offline Outreach, Policies &
+  Profiles, …) plus a shortcut to Generated reports for per-device detail.
+- "Collect now" is available on every snapshot-driven screen's data banner
+  (OS Updates, Patch, Extension Attributes, Policies & Profiles, Mobile Fleet,
+  posture and trends screens) — empty states no longer point at a refresh
+  button that didn't exist.
+- Data Sources explains snapshot archive families (summaries plus dated CSV
+  archives) and no longer renders empty filler rows under the table.
+- Overview, Trends, and Fleet Overview now carry a provenance chip stating that
+  their numbers come from the once-a-day summary digest (with its date), and —
+  when the digest was built from cached or missing sources — say so instead of
+  letting stale data wear a fresh date. Each daily summary now records where
+  every input came from (live, cached, or absent), in both engines.
+- New wiki page, Data Provenance, documents the three data tiers (per-device
+  records, server-side aggregates, daily digest) and every screen's data source.
+
+### Changed
+
+- Unknown is no longer reported as zero. When device check-in data was never
+  collected, the stale-device count is omitted (shown as "—") instead of a
+  false "0 stale devices", in both engines. The Stability Index drops
+  unmeasured components and renormalizes over what was actually measured, and
+  security controls the report marks NOT_COLLECTED no longer count as failing
+  in the compliance proxy — a partially-collected tenant no longer reads as 0%
+  compliant. Trend values can shift on fleets where data was previously
+  missing; the new numbers reflect measured data only.
+
+### Fixed
+
+- Clicking Profiles in Policies & Profiles crashed the app (issue #185). The screen
+  decoded the `profile-status` report against a data shape jamf-cli never produces,
+  creating a phantom row whose identity changed on every read — fatal to the table
+  on recent macOS. The tab now reads the real report and shows per-profile
+  installation failures (errors, devices affected, most common error), matching the
+  Excel report's Profile Status sheet. A tenant with no failures shows a healthy
+  state instead of an empty one.
+- The Fleet Overview "N Issues" badge now explains itself (issue #184). Clicking it
+  filters to the affected profiles, and each flagged card lists exactly what
+  tripped it (stale devices, FileVault below 90%, patch below 80%, low stability).
+- Finishing the existing-jamf-cli setup no longer reports success when a scheduled
+  automation agent failed to install — a warning toast points at the Automation tab.
+- "Collect now" and setup-screen collections now write a Run History entry, so the
+  "see Run History" guidance in their failure messages leads to the actual
+  per-command output instead of an empty list.
+- Restoring the default config now always names the `config.yaml.broken-<timestamp>`
+  backup in its error message, even when reseeding fails partway.
+- A missing config.yaml is reported as "file not found" instead of "may be corrupt".
+- Collecting macOS configuration profiles called a jamf-cli command that no longer
+  exists (`classic-macos-profiles` was renamed `classic-macos-config-profiles`
+  upstream), which silently saved jamf-cli's help text as the snapshot. The app now
+  calls the current command and refuses to save any snapshot that is not JSON, so a
+  future rename degrades to a warning instead of poisoning the cache.
+
+### Security
+
+- Inventory CSV export now refuses to write into system or sensitive home
+  directories, matching the guard PDF export gained in 2.2.1.
+
 ## [2.2.1] - 2026-06-10
 
 Patch release focused on the first-launch experience for admins who already use
