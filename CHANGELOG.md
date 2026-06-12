@@ -51,8 +51,9 @@ versions in this repository map to git tags.
   Excel report's Profile Status sheet. A tenant with no failures shows a healthy
   state instead of an empty one.
 - The Fleet Overview "N Issues" badge now explains itself (issue #184). Clicking it
-  filters to the affected profiles, and each flagged card lists exactly what
-  tripped it (stale devices, FileVault below 90%, patch below 80%, low stability).
+  opens a popover naming each flagged profile and what tripped it (stale devices,
+  FileVault below 90%, patch below 80%, low stability), and each flagged card
+  carries the same reasons with a link to the screen where they can be acted on.
 - Finishing the existing-jamf-cli setup no longer reports success when a scheduled
   automation agent failed to install — a warning toast points at the Automation tab.
 - "Collect now" and setup-screen collections now write a Run History entry, so the

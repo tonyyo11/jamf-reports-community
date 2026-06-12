@@ -29,7 +29,8 @@ does not issue new API calls. Data is refreshed by collection (see
   definitions.
 - **Health Audit** — instance health findings plus computer-group hygiene (empty and
   unused smart/static groups).
-  Data source: `pro report policy-status` (tier 2) and group lists (tier 1).
+  Data source: `pro audit` (instance-config checks, fetched by the Run Audit button)
+  and group lists (tier 1).
 - **Generated** — the library of reports already produced, with actions to generate new
   workbooks, HTML reports, and inventory CSVs.
   Data source: generated report catalog (no single tier; see [Data Provenance](11-Data-Provenance) for report composition).

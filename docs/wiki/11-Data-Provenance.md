@@ -54,9 +54,12 @@ Feeds these screens:
 
 Once per collection run, the app writes one `summary.json` file containing about 15
 aggregated fleet metrics for that day: total devices, compliance percent, patch percent,
-FileVault percent, stale device count, security score, and related rolled-up numbers. Only
-the first collect/generate run of a given day writes a summary; later runs the same day
-leave it unchanged.
+FileVault percent, stale device count, security score, and related rolled-up numbers. The
+first collect/generate run of a given day writes the summary; a later run the same day
+replaces it only when it is strictly better — for example it measured a metric the first
+run could not (stale count, real mSCP bands instead of the proxy). One caveat: a
+generate-time rewrite does not know which inputs were fetched live, so an upgraded
+summary may omit the `collectionSources` map the morning collect recorded.
 
 This is not live data. It is a snapshot of the fleet state at the time of collection.
 
