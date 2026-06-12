@@ -27,6 +27,8 @@ struct OverviewView: View {
     @State private var navigationPath = NavigationPath()
     @State private var legacyWorkspaces: [String] = []
     @State private var legacySchedules: [String] = []
+    @State private var checklist: GettingStartedChecklist?
+    @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
 
     private var defaultTrendRange: TrendRange {
         TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
@@ -62,6 +64,9 @@ struct OverviewView: View {
                         workspaceInitBanner
                     }
                     migrationBanner
+                    if !workspace.demoMode, let cl = checklist, !cl.isComplete {
+                        gettingStartedCard(cl)
+                    }
                     // PR-13: shared StaleDataBanner surfaces freshness above
                     // the KPI grid. Suppressed in demo mode (canonical demo
                     // dataset is intentionally static). Renders nothing when
@@ -128,6 +133,10 @@ struct OverviewView: View {
                 trendStore.load(profile: workspace.profile, range: defaultTrendRange)
             }
         }
+        .task(id: workspace.profile) {
+            guard !workspace.demoMode else { return }
+            await reloadChecklist()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             workspace.reloadFromDisk()
             if !workspace.demoMode {
@@ -135,6 +144,7 @@ struct OverviewView: View {
                 // short-circuit on unchanged profile and leave staleness stale.
                 trendStore.reload()
             }
+            Task { await reloadChecklist() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
             if !navigationPath.isEmpty {
@@ -1174,6 +1184,93 @@ struct OverviewView: View {
             name: .navigateToTab,
             object: nil,
             userInfo: ["tab": tab.rawValue]
+        )
+    }
+
+    // MARK: - Getting started checklist
+
+    /// Derives the five checklist booleans from real artifacts and updates `checklist`.
+    /// I/O is done off the main actor; the assignment back runs on MainActor.
+    @MainActor
+    private func reloadChecklist() async {
+        let profile = workspace.profile
+        guard ProfileService.isValid(profile) else { return }
+
+        let connected = !workspace.profiles.isEmpty
+        let collected = !trendStore.filteredSummaries.isEmpty
+        let scheduled = AutomationPolicy.parse(automationPolicyRaw).isManaged
+            || LaunchAgentService.list().contains { $0.profile == profile }
+
+        let customized = await Task.detached(priority: .utility) {
+            (try? ConfigService.load(profile: profile))
+                .map { loaded in
+                    loaded.state.columns.values.contains { !$0.isEmpty }
+                } ?? false
+        }.value
+
+        let reported = await Task.detached(priority: .utility) {
+            !ReportLibrary().list(profile: profile).isEmpty
+        }.value
+
+        checklist = .build(
+            connected: connected,
+            collected: collected,
+            customized: customized,
+            scheduled: scheduled,
+            reported: reported
+        )
+    }
+
+    /// Card rendered between migrationBanner and StaleDataBanner for new users.
+    /// Auto-hides once all steps are done — no stored dismiss flag.
+    @ViewBuilder
+    private func gettingStartedCard(_ cl: GettingStartedChecklist) -> some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Kicker(
+                        text: "Getting started — \(cl.completedCount) of \(cl.steps.count)",
+                        tone: cl.completedCount > 0 ? .teal : .muted
+                    )
+                    Spacer(minLength: 8)
+                }
+                ForEach(cl.steps) { step in
+                    gettingStartedRow(step, isActive: cl.firstIncomplete?.id == step.id)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func gettingStartedRow(_ step: GettingStartedStep, isActive: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(step.done ? Theme.Colors.ok : Theme.Text.tertiary(contrast))
+                    .accessibilityHidden(true)
+                Text(step.title)
+                    .font(.callout.weight(isActive ? .semibold : .regular))
+                    .foregroundStyle(step.done ? Theme.Text.tertiary(contrast) : Theme.Colors.fg)
+                    .strikethrough(step.done, color: Theme.Text.tertiary(contrast))
+            }
+            if !step.done {
+                Text(step.detail)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .padding(.leading, 24)
+            }
+            if isActive {
+                PNPButton(title: step.actionLabel, style: .gold, size: .sm) {
+                    navigate(to: Tab(rawValue: step.destinationTab) ?? .sources)
+                }
+                .padding(.leading, 24)
+                .padding(.top, 2)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(step.title): \(step.done ? "complete" : "incomplete"). \(step.done ? "" : step.detail)"
         )
     }
 }
