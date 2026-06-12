@@ -193,6 +193,32 @@ struct ExistingCLISetupView: View {
                     .foregroundStyle(Theme.Colors.fgMuted)
                     .padding(.leading, 28)
             }
+            if !flow.kindStatuses.isEmpty {
+                kindDetailDisclosure
+                    .padding(.leading, 28)
+            }
+        }
+    }
+
+    @State private var kindDetailExpanded = false
+
+    private var kindDetailDisclosure: some View {
+        DisclosureGroup(isExpanded: $kindDetailExpanded) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(flow.kindStatuses) { entry in
+                    HStack(spacing: 6) {
+                        Pill(text: entry.outcome.rawValue, tone: entry.outcome.pillTone)
+                        Text(entry.kind)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Text.secondary)
+                    }
+                }
+            }
+            .padding(.top, 6)
+        } label: {
+            Text("Collection detail")
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.fgMuted)
         }
     }
 
@@ -306,6 +332,19 @@ struct ExistingCLISetupView: View {
             workspace.reloadFromDisk()
             isFinishing = false
             outcomeRaw = ExistingCLISetupFlow.SetupOutcome.completed.rawValue
+        }
+    }
+}
+
+// MARK: - CollectKindStatus.Outcome + Pill
+
+private extension ExistingCLISetupFlow.CollectKindStatus.Outcome {
+    /// Maps collect outcomes to the matching Pill tone.
+    var pillTone: Pill.Tone {
+        switch self {
+        case .ok:   .teal
+        case .warn: .warn
+        case .skip: .muted
         }
     }
 }

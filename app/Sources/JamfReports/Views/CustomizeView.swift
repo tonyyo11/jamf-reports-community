@@ -14,6 +14,7 @@ struct CustomizeView: View {
 
     @State private var applySaved = false
     @State private var saveError: String?
+    @State private var showGuide = false
 
     private static let executiveSheets: Set<String> = [
         "Fleet Overview", "Security Posture", "Compliance", "Patch Compliance",
@@ -92,6 +93,14 @@ struct CustomizeView: View {
         ) {
             AnyView(
                 HStack(spacing: 8) {
+                    PNPButton(
+                        title: "How to customize",
+                        icon: "questionmark.circle",
+                        style: .ghost,
+                        size: .sm
+                    ) {
+                        showGuide = true
+                    }
                     PNPButton(title: "Preset: Executive") {
                         applyExecutivePreset()
                     }
@@ -103,6 +112,9 @@ struct CustomizeView: View {
                         saveError = nil
                         applyAndSave()
                     }
+                }
+                .sheet(isPresented: $showGuide) {
+                    CustomizeGuideSheet()
                 }
             )
         }
