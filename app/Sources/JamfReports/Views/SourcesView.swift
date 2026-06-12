@@ -422,15 +422,15 @@ struct SourcesView: View {
     }
 
     private var emptyFamiliesState: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("No snapshot families yet.")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(Theme.Text.primary)
-            Text("Historical trend snapshots will appear after collection or CSV archival runs.")
-                .font(.caption)
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-        }
-        .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
+        EmptyStateView(
+            systemImage: "archivebox",
+            title: "No snapshot families yet",
+            message: "Families appear after collection or CSV archival runs: "
+                + "summaries (written by every collect), plus dated computers, "
+                + "mobile, compliance, and patching archives."
+        )
+        .frame(maxWidth: .infinity, minHeight: 160)
+        .padding(.vertical, 8)
     }
 
     private func reload() {

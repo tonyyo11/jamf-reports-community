@@ -278,10 +278,13 @@ struct AuditView: View {
         VStack(alignment: .leading, spacing: 16) {
             integrityCard
             if findings.isEmpty {
-                emptyState(
-                    icon: "shield.checkered",
-                    text: "No audit findings yet. Run an audit to scan your instance."
+                EmptyStateView(
+                    systemImage: "shield.checkered",
+                    title: "No audit findings yet",
+                    message: "Run an audit from this screen to scan your Jamf instance configuration."
                 )
+                .frame(maxWidth: .infinity, minHeight: 300)
+                .padding(20)
             } else {
                 auditSummaryStrip
                 Card(padding: 0) {
@@ -513,10 +516,13 @@ struct AuditView: View {
     private var hygieneSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             if unusedGroups.isEmpty {
-                emptyState(
-                    icon: "wand.and.stars",
-                    text: "No unused groups identified. Run analysis to check for redundant groups."
+                EmptyStateView(
+                    systemImage: "wand.and.stars",
+                    title: "No unused groups identified",
+                    message: "Run analysis to scan for redundant or empty computer groups."
                 )
+                .frame(maxWidth: .infinity, minHeight: 300)
+                .padding(20)
             } else {
                 Card(padding: 0) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -578,20 +584,6 @@ struct AuditView: View {
             return
         }
         SystemActions.open(url)
-    }
-
-    private func emptyState(icon: String, text: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundStyle(Theme.Colors.gold.opacity(0.5))
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-        }
-        .frame(maxWidth: .infinity, minHeight: 300)
-        .background(Color.white.opacity(0.01))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private func severityIcon(_ severity: String) -> some View {

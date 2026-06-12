@@ -124,6 +124,9 @@ final class WorkspaceStore {
     var configState: ConfigState = .defaultState
     /// Non-nil after a save or load error; cleared on success.
     var configError: String?
+    /// Keys the YAML parser auto-healed on load (orphaned sequence items re-attached).
+    /// Non-empty means the on-disk file is still malformed until the user saves from Config.
+    var configRepairedKeys: [String] = []
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
@@ -470,11 +473,13 @@ final class WorkspaceStore {
             _savedState = loaded.state
             configState = loaded.state
             configError = nil
+            configRepairedKeys = loaded.document.repairedKeys.sorted()
         } catch ConfigService.ConfigError.missingConfig {
             configState = .defaultState
             _loadedDoc = nil
             _savedState = nil
             configError = nil
+            configRepairedKeys = []
         }
         rebuildColumnMappings()
         rebuildCustomEAs()

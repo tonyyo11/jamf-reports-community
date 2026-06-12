@@ -59,6 +59,9 @@ struct ConfigView: View {
             if let problem = configProblem {
                 configRecoveryCard(problem)
             }
+            if !workspace.configRepairedKeys.isEmpty {
+                configHealedKeysCard(workspace.configRepairedKeys)
+            }
             tabContent
         }
         .task(id: workspace.profile) {
@@ -143,6 +146,37 @@ struct ConfigView: View {
                     PNPButton(title: "Restore default config…", style: .danger, size: .sm) {
                         showRestoreConfirm = true
                     }
+                }
+            }
+        }
+    }
+
+    /// Informational card shown when the YAML parser auto-healed orphaned
+    /// sequence items on load. Not a parse failure — the file is still readable
+    /// — but the on-disk YAML is malformed until the user saves from this screen.
+    private func configHealedKeysCard(_ keys: [String]) -> some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "wand.and.sparkles")
+                        .foregroundStyle(Theme.Colors.warn)
+                        .accessibilityHidden(true)
+                    Text("Config auto-healed on load")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                    Pill(text: "\(keys.count) key\(keys.count == 1 ? "" : "s")", tone: .warn)
+                }
+                Text("The following YAML keys had malformed sequence items that were "
+                    + "auto-reattached. The file reads correctly but is still malformed "
+                    + "on disk. Save from this screen to persist the cleanup.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Mono(text: keys.joined(separator: ", "), size: 11.5, color: Theme.Colors.warnSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Healed keys: \(keys.joined(separator: ", "))")
+                PNPButton(title: "Save now", icon: "checkmark", style: .gold, size: .sm) {
+                    save()
                 }
             }
         }

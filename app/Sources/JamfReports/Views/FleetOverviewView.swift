@@ -402,14 +402,14 @@ struct FleetOverviewView: View {
     }
 
     private var stabilityEmptyState: some View {
-        VStack(spacing: 6) {
-            Kicker(text: "No stability history yet")
-            Text("Generate a report to start tracking trends")
-                .font(.callout)
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-        }
+        EmptyStateView(
+            systemImage: "chart.line.uptrend.xyaxis",
+            title: "No trend summaries yet",
+            message: "Stability history is built from daily summary snapshots written by each collect run."
+        )
         .frame(maxWidth: .infinity)
         .frame(height: 200)
+        .padding(.horizontal, 4)
     }
 
     private func stabilityChart(points: [StabilityTrendPoint]) -> some View {

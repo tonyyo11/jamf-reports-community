@@ -266,20 +266,18 @@ struct ReportsView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "doc.badge.plus")
-                .font(.system(size: 28))
-                .foregroundStyle(Theme.Colors.gold)
-                .accessibilityHidden(true)
-            Text("No reports yet — run Generate from Overview")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Theme.Colors.fg)
-            PNPButton(title: "Go to Overview", icon: "house", style: .gold) {
-                requestOverviewTab()
-            }
-        }
+        EmptyStateView(
+            systemImage: "doc.badge.plus",
+            title: "No reports yet",
+            message: "Reports are generated from the Overview screen using "
+                + "jamf-cli snapshots and optionally a CSV export.",
+            primaryAction: EmptyStateAction(
+                label: "Go to Overview",
+                icon: "house"
+            ) { requestOverviewTab() }
+        )
         .frame(maxWidth: .infinity, minHeight: 360)
-        .accessibilityLabel("No reports yet. Use Go to Overview to run Generate.")
+        .padding(20)
     }
 
     private var noFilterMatches: some View {
