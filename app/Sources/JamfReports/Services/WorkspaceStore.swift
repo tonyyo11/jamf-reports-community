@@ -467,6 +467,7 @@ final class WorkspaceStore {
     /// Load config.yaml for the current profile. Falls back to defaults if the
     /// file doesn't exist yet (new workspace). Other errors are rethrown.
     func loadConfig() async throws {
+        configRepairedKeys = []
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
@@ -496,6 +497,8 @@ final class WorkspaceStore {
         _loadedDoc = newDoc
         _savedState = configState
         configError = nil
+        // Re-saving drops the orphaned sequence items, so the healed-keys note clears.
+        configRepairedKeys = newDoc.repairedKeys.sorted()
     }
 
     /// Discard in-memory edits and restore to the state at the last load/save.

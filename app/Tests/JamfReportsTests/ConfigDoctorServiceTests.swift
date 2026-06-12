@@ -212,4 +212,125 @@ final class ConfigDoctorServiceTests: XCTestCase {
                        "a stronger header should yield a suggest, not a plain pass")
         XCTAssertTrue(serial?.detail.contains("Serial Number") ?? false)
     }
+
+    // MARK: - Mobile required columns gated on mobile_columns
+
+    func testComputerOnlyConfigEmitsNoMobileRequiredRows() throws {
+        let config = try makeConfig(cleanYAML)  // no mobile_columns block
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        XCTAssertFalse(rows.contains { $0.id.hasPrefix("required.mobile_columns") },
+                       "a computer-only config must not warn on every mobile field")
+    }
+
+    func testMobileConfigEmitsMobileRequiredRows() throws {
+        let yaml = """
+        mobile_columns:
+          device_name: "Display Name"
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        XCTAssertEqual(row(rows, id: "required.mobile_columns.device_name")?.severity, .pass)
+        XCTAssertEqual(row(rows, id: "required.mobile_columns.serial_number")?.severity, .warn)
+    }
+
+    // MARK: - CSV family unknown
+
+    func testUnknownCSVFamilyWarns() throws {
+        let config = try makeConfig(cleanYAML)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: ["Foo", "Bar"],
+            csvFamily: nil, eaCoverageNames: []
+        )
+        XCTAssertEqual(row(rows, id: "csv.family")?.severity, .warn)
+    }
+
+    // MARK: - custom_eas
+
+    func testBooleanCustomEAWithoutTrueValueWarns() throws {
+        let yaml = """
+        custom_eas:
+          - name: "FileVault"
+            column: "FileVault 2 Status"
+            type: boolean
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        XCTAssertEqual(row(rows, id: "custom_ea.FileVault.true_value")?.severity, .warn)
+    }
+
+    func testCustomEAColumnMissingFromCSVFails() throws {
+        let yaml = """
+        custom_eas:
+          - name: "FileVault"
+            column: "FileVault 2 Status"
+            type: text
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: ["Computer Name"],
+            csvFamily: .computers, eaCoverageNames: []
+        )
+        XCTAssertEqual(row(rows, id: "custom_ea.FileVault.column")?.severity, .fail)
+    }
+
+    // MARK: - platform
+
+    func testPlatformEnabledWithoutBenchmarksWarns() throws {
+        let yaml = """
+        platform:
+          enabled: true
+          compliance_benchmarks: []
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        XCTAssertEqual(row(rows, id: "platform.benchmarks")?.severity, .warn)
+    }
+
+    // MARK: - security_agents
+
+    func testSecurityAgentEmptyConnectedValueEmitsSingleWarnWithCSV() throws {
+        let yaml = """
+        security_agents:
+          - name: "CrowdStrike"
+            column: "CrowdStrike Status"
+            connected_value: ""
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: ["CrowdStrike Status"],
+            csvFamily: .computers, eaCoverageNames: []
+        )
+        let connected = rows.filter { $0.id.contains("connected_value") }
+        XCTAssertEqual(connected.count, 1, "CSV + structural must not both emit")
+        XCTAssertEqual(connected.first?.severity, .warn)
+    }
+
+    func testSecurityAgentEmptyColumnWarnsViaStructuralWhenNoCSV() throws {
+        let yaml = """
+        security_agents:
+          - name: "CrowdStrike"
+            column: ""
+            connected_value: "Installed"
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        XCTAssertEqual(
+            row(rows, id: "security_agent.CrowdStrike.column.structural")?.severity, .warn
+        )
+    }
 }

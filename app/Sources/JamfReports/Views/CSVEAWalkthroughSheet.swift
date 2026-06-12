@@ -301,6 +301,11 @@ struct CSVEAWalkthroughSheet: View {
         for agent in loaded.state.securityAgents where !agent.column.isEmpty {
             mapped.insert(agent.column)
         }
+        // Exclude columns already adopted as custom EAs so a second visit doesn't
+        // re-propose them.
+        for ea in loaded.state.customEAs where !ea.column.isEmpty {
+            mapped.insert(ea.column)
+        }
         return mapped
     }
 

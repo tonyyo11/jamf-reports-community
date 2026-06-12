@@ -54,9 +54,6 @@ enum ConfigDoctorService {
         ("Last check-in", "last_checkin", \.lastCheckin),
     ]
 
-    private static let validEATypes: Set<String> =
-        ["boolean", "date", "percentage", "text", "version"]
-
     // MARK: - Wiring
 
     /// Load `config.yaml`, the newest csv-inbox CSV headers, and cached EA coverage
@@ -131,6 +128,11 @@ enum ConfigDoctorService {
         rows += requiredColumnRows(config)
         if let headers = csvHeaders {
             rows += csvRows(config, headers: headers, family: csvFamily)
+        } else {
+            // Without a CSV, securityAgentCSVRows never runs, so the structural
+            // agent checks are the only way to surface a missing column /
+            // connected_value. With a CSV they would double-emit, so gate them here.
+            rows += securityAgentStructuralRows(config)
         }
         rows += structuralRows(config)
         rows += baselineRows(config, eaCoverageNames: eaCoverageNames)
@@ -150,14 +152,18 @@ enum ConfigDoctorService {
                 value: value
             ))
         }
-        let mobile = config.mobileColumns
-        for required in requiredMobileFields {
-            let value = mobile.flatMap { nonEmpty($0[keyPath: required.path]) }
-            rows.append(requiredRow(
-                id: "required.mobile_columns.\(required.logical)",
-                label: "Mobile \(required.label.lowercased())",
-                value: value
-            ))
+        // Only validate mobile required columns when the config opts into a mobile
+        // fleet (at least one mobile column mapped). Defaults still populate an empty
+        // mobile_columns, so a computer-only config must not warn on every mobile
+        // field — matches Python cmd_check, which validates the detected CSV family.
+        if let mobile = config.mobileColumns, !mobileMappings(config).isEmpty {
+            for required in requiredMobileFields {
+                rows.append(requiredRow(
+                    id: "required.mobile_columns.\(required.logical)",
+                    label: "Mobile \(required.label.lowercased())",
+                    value: nonEmpty(mobile[keyPath: required.path])
+                ))
+            }
         }
         return rows
     }
@@ -346,7 +352,6 @@ enum ConfigDoctorService {
         rows += duplicateColumnRows(config)
         rows += platformRows(config)
         rows += customEAStructuralRows(config)
-        rows += securityAgentStructuralRows(config)
         return rows
     }
 
@@ -402,13 +407,8 @@ enum ConfigDoctorService {
     private static func customEAStructuralRows(_ config: ReportConfig) -> [DoctorRow] {
         var rows: [DoctorRow] = []
         for ea in config.customEas ?? [] {
-            if !validEATypes.contains(ea.type.rawValue) {
-                rows.append(DoctorRow(
-                    id: "custom_ea.\(ea.name).type", severity: .warn, title: "EA: \(ea.name)",
-                    detail: "Unknown type '\(ea.type.rawValue)'.",
-                    hint: "Use one of: \(validEATypes.sorted().joined(separator: ", "))."
-                ))
-            }
+            // `ea.type` is a decoded enum, so an invalid type string is already a
+            // ConfigLoader parse failure — no type-validity row is reachable here.
             if ea.type == .boolean, nonEmpty(ea.trueValue) == nil {
                 rows.append(DoctorRow(
                     id: "custom_ea.\(ea.name).true_value", severity: .warn, title: "EA: \(ea.name)",
