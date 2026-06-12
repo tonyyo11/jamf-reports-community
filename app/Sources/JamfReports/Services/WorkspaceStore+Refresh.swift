@@ -190,7 +190,9 @@ extension WorkspaceStore {
     /// auth sent the #181 field tester to the wrong page.
     nonisolated static func firstCollectToast(exitCode: Int32, runRecorded: Bool = true) -> Toast {
         if exitCode == 0 {
-            return Toast(message: "First collection complete", style: .success)
+            // Context-neutral: this path also serves CollectNowBanner on every
+            // collect-fed screen, not just the first-run flow.
+            return Toast(message: "Collection complete", style: .success)
         }
         if exitCode == CLIBridge.exitCodeUnauthorized {
             return Toast(

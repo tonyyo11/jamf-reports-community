@@ -825,10 +825,10 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     if let stability = summary.stabilityIndex, stability < 70 {
         issues.append(FleetProfileIssue(
             reason: "Stability \(String(format: "%.0f", stability)) (below 70)",
-            explanation: "Composite of the summary's compliance, patch, stale, and "
-                + "FileVault metrics. Metrics the last collect could not measure "
-                + "count against it — a low score can mean missing data, not just "
-                + "unhealthy devices.",
+            explanation: "Composite of the summary's compliance, patch posture, and "
+                + "stale-device metrics. Components the last collect could not "
+                + "measure are dropped and the rest reweighted, so the score "
+                + "reflects measured data only.",
             actionLabel: "Open Trends",
             tab: .trends
         ))
