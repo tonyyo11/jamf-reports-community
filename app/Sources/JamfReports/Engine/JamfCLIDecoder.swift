@@ -434,33 +434,55 @@ struct SmartGroupRow: Decodable, Sendable {
     }
 }
 
-// MARK: - Profile status (classic macOS profiles)
-// `jamf-cli pro classic-macos-profiles list --output json`
+// MARK: - Profile status
+// `jamf-cli pro report profile-status --output json` returns a single-element
+// envelope (verified against live output; same shape Python's
+// `_write_profile_status` parses):
+//   [{"summary": {"total_errors": N, "unique_profiles": N, "unique_devices": N,
+//                 "days": N, "devices_high_failure": N, "devices_high_pending": N},
+//     "failures": [{"device_type": "...", "name": "...", "id": "...", "errors": N,
+//                   "devices": N, "last_error": "...", "top_error": "..."}],
+//     "device_failures": [...], "device_pending": [...]}]
 
-struct ProfileStatusRow: Decodable, Sendable, Identifiable {
-    let profileId: AnyCodable?
-    let name: String?
-    let category: String?
-    let site: String?
-    let managementStatus: String?
-    let errorCount: AnyCodable?
+struct ProfileStatusEnvelope: Decodable, Sendable {
+    let summary: ProfileFailureSummary?
+    let failures: [ProfileFailureRow]?
 
-    // Use the existing profileId field or fallback to name
-    var id: String {
-        if let profileId = profileId?.value as? String {
-            return profileId
-        } else if let profileId = profileId?.value as? Int {
-            return String(profileId)
-        } else {
-            return name ?? UUID().uuidString
-        }
-    }
+    private enum CodingKeys: String, CodingKey { case summary, failures }
+}
+
+struct ProfileFailureSummary: Decodable, Sendable, Equatable {
+    let totalErrors: Int?
+    let uniqueProfiles: Int?
+    let uniqueDevices: Int?
+    let days: Int?
 
     private enum CodingKeys: String, CodingKey {
+        case totalErrors = "total_errors"
+        case uniqueProfiles = "unique_profiles"
+        case uniqueDevices = "unique_devices"
+        case days
+    }
+}
+
+/// Not Identifiable on purpose: identity is assigned once at load by
+/// `PolicyHealthService` — a per-access computed id aborts SwiftUI Table (#185).
+struct ProfileFailureRow: Decodable, Sendable {
+    let deviceType: String?
+    let name: String?
+    let profileId: AnyCodable?
+    let errors: AnyCodable?
+    let devices: AnyCodable?
+    let lastError: String?
+    let topError: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case deviceType = "device_type"
+        case name
         case profileId = "id"
-        case name, category, site
-        case managementStatus = "management_status"
-        case errorCount = "error_count"
+        case errors, devices
+        case lastError = "last_error"
+        case topError = "top_error"
     }
 }
 

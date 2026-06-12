@@ -10,6 +10,7 @@
 - [Configuration & Templates](04-Configuration-and-Templates)
 - [Scheduling & Automation](05-Scheduling-and-Automation)
 - [Historical Trends](06-Historical-Trends)
+- [Data Provenance](11-Data-Provenance)
 
 ### Python CLI
 

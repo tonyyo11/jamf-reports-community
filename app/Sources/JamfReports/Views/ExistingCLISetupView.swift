@@ -285,7 +285,23 @@ struct ExistingCLISetupView: View {
                 UserDefaults.standard.set(
                     flow.configuredPolicy().serialize(), forKey: AutomationPolicy.storageKey
                 )
-                _ = await workspace.reconcileManagedAutomation()
+                // The user just opted into managed automation — a failed agent
+                // install must not be silently absorbed into "setup complete"
+                // (mirrors AutomationView's outcome handling).
+                let failed = await workspace.reconcileManagedAutomation()
+                    .filter { !$0.succeeded }
+                if !failed.isEmpty {
+                    for outcome in failed {
+                        AppLogger.schedule.error(
+                            "Setup reconcile failure: \(outcome.failureReason ?? "unknown error", privacy: .public)"
+                        )
+                    }
+                    workspace.toast = Toast(
+                        message: "Setup finished, but \(failed.count) automation agent\(failed.count == 1 ? "" : "s") "
+                            + "failed to install — check the Automation tab",
+                        style: .danger
+                    )
+                }
             }
             workspace.reloadFromDisk()
             isFinishing = false

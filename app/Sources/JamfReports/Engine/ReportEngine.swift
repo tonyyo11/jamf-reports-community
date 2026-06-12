@@ -297,6 +297,7 @@ struct ReportEngine: Sendable {
     func emitSummaryJSON(
         summariesDir: URL,
         provenance: Provenance? = nil,
+        liveKinds: Set<String>? = nil,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) {
         let fm = FileManager.default
@@ -320,7 +321,7 @@ struct ReportEngine: Sendable {
             // Same-day summary is valid. Check whether a fresh build would be strictly
             // better (proxy→real mSCP upgrade, or mscpBands newly populated). If not,
             // keep the existing file so its mtime reflects the first run.
-            if let fresh = buildSummaryFromCLI(date: today, provenance: provenance),
+            if let fresh = buildSummaryFromCLI(date: today, provenance: provenance, liveKinds: liveKinds),
                let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
                Self.freshSummaryIsBetter(existing: existing, fresh: fresh) {
                 let upgradeMsg = "[info] summary_\(today).json upgraded (proxy→real mSCP)"
@@ -335,7 +336,7 @@ struct ReportEngine: Sendable {
             return
         }
 
-        guard let summary = buildSummaryFromCLI(date: today, provenance: provenance) else {
+        guard let summary = buildSummaryFromCLI(date: today, provenance: provenance, liveKinds: liveKinds) else {
             // buildSummaryFromCLI returns nil when no cached jamf-cli snapshots
             // are available to summarize (fresh workspace, failed/skipped collect,
             // CSV-only generate run). Surface this so operators understand why
@@ -368,13 +369,14 @@ struct ReportEngine: Sendable {
         let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
         let freshHasBands = !(fresh.mscpBands?.isEmpty ?? true)
         if !existingHasBands && freshHasBands { return true }
-        // A later same-day collect that now sees stale devices where the earlier
-        // one recorded zero (on a non-empty fleet) is strictly better — the
-        // earlier run's stale source (device-compliance) was empty/degraded,
-        // e.g. after a transient auth failure that fell back to incomplete data.
-        // Upgrade only; a real count (existing > 0) is never downgraded to 0, so
-        // a genuinely zero-stale tenant is unaffected.
-        if existing.staleCount == 0, existing.totalDevices > 0, fresh.staleCount > 0 { return true }
+        // A later same-day collect that now measures staleness where the earlier
+        // one couldn't (nil), or sees stale devices where the earlier one
+        // recorded zero on a non-empty fleet, is strictly better — the earlier
+        // run's stale source (device-compliance) was absent/degraded. Upgrade
+        // only; a real count is never downgraded to 0 or to unknown.
+        if existing.staleCount == nil, fresh.staleCount != nil { return true }
+        if existing.staleCount == 0, existing.totalDevices > 0,
+           let freshStale = fresh.staleCount, freshStale > 0 { return true }
         return false
     }
 
@@ -402,15 +404,31 @@ struct ReportEngine: Sendable {
 
     // MARK: - Private helpers
 
-    private func buildSummaryFromCLI(date: String, provenance: Provenance? = nil) -> DailySummary? {
+    private func buildSummaryFromCLI(
+        date: String,
+        provenance: Provenance? = nil,
+        liveKinds: Set<String>? = nil
+    ) -> DailySummary? {
         // Load each snapshot kind once; cache by kind name to avoid repeated I/O + JSON parses.
         var snapshotCache: [String: Data] = [:]
+        // R4: per-input provenance — which of the digest's source kinds came
+        // from this run (live), an older snapshot (cache), or nowhere (absent).
+        // Only recorded when the caller (collect) knows its live kinds.
+        var sourceStatus: [String: String] = [:]
+        func recordSource(kind: String, present: Bool) {
+            guard let liveKinds else { return }
+            sourceStatus[kind] = present
+                ? (liveKinds.contains(kind) ? "live" : "cache")
+                : "absent"
+        }
         func cachedData(kind: String) -> Data? {
             if let hit = snapshotCache[kind] { return hit }
             if let d = try? Self.loadLatestSnapshotData(kind: kind, dataDir: dataDir) {
                 snapshotCache[kind] = d
+                recordSource(kind: kind, present: true)
                 return d
             }
+            recordSource(kind: kind, present: false)
             return nil
         }
 
@@ -481,7 +499,9 @@ struct ReportEngine: Sendable {
         // still hardcode 30 and use `daysSinceContact` — counts agree at the default config
         // but diverge with a non-default threshold (follow-up: parameterize those services).
         let staleDaysThreshold = config.thresholds?.resolvedStaleDays ?? 30
-        var staleCount = 0
+        // nil (not 0) when device-compliance was never collected — unknown is
+        // not zero, and a 0 here renders as a measured "0 stale devices".
+        var staleCount: Int? = nil
         if let compData = cachedData(kind: "device-compliance"),
            let rows = try? JSONDecoder().decode([DeviceComplianceRow].self, from: compData) {
             staleCount = rows.filter {
@@ -498,6 +518,7 @@ struct ReportEngine: Sendable {
            totalDevices > 0 {
             let osCounts = Dictionary(rows.map { ($0.osVersion, $0.count) }, uniquingKeysWith: +)
             let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+            recordSource(kind: "sofa", present: !sofaSnapshot.rows.isEmpty)
             let macOSRows = sofaSnapshot.rows.filter { $0.platform == "macOS" }
             osCurrentPct = Self.osCurrentPercent(
                 macOSRows: macOSRows, osCounts: osCounts, totalDevices: totalDevices)
@@ -528,9 +549,12 @@ struct ReportEngine: Sendable {
         var complianceFinalPct: Double? = complianceProxyPct
         var complianceIsRealData = false
         var mscpBandsSnapshot: [String: MSCPBandCounts]? = nil
+        // cachedData records the source automatically (live/cache/absent), so a single
+        // call here covers both the recordSource and the data load. Guard on eaBaselines
+        // so "absent" is not recorded for tenants that never configured an EA baseline.
         let eaBaselines = config.compliance?.resolvedBaselines ?? []
         if !eaBaselines.isEmpty,
-           let eaData = try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir),
+           let eaData = cachedData(kind: "ea-results"),
            let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData) {
             let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
             if let primary = results.first, let realPct = primary.compliancePct {
@@ -600,7 +624,8 @@ struct ReportEngine: Sendable {
             actionItemsP0: fileVaultCount != nil ? p0 : nil,
             actionItemsP1: gatekeeperCount.map { _ in p1 },
             complianceIsProxy: complianceIsProxy,
-            mscpBands: mscpBandsSnapshot
+            mscpBands: mscpBandsSnapshot,
+            collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil
         )
     }
 
@@ -800,7 +825,7 @@ struct ReportEngine: Sendable {
             // --- Device state trend (managed / stale) ---
             if config.charts?.deviceStateTrend?.enabled == true {
                 let stalePoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-                    (s.parsedDate, Double(s.staleCount))
+                    s.staleCount.map { (s.parsedDate, Double($0)) }
                 }
                 if !stalePoints.isEmpty {
                     let series = ChartSeries(label: "Stale Devices",
@@ -1298,7 +1323,9 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "report", "device-compliance", "--output", "json"],
              "device-compliance"),
             (["-p", profile, "pro", "report", "policy-status", "--output", "json"], "policy-status"),
-            (["-p", profile, "pro", "classic-macos-profiles", "list", "--output", "json"],
+            // Command renamed upstream (classic-macos-profiles → …-config-profiles);
+            // the snapshot key stays stable. Python already calls the new name.
+            (["-p", profile, "pro", "classic-macos-config-profiles", "list", "--output", "json"],
              "classic-macos-profiles"),
             (["-p", profile, "pro", "report", "app-status", "--output", "json"], "app-status"),
             (["-p", profile, "pro", "report", "software-installs", "--output", "json"],
@@ -1389,6 +1416,10 @@ struct ReportEngine: Sendable {
         let bridge = CLIBridge()
         var didFetchPrior = false
         var outcomes: [CollectOutcome] = []
+        // Tracks kinds where saveSnapshot actually wrote a file this run.
+        // Used to build liveKinds for R4 provenance — exit-0 non-JSON output
+        // (Cobra help) passes the exitCode==0 filter but must NOT be "live".
+        var savedKinds: Set<String> = []
         for (args, kind) in plannedCommands {
             // T-9 tier filter: drop kinds outside the selected tier set.
             // An unmapped kind has no tier and is always allowed — the
@@ -1451,7 +1482,19 @@ struct ReportEngine: Sendable {
             // intentionally excluded.
             outcomes.append(CollectOutcome(kind: kind, exitCode: exitCode))
             if exitCode == 0, !data.isEmpty {
+                // Cobra prints the parent help and exits 0 for an unknown
+                // subcommand — saving that as a snapshot poisons the cache
+                // (a renamed command filled classic-macos-profiles with help
+                // text). Python's bridge json.loads()es output, so this
+                // guard keeps the engines equivalent.
+                guard isJSONSnapshot(data) else {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                        text: "[warn] \(kind): output is not JSON (renamed/unsupported "
+                            + "command on this jamf-cli?) — snapshot not saved"))
+                    continue
+                }
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                savedKinds.insert(kind)
                 // T-8: record success so the cadence boundary advances.
                 // Use try? rather than try — a state-write failure should
                 // not undo the snapshot we already wrote. The worst case
@@ -1509,13 +1552,15 @@ struct ReportEngine: Sendable {
         // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
         // is in the requested tiers. Light network fetch — always in the Refresh tier
         // so snapshot-only and full runs both capture it.
+        var sofaRefreshSucceeded = false
         if let sofaTier = CollectionTier.tier(forReport: "sofa"), tiers.contains(sofaTier) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting sofa for \(profile)"))
-            let (_, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
+            let (sofaSnapshot, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
             for w in sofaWarnings {
                 onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(w)"))
             }
+            sofaRefreshSucceeded = !sofaSnapshot.rows.isEmpty
             onLine(.init(timestamp: Date(), level: .ok, text: "[ok] sofa: feeds refreshed"))
         }
 
@@ -1543,7 +1588,13 @@ struct ReportEngine: Sendable {
                 dataDir: dataDir
             )
             let engine = ReportEngine(config: config, dataDir: dataDir)
-            engine.emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
+            // R4: kinds where saveSnapshot succeeded this run → "live" in summary.
+            let liveKinds = Self.buildLiveKinds(savedKinds: savedKinds,
+                                                sofaRefreshed: sofaRefreshSucceeded)
+            engine.emitSummaryJSON(
+                summariesDir: summariesDir, provenance: prov,
+                liveKinds: liveKinds, onLine: onLine
+            )
         }
     }
 
@@ -2171,6 +2222,22 @@ struct ReportEngine: Sendable {
     }
 
     // MARK: - Private helpers
+
+    /// Assembles the liveKinds set for R4 provenance from the kinds that were
+    /// actually saved this run. `sofa` is added when the SOFA refresh returned rows.
+    /// Pure function — testable without subprocess dependencies.
+    static func buildLiveKinds(savedKinds: Set<String>, sofaRefreshed: Bool) -> Set<String> {
+        var result = savedKinds
+        if sofaRefreshed { result.insert("sofa") }
+        return result
+    }
+
+    /// True when `data` parses as JSON. Snapshot saves are gated on this:
+    /// Cobra's unknown-subcommand help text arrives with exit 0 and must
+    /// never be cached as a .json snapshot.
+    static func isJSONSnapshot(_ data: Data) -> Bool {
+        (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil
+    }
 
     private static func saveSnapshot(data: Data, kind: String, dataDir: URL) throws {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)

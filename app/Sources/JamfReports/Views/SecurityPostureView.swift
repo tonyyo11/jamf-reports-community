@@ -45,7 +45,7 @@ struct SecurityPostureView: View {
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
-                StaleDataBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource)
             }
 
             if snapshot.totalDevices == 0 {
@@ -206,7 +206,7 @@ struct SecurityPostureView: View {
             EmptyStateView(
                 systemImage: "lock.shield",
                 title: "No security snapshot yet",
-                message: "Run `jamf-cli pro report security` (Sources tab → Refresh) and this screen will populate."
+                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report security` — and it will populate."
             )
         }
     }

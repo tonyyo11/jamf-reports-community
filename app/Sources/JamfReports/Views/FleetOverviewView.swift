@@ -10,6 +10,7 @@ struct FleetOverviewView: View {
     @State private var rows: [FleetProfileOverview] = []
     @State private var isLoading = false
     @State private var issuesOnly: Bool = false
+    @State private var showIssuePopover = false
     @State private var navigationPath = NavigationPath()
 
     private var visibleRows: [FleetProfileOverview] {
@@ -39,6 +40,9 @@ struct FleetOverviewView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
+                    ProvenanceBadge(
+                        asOf: rows.compactMap { $0.summary?.date }.max()
+                    )
                     summaryStrip
                     issuesFilter
                     profileGrid
@@ -115,8 +119,18 @@ struct FleetOverviewView: View {
             StatTile(label: "Profiles", value: "\(rows.count)", sub: "Initialized workspaces")
                 .overlay(alignment: .topTrailing) {
                     if issueCount > 0 {
-                        Pill(text: "\(issueCount) Issue\(issueCount == 1 ? "" : "s")", tone: .danger)
-                            .padding(8)
+                        Button {
+                            showIssuePopover = true
+                        } label: {
+                            Pill(text: "\(issueCount) Issue\(issueCount == 1 ? "" : "s")", tone: .danger)
+                        }
+                        .buttonStyle(.plain)
+                        .help("List the profiles with issues and what tripped each one.")
+                        .accessibilityLabel("\(issueCount) issue\(issueCount == 1 ? "" : "s") — show details")
+                        .popover(isPresented: $showIssuePopover, arrowEdge: .bottom) {
+                            issuePopover
+                        }
+                        .padding(8)
                     }
                 }
             StatTile(label: "Devices", value: "\(totalDevices)", sub: "Latest successful summaries")
@@ -152,6 +166,46 @@ struct FleetOverviewView: View {
                 .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous))
+    }
+
+    /// #184: the badge answers "what is the issue" directly — one row per
+    /// flagged profile with its reasons; clicking opens that profile's
+    /// drill-down (which explains each reason and links to the fix surface).
+    private var issuePopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Profiles with issues")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Theme.Colors.fg)
+            ForEach(rows.filter(\.hasIssue)) { row in
+                Button {
+                    showIssuePopover = false
+                    navigationPath.append(row.profile)
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(row.profile)
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Spacer(minLength: 12)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Theme.Colors.goldBright)
+                        }
+                        Text(fleetProfileIssueReasons(row.summary).joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.warn)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    "\(row.profile): \(fleetProfileIssueReasons(row.summary).joined(separator: ", "))"
+                )
+            }
+        }
+        .padding(14)
+        .frame(minWidth: 300, maxWidth: 420)
     }
 
     private var issuesFilter: some View {
@@ -216,6 +270,18 @@ struct FleetOverviewView: View {
                         ?? "No successful summary found for this profile"
                 )
 
+                ProvenanceBadge(
+                    asOf: row.summary?.date,
+                    sources: row.summary?.collectionSources
+                )
+
+                // #184: the issue context must survive the drill-down — each
+                // flagged condition gets its explanation and a route to the
+                // screen where the operator can act on it.
+                if row.hasIssue {
+                    profileIssuesCard(for: row)
+                }
+
                 HStack(spacing: 12) {
                     StatTile(
                         label: "Devices",
@@ -229,7 +295,7 @@ struct FleetOverviewView: View {
                     )
                     StatTile(
                         label: "Stale",
-                        value: row.summary.map { "\($0.staleCount)" } ?? "--",
+                        value: row.summary?.staleCount.map { "\($0)" } ?? "--",
                         sub: "30d+ since contact"
                     )
                     StatTile(
@@ -433,9 +499,37 @@ struct FleetOverviewView: View {
         .accessibilityLabel("\(label): \(value.map { "\(String(format: "%.1f", $0))%" } ?? "no data")")
     }
 
-    private func stalePercent(_ summary: DailySummary) -> Double {
-        guard summary.totalDevices > 0 else { return 0 }
-        return (Double(summary.staleCount) / Double(summary.totalDevices)) * 100
+    private func stalePercent(_ summary: DailySummary) -> Double? {
+        guard let staleCount = summary.staleCount, summary.totalDevices > 0 else { return nil }
+        return (Double(staleCount) / Double(summary.totalDevices)) * 100
+    }
+
+    private func profileIssuesCard(for row: FleetProfileOverview) -> some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.warn)
+                        .accessibilityHidden(true)
+                    SectionHeader(title: "Issues on this profile")
+                }
+                ForEach(fleetProfileIssues(row.summary)) { issue in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(issue.reason)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.warn)
+                        Text(issue.explanation)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .fixedSize(horizontal: false, vertical: true)
+                        PNPButton(title: issue.actionLabel, icon: "arrow.right", size: .sm) {
+                            open(row.profile, tab: issue.tab)
+                        }
+                        .help("Switches to \(issue.tab.label) for this profile.")
+                    }
+                }
+            }
+        }
     }
 
     private func open(_ profile: String, tab: Tab) {
@@ -601,7 +695,29 @@ private struct FleetProfileCard: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                if hasIssue && !hasNoSummary {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.Colors.warn)
+                            .accessibilityHidden(true)
+                        Text(issueCaption)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.warn)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityLabel(
+                        "Issues: \(fleetProfileIssueReasons(row.summary).joined(separator: ", "))"
+                    )
+                }
         }
+    }
+
+    private var issueCaption: String {
+        let reasons = fleetProfileIssueReasons(row.summary)
+        let label = reasons.count == 1 ? "Issue" : "Issues"
+        return "\(label): \(reasons.joined(separator: " · "))"
     }
 
     private func metricRow(_ label: String, value: Double?, inverse: Bool = false) -> some View {
@@ -625,9 +741,9 @@ private struct FleetProfileCard: View {
         .accessibilityLabel("\(label): \(value.map { "\(String(format: "%.1f", $0))%" } ?? "no data")")
     }
 
-    private func stalePercent(_ summary: DailySummary) -> Double {
-        guard summary.totalDevices > 0 else { return 0 }
-        return (Double(summary.staleCount) / Double(summary.totalDevices)) * 100
+    private func stalePercent(_ summary: DailySummary) -> Double? {
+        guard let staleCount = summary.staleCount, summary.totalDevices > 0 else { return nil }
+        return (Double(staleCount) / Double(summary.totalDevices)) * 100
     }
 }
 
@@ -674,12 +790,77 @@ private func stabilityTone(_ value: Double?) -> Pill.Tone {
 /// the individual thresholds catch cases where one metric is bad but others
 /// keep stability above 70.
 func fleetProfileHasIssue(_ summary: DailySummary?) -> Bool {
-    guard let summary else { return true }
-    if let stability = summary.stabilityIndex, stability < 70 { return true }
-    if summary.staleCount > 0 { return true }
+    !fleetProfileIssues(summary).isEmpty
+}
+
+func fleetProfileIssueReasons(_ summary: DailySummary?) -> [String] {
+    fleetProfileIssues(summary).map(\.reason)
+}
+
+/// One flagged condition with the context the badge alone can't carry:
+/// what tripped, why it matters, and the screen where the operator can act.
+struct FleetProfileIssue: Identifiable {
+    var id: String { reason }
+    let reason: String
+    let explanation: String
+    let actionLabel: String
+    let tab: Tab
+}
+
+/// Why a profile is flagged (#184: the "N Issues" badge gave a count with no
+/// way to see what tripped it). Single source of truth for the badge popover,
+/// the Issues-Only filter, the per-card reason line, and the drill-down
+/// issues card — they cannot drift.
+func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
+    guard let summary else {
+        return [FleetProfileIssue(
+            reason: "No summary collected yet",
+            explanation: "No successful collect has produced a daily summary for this "
+                + "profile, so its fleet metrics are unknown.",
+            actionLabel: "Open Overview",
+            tab: .overview
+        )]
+    }
+    var issues: [FleetProfileIssue] = []
+    if let stability = summary.stabilityIndex, stability < 70 {
+        issues.append(FleetProfileIssue(
+            reason: "Stability \(String(format: "%.0f", stability)) (below 70)",
+            explanation: "Composite of the summary's compliance, patch posture, and "
+                + "stale-device metrics. Components the last collect could not "
+                + "measure are dropped and the rest reweighted, so the score "
+                + "reflects measured data only.",
+            actionLabel: "Open Trends",
+            tab: .trends
+        ))
+    }
+    if let staleCount = summary.staleCount, staleCount > 0 {
+        issues.append(FleetProfileIssue(
+            reason: "\(staleCount) stale device\(staleCount == 1 ? "" : "s")",
+            explanation: "Devices that have not checked in for 30+ days. Offline "
+                + "Outreach buckets them by how long they have been quiet.",
+            actionLabel: "Open Offline Outreach",
+            tab: .outreach
+        ))
+    }
     // Absent metric data isn't grounds for flagging the profile — under-flag rather
     // than over-flag. A nil here means the snapshot didn't carry the field at all.
-    if let fileVaultPct = summary.fileVaultPct, fileVaultPct < 90 { return true }
-    if let patchPct = summary.patchPct, patchPct < 80 { return true }
-    return false
+    if let fileVaultPct = summary.fileVaultPct, fileVaultPct < 90 {
+        issues.append(FleetProfileIssue(
+            reason: "FileVault \(String(format: "%.1f", fileVaultPct))% (below 90%)",
+            explanation: "Share of devices reporting FileVault encryption enabled "
+                + "in the latest security snapshot.",
+            actionLabel: "Open Security Posture",
+            tab: .securityPosture
+        ))
+    }
+    if let patchPct = summary.patchPct, patchPct < 80 {
+        issues.append(FleetProfileIssue(
+            reason: "Patch \(String(format: "%.1f", patchPct))% (below 80%)",
+            explanation: "Share of patch-managed titles on their latest version "
+                + "in the latest patch snapshot.",
+            actionLabel: "Open Patch Compliance",
+            tab: .patch
+        ))
+    }
+    return issues
 }

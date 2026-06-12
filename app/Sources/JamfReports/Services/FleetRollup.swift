@@ -43,7 +43,9 @@ struct FleetRollup: Sendable, Equatable {
     ) -> FleetRollup {
         let metrics: [Metric] = [
             sumMetric("devices", "Devices", current, previous) { Double($0.totalDevices) },
-            sumMetric("stale", "Stale Devices", current, previous) { Double($0.staleCount) },
+            // Unknown stale counts are skipped, not coerced to 0 — a nil→measured
+            // flip between periods must not fabricate a delta from a phantom 0.
+            sumMetric("stale", "Stale Devices", current, previous) { $0.staleCount.map(Double.init) },
             weightedMetric("compliance", "Compliance %", current, previous, \.compliancePct),
             weightedMetric("fileVault", "FileVault %", current, previous, \.fileVaultPct),
             weightedMetric("patch", "Patch %", current, previous, \.patchPct),
@@ -60,16 +62,26 @@ struct FleetRollup: Sendable, Equatable {
 
     // MARK: - Aggregators
 
+    /// Sum a count KPI over the profiles that report it. `value` returns nil for
+    /// a profile that lacks the metric; those contributors are skipped. nil when
+    /// no profile reports it — matching `weightedMetric`'s all-nil behavior (CSV
+    /// renders "—"), so an unmeasured period never sums to a phantom 0.
     private static func sumMetric(
         _ key: String, _ label: String,
         _ current: [DailySummary], _ previous: [DailySummary],
-        _ value: (DailySummary) -> Double
+        _ value: (DailySummary) -> Double?
     ) -> Metric {
         Metric(
             key: key, label: label, unit: .count,
-            value: current.isEmpty ? nil : current.reduce(0.0) { $0 + value($1) },
-            previous: previous.isEmpty ? nil : previous.reduce(0.0) { $0 + value($1) }
+            value: sum(current, value), previous: sum(previous, value)
         )
+    }
+
+    private static func sum(
+        _ summaries: [DailySummary], _ value: (DailySummary) -> Double?
+    ) -> Double? {
+        let contributors = summaries.compactMap(value)
+        return contributors.isEmpty ? nil : contributors.reduce(0, +)
     }
 
     private static func weightedMetric(

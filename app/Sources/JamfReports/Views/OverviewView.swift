@@ -83,6 +83,11 @@ struct OverviewView: View {
                        trendStore.cacheSource != .neverFetchedLive {
                         heavyTierStalePrompt
                     }
+                    // R1: these KPI cards render the daily digest, not live
+                    // inventory — say so, and flag cached/missing inputs (R4).
+                    if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
+                        ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
+                    }
                     statRow
                     if workspace.demoMode {
                         osAndRules
@@ -1099,7 +1104,8 @@ struct OverviewView: View {
             TrendSeries.stabilityBasis(
                 compliancePct: latest?.compliancePct,
                 patchPct: latest?.patchPct,
-                complianceIsProxy: latest?.complianceIsProxy
+                complianceIsProxy: latest?.complianceIsProxy,
+                staleMeasured: latest?.staleCount != nil
             ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
             "Open Devices to inspect records contributing to this count."

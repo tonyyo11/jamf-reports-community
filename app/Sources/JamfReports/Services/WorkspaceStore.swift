@@ -333,11 +333,13 @@ final class WorkspaceStore {
         let config = workspaceURL.appendingPathComponent("config.yaml")
         let stamp = Self.backupStampFormatter.string(from: Date())
         let backupName = "config.yaml.broken-\(stamp)"
+        var movedAside = false
         do {
             if FileManager.default.fileExists(atPath: config.path) {
                 try FileManager.default.moveItem(
                     at: config, to: workspaceURL.appendingPathComponent(backupName)
                 )
+                movedAside = true
             }
             let exit = try await CLIBridge().initializeWorkspace(
                 profile: profile, onLine: CLIBridge.noOpOnLine
@@ -347,6 +349,12 @@ final class WorkspaceStore {
                     + "as \(backupName)."
             }
         } catch {
+            // The rename may have already happened — never let the error hide
+            // that the user's config.yaml now lives under the backup name.
+            if movedAside {
+                return "\(error.localizedDescription) Your old config.yaml was moved aside "
+                    + "as \(backupName); no replacement was written."
+            }
             return error.localizedDescription
         }
         configError = nil

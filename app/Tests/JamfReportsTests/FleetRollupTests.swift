@@ -6,7 +6,7 @@ import XCTest
 final class FleetRollupTests: XCTestCase {
 
     private func summary(
-        date: String, devices: Int, compliance: Double?, stale: Int = 0,
+        date: String, devices: Int, compliance: Double?, stale: Int? = 0,
         security: Double? = nil
     ) -> DailySummary {
         DailySummary(
@@ -35,6 +35,42 @@ final class FleetRollupTests: XCTestCase {
         XCTAssertEqual(rollup.profileCount, 2)
         XCTAssertEqual(metric(rollup, "devices")?.value, 150)
         XCTAssertEqual(metric(rollup, "stale")?.value, 15)
+    }
+
+    func testStaleSkipsUnmeasuredContributors() {
+        // One profile measured stale, one with stale unmeasured (nil): the sum is
+        // the measured value only, NOT measured + 0.
+        let rollup = FleetRollup.compute(
+            groupName: "Fleet",
+            current: [
+                summary(date: "2026-06-06", devices: 100, compliance: 90, stale: 12),
+                summary(date: "2026-06-06", devices: 50, compliance: 80, stale: nil),
+            ],
+            previous: []
+        )
+        XCTAssertEqual(metric(rollup, "stale")?.value, 12)
+    }
+
+    func testStaleNilWhenNoProfileMeasuresIt() {
+        let rollup = FleetRollup.compute(
+            groupName: "Fleet",
+            current: [summary(date: "2026-06-06", devices: 100, compliance: 90, stale: nil)],
+            previous: []
+        )
+        XCTAssertNil(metric(rollup, "stale")?.value)
+    }
+
+    func testStaleNilToMeasuredFlipDoesNotFabricateDelta() {
+        // Previous period: stale unmeasured (nil). Current: measured. The delta
+        // must be nil (no phantom "improvement" from a coerced 0).
+        let rollup = FleetRollup.compute(
+            groupName: "Fleet",
+            current: [summary(date: "2026-06-06", devices: 100, compliance: 90, stale: 8)],
+            previous: [summary(date: "2026-05-30", devices: 100, compliance: 88, stale: nil)]
+        )
+        XCTAssertEqual(metric(rollup, "stale")?.value, 8)
+        XCTAssertNil(metric(rollup, "stale")?.previous)
+        XCTAssertNil(metric(rollup, "stale")?.delta)
     }
 
     func testComplianceIsDeviceWeightedNotSimpleMean() throws {

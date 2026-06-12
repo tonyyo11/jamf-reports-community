@@ -3307,6 +3307,8 @@ def _fresh_summary_is_better(existing: dict[str, Any], fresh: dict[str, Any]) ->
       truthy) and ``fresh`` now has real mSCP data (``complianceIsProxy`` false), OR
     * ``existing`` has no ``mscpBands`` (absent/empty) and ``fresh`` has non-empty
       ``mscpBands``, OR
+    * ``existing`` has no ``staleCount`` (key absent OR explicit null — both
+      mean unknown) and ``fresh`` measured one, OR
     * ``existing.staleCount == 0`` on a non-empty fleet
       (``existing.totalDevices > 0``) while ``fresh.staleCount > 0`` — the earlier
       run's stale source was empty/degraded (e.g. a transient failure).
@@ -3321,8 +3323,12 @@ def _fresh_summary_is_better(existing: dict[str, Any], fresh: dict[str, Any]) ->
     fresh_has_bands = bool(fresh.get("mscpBands"))
     if not existing_has_bands and fresh_has_bands:
         return True
+    # Explicit-null staleCount is unknown too — treat it like an absent key.
+    if existing.get("staleCount") is None and fresh.get("staleCount") is not None:
+        return True
     if (
-        int(existing.get("staleCount", 0) or 0) == 0
+        existing.get("staleCount") is not None
+        and int(existing.get("staleCount") or 0) == 0
         and int(existing.get("totalDevices", 0) or 0) > 0
         and int(fresh.get("staleCount", 0) or 0) > 0
     ):
@@ -3488,7 +3494,9 @@ def _emit_summary_json(
     # stale (treated as not-stale, not as stale).
     checkin_col = csv_dash._col("last_checkin")
     stale_days = int(config.thresholds.get("stale_device_days", 30))
-    stale_count = 0
+    # None (key omitted) when no check-in column is mapped/present — unknown
+    # is not zero (mirrors the bridge path in _build_summary_from_bridge).
+    stale_count: Optional[int] = None
     if checkin_col and checkin_col in df.columns:
         stale_count = int(
             df[checkin_col]
@@ -3556,12 +3564,13 @@ def _emit_summary_json(
     summary_data: dict[str, Any] = {
         "date": date_str,
         "totalDevices": int(total_devices),
-        "staleCount": int(stale_count),
         "source": "csv",
         # CSV path always uses the 4-control proxy; real ea-results bands below
         # flip this to False when they resolve. Matches the Swift summary schema.
         "complianceIsProxy": True,
     }
+    if stale_count is not None:
+        summary_data["staleCount"] = int(stale_count)
     if fv_pct is not None:
         summary_data["fileVaultPct"] = round(fv_pct, 1)
     if os_pct is not None:
@@ -3727,17 +3736,20 @@ def _build_summary_from_bridge(
     # stale_days from the config threshold, NOT the server-side `stale` flag
     # (~90-100d cadence). Missing/unknown checkin is NOT stale (-1 default).
     stale_days = int(config.thresholds.get("stale_device_days", 30))
-    stale_count = 0
+    # None (key omitted) when device-compliance is unavailable — unknown is
+    # not zero, and an emitted 0 renders as a measured "0 stale devices".
+    stale_count: Optional[int] = None
     try:
-        comp = bridge.device_compliance() or []
-        stale_count = sum(
-            1
-            for row in comp
-            if isinstance(row, dict)
-            and _to_int(row.get("days_since_contact"), -1) >= stale_days
-        )
+        comp = bridge.device_compliance()
+        if comp is not None:
+            stale_count = sum(
+                1
+                for row in comp
+                if isinstance(row, dict)
+                and _to_int(row.get("days_since_contact"), -1) >= stale_days
+            )
     except Exception as exc:
-        print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount defaulting to 0: {exc}")
+        print(f"  [warn] _build_summary_from_bridge: device_compliance failed — staleCount omitted (unknown): {exc}")
 
     # OS Current — SOFA-driven (latest release within each device's own major
     # version). Replaces the stale static config current_versions list. None
@@ -3781,9 +3793,10 @@ def _build_summary_from_bridge(
     summary: dict[str, Any] = {
         "date": date_str,
         "totalDevices": int(total_devices),
-        "staleCount": int(stale_count),
         "source": "jamf-cli",
     }
+    if stale_count is not None:
+        summary["staleCount"] = int(stale_count)
     if fv_pct is not None:
         summary["fileVaultPct"] = round(fv_pct, 1)
     if os_pct is not None:
@@ -3793,8 +3806,43 @@ def _build_summary_from_bridge(
 
     # Real mSCP/STIG bands from ea-results. Pure-CLI users get true compliance
     # banding when a baseline is configured. Mirrors the Swift summary wiring.
+    # Runs BEFORE collectionSources so the provenance map reflects whether the
+    # ea-results fetch this call triggered hit live data or a cached fallback.
     _apply_mscp_bands_to_summary(summary, config, bridge)
+
+    sources = _collection_sources_from_bridge(config, bridge)
+    if sources:
+        summary["collectionSources"] = sources
     return summary
+
+
+def _collection_sources_from_bridge(
+    config: "Config", bridge: Optional["JamfCLIBridge"]
+) -> dict[str, str]:
+    """Return the R4 provenance map for the digest's inputs (Swift parity).
+
+    Each kind resolves to ``"live"`` (fetched fresh this run), ``"cache"``
+    (served from an older cached snapshot), ``"absent"`` (never fetched), or
+    ``"unknown"`` (fetched but with an unrecognized mode string). ``ea-results``
+    is included only when at least one mSCP baseline resolves, mirroring Swift's
+    ``!eaBaselines.isEmpty`` gate; the other four kinds are unconditional.
+    """
+    # None (never fetched) -> absent; recognized -> mapped; any other non-None
+    # mode string -> unknown (present data must not be recorded as missing).
+    mode_map = {"live": "live", "cached-fallback": "cache", "cached": "cache"}
+    sources: dict[str, str] = {}
+    # Best-effort metadata — a bridge without source tracking (test doubles,
+    # cached-only flows) just omits the map; it must never fail the summary.
+    get_source = getattr(bridge, "source_info", None)
+    if not callable(get_source):
+        return sources
+    kinds = ["security", "device-compliance", "inventory-summary", "patch-status"]
+    if _mscp_resolved_baselines(config.compliance):
+        kinds.append("ea-results")
+    for kind in kinds:
+        mode = (get_source(kind) or {}).get("mode")
+        sources[kind] = "absent" if mode is None else mode_map.get(mode, "unknown")
+    return sources
 
 
 def _apply_mscp_bands_to_summary(

@@ -132,4 +132,121 @@ final class FleetOverviewFilterTests: XCTestCase {
         XCTAssertEqual(issueCount, 3)
         XCTAssertEqual(cleanCount, 2)
     }
+
+    // MARK: - Issue reasons (#184)
+
+    func testIssueReasonsNameEveryTrippedCondition() {
+        let summary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 100,
+            fileVaultPct: 82,
+            compliancePct: 88,
+            staleCount: 5,
+            osCurrentPct: 75,
+            crowdstrikePct: 95,
+            patchPct: 60
+        )
+        let reasons = fleetProfileIssueReasons(summary)
+        XCTAssertEqual(reasons.count, 3)
+        XCTAssertTrue(reasons.contains { $0.contains("5 stale devices") })
+        XCTAssertTrue(reasons.contains { $0.contains("FileVault 82.0%") })
+        XCTAssertTrue(reasons.contains { $0.contains("Patch 60.0%") })
+    }
+
+    func testIssueReasonsEmptyForCleanSummary() {
+        let summary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 100,
+            fileVaultPct: 98,
+            compliancePct: 88,
+            staleCount: 0,
+            osCurrentPct: 75,
+            crowdstrikePct: 95,
+            patchPct: 85
+        )
+        XCTAssertTrue(fleetProfileIssueReasons(summary).isEmpty)
+    }
+
+    func testIssueReasonsForMissingSummary() {
+        XCTAssertEqual(fleetProfileIssueReasons(nil), ["No summary collected yet"])
+    }
+
+    func testIssueDestinationsRouteToActionableTabs() {
+        let summary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 100,
+            fileVaultPct: 82,
+            compliancePct: 88,
+            staleCount: 5,
+            osCurrentPct: 75,
+            crowdstrikePct: 95,
+            patchPct: 60
+        )
+        XCTAssertEqual(fleetProfileIssues(summary).map(\.tab),
+                       [.outreach, .securityPosture, .patch])
+        XCTAssertEqual(fleetProfileIssues(nil).first?.tab, .overview)
+    }
+
+    // MARK: - Nil staleCount under-flag rule
+
+    /// Unknown stale (nil) with otherwise-healthy metrics must not produce any issues.
+    /// Under-flag rule: absent data is not a flag.
+    func testNilStaleCountHealthyMetricsProducesNoIssues() {
+        // stability = (88*0.4 + 85*0.4) / 0.8 = 86.5 — well above threshold
+        let summary = DailySummary(
+            date: "2026-06-01",
+            totalDevices: 200,
+            fileVaultPct: 95,
+            compliancePct: 88,
+            staleCount: nil,
+            osCurrentPct: 80,
+            crowdstrikePct: 97,
+            patchPct: 85
+        )
+        XCTAssertTrue(fleetProfileIssues(summary).isEmpty,
+                      "nil staleCount with healthy metrics must not trigger any issue")
+    }
+
+    /// nil stabilityIndex (both compliance and patch absent) must not flag a stability issue.
+    func testNilStabilityIndexNotFlagged() {
+        // No compliancePct, no patchPct → stabilityIndex == nil → no stability issue
+        let summary = DailySummary(
+            date: "2026-06-01",
+            totalDevices: 100,
+            fileVaultPct: 95,
+            compliancePct: nil,
+            staleCount: nil,
+            osCurrentPct: 80,
+            crowdstrikePct: 97,
+            patchPct: nil
+        )
+        let issues = fleetProfileIssues(summary)
+        XCTAssertFalse(issues.contains { $0.tab == .trends },
+                       "nil stabilityIndex must not produce a Trends issue")
+    }
+
+    // MARK: - Stability below 70 routes to Trends
+
+    /// Stability below 70 with no other conditions tripped must produce exactly one issue
+    /// whose reason contains "Stability" and whose tab is .trends.
+    func testLowStabilityAloneRoutesToTrends() throws {
+        // stability = (30*0.4 + 85*0.4) / 0.8 = 57.5 < 70
+        // staleCount=nil, fileVaultPct=95 (≥90), patchPct=85 (≥80) → only stability fires
+        let summary = DailySummary(
+            date: "2026-06-01",
+            totalDevices: 100,
+            fileVaultPct: 95,
+            compliancePct: 30,
+            staleCount: nil,
+            osCurrentPct: 75,
+            crowdstrikePct: 90,
+            patchPct: 85
+        )
+        let issues = fleetProfileIssues(summary)
+        XCTAssertEqual(issues.count, 1, "Only the stability issue should fire")
+        let issue = try XCTUnwrap(issues.first)
+        XCTAssertTrue(issue.reason.contains("Stability"),
+                      "Reason must contain 'Stability', got: \(issue.reason)")
+        XCTAssertEqual(issue.tab, .trends)
+    }
 }

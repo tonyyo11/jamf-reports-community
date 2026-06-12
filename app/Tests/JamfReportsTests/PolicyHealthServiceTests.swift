@@ -95,39 +95,32 @@ final class PolicyHealthServiceTests: XCTestCase {
     }
 
     func testProfileStatusServiceDecodeParity() throws {
+        // Real `pro report profile-status` envelope (same shape the Python
+        // engine's _write_profile_status parses).
         let profileJSON = """
         [
           {
-            "id": 101,
-            "name": "Wi-Fi Corporate",
-            "category": "Network",
-            "site": "Default",
-            "management_status": "Installed",
-            "error_count": 0
-          },
-          {
-            "id": 102,
-            "name": "Email Configuration",
-            "category": "Email",
-            "site": "Default",
-            "management_status": "Pending",
-            "error_count": 3
-          },
-          {
-            "id": 103,
-            "name": "Security Baseline",
-            "category": "Security",
-            "site": "Default",
-            "management_status": "Failed",
-            "error_count": 12
-          },
-          {
-            "id": 104,
-            "name": "Dock Settings",
-            "category": "Desktop",
-            "site": "Remote",
-            "management_status": "Removed",
-            "error_count": 5
+            "summary": {
+              "total_errors": 20,
+              "unique_profiles": 3,
+              "unique_devices": 14,
+              "days": 30,
+              "devices_high_failure": 1,
+              "devices_high_pending": 0
+            },
+            "failures": [
+              {"device_type": "Computer", "name": "Security Baseline", "id": "103",
+               "errors": 12, "devices": 9, "last_error": "2026-06-10",
+               "top_error": "Payload rejected"},
+              {"device_type": "Computer", "name": "Dock Settings", "id": 104,
+               "errors": 5, "devices": 4, "last_error": "2026-06-09",
+               "top_error": "Install timeout"},
+              {"device_type": "Mobile Device", "name": "Email Configuration", "id": null,
+               "errors": 3, "devices": 3, "last_error": "2026-06-08",
+               "top_error": "Account exists"}
+            ],
+            "device_failures": [],
+            "device_pending": []
           }
         ]
         """
@@ -140,22 +133,75 @@ final class PolicyHealthServiceTests: XCTestCase {
 
         let snapshot = try XCTUnwrap(PolicyHealthService.load(policyURL: nil, profileURL: profileURL))
 
-        // Profile counts
-        XCTAssertEqual(snapshot.totalProfiles, 4)
-        XCTAssertEqual(snapshot.installedProfiles, 1, "Only 'Installed' status")
-        XCTAssertEqual(snapshot.pendingProfiles, 1, "Only 'Pending' status")
-        XCTAssertEqual(snapshot.failedProfiles, 2, "'Failed' and 'Removed' statuses")
+        // Summary-driven KPIs
+        XCTAssertTrue(snapshot.hasProfileData)
+        XCTAssertEqual(snapshot.profileTotalErrors, 20)
+        XCTAssertEqual(snapshot.profilesWithFailures, 3)
+        XCTAssertEqual(snapshot.profileDevicesAffected, 14, "summary-backed value must be non-nil")
+        XCTAssertEqual(snapshot.profileLookbackDays, 30)
 
-        // Individual profiles
-        XCTAssertEqual(snapshot.profiles.count, 4)
-        let firstProfile = snapshot.profiles[0]
-        XCTAssertEqual(firstProfile.name, "Wi-Fi Corporate")
-        XCTAssertEqual(firstProfile.category, "Network")
-        XCTAssertEqual(firstProfile.managementStatus, "Installed")
+        // Failure rows — typed and ordered
+        XCTAssertEqual(snapshot.profiles.count, 3)
+        let first = snapshot.profiles[0]
+        XCTAssertEqual(first.name, "Security Baseline")
+        XCTAssertEqual(first.deviceType, "Computer")
+        XCTAssertEqual(first.errors, 12)
+        XCTAssertEqual(first.devices, 9)
+        XCTAssertEqual(first.topError, "Payload rejected")
+        XCTAssertEqual(snapshot.profiles[2].name, "Email Configuration",
+                       "null id keeps the row — name is identity enough")
 
         // File metadata
         XCTAssertEqual(snapshot.sourceFile, profileURL)
         XCTAssertNotNil(snapshot.snapshotDate)
+    }
+
+    // MARK: - #185 crash regression
+
+    /// The 2.2.1 decoder turned the real envelope into one all-nil row whose
+    /// computed id changed on every access — an AttributeGraph abort in
+    /// SwiftUI Table. The envelope (even a zero-failure one) must decode to
+    /// zero phantom rows, and every produced id must be stable and unique.
+    func testRealEnvelopeProducesNoPhantomRows() throws {
+        let emptyEnvelope = """
+        [{"device_failures": [], "device_pending": [], "failures": [],
+          "summary": {"days": 30, "total_errors": 0, "unique_devices": 0,
+                      "unique_profiles": 0}}]
+        """
+        let tmp = FileManager.default.temporaryDirectory
+        let url = tmp.appendingPathComponent("profile-empty-\(UUID().uuidString).json")
+        try Data(emptyEnvelope.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let snapshot = try XCTUnwrap(PolicyHealthService.load(policyURL: nil, profileURL: url))
+        XCTAssertTrue(snapshot.profiles.isEmpty,
+                      "an empty envelope must not decode into phantom all-nil rows")
+        XCTAssertTrue(snapshot.hasProfileData, "summary present → healthy state, not empty state")
+        XCTAssertEqual(snapshot.profileTotalErrors, 0)
+    }
+
+    func testFailureRowIDsAreStableAndUnique() {
+        func row(name: String?, id: AnyCodable?) -> ProfileFailureRow {
+            ProfileFailureRow(deviceType: nil, name: name, profileId: id,
+                              errors: nil, devices: nil, lastError: nil, topError: nil)
+        }
+        let rows = [
+            row(name: "WiFi", id: nil),
+            row(name: "WiFi", id: nil),          // duplicate name, no id
+            row(name: nil, id: AnyCodable(7)),
+            row(name: nil, id: nil)              // all-nil — must be dropped
+        ]
+        let mapped = PolicyHealthService.failureRows(from: rows)
+        XCTAssertEqual(mapped.count, 3, "all-nil row dropped")
+        XCTAssertEqual(Set(mapped.map(\.id)).count, 3, "ids unique despite duplicate names")
+
+        // Determinism across loads: calling failureRows twice on the same input
+        // must produce identical id arrays — the core #185 property.
+        let mapped2 = PolicyHealthService.failureRows(from: rows)
+        XCTAssertEqual(mapped.map(\.id), mapped2.map(\.id),
+                       "ids must be deterministic across independent calls on the same input")
+
+        XCTAssertEqual(mapped[2].name, "Profile 7", "id-only rows get a synthesized name")
     }
 
     func testCombinedPolicyAndProfileData() throws {
@@ -186,12 +232,15 @@ final class PolicyHealthServiceTests: XCTestCase {
         let profileJSON = """
         [
           {
-            "id": 201,
-            "name": "Test Profile",
-            "category": "Test",
-            "site": "Default",
-            "management_status": "Success",
-            "error_count": 0
+            "summary": {"total_errors": 2, "unique_profiles": 1,
+                        "unique_devices": 2, "days": 30},
+            "failures": [
+              {"device_type": "Computer", "name": "Test Profile", "id": "201",
+               "errors": 2, "devices": 2, "last_error": "2026-06-10",
+               "top_error": "Install failed"}
+            ],
+            "device_failures": [],
+            "device_pending": []
           }
         ]
         """
@@ -213,7 +262,7 @@ final class PolicyHealthServiceTests: XCTestCase {
         XCTAssertNotNil(snapshot.summary)
         XCTAssertEqual(snapshot.findings.count, 1)
         XCTAssertEqual(snapshot.profiles.count, 1)
-        XCTAssertEqual(snapshot.installedProfiles, 1, "'Success' counts as installed")
+        XCTAssertEqual(snapshot.profileTotalErrors, 2)
 
         // Uses policy file as primary source for timestamp
         XCTAssertEqual(snapshot.sourceFile, policyURL)
@@ -244,10 +293,11 @@ final class PolicyHealthServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.summary?.totalPolicies, 0)
         XCTAssertEqual(snapshot.findings.count, 0)
         XCTAssertEqual(snapshot.profiles.count, 0)
-        XCTAssertEqual(snapshot.totalProfiles, 0)
-        XCTAssertEqual(snapshot.installedProfiles, 0)
-        XCTAssertEqual(snapshot.pendingProfiles, 0)
-        XCTAssertEqual(snapshot.failedProfiles, 0)
+        XCTAssertFalse(snapshot.hasProfileData,
+                       "a bare [] profile file is no data, not zero failures")
+        XCTAssertEqual(snapshot.profileTotalErrors, 0)
+        XCTAssertNil(snapshot.profileDevicesAffected,
+                     "no summary envelope means devices affected is unknown, not zero")
     }
 
     func testSeverityGroupingCaseInsensitive() throws {
@@ -292,6 +342,7 @@ final class PolicyHealthServiceTests: XCTestCase {
             summary: nil,
             findings: [],
             profiles: [],
+            profileSummary: nil,
             sourceFile: nil,
             snapshotDate: nil
         )
@@ -304,6 +355,7 @@ final class PolicyHealthServiceTests: XCTestCase {
             summary: nil,
             findings: [],
             profiles: [],
+            profileSummary: nil,
             sourceFile: nil,
             snapshotDate: recent
         )
@@ -316,6 +368,7 @@ final class PolicyHealthServiceTests: XCTestCase {
             summary: nil,
             findings: [],
             profiles: [],
+            profileSummary: nil,
             sourceFile: nil,
             snapshotDate: stale
         )

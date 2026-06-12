@@ -1186,6 +1186,16 @@ final class CLIBridge {
         outFile: String?,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
+        // Epic #103 parity with generatePDF: the engine createDirectory()s at
+        // this path, so refuse sensitive destinations before doing anything.
+        if let path = outFile {
+            let candidate = URL(fileURLWithPath: path)
+            guard !WorkspacePaths.isSensitiveAbsolutePath(candidate) else {
+                onLine(.init(timestamp: Date(), level: .fail,
+                    text: "[error] refusing to write CSV into a sensitive path: \(candidate.path)"))
+                throw CLIBridgeError.directoryOperationFailed(path: candidate.path)
+            }
+        }
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
@@ -1534,7 +1544,12 @@ final class CLIBridge {
         guard FileManager.default.fileExists(atPath: configURL.path) else {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] config.yaml not found — run workspace-init first"))
-            throw CLIBridgeError.configLoadFailed(path: configURL.path, detail: nil)
+            // Distinct detail: "may be corrupt" misdescribes a file that
+            // simply does not exist.
+            throw CLIBridgeError.configLoadFailed(
+                path: configURL.path,
+                detail: "file not found — initialize the workspace first"
+            )
         }
         do {
             let config = try ConfigLoader.load(from: configURL)

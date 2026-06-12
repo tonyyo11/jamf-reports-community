@@ -135,39 +135,81 @@ extension WorkspaceStore {
     /// from one click, then re-probes heavy-tier staleness so the prompt
     /// clears honestly. Failures surface as a toast instead of the silent
     /// RefreshCoordinator backoff that left issue #181's reporter stranded.
-    func runFirstCollect() async {
-        guard canRefresh(profileSlug: profile) else { return }
+    func runFirstCollect(
+        collect: @Sendable (String, @escaping @Sendable (CLIBridge.LogLine) -> Void)
+            async throws -> Int32 = { profile, onLine in
+            try await CLIBridge().collect(
+                profile: profile, tiers: Set(CollectionTier.allCases), force: true,
+                onLine: onLine
+            )
+        }
+    ) async {
+        guard canRefresh(profileSlug: profile) else {
+            // Practically unreachable (the banner is suppressed in demo mode),
+            // but a button click must never be a silent no-op.
+            toast = Toast(message: "Collect is unavailable for this profile.", style: .info)
+            return
+        }
         let activeProfile = profile
         globalStatus = "collecting jamf-cli data · profile=\(activeProfile)"
         defer { globalStatus = nil }
-        do {
-            let exit = try await CLIBridge().collect(
-                profile: activeProfile, tiers: Set(CollectionTier.allCases), force: true,
-                onLine: CLIBridge.noOpOnLine
+        // Record the run so the failure toast's "see Run History" is true —
+        // this in-process collect previously discarded every per-kind line.
+        let recorder = ProfileService.workspaceURL(for: activeProfile).flatMap {
+            ScheduledRunRecorder(workspace: $0, label: Self.firstCollectRunLabel)
+        }
+        if recorder == nil {
+            AppLogger.cli.warning(
+                "First-collect run recorder unavailable — this run will not appear in Run History"
             )
-            if exit == 0 {
-                toast = Toast(message: "First collection complete", style: .success)
-            } else if exit == CLIBridge.exitCodeUnauthorized {
-                toast = Toast(
-                    message: "Collect failed — jamf-cli credentials expired; re-authenticate "
-                        + "from Settings → Connections",
-                    style: .danger
-                )
-            } else {
-                // Exit 1 here is usually partial per-kind failures, not auth —
-                // blaming auth sent the #181 field tester to the wrong page.
-                toast = Toast(
-                    message: "Collect finished with errors (exit \(exit)) — see Run History "
-                        + "for the failing commands",
-                    style: .danger
-                )
+        }
+        do {
+            let exit = try await collect(activeProfile) { line in
+                recorder?.record(line.text)
             }
+            recorder?.finish(exitCode: exit)
+            toast = Self.firstCollectToast(exitCode: exit, runRecorded: recorder != nil)
         } catch {
+            recorder?.record("[error] \(error.localizedDescription)")
+            recorder?.finish(exitCode: 1)
             toast = Toast(
                 message: "Collect failed — \(error.localizedDescription)", style: .danger
             )
         }
         await checkHeavyTierStaleness()
+    }
+
+    /// Must carry the LaunchAgent label prefix or `ScheduledRunRecorder.init`
+    /// rejects it and the run silently goes unrecorded.
+    nonisolated static var firstCollectRunLabel: String {
+        "\(LaunchAgentWriter.labelPrefix).manual-collect"
+    }
+
+    /// Exit-code triage for the first-collect toast. Only exit 3 blames
+    /// credentials — exit 1 is usually partial per-kind failures, and blaming
+    /// auth sent the #181 field tester to the wrong page.
+    nonisolated static func firstCollectToast(exitCode: Int32, runRecorded: Bool = true) -> Toast {
+        if exitCode == 0 {
+            // Context-neutral: this path also serves CollectNowBanner on every
+            // collect-fed screen, not just the first-run flow.
+            return Toast(message: "Collection complete", style: .success)
+        }
+        if exitCode == CLIBridge.exitCodeUnauthorized {
+            return Toast(
+                message: "Collect failed — jamf-cli credentials expired; re-authenticate "
+                    + "from Settings → Connections",
+                style: .danger
+            )
+        }
+        // Only point at Run History when this run was actually recorded;
+        // otherwise the failing commands live in the app log, not a run log.
+        let tail = runRecorded
+            ? "see Run History for the failing commands"
+            : "check the app log"
+        return Toast(
+            message: "Collect finished with errors (exit \(exitCode)) — \(tail)",
+            style: .danger
+        )
     }
 
     /// Run a Health Audit in the background when the cached audit snapshot is

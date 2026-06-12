@@ -124,6 +124,35 @@ struct StaleDataBanner: View {
         .background(Theme.Colors.winBG)
 }
 
+/// `StaleDataBanner` with the "Collect now" action wired to the active
+/// workspace. Adopt on screens fed by `pro` collect snapshots — NOT on
+/// audit-driven screens (Run Audit is their fetch) or Protect (separate
+/// collect path). Posts `.refreshActiveTab` when the collect finishes so
+/// the hosting screen reloads its snapshot.
+struct CollectNowBanner: View {
+    @Environment(WorkspaceStore.self) private var workspace
+    let source: CacheSource
+    @State private var isCollecting = false
+
+    var body: some View {
+        StaleDataBanner(
+            source: source,
+            onCollect: { runCollect() },
+            isCollecting: isCollecting
+        )
+    }
+
+    private func runCollect() {
+        guard !isCollecting else { return }
+        isCollecting = true
+        Task {
+            await workspace.runFirstCollect()
+            isCollecting = false
+            NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
+        }
+    }
+}
+
 #Preview("Never fetched live — Collect action") {
     StaleDataBanner(source: .neverFetchedLive, onCollect: {})
         .padding()

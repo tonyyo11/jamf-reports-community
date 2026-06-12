@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Policy and Profile health dashboard. Surfaces Jamf Pro policy configuration
-/// findings and profile deployment status from `pro report policy-status` and
-/// `pro classic-macos-profiles list` snapshots. Lifts the policy health monitoring
+/// findings and profile assignment failures from `pro report policy-status` and
+/// `pro report profile-status` snapshots. Lifts the policy health monitoring
 /// from Excel reports into a live, on-screen dashboard.
 struct PolicyProfileView: View {
     @Environment(WorkspaceStore.self) private var workspace
@@ -48,7 +48,7 @@ struct PolicyProfileView: View {
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
-                StaleDataBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource)
             }
 
             switch selectedTab {
@@ -62,11 +62,15 @@ struct PolicyProfileView: View {
                     }
                 }
             case .profiles:
-                if snapshot.profiles.isEmpty {
+                if !snapshot.hasProfileData {
                     profileEmptyState
                 } else {
                     profileKpiGrid
-                    profileStatusCard
+                    if snapshot.profiles.isEmpty {
+                        profileHealthyCard
+                    } else {
+                        profileStatusCard
+                    }
                 }
             }
         }
@@ -85,9 +89,10 @@ struct PolicyProfileView: View {
             let totalFindings = snapshot.findings.count
             return "\(summary.totalPolicies) policies tracked, \(totalFindings) finding\(totalFindings == 1 ? "" : "s") identified."
         case .profiles:
-            let count = snapshot.totalProfiles
-            guard count > 0 else { return nil }
-            return "\(count) profile\(count == 1 ? "" : "s") tracked across the fleet."
+            guard snapshot.hasProfileData else { return nil }
+            let count = snapshot.profilesWithFailures
+            let days = snapshot.profileLookbackDays.map { " in the last \($0) days" } ?? ""
+            return "\(count) profile\(count == 1 ? "" : "s") with failures\(days)."
         }
     }
 
@@ -129,19 +134,18 @@ struct PolicyProfileView: View {
             PolicyFinding(severity: "warning", policy: "Application Restriction", policyId: "134", check: "Business Impact", detail: "Policy blocks productivity apps during work hours")
         ],
         profiles: [
-            ProfileStatusRow(profileId: AnyCodable(101), name: "Wi-Fi Corporate Network", category: "Network", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
-            ProfileStatusRow(profileId: AnyCodable(102), name: "Exchange Email Setup", category: "Email", site: "Default", managementStatus: "Pending", errorCount: AnyCodable(3)),
-            ProfileStatusRow(profileId: AnyCodable(103), name: "VPN Configuration", category: "Network", site: "Remote Office", managementStatus: "Installed", errorCount: AnyCodable(0)),
-            ProfileStatusRow(profileId: AnyCodable(104), name: "Certificate Authority", category: "Security", site: "Default", managementStatus: "Failed", errorCount: AnyCodable(15)),
-            ProfileStatusRow(profileId: AnyCodable(105), name: "Software Update Settings", category: "System", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
-            ProfileStatusRow(profileId: AnyCodable(106), name: "Security Baseline", category: "Security", site: "Default", managementStatus: "Pending", errorCount: AnyCodable(2)),
-            ProfileStatusRow(profileId: AnyCodable(107), name: "Dock Preferences", category: "Desktop", site: "Default", managementStatus: "Removed", errorCount: AnyCodable(8)),
-            ProfileStatusRow(profileId: AnyCodable(108), name: "Printer Configuration", category: "Printing", site: "Branch Office", managementStatus: "Installed", errorCount: AnyCodable(1)),
-            ProfileStatusRow(profileId: AnyCodable(109), name: "Chrome Enterprise", category: "Applications", site: "Default", managementStatus: "Failed", errorCount: AnyCodable(7)),
-            ProfileStatusRow(profileId: AnyCodable(110), name: "Login Window", category: "System", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0)),
-            ProfileStatusRow(profileId: AnyCodable(111), name: "Time Zone Settings", category: "System", site: "Remote Office", managementStatus: "Pending", errorCount: AnyCodable(1)),
-            ProfileStatusRow(profileId: AnyCodable(112), name: "FileVault Encryption", category: "Security", site: "Default", managementStatus: "Installed", errorCount: AnyCodable(0))
+            PolicyHealthService.ProfileFailure(id: "0-104", name: "Certificate Authority", deviceType: "Computer", errors: 15, devices: 11, lastError: "2026-06-09", topError: "The certificate payload could not be installed"),
+            PolicyHealthService.ProfileFailure(id: "1-109", name: "Chrome Enterprise", deviceType: "Computer", errors: 7, devices: 6, lastError: "2026-06-08", topError: "Profile installation timed out"),
+            PolicyHealthService.ProfileFailure(id: "2-107", name: "Dock Preferences", deviceType: "Computer", errors: 8, devices: 5, lastError: "2026-06-10", topError: "Payload rejected by managed client"),
+            PolicyHealthService.ProfileFailure(id: "3-102", name: "Exchange Email Setup", deviceType: "Computer", errors: 3, devices: 3, lastError: "2026-06-07", topError: "Account already exists on device"),
+            PolicyHealthService.ProfileFailure(id: "4-111", name: "Time Zone Settings", deviceType: "Mobile Device", errors: 1, devices: 1, lastError: "2026-06-05", topError: "Device offline during push")
         ],
+        profileSummary: ProfileFailureSummary(
+            totalErrors: 34,
+            uniqueProfiles: 5,
+            uniqueDevices: 22,
+            days: 30
+        ),
         sourceFile: nil,
         snapshotDate: Date()
     )
@@ -153,7 +157,7 @@ struct PolicyProfileView: View {
             EmptyStateView(
                 systemImage: "list.bullet.indent",
                 title: "No policy data yet",
-                message: "Run `jamf-cli pro report policy-status` (Sources tab → Refresh) and this screen will populate."
+                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report policy-status` — and it will populate."
             )
         }
     }
@@ -277,33 +281,48 @@ struct PolicyProfileView: View {
             EmptyStateView(
                 systemImage: "doc.badge.gearshape",
                 title: "No profile data yet",
-                message: "Run `jamf-cli pro classic-macos-profiles list` (Sources tab → Refresh) and this screen will populate."
+                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report profile-status` — and it will populate."
             )
         }
+    }
+
+    private var profileHealthyCard: some View {
+        Card(padding: 24) {
+            EmptyStateView(
+                systemImage: "checkmark.seal",
+                title: "No profile failures",
+                message: lookbackMessage
+            )
+        }
+    }
+
+    private var lookbackMessage: String {
+        let days = snapshot.profileLookbackDays.map { "the last \($0) days" } ?? "the lookback window"
+        return "No configuration profile reported installation errors in \(days)."
     }
 
     private var profileKpiGrid: some View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Total Profiles",
-                value: "\(snapshot.totalProfiles)",
-                sub: "Configuration profiles"
+                label: "Total Errors",
+                value: "\(snapshot.profileTotalErrors)",
+                sub: "Profile installation errors"
             )
             StatTile(
-                label: "Pending",
-                value: "\(snapshot.pendingProfiles)",
-                sub: "Awaiting installation"
-            )
-            StatTile(
-                label: "Installed",
-                value: "\(snapshot.installedProfiles)",
-                sub: "Successfully deployed"
-            )
-            StatTile(
-                label: "Failed/Removed",
-                value: "\(snapshot.failedProfiles)",
+                label: "Profiles with Failures",
+                value: "\(snapshot.profilesWithFailures)",
                 sub: "Requiring attention"
+            )
+            StatTile(
+                label: "Devices Affected",
+                value: snapshot.profileDevicesAffected.map { "\($0)" } ?? "—",
+                sub: "Unique devices with errors"
+            )
+            StatTile(
+                label: "Lookback",
+                value: snapshot.profileLookbackDays.map { "\($0)d" } ?? "—",
+                sub: "Report window"
             )
         }
     }
@@ -311,80 +330,58 @@ struct PolicyProfileView: View {
     private var profileStatusCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Profile Status")
+                SectionHeader(title: "Profile Failures")
                 Table(snapshot.profiles) {
-                    TableColumn("Name") { profile in
-                        Text(profile.name ?? "Unknown Profile")
+                    TableColumn("Profile") { profile in
+                        Text(profile.name)
                             .font(.callout.weight(.medium))
-                            .foregroundStyle(profileNameColor(for: profile))
-                            .accessibilityLabel("\(profile.name ?? "Unknown Profile"), profile name")
+                            .foregroundStyle(profile.errors > 0 ? Theme.Colors.danger : Theme.Colors.fg)
+                            .accessibilityLabel("\(profile.name), profile name")
                     }
                     .width(min: 180, ideal: 220)
 
-                    TableColumn("Category") { profile in
-                        Text(profile.category ?? "—")
+                    TableColumn("Device Type") { profile in
+                        Text(profile.deviceType)
                             .font(.callout)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    .width(min: 100, ideal: 120)
-
-                    TableColumn("Site") { profile in
-                        Text(profile.site ?? "—")
-                            .font(.callout)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    .width(min: 80, ideal: 100)
-
-                    TableColumn("Status") { profile in
-                        if let status = profile.managementStatus {
-                            Pill(
-                                text: status,
-                                tone: profileStatusTone(for: status)
-                            )
-                            .accessibilityLabel("Status \(status)")
-                        } else {
-                            Text("Unknown")
-                                .font(.callout)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                        }
-                    }
-                    .width(min: 100, ideal: 120)
+                    .width(min: 90, ideal: 110)
 
                     TableColumn("Errors") { profile in
-                        if let errorCount = profile.errorCount?.value as? Int {
-                            Text("\(errorCount)")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(errorCount > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
-                                .monospacedDigit()
-                                .accessibilityLabel("\(errorCount) error\(errorCount == 1 ? "" : "s")")
-                        } else {
-                            Text("—")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                        }
+                        Text("\(profile.errors)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(profile.errors > 0 ? Theme.Colors.danger : Theme.Text.tertiary(contrast))
+                            .monospacedDigit()
+                            .accessibilityLabel("\(profile.errors) error\(profile.errors == 1 ? "" : "s")")
                     }
                     .width(min: 60, ideal: 80)
+
+                    TableColumn("Devices") { profile in
+                        Text("\(profile.devices)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .monospacedDigit()
+                    }
+                    .width(min: 60, ideal: 80)
+
+                    TableColumn("Last Error") { profile in
+                        Text(profile.lastError.isEmpty ? "—" : profile.lastError)
+                            .font(.callout)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    }
+                    .width(min: 90, ideal: 110)
+
+                    TableColumn("Top Error") { profile in
+                        Text(profile.topError.isEmpty ? "—" : profile.topError)
+                            .font(.callout)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .help(profile.topError)
+                    }
+                    .width(min: 180, ideal: 260)
                 }
                 .frame(minHeight: 200)
             }
         }
     }
 
-    private func profileNameColor(for profile: ProfileStatusRow) -> Color {
-        guard let status = profile.managementStatus?.lowercased() else {
-            return Theme.Colors.fg
-        }
-        if status.contains("failed") || status.contains("removed") {
-            return Theme.Colors.danger
-        }
-        return Theme.Colors.fg
-    }
-
-    private func profileStatusTone(for status: String) -> Pill.Tone {
-        let lower = status.lowercased()
-        if lower.contains("installed") || lower.contains("success") { return .teal }
-        if lower.contains("pending") { return .warn }
-        if lower.contains("failed") || lower.contains("removed") || lower.contains("error") { return .danger }
-        return .muted
-    }
 }

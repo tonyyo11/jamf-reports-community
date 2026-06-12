@@ -915,6 +915,7 @@ private struct AffectedBar: View {
 private struct FindingDetailPopover: View {
     let finding: AuditFinding
     let tone: Pill.Tone
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -943,6 +944,34 @@ private struct FindingDetailPopover: View {
                     .textSelection(.enabled)
             }
 
+            // `pro audit` returns counts, not device lists — "take action"
+            // means routing to the screen that holds the underlying records.
+            VStack(alignment: .leading, spacing: 6) {
+                Kicker(text: "Take action")
+                HStack(spacing: 8) {
+                    if let destination = auditActionDestination(for: finding) {
+                        PNPButton(title: destination.label, icon: "arrow.right", size: .sm) {
+                            dismiss()
+                            NotificationCenter.default.post(
+                                name: .navigateToTab,
+                                object: nil,
+                                userInfo: ["tab": destination.tab.rawValue]
+                            )
+                        }
+                        .help("Open the screen with the records behind this finding.")
+                    }
+                    PNPButton(title: "Generated reports", icon: "doc.text", size: .sm) {
+                        dismiss()
+                        NotificationCenter.default.post(
+                            name: .navigateToTab,
+                            object: nil,
+                            userInfo: ["tab": Tab.reports.rawValue]
+                        )
+                    }
+                    .help("Open recent reports for the per-device detail.")
+                }
+            }
+
             HStack {
                 Spacer()
                 PNPButton(title: "Copy", icon: "doc.on.doc", size: .sm) {
@@ -954,6 +983,33 @@ private struct FindingDetailPopover: View {
         .padding(16)
         .frame(width: 360)
         .background(Theme.Colors.winBG)
+    }
+}
+
+/// Maps a finding to the screen that can show its underlying records — by
+/// finding name first, category as fallback. Internal (not private) for tests.
+func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: Tab)? {
+    let name = finding.name.lowercased()
+    if name.contains("unencrypted") || name.contains("filevault")
+        || name.contains("gatekeeper") || name.contains("sip")
+        || name.contains("firewall") {
+        return ("Security Posture", .securityPosture)
+    }
+    if name.contains("stale") || name.contains("check-in") {
+        return ("Offline Outreach", .outreach)
+    }
+    if name.contains("patch") { return ("Patch Compliance", .patch) }
+    if name.contains("update") { return ("OS Updates", .updates) }
+    if name.contains("polic") || name.contains("scope") || name.contains("profile") {
+        return ("Policies & Profiles", .policyProfile)
+    }
+    if name.contains("extension attribute") { return ("Extension Attributes", .extensionAttributes) }
+    if name.contains("group") { return ("Groups & Searches", .groupInventory) }
+    switch finding.category.lowercased() {
+    case "security": return ("Security Posture", .securityPosture)
+    case "compliance": return ("Compliance Posture", .compliancePosture)
+    case "hygiene": return ("Policies & Profiles", .policyProfile)
+    default: return nil
     }
 }
 

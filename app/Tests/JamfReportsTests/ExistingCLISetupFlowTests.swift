@@ -209,4 +209,14 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         XCTAssertEqual(policy, AutomationPolicy(),
                        "declining automation must not flip isManaged or alter fields")
     }
+
+    func testCollectFailureReasonExitOneDoesNotBlameAuth() {
+        // The #181 misattribution class: only exit 3 means dead credentials.
+        let partial = ExistingCLISetupFlow.collectFailureReason(exit: 1)
+        XCTAssertFalse(partial.contains("credentials"))
+        XCTAssertTrue(partial.contains("Run History"))
+
+        let auth = ExistingCLISetupFlow.collectFailureReason(exit: CLIBridge.exitCodeUnauthorized)
+        XCTAssertTrue(auth.contains("re-authenticate"))
+    }
 }

@@ -1,8 +1,9 @@
 """Failure-branch tests for `_build_summary_from_bridge` and `_emit_summary_json`.
 
 The summary builder emits `[warn]` log lines when individual bridge calls raise
-and OMITS the affected metric's key from the emitted JSON. `totalDevices` and
-`staleCount` are always present; the percentage metrics (`fileVaultPct`,
+and OMITS the affected metric's key from the emitted JSON. `totalDevices`
+is always present; `staleCount` is omitted when device-compliance is
+unavailable (unknown is not zero); the percentage metrics (`fileVaultPct`,
 `osCurrentPct`, `patchPct`) are conditional. A failed bridge call leaves the
 metric unmeasured, so its key is dropped rather than written as a false 0.0 —
 the Swift `DailySummary` decoder treats a missing key as nil and skips the
@@ -18,7 +19,9 @@ bridge throws on `patch_status`, the CSV path must OMIT the `patchPct` key
 
 from __future__ import annotations
 
+import inspect
 import json
+import re
 from typing import Any
 
 
@@ -128,11 +131,11 @@ def test_inventory_summary_failure_defaults_total_devices_and_warns(jrc, fixture
 
 
 # -------------------------------------------------------------------
-# device_compliance failure → staleCount stays 0, warn emitted.
+# device_compliance failure → staleCount omitted (unknown, not zero), warn emitted.
 # -------------------------------------------------------------------
 
 
-def test_device_compliance_failure_defaults_stale_count_and_warns(jrc, fixtures_root, capsys) -> None:
+def test_device_compliance_failure_omits_stale_count_and_warns(jrc, fixtures_root, capsys) -> None:
     config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
 
     class BoomBridge(_BaselineBridge):
@@ -143,10 +146,12 @@ def test_device_compliance_failure_defaults_stale_count_and_warns(jrc, fixtures_
     captured = capsys.readouterr()
 
     assert summary is not None
-    assert summary["staleCount"] == 0, "staleCount must default to 0 when device_compliance raises"
+    assert "staleCount" not in summary, (
+        "staleCount must be omitted when device_compliance raises — unknown is not zero"
+    )
     assert "[warn]" in captured.out
     assert "device_compliance failed" in captured.out
-    assert "staleCount defaulting to 0" in captured.out
+    assert "staleCount omitted (unknown)" in captured.out
 
 
 # -------------------------------------------------------------------
@@ -308,3 +313,235 @@ def test_emit_summary_json_omits_patchpct_when_patch_status_fails(
     assert payload["totalDevices"] == 2
     assert payload["fileVaultPct"] == 100.0
     assert payload["source"] == "csv"
+
+
+# -------------------------------------------------------------------
+# _emit_summary_json (CSV path) — staleCount omitted when no check-in column.
+# -------------------------------------------------------------------
+
+
+def test_emit_summary_json_omits_stale_count_without_checkin_column(
+    tmp_path, monkeypatch, jrc
+) -> None:
+    """CSV-path regression: no last_checkin mapping → staleCount OMITTED.
+
+    Previously the CSV branch initialized stale_count = 0 and wrote it
+    unconditionally, so a workspace whose CSV has no check-in column persisted
+    a measured-looking "0 stale devices" — the unknown-is-not-zero class this
+    cycle fixed on the bridge path (review finding on PR #187).
+    """
+    pd = jrc.pd
+    df = pd.DataFrame({
+        "Computer Name": ["A", "B"],
+        "FileVault Status": ["Encrypted", "Encrypted"],
+    })
+    config = _build_minimal_csv_config(jrc)
+    # No last_checkin in the mapper: _col("last_checkin") returns None.
+    csv_dash = _StubCSVDashboard(df, {"filevault": "FileVault Status"})
+
+    historical = tmp_path / "snapshots"
+    fixed_now = jrc.datetime(2026, 5, 16, 12, 0, 0)
+
+    class _FixedDateTime(jrc.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.replace(tzinfo=tz)
+
+    monkeypatch.setattr(jrc, "datetime", _FixedDateTime)
+
+    jrc._emit_summary_json(config, csv_dash, _BaselineBridge(), str(historical))
+
+    summary_path = historical / "summaries" / "summary_2026-05-16.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert "staleCount" not in payload, (
+        "staleCount must be omitted when the CSV has no check-in column — "
+        f"unknown is not zero. payload={payload!r}"
+    )
+    assert payload["totalDevices"] == 2
+
+
+def test_emit_summary_json_counts_stale_with_checkin_column(
+    tmp_path, monkeypatch, jrc
+) -> None:
+    """Measured branch still measures: an old check-in date counts as stale."""
+    pd = jrc.pd
+    df = pd.DataFrame({
+        "Computer Name": ["A", "B"],
+        "Last Check-in": ["2026-05-15", "2025-01-01"],
+    })
+    config = _build_minimal_csv_config(jrc)
+    csv_dash = _StubCSVDashboard(df, {"last_checkin": "Last Check-in"})
+
+    historical = tmp_path / "snapshots"
+    fixed_now = jrc.datetime(2026, 5, 16, 12, 0, 0)
+
+    class _FixedDateTime(jrc.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.replace(tzinfo=tz)
+
+    monkeypatch.setattr(jrc, "datetime", _FixedDateTime)
+
+    jrc._emit_summary_json(config, csv_dash, _BaselineBridge(), str(historical))
+
+    summary_path = historical / "summaries" / "summary_2026-05-16.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["staleCount"] == 1
+
+
+# -------------------------------------------------------------------
+# collectionSources (R4 provenance map) — Swift parity.
+#
+# The map records, per digest input, whether the value was fetched live this
+# run ("live"), served from an older cached snapshot ("cache"), never fetched
+# ("absent"), or fetched with an unrecognized mode ("unknown"). ea-results is
+# gated on a configured mSCP baseline (mirrors Swift !eaBaselines.isEmpty);
+# the other four kinds are unconditional.
+# -------------------------------------------------------------------
+
+
+class _SourceInfoBridge(_BaselineBridge):
+    """Baseline bridge that also exposes ``source_info(kind) -> {"mode": ...}``."""
+
+    def __init__(self, modes: dict[str, str | None]) -> None:
+        self._modes = modes
+
+    def source_info(self, kind: str) -> dict[str, Any]:
+        # Mirror the real bridge: an unfetched kind returns {} (no "mode" key).
+        mode = self._modes.get(kind)
+        return {"mode": mode} if mode is not None else {}
+
+
+def test_collection_sources_maps_live_and_cache(jrc, fixtures_root) -> None:
+    config = _config_with_macos_ea(jrc, fixtures_root)
+    bridge = _SourceInfoBridge({
+        "security": "live",
+        "device-compliance": "cached-fallback",
+        "inventory-summary": "live",
+        "patch-status": "cached",
+    })
+    summary = jrc._build_summary_from_bridge(config, bridge, "2026-04-27")
+
+    assert summary is not None
+    sources = summary["collectionSources"]
+    assert sources["security"] == "live"
+    assert sources["inventory-summary"] == "live"
+    assert sources["device-compliance"] == "cache"
+    assert sources["patch-status"] == "cache"
+
+
+def test_collection_sources_omits_ea_results_without_baseline(jrc, fixtures_root) -> None:
+    # dummy.yaml has failures_count_column "" and no baselines list, so
+    # _mscp_resolved_baselines() is empty → ea-results must NOT be queried.
+    config = _config_with_macos_ea(jrc, fixtures_root)
+    assert jrc._mscp_resolved_baselines(config.compliance) == [], (
+        "fixture must have no resolvable baseline for this gate test"
+    )
+    bridge = _SourceInfoBridge({
+        "security": "live",
+        "device-compliance": "live",
+        "inventory-summary": "live",
+        "patch-status": "live",
+        "ea-results": "live",
+    })
+    summary = jrc._build_summary_from_bridge(config, bridge, "2026-04-27")
+
+    assert summary is not None
+    sources = summary["collectionSources"]
+    assert "ea-results" not in sources, "ea-results must be gated behind a baseline"
+    assert set(sources) == {
+        "security", "device-compliance", "inventory-summary", "patch-status"
+    }
+
+
+def test_collection_sources_includes_ea_results_with_baseline(jrc, fixtures_root) -> None:
+    config = _config_with_macos_ea(jrc, fixtures_root)
+    config._data["compliance"]["failures_count_column"] = "mSCP Failures"
+    assert jrc._mscp_resolved_baselines(config.compliance), "baseline should resolve"
+    bridge = _SourceInfoBridge({
+        "security": "live",
+        "device-compliance": "live",
+        "inventory-summary": "live",
+        "patch-status": "live",
+        "ea-results": "cached-fallback",
+    })
+    summary = jrc._build_summary_from_bridge(config, bridge, "2026-04-27")
+
+    assert summary is not None
+    assert summary["collectionSources"]["ea-results"] == "cache"
+
+
+def test_collection_sources_unknown_and_absent_modes(jrc, fixtures_root) -> None:
+    config = _config_with_macos_ea(jrc, fixtures_root)
+    bridge = _SourceInfoBridge({
+        "security": "weird-new-mode",  # unrecognized non-None → "unknown"
+        "device-compliance": "live",
+        # inventory-summary / patch-status omitted → source_info returns {} → absent
+    })
+    summary = jrc._build_summary_from_bridge(config, bridge, "2026-04-27")
+
+    assert summary is not None
+    sources = summary["collectionSources"]
+    assert sources["security"] == "unknown"
+    assert sources["device-compliance"] == "live"
+    assert sources["inventory-summary"] == "absent"
+    assert sources["patch-status"] == "absent"
+
+
+def test_collection_sources_absent_when_bridge_lacks_source_info(jrc, fixtures_root) -> None:
+    # _BaselineBridge has no source_info method → getattr guard → key omitted.
+    config = _config_with_macos_ea(jrc, fixtures_root)
+    summary = jrc._build_summary_from_bridge(config, _BaselineBridge(), "2026-04-27")
+
+    assert summary is not None
+    assert "collectionSources" not in summary
+
+
+# -------------------------------------------------------------------
+# staleCount omitted on the non-raising exhausted-cache path.
+#
+# device_compliance() returning None (cache exhausted, no live data — distinct
+# from raising) must leave staleCount unknown, not write a measured 0.
+# -------------------------------------------------------------------
+
+
+def test_stale_count_omitted_when_device_compliance_returns_none(jrc, fixtures_root) -> None:
+    config = jrc.Config(str(fixtures_root / "config" / "dummy.yaml"))
+
+    class NoneBridge(_BaselineBridge):
+        def device_compliance(self) -> None:
+            return None
+
+    summary = jrc._build_summary_from_bridge(config, NoneBridge(), "2026-04-27")
+
+    assert summary is not None
+    assert "staleCount" not in summary, (
+        "device_compliance() -> None is the exhausted-cache path; staleCount "
+        "stays unknown rather than a false measured 0"
+    )
+
+
+# -------------------------------------------------------------------
+# Kinds-parity pin: every kind the summary builder queries must be a real
+# report_type the bridge records under _run_and_save("<kind>", ...).
+# -------------------------------------------------------------------
+
+
+def test_collection_source_kinds_match_bridge_report_types(jrc) -> None:
+    """Each queried kind is a first-arg of a _run_and_save call in the module.
+
+    Reading the module source (vs hardcoding a parallel list) keeps the pin
+    coupled to the real bridge wiring: rename a report_type and this fails
+    unless the summary builder's kind literal is renamed too. ``ea-results``
+    is recorded by ``ea_results_report`` (the saving variant); the bare
+    ``ea_results`` method intentionally does not cache.
+    """
+    source = inspect.getsource(jrc)
+    recorded = set(re.findall(r'_run_and_save\(\s*["\']([\w-]+)["\']', source))
+    for kind in ("security", "device-compliance", "inventory-summary",
+                 "patch-status", "ea-results"):
+        assert kind in recorded, (
+            f"summary builder queries source_info({kind!r}) but no "
+            f"_run_and_save({kind!r}, ...) records it — provenance would be a "
+            "permanent 'absent'"
+        )

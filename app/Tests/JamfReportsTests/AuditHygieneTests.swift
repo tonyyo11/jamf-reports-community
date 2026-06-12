@@ -112,4 +112,45 @@ final class AuditHygieneTests: XCTestCase {
         XCTAssertEqual(groups[0].reason, "Referenced by 12 policies")
         XCTAssertEqual(groups[1].reasonLabel, "Not referenced by any policy or profile.")
     }
+
+    // MARK: - Take-action routing (#184 follow-on)
+
+    private func finding(_ name: String, category: String = "Security") -> AuditFinding {
+        AuditFinding(name: name, affected: 1, category: category,
+                     recommendation: "r", severity: "WARNING")
+    }
+
+    func testAuditActionDestinationRoutesKnownFindings() {
+        XCTAssertEqual(auditActionDestination(for: finding("Unencrypted devices"))?.tab, .securityPosture)
+        XCTAssertEqual(auditActionDestination(for: finding("Stale check-in (>14 days)", category: "Compliance"))?.tab, .outreach)
+        XCTAssertEqual(auditActionDestination(for: finding("Policies with no scope", category: "Hygiene"))?.tab, .policyProfile)
+        XCTAssertEqual(auditActionDestination(for: finding("Gatekeeper disabled"))?.tab, .securityPosture)
+    }
+
+    func testAuditActionDestinationCategoryFallback() {
+        XCTAssertEqual(auditActionDestination(for: finding("Mystery finding", category: "Compliance"))?.tab, .compliancePosture)
+        XCTAssertNil(auditActionDestination(for: finding("Mystery finding", category: "Inventory")),
+                     "unknown name + category routes nowhere rather than somewhere wrong")
+    }
+
+    // MARK: - Name-based routes not previously covered
+
+    func testAuditActionDestinationPatchNameRoutesToPatch() {
+        XCTAssertEqual(auditActionDestination(for: finding("Patch compliance gap"))?.tab, .patch)
+    }
+
+    func testAuditActionDestinationUpdateNameRoutesToUpdates() {
+        XCTAssertEqual(auditActionDestination(for: finding("Update plan failures"))?.tab, .updates)
+    }
+
+    func testAuditActionDestinationExtensionAttributeNameRoutesToEA() {
+        XCTAssertEqual(
+            auditActionDestination(for: finding("Extension attribute coverage low"))?.tab,
+            .extensionAttributes
+        )
+    }
+
+    func testAuditActionDestinationGroupNameRoutesToGroupInventory() {
+        XCTAssertEqual(auditActionDestination(for: finding("Unused group detected"))?.tab, .groupInventory)
+    }
 }

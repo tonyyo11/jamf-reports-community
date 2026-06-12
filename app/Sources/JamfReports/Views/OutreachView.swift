@@ -30,7 +30,7 @@ struct OutreachView: View {
             )
             // DRAFT — needs visual verification at PageScaffold.minSupportedWidth
             if !workspace.demoMode {
-                StaleDataBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource)
             }
             if snapshot.totalDevices == 0 {
                 emptyState
@@ -144,7 +144,7 @@ struct OutreachView: View {
             EmptyStateView(
                 systemImage: "envelope",
                 title: "No device inventory yet",
-                message: "Run device collection (Sources tab → Refresh) and this screen will populate."
+                message: "Collect data for this screen — use the Collect now banner when shown, or run a scheduled collect — and it will populate."
             )
         }
     }

@@ -72,4 +72,46 @@ final class CLIBridgePDFTests: XCTestCase {
         XCTAssertNoThrow(try ConfigLoader.load(from: config),
                          "the seeded config must parse with the app's own loader (#181)")
     }
+
+    /// Epic #103: both caller-supplied output paths must refuse sensitive
+    /// destinations — the engine createDirectory()s at them. Deleting either
+    /// guard previously left the suite green.
+    func testGeneratePDFRefusesSensitiveDestination() async throws {
+        let slug = "pdf-test-sensitive-\(UUID().uuidString.prefix(8))".lowercased()
+        guard let root = ProfileService.workspaceURL(for: slug) else {
+            throw XCTSkip("workspace root unavailable for test profile")
+        }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let target = NSHomeDirectory() + "/Library/jrc-test-denied/report.pdf"
+
+        do {
+            _ = try await bridge.generatePDF(profile: slug, outFile: target, onLine: { _ in })
+            XCTFail("a sensitive destination must be refused")
+        } catch let error as CLIBridgeError {
+            guard case .directoryOperationFailed = error else {
+                return XCTFail("unexpected CLIBridgeError: \(error)")
+            }
+        }
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: NSHomeDirectory() + "/Library/jrc-test-denied"),
+            "no directory may be created at the refused destination"
+        )
+    }
+
+    func testExportInventoryCSVRefusesSensitiveDestination() async {
+        do {
+            _ = try await bridge.exportInventoryCSV(
+                profile: "jrc-test-no-such-profile-xyzzy",
+                outFile: "/etc/jrc-test-denied.csv",
+                onLine: { _ in }
+            )
+            XCTFail("a sensitive destination must be refused")
+        } catch let error as CLIBridgeError {
+            guard case .directoryOperationFailed = error else {
+                return XCTFail("unexpected CLIBridgeError: \(error)")
+            }
+        } catch {
+            XCTFail("unexpected error type: \(error)")
+        }
+    }
 }
