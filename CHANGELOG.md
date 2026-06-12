@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-06-12
+
 ### Added
 
 - The Fleet Overview "N Issues" badge now opens a popover listing each flagged
