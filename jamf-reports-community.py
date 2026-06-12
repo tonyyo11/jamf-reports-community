@@ -3494,7 +3494,9 @@ def _emit_summary_json(
     # stale (treated as not-stale, not as stale).
     checkin_col = csv_dash._col("last_checkin")
     stale_days = int(config.thresholds.get("stale_device_days", 30))
-    stale_count = 0
+    # None (key omitted) when no check-in column is mapped/present — unknown
+    # is not zero (mirrors the bridge path in _build_summary_from_bridge).
+    stale_count: Optional[int] = None
     if checkin_col and checkin_col in df.columns:
         stale_count = int(
             df[checkin_col]
@@ -3562,12 +3564,13 @@ def _emit_summary_json(
     summary_data: dict[str, Any] = {
         "date": date_str,
         "totalDevices": int(total_devices),
-        "staleCount": int(stale_count),
         "source": "csv",
         # CSV path always uses the 4-control proxy; real ea-results bands below
         # flip this to False when they resolve. Matches the Swift summary schema.
         "complianceIsProxy": True,
     }
+    if stale_count is not None:
+        summary_data["staleCount"] = int(stale_count)
     if fv_pct is not None:
         summary_data["fileVaultPct"] = round(fv_pct, 1)
     if os_pct is not None:

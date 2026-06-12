@@ -1,7 +1,7 @@
 """Failure-branch tests for `_build_summary_from_bridge` and `_emit_summary_json`.
 
 The summary builder emits `[warn]` log lines when individual bridge calls raise
-and OMITS the affected metric's key from the emitted JSON. `totalDevices` and
+and OMITS the affected metric's key from the emitted JSON. `totalDevices`
 is always present; `staleCount` is omitted when device-compliance is
 unavailable (unknown is not zero); the percentage metrics (`fileVaultPct`,
 `osCurrentPct`, `patchPct`) are conditional. A failed bridge call leaves the
@@ -313,6 +313,80 @@ def test_emit_summary_json_omits_patchpct_when_patch_status_fails(
     assert payload["totalDevices"] == 2
     assert payload["fileVaultPct"] == 100.0
     assert payload["source"] == "csv"
+
+
+# -------------------------------------------------------------------
+# _emit_summary_json (CSV path) — staleCount omitted when no check-in column.
+# -------------------------------------------------------------------
+
+
+def test_emit_summary_json_omits_stale_count_without_checkin_column(
+    tmp_path, monkeypatch, jrc
+) -> None:
+    """CSV-path regression: no last_checkin mapping → staleCount OMITTED.
+
+    Previously the CSV branch initialized stale_count = 0 and wrote it
+    unconditionally, so a workspace whose CSV has no check-in column persisted
+    a measured-looking "0 stale devices" — the unknown-is-not-zero class this
+    cycle fixed on the bridge path (review finding on PR #187).
+    """
+    pd = jrc.pd
+    df = pd.DataFrame({
+        "Computer Name": ["A", "B"],
+        "FileVault Status": ["Encrypted", "Encrypted"],
+    })
+    config = _build_minimal_csv_config(jrc)
+    # No last_checkin in the mapper: _col("last_checkin") returns None.
+    csv_dash = _StubCSVDashboard(df, {"filevault": "FileVault Status"})
+
+    historical = tmp_path / "snapshots"
+    fixed_now = jrc.datetime(2026, 5, 16, 12, 0, 0)
+
+    class _FixedDateTime(jrc.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.replace(tzinfo=tz)
+
+    monkeypatch.setattr(jrc, "datetime", _FixedDateTime)
+
+    jrc._emit_summary_json(config, csv_dash, _BaselineBridge(), str(historical))
+
+    summary_path = historical / "summaries" / "summary_2026-05-16.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert "staleCount" not in payload, (
+        "staleCount must be omitted when the CSV has no check-in column — "
+        f"unknown is not zero. payload={payload!r}"
+    )
+    assert payload["totalDevices"] == 2
+
+
+def test_emit_summary_json_counts_stale_with_checkin_column(
+    tmp_path, monkeypatch, jrc
+) -> None:
+    """Measured branch still measures: an old check-in date counts as stale."""
+    pd = jrc.pd
+    df = pd.DataFrame({
+        "Computer Name": ["A", "B"],
+        "Last Check-in": ["2026-05-15", "2025-01-01"],
+    })
+    config = _build_minimal_csv_config(jrc)
+    csv_dash = _StubCSVDashboard(df, {"last_checkin": "Last Check-in"})
+
+    historical = tmp_path / "snapshots"
+    fixed_now = jrc.datetime(2026, 5, 16, 12, 0, 0)
+
+    class _FixedDateTime(jrc.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is None else fixed_now.replace(tzinfo=tz)
+
+    monkeypatch.setattr(jrc, "datetime", _FixedDateTime)
+
+    jrc._emit_summary_json(config, csv_dash, _BaselineBridge(), str(historical))
+
+    summary_path = historical / "summaries" / "summary_2026-05-16.json"
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["staleCount"] == 1
 
 
 # -------------------------------------------------------------------
