@@ -157,6 +157,32 @@ enum ScaffoldService {
         )
     }
 
+    // MARK: - Public scoring (config doctor [SUGGEST] support)
+
+    /// Best-scoring header for a logical field, scored against the family's hint table.
+    ///
+    /// Returns the highest-scoring header (score >= 60) or `nil` when nothing matches.
+    /// Used by `ConfigDoctorService` to detect that a stronger column exists than the
+    /// one the operator mapped. `family == .mobile` scores against the mobile tables;
+    /// any other value scores against the computer tables.
+    static func bestColumnMatch(
+        headers: [String],
+        logical: String,
+        family: CSVFamily?
+    ) -> (header: String, score: Int)? {
+        let useMobile = family == .mobile
+        var best: (header: String, score: Int)?
+        for header in headers {
+            let s = useMobile
+                ? mobileMatchScore(header: header, logical: logical)
+                : columnMatchScore(header: header, logical: logical)
+            if s > 0, s > (best?.score ?? 0) {
+                best = (header, s)
+            }
+        }
+        return best
+    }
+
     // MARK: - Public API
 
     /// Read the first line of `csvURL`, detect the CSV family (computers vs mobile),
