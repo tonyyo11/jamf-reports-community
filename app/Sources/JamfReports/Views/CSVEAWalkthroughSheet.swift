@@ -244,8 +244,12 @@ struct CSVEAWalkthroughSheet: View {
         adoptError = nil
         do {
             let count = try ConfigEAAdopter.adoptEAs(selectedProposals, profile: profile)
-            confirmation = "Added \(count) Extension Attribute\(count == 1 ? "" : "s") "
-                + "to config.yaml."
+            if count == 0 {
+                confirmation = "Those Extension Attributes are already in config.yaml."
+            } else {
+                confirmation = "Added \(count) Extension Attribute\(count == 1 ? "" : "s") "
+                    + "to config.yaml."
+            }
             // Brief confirmation, then dismiss.
             Task {
                 try? await Task.sleep(for: .milliseconds(900))

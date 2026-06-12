@@ -1198,8 +1198,12 @@ struct OverviewView: View {
 
         let connected = !workspace.profiles.isEmpty
         let collected = !trendStore.filteredSummaries.isEmpty
-        let scheduled = AutomationPolicy.parse(automationPolicyRaw).isManaged
-            || LaunchAgentService.list().contains { $0.profile == profile }
+        let policyRaw = automationPolicyRaw
+
+        let scheduled = await Task.detached(priority: .utility) {
+            AutomationPolicy.parse(policyRaw).isManaged
+                || LaunchAgentService.list().contains { $0.profile == profile }
+        }.value
 
         let customized = await Task.detached(priority: .utility) {
             (try? ConfigService.load(profile: profile))

@@ -142,6 +142,9 @@ struct ExistingCLISetupView: View {
                     ForEach(flow.profileNames.filter(flow.selected.contains), id: \.self) { name in
                         statusRow(name)
                     }
+                    if !flow.kindStatuses.isEmpty {
+                        kindDetailDisclosure
+                    }
                 }
 
                 if flow.didComplete {
@@ -191,10 +194,6 @@ struct ExistingCLISetupView: View {
                 Text(collectingCaption)
                     .font(.footnote.monospaced())
                     .foregroundStyle(Theme.Colors.fgMuted)
-                    .padding(.leading, 28)
-            }
-            if !flow.kindStatuses.isEmpty {
-                kindDetailDisclosure
                     .padding(.leading, 28)
             }
         }
