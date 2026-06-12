@@ -158,12 +158,17 @@ extension WorkspaceStore {
         let recorder = ProfileService.workspaceURL(for: activeProfile).flatMap {
             ScheduledRunRecorder(workspace: $0, label: Self.firstCollectRunLabel)
         }
+        if recorder == nil {
+            AppLogger.cli.warning(
+                "First-collect run recorder unavailable — this run will not appear in Run History"
+            )
+        }
         do {
             let exit = try await collect(activeProfile) { line in
                 recorder?.record(line.text)
             }
             recorder?.finish(exitCode: exit)
-            toast = Self.firstCollectToast(exitCode: exit)
+            toast = Self.firstCollectToast(exitCode: exit, runRecorded: recorder != nil)
         } catch {
             recorder?.record("[error] \(error.localizedDescription)")
             recorder?.finish(exitCode: 1)
@@ -183,7 +188,7 @@ extension WorkspaceStore {
     /// Exit-code triage for the first-collect toast. Only exit 3 blames
     /// credentials — exit 1 is usually partial per-kind failures, and blaming
     /// auth sent the #181 field tester to the wrong page.
-    nonisolated static func firstCollectToast(exitCode: Int32) -> Toast {
+    nonisolated static func firstCollectToast(exitCode: Int32, runRecorded: Bool = true) -> Toast {
         if exitCode == 0 {
             return Toast(message: "First collection complete", style: .success)
         }
@@ -194,9 +199,13 @@ extension WorkspaceStore {
                 style: .danger
             )
         }
+        // Only point at Run History when this run was actually recorded;
+        // otherwise the failing commands live in the app log, not a run log.
+        let tail = runRecorded
+            ? "see Run History for the failing commands"
+            : "check the app log"
         return Toast(
-            message: "Collect finished with errors (exit \(exitCode)) — see Run History "
-                + "for the failing commands",
+            message: "Collect finished with errors (exit \(exitCode)) — \(tail)",
             style: .danger
         )
     }

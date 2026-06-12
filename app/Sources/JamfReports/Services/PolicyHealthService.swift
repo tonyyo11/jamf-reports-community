@@ -55,8 +55,8 @@ struct PolicyHealthService: Sendable {
             profileSummary?.uniqueProfiles ?? profiles.count
         }
 
-        var profileDevicesAffected: Int {
-            profileSummary?.uniqueDevices ?? 0
+        var profileDevicesAffected: Int? {
+            profileSummary?.uniqueDevices
         }
 
         var profileLookbackDays: Int? {
@@ -146,16 +146,22 @@ struct PolicyHealthService: Sendable {
             if let profileData = try? Data(contentsOf: profileURL) {
                 if let envelopes = try? JSONDecoder().decode(
                     [ProfileStatusEnvelope].self, from: profileData
-                ), let envelope = envelopes.first {
-                    profileSummary = envelope.summary
-                    profiles = failureRows(from: envelope.failures ?? [])
+                ) {
+                    if let envelope = envelopes.first {
+                        profileSummary = envelope.summary
+                        profiles = failureRows(from: envelope.failures ?? [])
 
-                    // Use profile timestamp if we don't have a policy timestamp
-                    if sourceFile == nil {
-                        sourceFile = profileURL
-                        snapshotDate = (try? profileURL.resourceValues(
-                            forKeys: [.contentModificationDateKey]))?
-                            .contentModificationDate
+                        // Use profile timestamp if we don't have a policy timestamp
+                        if sourceFile == nil {
+                            sourceFile = profileURL
+                            snapshotDate = (try? profileURL.resourceValues(
+                                forKeys: [.contentModificationDateKey]))?
+                                .contentModificationDate
+                        }
+                    } else {
+                        AppLogger.engine.info(
+                            "PolicyHealthService: profile-status snapshot decoded but contains no envelope — treating as no data"
+                        )
                     }
                 } else {
                     AppLogger.engine.warning(

@@ -144,7 +144,7 @@ struct OutreachView: View {
             EmptyStateView(
                 systemImage: "envelope",
                 title: "No device inventory yet",
-                message: "Use Collect now in the banner above (or run a scheduled collect) and this screen will populate."
+                message: "Collect data for this screen — use the Collect now banner when shown, or run a scheduled collect — and it will populate."
             )
         }
     }

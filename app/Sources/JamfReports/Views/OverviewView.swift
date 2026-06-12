@@ -1104,7 +1104,8 @@ struct OverviewView: View {
             TrendSeries.stabilityBasis(
                 compliancePct: latest?.compliancePct,
                 patchPct: latest?.patchPct,
-                complianceIsProxy: latest?.complianceIsProxy
+                complianceIsProxy: latest?.complianceIsProxy,
+                staleMeasured: latest?.staleCount != nil
             ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
             "Open Devices to inspect records contributing to this count."

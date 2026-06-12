@@ -157,7 +157,7 @@ struct PolicyProfileView: View {
             EmptyStateView(
                 systemImage: "list.bullet.indent",
                 title: "No policy data yet",
-                message: "Use Collect now in the banner above — or run `jamf-cli pro report policy-status` — and this screen will populate."
+                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report policy-status` — and it will populate."
             )
         }
     }
@@ -281,7 +281,7 @@ struct PolicyProfileView: View {
             EmptyStateView(
                 systemImage: "doc.badge.gearshape",
                 title: "No profile data yet",
-                message: "Use Collect now in the banner above — or run `jamf-cli pro report profile-status` — and this screen will populate."
+                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report profile-status` — and it will populate."
             )
         }
     }
@@ -316,7 +316,7 @@ struct PolicyProfileView: View {
             )
             StatTile(
                 label: "Devices Affected",
-                value: "\(snapshot.profileDevicesAffected)",
+                value: snapshot.profileDevicesAffected.map { "\($0)" } ?? "—",
                 sub: "Unique devices with errors"
             )
             StatTile(

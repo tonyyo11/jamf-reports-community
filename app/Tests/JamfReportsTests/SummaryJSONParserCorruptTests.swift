@@ -88,4 +88,47 @@ final class SummaryJSONParserCorruptTests: XCTestCase {
 
         XCTAssertThrowsError(try SummaryJSONParser.parse(corrupt))
     }
+
+    // MARK: - staleCount omission contract (data-honesty, Int → Int?)
+
+    /// Python now omits staleCount entirely on degraded collects. DailySummary
+    /// must decode with staleCount == nil when the key is absent — not zero.
+    func test_parse_staleCountAbsent_decodesAsNil() throws {
+        let dir = try makeDir()
+        let url = dir.appendingPathComponent("summary_2026-06-01.json")
+        // Raw JSON without staleCount key — the shape Python emits on degraded collects.
+        let json = """
+        {"date":"2026-06-01","totalDevices":659,"fileVaultPct":98.8,\
+        "osCurrentPct":36.3,"patchPct":36.3,"source":"jamf-cli"}
+        """
+        try json.write(to: url, atomically: true, encoding: .utf8)
+
+        let decoded = try SummaryJSONParser.parse(url)
+        XCTAssertNil(decoded.staleCount,
+                     "absent staleCount key must decode as nil, not zero")
+        XCTAssertEqual(decoded.totalDevices, 659)
+    }
+
+    /// A DailySummary with staleCount nil must encode without the "staleCount"
+    /// key — omitted entirely, not serialized as null.
+    func test_encode_staleCountNil_keyAbsentFromJSON() throws {
+        let summary = DailySummary(
+            date: "2026-06-01",
+            totalDevices: 659,
+            fileVaultPct: nil,
+            compliancePct: nil,
+            staleCount: nil,
+            osCurrentPct: nil,
+            crowdstrikePct: nil,
+            patchPct: nil,
+            source: "jamf-cli"
+        )
+        let data = try JSONEncoder().encode(summary)
+        let dict = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any],
+            "encoded summary must be a JSON object"
+        )
+        XCTAssertNil(dict["staleCount"],
+                     "staleCount nil must be omitted from JSON, not written as null")
+    }
 }

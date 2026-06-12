@@ -137,7 +137,7 @@ final class PolicyHealthServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.hasProfileData)
         XCTAssertEqual(snapshot.profileTotalErrors, 20)
         XCTAssertEqual(snapshot.profilesWithFailures, 3)
-        XCTAssertEqual(snapshot.profileDevicesAffected, 14)
+        XCTAssertEqual(snapshot.profileDevicesAffected, 14, "summary-backed value must be non-nil")
         XCTAssertEqual(snapshot.profileLookbackDays, 30)
 
         // Failure rows — typed and ordered
@@ -194,7 +194,13 @@ final class PolicyHealthServiceTests: XCTestCase {
         let mapped = PolicyHealthService.failureRows(from: rows)
         XCTAssertEqual(mapped.count, 3, "all-nil row dropped")
         XCTAssertEqual(Set(mapped.map(\.id)).count, 3, "ids unique despite duplicate names")
-        XCTAssertEqual(mapped[0].id, mapped[0].id, "id is stored, not recomputed")
+
+        // Determinism across loads: calling failureRows twice on the same input
+        // must produce identical id arrays — the core #185 property.
+        let mapped2 = PolicyHealthService.failureRows(from: rows)
+        XCTAssertEqual(mapped.map(\.id), mapped2.map(\.id),
+                       "ids must be deterministic across independent calls on the same input")
+
         XCTAssertEqual(mapped[2].name, "Profile 7", "id-only rows get a synthesized name")
     }
 
@@ -290,7 +296,8 @@ final class PolicyHealthServiceTests: XCTestCase {
         XCTAssertFalse(snapshot.hasProfileData,
                        "a bare [] profile file is no data, not zero failures")
         XCTAssertEqual(snapshot.profileTotalErrors, 0)
-        XCTAssertEqual(snapshot.profileDevicesAffected, 0)
+        XCTAssertNil(snapshot.profileDevicesAffected,
+                     "no summary envelope means devices affected is unknown, not zero")
     }
 
     func testSeverityGroupingCaseInsensitive() throws {

@@ -629,5 +629,86 @@ final class ReportEngineTests: XCTestCase {
         XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("[]".utf8)))
         XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("{\"a\": 1}".utf8)))
         XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("[{\"id\": 1}]".utf8)))
+
+        // JSON fragments ("null", "0", string literals) must be accepted — parity
+        // with Python's json.loads, which also accepts these forms.
+        XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("null".utf8)))
+        XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("0".utf8)))
+        XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("\"text\"".utf8)))
+    }
+
+    // MARK: - Fix 1: buildLiveKinds only includes actually-saved kinds
+
+    /// A kind with exitCode==0 but a non-JSON body is NOT saved and must NOT
+    /// appear in liveKinds. buildLiveKinds takes savedKinds (post-saveSnapshot),
+    /// so the Cobra-help case is structurally excluded.
+    func testBuildLiveKindsExcludesUnsavedKinds() {
+        // "security" saved; "policies" had exit 0 but non-JSON body — not in savedKinds.
+        let saved: Set<String> = ["security"]
+        let result = ReportEngine.buildLiveKinds(savedKinds: saved, sofaRefreshed: false)
+        XCTAssertTrue(result.contains("security"))
+        XCTAssertFalse(result.contains("policies"), "Unsaved kind must not appear in liveKinds")
+        XCTAssertFalse(result.contains("sofa"), "sofa absent when sofaRefreshed=false")
+    }
+
+    func testBuildLiveKindsSofaInsertedWhenRefreshSucceeded() {
+        let saved: Set<String> = ["security"]
+        let result = ReportEngine.buildLiveKinds(savedKinds: saved, sofaRefreshed: true)
+        XCTAssertTrue(result.contains("sofa"), "sofa must be included when sofaRefreshed=true")
+        XCTAssertTrue(result.contains("security"))
+    }
+
+    // MARK: - Fix 1+2: collectionSources end-to-end via emitSummaryJSON
+
+    /// Verifies the three provenance states written into summary.json:
+    ///   - A kind with a snapshot file AND in liveKinds → "live"
+    ///   - A kind with a snapshot file NOT in liveKinds → "cache"
+    ///   - A kind with no snapshot file → "absent"
+    func testCollectionSourcesReflectsLiveCacheAbsent() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("collsrc-\(UUID().uuidString)", isDirectory: true)
+        let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        // Write a security snapshot so buildSummaryFromCLI produces totalDevices > 0.
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        let secPayload = """
+        [{"section":"summary","data":{"total_devices":10,"filevault_encrypted":8,
+          "sip_enabled":10,"firewall_enabled":9,"gatekeeper_enabled":10}}]
+        """
+        try Data(secPayload.utf8).write(
+            to: secDir.appendingPathComponent("security_20260101T000000.json"))
+
+        // Write a device-compliance snapshot for the "cache" case.
+        let compDir = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+        try FileManager.default.createDirectory(at: compDir, withIntermediateDirectories: true)
+        try Data("""
+        [{"name":"A","serial":"AA","managed":true,"stale":false,"days_since_checkin":5}]
+        """.utf8).write(
+            to: compDir.appendingPathComponent("device-compliance_20260101T000000.json"))
+
+        // liveKinds: "security" was fetched live; "device-compliance" was NOT (cache);
+        // "patch-status" has no snapshot at all (absent).
+        let liveKinds: Set<String> = ["security"]
+
+        let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+        engine.emitSummaryJSON(summariesDir: summariesDir, liveKinds: liveKinds)
+
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryURL = summariesDir.appendingPathComponent("summary_\(today).json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: summaryURL.path))
+
+        let data = try Data(contentsOf: summaryURL)
+        let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let sources = try XCTUnwrap(obj["collectionSources"] as? [String: String],
+                                    "collectionSources must be present when liveKinds is provided")
+
+        XCTAssertEqual(sources["security"], "live",
+                       "security was in liveKinds → must be 'live'")
+        XCTAssertEqual(sources["device-compliance"], "cache",
+                       "device-compliance has a file but was not in liveKinds → must be 'cache'")
+        XCTAssertEqual(sources["patch-status"], "absent",
+                       "patch-status has no snapshot → must be 'absent'")
     }
 }

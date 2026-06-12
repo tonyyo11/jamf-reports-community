@@ -75,6 +75,35 @@ def test_rule_identical_is_not_better(jrc):
     assert not jrc._fresh_summary_is_better(dict(summary), dict(summary))
 
 
+def test_rule_absent_stale_to_measured_is_better(jrc):
+    """existing missing the staleCount key + fresh measured one → upgrade."""
+    existing = {"complianceIsProxy": False, "totalDevices": 100}
+    fresh = {"complianceIsProxy": False, "totalDevices": 100, "staleCount": 4}
+    assert jrc._fresh_summary_is_better(existing, fresh)
+
+
+def test_rule_both_absent_stale_is_not_better(jrc):
+    """Neither side has staleCount → no staleCount-driven upgrade."""
+    existing = {"complianceIsProxy": False, "totalDevices": 100}
+    fresh = {"complianceIsProxy": False, "totalDevices": 100}
+    assert not jrc._fresh_summary_is_better(existing, fresh)
+
+
+def test_rule_explicit_null_stale_to_measured_is_better(jrc):
+    """An explicit ``staleCount: null`` (legacy/hand-edited) is unknown too —
+    treated like an absent key, so a fresh measured value upgrades it."""
+    existing = {"complianceIsProxy": False, "totalDevices": 100, "staleCount": None}
+    fresh = {"complianceIsProxy": False, "totalDevices": 100, "staleCount": 6}
+    assert jrc._fresh_summary_is_better(existing, fresh)
+
+
+def test_rule_measured_stale_to_absent_is_not_better(jrc):
+    """existing measured (166) + fresh missing the key → never downgrade."""
+    existing = {"complianceIsProxy": False, "totalDevices": 200, "staleCount": 166}
+    fresh = {"complianceIsProxy": False, "totalDevices": 200}
+    assert not jrc._fresh_summary_is_better(existing, fresh)
+
+
 # --- persistence decision ----------------------------------------------------
 
 def _write_existing(path: Path, data: dict) -> None:

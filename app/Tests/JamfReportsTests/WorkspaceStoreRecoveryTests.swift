@@ -35,6 +35,12 @@ final class WorkspaceStoreRecoveryTests: XCTestCase {
         let partial = WorkspaceStore.firstCollectToast(exitCode: 1)
         XCTAssertFalse(partial.message.contains("credentials"))
         XCTAssertTrue(partial.message.contains("Run History"))
+
+        // When the run was not recorded, point at the app log — not a run log
+        // that does not exist for this run.
+        let unrecorded = WorkspaceStore.firstCollectToast(exitCode: 1, runRecorded: false)
+        XCTAssertFalse(unrecorded.message.contains("Run History"))
+        XCTAssertTrue(unrecorded.message.contains("app log"))
     }
 
     // MARK: - runFirstCollect

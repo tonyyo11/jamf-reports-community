@@ -518,6 +518,7 @@ struct ReportEngine: Sendable {
            totalDevices > 0 {
             let osCounts = Dictionary(rows.map { ($0.osVersion, $0.count) }, uniquingKeysWith: +)
             let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
+            recordSource(kind: "sofa", present: !sofaSnapshot.rows.isEmpty)
             let macOSRows = sofaSnapshot.rows.filter { $0.platform == "macOS" }
             osCurrentPct = Self.osCurrentPercent(
                 macOSRows: macOSRows, osCounts: osCounts, totalDevices: totalDevices)
@@ -548,15 +549,12 @@ struct ReportEngine: Sendable {
         var complianceFinalPct: Double? = complianceProxyPct
         var complianceIsRealData = false
         var mscpBandsSnapshot: [String: MSCPBandCounts]? = nil
+        // cachedData records the source automatically (live/cache/absent), so a single
+        // call here covers both the recordSource and the data load. Guard on eaBaselines
+        // so "absent" is not recorded for tenants that never configured an EA baseline.
         let eaBaselines = config.compliance?.resolvedBaselines ?? []
-        if !eaBaselines.isEmpty {
-            recordSource(
-                kind: "ea-results",
-                present: (try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir)) != nil
-            )
-        }
         if !eaBaselines.isEmpty,
-           let eaData = try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir),
+           let eaData = cachedData(kind: "ea-results"),
            let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData) {
             let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
             if let primary = results.first, let realPct = primary.compliancePct {
@@ -1418,6 +1416,10 @@ struct ReportEngine: Sendable {
         let bridge = CLIBridge()
         var didFetchPrior = false
         var outcomes: [CollectOutcome] = []
+        // Tracks kinds where saveSnapshot actually wrote a file this run.
+        // Used to build liveKinds for R4 provenance — exit-0 non-JSON output
+        // (Cobra help) passes the exitCode==0 filter but must NOT be "live".
+        var savedKinds: Set<String> = []
         for (args, kind) in plannedCommands {
             // T-9 tier filter: drop kinds outside the selected tier set.
             // An unmapped kind has no tier and is always allowed — the
@@ -1492,6 +1494,7 @@ struct ReportEngine: Sendable {
                     continue
                 }
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                savedKinds.insert(kind)
                 // T-8: record success so the cadence boundary advances.
                 // Use try? rather than try — a state-write failure should
                 // not undo the snapshot we already wrote. The worst case
@@ -1549,13 +1552,15 @@ struct ReportEngine: Sendable {
         // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
         // is in the requested tiers. Light network fetch — always in the Refresh tier
         // so snapshot-only and full runs both capture it.
+        var sofaRefreshSucceeded = false
         if let sofaTier = CollectionTier.tier(forReport: "sofa"), tiers.contains(sofaTier) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting sofa for \(profile)"))
-            let (_, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
+            let (sofaSnapshot, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
             for w in sofaWarnings {
                 onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(w)"))
             }
+            sofaRefreshSucceeded = !sofaSnapshot.rows.isEmpty
             onLine(.init(timestamp: Date(), level: .ok, text: "[ok] sofa: feeds refreshed"))
         }
 
@@ -1583,12 +1588,9 @@ struct ReportEngine: Sendable {
                 dataDir: dataDir
             )
             let engine = ReportEngine(config: config, dataDir: dataDir)
-            // R4: kinds fetched live THIS run; the summary records which of its
-            // inputs were live vs served from an older cached snapshot.
-            var liveKinds = Set(outcomes.filter { $0.exitCode == 0 }.map(\.kind))
-            if let sofaTier = CollectionTier.tier(forReport: "sofa"), tiers.contains(sofaTier) {
-                liveKinds.insert("sofa")
-            }
+            // R4: kinds where saveSnapshot succeeded this run → "live" in summary.
+            let liveKinds = Self.buildLiveKinds(savedKinds: savedKinds,
+                                                sofaRefreshed: sofaRefreshSucceeded)
             engine.emitSummaryJSON(
                 summariesDir: summariesDir, provenance: prov,
                 liveKinds: liveKinds, onLine: onLine
@@ -2220,6 +2222,15 @@ struct ReportEngine: Sendable {
     }
 
     // MARK: - Private helpers
+
+    /// Assembles the liveKinds set for R4 provenance from the kinds that were
+    /// actually saved this run. `sofa` is added when the SOFA refresh returned rows.
+    /// Pure function — testable without subprocess dependencies.
+    static func buildLiveKinds(savedKinds: Set<String>, sofaRefreshed: Bool) -> Set<String> {
+        var result = savedKinds
+        if sofaRefreshed { result.insert("sofa") }
+        return result
+    }
 
     /// True when `data` parses as JSON. Snapshot saves are gated on this:
     /// Cobra's unknown-subcommand help text arrives with exit 0 and must

@@ -3307,8 +3307,8 @@ def _fresh_summary_is_better(existing: dict[str, Any], fresh: dict[str, Any]) ->
       truthy) and ``fresh`` now has real mSCP data (``complianceIsProxy`` false), OR
     * ``existing`` has no ``mscpBands`` (absent/empty) and ``fresh`` has non-empty
       ``mscpBands``, OR
-    * ``existing`` has no ``staleCount`` key (unknown) and ``fresh`` measured
-      one, OR
+    * ``existing`` has no ``staleCount`` (key absent OR explicit null — both
+      mean unknown) and ``fresh`` measured one, OR
     * ``existing.staleCount == 0`` on a non-empty fleet
       (``existing.totalDevices > 0``) while ``fresh.staleCount > 0`` — the earlier
       run's stale source was empty/degraded (e.g. a transient failure).
@@ -3323,7 +3323,8 @@ def _fresh_summary_is_better(existing: dict[str, Any], fresh: dict[str, Any]) ->
     fresh_has_bands = bool(fresh.get("mscpBands"))
     if not existing_has_bands and fresh_has_bands:
         return True
-    if "staleCount" not in existing and "staleCount" in fresh:
+    # Explicit-null staleCount is unknown too — treat it like an absent key.
+    if existing.get("staleCount") is None and fresh.get("staleCount") is not None:
         return True
     if (
         existing.get("staleCount") is not None
@@ -3793,20 +3794,6 @@ def _build_summary_from_bridge(
     }
     if stale_count is not None:
         summary["staleCount"] = int(stale_count)
-    # R4 parity with Swift: which of the digest's inputs were fetched live this
-    # run vs served from an older cached snapshot vs absent entirely.
-    sources: dict[str, str] = {}
-    mode_map = {"live": "live", "cached-fallback": "cache", "cached": "cache"}
-    # Best-effort metadata — a bridge without source tracking (test doubles,
-    # cached-only flows) just omits the map; it must never fail the summary.
-    get_source = getattr(bridge, "source_info", None)
-    if callable(get_source):
-        for kind in ("security", "device-compliance", "inventory-summary",
-                     "patch-status", "ea-results"):
-            mode = (get_source(kind) or {}).get("mode")
-            sources[kind] = mode_map.get(mode, "absent")
-    if sources:
-        summary["collectionSources"] = sources
     if fv_pct is not None:
         summary["fileVaultPct"] = round(fv_pct, 1)
     if os_pct is not None:
@@ -3816,8 +3803,43 @@ def _build_summary_from_bridge(
 
     # Real mSCP/STIG bands from ea-results. Pure-CLI users get true compliance
     # banding when a baseline is configured. Mirrors the Swift summary wiring.
+    # Runs BEFORE collectionSources so the provenance map reflects whether the
+    # ea-results fetch this call triggered hit live data or a cached fallback.
     _apply_mscp_bands_to_summary(summary, config, bridge)
+
+    sources = _collection_sources_from_bridge(config, bridge)
+    if sources:
+        summary["collectionSources"] = sources
     return summary
+
+
+def _collection_sources_from_bridge(
+    config: "Config", bridge: Optional["JamfCLIBridge"]
+) -> dict[str, str]:
+    """Return the R4 provenance map for the digest's inputs (Swift parity).
+
+    Each kind resolves to ``"live"`` (fetched fresh this run), ``"cache"``
+    (served from an older cached snapshot), ``"absent"`` (never fetched), or
+    ``"unknown"`` (fetched but with an unrecognized mode string). ``ea-results``
+    is included only when at least one mSCP baseline resolves, mirroring Swift's
+    ``!eaBaselines.isEmpty`` gate; the other four kinds are unconditional.
+    """
+    # None (never fetched) -> absent; recognized -> mapped; any other non-None
+    # mode string -> unknown (present data must not be recorded as missing).
+    mode_map = {"live": "live", "cached-fallback": "cache", "cached": "cache"}
+    sources: dict[str, str] = {}
+    # Best-effort metadata — a bridge without source tracking (test doubles,
+    # cached-only flows) just omits the map; it must never fail the summary.
+    get_source = getattr(bridge, "source_info", None)
+    if not callable(get_source):
+        return sources
+    kinds = ["security", "device-compliance", "inventory-summary", "patch-status"]
+    if _mscp_resolved_baselines(config.compliance):
+        kinds.append("ea-results")
+    for kind in kinds:
+        mode = (get_source(kind) or {}).get("mode")
+        sources[kind] = "absent" if mode is None else mode_map.get(mode, "unknown")
+    return sources
 
 
 def _apply_mscp_bands_to_summary(

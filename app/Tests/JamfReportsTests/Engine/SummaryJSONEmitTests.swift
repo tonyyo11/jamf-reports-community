@@ -309,6 +309,34 @@ final class SummaryJSONEmitTests: XCTestCase {
                        "Dropping bands is not an upgrade — downgrade protection")
     }
 
+    // MARK: - freshSummaryIsBetter nil-staleCount upgrade rules
+
+    /// nil → measured: a collect that couldn't determine staleness is upgraded
+    /// when the next run produces a real reading.
+    func testFreshSummaryIsBetter_staleNilToMeasured_returnsTrue() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, staleCount: nil)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, staleCount: 166)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                      "nil → measured staleCount is an upgrade: the unknown becomes known")
+    }
+
+    /// measured → nil: a fresh run that couldn't determine staleness must not
+    /// overwrite an existing run that did.
+    func testFreshSummaryIsBetter_staleMeasuredToNil_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, staleCount: 166)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, staleCount: nil)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "measured → nil staleCount is a downgrade: must not clobber known data")
+    }
+
+    /// both nil: neither run measured staleness; no upgrade.
+    func testFreshSummaryIsBetter_bothStaleNil_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, staleCount: nil)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, staleCount: nil)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "nil → nil staleCount is not an upgrade")
+    }
+
     // MARK: - emitSummaryJSON upgrade behavior (integration)
 
     /// Existing proxy summary + fresh real-mSCP summary → file overwritten with real data.
@@ -428,7 +456,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         hasBands: Bool,
         date: String = "2026-06-05",
         totalDevices: Int = 100,
-        staleCount: Int = 5
+        staleCount: Int? = 5
     ) -> DailySummary {
         let bands: [String: MSCPBandCounts]? = hasBands
             ? ["NIST": MSCPBandCounts(pass: 80, low: 10, medLow: 5, medium: 3, high: 2, noData: 0)]

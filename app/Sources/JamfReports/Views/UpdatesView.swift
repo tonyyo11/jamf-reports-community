@@ -263,7 +263,7 @@ struct UpdatesView: View {
             EmptyStateView(
                 systemImage: "arrow.triangle.2.circlepath",
                 title: "No update status data yet",
-                message: "Use Collect now in the banner above — or run `jamf-cli pro report update-status` — and this screen will populate."
+                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report update-status` — and it will populate."
             )
         }
     }

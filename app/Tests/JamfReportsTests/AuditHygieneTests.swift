@@ -132,4 +132,25 @@ final class AuditHygieneTests: XCTestCase {
         XCTAssertNil(auditActionDestination(for: finding("Mystery finding", category: "Inventory")),
                      "unknown name + category routes nowhere rather than somewhere wrong")
     }
+
+    // MARK: - Name-based routes not previously covered
+
+    func testAuditActionDestinationPatchNameRoutesToPatch() {
+        XCTAssertEqual(auditActionDestination(for: finding("Patch compliance gap"))?.tab, .patch)
+    }
+
+    func testAuditActionDestinationUpdateNameRoutesToUpdates() {
+        XCTAssertEqual(auditActionDestination(for: finding("Update plan failures"))?.tab, .updates)
+    }
+
+    func testAuditActionDestinationExtensionAttributeNameRoutesToEA() {
+        XCTAssertEqual(
+            auditActionDestination(for: finding("Extension attribute coverage low"))?.tab,
+            .extensionAttributes
+        )
+    }
+
+    func testAuditActionDestinationGroupNameRoutesToGroupInventory() {
+        XCTAssertEqual(auditActionDestination(for: finding("Unused group detected"))?.tab, .groupInventory)
+    }
 }

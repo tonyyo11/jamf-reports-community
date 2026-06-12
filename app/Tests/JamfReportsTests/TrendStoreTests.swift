@@ -407,6 +407,26 @@ final class TrendStoreTests: XCTestCase {
         // we treat "no mtime evidence" as "never live", not "stale forever".
         XCTAssertEqual(store.cacheSource, .neverFetchedLive)
     }
+
+    // MARK: - staleCount nil renormalization
+
+    /// staleCount nil must drop the stale component; index renormalizes over
+    /// compliance + patch only. Moved from TrendStoreTestEnv where XCTest
+    /// could not discover it (struct scope).
+    func testStabilityIndexDropsStaleComponentWhenUnknown() {
+        let withUnknownStale = TrendSeries.stabilityIndex(
+            compliancePct: 80, patchPct: 60, staleCount: nil, totalDevices: 100)
+        // weights: compliance 0.4, patch 0.4, total 0.8 → each 50% → 70
+        let expectedNil: Double = 70.0
+        XCTAssertEqual(withUnknownStale ?? -1, expectedNil, accuracy: 0.01)
+
+        let withMeasuredZero = TrendSeries.stabilityIndex(
+            compliancePct: 80, patchPct: 60, staleCount: 0, totalDevices: 100)
+        // staleInverse=100 (weight 0.2), compliance 80 (0.4), patch 60 (0.4) → 76
+        let expectedZero: Double = 76.0
+        XCTAssertEqual(withMeasuredZero ?? -1, expectedZero, accuracy: 0.01,
+                       "a measured zero still earns the stale component")
+    }
 }
 
 // MARK: - PR-18 test scaffolding
@@ -465,16 +485,4 @@ private struct TrendStoreTestEnv {
         )
     }
 
-    func testStabilityIndexDropsStaleComponentWhenUnknown() {
-        // staleCount nil must not contribute a perfect "no stale devices"
-        // score — the index renormalizes over compliance + patch only.
-        let withUnknownStale = TrendSeries.stabilityIndex(
-            compliancePct: 80, patchPct: 60, staleCount: nil, totalDevices: 100)
-        XCTAssertEqual(withUnknownStale ?? -1, 70.0, accuracy: 0.01)
-
-        let withMeasuredZero = TrendSeries.stabilityIndex(
-            compliancePct: 80, patchPct: 60, staleCount: 0, totalDevices: 100)
-        XCTAssertEqual(withMeasuredZero ?? -1, 76.0, accuracy: 0.01,
-                       "a measured zero still earns the stale component")
-    }
 }
