@@ -17,6 +17,27 @@ enum ScaffoldService {
         let mobileColumns: [String: String]
     }
 
+    /// A candidate Extension Attribute column the walkthrough proposes adopting
+    /// into `custom_eas`. The user selects which proposals to adopt — nothing is
+    /// written automatically.
+    struct ProposedEA: Identifiable, Sendable, Equatable {
+        /// Human label derived from the column header.
+        let name: String
+        /// Exact CSV header.
+        let column: String
+        /// Guessed EA type — one of `boolean|date|percentage|version|text`.
+        let type: String
+        /// First non-empty sample value across the parsed rows, for the UI preview.
+        let sampleValue: String
+        var id: String { column }
+    }
+
+    /// Header + sample rows parsed from a CSV, for EA proposal previewing.
+    struct CSVSample: Sendable {
+        let headers: [String]
+        let rows: [[String]]
+    }
+
     // MARK: - Hint tables (ported verbatim from Python COLUMN_HINTS / COLUMN_EXCLUDES)
 
     private static let columnHints: [String: [String]] = [
@@ -482,5 +503,160 @@ enum ScaffoldService {
             "",
         ]
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - EA proposal (CSV → custom_eas walkthrough)
+
+    /// Normalized built-in identity/inventory headers that are NEVER EA candidates.
+    /// Conservative: when unsure, a header is left OUT of this set so the user can
+    /// still see it as a proposal and deselect it.
+    static let builtInHeaders: Set<String> = [
+        "computer name", "device name", "display name", "hostname", "name",
+        "serial number", "serial", "udid", "jss computer id", "jss mobile device id",
+        "device id", "asset tag", "model", "model identifier", "processor type",
+        "apple silicon", "architecture", "operating system version", "os version",
+        "build", "last inventory update", "last check-in", "last checkin",
+        "last contact", "last enrollment", "enrollment date", "managed", "supervised",
+        "ip address", "last reported ip address", "mac address", "wi-fi mac address",
+        "bluetooth mac address", "username", "user", "full name", "email address",
+        "email", "e-mail", "phone number", "position", "building", "department",
+        "dept", "manager", "managed by", "room", "site", "imei", "iccid", "meid",
+        "device ownership type", "battery level",
+    ]
+
+    /// Sample values (lowercased) that read as a boolean for the EA type guess.
+    static let booleanSampleValues: Set<String> = [
+        "yes", "no", "true", "false", "enabled", "disabled", "installed",
+        "not installed", "encrypted", "not encrypted", "compliant",
+        "non-compliant", "on", "off",
+    ]
+
+    /// Propose `custom_eas` candidates from a CSV's headers and sample rows.
+    ///
+    /// Pure (no I/O) so it is unit-testable. Skips headers already mapped to a
+    /// logical column (`mappedHeaders`, normalized compare) and obvious built-in
+    /// identity/inventory headers. Each remaining header is title-cased into a
+    /// `name`, given its first non-empty sample value, and assigned a guessed type.
+    ///
+    /// - Parameters:
+    ///   - headers: CSV column names.
+    ///   - sampleRows: Row cells aligned to `headers` (ragged rows tolerated).
+    ///   - mappedHeaders: Headers already mapped to logical fields — excluded.
+    /// - Returns: Proposals sorted by column name.
+    static func proposeEAs(
+        headers: [String],
+        sampleRows: [[String]],
+        mappedHeaders: Set<String>
+    ) -> [ProposedEA] {
+        let mappedNorm = Set(mappedHeaders.map(normalizedText))
+        var proposals: [ProposedEA] = []
+
+        for (index, header) in headers.enumerated() {
+            let norm = normalizedText(header)
+            if norm.isEmpty { continue }
+            if mappedNorm.contains(norm) { continue }
+            if builtInHeaders.contains(norm) { continue }
+
+            let samples = columnSamples(at: index, rows: sampleRows)
+            let sampleValue = samples.first(where: { !$0.isEmpty }) ?? ""
+            let type = guessEAType(header: norm, sampleValue: sampleValue, samples: samples)
+            proposals.append(
+                ProposedEA(
+                    name: titleCased(header),
+                    column: header,
+                    type: type,
+                    sampleValue: sampleValue
+                )
+            )
+        }
+
+        return proposals.sorted { $0.column < $1.column }
+    }
+
+    /// Extract a column's cells across the sample rows, trimmed.
+    private static func columnSamples(at index: Int, rows: [[String]]) -> [String] {
+        rows.compactMap { row in
+            guard index < row.count else { return nil }
+            return row[index].trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    /// Guess the EA type from a normalized header and its sample values.
+    private static func guessEAType(
+        header: String,
+        sampleValue: String,
+        samples: [String]
+    ) -> String {
+        if headerSuggestsDate(header) || sampleParsesAsDate(sampleValue) { return "date" }
+        if header.contains("version") || sampleLooksLikeVersion(sampleValue) { return "version" }
+        if header.contains("percent") || header.contains("%") || sampleValue.hasSuffix("%") {
+            return "percentage"
+        }
+        if booleanSampleValues.contains(sampleValue.lowercased()) || samplesLookBoolean(samples) {
+            return "boolean"
+        }
+        return "text"
+    }
+
+    private static func headerSuggestsDate(_ header: String) -> Bool {
+        ["date", "expire", "expiry", "enrolled", "checkin"].contains { header.contains($0) }
+    }
+
+    private static func sampleParsesAsDate(_ value: String) -> Bool {
+        guard !value.isEmpty else { return false }
+        // Match common Jamf date shapes: YYYY-MM-DD or YYYY/MM/DD with optional time.
+        let pattern = "^\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}([ T].*)?$"
+        return value.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private static func sampleLooksLikeVersion(_ value: String) -> Bool {
+        guard !value.isEmpty else { return false }
+        return value.range(of: "^\\d+(\\.\\d+)+$", options: .regularExpression) != nil
+    }
+
+    /// True when the distinct non-empty samples are <= 2 and look boolean-ish.
+    private static func samplesLookBoolean(_ samples: [String]) -> Bool {
+        let distinct = Set(samples.filter { !$0.isEmpty }.map { $0.lowercased() })
+        guard !distinct.isEmpty, distinct.count <= 2 else { return false }
+        return distinct.allSatisfy { booleanSampleValues.contains($0) }
+    }
+
+    /// Title-case a CSV header into a readable EA name (collapse whitespace,
+    /// capitalize each word, preserve acronym-ish all-caps tokens).
+    private static func titleCased(_ header: String) -> String {
+        let cleaned = header
+            .trimmingCharacters(in: .whitespaces)
+            .components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+        let words = cleaned.map { word -> String in
+            if word.count > 1, word == word.uppercased() { return word }  // keep acronyms
+            return word.prefix(1).uppercased() + word.dropFirst().lowercased()
+        }
+        return words.joined(separator: " ")
+    }
+
+    /// Read a CSV's header row and up to `maxRows` data rows.
+    ///
+    /// Reuses ``parseHeaderLine`` (RFC 4180) for each line and strips a UTF-8 BOM.
+    /// Thin I/O wrapper; the proposal logic in ``proposeEAs`` stays pure.
+    ///
+    /// - Parameters:
+    ///   - csvURL: CSV file to read.
+    ///   - maxRows: Maximum number of data rows to sample (default 50).
+    /// - Returns: Parsed headers and sample rows.
+    /// - Throws: If the file cannot be read as UTF-8.
+    static func readSample(from csvURL: URL, maxRows: Int = 50) throws -> CSVSample {
+        var text = try String(contentsOf: csvURL, encoding: .utf8)
+        if text.hasPrefix("\u{FEFF}") { text = String(text.dropFirst()) }
+
+        let lines = text
+            .components(separatedBy: CharacterSet.newlines)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard let headerLine = lines.first else {
+            return CSVSample(headers: [], rows: [])
+        }
+        let headers = parseHeaderLine(headerLine)
+        let rows = lines.dropFirst().prefix(maxRows).map { parseHeaderLine($0) }
+        return CSVSample(headers: headers, rows: Array(rows))
     }
 }

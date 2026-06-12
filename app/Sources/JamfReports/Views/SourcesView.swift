@@ -20,6 +20,7 @@ struct SourcesView: View {
     @State private var capabilityService: CapabilityService?
     @State private var cliBridge = CLIBridge()
     @State private var showingProductConnect: ProductConnectSheet? = nil
+    @State private var showingEAWalkthrough = false
 
     enum ProductConnectSheet: Identifiable {
         case protect, school
@@ -96,6 +97,9 @@ struct SourcesView: View {
                 product: kind,
                 profileSlug: workspace.profile
             )
+        }
+        .sheet(isPresented: $showingEAWalkthrough) {
+            CSVEAWalkthroughSheet(profile: workspace.profile)
         }
         .onAppear {
             reload()
@@ -269,14 +273,25 @@ struct SourcesView: View {
                     }
                 }
 
-                PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
-                    let url = (ProfileService.workspaceURL(for: workspace.profile)
-                                ?? FileManager.default.homeDirectoryForCurrentUser
-                                    .appendingPathComponent("Jamf-Reports"))
-                        .appendingPathComponent("csv-inbox", isDirectory: true)
-                    SystemActions.openFolder(url)
+                HStack(spacing: 8) {
+                    PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
+                        let url = (ProfileService.workspaceURL(for: workspace.profile)
+                                    ?? FileManager.default.homeDirectoryForCurrentUser
+                                        .appendingPathComponent("Jamf-Reports"))
+                            .appendingPathComponent("csv-inbox", isDirectory: true)
+                        SystemActions.openFolder(url)
+                    }
+                    .help("Open the csv-inbox folder where you drop fresh CSV exports.")
+                    PNPButton(
+                        title: "EA tracking guide",
+                        icon: "tablecells.badge.ellipsis",
+                        style: .ghost,
+                        size: .sm
+                    ) {
+                        showingEAWalkthrough = true
+                    }
+                    .help("Detect Extension Attribute columns in your newest CSV and adopt them into config.yaml.")
                 }
-                .help("Open the csv-inbox folder where you drop fresh CSV exports.")
                 .padding(.top, 4)
             }
         }
@@ -392,14 +407,17 @@ struct SourcesView: View {
     }
 
     private var emptyCSVState: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("No CSV files in the inbox.")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(Theme.Text.primary)
-            Text("Drop Jamf exports here before running a CSV-assisted report.")
-                .font(.caption)
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-        }
+        EmptyStateView(
+            systemImage: "tablecells.badge.ellipsis",
+            title: "No CSV files in the inbox.",
+            message: "Drop Jamf Pro exports here before running a CSV-assisted report. "
+                + "Add your Extension Attribute columns to the export to track them.",
+            primaryAction: EmptyStateAction(
+                label: "Set up EA tracking",
+                icon: "tablecells.badge.ellipsis",
+                action: { showingEAWalkthrough = true }
+            )
+        )
         .padding(.vertical, 10)
     }
 
