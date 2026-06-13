@@ -216,6 +216,7 @@ struct OverviewView: View {
             defer { isRunningFirstCollect = false }
             await workspace.runFirstCollect()
             trendStore.reload()
+            await reloadChecklist()
         }
     }
 
@@ -359,6 +360,7 @@ struct OverviewView: View {
                             // the StaleDataBanner picks up any newly-written summaries.
                             trendStore.reload()
                         }
+                        Task { await reloadChecklist() }
                     }
                     .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
                     PNPButton(
@@ -490,6 +492,9 @@ struct OverviewView: View {
                 if !workspace.demoMode {
                     trendStore.reload()
                 }
+                // A generated report completes the checklist's last step — re-derive
+                // it so the card ticks "Generate a report" and auto-hides.
+                await reloadChecklist()
             } else {
                 workspace.toast = Toast(message: "Generate failed · exit \(exit)", style: .danger)
                 generatedHashes.removeAll()
