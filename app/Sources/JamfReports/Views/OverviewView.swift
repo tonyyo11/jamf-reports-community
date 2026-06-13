@@ -1266,7 +1266,7 @@ struct OverviewView: View {
             }
             if isActive {
                 PNPButton(title: step.actionLabel, style: .gold, size: .sm) {
-                    navigate(to: Tab(rawValue: step.destinationTab) ?? .sources)
+                    performStepAction(step)
                 }
                 .padding(.leading, 24)
                 .padding(.top, 2)
@@ -1276,6 +1276,21 @@ struct OverviewView: View {
         .accessibilityLabel(
             "\(step.title): \(step.done ? "complete" : "incomplete"). \(step.done ? "" : step.detail)"
         )
+    }
+
+    /// The active step's CTA. Action-labeled steps perform the action (generate /
+    /// collect) like the toolbar buttons rather than dead-ending on an empty tab;
+    /// the rest navigate to the screen where the user completes them.
+    private func performStepAction(_ step: GettingStartedStep) {
+        switch step.kind {
+        case .report:
+            guard !isRunning else { return }
+            Task { await runGenerate() }
+        case .collect:
+            runFirstCollect()
+        default:
+            navigate(to: Tab(rawValue: step.destinationTab) ?? .sources)
+        }
     }
 }
 
