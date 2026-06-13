@@ -67,7 +67,7 @@ columns:
 
   # FileVault 2 encryption status. Prefer the detailed FileVault 2 status column
   # over summary/count-style columns such as "FileVault Status" with values like "1/1".
-  filevault: "FileVault 2 - Status"
+  filevault: "FileVault 2 Status"
 
   # System Integrity Protection status. Typical values: "Enabled", "Disabled".
   sip: "System Integrity Protection"

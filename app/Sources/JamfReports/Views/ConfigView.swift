@@ -286,47 +286,29 @@ struct ConfigView: View {
 // MARK: - Columns tab
 
 private struct ColumnsTab: View {
+    /// Which device-family column block the editor is showing.
+    private enum ColumnFamily: Hashable { case mac, mobile }
+
     @Binding var triggerCheck: Bool
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var cli = CLIBridge()
     @State private var checkStatus: String? = nil
+    @State private var family: ColumnFamily = .mac
 
     var body: some View {
-        @Bindable var ws = workspace
         HStack(alignment: .top, spacing: 14) {
-            Card(padding: 18) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        SectionHeader(title: "CSV Column Mappings")
-                        Spacer()
-                        Pill(
-                            text: "\(ws.columnMappings.filter { $0.status == .ok }.count) OK · "
-                                + "\(ws.columnMappings.filter { $0.status == .warn }.count) WARN",
-                            tone: .teal,
-                            icon: "checkmark"
-                        )
-                    }
-                    .padding(.bottom, 8)
-
-                    HStack(spacing: 4) {
-                        Text("Mapping logical fields → column headers in your CSV export")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    .padding(.bottom, 12)
-
-                    VStack(spacing: 0) {
-                        ForEach(ws.columnMappings.indices, id: \.self) { i in
-                            ColumnFieldRow(
-                                mapping: ws.columnMappings[i],
-                                value: Binding(
-                                    get: { ws.columnMappings[i].value },
-                                    set: { ws.columnMappings[i].value = $0 }
-                                )
-                            )
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 12) {
+                SegmentedControl(
+                    selection: $family,
+                    options: [
+                        (ColumnFamily.mac, "macOS", "laptopcomputer"),
+                        (ColumnFamily.mobile, "Mobile Devices", "ipad"),
+                    ]
+                )
+                switch family {
+                case .mac:    macColumnsCard
+                case .mobile: mobileColumnsCard
                 }
             }
             .frame(maxWidth: .infinity)
@@ -340,9 +322,96 @@ private struct ColumnsTab: View {
         .onChange(of: triggerCheck) { _, triggered in
             guard triggered else { return }
             triggerCheck = false
+            family = .mac
             runCheck()
         }
     }
+
+    // MARK: macOS column mappings (unchanged idiom)
+
+    private var macColumnsCard: some View {
+        @Bindable var ws = workspace
+        return Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    SectionHeader(title: "CSV Column Mappings")
+                    Spacer()
+                    Pill(
+                        text: "\(ws.columnMappings.filter { $0.status == .ok }.count) OK · "
+                            + "\(ws.columnMappings.filter { $0.status == .warn }.count) WARN",
+                        tone: .teal,
+                        icon: "checkmark"
+                    )
+                }
+                .padding(.bottom, 8)
+
+                HStack(spacing: 4) {
+                    Text("Mapping logical fields → column headers in your CSV export")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+                .padding(.bottom, 12)
+
+                VStack(spacing: 0) {
+                    ForEach(ws.columnMappings.indices, id: \.self) { i in
+                        ColumnFieldRow(
+                            mapping: ws.columnMappings[i],
+                            value: Binding(
+                                get: { ws.columnMappings[i].value },
+                                set: { ws.columnMappings[i].value = $0 }
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Mobile-device column mappings (opt-in)
+
+    private var mobileColumnsCard: some View {
+        @Bindable var ws = workspace
+        return Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 0) {
+                SectionHeader(title: "Mobile CSV Column Mappings")
+                    .padding(.bottom, 8)
+                Text("Optional — only needed if you report on iOS/iPadOS/tvOS "
+                    + "devices. Leave blank for a Mac-only fleet.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 12)
+
+                VStack(spacing: 0) {
+                    ForEach(ConfigState.mobileColumnKeys, id: \.self) { key in
+                        MobileColumnFieldRow(
+                            key: key,
+                            placeholder: Self.mobilePlaceholders[key] ?? "",
+                            value: Binding(
+                                get: { ws.configState.mobileColumns[key] ?? "" },
+                                set: { ws.configState.mobileColumns[key] = $0 }
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Native column-header examples shown as placeholders when a mobile
+    /// mapping is blank. Mirrors the `mobile_columns` block in
+    /// `config.example.yaml`.
+    private static let mobilePlaceholders: [String: String] = [
+        "device_name": "Display Name",
+        "serial_number": "Serial Number",
+        "operating_system": "OS Version",
+        "last_checkin": "Last Inventory Update",
+        "email": "Email Address",
+        "model": "Model",
+        "device_family": "Device Family",
+        "managed": "Managed",
+        "supervised": "Supervised",
+    ]
 
     private var validationCard: some View {
         Card(padding: 16) {
@@ -1116,6 +1185,26 @@ private struct ColumnFieldRow: View {
             }
         }
         .font(.system(size: 12, weight: .semibold))
+    }
+}
+
+// MARK: - MobileColumnFieldRow
+
+/// One row of the Mobile Devices column editor. Same label + TextField idiom
+/// as `ColumnFieldRow`, minus the live validation icon — mobile mappings are
+/// not exercised by the macOS "Run check" flow.
+private struct MobileColumnFieldRow: View {
+    let key: String
+    let placeholder: String
+    @Binding var value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Mono(text: key, size: 11.5, color: Theme.Text.secondary)
+                .frame(width: 180, alignment: .leading)
+            PNPTextField(value: $value, placeholder: placeholder, mono: true)
+        }
+        .padding(.vertical, 6)
     }
 }
 

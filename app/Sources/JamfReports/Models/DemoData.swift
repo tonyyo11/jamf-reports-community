@@ -181,7 +181,7 @@ enum DemoData {
         .init(key: "last_checkin",      label: "Last Check-in",      value: "Last Inventory Update",    required: false, status: .ok),
         .init(key: "department",        label: "Department",         value: "Department",               required: false, status: .ok),
         .init(key: "email",             label: "Primary Email",      value: "Email Address",            required: false, status: .ok),
-        .init(key: "filevault",         label: "FileVault Status",   value: "FileVault 2 - Status",     required: false, status: .ok),
+        .init(key: "filevault",         label: "FileVault Status",   value: "FileVault 2 Status",     required: false, status: .ok),
         .init(key: "sip",               label: "SIP",                value: "System Integrity Protection", required: false, status: .ok),
         .init(key: "firewall",          label: "Firewall",           value: "Firewall Enabled",          required: false, status: .ok),
         .init(key: "gatekeeper",        label: "Gatekeeper",         value: "Gatekeeper",                required: false, status: .ok),

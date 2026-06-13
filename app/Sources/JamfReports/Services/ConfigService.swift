@@ -21,6 +21,7 @@ struct ConfigCustomEA: Identifiable, Equatable, Sendable {
 
 struct ConfigState: Equatable, Sendable {
     var columns: [String: String]
+    var mobileColumns: [String: String]
     var securityAgents: [ConfigSecurityAgent]
     var customEAs: [ConfigCustomEA]
     var staleDeviceDays: String
@@ -56,6 +57,11 @@ struct ConfigState: Equatable, Sendable {
         "mdm_expiry",
     ]
 
+    static let mobileColumnKeys = [
+        "device_name", "serial_number", "operating_system", "last_checkin", "email",
+        "model", "device_family", "managed", "supervised",
+    ]
+
     static let defaultState = ConfigState(
         columns: [
             "computer_name": "Computer Name",
@@ -67,7 +73,7 @@ struct ConfigState: Equatable, Sendable {
             // it unmapped by default (matches Python DEFAULT_CONFIG).
             "manager": "",
             "email": "Email Address",
-            "filevault": "FileVault 2 - Status",
+            "filevault": "FileVault 2 Status",
             "sip": "System Integrity Protection",
             "firewall": "Firewall Enabled",
             "gatekeeper": "Gatekeeper",
@@ -78,6 +84,20 @@ struct ConfigState: Equatable, Sendable {
             "model": "Model",
             "last_enrollment": "Last Enrollment",
             "mdm_expiry": "MDM Profile Expiration Date",
+        ],
+        // Mobile is opt-in — seed empty so a Mac-only fleet doesn't trip the
+        // config doctor with mappings it will never use (matches Python
+        // DEFAULT_CONFIG, where mobile_columns is all "").
+        mobileColumns: [
+            "device_name": "",
+            "serial_number": "",
+            "operating_system": "",
+            "last_checkin": "",
+            "email": "",
+            "model": "",
+            "device_family": "",
+            "managed": "",
+            "supervised": "",
         ],
         securityAgents: [],
         customEAs: [],
@@ -136,8 +156,8 @@ enum ConfigService {
     }
 
     private static let managedTopLevelKeys: Set<String> = [
-        "columns", "security_agents", "custom_eas", "thresholds", "compliance",
-        "platform", "output", "jamf_cli", "branding",
+        "columns", "mobile_columns", "security_agents", "custom_eas", "thresholds",
+        "compliance", "platform", "output", "jamf_cli", "branding",
     ]
 
     static func load(profile: String, workspaceRoot: URL? = nil) throws -> LoadedConfig {
@@ -417,6 +437,12 @@ enum ConfigService {
             }
         }
 
+        if let mobile = root.value(for: "mobile_columns")?.mapping {
+            for key in ConfigState.mobileColumnKeys {
+                state.mobileColumns[key] = mobile.value(for: key)?.stringValue ?? ""
+            }
+        }
+
         state.securityAgents = sequenceMappings(root, "security_agents").map {
             ConfigSecurityAgent(
                 name: string($0, "name"),
@@ -502,6 +528,12 @@ enum ConfigService {
             columns.set(key, value: scalar(state.columns[key] ?? ""))
         }
         root.set("columns", value: .mapping(columns))
+
+        var mobileColumns = root.value(for: "mobile_columns")?.mapping ?? .init(entries: [])
+        for key in ConfigState.mobileColumnKeys {
+            mobileColumns.set(key, value: scalar(state.mobileColumns[key] ?? ""))
+        }
+        root.set("mobile_columns", value: .mapping(mobileColumns))
 
         root.set("security_agents", value: .sequence(state.securityAgents.map { agent in
             .mapping(.init(entries: [
