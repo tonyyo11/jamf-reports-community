@@ -18,6 +18,8 @@ struct SourcesView: View {
     @State private var scopeRefreshTrigger = 0
     @State private var capabilitySnapshot: CLICapabilitySnapshot?
     @State private var capabilityService: CapabilityService?
+    @State private var doctorOutcome: CLIDoctorService.Outcome?
+    @State private var doctorRunning = false
     @State private var cliBridge = CLIBridge()
     @State private var showingProductConnect: ProductConnectSheet? = nil
     @State private var showingEAWalkthrough = false
@@ -88,6 +90,7 @@ struct SourcesView: View {
                 cliCard
                 csvCard
             }
+            doctorCard
             capabilityCard
             familiesCard
             additionalProductsCard
@@ -112,6 +115,8 @@ struct SourcesView: View {
             pendingClearFile = nil
             pendingClearProfile = nil
             showClearConfirm = false
+            doctorOutcome = nil
+            doctorRunning = false
             reload()
             inboxWatcher.start(profile: workspace.profile) {
                 reload()
@@ -301,6 +306,138 @@ struct SourcesView: View {
     // MARK: - Capability matrix
 
     /// Capability matrix card. DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
+    /// On-demand `jamf-cli doctor` health probe: profile resolution, credential
+    /// state, and a live HEAD reachability check of the configured server. Runs
+    /// only when the user clicks — it makes a network call, unlike the local
+    /// `pro --help` capability probe.
+    private var doctorCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "stethoscope")
+                        .foregroundStyle(Theme.Colors.tealBright)
+                        .font(.system(size: 16))
+                    SectionHeader(title: "jamf-cli · connection health")
+                    Spacer()
+                    if doctorRunning {
+                        Pill(text: "probing…", tone: .muted)
+                    } else if case .report(let r) = doctorOutcome {
+                        let v = Self.healthPill(r.health)
+                        Pill(text: v.label, tone: v.tone, icon: v.icon)
+                    }
+                    Button(doctorOutcome == nil ? "Check connection" : "Re-check") {
+                        runDoctor()
+                    }
+                    .disabled(doctorRunning)
+                }
+
+                doctorBody
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var doctorBody: some View {
+        switch doctorOutcome {
+        case .none:
+            Text("Run a live diagnosis of the active profile's credentials and "
+                + "server reachability — useful when a collect returns 401 or no data.")
+                .font(.caption)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .padding(.vertical, 6)
+        case .notInstalled:
+            doctorMessageRow(
+                "jamf-cli is not installed — install it from the Sources screen to run diagnostics.",
+                tone: .warn)
+        case .failed(let reason):
+            doctorMessageRow(reason, tone: .danger)
+        case .report(let report):
+            doctorReportRows(report)
+        }
+    }
+
+    @ViewBuilder
+    private func doctorMessageRow(_ text: String, tone: Pill.Tone) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: tone == .danger
+                ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
+                .foregroundStyle(tone == .danger ? Theme.Colors.danger : Theme.Colors.gold)
+            Text(text).font(.caption).foregroundStyle(Theme.Text.secondary)
+            Spacer()
+        }
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func doctorReportRows(_ report: CLIDoctorReport) -> some View {
+        VStack(spacing: 0) {
+            doctorRow("Profile", report.profile?.name ?? "—")
+            doctorRow("Server", report.profile?.effectiveUrl ?? report.profile?.url ?? "—")
+            doctorRow("Auth method", report.profile?.authMethod ?? "—")
+            doctorRow("Credentials", Self.credentialSummary(report))
+            doctorRow("Connectivity", Self.connectivitySummary(report.connectivity))
+        }
+    }
+
+    @ViewBuilder
+    private func doctorRow(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(label).font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
+                Spacer()
+                Mono(text: value, color: Theme.Text.secondary)
+            }
+            .padding(.vertical, 6)
+            Divider().background(Theme.Hairline.standard)
+        }
+    }
+
+    /// Maps the health verdict to a UI label/tone/icon. Static + pure so it can
+    /// be reasoned about independently of the view.
+    static func healthPill(
+        _ health: CLIDoctorReport.Health
+    ) -> (label: String, tone: Pill.Tone, icon: String) {
+        switch health {
+        case .healthy:
+            return ("Healthy", .teal, "checkmark.circle.fill")
+        case .credentialsUnresolved:
+            return ("Credentials unresolved", .warn, "key.slash")
+        case .unauthorized:
+            return ("Unauthorized", .danger, "lock.trianglebadge.exclamationmark")
+        case .unreachable:
+            return ("Unreachable", .danger, "wifi.slash")
+        case .noProfile:
+            return ("No profile", .danger, "questionmark.circle")
+        }
+    }
+
+    static func credentialSummary(_ report: CLIDoctorReport) -> String {
+        let creds = report.profile?.credentials ?? []
+        guard !creds.isEmpty else { return "none resolved" }
+        let resolved = creds.filter { $0.resolved == true }.count
+        return "\(resolved)/\(creds.count) resolved"
+    }
+
+    static func connectivitySummary(_ c: CLIDoctorReport.Connectivity?) -> String {
+        guard let c, let code = c.statusCode, code > 0 else { return "no response" }
+        if let ms = c.latencyMs { return "HTTP \(code) · \(ms)ms" }
+        return "HTTP \(code)"
+    }
+
+    private func runDoctor() {
+        doctorRunning = true
+        let profile = workspace.profile
+        let service = CLIDoctorService(executor: DefaultCLIExecutor(bridge: cliBridge))
+        Task {
+            let outcome = await service.run(profile: profile)
+            // Ignore a result that arrived after the user switched profiles.
+            guard profile == workspace.profile else { return }
+            doctorOutcome = outcome
+            doctorRunning = false
+        }
+    }
+
     private var capabilityCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
