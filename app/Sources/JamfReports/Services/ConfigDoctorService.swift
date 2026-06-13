@@ -125,13 +125,16 @@ enum ConfigDoctorService {
         guard let config else { return [] }
 
         var rows: [DoctorRow] = []
-        rows += requiredColumnRows(config)
         if let headers = csvHeaders {
+            // A CSV validates every configured column against real headers, which
+            // supersedes the bare "is it configured" required-column check — running
+            // both would emit a contradictory OK (configured) + ERROR (not in CSV)
+            // pair for the same field. Same reasoning gates the structural agent
+            // checks, which the CSV path already covers.
             rows += csvRows(config, headers: headers, family: csvFamily)
         } else {
-            // Without a CSV, securityAgentCSVRows never runs, so the structural
-            // agent checks are the only way to surface a missing column /
-            // connected_value. With a CSV they would double-emit, so gate them here.
+            // No CSV to validate against: fall back to config-presence checks.
+            rows += requiredColumnRows(config)
             rows += securityAgentStructuralRows(config)
         }
         rows += structuralRows(config)

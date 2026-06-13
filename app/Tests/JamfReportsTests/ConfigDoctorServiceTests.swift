@@ -57,10 +57,11 @@ final class ConfigDoctorServiceTests: XCTestCase {
             eaCoverageNames: []
         )
         XCTAssertFalse(rows.contains { $0.severity == .fail }, "clean config must not fail")
-        // Required-column pass rows must be present.
-        XCTAssertEqual(row(rows, id: "required.columns.computer_name")?.severity, .pass)
-        // CSV-mapped pass rows must be present.
+        // With a CSV present, the CSV-presence check supersedes the bare required
+        // check, so there is one pass row per column (no contradictory duplicate).
         XCTAssertEqual(row(rows, id: "columns.computer_name")?.severity, .pass)
+        XCTAssertNil(row(rows, id: "required.columns.computer_name"),
+                     "required rows are skipped when a CSV is present")
     }
 
     // MARK: - Missing column
