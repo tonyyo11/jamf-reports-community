@@ -63,7 +63,9 @@ struct ConfigState: Equatable, Sendable {
             "operating_system": "Operating System Version",
             "last_checkin": "Last Check-in",
             "department": "Department",
-            "manager": "Manager",
+            // No universal Jamf "Manager" column — it's an org-specific EA, so leave
+            // it unmapped by default (matches Python DEFAULT_CONFIG).
+            "manager": "",
             "email": "Email Address",
             "filevault": "FileVault 2 - Status",
             "sip": "System Integrity Protection",
