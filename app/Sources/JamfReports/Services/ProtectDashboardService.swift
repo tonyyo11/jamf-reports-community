@@ -14,6 +14,7 @@ struct ProtectDashboardService: Sendable {
         let alerts: [ProtectAlertRow]
         let computers: [ProtectComputerRow]
         let insights: [ProtectInsightRow]
+        let plans: [ProtectPlanRow]
 
         // Derived aggregates
         let totalComputers: Int
@@ -42,6 +43,7 @@ struct ProtectDashboardService: Sendable {
             alerts: [],
             computers: [],
             insights: [],
+            plans: [],
             totalComputers: 0,
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,
@@ -67,6 +69,7 @@ struct ProtectDashboardService: Sendable {
             lhs.mediumAlerts == rhs.mediumAlerts &&
             lhs.lowAlerts == rhs.lowAlerts &&
             lhs.failingInsights == rhs.failingInsights &&
+            lhs.plans.count == rhs.plans.count &&
             lhs.sourceFile == rhs.sourceFile &&
             lhs.snapshotDate == rhs.snapshotDate
         }
@@ -82,13 +85,18 @@ struct ProtectDashboardService: Sendable {
         let alertsURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-alerts", isDirectory: true))
         let computersURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-computers", isDirectory: true))
         let insightsURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-insights", isDirectory: true))
+        let plansURL = FileManager.newestJSONFile(in: dir.appendingPathComponent("protect-plans", isDirectory: true))
 
-        return load(overviewURL: overviewURL, alertsURL: alertsURL, computersURL: computersURL, insightsURL: insightsURL)
+        return load(overviewURL: overviewURL, alertsURL: alertsURL, computersURL: computersURL,
+                    insightsURL: insightsURL, plansURL: plansURL)
     }
 
     /// Test seam: load directly from specific URLs. Returns `.empty` when all URLs are nil.
-    static func load(overviewURL: URL?, alertsURL: URL?, computersURL: URL?, insightsURL: URL?) -> Snapshot {
-        guard overviewURL != nil || alertsURL != nil || computersURL != nil || insightsURL != nil else {
+    /// `plansURL` defaults to nil so pre-plans callers/tests keep compiling.
+    static func load(overviewURL: URL?, alertsURL: URL?, computersURL: URL?,
+                     insightsURL: URL?, plansURL: URL? = nil) -> Snapshot {
+        guard overviewURL != nil || alertsURL != nil || computersURL != nil
+            || insightsURL != nil || plansURL != nil else {
             return .empty
         }
 
@@ -100,11 +108,12 @@ struct ProtectDashboardService: Sendable {
         let alerts = loadAlerts(from: alertsURL, success: &readSomething)
         let computers = loadComputers(from: computersURL, success: &readSomething)
         let insights = loadInsights(from: insightsURL, success: &readSomething)
+        let plans = loadPlans(from: plansURL, success: &readSomething)
 
         let hasData = readSomething
 
         // Find most recent source file across all loaded data
-        let allURLs = [overviewURL, alertsURL, computersURL, insightsURL].compactMap { $0 }
+        let allURLs = [overviewURL, alertsURL, computersURL, insightsURL, plansURL].compactMap { $0 }
         let sourceFile = allURLs.max { lhs, rhs in
             let lDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             let rDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
@@ -130,6 +139,7 @@ struct ProtectDashboardService: Sendable {
             alerts: alerts,
             computers: computers,
             insights: insights,
+            plans: plans,
             totalComputers: totalComputers,
             webProtectionActiveCount: webProtectionActiveCount,
             fullDiskAccessCount: fullDiskAccessCount,
@@ -184,6 +194,25 @@ struct ProtectDashboardService: Sendable {
         else { return [] }
         success = true
         return decoded
+    }
+
+    /// Plans arrive either as a bare array or a `{ "nodes": [...] }` GraphQL
+    /// envelope (same two shapes the workbook's `writeProtectPlans` handles).
+    private static func loadPlans(
+        from url: URL?, success: inout Bool
+    ) -> [ProtectPlanRow] {
+        guard let url, let data = try? Data(contentsOf: url) else { return [] }
+        let decoder = JSONDecoder()
+        if let rows = try? decoder.decode([ProtectPlanRow].self, from: data) {
+            success = true
+            return rows
+        }
+        struct Envelope: Decodable { let nodes: [ProtectPlanRow] }
+        if let env = try? decoder.decode(Envelope.self, from: data) {
+            success = true
+            return env.nodes
+        }
+        return []
     }
 
     /// Connection predicate: matches the canonical positive states only.

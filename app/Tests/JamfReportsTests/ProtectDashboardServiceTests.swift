@@ -45,6 +45,39 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertNil(snapshot.snapshotDate)
     }
 
+    func testLoadPlansDecodesArrayShapeAndMarksDetected() throws {
+        let dir = FileManager.default.temporaryDirectory
+        let url = dir.appendingPathComponent("plans-array-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try #"""
+        [{"name":"Standard","uuid":"u1","threatPreventionStrategy":"BALANCED",
+          "logLevel":"INFO","autoUpdate":true,"telemetry":true,"profileVersion":3}]
+        """#.write(to: url, atomically: true, encoding: .utf8)
+
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: nil, computersURL: nil, insightsURL: nil, plansURL: url)
+
+        XCTAssertTrue(snapshot.isDetected, "a decoded plans file should mark Protect detected")
+        XCTAssertEqual(snapshot.plans.count, 1)
+        XCTAssertEqual(snapshot.plans.first?.name, "Standard")
+        XCTAssertEqual(snapshot.plans.first?.threatPreventionStrategy, "BALANCED")
+        XCTAssertEqual(snapshot.plans.first?.autoUpdate, true)
+    }
+
+    func testLoadPlansDecodesNodesEnvelope() throws {
+        let dir = FileManager.default.temporaryDirectory
+        let url = dir.appendingPathComponent("plans-nodes-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try #"{"nodes":[{"name":"Premium","threatPreventionStrategy":"AGGRESSIVE"}]}"#
+            .write(to: url, atomically: true, encoding: .utf8)
+
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: nil, computersURL: nil, insightsURL: nil, plansURL: url)
+
+        XCTAssertEqual(snapshot.plans.count, 1)
+        XCTAssertEqual(snapshot.plans.first?.name, "Premium")
+    }
+
     func testDecodeParityWithMockData() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let alertsFile = tempDir.appendingPathComponent("alerts-test.json")
@@ -298,6 +331,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
             alerts: [],
             computers: [],
             insights: [],
+            plans: [],
             totalComputers: 0,
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,
@@ -321,6 +355,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
             alerts: [],
             computers: [],
             insights: [],
+            plans: [],
             totalComputers: 0,
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,
@@ -344,6 +379,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
             alerts: [],
             computers: [],
             insights: [],
+            plans: [],
             totalComputers: 0,
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,

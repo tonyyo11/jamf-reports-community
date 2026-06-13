@@ -893,6 +893,25 @@ struct ProtectInsightRow: Decodable, Sendable {
     }
 }
 
+/// A Jamf Protect plan from `protect plans list --output json`. Mirrors the
+/// fields the "Protect Plans" workbook sheet renders; the live ProtectView
+/// surfaces a focused subset (name, strategy, telemetry, auto-update).
+struct ProtectPlanRow: Decodable, Sendable, Equatable {
+    let name: String?
+    let uuid: String?
+    let description: String?
+    let logLevel: String?
+    let autoUpdate: Bool?
+    let threatPreventionStrategy: String?
+    let profileVersion: Int?
+    let telemetry: Bool?
+
+    private enum CodingKeys: String, CodingKey {
+        case name, uuid, description, logLevel, autoUpdate
+        case threatPreventionStrategy, profileVersion, telemetry
+    }
+}
+
 // MARK: - AnyCodable
 // Lightweight type-erased Codable for fields whose JSON type varies across
 // jamf-cli versions or commands (Int / String / Bool / null coalesce at decode time).
