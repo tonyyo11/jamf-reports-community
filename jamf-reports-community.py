@@ -22736,6 +22736,58 @@ def _bundle_collect_versions(
     manifest_files.append({"path": "versions.json", "size": len(content)})
 
 
+def _bundle_collect_doctor(
+    config: Config,
+    redactor: Optional[LogRedactor],
+    zip_file: zipfile.ZipFile,
+    manifest_files: list[dict[str, Any]],
+) -> None:
+    """Capture `jamf-cli doctor` for the configured profile (v1.18+).
+
+    Records the resolved profile, credential-resolution state (secrets are
+    fingerprinted by jamf-cli, never raw), env-var state, and a HEAD
+    reachability probe — the live connectivity context a static bundle
+    otherwise lacks. The only PII in the output is the server hostname, which
+    `redact_json` strips by running string values through `redact_text`.
+
+    Best-effort: a missing binary, missing profile, non-zero exit, or
+    unparseable output is silently skipped — the bundle must not fail on its
+    own optional diagnostic probe.
+    """
+    try:
+        jamf_cfg = config.get("jamf_cli") or {}
+        profile = (jamf_cfg.get("profile") or "").strip()
+    except (AttributeError, KeyError):
+        profile = ""
+    cmd = ["jamf-cli"]
+    if profile:
+        cmd += ["-p", profile]
+    cmd += ["doctor", "--output", "json"]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            env=_jamf_cli_env(),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    if result.returncode != 0 or not (result.stdout or "").strip():
+        return
+    try:
+        parsed = json.loads(result.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return
+    if redactor is not None:
+        parsed = redactor.redact_json(parsed)
+    content = json.dumps(parsed, indent=2, sort_keys=True)
+    zip_file.writestr("doctor.json", content)
+    manifest_files.append({"path": "doctor.json", "size": len(content)})
+
+
 def cmd_diagnostic_bundle(
     config: Config,
     *,
@@ -22829,6 +22881,7 @@ def cmd_diagnostic_bundle(
         _bundle_collect_config(config, redactor, zf, manifest_files)
         _bundle_collect_workspace_tree(workspace, redactor, zf, manifest_files)
         _bundle_collect_versions(redactor, zf, manifest_files)
+        _bundle_collect_doctor(config, redactor, zf, manifest_files)
 
         manifest = {
             "schema_version": _BUNDLE_SCHEMA_VERSION,

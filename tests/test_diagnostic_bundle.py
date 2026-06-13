@@ -289,6 +289,59 @@ def test_bundle_redacts_pii_in_summary_json(jrc, mock_workspace, tmp_path):
     assert summary["totalDevices"] == 100  # untouched
 
 
+def _fake_run_factory(doctor_stdout: str, doctor_returncode: int = 0):
+    """Return a subprocess.run stand-in: doctor JSON for `doctor` calls, a
+    plausible version string for the `--version` probe, success otherwise."""
+    import types
+
+    def fake_run(cmd, **kwargs):
+        if "doctor" in cmd:
+            return types.SimpleNamespace(
+                returncode=doctor_returncode, stdout=doctor_stdout, stderr="")
+        return types.SimpleNamespace(returncode=0, stdout="jamf-cli 1.18.0", stderr="")
+
+    return fake_run
+
+
+def test_bundle_captures_redacted_doctor_json(jrc, mock_workspace, tmp_path, monkeypatch):
+    doctor_json = json.dumps({
+        "version": "1.18.0",
+        "configPresent": True,
+        "profile": {
+            "name": "test",
+            "url": "https://secret-host.example.com:8443",
+            "authMethod": "oauth2",
+            "credentials": [
+                {"field": "client-id", "resolved": True, "fingerprint": "98f2••••"}
+            ],
+        },
+        "connectivity": {
+            "url": "https://secret-host.example.com:8443", "statusCode": 401, "latencyMs": 222
+        },
+    })
+    monkeypatch.setattr(jrc.subprocess, "run", _fake_run_factory(doctor_json))
+    config = _make_config(jrc, mock_workspace)
+    output = tmp_path / "bundle.zip"
+    jrc.cmd_diagnostic_bundle(config, output_path=output)
+    with zipfile.ZipFile(output) as zf:
+        assert "doctor.json" in set(zf.namelist())
+        text = zf.read("doctor.json").decode("utf-8")
+        doctor = json.loads(text)
+    assert "secret-host.example.com" not in text, "server hostname must be redacted"
+    assert doctor["connectivity"]["statusCode"] == 401  # signal preserved
+    assert doctor["profile"]["credentials"][0]["fingerprint"] == "98f2••••"
+
+
+def test_bundle_skips_doctor_on_nonzero_exit(jrc, mock_workspace, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        jrc.subprocess, "run", _fake_run_factory("", doctor_returncode=3))
+    config = _make_config(jrc, mock_workspace)
+    output = tmp_path / "bundle.zip"
+    jrc.cmd_diagnostic_bundle(config, output_path=output)
+    with zipfile.ZipFile(output) as zf:
+        assert "doctor.json" not in set(zf.namelist())
+
+
 def test_bundle_no_redact_flag_preserves_raw_content(jrc, mock_workspace, tmp_path):
     config = _make_config(jrc, mock_workspace)
     output = tmp_path / "bundle.zip"

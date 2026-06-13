@@ -353,6 +353,9 @@ enum DiagnosticBundleService {
         let summariesDir: URL
         let configURL: URL
         let dataDir: URL
+        /// jamf-cli profile to diagnose via `doctor`. Empty disables the live
+        /// doctor capture (e.g. tests that don't want a network probe).
+        var cliProfile: String = ""
     }
 
     struct ManifestEntry {
@@ -394,7 +397,8 @@ enum DiagnosticBundleService {
             logsDir: try WorkspacePaths.runHistoryDir(for: profile),
             summariesDir: try WorkspacePaths.summariesDir(for: profile),
             configURL: workspace.appendingPathComponent("config.yaml"),
-            dataDir: try WorkspacePaths.dataDir(for: profile)
+            dataDir: try WorkspacePaths.dataDir(for: profile),
+            cliProfile: profile
         )
         return try buildBundle(
             sources: sources, outputDir: try WorkspacePaths.diagnosticsDir(for: profile),
@@ -483,6 +487,8 @@ enum DiagnosticBundleService {
             root: sources.workspaceRoot, name: sources.workspaceName,
             into: staging, redactor: redactor)
         entries += try collectVersions(into: staging, redactor: redactor)
+        entries += collectDoctor(
+            cliProfile: sources.cliProfile, into: staging, redactor: redactor)
         return entries
     }
 
@@ -608,6 +614,45 @@ enum DiagnosticBundleService {
         try data.write(to: staging.appendingPathComponent("versions.json"))
         return [ManifestEntry(
             path: "versions.json", size: data.count, redacted: nil, skipped: nil, reason: nil)]
+    }
+
+    /// Run `jamf-cli doctor` for `cliProfile` and stage the redacted JSON as
+    /// `doctor.json`. Mirrors `collectVersions`' no-injection live-run pattern:
+    /// jamf-cli already fingerprints secrets and reports env state, so the only
+    /// PII is the server hostname — stripped by the redactor (it walks the
+    /// decoded JSON's string values through `redactText`). Returns `[]` (no
+    /// entry) when no profile is configured, the binary is absent, or the run
+    /// fails — a diagnostic bundle should never fail on its own optional probe.
+    static func collectDoctor(
+        cliProfile: String, into staging: URL, redactor: DiagnosticRedactor?
+    ) -> [ManifestEntry] {
+        guard !cliProfile.isEmpty, ProfileService.isValid(cliProfile) else { return [] }
+        guard let binary = ExecutableLocator.locate("jamf-cli") else { return [] }
+        if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
+            return []
+        }
+        let result = runProcess(
+            binary.path, ["-p", cliProfile, "doctor", "--output", "json"], timeout: 15)
+        guard result.code == 0, let data = result.stdout.data(using: .utf8) else { return [] }
+        return stageDoctorJSON(data, into: staging, redactor: redactor)
+    }
+
+    /// Pure: parse `doctor` JSON, redact it, and write `doctor.json`. Split from
+    /// the live run so redaction is unit-testable with a fixture. Returns a
+    /// `.skipped` entry when the bytes aren't valid JSON.
+    static func stageDoctorJSON(
+        _ data: Data, into staging: URL, redactor: DiagnosticRedactor?
+    ) -> [ManifestEntry] {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) else {
+            return [.skipped(path: "doctor.json", reason: "could not parse doctor output")]
+        }
+        let redacted = redactor?.redactJSON(obj) ?? obj
+        guard let out = try? JSONSerialization.data(
+            withJSONObject: redacted, options: [.prettyPrinted, .sortedKeys]),
+            (try? writeData(out, to: staging.appendingPathComponent("doctor.json"))) != nil else {
+            return [.skipped(path: "doctor.json", reason: "could not stage doctor output")]
+        }
+        return [.file(path: "doctor.json", size: out.count, redacted: redactor != nil)]
     }
 
     // MARK: - Manifest + archive
