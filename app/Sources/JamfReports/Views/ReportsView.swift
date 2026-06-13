@@ -172,44 +172,6 @@ struct ReportsView: View {
             ) {
                 AnyView(
                     HStack(spacing: 8) {
-                        SegmentedControl(
-                            selection: $filter,
-                            options: [
-                                ("All", "All", nil),
-                                ("xlsx", "xlsx", nil),
-                                ("html", "html", nil),
-                                ("pdf", "pdf", nil),
-                                ("csv", "csv", nil),
-                            ]
-                        )
-
-                        Menu {
-                            Button("All Profiles") {
-                                profileFilter = nil
-                            }
-                            if !availableProfiles.isEmpty {
-                                Divider()
-                                ForEach(availableProfiles, id: \.self) { profile in
-                                    Button(profile) {
-                                        profileFilter = profile
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(profileFilter ?? "All Profiles")
-                                    .font(.footnote)
-                                    .foregroundStyle(Theme.Colors.fg)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(Theme.Colors.fgMuted)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Theme.Colors.winBG2, in: RoundedRectangle(cornerRadius: 6))
-                        }
-                        .help("Filter reports by profile")
-
                         PNPButton(title: "Reveal in Finder", icon: "folder") {
                             SystemActions.openFolder(reportsDirectory)
                         }
@@ -255,6 +217,41 @@ struct ReportsView: View {
                         )
                     }
                 )
+            }
+            HStack(spacing: 8) {
+                SegmentedControl(
+                    selection: $filter,
+                    options: [
+                        ("All", "All", nil),
+                        ("xlsx", "xlsx", nil),
+                        ("html", "html", nil),
+                        ("pdf", "pdf", nil),
+                        ("csv", "csv", nil),
+                    ]
+                )
+                Menu {
+                    Button("All Profiles") { profileFilter = nil }
+                    if !availableProfiles.isEmpty {
+                        Divider()
+                        ForEach(availableProfiles, id: \.self) { profile in
+                            Button(profile) { profileFilter = profile }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(profileFilter ?? "All Profiles")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.Colors.winBG2, in: RoundedRectangle(cornerRadius: 6))
+                }
+                .help("Filter reports by profile")
+                Spacer()
             }
             if let err = reportError {
                 Text(err)
