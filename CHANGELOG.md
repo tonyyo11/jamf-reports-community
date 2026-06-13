@@ -7,6 +7,22 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- Data Sources gains a "Connection health" check (jamf-cli `doctor`): on demand,
+  it diagnoses the active profile's credential resolution and runs a live server
+  reachability probe, then shows a plain verdict (healthy, credentials
+  unresolved, unauthorized, unreachable, or no profile) — useful when a collect
+  returns 401 or no data.
+- Diagnostic bundles now include a redacted `doctor.json` (resolved profile,
+  credential-resolution state, environment, and server reachability) so a shared
+  bundle carries the live connection context it previously lacked. The server
+  hostname is redacted like every other PII field; credentials were already
+  fingerprinted by jamf-cli.
+- The Jamf Protect screen now lists configured Protect plans (threat-prevention
+  strategy, log level, profile version, auto-update and telemetry state) — this
+  data was already collected and in the workbook but wasn't shown in the app.
+
 ## [2.2.2] - 2026-06-12
 
 ### Added
