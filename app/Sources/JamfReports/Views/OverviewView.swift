@@ -416,7 +416,7 @@ struct OverviewView: View {
             workspace.globalStatus = "collect + generate · profile=\(profile)"
         }
 
-        // Status-bar race guard — see HealthCheckView.runAudit comment.
+        // Status-bar race guard — see AuditView.runAudit comment.
         do {
             // Opt-in audit-before-generate (v2.2.0): refresh Health Audit data
             // so audit-derived workbook content reflects this run, not the

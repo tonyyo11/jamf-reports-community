@@ -1371,7 +1371,7 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "mobile-device-inventory-details", "list", "--output", "json"],
              "mobile-device-inventory-details"),
             // Health audit — single cheap server call; matches CLIBridge.audit() shape that
-            // AuditView, HealthCheckView, and WorkspaceStore+Refresh all consume as "audit".
+            // AuditView and WorkspaceStore+Refresh all consume as "audit".
             // audit-platform-checks omitted: no Swift reader for that kind yet.
             (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
         ]

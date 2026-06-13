@@ -364,7 +364,7 @@ struct ReportsView: View {
                 // T-13 integrity envelope: scrape the engine's sentinel sha256 log line
                 // so we can surface the truncated fingerprint in the toast.
                 let hashBox = HashBox()
-                // Status-bar race guard — see comment in HealthCheckView.runAudit.
+                // Status-bar race guard — see comment in AuditView.runAudit.
                 let code: Int32
                 do {
                     code = try await bridge.generateHTML(profile: profile, outFile: outPath) { [weak workspace] line in

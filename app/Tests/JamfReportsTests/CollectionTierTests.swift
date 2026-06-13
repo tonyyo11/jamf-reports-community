@@ -131,8 +131,8 @@ final class CollectionTierLookupTests: XCTestCase {
         }
     }
 
-    /// `audit` must be collected and in the Refresh tier. AuditView,
-    /// HealthCheckView, and WorkspaceStore+Refresh all consume the "audit"
+    /// `audit` must be collected and in the Refresh tier. AuditView
+    /// and WorkspaceStore+Refresh all consume the "audit"
     /// snapshot; without this entry the scheduled Swift collect never writes
     /// the directory, leaving the audit manifest.json permanently stale.
     func testAuditKindIsCollectedAndRefreshTiered() {
