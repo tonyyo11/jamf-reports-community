@@ -177,6 +177,38 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertEqual(loaded.state, state)
     }
 
+    func testEmptyPercentageThresholdIsOmittedNotEmptyString() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "empty-threshold-test"
+        var state = fullState()
+        // The EA-walkthrough adoption case: a percentage EA with no thresholds
+        // set. Previously this wrote `warning_threshold: ""`, which the engine
+        // decoder (Int?) rejected as "value has the wrong type".
+        state.customEAs = [
+            ConfigCustomEA(
+                name: "Disk Usage", column: "Disk Usage Percent", type: "percentage",
+                trueValue: "", warningThreshold: "", criticalThreshold: "",
+                currentVersions: [], warningDays: "")
+        ]
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: nil, workspaceRoot: root)
+        let yaml = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root),
+            encoding: .utf8)
+        XCTAssertFalse(yaml.contains("warning_threshold"),
+            "empty threshold must be omitted entirely, not written as an empty string")
+        XCTAssertFalse(yaml.contains("critical_threshold"))
+
+        // A populated threshold still serializes as a bare int.
+        state.customEAs[0].warningThreshold = "80"
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: nil, workspaceRoot: root)
+        let yaml2 = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root),
+            encoding: .utf8)
+        XCTAssertTrue(yaml2.contains("warning_threshold: 80"))
+    }
+
     private func fullState() -> ConfigState {
         var columns: [String: String] = [:]
         for key in ConfigState.columnKeys {

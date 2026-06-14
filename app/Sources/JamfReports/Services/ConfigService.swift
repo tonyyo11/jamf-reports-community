@@ -601,15 +601,15 @@ enum ConfigService {
         case "boolean":
             entries.append(.init(key: "true_value", value: scalar(ea.trueValue)))
         case "percentage":
-            entries.append(.init(key: "warning_threshold", value: intScalar(ea.warningThreshold)))
-            entries.append(.init(key: "critical_threshold", value: intScalar(ea.criticalThreshold)))
+            appendIntEntry(&entries, key: "warning_threshold", ea.warningThreshold)
+            appendIntEntry(&entries, key: "critical_threshold", ea.criticalThreshold)
         case "version":
             entries.append(.init(
                 key: "current_versions",
                 value: .sequence(ea.currentVersions.map { scalar($0) })
             ))
         case "date":
-            entries.append(.init(key: "warning_days", value: intScalar(ea.warningDays)))
+            appendIntEntry(&entries, key: "warning_days", ea.warningDays)
         default:
             break
         }
@@ -637,6 +637,20 @@ enum ConfigService {
 
     private static func scalar(_ value: String) -> YAMLCodec.YAMLValue {
         .scalar(.string(value))
+    }
+
+    /// Append an integer-typed config key ONLY when the string parses to an Int.
+    /// An empty or non-numeric value is omitted entirely rather than written as
+    /// `key: ""` — the engine decoder types these as `Int?`, and an empty string
+    /// fails its decode ("value has the wrong type"). Omitting lets the engine
+    /// fall back to its default. (This is the recurring "Configuration file
+    /// problem" banner after the EA walkthrough adopts a percentage EA with no
+    /// threshold set.)
+    private static func appendIntEntry(
+        _ entries: inout [YAMLCodec.YAMLEntry], key: String, _ value: String
+    ) {
+        guard let int = Int(value.trimmingCharacters(in: .whitespaces)) else { return }
+        entries.append(.init(key: key, value: .scalar(.int(int))))
     }
 
     private static func intScalar(_ value: String) -> YAMLCodec.YAMLValue {
