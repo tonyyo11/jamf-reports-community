@@ -38,6 +38,65 @@ enum ScaffoldService {
         let rows: [[String]]
     }
 
+    /// Outcome of merging freshly-detected column mappings into an existing
+    /// config — surfaced to the operator so a re-scaffold explains what changed.
+    struct ColumnMergeReport: Sendable, Equatable {
+        var added: [String] = []            // logical fields newly mapped from the CSV
+        var repaired: [String] = []         // mappings whose stale header was replaced
+        var keptCount: Int = 0              // existing valid mappings retained unchanged
+        var staleUnresolved: [String] = []  // mapped header gone from CSV, no replacement
+
+        var summary: String {
+            var parts: [String] = []
+            if !added.isEmpty { parts.append("\(added.count) added") }
+            if !repaired.isEmpty { parts.append("\(repaired.count) updated") }
+            if keptCount > 0 { parts.append("\(keptCount) kept") }
+            var text = parts.isEmpty ? "no column changes" : parts.joined(separator: ", ")
+            if !staleUnresolved.isEmpty {
+                text += "; \(staleUnresolved.count) mapping(s) still point to columns no longer "
+                    + "in the CSV (\(staleUnresolved.sorted().joined(separator: ", "))) — review them"
+            }
+            return text
+        }
+    }
+
+    /// Non-destructively merge detected column mappings into existing ones.
+    ///
+    /// - Existing valid mappings are KEPT (never silently clobbered).
+    /// - Empty slots are FILLED from detection.
+    /// - A mapping whose header is no longer present in the CSV is REPAIRED to
+    ///   the newly-detected header when one exists, else flagged stale.
+    ///
+    /// This is how a re-scaffold handles a CSV that changes over time without
+    /// destroying hand-tuned mappings. `csvHeaders` is matched case-insensitively.
+    static func mergeColumns(
+        existing: [String: String],
+        detected: [String: String],
+        csvHeaders: [String]
+    ) -> (merged: [String: String], report: ColumnMergeReport) {
+        let headerSet = Set(csvHeaders.map { $0.lowercased() })
+        var merged = existing
+        var report = ColumnMergeReport()
+        for logical in Set(existing.keys).union(detected.keys) {
+            let current = (existing[logical] ?? "").trimmingCharacters(in: .whitespaces)
+            let detectedHeader = (detected[logical] ?? "").trimmingCharacters(in: .whitespaces)
+            if current.isEmpty {
+                if !detectedHeader.isEmpty {
+                    merged[logical] = detectedHeader
+                    report.added.append(logical)
+                }
+            } else if headerSet.contains(current.lowercased()) {
+                report.keptCount += 1
+            } else if !detectedHeader.isEmpty, detectedHeader.lowercased() != current.lowercased() {
+                merged[logical] = detectedHeader
+                report.repaired.append(logical)
+            } else {
+                report.staleUnresolved.append(logical)
+            }
+        }
+        return (merged, report)
+    }
+
     // MARK: - Hint tables (ported verbatim from Python COLUMN_HINTS / COLUMN_EXCLUDES)
 
     private static let columnHints: [String: [String]] = [

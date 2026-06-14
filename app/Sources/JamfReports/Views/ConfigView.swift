@@ -494,11 +494,11 @@ private struct ColumnsTab: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(title: "Tip")
-                (Text("Run ") + Text("scaffold").font(.caption.monospaced()) +
-                 Text(" to auto-detect columns from a new CSV export. Existing config is preserved."))
+                Text(scaffoldTipText)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
-                PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm, action: runScaffold)
+                PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm,
+                          action: runScaffold)
             }
         }
     }
@@ -531,14 +531,14 @@ private struct ColumnsTab: View {
         SystemActions.open(url)
     }
 
+    private var scaffoldTipText: String {
+        "Run scaffold to detect column mappings from a new CSV export and merge them into "
+            + "profile \(workspace.profile)'s config.yaml. Existing mappings, security agents, "
+            + "custom EAs and thresholds are kept — only empty or stale column mappings are "
+            + "filled. Re-running as the CSV changes over time is safe."
+    }
+
     private func runScaffold() {
-        guard let wsURL = ProfileService.workspaceURL(for: workspace.profile) else {
-            workspace.toast = Toast(
-                message: "Cannot locate workspace for `\(workspace.profile)`.",
-                style: .danger
-            )
-            return
-        }
         guard let csvURL = newestCSVURL() else {
             workspace.toast = Toast(
                 message: "Drop a CSV export into the workspace before scaffolding.",
@@ -546,24 +546,40 @@ private struct ColumnsTab: View {
             )
             return
         }
-        let configOut = wsURL.appendingPathComponent("config.yaml")
         let profile = workspace.profile
         Task {
             do {
+                // MERGE into the existing config (per profile) rather than
+                // overwrite: fill empty mappings, repair mappings whose CSV
+                // column is gone, keep everything else (agents, custom EAs,
+                // thresholds) untouched. ConfigService.save preserves unmanaged keys.
+                let sample = try ScaffoldService.readSample(from: csvURL)
                 let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
-                try ScaffoldService.writeConfig(to: configOut, result: result, profile: profile)
-                let familyLabel = result.family == .mobile ? "mobile device export" : "computer export"
-                let matched = (result.family == .mobile ? result.mobileColumns : result.columns).count
+                var loaded = try ConfigService.load(profile: profile)
+                let isMobile = result.family == .mobile
+                let detected = isMobile ? result.mobileColumns : result.columns
+                let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
+                let (merged, report) = ScaffoldService.mergeColumns(
+                    existing: existing, detected: detected, csvHeaders: sample.headers)
+                if isMobile { loaded.state.mobileColumns = merged }
+                else { loaded.state.columns = merged }
+                _ = try ConfigService.save(
+                    profile: profile, state: loaded.state, existingDocument: loaded.document)
+                let familyLabel = isMobile ? "mobile device export" : "computer export"
                 await MainActor.run {
                     workspace.toast = Toast(
-                        message: "Detected \(familyLabel) — mapped \(matched) column(s)",
+                        message: "Merged \(familyLabel) column mappings into \(profile)'s "
+                            + "config — \(report.summary). Security agents, custom EAs and "
+                            + "thresholds were kept. Review the Columns tab, then Save.",
                         style: .success
                     )
                 }
                 workspace.reloadFromDisk()
             } catch {
                 await MainActor.run {
-                    workspace.toast = Toast(message: "Scaffold failed: \(error.localizedDescription)", style: .danger)
+                    workspace.toast = Toast(
+                        message: "Re-scaffold failed for \(profile): \(error.localizedDescription)",
+                        style: .danger)
                 }
             }
         }
