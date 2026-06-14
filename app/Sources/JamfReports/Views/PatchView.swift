@@ -327,12 +327,15 @@ struct PatchView: View {
     }
 
     private func exportPatchTitlesTable() {
-        DashboardChartExport.run(
+        let result = DashboardChartExport.run(
             title: "Patch Titles",
             subtitle: "Fleet patch compliance summary",
             suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile)
         ) {
             PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
+        }
+        if case .failure(let error) = result {
+            workspace.toast = Toast(message: error.userMessage, style: .danger)
         }
     }
 

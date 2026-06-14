@@ -138,6 +138,11 @@ struct ContentView: View {
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
         .animation(.snappy, value: workspace.toast != nil)
+        .onReceive(NotificationCenter.default.publisher(for: .systemActionDenied)) { note in
+            if let message = note.userInfo?["message"] as? String {
+                workspace.toast = Toast(message: message, style: .danger)
+            }
+        }
     }
 
     @ViewBuilder

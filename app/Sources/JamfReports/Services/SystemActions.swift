@@ -19,10 +19,20 @@ enum SystemActions {
             AppLogger.ui.warning(
                 "SystemActions.reveal: path not in allow-list: \(url.path, privacy: .private)"
             )
+            notifyDenied(url, verb: "reveal")
             return false
         }
         NSWorkspace.shared.activateFileViewerSelecting([resolved])
         return true
+    }
+
+    /// Surface a refused reveal/open so the click isn't silently swallowed.
+    /// Posts on the main queue; `ContentView` turns it into a toast.
+    private static func notifyDenied(_ url: URL, verb: String) {
+        let message = "Can't \(verb) \"\(url.lastPathComponent)\" — it's outside the app's "
+            + "allowed folders (~/Jamf-Reports, LaunchAgents, Logs)."
+        NotificationCenter.default.post(
+            name: .systemActionDenied, object: nil, userInfo: ["message": message])
     }
 
     /// Returns true when `url` should be opened directly via `NSWorkspace.open`
@@ -40,18 +50,27 @@ enum SystemActions {
     static func open(_ url: URL) {
         if isBrowserOpenable(url) {
             // Reject non-http(s) schemes disguised as URL components (javascript:, data:, file:).
-            guard let host = url.host, !host.isEmpty else { return }
+            guard let host = url.host, !host.isEmpty else {
+                notifyDenied(url, verb: "open")
+                return
+            }
             NSWorkspace.shared.open(url)
             return
         }
-        guard let resolved = canonicalize(url) else { return }
+        guard let resolved = canonicalize(url) else {
+            notifyDenied(url, verb: "open")
+            return
+        }
         NSWorkspace.shared.open(resolved)
     }
 
     /// Open a directory in Finder.
     static func openFolder(_ url: URL) {
         guard let resolved = canonicalize(url),
-              FileManager.default.fileExists(atPath: resolved.path) else { return }
+              FileManager.default.fileExists(atPath: resolved.path) else {
+            notifyDenied(url, verb: "open")
+            return
+        }
         NSWorkspace.shared.open(resolved)
     }
 
