@@ -150,25 +150,40 @@ struct CSVEAWalkthroughSheet: View {
             .accessibilityAddTraits(.isButton)
 
             if selected.contains(ea.id) {
-                HStack(spacing: 8) {
-                    Text("Adopt as")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                    Picker("", selection: targetBinding(ea)) {
-                        Text("Custom EA").tag(AdoptTarget.customEA)
-                        Text("Security Agent").tag(AdoptTarget.securityAgent)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 220)
-                    if agentTargets.contains(ea.id) {
-                        Text("connected =")
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text("Adopt as")
                             .font(.caption2)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
-                        PNPTextField(value: connectedBinding(ea), mono: true)
-                            .frame(width: 130)
+                        Picker("", selection: targetBinding(ea)) {
+                            Text("Custom EA").tag(AdoptTarget.customEA)
+                            Text("Security Agent").tag(AdoptTarget.securityAgent)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 220)
+                        Spacer()
                     }
-                    Spacer()
+                    if agentTargets.contains(ea.id) {
+                        // Own line so it never reads as a third picker segment or
+                        // overflows the sheet at minWidth.
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 8) {
+                                Text("Connected value")
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                                PNPTextField(
+                                    value: connectedBinding(ea), placeholder: "e.g. Installed",
+                                    mono: true)
+                                    .frame(maxWidth: 220)
+                                Spacer()
+                            }
+                            Text("Value in the column that means the agent is "
+                                + "installed/connected (case-insensitive substring match).")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                    }
                 }
                 .padding(.leading, 24)
             }
