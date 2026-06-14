@@ -69,6 +69,30 @@ final class ConfigRowDeletionSafetyTests: XCTestCase {
         XCTAssertEqual(store.configState.securityAgents.count, before)
     }
 
+    // MARK: - Reset-impact summary
+
+    func testClearedConfigSummaryListsCustomizations() {
+        let store = WorkspaceStore(demoMode: false)
+        store.configState.columns = ["computer_name": "Computer Name", "serial_number": "Serial"]
+        store.configState.mobileColumns = [:]
+        store.configState.securityAgents = [
+            ConfigSecurityAgent(name: "Falcon", column: "Falcon Status", connectedValue: "Installed")
+        ]
+        store.configState.customEAs = []
+        store.configState.complianceBenchmarks = []
+        XCTAssertEqual(store.clearedConfigSummary(), "2 column mappings, 1 security agent")
+    }
+
+    func testClearedConfigSummaryEmptyWhenNothingConfigured() {
+        let store = WorkspaceStore(demoMode: false)
+        store.configState.columns = [:]
+        store.configState.mobileColumns = [:]
+        store.configState.securityAgents = []
+        store.configState.customEAs = []
+        store.configState.complianceBenchmarks = []
+        XCTAssertEqual(store.clearedConfigSummary(), "")
+    }
+
     func testRemoveCustomEAAndBenchmarkOutOfRangeIsNoOp() {
         let store = WorkspaceStore(demoMode: false)
         store.addCustomEA()

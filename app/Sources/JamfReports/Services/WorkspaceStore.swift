@@ -336,6 +336,10 @@ final class WorkspaceStore {
         let config = workspaceURL.appendingPathComponent("config.yaml")
         let stamp = Self.backupStampFormatter.string(from: Date())
         let backupName = "config.yaml.broken-\(stamp)"
+        // Summarize what the user is about to lose, read from the currently
+        // loaded state (the GUI's lenient parse populates it even when the
+        // engine can't), so the result toast says what to rebuild.
+        let priorSummary = clearedConfigSummary()
         var movedAside = false
         do {
             if FileManager.default.fileExists(atPath: config.path) {
@@ -362,11 +366,34 @@ final class WorkspaceStore {
         }
         configError = nil
         reloadFromDisk()
+        let rebuildHint = priorSummary.isEmpty
+            ? ""
+            : " Previous config (\(priorSummary)) saved as \(backupName); re-run the "
+                + "CSV → EA guide and Columns scaffold to rebuild from your CSV."
         toast = Toast(
-            message: "Default config restored — old file kept as \(backupName)",
+            message: rebuildHint.isEmpty
+                ? "Default config restored — old file kept as \(backupName)"
+                : "Default config restored." + rebuildHint,
             style: .success
         )
         return nil
+    }
+
+    /// Human-readable summary of the customizations the current config carries,
+    /// e.g. "12 column mappings, 1 security agent, 16 custom EAs". Empty when the
+    /// loaded state has nothing customized (so callers can omit the clause).
+    func clearedConfigSummary() -> String {
+        var parts: [String] = []
+        let columns = configState.columns.values.filter { !$0.isEmpty }.count
+            + configState.mobileColumns.values.filter { !$0.isEmpty }.count
+        if columns > 0 { parts.append("\(columns) column mapping\(columns == 1 ? "" : "s")") }
+        let agents = configState.securityAgents.count
+        if agents > 0 { parts.append("\(agents) security agent\(agents == 1 ? "" : "s")") }
+        let eas = configState.customEAs.count
+        if eas > 0 { parts.append("\(eas) custom EA\(eas == 1 ? "" : "s")") }
+        let benches = configState.complianceBenchmarks.count
+        if benches > 0 { parts.append("\(benches) benchmark\(benches == 1 ? "" : "s")") }
+        return parts.joined(separator: ", ")
     }
 
     private static let backupStampFormatter: DateFormatter = {

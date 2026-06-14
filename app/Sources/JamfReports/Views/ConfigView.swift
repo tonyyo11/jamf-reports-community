@@ -110,9 +110,15 @@ struct ConfigView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your current file is kept beside the new one as "
-                + "config.yaml.broken-<timestamp> — nothing is deleted. Column mappings "
-                + "and customizations will need to be re-applied.")
+            let summary = workspace.clearedConfigSummary()
+            Text(
+                (summary.isEmpty
+                    ? "This reseeds the default config."
+                    : "This clears \(summary).")
+                + " Your current file is kept beside the new one as "
+                + "config.yaml.broken-<timestamp> — nothing is deleted, so you can copy "
+                + "values back. Rebuild quickly with the CSV → EA guide and Columns scaffold."
+            )
         }
     }
 
