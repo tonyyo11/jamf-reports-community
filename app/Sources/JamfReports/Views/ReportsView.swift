@@ -397,8 +397,9 @@ struct ReportsView: View {
                     SystemActions.open(dest)
                     reload()
                 } else {
-                    workspace.toast = Toast(message: "HTML generation failed · exit \(code)", style: .danger)
-                    reportError = "HTML generation failed (exit \(code))"
+                    let msg = CLIBridge.explainExit(code, operation: "HTML report generation")
+                    workspace.toast = Toast(message: msg, style: .danger)
+                    reportError = msg
                 }
             }
         }
@@ -441,8 +442,9 @@ struct ReportsView: View {
                     SystemActions.open(dest)
                     reload()
                 } else {
-                    workspace.toast = Toast(message: "PDF generation failed · exit \(code)", style: .danger)
-                    reportError = "PDF generation failed (exit \(code))"
+                    let msg = CLIBridge.explainExit(code, operation: "PDF report generation")
+                    workspace.toast = Toast(message: msg, style: .danger)
+                    reportError = msg
                 }
             }
         }
@@ -485,8 +487,9 @@ struct ReportsView: View {
                     SystemActions.reveal(dest)
                     reload()
                 } else {
-                    workspace.toast = Toast(message: "CSV export failed · exit \(code)", style: .danger)
-                    reportError = "Inventory CSV export failed (exit \(code))"
+                    let msg = CLIBridge.explainExit(code, operation: "Inventory CSV export")
+                    workspace.toast = Toast(message: msg, style: .danger)
+                    reportError = msg
                 }
             }
         }

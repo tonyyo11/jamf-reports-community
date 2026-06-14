@@ -142,7 +142,8 @@ final class SmartGroupApplySheetViewModel {
         } catch let SmartGroupApplyError.unexpectedOutput(stderr) {
             phase = .applyFailed(preview, "Unexpected jamf-cli output:\n\(stderr)")
         } catch let SmartGroupApplyError.executionFailed(code, stderr) {
-            phase = .applyFailed(preview, "jamf-cli exited \(code):\n\(stderr)")
+            let explained = CLIBridge.explainExit(code, operation: "Smart group apply")
+            phase = .applyFailed(preview, stderr.isEmpty ? explained : "\(explained)\n\n\(stderr)")
         } catch {
             phase = .applyFailed(preview, String(describing: error))
         }

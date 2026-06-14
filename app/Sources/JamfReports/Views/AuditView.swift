@@ -926,7 +926,9 @@ struct AuditView: View {
                 workspace.toast = Toast(message: "Instance Health Audit completed", style: .success)
                 await loadCached()
             } else {
-                workspace.toast = Toast(message: "Audit failed · exit \(code)", style: .danger)
+                workspace.toast = Toast(
+                    message: CLIBridge.explainExit(code, operation: "Instance Health Audit"),
+                    style: .danger)
             }
         }
     }
@@ -956,7 +958,9 @@ struct AuditView: View {
                 workspace.toast = Toast(message: "Group Hygiene analysis completed", style: .success)
                 await loadCached()
             } else {
-                workspace.toast = Toast(message: "Analysis failed · exit \(code)", style: .danger)
+                workspace.toast = Toast(
+                    message: CLIBridge.explainExit(code, operation: "Group hygiene analysis"),
+                    style: .danger)
             }
         }
     }

@@ -726,6 +726,40 @@ final class CLIBridge {
     nonisolated static let exitCodePermissionDenied: Int32 = 5  // HTTP 403 — account lacks required API privileges
     nonisolated static let exitCodeRateLimited: Int32 = 6    // HTTP 429 — server throttling; transient, self-resolving
 
+    /// Translate a jamf-cli exit code into a plain-language explanation with a
+    /// remediation hint, prefixed by the operation. Replaces raw "… exit N"
+    /// strings so the user learns the cause (auth / privileges / throttling /
+    /// network) and what to do next, not just a number.
+    ///
+    /// - Parameters:
+    ///   - code: the process exit code.
+    ///   - operation: human phrase for what failed, e.g. "HTML report generation".
+    nonisolated static func explainExit(_ code: Int32, operation: String) -> String {
+        let detail: String
+        switch code {
+        case exitCodeUnauthorized:
+            detail = "authentication failed (401) — this profile's Jamf Pro credentials are "
+                + "invalid or expired. Re-authenticate it from Data Sources."
+        case exitCodePermissionDenied:
+            detail = "permission denied (403) — this profile's API account lacks the required "
+                + "privileges. Grant read/reporting privileges to its API role in Jamf Pro."
+        case exitCodeNotFound:
+            detail = "not found (404) — the server didn't have the requested resource."
+        case exitCodeRateLimited:
+            detail = "rate limited (429) — Jamf Pro is throttling requests. Wait a minute, "
+                + "then try again."
+        case exitCodeUsage:
+            detail = "internal argument error (exit 2) — please report this with the Run "
+                + "History log."
+        case 1:
+            detail = "exit 1 — usually a network error or a per-command failure. Check Run "
+                + "History for the failing command."
+        default:
+            detail = "exit \(code) — check Run History for details."
+        }
+        return "\(operation) failed: \(detail)"
+    }
+
     /// Guards a live-API operation by probing `pro auth token` first.
     ///
     /// Resolves the profile's auth method via `jamf-cli config list` (falls back to local

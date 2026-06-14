@@ -341,7 +341,7 @@ struct BackupsView: View {
                 backupLabel = ""
                 reload()
             } else {
-                errorMessage = "Backup failed for \(profile) with exit \(exit)."
+                errorMessage = CLIBridge.explainExit(exit, operation: "Backup for \(profile)")
             }
         }
     }
@@ -379,7 +379,7 @@ struct BackupsView: View {
             diffExitCode = exit
             isRunningDiff = false
             if exit != 0 {
-                errorMessage = "Backup diff failed with exit \(exit)."
+                errorMessage = CLIBridge.explainExit(exit, operation: "Backup diff")
             }
         }
     }
