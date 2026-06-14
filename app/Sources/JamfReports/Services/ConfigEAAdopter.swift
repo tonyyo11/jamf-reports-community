@@ -22,18 +22,53 @@ enum ConfigEAAdopter {
         profile: String,
         workspaceRoot: URL? = nil
     ) throws -> Int {
+        try adopt(
+            eaProposals: proposals, agentProposals: [],
+            profile: profile, workspaceRoot: workspaceRoot
+        ).eas
+    }
+
+    /// Append selected proposals to `custom_eas` and/or `security_agents` in one
+    /// load/save. Duplicate columns (already present in the respective section)
+    /// are skipped. A security agent's connected value comes from
+    /// `connectedValues[proposal.id]`, falling back to the proposal's sample
+    /// value. Additive — unrelated config is preserved.
+    ///
+    /// - Returns: counts of EAs and security agents actually appended.
+    @discardableResult
+    static func adopt(
+        eaProposals: [ScaffoldService.ProposedEA],
+        agentProposals: [ScaffoldService.ProposedEA],
+        connectedValues: [String: String] = [:],
+        profile: String,
+        workspaceRoot: URL? = nil
+    ) throws -> (eas: Int, agents: Int) {
         let loaded = try ConfigService.load(profile: profile, workspaceRoot: workspaceRoot)
         var state = loaded.state
 
-        let existingColumns = Set(state.customEAs.map { $0.column.lowercased() })
-        var added = 0
-        for proposal in proposals {
-            guard !existingColumns.contains(proposal.column.lowercased()) else { continue }
+        var eaColumns = Set(state.customEAs.map { $0.column.lowercased() })
+        var eaAdded = 0
+        for proposal in eaProposals {
+            let key = proposal.column.lowercased()
+            guard !eaColumns.contains(key) else { continue }
+            eaColumns.insert(key)
             state.customEAs.append(customEA(from: proposal))
-            added += 1
+            eaAdded += 1
         }
 
-        guard added > 0 else { return 0 }
+        var agentColumns = Set(state.securityAgents.map { $0.column.lowercased() })
+        var agentAdded = 0
+        for proposal in agentProposals {
+            let key = proposal.column.lowercased()
+            guard !agentColumns.contains(key) else { continue }
+            agentColumns.insert(key)
+            let connected = connectedValues[proposal.id] ?? proposal.sampleValue
+            state.securityAgents.append(ConfigSecurityAgent(
+                name: proposal.name, column: proposal.column, connectedValue: connected))
+            agentAdded += 1
+        }
+
+        guard eaAdded > 0 || agentAdded > 0 else { return (0, 0) }
 
         _ = try ConfigService.save(
             profile: profile,
@@ -41,7 +76,7 @@ enum ConfigEAAdopter {
             existingDocument: loaded.document,
             workspaceRoot: workspaceRoot
         )
-        return added
+        return (eaAdded, agentAdded)
     }
 
     /// Map a `ProposedEA` to the flat `ConfigCustomEA` editing model.

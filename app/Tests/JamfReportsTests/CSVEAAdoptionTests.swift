@@ -127,6 +127,73 @@ final class CSVEAAdoptionTests: XCTestCase {
         XCTAssertTrue(reloaded.state.customEAs.isEmpty)
     }
 
+    func test_adopt_routesProposalsToEAsAndSecurityAgents() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "ea-adopt-split-\(UUID().uuidString.lowercased())"
+        try writeConfig("columns: {}\ncustom_eas: []\nsecurity_agents: []\n",
+                        profile: profile, root: root)
+
+        let falcon = ScaffoldService.ProposedEA(
+            name: "CrowdStrike Falcon", column: "CrowdStrike Falcon - Status",
+            type: "boolean", sampleValue: "Installed")
+        let fileVault = ScaffoldService.ProposedEA(
+            name: "FileVault", column: "FileVault 2 - Status",
+            type: "boolean", sampleValue: "Encrypted")
+
+        let result = try ConfigEAAdopter.adopt(
+            eaProposals: [fileVault], agentProposals: [falcon],
+            profile: profile, workspaceRoot: root)
+        XCTAssertEqual(result.eas, 1)
+        XCTAssertEqual(result.agents, 1)
+
+        let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(reloaded.state.customEAs.map(\.column), ["FileVault 2 - Status"])
+        let agent = try XCTUnwrap(reloaded.state.securityAgents.first)
+        XCTAssertEqual(agent.column, "CrowdStrike Falcon - Status")
+        // Connected value defaults to the proposal's sample value.
+        XCTAssertEqual(agent.connectedValue, "Installed")
+    }
+
+    func test_adopt_usesConnectedValueOverride() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "ea-adopt-cv-\(UUID().uuidString.lowercased())"
+        try writeConfig("columns: {}\nsecurity_agents: []\n", profile: profile, root: root)
+
+        let agent = ScaffoldService.ProposedEA(
+            name: "Nessus", column: "Nessus - Status", type: "boolean", sampleValue: "Online")
+        let result = try ConfigEAAdopter.adopt(
+            eaProposals: [], agentProposals: [agent],
+            connectedValues: [agent.id: "Connected"], profile: profile, workspaceRoot: root)
+
+        XCTAssertEqual(result.agents, 1)
+        let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(reloaded.state.securityAgents.first?.connectedValue, "Connected")
+    }
+
+    func test_adopt_skipsDuplicateAgentColumn() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "ea-adopt-dupagent-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            columns: {}
+            security_agents:
+              - name: Falcon
+                column: CrowdStrike Falcon - Status
+                connected_value: Installed
+            """,
+            profile: profile, root: root)
+
+        let dup = ScaffoldService.ProposedEA(
+            name: "Falcon", column: "crowdstrike falcon - status",
+            type: "boolean", sampleValue: "Installed")
+        let result = try ConfigEAAdopter.adopt(
+            eaProposals: [], agentProposals: [dup], profile: profile, workspaceRoot: root)
+
+        XCTAssertEqual(result.agents, 0, "case-insensitive duplicate column must be skipped")
+        let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(reloaded.state.securityAgents.count, 1)
+    }
+
     // MARK: - Helpers
 
     private func temporaryWorkspaceRoot() throws -> URL {

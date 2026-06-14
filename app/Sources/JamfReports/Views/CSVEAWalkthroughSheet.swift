@@ -15,10 +15,18 @@ struct CSVEAWalkthroughSheet: View {
 
     @State private var proposals: [ScaffoldService.ProposedEA] = []
     @State private var selected: Set<String> = []
+    /// Proposal ids the operator chose to adopt as a Security Agent rather than a
+    /// Custom EA. Default (absent) is Custom EA.
+    @State private var agentTargets: Set<String> = []
+    /// Per-proposal connected-value override for Security Agent adoption; absent
+    /// falls back to the proposal's sample value.
+    @State private var connectedValues: [String: String] = [:]
     @State private var sourceName: String?
     @State private var loaded = false
     @State private var adoptError: String?
     @State private var confirmation: String?
+
+    private enum AdoptTarget: Hashable { case customEA, securityAgent }
 
     private var selectedProposals: [ScaffoldService.ProposedEA] {
         proposals.filter { selected.contains($0.id) }
@@ -109,37 +117,83 @@ struct CSVEAWalkthroughSheet: View {
     }
 
     private func candidateRow(_ ea: ScaffoldService.ProposedEA) -> some View {
-        Button {
-            toggle(ea.id)
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: selected.contains(ea.id)
-                        ? "checkmark.square.fill" : "square")
-                    .foregroundStyle(selected.contains(ea.id)
-                                        ? Theme.Colors.gold : Theme.Text.tertiary(contrast))
-                    .font(.system(size: 14))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ea.name)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(Theme.Text.primary)
-                    Mono(text: ea.column, size: 10.5)
-                    if !ea.sampleValue.isEmpty {
-                        Text("e.g. \(ea.sampleValue)")
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                toggle(ea.id)
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: selected.contains(ea.id)
+                            ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(selected.contains(ea.id)
+                                            ? Theme.Colors.gold : Theme.Text.tertiary(contrast))
+                        .font(.system(size: 14))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(ea.name)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(Theme.Text.primary)
+                        Mono(text: ea.column, size: 10.5)
+                        if !ea.sampleValue.isEmpty {
+                            Text("e.g. \(ea.sampleValue)")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer()
+                    Pill(text: ea.type, tone: .muted)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(ea.name), \(ea.type)")
+            .accessibilityValue(selected.contains(ea.id) ? "Selected" : "Not selected")
+            .accessibilityAddTraits(.isButton)
+
+            if selected.contains(ea.id) {
+                HStack(spacing: 8) {
+                    Text("Adopt as")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                    Picker("", selection: targetBinding(ea)) {
+                        Text("Custom EA").tag(AdoptTarget.customEA)
+                        Text("Security Agent").tag(AdoptTarget.securityAgent)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 220)
+                    if agentTargets.contains(ea.id) {
+                        Text("connected =")
                             .font(.caption2)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
-                            .lineLimit(1)
+                        PNPTextField(value: connectedBinding(ea), mono: true)
+                            .frame(width: 130)
                     }
+                    Spacer()
                 }
-                Spacer()
-                Pill(text: ea.type, tone: .muted)
+                .padding(.leading, 24)
             }
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(ea.name), \(ea.type)")
-        .accessibilityValue(selected.contains(ea.id) ? "Selected" : "Not selected")
-        .accessibilityAddTraits(.isButton)
+        .padding(.vertical, 8)
+    }
+
+    /// Custom EA (default) vs Security Agent for a proposal.
+    private func targetBinding(_ ea: ScaffoldService.ProposedEA) -> Binding<AdoptTarget> {
+        Binding(
+            get: { agentTargets.contains(ea.id) ? .securityAgent : .customEA },
+            set: { newValue in
+                if newValue == .securityAgent { agentTargets.insert(ea.id) }
+                else { agentTargets.remove(ea.id) }
+                confirmation = nil
+            }
+        )
+    }
+
+    /// Connected value for a Security Agent adoption; defaults to the sample value.
+    private func connectedBinding(_ ea: ScaffoldService.ProposedEA) -> Binding<String> {
+        Binding(
+            get: { connectedValues[ea.id] ?? ea.sampleValue },
+            set: { connectedValues[ea.id] = $0 }
+        )
     }
 
     private var loadingState: some View {
@@ -242,13 +296,23 @@ struct CSVEAWalkthroughSheet: View {
 
     private func adopt() {
         adoptError = nil
+        let eas = selectedProposals.filter { !agentTargets.contains($0.id) }
+        let agents = selectedProposals.filter { agentTargets.contains($0.id) }
         do {
-            let count = try ConfigEAAdopter.adoptEAs(selectedProposals, profile: profile)
-            if count == 0 {
-                confirmation = "Those Extension Attributes are already in config.yaml."
+            let result = try ConfigEAAdopter.adopt(
+                eaProposals: eas, agentProposals: agents,
+                connectedValues: connectedValues, profile: profile)
+            if result.eas == 0 && result.agents == 0 {
+                confirmation = "Those columns are already in config.yaml."
             } else {
-                confirmation = "Added \(count) Extension Attribute\(count == 1 ? "" : "s") "
-                    + "to config.yaml."
+                var parts: [String] = []
+                if result.eas > 0 {
+                    parts.append("\(result.eas) Extension Attribute\(result.eas == 1 ? "" : "s")")
+                }
+                if result.agents > 0 {
+                    parts.append("\(result.agents) Security Agent\(result.agents == 1 ? "" : "s")")
+                }
+                confirmation = "Added \(parts.joined(separator: " and ")) to config.yaml."
             }
             // Brief confirmation, then dismiss.
             Task {
