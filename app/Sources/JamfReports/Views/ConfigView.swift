@@ -1,6 +1,30 @@
 import SwiftUI
 import AppKit
 
+/// Bounds-checked binding to an array element by index.
+///
+/// `ForEach(array.indices, id: \.self)` re-evaluates a row's body for an index
+/// that no longer exists during SwiftUI's removal diff. A plain
+/// `$array[index]` binding traps (`Array index out of range`) when its getter
+/// runs against the shrunken array — the crash seen when deleting a Security
+/// Agent / Custom EA / Compliance Benchmark row. This binding returns `default`
+/// for an out-of-range read and ignores an out-of-range write, so the
+/// disappearing row renders harmlessly instead of crashing.
+@MainActor
+func safeElementBinding<T>(
+    _ array: Binding<[T]>, _ index: Int, default fallback: T
+) -> Binding<T> {
+    Binding(
+        get: { index >= 0 && index < array.wrappedValue.count
+            ? array.wrappedValue[index] : fallback },
+        set: { newValue in
+            if index >= 0 && index < array.wrappedValue.count {
+                array.wrappedValue[index] = newValue
+            }
+        }
+    )
+}
+
 // MARK: - ConfigView
 
 struct ConfigView: View {
@@ -626,12 +650,18 @@ private struct AgentsTab: View {
 
     private func agentRow(_ index: Int) -> some View {
         @Bindable var ws = workspace
+        // Bounds-checked element binding: a `ForEach(indices, id: \.self)` row can
+        // be re-evaluated for a now-deleted index during SwiftUI's removal diff;
+        // a raw `$array[index]` subscript traps there. See safeElementBinding.
+        let agent = safeElementBinding(
+            $ws.configState.securityAgents, index,
+            default: ConfigSecurityAgent(name: "", column: "", connectedValue: ""))
         return HStack(spacing: 8) {
-            PNPTextField(value: $ws.configState.securityAgents[index].name)
+            PNPTextField(value: agent.name)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            PNPTextField(value: $ws.configState.securityAgents[index].column, mono: true)
+            PNPTextField(value: agent.column, mono: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            PNPTextField(value: $ws.configState.securityAgents[index].connectedValue, mono: true)
+            PNPTextField(value: agent.connectedValue, mono: true)
                 .frame(width: 140, alignment: .leading)
             Menu {
                 Button(role: .destructive) { workspace.removeSecurityAgent(at: index) } label: {
@@ -689,19 +719,28 @@ private struct EACardEdit: View {
 
     var body: some View {
         @Bindable var ws = workspace
-        VStack(alignment: .leading, spacing: 12) {
+        // Bounds-checked element binding — a deleted row can be re-evaluated for
+        // a stale index during SwiftUI's removal diff; a raw `[index]` subscript
+        // traps. See safeElementBinding.
+        let ea = safeElementBinding(
+            $ws.configState.customEAs, index,
+            default: ConfigCustomEA(
+                name: "", column: "", type: "text", trueValue: "",
+                warningThreshold: "", criticalThreshold: "",
+                currentVersions: [], warningDays: ""))
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Sheet name")
-                    PNPTextField(value: $ws.configState.customEAs[index].name)
+                    PNPTextField(value: ea.name)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "EA Column")
-                    PNPTextField(value: $ws.configState.customEAs[index].column, mono: true)
+                    PNPTextField(value: ea.column, mono: true)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Type")
-                    Picker("", selection: $ws.configState.customEAs[index].type) {
+                    Picker("", selection: ea.type) {
                         Text("Boolean").tag("boolean")
                         Text("Percentage").tag("percentage")
                         Text("Version").tag("version")
@@ -719,22 +758,22 @@ private struct EACardEdit: View {
                 .padding(.top, 24)
             }
 
-            let type = ws.configState.customEAs[index].type
+            let type = ea.wrappedValue.type
             HStack(spacing: 16) {
                 if type == "boolean" {
-                    eaField(label: "True value", value: $ws.configState.customEAs[index].trueValue, help: "Value that means compliant")
+                    eaField(label: "True value", value: ea.trueValue, help: "Value that means compliant")
                 } else if type == "percentage" {
-                    eaField(label: "Warning ≥", value: $ws.configState.customEAs[index].warningThreshold, unit: "%")
-                    eaField(label: "Critical ≥", value: $ws.configState.customEAs[index].criticalThreshold, unit: "%")
+                    eaField(label: "Warning ≥", value: ea.warningThreshold, unit: "%")
+                    eaField(label: "Critical ≥", value: ea.criticalThreshold, unit: "%")
                 } else if type == "date" {
-                    eaField(label: "Warning days", value: $ws.configState.customEAs[index].warningDays, unit: "days")
+                    eaField(label: "Warning days", value: ea.warningDays, unit: "days")
                 } else if type == "version" {
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "Current versions")
                         Text("Comma-separated list").font(.caption2).foregroundStyle(Theme.Text.tertiary(contrast))
                         PNPTextField(value: Binding(
-                            get: { ws.configState.customEAs[index].currentVersions.joined(separator: ", ") },
-                            set: { ws.configState.customEAs[index].currentVersions = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+                            get: { ea.wrappedValue.currentVersions.joined(separator: ", ") },
+                            set: { ea.wrappedValue.currentVersions = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
                         ), mono: true)
                     }
                 }
@@ -915,7 +954,8 @@ private struct PlatformTab: View {
                     FieldLabel(label: "Compliance benchmarks")
                     ForEach(ws.configState.complianceBenchmarks.indices, id: \.self) { i in
                         HStack(spacing: 8) {
-                            PNPTextField(value: $ws.configState.complianceBenchmarks[i])
+                            PNPTextField(value: safeElementBinding(
+                                $ws.configState.complianceBenchmarks, i, default: ""))
                             Button(role: .destructive) { ws.removeComplianceBenchmark(at: i) } label: {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundStyle(Theme.Colors.danger)

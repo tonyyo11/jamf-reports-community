@@ -516,6 +516,7 @@ final class WorkspaceStore {
     }
 
     func removeSecurityAgent(at index: Int) {
+        guard configState.securityAgents.indices.contains(index) else { return }
         configState.securityAgents.remove(at: index)
     }
 
@@ -534,6 +535,7 @@ final class WorkspaceStore {
     }
 
     func removeCustomEA(at index: Int) {
+        guard configState.customEAs.indices.contains(index) else { return }
         configState.customEAs.remove(at: index)
         rebuildCustomEAs()
     }
@@ -543,6 +545,7 @@ final class WorkspaceStore {
     }
 
     func removeComplianceBenchmark(at index: Int) {
+        guard configState.complianceBenchmarks.indices.contains(index) else { return }
         configState.complianceBenchmarks.remove(at: index)
     }
 
