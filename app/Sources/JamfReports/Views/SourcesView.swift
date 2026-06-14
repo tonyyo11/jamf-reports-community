@@ -580,7 +580,9 @@ struct SourcesView: View {
             _ = try WorkspacePaths.outputDir(for: workspace.profile)
             resolutionError = nil
         } catch {
-            resolutionError = error.localizedDescription
+            resolutionError = "Couldn't resolve this profile's workspace folders: "
+                + "\(error.localizedDescription). Check the profile name and that "
+                + "~/Jamf-Reports/\(workspace.profile) exists and is writable."
         }
     }
 
@@ -598,7 +600,8 @@ struct SourcesView: View {
                 reload()
             }
         } catch {
-            clearError = error.localizedDescription
+            clearError = "Couldn't remove the inbox file: \(error.localizedDescription). "
+                + "It may be open in another app or read-only."
             showClearError = true
         }
     }

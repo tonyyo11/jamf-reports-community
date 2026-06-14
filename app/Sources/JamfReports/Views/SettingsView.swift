@@ -660,7 +660,8 @@ struct SettingsView: View {
             // so the migration notice no longer applies (T-25).
             hasLegacyCollectSkip = false
         } catch {
-            presetWriteError = "Could not save preset: \(error.localizedDescription)"
+            presetWriteError = "Couldn't save the cadence preset: \(error.localizedDescription). "
+                + "The workspace config may be read-only — check it via Config → Reveal in Finder."
         }
         pendingPreset = nil
     }
@@ -825,7 +826,8 @@ struct SettingsView: View {
             )
             customCadenceMessage = "Saved."
         } catch {
-            customCadenceMessage = "Save failed: \(error.localizedDescription)"
+            customCadenceMessage = "Couldn't save the custom cadence: "
+                + "\(error.localizedDescription). Verify the workspace config is writable."
         }
     }
 
@@ -993,7 +995,8 @@ struct SettingsView: View {
             ].compactMap { $0 }
             legacyImportMessage = parts.joined(separator: " · ")
         } catch {
-            legacyImportMessage = "Import failed: \(error.localizedDescription)"
+            legacyImportMessage = "Legacy history import failed: \(error.localizedDescription). "
+                + "Confirm the source file is a valid v3.5 history JSON and the workspace is writable."
         }
         isImportingLegacyHistory = false
     }
@@ -1059,7 +1062,8 @@ struct SettingsView: View {
                       "diagnostics folder (Finder reveal was blocked)."
             } catch {
                 diagnosticBundleMessage =
-                    "Bundle generation failed: \(error.localizedDescription)"
+                    "Diagnostic bundle failed: \(error.localizedDescription). Verify "
+                    + "~/Jamf-Reports/\(workspace.profile)/diagnostics is writable and has free space."
             }
             isGeneratingBundle = false
         }

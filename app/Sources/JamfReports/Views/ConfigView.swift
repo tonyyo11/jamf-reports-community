@@ -513,10 +513,13 @@ private struct ColumnsTab: View {
                     Task { @MainActor in checkStatus = line.text }
                 }
             } catch {
-                checkStatus = "Check failed · \(error.localizedDescription)"
+                checkStatus = "Check failed: \(error.localizedDescription). Confirm a CSV is in "
+                    + "csv-inbox and config.yaml is valid."
                 return
             }
-            checkStatus = exit == 0 ? "Check passed · exit 0" : "Check failed · exit \(exit)"
+            checkStatus = exit == 0
+                ? "Check passed · exit 0"
+                : CLIBridge.explainExit(exit, operation: "Config check")
         }
     }
 

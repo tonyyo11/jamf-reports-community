@@ -312,7 +312,9 @@ struct CSVEAWalkthroughSheet: View {
                 if result.agents > 0 {
                     parts.append("\(result.agents) Security Agent\(result.agents == 1 ? "" : "s")")
                 }
-                confirmation = "Added \(parts.joined(separator: " and ")) to config.yaml."
+                confirmation = "Added \(parts.joined(separator: " and ")) to config.yaml for "
+                    + "profile \(profile). They appear in the Config tab now and in reports "
+                    + "after the next generate."
             }
             // Brief confirmation, then dismiss.
             Task {
@@ -320,7 +322,9 @@ struct CSVEAWalkthroughSheet: View {
                 dismiss()
             }
         } catch {
-            adoptError = error.localizedDescription
+            adoptError = "Couldn't write the selections to config.yaml: "
+                + "\(error.localizedDescription). Verify the workspace config isn't open "
+                + "elsewhere and is writable, then try again."
         }
     }
 
