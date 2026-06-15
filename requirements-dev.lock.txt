@@ -670,9 +670,9 @@ pyparsing==3.3.2 \
     --hash=sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d \
     --hash=sha256:c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc
     # via matplotlib
-pytest==9.0.3 \
-    --hash=sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9 \
-    --hash=sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c
+pytest==9.1.0 \
+    --hash=sha256:41dd9148c08072446394cefd3d79701701335a9f4cae69ba92e39f6c7f5c061c \
+    --hash=sha256:8ebb0e7888bdf2bdfc602ec51f8f62d50200af37356c74e503c79a94f5c81f32
     # via
     #   -r requirements-dev.txt
     #   pytest-cov
