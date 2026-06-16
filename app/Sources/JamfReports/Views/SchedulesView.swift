@@ -241,7 +241,7 @@ struct SchedulesView: View {
         let nextDate = next.flatMap { Self.parseScheduleDate($0.next, reference: now) }
         let lastDate = next.flatMap { Self.parseScheduleDate($0.last, reference: now) }
         let progress = Self.intervalProgress(now: now, next: nextDate, last: lastDate)
-        return GlassPane(borderColor: Theme.Colors.gold.opacity(0.4), tint: Theme.Colors.gold) {
+        return GlassPane(borderColor: Theme.Colors.gold.opacity(0.4)) {
             HStack(alignment: .center, spacing: 14) {
                 ZStack {
                     Circle()
