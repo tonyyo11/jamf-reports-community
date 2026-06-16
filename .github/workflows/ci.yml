@@ -41,18 +41,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    # Two-leg toolchain matrix for Liquid Glass adoption.
+    # Two-leg toolchain matrix for Liquid Glass adoption. Both legs block.
     #   floor leg  — macOS 15 SDK + Xcode 16.4 (Swift 6.1.x): proves the
     #                macOS 14/15 fallback path (the #available else-branch)
     #                builds, AND is the strict-concurrency floor gate (local
     #                Xcode/Swift 6.3 is more lenient and compiles isolation
-    #                errors this leg catches). Blocking.
-    #   glass leg  — macOS 26 SDK + Xcode 26.0.1: proves the
+    #                errors this leg catches).
+    #   glass leg  — macOS 26 SDK + Xcode 26.0.1 (Swift 6.2): proves the
     #                #available(macOS 26, *) glassEffect branch compiles.
     #                Pinned to the LOWEST 26 so glass code can't lean on a
-    #                26.2+-only API the deployment floor lacks. Advisory
-    #                (continue-on-error) until the existing codebase is clean
-    #                on Swift 6.2 — then drop `experimental` to make it block.
+    #                26.2+-only API the deployment floor lacks. The existing
+    #                codebase was verified clean on 6.2 before this leg was
+    #                made blocking (CI run 27642973607).
     strategy:
       fail-fast: false
       matrix:
@@ -61,8 +61,6 @@ jobs:
             xcode: "16.4"
           - os: macos-26
             xcode: "26.0.1"
-            experimental: true
-    continue-on-error: ${{ matrix.experimental || false }}
 
     steps:
       - name: Checkout
