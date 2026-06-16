@@ -38,24 +38,45 @@ jobs:
         run: python3 -m pytest tests -q
 
   swift-app:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+    # Two-leg toolchain matrix for Liquid Glass adoption.
+    #   floor leg  — macOS 15 SDK + Xcode 16.4 (Swift 6.1.x): proves the
+    #                macOS 14/15 fallback path (the #available else-branch)
+    #                builds, AND is the strict-concurrency floor gate (local
+    #                Xcode/Swift 6.3 is more lenient and compiles isolation
+    #                errors this leg catches). Blocking.
+    #   glass leg  — macOS 26 SDK + Xcode 26.0.1: proves the
+    #                #available(macOS 26, *) glassEffect branch compiles.
+    #                Pinned to the LOWEST 26 so glass code can't lean on a
+    #                26.2+-only API the deployment floor lacks. Advisory
+    #                (continue-on-error) until the existing codebase is clean
+    #                on Swift 6.2 — then drop `experimental` to make it block.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            xcode: "16.4"
+          - os: macos-26
+            xcode: "26.0.1"
+            experimental: true
+    continue-on-error: ${{ matrix.experimental || false }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
-      # Pin Xcode so the runner-image rotation doesn't silently shift the
-      # bundled Swift between PRs. Xcode 16.4 ships Swift 6.1.x. Pinning
-      # the Xcode bundle (rather than installing a standalone Swift via
-      # swift-actions/setup-swift) keeps the toolchain and the SDK in sync
-      # — mixing them produces frontend crashes like the SIGABRT we hit on
-      # ZIPFoundation during the first PR-9.5 attempt.
-      - name: Pin Xcode 16.4
+      # Pin the Xcode bundle (not a standalone Swift via
+      # swift-actions/setup-swift) so the toolchain and SDK stay in sync —
+      # mixing them produces frontend crashes like the SIGABRT we hit on
+      # ZIPFoundation during the first PR-9.5 attempt. The pin also stops
+      # runner-image rotation from silently shifting the bundled Swift.
+      - name: Pin Xcode ${{ matrix.xcode }}
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90  # v1
         with:
-          xcode-version: "16.4"
+          xcode-version: ${{ matrix.xcode }}
 
       - name: Print Swift version
         run: swift --version
