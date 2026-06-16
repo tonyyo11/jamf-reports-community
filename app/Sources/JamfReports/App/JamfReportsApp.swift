@@ -32,7 +32,12 @@ struct JamfReportsApp: App {
                     NSApp.windows.first?.makeKeyAndOrderFront(nil)
                 }
         }
-        .windowStyle(.hiddenTitleBar)
+        // Liquid Glass shell (2a): use the standard titled window so the system
+        // toolbar renders as Liquid Glass on macOS 26 (under .hiddenTitleBar it
+        // was muted). The toolbar already exists — the per-view `.searchable`
+        // field lives there; the shell now also puts the title, sidebar toggle,
+        // and CLIStatusChip into it. Deployment target stays .macOS(.v14); on
+        // 14/15 this is just a normal titled window + toolbar.
         .windowResizability(.contentSize)
         .commands {
             // ⌘0 cycles the sidebar — a HIG-shaped affordance the prototype calls out.
