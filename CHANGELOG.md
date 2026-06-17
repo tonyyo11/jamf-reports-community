@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-06-17
+
 ### Added
 
 - The app now adopts macOS 26 (Tahoe) **Liquid Glass** for its window chrome:
@@ -41,8 +43,23 @@ versions in this repository map to git tags.
   it.
 - "Restore default config" and "Re-scaffold from CSV" now state exactly what will
   change (named counts, per profile) and how to rebuild.
+- **Refresh data on demand, anywhere.** A new "Refresh all data" button in the
+  window toolbar fetches every report immediately, and the "stale data" banner on
+  each screen now offers a "Collect now" button that refreshes just that screen's
+  data — previously the banner only offered to collect when nothing had ever been
+  fetched, leaving stale pages with no way to update them.
 
 ### Changed
+
+- **Collection cadence is now a single fixed schedule; the on-prem/cloud preset
+  is gone.** Reports collect on the faster (former "cloud") cadence by default —
+  twice-daily headline KPIs, inventory every two days, deep scans weekly — and the
+  Settings/Onboarding preset picker has been removed. The goal is the freshest data
+  the server can provide; a self-hosted Jamf Pro that struggles with the load
+  should be given more memory. An on-demand refresh always fetches immediately,
+  regardless of the scheduled cadence.
+- The Overview "data is getting old" prompt now appears after 2 days (was 7), in
+  line with the faster inventory cadence.
 
 - **Re-scaffold from CSV now merges** into the active profile's config instead of
   overwriting it: empty column mappings are filled, mappings whose CSV column was
@@ -56,6 +73,8 @@ versions in this repository map to git tags.
 - Fixed a recurring "Configuration file problem" error after adopting a
   percentage EA: an empty threshold was written in a form the report engine
   rejected. Re-saving the config from the app repairs an already-affected file.
+- Fixed the jamf-cli status chip rendering a doubled background (a rounded
+  rectangle nested inside the toolbar pill) on the macOS 26 Liquid Glass toolbar.
 
 ## [2.2.2] - 2026-06-12
 
