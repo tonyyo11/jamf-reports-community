@@ -38,6 +38,28 @@ final class ScaffoldEAProposalTests: XCTestCase {
         XCTAssertEqual(proposals.first?.type, "date")
     }
 
+    func test_proposeEAs_dateFollowedByProseIsTextNotDate() {
+        // A status string that *starts* with a timestamp must not be typed as a
+        // date EA (would mis-parse). Header gives no date hint.
+        let proposals = ScaffoldService.proposeEAs(
+            headers: ["AAP-Status"],
+            sampleRows: [["2026-04-07 12:58:59 -0600: Completed: Collecting patches"]],
+            mappedHeaders: []
+        )
+        XCTAssertEqual(proposals.first?.type, "text")
+    }
+
+    func test_proposeEAs_dateWithTimezoneStillDate() {
+        // A bare timestamp with a timezone is still a date (header has no date hint,
+        // so this exercises the sample regex, not the header keyword).
+        let proposals = ScaffoldService.proposeEAs(
+            headers: ["AAP-LastEvent"],
+            sampleRows: [["2026-04-07 12:58:59 -0600"]],
+            mappedHeaders: []
+        )
+        XCTAssertEqual(proposals.first?.type, "date")
+    }
+
     func test_proposeEAs_versionFromHeader() {
         let proposals = ScaffoldService.proposeEAs(
             headers: ["SysTrack Agent Version"],

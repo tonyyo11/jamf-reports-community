@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TipKit
 import UniformTypeIdentifiers
 
 struct OnboardingView: View {
@@ -329,6 +330,7 @@ struct OnboardingView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.radioGroup)
+                    .popoverTip(OnboardingTips.connectionType)
                 }
             }
 
@@ -365,6 +367,7 @@ struct OnboardingView: View {
                             flow.setClientSecret(data)
                         }
                         .frame(height: 28)
+                        .popoverTip(OnboardingTips.secretField)
                     }
                     .frame(maxWidth: .infinity)
                 }

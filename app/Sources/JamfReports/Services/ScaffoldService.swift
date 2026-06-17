@@ -663,8 +663,12 @@ enum ScaffoldService {
 
     private static func sampleParsesAsDate(_ value: String) -> Bool {
         guard !value.isEmpty else { return false }
-        // Match common Jamf date shapes: YYYY-MM-DD or YYYY/MM/DD with optional time.
-        let pattern = "^\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}([ T].*)?$"
+        // Match common Jamf date shapes: YYYY-MM-DD or YYYY/MM/DD, optionally with
+        // a time and timezone — but NOT a date followed by free text (e.g.
+        // "2026-04-07 12:58:59 -0600: Completed: …"), which is a status string,
+        // not a date EA. The anchor after the optional time/tz prevents that.
+        let pattern = "^\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}"
+            + "([ T]\\d{1,2}:\\d{2}(:\\d{2})?( ?([-+]\\d{2}:?\\d{2}|Z|[A-Za-z]{2,4}))?)?$"
         return value.range(of: pattern, options: .regularExpression) != nil
     }
 

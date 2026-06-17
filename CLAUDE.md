@@ -511,19 +511,21 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | Service | Purpose |
 |---------|---------|
 | `WorkspaceStore` | `@Observable` per-profile state. Sidebar chip switches the active profile; every screen re-routes to that workspace's data. |
-| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. `runNow(profile:mode:)` is the canonical Schedule-mode dispatcher — see Schedule mode contract below. |
+| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. `runNow(profile:mode:)` is the canonical Schedule-mode dispatcher — see Schedule mode contract below. `explainExit(_:operation:)` (nonisolated static) maps a jamf-cli exit code to a plain-language cause + remediation (3→re-auth/401, 5→privileges/403, 6→throttled/429, 4→404, 1→network/per-command); used by every view that surfaces a non-zero exit instead of a bare number. |
 | `WorkspacePaths` | Typed, profile-validated path constants under `~/Jamf-Reports/<profile>/`. All path construction goes through here. |
 | `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
 | `LaunchAgentService` | Discovers and parses existing `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist` jobs. |
 | `LaunchAgentWriter` | Generates LaunchAgent plists and writes them atomically. |
 | `OnboardingFlow` | Orchestrates first-run: jamf-cli auth via PTY-driven `stdin`, profile creation, workspace init, first collect/generate run. Supports four connection flows: Jamf Pro OAuth2 (`config add-profile`), Platform Gateway (`config add-profile --auth-method platform --tenant-id`), Jamf Protect (`protect setup`), Jamf School (`school setup`). Protect/School are optional "Add Products" additions (also reachable post-onboarding from SourcesView via `ProductConnectSheetView`); success wires `protect.enabled/profile` and `school_cli.enabled/profile` into config.yaml. Secrets: PTY stdin only, redacted output, cleared after use; `SecureSecretField` reports a has-text Bool (never content) so the Continue button enables while typing. |
-| `ConfigService` | Reads and writes `config.yaml` within a profile workspace. |
+| `ConfigService` | Reads and writes `config.yaml` within a profile workspace. Only rewrites managed top-level keys and re-reads the rest, so unrelated/unmanaged config is preserved verbatim (this is what makes additive merges/adoptions safe). Int-typed custom-EA keys (`warning_threshold`/`critical_threshold`/`warning_days`) are omitted when empty/non-numeric — never written as `key: ""`, which the report engine's `Int?` decode rejects. |
+| `ConfigEAAdopter` | Appends CSV-detected columns into `config.yaml` as `custom_eas` and/or `security_agents` in one load/save (`adopt(eaProposals:agentProposals:connectedValues:)`); per-section case-insensitive column de-dup. `adoptEAs` is a shim over it. Backs the CSV → EA walkthrough's "Adopt as" picker. |
+| `ScaffoldService` | CSV column detection + config writing. `writeConfig` (full regenerate) is used only for the initial onboarding scaffold; **re-scaffold uses the non-destructive `mergeColumns(existing:detected:csvHeaders:)`** — fills empty mappings, repairs mappings whose CSV column was renamed, keeps valid existing mappings, flags stale-unresolved ones (`ColumnMergeReport`). Per profile, via `ConfigService.save`, so agents/EAs/thresholds survive. (Python's CLI `scaffold` still overwrites — it's an initial-setup command; use the GUI re-scaffold for safe re-runs.) |
 | `TrendStore` | Loads `summary.json` snapshots from `snapshots/computers/summaries/`; feeds the Trends screen charts. |
 | `DeviceInventoryService` | Reads cached device inventory JSON from the workspace. |
 | `ReportLibrary` | Lists generated reports in `Generated Reports/`. |
 | `RunHistoryService` | Reads run logs from `automation/logs/`. |
 | `SnapshotArchiveService` | Manages dated CSV snapshot archives. |
-| `SystemActions` | `NSWorkspace` file open/reveal, strictly bounded to allowed paths. |
+| `SystemActions` | `NSWorkspace` file open/reveal, strictly bounded to allowed paths. A refused reveal/open (path outside the allow-list, or a non-web link) posts `.systemActionDenied` with a user-facing `userInfo["message"]`; `ContentView` observes it once and shows a toast, so a blocked action is never silently swallowed. |
 | `YAMLCodec` | Minimal YAML reader/writer for `config.yaml` fields the GUI exposes. |
 | `JamfCLIInstaller` | Auto-update check and installation via Homebrew. |
 | `SecurityScoreCalculator` | v3.5-parity weighted Security Score (FV 15 + SIP 15 + Firewall 15 + CrowdStrike 10 + mSCP 20 + XProtect 5 + CVE 15 + Secure Boot 5). Drops missing metrics from the denominator and renormalizes so tenants without specific agent stacks still get a comparable score. Weights configurable via ConfigView → Scoring tab (backed by `@AppStorage("securityScoreWeights")` and `ScoringConfig`). |
@@ -706,6 +708,10 @@ dependency floor), unrelated to app versioning.
 - No `UIKit` — SwiftUI only.
 - All new services must validate paths through `ProfileService.workspaceURL(for:)` before
   constructing any file paths.
+- **Never bind `$array[index]` inside `ForEach(array.indices, id: \.self)`** for an
+  editable/removable list — the disappearing row's binding is re-read with a stale index
+  during SwiftUI's removal diff and traps ("Array index out of range"). Use
+  `safeElementBinding(_:_:default:)` (ConfigView) or a binding-to-element `ForEach($array)`.
 - Test targets live in `app/Tests/JamfReportsTests/`.
 
 ---

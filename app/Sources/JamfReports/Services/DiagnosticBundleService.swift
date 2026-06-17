@@ -833,6 +833,9 @@ enum DiagnosticBundleService {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        // Scrub the environment like every other jamf-cli spawn — don't inherit
+        // DYLD_INSERT_LIBRARIES / SSL_CERT_FILE et al. into the doctor/version probes.
+        process.environment = CLIBridge.environmentForJamfCLI()
         let outPipe = Pipe()
         let errPipe = Pipe()
         process.standardOutput = outPipe

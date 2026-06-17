@@ -42,6 +42,7 @@ struct SettingsView: View {
     @State private var loadingTokenProfiles: Set<String> = []
     @State private var diagnosticBundleMessage: String? = nil
     @State private var isGeneratingBundle = false
+    @State private var tipsResetConfirmation: String? = nil
     // Legacy v3.5 history import (LegacyHistoryImporter).
     @State private var legacyImportMessage: String? = nil
     @State private var isImportingLegacyHistory = false
@@ -893,6 +894,24 @@ struct SettingsView: View {
                 if let msg = diagnosticBundleMessage {
                     Text(msg)
                         .font(.caption.monospaced())
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 8) {
+                    PNPButton(title: "Restore in-app tips", icon: "lightbulb", size: .sm) {
+                        let ok = AppTips.resetAll()
+                        tipsResetConfirmation = ok
+                            ? "In-app tips restored — they'll reappear as you visit each screen."
+                            : "Couldn't reset the tips datastore."
+                    }
+                    .help("Clear the seen/dismissed state for all guidance tips so they show again.")
+                    .accessibilityHint("Restores all in-app guidance tips.")
+                }
+
+                if let msg = tipsResetConfirmation {
+                    Text(msg)
+                        .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }

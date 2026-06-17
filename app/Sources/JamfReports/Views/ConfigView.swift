@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import TipKit
 
 /// Bounds-checked binding to an array element by index.
 ///
@@ -336,6 +337,7 @@ private struct ColumnsTab: View {
                         (ColumnFamily.mobile, "Mobile Devices", "ipad"),
                     ]
                 )
+                .popoverTip(ConfigTips.columnMapping)
                 switch family {
                 case .mac:    macColumnsCard
                 case .mobile: mobileColumnsCard
@@ -499,6 +501,7 @@ private struct ColumnsTab: View {
                     .foregroundStyle(Theme.Text.secondary)
                 PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm,
                           action: runScaffold)
+                .popoverTip(ConfigTips.rescaffold)
             }
         }
     }
@@ -562,10 +565,31 @@ private struct ColumnsTab: View {
                 let isMobile = result.family == .mobile
                 let detected = isMobile ? result.mobileColumns : result.columns
                 let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
-                let (merged, report) = ScaffoldService.mergeColumns(
+                let merge = ScaffoldService.mergeColumns(
                     existing: existing, detected: detected, csvHeaders: sample.headers)
-                if isMobile { loaded.state.mobileColumns = merged }
-                else { loaded.state.columns = merged }
+                var report = merge.report
+                if isMobile { loaded.state.mobileColumns = merge.merged }
+                else { loaded.state.columns = merge.merged }
+
+                // Compliance columns (computer family only) merge the same way —
+                // they live in two scalar fields, not the columns dict.
+                if !isMobile {
+                    let existingCompliance = [
+                        "failures_count_column": loaded.state.failuresCountColumn,
+                        "failures_list_column": loaded.state.failuresListColumn,
+                    ]
+                    let cMerge = ScaffoldService.mergeColumns(
+                        existing: existingCompliance, detected: result.complianceColumns,
+                        csvHeaders: sample.headers)
+                    loaded.state.failuresCountColumn =
+                        cMerge.merged["failures_count_column"] ?? loaded.state.failuresCountColumn
+                    loaded.state.failuresListColumn =
+                        cMerge.merged["failures_list_column"] ?? loaded.state.failuresListColumn
+                    report.added += cMerge.report.added
+                    report.repaired += cMerge.report.repaired
+                    report.keptCount += cMerge.report.keptCount
+                    report.staleUnresolved += cMerge.report.staleUnresolved
+                }
                 _ = try ConfigService.save(
                     profile: profile, state: loaded.state, existingDocument: loaded.document)
                 let familyLabel = isMobile ? "mobile device export" : "computer export"

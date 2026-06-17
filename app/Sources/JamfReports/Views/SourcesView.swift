@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TipKit
 
 struct SourcesView: View {
     @Environment(WorkspaceStore.self) private var workspace
@@ -296,6 +297,7 @@ struct SourcesView: View {
                         showingEAWalkthrough = true
                     }
                     .help("Detect Extension Attribute columns in your newest CSV and adopt them into config.yaml.")
+                    .popoverTip(SourcesTips.eaTracking)
                 }
                 .padding(.top, 4)
             }
@@ -329,6 +331,7 @@ struct SourcesView: View {
                         runDoctor()
                     }
                     .disabled(doctorRunning)
+                    .popoverTip(SourcesTips.connectionHealth)
                 }
 
                 doctorBody

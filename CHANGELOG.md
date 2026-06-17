@@ -22,6 +22,35 @@ versions in this repository map to git tags.
 - The Jamf Protect screen now lists configured Protect plans (threat-prevention
   strategy, log level, profile version, auto-update and telemetry state) — this
   data was already collected and in the workbook but wasn't shown in the app.
+- The CSV → EA guide can now adopt a detected column as a **Security Agent**
+  (not just a Custom EA): each candidate has an "Adopt as" choice, and Security
+  Agent reveals a "Connected value" field (pre-filled, with guidance on what the
+  value should be).
+- Config errors are clearer everywhere: jamf-cli failures (reports, audit,
+  backups, smart-group apply) translate the exit code into plain language with a
+  fix (re-authenticate / grant API privileges / wait — throttled / check Run
+  History) instead of showing a bare exit number; cadence, import, diagnostic-
+  bundle, config-check and inbox errors now name the operation and a remediation.
+- "Reveal in Finder" / "Open" now shows a toast when a path is outside the app's
+  allowed folders instead of doing nothing; a chart export that fails now reports
+  it.
+- "Restore default config" and "Re-scaffold from CSV" now state exactly what will
+  change (named counts, per profile) and how to rebuild.
+
+### Changed
+
+- **Re-scaffold from CSV now merges** into the active profile's config instead of
+  overwriting it: empty column mappings are filled, mappings whose CSV column was
+  renamed are repaired, and existing mappings, security agents, custom EAs and
+  thresholds are kept. Safe to re-run as the CSV changes over time.
+
+### Fixed
+
+- Fixed a crash when adding then removing a Security Agent, Custom EA, or
+  Compliance Benchmark row in Config.
+- Fixed a recurring "Configuration file problem" error after adopting a
+  percentage EA: an empty threshold was written in a form the report engine
+  rejected. Re-saving the config from the app repairs an already-affected file.
 
 ## [2.2.2] - 2026-06-12
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 /// Guided walkthrough that explains which Jamf Pro export-only fields to include
 /// for Extension Attribute tracking, detects EA-like columns in the newest inbox
@@ -38,6 +39,7 @@ struct CSVEAWalkthroughSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     guidanceCard
+                    TipView(WalkthroughTips.adoptTarget)
                     if !loaded {
                         loadingState
                     } else if proposals.isEmpty {
@@ -176,12 +178,17 @@ struct CSVEAWalkthroughSheet: View {
                                     value: connectedBinding(ea), placeholder: "e.g. Installed",
                                     mono: true)
                                     .frame(maxWidth: 220)
+                                    .popoverTip(WalkthroughTips.connectedValue)
                                 Spacer()
                             }
-                            Text("Value in the column that means the agent is "
-                                + "installed/connected (case-insensitive substring match).")
+                            Text("Pre-filled from a sample value. Set it to what this column "
+                                + "shows when the agent is installed/connected — matched as a "
+                                + "case-insensitive substring (e.g. Installed, Running, or a "
+                                + "version). A device counts as connected when its value contains "
+                                + "this text.")
                                 .font(.caption2)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }

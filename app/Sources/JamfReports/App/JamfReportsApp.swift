@@ -13,6 +13,7 @@ struct JamfReportsApp: App {
 
     init() {
         FontRegistry.registerBundledFonts()
+        AppTips.configure()
     }
 
     var body: some Scene {
