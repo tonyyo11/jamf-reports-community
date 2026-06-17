@@ -113,7 +113,7 @@ struct TrendsView: View {
                 // dataset is intentionally static and not user-perceivably
                 // "stale"). Renders nothing when source is .fresh.
                 if !workspaceStore.demoMode {
-                    CollectNowBanner(source: trendStore.cacheSource)
+                    CollectNowBanner(source: trendStore.cacheSource, tiers: [.refresh])
                     if let latest = trendStore.filteredSummaries.last {
                         ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
                     }

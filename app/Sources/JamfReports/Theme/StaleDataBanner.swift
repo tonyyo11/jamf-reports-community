@@ -22,8 +22,8 @@ import SwiftUI
 /// Issue #181: the never-fetched copy says "run Collect" but nothing in the
 /// GUI was labeled Collect. Callers that can run a collect pass `onCollect`;
 /// the banner then renders a "Collect now" button alongside the message for
-/// `.neverFetchedLive`. Callers without a collect context omit it and keep
-/// the informational banner unchanged.
+/// `.neverFetchedLive` and `.stale(at:)`. Callers without a collect context
+/// omit it and keep the informational banner unchanged.
 struct StaleDataBanner: View {
     let source: CacheSource
     var onCollect: (() -> Void)?
@@ -73,11 +73,10 @@ struct StaleDataBanner: View {
         }
     }
 
-    /// The Collect button renders only for `.neverFetchedLive` with a handler:
-    /// a stale-but-present cache still drives every dashboard, so the steady
-    /// `.stale` state stays informational. Public for tests.
+    /// The Collect button renders for any banner-visible state (`.neverFetchedLive`
+    /// or `.stale(at:)`) when a handler is provided. Public for tests.
     var showsCollectButton: Bool {
-        source == .neverFetchedLive && onCollect != nil
+        source.shouldDisplayBanner && onCollect != nil
     }
 
     /// Public for tests — lets us assert the rendered copy without standing
@@ -129,9 +128,14 @@ struct StaleDataBanner: View {
 /// audit-driven screens (Run Audit is their fetch) or Protect (separate
 /// collect path). Posts `.refreshActiveTab` when the collect finishes so
 /// the hosting screen reloads its snapshot.
+///
+/// Pass `tiers` to scope the refresh to the data this screen cares about.
+/// Defaults to all tiers so callers that don't specify get the same
+/// full-collect behaviour as the original first-run path.
 struct CollectNowBanner: View {
     @Environment(WorkspaceStore.self) private var workspace
     let source: CacheSource
+    var tiers: Set<CollectionTier> = Set(CollectionTier.allCases)
     @State private var isCollecting = false
 
     var body: some View {
@@ -146,7 +150,7 @@ struct CollectNowBanner: View {
         guard !isCollecting else { return }
         isCollecting = true
         Task {
-            await workspace.runFirstCollect()
+            await workspace.runTierRefresh(tiers)
             isCollecting = false
             NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
         }

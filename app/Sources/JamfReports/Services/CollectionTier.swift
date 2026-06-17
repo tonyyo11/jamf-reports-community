@@ -1,29 +1,26 @@
 import Foundation
 
-/// Three-tier model that drives per-report collection cadence (PR-22+).
+/// Three-tier model that drives per-report collection cadence.
 ///
 /// Tiers are named after **what they keep fresh**, not abstract cadences.
 /// Each report belongs to exactly one tier; see `tier(forReport:)`.
 ///
 /// - `refresh`: cheap summary-level reports that feed the Overview KPIs
-///   and Trends summary. Default cadence: daily (on-prem) / twice daily
-///   (cloud). Safe to schedule frequently — small payloads, no per-device
+///   and Trends summary. Fixed cadence: 43 200 s (12 h / twice daily).
+///   Safe to schedule frequently — small payloads, no per-device
 ///   enumeration.
 /// - `inventory`: list-type endpoints that feed the Deep Dive screens
 ///   (Policies, Profiles, Apps, Mobile, EA metadata, per-device posture
-///   without the expensive --scan-failures fan-out). Default cadence:
-///   daily (automation model). Moderate cost; safe to schedule daily
-///   alongside the Refresh tier.
+///   without the expensive --scan-failures fan-out). Fixed cadence:
+///   172 800 s (every 2 days).
 /// - `scan`: the two `--scan-failures` per-device fan-out queries only
 ///   (`patch-device-failures`, `update-device-failures`). These drive
 ///   the Patch Failures and Update Failures sheets and are the only
-///   commands that enumerate every failing device in detail. Default
-///   cadence: weekly (both presets) — daily = refresh+inventory,
-///   weekly = scan.
+///   commands that enumerate every failing device in detail. Fixed
+///   cadence: 604 800 s (weekly).
 ///
 /// Drives both `ReportEngine.collect`'s per-report cadence filter and the
-/// `RefreshCoordinator` staleness model (PR-23 T-16). See
-/// `docs/architecture/tiered-collection-adr.md` for the full design.
+/// `RefreshCoordinator` staleness model.
 enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
     case refresh
     case inventory
@@ -62,19 +59,16 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         Array(tierMap.keys)
     }
 
-    // MARK: - RefreshCoordinator support (PR-23 T-16)
+    // MARK: - RefreshCoordinator support
 
-    /// On-prem default cadence in seconds — the canonical reference for
-    /// `RefreshPolicy`'s backoff math (`interval × 2^failures`).
-    ///
-    /// On-prem is chosen deliberately: it's the conservative preset, so a
-    /// backoff interval derived from it never under-waits on a struggling
-    /// self-hosted server. The actual staleness check is preset-aware
-    /// (`RefreshCoordinator.isDataStale` reads the live config) — this
-    /// value is only the fixed denominator for backoff exponentiation,
-    /// which must not shift under the operator mid-session.
+    /// Fixed collection cadence in seconds for this tier. Also serves as the
+    /// denominator for `RefreshPolicy`'s backoff math (`interval × 2^failures`).
     var intervalSeconds: Int {
-        CadencePreset.onPrem.defaultCadence(for: self) ?? 86_400
+        switch self {
+        case .refresh:   return 43_200
+        case .inventory: return 172_800
+        case .scan:      return 604_800
+        }
     }
 
     /// Snapshot directory name `RefreshCoordinator` probes for staleness.

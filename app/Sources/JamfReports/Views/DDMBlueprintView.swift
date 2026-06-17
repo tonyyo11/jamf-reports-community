@@ -27,7 +27,7 @@ struct DDMBlueprintView: View {
         PageScaffold {
             DDMBlueprintView.header()
             if !workspace.demoMode && lockState == .unlockedWithData {
-                CollectNowBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
             }
             content
         }

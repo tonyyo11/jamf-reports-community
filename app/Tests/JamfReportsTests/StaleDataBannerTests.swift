@@ -85,9 +85,10 @@ final class StaleDataBannerTests: XCTestCase {
 
     // MARK: - #181: Collect-now action
 
-    /// The button renders only for `.neverFetchedLive` AND only when the
-    /// caller supplies a handler — informational call sites stay unchanged.
-    func testCollectButtonShownOnlyForNeverFetchedWithHandler() {
+    /// The button renders whenever the banner is visible (`.stale` or
+    /// `.neverFetchedLive`) AND the caller supplies a handler — so an operator
+    /// can refresh stale data on demand, not only never-fetched data.
+    func testCollectButtonShownWhenBannerVisibleWithHandler() {
         XCTAssertTrue(
             StaleDataBanner(source: .neverFetchedLive, onCollect: {}).showsCollectButton,
             "never-fetched + handler must surface the Collect now button (#181)"
@@ -96,9 +97,9 @@ final class StaleDataBannerTests: XCTestCase {
             StaleDataBanner(source: .neverFetchedLive).showsCollectButton,
             "no handler → informational banner, as before"
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             StaleDataBanner(source: .stale(at: Date()), onCollect: {}).showsCollectButton,
-            "stale cache still drives dashboards — steady state stays informational"
+            "stale + handler must offer on-demand refresh"
         )
         XCTAssertFalse(
             StaleDataBanner(source: .fresh, onCollect: {}).showsCollectButton

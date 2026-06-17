@@ -24,6 +24,7 @@ struct ContentView: View {
     /// Drives the Automation tab's breadcrumb: "POLICY" in managed mode,
     /// "SCHEDULES" when the operator manages hand-built agents directly.
     @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
+    @State private var isRefreshingAll = false
 
     private var sidebarMode: SidebarMode {
         get { SidebarMode(rawValue: sidebarModeRaw) ?? .expanded }
@@ -143,9 +144,10 @@ struct ContentView: View {
     }
 
     /// Shell chrome moved into the system (Liquid Glass) toolbar: the sidebar
-    /// toggle on the leading edge, the jamf-cli status chip on the trailing
-    /// edge. The title/subtitle come from navigationTitle/navigationSubtitle;
-    /// per-view `.searchable` fields render in the same toolbar.
+    /// toggle on the leading edge, the jamf-cli status chip and global refresh
+    /// button on the trailing edge. The title/subtitle come from
+    /// navigationTitle/navigationSubtitle; per-view `.searchable` fields render
+    /// in the same toolbar.
     @ToolbarContentBuilder
     private var shellToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
@@ -157,6 +159,22 @@ struct ContentView: View {
         }
         ToolbarItem(placement: .primaryAction) {
             CLIStatusChip()
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                guard !isRefreshingAll, !workspace.demoMode else { return }
+                Task {
+                    isRefreshingAll = true
+                    defer { isRefreshingAll = false }
+                    await workspace.runTierRefresh(Set(CollectionTier.allCases))
+                    NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
+                }
+            } label: {
+                Image(systemName: isRefreshingAll ? "hourglass" : "arrow.clockwise")
+            }
+            .disabled(isRefreshingAll || workspace.demoMode)
+            .help("Refresh all data now")
+            .accessibilityLabel("Refresh all data")
         }
     }
 

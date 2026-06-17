@@ -291,25 +291,6 @@ struct OnboardingView: View {
                     }
                 }
 
-                Divider().background(Theme.Colors.hairline)
-
-                // PR-23 T-24: collection cadence preset. Onboarding offers
-                // On-prem / Cloud only; Custom is opt-in later via Settings.
-                VStack(alignment: .leading, spacing: 6) {
-                    FieldLabel(label: "Jamf Pro hosting")
-                    Picker("", selection: Binding(
-                        get: { flow.selectedCollectionPreset },
-                        set: { flow.selectedCollectionPreset = $0 }
-                    )) {
-                        Text("On-prem").tag(CadencePreset.onPrem)
-                        Text("Cloud").tag(CadencePreset.cloud)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.radioGroup)
-                    FieldHelp(text: flow.selectedCollectionPreset == .cloud
-                        ? "Faster cadence for jamfcloud tenants that absorb API calls."
-                        : "Conservative cadence for self-hosted Jamf Pro — paces calls, skips server-killer reports.")
-                }
             }
         }
     }

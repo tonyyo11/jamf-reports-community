@@ -15,23 +15,8 @@ final class RefreshCoordinatorTests: XCTestCase {
         // preset-aware formula so a config-read failure degrades to the same
         // number rather than a surprise.
         XCTAssertEqual(
-            policy.stalenessThreshold(for: .refresh),
+            policy.stalenessThreshold,
             TimeInterval(CollectionTier.refresh.intervalSeconds) * 1.5
-        )
-    }
-
-    func testUnpopulatedTierFallsBackToInterval() {
-        let policy = RefreshPolicy.default
-        // .inventory/.scan are not in the default map — the coordinator never
-        // drives them. stalenessThreshold falls back to the tier's own
-        // intervalSeconds rather than carrying a ghost map entry.
-        XCTAssertEqual(
-            policy.stalenessThreshold(for: .inventory),
-            TimeInterval(CollectionTier.inventory.intervalSeconds)
-        )
-        XCTAssertEqual(
-            policy.stalenessThreshold(for: .scan),
-            TimeInterval(CollectionTier.scan.intervalSeconds)
         )
     }
 
@@ -118,13 +103,13 @@ final class RefreshCoordinatorTests: XCTestCase {
 
     func testCustomPolicyRespectsThresholds() {
         let policy = RefreshPolicy(
-            stalenessThresholds: [.refresh: 60],
-            maxConsecutiveFailures: [.refresh: 1],
+            stalenessThreshold: 60,
+            maxFailures: 1,
             backoffBase: 3.0,
             maxBackoffMultiplier: 4.0
         )
-        XCTAssertEqual(policy.stalenessThreshold(for: .refresh), 60)
-        XCTAssertEqual(policy.maxFailures(for: .refresh), 1)
+        XCTAssertEqual(policy.stalenessThreshold, 60)
+        XCTAssertEqual(policy.maxFailures, 1)
         // Backoff multiplies the tier's natural cadence interval (not staleness threshold).
         XCTAssertEqual(
             policy.backoffInterval(tier: .refresh, failureCount: 1),
@@ -132,29 +117,14 @@ final class RefreshCoordinatorTests: XCTestCase {
         )
     }
 
-    func testFallbackThresholdUsedWhenTierNotInMap() {
-        let policy = RefreshPolicy(
-            stalenessThresholds: [:],
-            maxConsecutiveFailures: [:],
-            backoffBase: 2.0,
-            maxBackoffMultiplier: 8.0
-        )
-        // Falls back to the tier's own intervalSeconds.
-        XCTAssertEqual(
-            policy.stalenessThreshold(for: .inventory),
-            TimeInterval(CollectionTier.inventory.intervalSeconds)
-        )
-        XCTAssertEqual(policy.maxFailures(for: .inventory), 2)
-    }
-
     // MARK: - CollectionTier interval reference
 
-    func testRefreshIntervalIsOnPremDailyCadence() {
-        // intervalSeconds is the on-prem default cadence — the fixed
+    func testTierIntervalsAreFixedCloudCadence() {
+        // intervalSeconds is the fixed cloud collection cadence — the fixed
         // denominator for backoff math. Pinned so a preset-table change
         // doesn't silently shift backoff timing.
-        XCTAssertEqual(CollectionTier.refresh.intervalSeconds, 86_400)
-        XCTAssertEqual(CollectionTier.inventory.intervalSeconds, 604_800)
+        XCTAssertEqual(CollectionTier.refresh.intervalSeconds, 43_200)
+        XCTAssertEqual(CollectionTier.inventory.intervalSeconds, 172_800)
         XCTAssertEqual(CollectionTier.scan.intervalSeconds, 604_800)
     }
 
