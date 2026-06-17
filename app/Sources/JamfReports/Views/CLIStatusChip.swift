@@ -15,7 +15,21 @@ struct CLIStatusChip: View {
     var body: some View {
         let isWarn = workspace.jamfCLIPath == nil
         let dotColor = isWarn ? Theme.Colors.warn : Theme.Colors.ok
-        return HStack(spacing: 6) {
+        return chipContent(isWarn: isWarn, dotColor: dotColor)
+            .onHover { hoveringChip = $0 }
+            .popover(isPresented: $hoveringChip, arrowEdge: .bottom) {
+                chipPopover
+            }
+    }
+
+    /// The dot + label. On macOS 26 the system Liquid Glass toolbar already
+    /// wraps the item in a glass capsule, so the chip draws no background of
+    /// its own (a self-drawn rounded rect would nest visibly inside the
+    /// capsule). On macOS 14/15 the standard toolbar gives the item no
+    /// container, so the chip supplies its own.
+    @ViewBuilder
+    private func chipContent(isWarn: Bool, dotColor: Color) -> some View {
+        let content = HStack(spacing: 6) {
             Circle()
                 .fill(dotColor)
                 .frame(width: 6, height: 6)
@@ -40,19 +54,20 @@ struct CLIStatusChip: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(workspace.demoMode
-                      ? Theme.Colors.gold.opacity(0.08)
-                      : Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
-                )
-        )
-        .onHover { hoveringChip = $0 }
-        .popover(isPresented: $hoveringChip, arrowEdge: .bottom) {
-            chipPopover
+
+        if #available(macOS 26, *) {
+            content
+        } else {
+            content.background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(workspace.demoMode
+                          ? Theme.Colors.gold.opacity(0.08)
+                          : Color.white.opacity(0.04))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
+                    )
+            )
         }
     }
 
