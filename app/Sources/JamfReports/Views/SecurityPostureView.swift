@@ -45,7 +45,7 @@ struct SecurityPostureView: View {
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
             }
 
             if snapshot.totalDevices == 0 {

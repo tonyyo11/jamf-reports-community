@@ -168,17 +168,14 @@ final class RefreshCoordinator {
     /// Returns `true` when the newest snapshot for `tier` is older than the
     /// staleness threshold, or when no snapshot exists at all.
     ///
-    /// The threshold is preset-aware (ADR Q1): the active preset's resolved
-    /// cadence for the tier's probe kind × 1.5. A `.never` cadence means the
-    /// report is intentionally not collected — never "stale", so no backfill.
-    /// Falls back to `RefreshPolicy.stalenessThreshold` when `config.yaml`
-    /// can't be read.
+    /// The threshold is the tier probe kind's fixed cadence × 1.5. A `.never`
+    /// cadence means the report is intentionally not collected — never
+    /// "stale", so no backfill.
     private func isDataStale(profile: String, tier: CollectionTier) async -> Bool {
-        let fallback = policy.stalenessThreshold(for: tier)
         return await Task.detached(priority: .utility) {
             guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return true }
 
-            switch Self.resolvedStalenessThreshold(profile: profile, tier: tier, fallback: fallback) {
+            switch Self.resolvedStalenessThreshold(for: tier) {
             case .none:
                 // Probe kind resolves to cadence .never — not collected, not stale.
                 return false
@@ -208,33 +205,19 @@ final class RefreshCoordinator {
         }.value
     }
 
-    /// Resolve the preset-aware staleness threshold for `tier`.
+    /// Resolve the staleness threshold for `tier`: the fixed collection
+    /// cadence for the tier's probe kind × 1.5.
     ///
     /// Returns `nil` when the tier's probe kind resolves to cadence `.never`
-    /// (intentionally not collected — never triggers a backfill). Otherwise
-    /// returns the resolved cadence × 1.5. Falls back to `fallback` when the
-    /// config can't be read.
+    /// (intentionally not collected — never triggers a backfill).
     ///
     /// `nonisolated` so the `Task.detached` staleness probe can call it off
-    /// the main actor — it only touches the filesystem and pure resolvers,
-    /// no `RefreshCoordinator` state.
+    /// the main actor — it only touches the pure cadence resolver, no
+    /// `RefreshCoordinator` state.
     nonisolated private static func resolvedStalenessThreshold(
-        profile: String,
-        tier: CollectionTier,
-        fallback: TimeInterval
+        for tier: CollectionTier
     ) -> TimeInterval? {
-        guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            return fallback
-        }
-        let configURL = workspace.appendingPathComponent("config.yaml")
-        guard FileManager.default.fileExists(atPath: configURL.path),
-              let config = try? ConfigLoader.load(from: configURL) else {
-            return fallback
-        }
-        let cadence = CadenceResolver.resolve(
-            report: tier.stalenessProbeKind, config: config.collectCadence
-        )
-        switch cadence {
+        switch CadenceResolver.cadence(forReport: tier.stalenessProbeKind) {
         case .never:
             return nil
         case .seconds(let n):

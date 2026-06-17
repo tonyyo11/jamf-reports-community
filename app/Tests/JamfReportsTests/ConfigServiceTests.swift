@@ -79,6 +79,62 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("allow_live_overview: false"))
     }
 
+    func testMobileColumnsPersistAndPreserveSiblings() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "mobile-cols-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            columns:
+              computer_name: Computer Name
+              serial_number: Serial Number
+            mobile_columns:
+              device_name: Display Name
+            custom_label: keep me
+            """,
+            profile: profile,
+            root: root
+        )
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.state.mobileColumns["device_name"], "Display Name")
+
+        var state = loaded.state
+        state.mobileColumns["device_name"] = "Mobile Display Name"
+        state.mobileColumns["operating_system"] = "OS Version"
+        state.columns["computer_name"] = "Updated Computer Name"
+
+        _ = try ConfigService.save(
+            profile: profile,
+            state: state,
+            existingDocument: loaded.document,
+            workspaceRoot: root
+        )
+
+        let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(reloaded.state.mobileColumns["device_name"], "Mobile Display Name")
+        XCTAssertEqual(reloaded.state.mobileColumns["operating_system"], "OS Version")
+        XCTAssertEqual(reloaded.state.columns["computer_name"], "Updated Computer Name")
+
+        // The unmanaged top-level key must survive the round-trip.
+        let savedText = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root),
+            encoding: .utf8
+        )
+        XCTAssertTrue(savedText.contains("custom_label: keep me"))
+        XCTAssertTrue(savedText.contains("mobile_columns:"))
+        XCTAssertTrue(savedText.contains("device_name: Mobile Display Name"))
+    }
+
+    func testDefaultStateFileVaultColumnAndEmptyMobileColumns() {
+        XCTAssertEqual(ConfigState.defaultState.columns["filevault"], "FileVault 2 Status")
+        for key in ConfigState.mobileColumnKeys {
+            XCTAssertEqual(
+                ConfigState.defaultState.mobileColumns[key], "",
+                "mobile column \(key) should default empty (opt-in)"
+            )
+        }
+    }
+
     func testNewConfigFieldsUseDefaultsWhenMissing() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "config-test-\(UUID().uuidString.lowercased())"
@@ -121,14 +177,51 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertEqual(loaded.state, state)
     }
 
+    func testEmptyPercentageThresholdIsOmittedNotEmptyString() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "empty-threshold-test"
+        var state = fullState()
+        // The EA-walkthrough adoption case: a percentage EA with no thresholds
+        // set. Previously this wrote `warning_threshold: ""`, which the engine
+        // decoder (Int?) rejected as "value has the wrong type".
+        state.customEAs = [
+            ConfigCustomEA(
+                name: "Disk Usage", column: "Disk Usage Percent", type: "percentage",
+                trueValue: "", warningThreshold: "", criticalThreshold: "",
+                currentVersions: [], warningDays: "")
+        ]
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: nil, workspaceRoot: root)
+        let yaml = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root),
+            encoding: .utf8)
+        XCTAssertFalse(yaml.contains("warning_threshold"),
+            "empty threshold must be omitted entirely, not written as an empty string")
+        XCTAssertFalse(yaml.contains("critical_threshold"))
+
+        // A populated threshold still serializes as a bare int.
+        state.customEAs[0].warningThreshold = "80"
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: nil, workspaceRoot: root)
+        let yaml2 = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root),
+            encoding: .utf8)
+        XCTAssertTrue(yaml2.contains("warning_threshold: 80"))
+    }
+
     private func fullState() -> ConfigState {
         var columns: [String: String] = [:]
         for key in ConfigState.columnKeys {
             columns[key] = "Mapped \(key)"
         }
+        var mobileColumns: [String: String] = [:]
+        for key in ConfigState.mobileColumnKeys {
+            mobileColumns[key] = "Mobile \(key)"
+        }
 
         return ConfigState(
             columns: columns,
+            mobileColumns: mobileColumns,
             securityAgents: [
                 ConfigSecurityAgent(
                     name: "Endpoint Agent",

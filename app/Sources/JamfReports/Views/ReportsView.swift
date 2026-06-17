@@ -172,44 +172,6 @@ struct ReportsView: View {
             ) {
                 AnyView(
                     HStack(spacing: 8) {
-                        SegmentedControl(
-                            selection: $filter,
-                            options: [
-                                ("All", "All", nil),
-                                ("xlsx", "xlsx", nil),
-                                ("html", "html", nil),
-                                ("pdf", "pdf", nil),
-                                ("csv", "csv", nil),
-                            ]
-                        )
-
-                        Menu {
-                            Button("All Profiles") {
-                                profileFilter = nil
-                            }
-                            if !availableProfiles.isEmpty {
-                                Divider()
-                                ForEach(availableProfiles, id: \.self) { profile in
-                                    Button(profile) {
-                                        profileFilter = profile
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(profileFilter ?? "All Profiles")
-                                    .font(.footnote)
-                                    .foregroundStyle(Theme.Colors.fg)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(Theme.Colors.fgMuted)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Theme.Colors.winBG2, in: RoundedRectangle(cornerRadius: 6))
-                        }
-                        .help("Filter reports by profile")
-
                         PNPButton(title: "Reveal in Finder", icon: "folder") {
                             SystemActions.openFolder(reportsDirectory)
                         }
@@ -256,6 +218,41 @@ struct ReportsView: View {
                     }
                 )
             }
+            HStack(spacing: 8) {
+                SegmentedControl(
+                    selection: $filter,
+                    options: [
+                        ("All", "All", nil),
+                        ("xlsx", "xlsx", nil),
+                        ("html", "html", nil),
+                        ("pdf", "pdf", nil),
+                        ("csv", "csv", nil),
+                    ]
+                )
+                Menu {
+                    Button("All Profiles") { profileFilter = nil }
+                    if !availableProfiles.isEmpty {
+                        Divider()
+                        ForEach(availableProfiles, id: \.self) { profile in
+                            Button(profile) { profileFilter = profile }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(profileFilter ?? "All Profiles")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8))
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.Colors.winBG2, in: RoundedRectangle(cornerRadius: 6))
+                }
+                .help("Filter reports by profile")
+                Spacer()
+            }
             if let err = reportError {
                 Text(err)
                     .font(.footnote)
@@ -266,20 +263,18 @@ struct ReportsView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "doc.badge.plus")
-                .font(.system(size: 28))
-                .foregroundStyle(Theme.Colors.gold)
-                .accessibilityHidden(true)
-            Text("No reports yet — run Generate from Overview")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Theme.Colors.fg)
-            PNPButton(title: "Go to Overview", icon: "house", style: .gold) {
-                requestOverviewTab()
-            }
-        }
+        EmptyStateView(
+            systemImage: "doc.badge.plus",
+            title: "No reports yet",
+            message: "Reports are generated from the Overview screen using "
+                + "jamf-cli snapshots and optionally a CSV export.",
+            primaryAction: EmptyStateAction(
+                label: "Go to Overview",
+                icon: "house"
+            ) { requestOverviewTab() }
+        )
         .frame(maxWidth: .infinity, minHeight: 360)
-        .accessibilityLabel("No reports yet. Use Go to Overview to run Generate.")
+        .padding(20)
     }
 
     private var noFilterMatches: some View {
@@ -369,7 +364,7 @@ struct ReportsView: View {
                 // T-13 integrity envelope: scrape the engine's sentinel sha256 log line
                 // so we can surface the truncated fingerprint in the toast.
                 let hashBox = HashBox()
-                // Status-bar race guard — see comment in HealthCheckView.runAudit.
+                // Status-bar race guard — see comment in AuditView.runAudit.
                 let code: Int32
                 do {
                     code = try await bridge.generateHTML(profile: profile, outFile: outPath) { [weak workspace] line in
@@ -402,8 +397,9 @@ struct ReportsView: View {
                     SystemActions.open(dest)
                     reload()
                 } else {
-                    workspace.toast = Toast(message: "HTML generation failed · exit \(code)", style: .danger)
-                    reportError = "HTML generation failed (exit \(code))"
+                    let msg = CLIBridge.explainExit(code, operation: "HTML report generation")
+                    workspace.toast = Toast(message: msg, style: .danger)
+                    reportError = msg
                 }
             }
         }
@@ -446,8 +442,9 @@ struct ReportsView: View {
                     SystemActions.open(dest)
                     reload()
                 } else {
-                    workspace.toast = Toast(message: "PDF generation failed · exit \(code)", style: .danger)
-                    reportError = "PDF generation failed (exit \(code))"
+                    let msg = CLIBridge.explainExit(code, operation: "PDF report generation")
+                    workspace.toast = Toast(message: msg, style: .danger)
+                    reportError = msg
                 }
             }
         }
@@ -490,8 +487,9 @@ struct ReportsView: View {
                     SystemActions.reveal(dest)
                     reload()
                 } else {
-                    workspace.toast = Toast(message: "CSV export failed · exit \(code)", style: .danger)
-                    reportError = "Inventory CSV export failed (exit \(code))"
+                    let msg = CLIBridge.explainExit(code, operation: "Inventory CSV export")
+                    workspace.toast = Toast(message: msg, style: .danger)
+                    reportError = msg
                 }
             }
         }

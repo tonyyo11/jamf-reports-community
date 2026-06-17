@@ -233,6 +233,57 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue(paths.contains("versions.json"))
     }
 
+    func testStageDoctorJSONRedactsHostButKeepsStructureAndFingerprints() throws {
+        let staging = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let doctorJSON = """
+        {"version":"1.18.0","configPresent":true,
+         "profile":{"name":"prod","url":"https://secret-host.example.com:8443",
+           "authMethod":"oauth2",
+           "credentials":[{"field":"client-id","resolved":true,"fingerprint":"98f2••••"}]},
+         "connectivity":{"url":"https://secret-host.example.com:8443","statusCode":401,
+           "latencyMs":222}}
+        """
+        let entries = DiagnosticBundleService.stageDoctorJSON(
+            Data(doctorJSON.utf8), into: staging, redactor: DiagnosticRedactor())
+
+        XCTAssertEqual(entries.first?.path, "doctor.json")
+        let text = try String(
+            contentsOf: staging.appendingPathComponent("doctor.json"), encoding: .utf8)
+        XCTAssertFalse(text.contains("secret-host.example.com"),
+            "server hostname must be redacted from the doctor capture")
+        // Structure + non-PII signal survive: status code, auth method, and the
+        // already-truncated credential fingerprint are kept for diagnosis.
+        let obj = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(text.utf8)) as? [String: Any])
+        let connectivity = try XCTUnwrap(obj["connectivity"] as? [String: Any])
+        XCTAssertEqual(connectivity["statusCode"] as? Int, 401)
+        let profile = try XCTUnwrap(obj["profile"] as? [String: Any])
+        XCTAssertEqual(profile["authMethod"] as? String, "oauth2")
+        let creds = try XCTUnwrap(profile["credentials"] as? [[String: Any]])
+        XCTAssertEqual(creds.first?["fingerprint"] as? String, "98f2••••")
+    }
+
+    func testStageDoctorJSONSkipsMalformedOutput() throws {
+        let staging = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let entries = DiagnosticBundleService.stageDoctorJSON(
+            Data("not json".utf8), into: staging, redactor: DiagnosticRedactor())
+        XCTAssertEqual(entries.first?.skipped, true)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: staging.appendingPathComponent("doctor.json").path))
+    }
+
+    func testCollectDoctorReturnsNoEntryWhenProfileEmpty() {
+        let staging = (try? makeTempDir()) ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        defer { try? FileManager.default.removeItem(at: staging) }
+        // Empty profile disables the live probe — deterministic and CI-safe.
+        let entries = DiagnosticBundleService.collectDoctor(
+            cliProfile: "", into: staging, redactor: nil)
+        XCTAssertTrue(entries.isEmpty)
+    }
+
     func testLogLookbackExcludesOldFiles() throws {
         let workspace = try makeWorkspace()
         defer { try? FileManager.default.removeItem(at: workspace.root) }

@@ -36,7 +36,7 @@ struct ExtensionAttributesView: View {
                 lastModified: snapshot.snapshotDate
             )
             if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
             }
             if snapshot.totalEAs == 0 {
                 emptyState

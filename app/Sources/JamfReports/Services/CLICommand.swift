@@ -35,6 +35,14 @@ enum CLICommand: Sendable, Equatable {
     /// capability set if the executor throws.
     case proHelp
 
+    /// `jamf-cli -p <profile> doctor --output json` (v1.18+).
+    ///
+    /// Read-only local diagnostic: resolved profile, env-var state (secrets
+    /// fingerprinted by jamf-cli), and a HEAD connectivity probe of the
+    /// configured URL. Exits 0 even when the probe returns 401/403/404 — the
+    /// command succeeds at *diagnosing*, so the JSON is always available.
+    case proDoctor(profile: String)
+
     /// `jamf-cli -p <profile> school dep-devices list --output json` (v1.14+).
     case schoolDepDevicesList(profile: String)
 
@@ -94,6 +102,8 @@ enum CLICommand: Sendable, Equatable {
         switch self {
         case .proAuthToken(let profile):
             return ["-p", profile, "pro", "auth", "token", "--output", "json", "--no-input"]
+        case .proDoctor(let profile):
+            return ["-p", profile, "doctor", "--output", "json"]
         case .schoolDepDevicesList(let profile):
             return ["-p", profile, "school", "dep-devices", "list", "--output", "json"]
         case .schoolIBeaconsList(let profile):
@@ -145,7 +155,7 @@ enum CLICommand: Sendable, Equatable {
     /// preview, apply) or for diagnostic commands (verify-templates).
     var snapshotKind: SnapshotKind? {
         switch self {
-        case .proAuthToken, .configList, .proHelp:
+        case .proAuthToken, .configList, .proHelp, .proDoctor:
             return nil
         case .schoolDepDevicesList:
             return .schoolDepDevices
@@ -271,6 +281,7 @@ extension CLICommand {
     var profile: String {
         switch self {
         case .proAuthToken(let profile),
+             .proDoctor(let profile),
              .schoolDepDevicesList(let profile),
              .schoolIBeaconsList(let profile),
              .proSmartGroupTemplates(let profile),

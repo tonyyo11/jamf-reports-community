@@ -76,7 +76,7 @@ extension WorkspaceStore {
 
     /// Age threshold (days) past which heavy-tier data triggers the Overview
     /// refresh prompt and audit data auto-refreshes on launch.
-    nonisolated static let heavyTierStaleDays = 7
+    nonisolated static let heavyTierStaleDays = 2
 
     /// Populate `staleHeavyTiers` with the .inventory / .scan tiers whose
     /// newest probe-kind snapshot is older than `heavyTierStaleDays`.
@@ -118,6 +118,32 @@ extension WorkspaceStore {
             if exit == 0 {
                 staleHeavyTiers = []
                 toast = Toast(message: "\(labels) data refreshed", style: .success)
+            } else {
+                toast = Toast(
+                    message: "Refresh finished with exit \(exit) — see Runs for details",
+                    style: .danger
+                )
+            }
+        } catch {
+            toast = Toast(message: "Refresh failed — \(error.localizedDescription)", style: .danger)
+        }
+    }
+
+    /// Force-collect the given `tiers` and surface progress through `globalStatus`
+    /// and a completion/failure toast. No-ops when `tiers` is empty or `canRefresh`
+    /// is false. Modelled on `runHeavyTierRefresh`.
+    func runTierRefresh(_ tiers: Set<CollectionTier>) async {
+        guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
+        let activeProfile = profile
+        globalStatus = "refreshing data · profile=\(activeProfile)"
+        defer { globalStatus = nil }
+        do {
+            let exit = try await CLIBridge().collect(
+                profile: activeProfile, tiers: tiers, force: true,
+                onLine: CLIBridge.noOpOnLine
+            )
+            if exit == 0 {
+                toast = Toast(message: "Data refreshed", style: .success)
             } else {
                 toast = Toast(
                     message: "Refresh finished with exit \(exit) — see Runs for details",

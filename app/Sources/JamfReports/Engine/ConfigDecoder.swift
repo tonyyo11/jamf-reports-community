@@ -26,12 +26,6 @@ struct ReportConfig: Decodable, Sendable {
     var notify: NotifyConfig?
     var retention: RetentionConfig?
     var html: HTMLReportConfig?
-    /// PR-22 T-3: per-report cadence + preset overrides. Top-level (not
-    /// nested under `jamf_cli`) because the GUI's new Cadence tab edits it
-    /// directly and the preset choice (`on-prem` / `cloud` / `custom`)
-    /// reads more like its own concept than a `jamf_cli` knob.
-    /// Absent ⇒ resolver substitutes on-prem defaults (see `CadenceResolver`).
-    var collectCadence: CollectCadenceConfig?
 
     private enum CodingKeys: String, CodingKey {
         case columns
@@ -52,7 +46,6 @@ struct ReportConfig: Decodable, Sendable {
         case notify
         case retention
         case html
-        case collectCadence = "collect_cadence"
     }
 
     /// Produce a config with all optional fields filled in from hardcoded defaults,
@@ -71,52 +64,7 @@ struct ReportConfig: Decodable, Sendable {
         if r.charts == nil { r.charts = ChartsConfig() }
         if r.branding == nil { r.branding = BrandingConfig() }
         if r.platform == nil { r.platform = PlatformConfig() }
-        r.migrateCollectSkipToPerReport()
         return r
-    }
-
-    /// PR-22 T-12 + T-13: migrate `jamf_cli.collect_skip` entries to the
-    /// new `collect_cadence.per_report: <kind>: never` schema.
-    ///
-    /// Both keys are read during the transition window so an operator who
-    /// hand-edited `collect_skip` (or who runs the Python script on the
-    /// same config) sees identical behavior in both engines without
-    /// needing to re-scaffold. PR-23's GUI write path stops emitting
-    /// `collect_skip` so newly-saved configs are clean.
-    ///
-    /// Merge rules:
-    /// - Underscore/hyphen normalization (`update_status` ≡ `update-status`)
-    ///   matches the Python script's PR-16 behavior.
-    /// - Existing `per_report` entries WIN over the migration — operators
-    ///   who explicitly set `per_report: <kind>: 86400` should not have
-    ///   it silently downgraded to `.never` by an old `collect_skip` entry.
-    /// - Empty/whitespace entries are dropped silently rather than
-    ///   throwing — the YAML can have stray blank list items.
-    /// - Logs once per migrated kind via `AppLogger.engine.info`, prefix
-    ///   `[migrate]`, so operators see what changed in unified logs.
-    private mutating func migrateCollectSkipToPerReport() {
-        guard let raw = jamfCli?.collectSkip, !raw.isEmpty else { return }
-
-        let normalized: [String] = raw.compactMap { entry in
-            let trimmed = entry
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "_", with: "-")
-            return trimmed.isEmpty ? nil : trimmed
-        }
-        guard !normalized.isEmpty else { return }
-
-        var cadence = collectCadence ?? CollectCadenceConfig()
-        var perReport = cadence.perReport ?? [:]
-
-        for kind in normalized {
-            if perReport[kind] != nil { continue }  // explicit override wins
-            perReport[kind] = PerReportCadence(cadence: .never)
-            AppLogger.engine.info(
-                "[migrate] jamf_cli.collect_skip → per_report: \(kind, privacy: .public): never"
-            )
-        }
-        cadence.perReport = perReport
-        collectCadence = cadence
     }
 }
 
@@ -299,11 +247,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     var useCachedData: Bool?
     var allowLiveOverview: Bool?
     var requireManifest: Bool?       // PR-10 / threat-model T-11
-    /// PR-16 legacy: list of jamf-cli report kinds to skip during collect.
-    /// PR-22 T-12 migrates these to `collect_cadence.per_report: <kind>: never`
-    /// at load time so the Swift engine reads both keys during the
-    /// transition window. The Python script keeps reading the original
-    /// key directly. PR-23 GUI saves stop emitting the legacy key.
+    /// Legacy list of jamf-cli report kinds to skip during collect.
+    /// Still read so existing config.yaml files continue to work;
+    /// the GUI no longer emits this key.
     var collectSkip: [String]?
 
     private enum CodingKeys: String, CodingKey {

@@ -97,7 +97,7 @@ echo "✓ DMG created: $DMG_PATH"
 # ── Notarization ─────────────────────────────────────────────────────────────
 # Skip when SKIP_NOTARIZE=1 is set (fast local iteration / unsigned DMG).
 # When notarizing, the DMG is codesign'd, submitted to Apple notarytool,
-# stapled, and validated — matching build-app.sh / build-dmg.sh behavior.
+# stapled, and validated — matching build-pkg.sh notarization behavior.
 if [[ -n "${SKIP_NOTARIZE:-}" ]]; then
   echo "⚠ SKIP_NOTARIZE set — skipping codesign/notarize/staple" >&2
   echo "  Size: $(du -h "$DMG_PATH" | cut -f1)"

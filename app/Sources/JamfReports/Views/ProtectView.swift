@@ -61,6 +61,9 @@ struct ProtectView: View {
                 if !snapshot.insights.isEmpty || workspace.demoMode {
                     insightsCard
                 }
+                if !snapshot.plans.isEmpty || workspace.demoMode {
+                    plansCard
+                }
             }
         }
         .tint(Theme.Colors.goldBright)
@@ -103,6 +106,7 @@ struct ProtectView: View {
         alerts: [],
         computers: [],
         insights: [],
+        plans: demoPlans,
         totalComputers: 12,
         webProtectionActiveCount: 10,
         fullDiskAccessCount: 9,
@@ -152,6 +156,24 @@ struct ProtectView: View {
             ("XProtect Updates", "Malware Protection", 9, 3, false),
             ("Certificate Validation", "PKI", 11, 1, true)
         ]
+
+    private static let demoPlans: [ProtectPlanRow] = [
+        ProtectPlanRow(
+            name: "Standard", uuid: "11111111-1111-1111-1111-111111111111",
+            description: "Baseline detection + telemetry", logLevel: "INFO",
+            autoUpdate: true, threatPreventionStrategy: "BALANCED",
+            profileVersion: 3, telemetry: true),
+        ProtectPlanRow(
+            name: "Premium", uuid: "22222222-2222-2222-2222-222222222222",
+            description: "Aggressive prevention for high-risk fleet", logLevel: "DEBUG",
+            autoUpdate: true, threatPreventionStrategy: "AGGRESSIVE",
+            profileVersion: 4, telemetry: true),
+        ProtectPlanRow(
+            name: "Lab", uuid: "33333333-3333-3333-3333-333333333333",
+            description: "Detection-only, no auto-update", logLevel: "INFO",
+            autoUpdate: false, threatPreventionStrategy: "DETECT_ONLY",
+            profileVersion: 2, telemetry: false),
+    ]
 
     // MARK: - Sections
 
@@ -919,6 +941,67 @@ struct ProtectView: View {
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(insight.label), \(pass) pass, \(fail) fail")
+    }
+
+    // MARK: - Plans
+
+    private var plansCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SectionHeader(title: "Plans")
+                    Spacer()
+                    Pill(text: "\(snapshot.plans.count) plan\(snapshot.plans.count == 1 ? "" : "s")",
+                         tone: .muted)
+                }
+                VStack(spacing: 8) {
+                    ForEach(Array(snapshot.plans.enumerated()), id: \.offset) { _, plan in
+                        planRow(plan)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func planRow(_ plan: ProtectPlanRow) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(plan.name ?? "Unnamed Plan")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
+                Spacer()
+                if let strategy = plan.threatPreventionStrategy, !strategy.isEmpty {
+                    Pill(text: strategy, tone: .teal)
+                }
+            }
+            if let description = plan.description, !description.isEmpty {
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            HStack(spacing: 10) {
+                if let level = plan.logLevel, !level.isEmpty {
+                    planTag("Log: \(level)")
+                }
+                if let version = plan.profileVersion {
+                    planTag("Profile v\(version)")
+                }
+                planTag(plan.autoUpdate == true ? "Auto-update on" : "Auto-update off")
+                planTag(plan.telemetry == true ? "Telemetry on" : "Telemetry off")
+                Spacer()
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(plan.name ?? "Unnamed plan"), strategy \(plan.threatPreventionStrategy ?? "unknown")")
+    }
+
+    private func planTag(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.monospaced())
+            .foregroundStyle(Theme.Text.tertiary(contrast))
     }
 
     // MARK: - Utilities

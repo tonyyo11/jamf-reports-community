@@ -107,6 +107,9 @@ struct AuditView: View {
     // PR-10 / threat-model T-11: surface unverified-snapshot state.
     @State private var integritySummary: SnapshotManifest.WorkspaceVerificationSummary?
 
+    // Config Doctor (EPIC #182) — third "Config" segment.
+    @State private var doctorReport: DoctorReport?
+
     private var filteredFindings: [AuditFinding] {
         findings.filter { finding in
             query.isEmpty || finding.name.lowercased().contains(query.lowercased()) || finding.category.lowercased().contains(query.lowercased())
@@ -141,7 +144,7 @@ struct AuditView: View {
         PageScaffold {
             header
 
-            if !workspace.demoMode {
+            if !workspace.demoMode && selectedTab != 2 {
                 let auditCacheSource = CacheSource.from(snapshotDate: lastAuditDate, withinHours: 36)
                 let hygieneCacheSource = CacheSource.from(snapshotDate: lastHygieneDate, withinHours: 36)
                 let activeSource = selectedTab == 0 ? auditCacheSource : hygieneCacheSource
@@ -151,12 +154,13 @@ struct AuditView: View {
             HStack(spacing: 16) {
                 SegmentedControl(
                     selection: Binding(
-                        get: { selectedTab == 0 ? "Audit" : "Hygiene" },
-                        set: { selectedTab = ($0 == "Audit" ? 0 : 1) }
+                        get: { auditTabKey(selectedTab) },
+                        set: { selectedTab = auditTabIndex($0) }
                     ),
                     options: [
                         ("Audit", "Health Audit", "shield.checkered"),
-                        ("Hygiene", "Group Hygiene", "wand.and.stars")
+                        ("Hygiene", "Group Hygiene", "wand.and.stars"),
+                        ("Config", "Config Doctor", "stethoscope")
                     ]
                 )
 
@@ -183,17 +187,24 @@ struct AuditView: View {
                 Spacer()
             }
 
-            if selectedTab == 0 {
-                auditSection
-            } else {
-                hygieneSection
+            switch selectedTab {
+            case 0: auditSection
+            case 1: hygieneSection
+            default: configSection
             }
         }
         .task(id: workspace.profile) {
             await loadCached()
         }
+        .task(id: doctorTaskKey) {
+            loadDoctorReport()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            if selectedTab == 0 { runAudit() } else { runHygiene() }
+            switch selectedTab {
+            case 0: runAudit()
+            case 1: runHygiene()
+            default: loadDoctorReport()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusSearch)) { _ in
             if selectedTab == 0 { isSearchFocused = true }
@@ -209,20 +220,20 @@ struct AuditView: View {
         PageHeader(
             kicker: "Health & Hygiene",
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
-            title: selectedTab == 0 ? "Instance Health Audit" : "Computer Group Hygiene",
-            subtitle: selectedTab == 0
-                ? "Automated checks for security, compliance, and hygiene"
-                : "Identifying unused or redundant configuration objects",
-            lastModified: selectedTab == 0 ? lastAuditDate : lastHygieneDate
+            title: auditTabTitle(selectedTab),
+            subtitle: auditTabSubtitle(selectedTab),
+            lastModified: auditTabLastModified(selectedTab)
         ) {
             AnyView(
                 VStack(alignment: .trailing, spacing: 6) {
-                    Mono(
-                        text: selectedTab == 0
-                            ? lastRunLabel(lastAuditDate, empty: "Last audit: Never")
-                            : lastRunLabel(lastHygieneDate, empty: "Last analysis: Never"),
-                        size: 10.5
-                    )
+                    if selectedTab != 2 {
+                        Mono(
+                            text: selectedTab == 0
+                                ? lastRunLabel(lastAuditDate, empty: "Last audit: Never")
+                                : lastRunLabel(lastHygieneDate, empty: "Last analysis: Never"),
+                            size: 10.5
+                        )
+                    }
                     HStack(spacing: 8) {
                         if selectedTab == 0 {
                             PNPButton(
@@ -239,7 +250,7 @@ struct AuditView: View {
                             }
                             .disabled(findings.isEmpty || workspace.demoMode)
                             .help("Export all audit findings to a CSV file")
-                        } else {
+                        } else if selectedTab == 1 {
                             PNPButton(title: "Copy IDs", icon: "doc.on.doc", style: .neutral) {
                                 copyGroupIDs()
                             }
@@ -259,10 +270,130 @@ struct AuditView: View {
                             }
                             .disabled(isRunningHygiene || workspace.demoMode)
                             .help("Find computer groups not referenced by any policy or profile.")
+                        } else {
+                            PNPButton(title: "Re-check", icon: "arrow.clockwise", style: .gold) {
+                                loadDoctorReport()
+                            }
+                            .disabled(workspace.demoMode)
+                            .help("Re-validate config.yaml against the newest CSV and cached EA results.")
                         }
                     }
                 }
             )
+        }
+    }
+
+    // MARK: - Config Doctor (EPIC #182)
+
+    private func auditTabKey(_ index: Int) -> String {
+        switch index { case 0: "Audit"; case 1: "Hygiene"; default: "Config" }
+    }
+
+    private func auditTabIndex(_ key: String) -> Int {
+        switch key { case "Audit": 0; case "Hygiene": 1; default: 2 }
+    }
+
+    private func auditTabTitle(_ index: Int) -> String {
+        switch index {
+        case 0: "Instance Health Audit"
+        case 1: "Computer Group Hygiene"
+        default: "Config Doctor"
+        }
+    }
+
+    private func auditTabSubtitle(_ index: Int) -> String {
+        switch index {
+        case 0: "Automated checks for security, compliance, and hygiene"
+        case 1: "Identifying unused or redundant configuration objects"
+        default: "Validating config.yaml against your CSV export and cached EA results"
+        }
+    }
+
+    private func auditTabLastModified(_ index: Int) -> Date? {
+        switch index { case 0: lastAuditDate; case 1: lastHygieneDate; default: nil }
+    }
+
+    private var doctorTaskKey: String { "\(workspace.profile)|\(selectedTab == 2)" }
+
+    private func loadDoctorReport() {
+        guard selectedTab == 2, !workspace.demoMode else {
+            doctorReport = nil
+            return
+        }
+        let profile = workspace.profile
+        doctorReport = nil
+        Task {
+            // run() touches the filesystem (config + EA results); keep it off the
+            // main actor so a large ea-results JSON never blocks the UI.
+            let report = await Task.detached { ConfigDoctorService.run(profile: profile) }.value
+            guard workspace.profile == profile, selectedTab == 2 else { return }
+            doctorReport = report
+        }
+    }
+
+    @ViewBuilder
+    private var configSection: some View {
+        if workspace.demoMode {
+            Card(padding: 24) {
+                EmptyStateView(
+                    systemImage: "stethoscope",
+                    title: "Config Doctor",
+                    message: "Switch to a real workspace to validate its config.yaml."
+                )
+            }
+        } else if let report = doctorReport {
+            VStack(alignment: .leading, spacing: 16) {
+                doctorSummaryStrip(report)
+                if report.failCount == 0 && report.warnCount == 0 {
+                    Card(padding: 24) {
+                        EmptyStateView(
+                            systemImage: "checkmark.seal.fill",
+                            title: "Configuration looks healthy",
+                            message: "No errors or warnings. Passing checks are listed below."
+                        )
+                    }
+                }
+                doctorRowsCard(report)
+            }
+        } else {
+            Card(padding: 24) {
+                EmptyStateView(
+                    systemImage: "stethoscope",
+                    title: "Checking configuration…",
+                    message: "Reading config.yaml, the newest CSV export, and cached EA results."
+                )
+            }
+        }
+    }
+
+    private func doctorSummaryStrip(_ report: DoctorReport) -> some View {
+        HStack(spacing: 10) {
+            CompactMetricTile(label: "Passing", value: "\(report.passCount)", tone: .teal)
+            CompactMetricTile(label: "Suggestions", value: "\(report.suggestCount)", tone: .gold)
+            CompactMetricTile(label: "Warnings", value: "\(report.warnCount)", tone: .warn)
+            CompactMetricTile(label: "Errors", value: "\(report.failCount)", tone: .danger)
+        }
+    }
+
+    private func doctorRowsCard(_ report: DoctorReport) -> some View {
+        Card(padding: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    SectionHeader(title: "Checks")
+                    Spacer()
+                    Pill(text: "\(report.rows.count) total", tone: .muted)
+                }
+                .padding(16)
+                Divider().background(Theme.Colors.hairline)
+                VStack(spacing: 0) {
+                    ForEach(Array(report.rows.enumerated()), id: \.element.id) { idx, row in
+                        DoctorRowView(row: row)
+                        if idx < report.rows.count - 1 {
+                            Divider().background(Theme.Colors.hairline)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -278,10 +409,13 @@ struct AuditView: View {
         VStack(alignment: .leading, spacing: 16) {
             integrityCard
             if findings.isEmpty {
-                emptyState(
-                    icon: "shield.checkered",
-                    text: "No audit findings yet. Run an audit to scan your instance."
+                EmptyStateView(
+                    systemImage: "shield.checkered",
+                    title: "No audit findings yet",
+                    message: "Run an audit from this screen to scan your Jamf instance configuration."
                 )
+                .frame(maxWidth: .infinity, minHeight: 300)
+                .padding(20)
             } else {
                 auditSummaryStrip
                 Card(padding: 0) {
@@ -513,10 +647,13 @@ struct AuditView: View {
     private var hygieneSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             if unusedGroups.isEmpty {
-                emptyState(
-                    icon: "wand.and.stars",
-                    text: "No unused groups identified. Run analysis to check for redundant groups."
+                EmptyStateView(
+                    systemImage: "wand.and.stars",
+                    title: "No unused groups identified",
+                    message: "Run analysis to scan for redundant or empty computer groups."
                 )
+                .frame(maxWidth: .infinity, minHeight: 300)
+                .padding(20)
             } else {
                 Card(padding: 0) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -578,20 +715,6 @@ struct AuditView: View {
             return
         }
         SystemActions.open(url)
-    }
-
-    private func emptyState(icon: String, text: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundStyle(Theme.Colors.gold.opacity(0.5))
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-        }
-        .frame(maxWidth: .infinity, minHeight: 300)
-        .background(Color.white.opacity(0.01))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private func severityIcon(_ severity: String) -> some View {
@@ -803,7 +926,9 @@ struct AuditView: View {
                 workspace.toast = Toast(message: "Instance Health Audit completed", style: .success)
                 await loadCached()
             } else {
-                workspace.toast = Toast(message: "Audit failed · exit \(code)", style: .danger)
+                workspace.toast = Toast(
+                    message: CLIBridge.explainExit(code, operation: "Instance Health Audit"),
+                    style: .danger)
             }
         }
     }
@@ -833,7 +958,9 @@ struct AuditView: View {
                 workspace.toast = Toast(message: "Group Hygiene analysis completed", style: .success)
                 await loadCached()
             } else {
-                workspace.toast = Toast(message: "Analysis failed · exit \(code)", style: .danger)
+                workspace.toast = Toast(
+                    message: CLIBridge.explainExit(code, operation: "Group hygiene analysis"),
+                    style: .danger)
             }
         }
     }
@@ -1020,5 +1147,65 @@ private func toneColor(_ tone: Pill.Tone) -> Color {
     case .teal: Theme.Colors.teal
     case .warn: Theme.Colors.warn
     case .danger: Theme.Colors.danger
+    }
+}
+
+// MARK: - Config Doctor row (EPIC #182)
+
+private struct DoctorRowView: View {
+    let row: DoctorRow
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Pill(text: severityLabel, tone: tone, icon: icon)
+                .frame(width: 86, alignment: .leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.fg)
+                Text(row.detail)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let hint = row.hint {
+                    Text(hint)
+                        .font(.caption2)
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var severityLabel: String {
+        switch row.severity {
+        case .pass: "OK"
+        case .suggest: "Suggest"
+        case .warn: "Warning"
+        case .fail: "Error"
+        }
+    }
+
+    private var icon: String {
+        switch row.severity {
+        case .pass: "checkmark.circle.fill"
+        case .suggest: "lightbulb.fill"
+        case .warn: "exclamationmark.triangle.fill"
+        case .fail: "xmark.octagon.fill"
+        }
+    }
+
+    private var tone: Pill.Tone {
+        switch row.severity {
+        case .pass: .teal
+        case .suggest: .gold
+        case .warn: .warn
+        case .fail: .danger
+        }
     }
 }

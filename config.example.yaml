@@ -55,8 +55,10 @@ columns:
   department: "Department"
 
   # The manager field (plain name or AD Distinguished Name — both are handled).
-  # Do not point this at Jamf's built-in "Managed" / "Unmanaged" status column.
-  manager: "Manager"
+  # There is no universal Jamf "Manager" column — it is typically an Extension
+  # Attribute, so this is unset by default. Point it at your EA's column name to
+  # enable it. Do not point it at Jamf's built-in "Managed"/"Unmanaged" status.
+  manager: ""
 
   # The assigned user's email address.
   email: "Email Address"
@@ -65,7 +67,7 @@ columns:
 
   # FileVault 2 encryption status. Prefer the detailed FileVault 2 status column
   # over summary/count-style columns such as "FileVault Status" with values like "1/1".
-  filevault: "FileVault 2 - Status"
+  filevault: "FileVault 2 Status"
 
   # System Integrity Protection status. Typical values: "Enabled", "Disabled".
   sip: "System Integrity Protection"

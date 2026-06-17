@@ -41,6 +41,17 @@ final class ExistingCLISetupFlow {
         }
     }
 
+    /// One entry in the per-kind status list accumulated during a collect run.
+    /// `id` is the kind string; a later outcome for the same kind replaces the
+    /// earlier one (last-wins), preserving first-seen insertion order.
+    struct CollectKindStatus: Identifiable, Sendable, Equatable {
+        enum Outcome: String, Sendable, Equatable { case ok, warn, skip }
+        let kind: String
+        let outcome: Outcome
+        /// Stable identity keyed on kind so `ForEach` updates in place.
+        var id: String { kind }
+    }
+
     /// How the setup screen was dismissed. The distinction matters for
     /// re-offering: a COMPLETED setup created workspaces, so if the user later
     /// wipes ~/Jamf-Reports the on-disk state is first-launch again and the
@@ -90,6 +101,11 @@ final class ExistingCLISetupFlow {
     private(set) var progress = CollectProgress()
     /// Final per-profile tallies, rendered next to the finished status rows.
     private(set) var kindSummaries: [String: CollectProgress] = [:]
+    /// Ordered per-kind outcomes for the currently-collecting profile; last
+    /// outcome for a repeated kind wins. Cleared at the start of each profile.
+    private(set) var kindStatuses: [CollectKindStatus] = []
+    /// Lookup used to implement last-wins without a linear scan.
+    private var kindStatusIndex: [String: Int] = [:]
 
     init(profileNames: [String]) {
         self.profileNames = profileNames
@@ -201,6 +217,8 @@ final class ExistingCLISetupFlow {
                 }
                 statuses[name] = .collecting
                 progress = CollectProgress()
+                kindStatuses = []
+                kindStatusIndex = [:]
                 let collectExit = try await collect(name) { [weak self] line in
                     Task { @MainActor in self?.ingest(line.text) }
                 }
@@ -219,22 +237,51 @@ final class ExistingCLISetupFlow {
         didComplete = true
     }
 
-    /// Parse one engine log line into the live tally. Line shapes (from
-    /// `ReportEngine.collect`): `[info] collecting <kind> for <profile>`,
-    /// `[ok] <kind>: N bytes`, `[warn] <kind>: …`, `[skip] <kind>: …`.
+    /// Parse one engine log line into the live tally and per-kind list.
+    ///
+    /// Line shapes (from `ReportEngine.collect`):
+    /// `[info] collecting <kind> for <profile>` — marks the kind in-progress.
+    /// `[ok] <kind>: N bytes` — kind succeeded.
+    /// `[warn] <kind>: …` — kind failed/partial.
+    /// `[skip] <kind>: …` — kind was skipped (tier or collect_skip list).
     /// Anything else (subprocess output, SOFA notes) is ignored.
     func ingest(_ text: String) {
         if text.hasPrefix("[info] collecting ") {
             let rest = text.dropFirst("[info] collecting ".count)
             progress.currentKind = rest.split(separator: " ").first.map(String.init)
         } else if text.hasPrefix("[ok] ") {
+            let kind = kindFromResultLine(text, prefix: "[ok] ")
             progress.collected += 1
             progress.currentKind = nil
+            record(kind: kind, outcome: .ok)
         } else if text.hasPrefix("[warn] ") {
+            let kind = kindFromResultLine(text, prefix: "[warn] ")
             progress.failed += 1
             progress.currentKind = nil
+            record(kind: kind, outcome: .warn)
         } else if text.hasPrefix("[skip] ") {
+            let kind = kindFromResultLine(text, prefix: "[skip] ")
             progress.skipped += 1
+            record(kind: kind, outcome: .skip)
+        }
+    }
+
+    /// Extract the kind token from a result line: `[ok] <kind>: …` → `<kind>`.
+    private func kindFromResultLine(_ text: String, prefix: String) -> String {
+        let rest = text.dropFirst(prefix.count)
+        return rest.split(separator: ":").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+    }
+
+    /// Upsert a `CollectKindStatus`; last-wins for repeated kinds, insertion
+    /// order preserved for new ones.
+    private func record(kind: String, outcome: CollectKindStatus.Outcome) {
+        guard !kind.isEmpty else { return }
+        let entry = CollectKindStatus(kind: kind, outcome: outcome)
+        if let idx = kindStatusIndex[kind] {
+            kindStatuses[idx] = entry
+        } else {
+            kindStatusIndex[kind] = kindStatuses.count
+            kindStatuses.append(entry)
         }
     }
 

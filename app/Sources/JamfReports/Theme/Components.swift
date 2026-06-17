@@ -170,27 +170,23 @@ struct Card<Content: View>: View {
 }
 
 /// Liquid-glass elevated pane — used for the gold "next-up" callout on Schedules.
+/// Routes through the `appGlass` seam: real Liquid Glass on macOS 26+, the same
+/// Material/solid fallback as before on macOS 14/15 and under Reduce Transparency.
 struct GlassPane<Content: View>: View {
     var padding: CGFloat = 18
     var borderColor: Color = Theme.Colors.hairlineStrong
+    /// Optional brand tint for the glass surface (used sparingly). Nil = neutral.
+    var tint: Color? = nil
     @ViewBuilder var content: () -> Content
-
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.regularMaterial),
-                in: RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Metrics.largeCardRadius, style: .continuous)
-                    .strokeBorder(
-                        reduceTransparency ? Theme.Colors.hairlineStrong : borderColor,
-                        lineWidth: 0.5
-                    )
+            .appGlass(
+                in: .rect(cornerRadius: Theme.Metrics.largeCardRadius),
+                tint: tint,
+                border: borderColor
             )
     }
 }

@@ -26,7 +26,7 @@ struct PatchView: View {
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh, .scan])
             }
             if snapshot.totalTitles == 0 {
                 emptyState
@@ -327,12 +327,15 @@ struct PatchView: View {
     }
 
     private func exportPatchTitlesTable() {
-        DashboardChartExport.run(
+        let result = DashboardChartExport.run(
             title: "Patch Titles",
             subtitle: "Fleet patch compliance summary",
             suggestedFilename: DashboardChartExport.filename(for: "patch-titles-table", profile: workspace.profile)
         ) {
             PatchTitlesTableExport(titles: Array(sortedTitles.prefix(Self.titlesDisplayCap)))
+        }
+        if case .failure(let error) = result {
+            workspace.toast = Toast(message: error.userMessage, style: .danger)
         }
     }
 

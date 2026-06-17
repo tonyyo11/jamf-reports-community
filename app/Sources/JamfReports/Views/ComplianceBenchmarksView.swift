@@ -26,7 +26,7 @@ struct ComplianceBenchmarksView: View {
         PageScaffold {
             ComplianceBenchmarksView.header()
             if !workspace.demoMode && lockState == .unlockedWithData {
-                CollectNowBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
             }
             content
         }

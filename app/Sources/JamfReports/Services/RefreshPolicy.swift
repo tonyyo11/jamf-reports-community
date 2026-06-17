@@ -1,30 +1,27 @@
 import Foundation
 
-/// Per-tier staleness thresholds, failure backoff constants, and derived timing
+/// Staleness threshold, failure backoff constants, and derived timing
 /// helpers for `RefreshCoordinator`.
 ///
-/// All time values are in seconds. Keyed on `CollectionTier`.
-/// `RefreshCoordinator` only ever drives the `.refresh` tier today
-/// (profile-switch + app-foreground backfill), so the maps are populated for
-/// `.refresh` only — `.inventory`/`.scan` fall through to the keyless
-/// defaults rather than carrying ghost entries nothing reads.
+/// All time values are in seconds. `RefreshCoordinator` only ever drives the
+/// `.refresh` tier, so per-tier maps are unnecessary — scalars are used instead.
 struct RefreshPolicy: Sendable {
 
-    // MARK: - Per-tier thresholds
+    // MARK: - Thresholds
 
-    /// Minimum age (seconds) before a snapshot is considered stale for a tier.
+    /// Minimum age (seconds) before a snapshot is considered stale.
     ///
     /// This is the *fallback* staleness threshold — `RefreshCoordinator`
     /// prefers a preset-aware value (the active preset's `.refresh` cadence
     /// × 1.5, ADR Q1) and only falls back here when `config.yaml` can't be
     /// read.
-    let stalenessThresholds: [CollectionTier: TimeInterval]
+    let stalenessThreshold: TimeInterval
 
     /// Maximum consecutive failures before exponential backoff engages.
     ///
     /// After this many failures the coordinator skips the next scheduled refresh
     /// and doubles the wait each time (capped by `maxBackoffMultiplier`).
-    let maxConsecutiveFailures: [CollectionTier: Int]
+    let maxFailures: Int
 
     // MARK: - Backoff constants
 
@@ -44,35 +41,20 @@ struct RefreshPolicy: Sendable {
 
     // MARK: - Defaults
 
-    /// Default policy. Only `.refresh` is populated — it's the sole tier
-    /// `RefreshCoordinator` drives. The staleness fallback is the on-prem
-    /// Refresh cadence × 1.5 (matches the preset-aware path's formula so a
-    /// config-read failure degrades to the same number, not a surprise).
+    /// Default policy for the `.refresh` tier — the sole tier `RefreshCoordinator`
+    /// drives. The staleness fallback is the on-prem Refresh cadence × 1.5
+    /// (matches the preset-aware path's formula so a config-read failure
+    /// degrades to the same number, not a surprise).
     static let `default` = RefreshPolicy(
-        stalenessThresholds: [
-            .refresh: TimeInterval(CollectionTier.refresh.intervalSeconds) * 1.5,
-        ],
-        maxConsecutiveFailures: [
-            .refresh: 3,
-        ],
+        stalenessThreshold: TimeInterval(CollectionTier.refresh.intervalSeconds) * 1.5,
+        maxFailures: 3,
         backoffBase: 2.0,
         maxBackoffMultiplier: 8.0
     )
 
     // MARK: - Derived helpers
 
-    /// Staleness threshold for `tier`, falling back to the tier's own interval
-    /// when the map has no entry.
-    func stalenessThreshold(for tier: CollectionTier) -> TimeInterval {
-        stalenessThresholds[tier] ?? TimeInterval(tier.intervalSeconds)
-    }
-
-    /// Max consecutive failures for `tier`, falling back to 2.
-    func maxFailures(for tier: CollectionTier) -> Int {
-        maxConsecutiveFailures[tier] ?? 2
-    }
-
-    /// Effective wait interval after `failureCount` consecutive failures.
+    /// Effective wait interval after `failureCount` consecutive failures for `tier`.
     ///
     /// Returns `interval × min(2^failureCount, maxBackoffMultiplier)`.
     /// When `failureCount == 0` the result equals `interval` (no backoff).
@@ -93,7 +75,7 @@ struct RefreshPolicy: Sendable {
         lastAttempt: Date,
         now: Date = Date()
     ) -> Bool {
-        guard failureCount >= maxFailures(for: tier) else { return false }
+        guard failureCount >= maxFailures else { return false }
         let elapsed = now.timeIntervalSince(lastAttempt)
         return elapsed < backoffInterval(tier: tier, failureCount: failureCount)
     }

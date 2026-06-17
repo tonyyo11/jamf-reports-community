@@ -225,22 +225,19 @@ struct BackupsView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "externaldrive")
-                .font(.system(size: 28))
-                .foregroundStyle(Theme.Colors.gold)
-            Text("No backups yet")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Theme.Text.primary)
-            Text("Create a restore point before making config changes.")
-                .font(.footnote)
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-            PNPButton(title: "New Backup", icon: "externaldrive.badge.plus", style: .gold) {
-                runBackup()
-            }
-            .disabled(workspace.demoMode || isRunningBackup)
-        }
+        EmptyStateView(
+            systemImage: "externaldrive",
+            title: "No backups yet",
+            message: "Backups are created by scheduled or manual backup runs. "
+                + "Create a restore point before making config changes.",
+            primaryAction: EmptyStateAction(
+                label: "New Backup",
+                icon: "externaldrive.badge.plus"
+            ) { runBackup() }
+        )
+        .disabled(workspace.demoMode || isRunningBackup)
         .frame(maxWidth: .infinity, minHeight: 360)
+        .padding(20)
     }
 
     private var summary: some View {
@@ -344,7 +341,7 @@ struct BackupsView: View {
                 backupLabel = ""
                 reload()
             } else {
-                errorMessage = "Backup failed for \(profile) with exit \(exit)."
+                errorMessage = CLIBridge.explainExit(exit, operation: "Backup for \(profile)")
             }
         }
     }
@@ -382,7 +379,7 @@ struct BackupsView: View {
             diffExitCode = exit
             isRunningDiff = false
             if exit != 0 {
-                errorMessage = "Backup diff failed with exit \(exit)."
+                errorMessage = CLIBridge.explainExit(exit, operation: "Backup diff")
             }
         }
     }

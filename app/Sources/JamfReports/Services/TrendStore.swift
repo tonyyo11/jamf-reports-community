@@ -8,7 +8,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     var id: Date { date }
 }
 
-@Observable final class TrendStore: CacheSourceProviding {
+@Observable final class TrendStore {
     private var allSummaries: [DailySummary] = []
     private(set) var filteredSummaries: [DailySummary] = []
     private(set) var currentProfile: String?

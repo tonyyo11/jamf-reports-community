@@ -124,6 +124,9 @@ final class WorkspaceStore {
     var configState: ConfigState = .defaultState
     /// Non-nil after a save or load error; cleared on success.
     var configError: String?
+    /// Keys the YAML parser auto-healed on load (orphaned sequence items re-attached).
+    /// Non-empty means the on-disk file is still malformed until the user saves from Config.
+    var configRepairedKeys: [String] = []
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
@@ -333,6 +336,10 @@ final class WorkspaceStore {
         let config = workspaceURL.appendingPathComponent("config.yaml")
         let stamp = Self.backupStampFormatter.string(from: Date())
         let backupName = "config.yaml.broken-\(stamp)"
+        // Summarize what the user is about to lose, read from the currently
+        // loaded state (the GUI's lenient parse populates it even when the
+        // engine can't), so the result toast says what to rebuild.
+        let priorSummary = clearedConfigSummary()
         var movedAside = false
         do {
             if FileManager.default.fileExists(atPath: config.path) {
@@ -359,11 +366,34 @@ final class WorkspaceStore {
         }
         configError = nil
         reloadFromDisk()
+        let rebuildHint = priorSummary.isEmpty
+            ? ""
+            : " Previous config (\(priorSummary)) saved as \(backupName); re-run the "
+                + "CSV → EA guide and Columns scaffold to rebuild from your CSV."
         toast = Toast(
-            message: "Default config restored — old file kept as \(backupName)",
+            message: rebuildHint.isEmpty
+                ? "Default config restored — old file kept as \(backupName)"
+                : "Default config restored." + rebuildHint,
             style: .success
         )
         return nil
+    }
+
+    /// Human-readable summary of the customizations the current config carries,
+    /// e.g. "12 column mappings, 1 security agent, 16 custom EAs". Empty when the
+    /// loaded state has nothing customized (so callers can omit the clause).
+    func clearedConfigSummary() -> String {
+        var parts: [String] = []
+        let columns = configState.columns.values.filter { !$0.isEmpty }.count
+            + configState.mobileColumns.values.filter { !$0.isEmpty }.count
+        if columns > 0 { parts.append("\(columns) column mapping\(columns == 1 ? "" : "s")") }
+        let agents = configState.securityAgents.count
+        if agents > 0 { parts.append("\(agents) security agent\(agents == 1 ? "" : "s")") }
+        let eas = configState.customEAs.count
+        if eas > 0 { parts.append("\(eas) custom EA\(eas == 1 ? "" : "s")") }
+        let benches = configState.complianceBenchmarks.count
+        if benches > 0 { parts.append("\(benches) benchmark\(benches == 1 ? "" : "s")") }
+        return parts.joined(separator: ", ")
     }
 
     private static let backupStampFormatter: DateFormatter = {
@@ -464,17 +494,20 @@ final class WorkspaceStore {
     /// Load config.yaml for the current profile. Falls back to defaults if the
     /// file doesn't exist yet (new workspace). Other errors are rethrown.
     func loadConfig() async throws {
+        configRepairedKeys = []
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
             _savedState = loaded.state
             configState = loaded.state
             configError = nil
+            configRepairedKeys = loaded.document.repairedKeys.sorted()
         } catch ConfigService.ConfigError.missingConfig {
             configState = .defaultState
             _loadedDoc = nil
             _savedState = nil
             configError = nil
+            configRepairedKeys = []
         }
         rebuildColumnMappings()
         rebuildCustomEAs()
@@ -491,6 +524,8 @@ final class WorkspaceStore {
         _loadedDoc = newDoc
         _savedState = configState
         configError = nil
+        // Re-saving drops the orphaned sequence items, so the healed-keys note clears.
+        configRepairedKeys = newDoc.repairedKeys.sorted()
     }
 
     /// Discard in-memory edits and restore to the state at the last load/save.
@@ -508,6 +543,7 @@ final class WorkspaceStore {
     }
 
     func removeSecurityAgent(at index: Int) {
+        guard configState.securityAgents.indices.contains(index) else { return }
         configState.securityAgents.remove(at: index)
     }
 
@@ -526,6 +562,7 @@ final class WorkspaceStore {
     }
 
     func removeCustomEA(at index: Int) {
+        guard configState.customEAs.indices.contains(index) else { return }
         configState.customEAs.remove(at: index)
         rebuildCustomEAs()
     }
@@ -535,6 +572,7 @@ final class WorkspaceStore {
     }
 
     func removeComplianceBenchmark(at index: Int) {
+        guard configState.complianceBenchmarks.indices.contains(index) else { return }
         configState.complianceBenchmarks.remove(at: index)
     }
 

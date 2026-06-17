@@ -1,5 +1,30 @@
 import SwiftUI
 import AppKit
+import TipKit
+
+/// Bounds-checked binding to an array element by index.
+///
+/// `ForEach(array.indices, id: \.self)` re-evaluates a row's body for an index
+/// that no longer exists during SwiftUI's removal diff. A plain
+/// `$array[index]` binding traps (`Array index out of range`) when its getter
+/// runs against the shrunken array — the crash seen when deleting a Security
+/// Agent / Custom EA / Compliance Benchmark row. This binding returns `default`
+/// for an out-of-range read and ignores an out-of-range write, so the
+/// disappearing row renders harmlessly instead of crashing.
+@MainActor
+func safeElementBinding<T>(
+    _ array: Binding<[T]>, _ index: Int, default fallback: T
+) -> Binding<T> {
+    Binding(
+        get: { index >= 0 && index < array.wrappedValue.count
+            ? array.wrappedValue[index] : fallback },
+        set: { newValue in
+            if index >= 0 && index < array.wrappedValue.count {
+                array.wrappedValue[index] = newValue
+            }
+        }
+    )
+}
 
 // MARK: - ConfigView
 
@@ -59,6 +84,9 @@ struct ConfigView: View {
             if let problem = configProblem {
                 configRecoveryCard(problem)
             }
+            if !workspace.configRepairedKeys.isEmpty {
+                configHealedKeysCard(workspace.configRepairedKeys)
+            }
             tabContent
         }
         .task(id: workspace.profile) {
@@ -83,9 +111,15 @@ struct ConfigView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your current file is kept beside the new one as "
-                + "config.yaml.broken-<timestamp> — nothing is deleted. Column mappings "
-                + "and customizations will need to be re-applied.")
+            let summary = workspace.clearedConfigSummary()
+            Text(
+                (summary.isEmpty
+                    ? "This reseeds the default config."
+                    : "This clears \(summary).")
+                + " Your current file is kept beside the new one as "
+                + "config.yaml.broken-<timestamp> — nothing is deleted, so you can copy "
+                + "values back. Rebuild quickly with the CSV → EA guide and Columns scaffold."
+            )
         }
     }
 
@@ -143,6 +177,37 @@ struct ConfigView: View {
                     PNPButton(title: "Restore default config…", style: .danger, size: .sm) {
                         showRestoreConfirm = true
                     }
+                }
+            }
+        }
+    }
+
+    /// Informational card shown when the YAML parser auto-healed orphaned
+    /// sequence items on load. Not a parse failure — the file is still readable
+    /// — but the on-disk YAML is malformed until the user saves from this screen.
+    private func configHealedKeysCard(_ keys: [String]) -> some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "wand.and.sparkles")
+                        .foregroundStyle(Theme.Colors.warn)
+                        .accessibilityHidden(true)
+                    Text("Config auto-healed on load")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                    Pill(text: "\(keys.count) key\(keys.count == 1 ? "" : "s")", tone: .warn)
+                }
+                Text("The following YAML keys had malformed sequence items that were "
+                    + "auto-reattached. The file reads correctly but is still malformed "
+                    + "on disk. Save from this screen to persist the cleanup.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Mono(text: keys.joined(separator: ", "), size: 11.5, color: Theme.Colors.warnSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Healed keys: \(keys.joined(separator: ", "))")
+                PNPButton(title: "Save now", icon: "checkmark", style: .gold, size: .sm) {
+                    save()
                 }
             }
         }
@@ -252,47 +317,30 @@ struct ConfigView: View {
 // MARK: - Columns tab
 
 private struct ColumnsTab: View {
+    /// Which device-family column block the editor is showing.
+    private enum ColumnFamily: Hashable { case mac, mobile }
+
     @Binding var triggerCheck: Bool
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var cli = CLIBridge()
     @State private var checkStatus: String? = nil
+    @State private var family: ColumnFamily = .mac
 
     var body: some View {
-        @Bindable var ws = workspace
         HStack(alignment: .top, spacing: 14) {
-            Card(padding: 18) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        SectionHeader(title: "CSV Column Mappings")
-                        Spacer()
-                        Pill(
-                            text: "\(ws.columnMappings.filter { $0.status == .ok }.count) OK · "
-                                + "\(ws.columnMappings.filter { $0.status == .warn }.count) WARN",
-                            tone: .teal,
-                            icon: "checkmark"
-                        )
-                    }
-                    .padding(.bottom, 8)
-
-                    HStack(spacing: 4) {
-                        Text("Mapping logical fields → column headers in your CSV export")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    .padding(.bottom, 12)
-
-                    VStack(spacing: 0) {
-                        ForEach(ws.columnMappings.indices, id: \.self) { i in
-                            ColumnFieldRow(
-                                mapping: ws.columnMappings[i],
-                                value: Binding(
-                                    get: { ws.columnMappings[i].value },
-                                    set: { ws.columnMappings[i].value = $0 }
-                                )
-                            )
-                        }
-                    }
+            VStack(alignment: .leading, spacing: 12) {
+                SegmentedControl(
+                    selection: $family,
+                    options: [
+                        (ColumnFamily.mac, "macOS", "laptopcomputer"),
+                        (ColumnFamily.mobile, "Mobile Devices", "ipad"),
+                    ]
+                )
+                .popoverTip(ConfigTips.columnMapping)
+                switch family {
+                case .mac:    macColumnsCard
+                case .mobile: mobileColumnsCard
                 }
             }
             .frame(maxWidth: .infinity)
@@ -306,9 +354,96 @@ private struct ColumnsTab: View {
         .onChange(of: triggerCheck) { _, triggered in
             guard triggered else { return }
             triggerCheck = false
+            family = .mac
             runCheck()
         }
     }
+
+    // MARK: macOS column mappings (unchanged idiom)
+
+    private var macColumnsCard: some View {
+        @Bindable var ws = workspace
+        return Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    SectionHeader(title: "CSV Column Mappings")
+                    Spacer()
+                    Pill(
+                        text: "\(ws.columnMappings.filter { $0.status == .ok }.count) OK · "
+                            + "\(ws.columnMappings.filter { $0.status == .warn }.count) WARN",
+                        tone: .teal,
+                        icon: "checkmark"
+                    )
+                }
+                .padding(.bottom, 8)
+
+                HStack(spacing: 4) {
+                    Text("Mapping logical fields → column headers in your CSV export")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+                .padding(.bottom, 12)
+
+                VStack(spacing: 0) {
+                    ForEach(ws.columnMappings.indices, id: \.self) { i in
+                        ColumnFieldRow(
+                            mapping: ws.columnMappings[i],
+                            value: Binding(
+                                get: { ws.columnMappings[i].value },
+                                set: { ws.columnMappings[i].value = $0 }
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Mobile-device column mappings (opt-in)
+
+    private var mobileColumnsCard: some View {
+        @Bindable var ws = workspace
+        return Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 0) {
+                SectionHeader(title: "Mobile CSV Column Mappings")
+                    .padding(.bottom, 8)
+                Text("Optional — only needed if you report on iOS/iPadOS/tvOS "
+                    + "devices. Leave blank for a Mac-only fleet.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 12)
+
+                VStack(spacing: 0) {
+                    ForEach(ConfigState.mobileColumnKeys, id: \.self) { key in
+                        MobileColumnFieldRow(
+                            key: key,
+                            placeholder: Self.mobilePlaceholders[key] ?? "",
+                            value: Binding(
+                                get: { ws.configState.mobileColumns[key] ?? "" },
+                                set: { ws.configState.mobileColumns[key] = $0 }
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /// Native column-header examples shown as placeholders when a mobile
+    /// mapping is blank. Mirrors the `mobile_columns` block in
+    /// `config.example.yaml`.
+    private static let mobilePlaceholders: [String: String] = [
+        "device_name": "Display Name",
+        "serial_number": "Serial Number",
+        "operating_system": "OS Version",
+        "last_checkin": "Last Inventory Update",
+        "email": "Email Address",
+        "model": "Model",
+        "device_family": "Device Family",
+        "managed": "Managed",
+        "supervised": "Supervised",
+    ]
 
     private var validationCard: some View {
         Card(padding: 16) {
@@ -361,11 +496,12 @@ private struct ColumnsTab: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionHeader(title: "Tip")
-                (Text("Run ") + Text("scaffold").font(.caption.monospaced()) +
-                 Text(" to auto-detect columns from a new CSV export. Existing config is preserved."))
+                Text(scaffoldTipText)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
-                PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm, action: runScaffold)
+                PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm,
+                          action: runScaffold)
+                .popoverTip(ConfigTips.rescaffold)
             }
         }
     }
@@ -380,10 +516,13 @@ private struct ColumnsTab: View {
                     Task { @MainActor in checkStatus = line.text }
                 }
             } catch {
-                checkStatus = "Check failed · \(error.localizedDescription)"
+                checkStatus = "Check failed: \(error.localizedDescription). Confirm a CSV is in "
+                    + "csv-inbox and config.yaml is valid."
                 return
             }
-            checkStatus = exit == 0 ? "Check passed · exit 0" : "Check failed · exit \(exit)"
+            checkStatus = exit == 0
+                ? "Check passed · exit 0"
+                : CLIBridge.explainExit(exit, operation: "Config check")
         }
     }
 
@@ -398,14 +537,14 @@ private struct ColumnsTab: View {
         SystemActions.open(url)
     }
 
+    private var scaffoldTipText: String {
+        "Run scaffold to detect column mappings from a new CSV export and merge them into "
+            + "profile \(workspace.profile)'s config.yaml. Existing mappings, security agents, "
+            + "custom EAs and thresholds are kept — only empty or stale column mappings are "
+            + "filled. Re-running as the CSV changes over time is safe."
+    }
+
     private func runScaffold() {
-        guard let wsURL = ProfileService.workspaceURL(for: workspace.profile) else {
-            workspace.toast = Toast(
-                message: "Cannot locate workspace for `\(workspace.profile)`.",
-                style: .danger
-            )
-            return
-        }
         guard let csvURL = newestCSVURL() else {
             workspace.toast = Toast(
                 message: "Drop a CSV export into the workspace before scaffolding.",
@@ -413,24 +552,61 @@ private struct ColumnsTab: View {
             )
             return
         }
-        let configOut = wsURL.appendingPathComponent("config.yaml")
         let profile = workspace.profile
         Task {
             do {
+                // MERGE into the existing config (per profile) rather than
+                // overwrite: fill empty mappings, repair mappings whose CSV
+                // column is gone, keep everything else (agents, custom EAs,
+                // thresholds) untouched. ConfigService.save preserves unmanaged keys.
+                let sample = try ScaffoldService.readSample(from: csvURL)
                 let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
-                try ScaffoldService.writeConfig(to: configOut, result: result, profile: profile)
-                let familyLabel = result.family == .mobile ? "mobile device export" : "computer export"
-                let matched = (result.family == .mobile ? result.mobileColumns : result.columns).count
+                var loaded = try ConfigService.load(profile: profile)
+                let isMobile = result.family == .mobile
+                let detected = isMobile ? result.mobileColumns : result.columns
+                let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
+                let merge = ScaffoldService.mergeColumns(
+                    existing: existing, detected: detected, csvHeaders: sample.headers)
+                var report = merge.report
+                if isMobile { loaded.state.mobileColumns = merge.merged }
+                else { loaded.state.columns = merge.merged }
+
+                // Compliance columns (computer family only) merge the same way —
+                // they live in two scalar fields, not the columns dict.
+                if !isMobile {
+                    let existingCompliance = [
+                        "failures_count_column": loaded.state.failuresCountColumn,
+                        "failures_list_column": loaded.state.failuresListColumn,
+                    ]
+                    let cMerge = ScaffoldService.mergeColumns(
+                        existing: existingCompliance, detected: result.complianceColumns,
+                        csvHeaders: sample.headers)
+                    loaded.state.failuresCountColumn =
+                        cMerge.merged["failures_count_column"] ?? loaded.state.failuresCountColumn
+                    loaded.state.failuresListColumn =
+                        cMerge.merged["failures_list_column"] ?? loaded.state.failuresListColumn
+                    report.added += cMerge.report.added
+                    report.repaired += cMerge.report.repaired
+                    report.keptCount += cMerge.report.keptCount
+                    report.staleUnresolved += cMerge.report.staleUnresolved
+                }
+                _ = try ConfigService.save(
+                    profile: profile, state: loaded.state, existingDocument: loaded.document)
+                let familyLabel = isMobile ? "mobile device export" : "computer export"
                 await MainActor.run {
                     workspace.toast = Toast(
-                        message: "Detected \(familyLabel) — mapped \(matched) column(s)",
+                        message: "Merged \(familyLabel) column mappings into \(profile)'s "
+                            + "config — \(report.summary). Security agents, custom EAs and "
+                            + "thresholds were kept. Review the Columns tab, then Save.",
                         style: .success
                     )
                 }
                 workspace.reloadFromDisk()
             } catch {
                 await MainActor.run {
-                    workspace.toast = Toast(message: "Scaffold failed: \(error.localizedDescription)", style: .danger)
+                    workspace.toast = Toast(
+                        message: "Re-scaffold failed for \(profile): \(error.localizedDescription)",
+                        style: .danger)
                 }
             }
         }
@@ -523,12 +699,18 @@ private struct AgentsTab: View {
 
     private func agentRow(_ index: Int) -> some View {
         @Bindable var ws = workspace
+        // Bounds-checked element binding: a `ForEach(indices, id: \.self)` row can
+        // be re-evaluated for a now-deleted index during SwiftUI's removal diff;
+        // a raw `$array[index]` subscript traps there. See safeElementBinding.
+        let agent = safeElementBinding(
+            $ws.configState.securityAgents, index,
+            default: ConfigSecurityAgent(name: "", column: "", connectedValue: ""))
         return HStack(spacing: 8) {
-            PNPTextField(value: $ws.configState.securityAgents[index].name)
+            PNPTextField(value: agent.name)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            PNPTextField(value: $ws.configState.securityAgents[index].column, mono: true)
+            PNPTextField(value: agent.column, mono: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            PNPTextField(value: $ws.configState.securityAgents[index].connectedValue, mono: true)
+            PNPTextField(value: agent.connectedValue, mono: true)
                 .frame(width: 140, alignment: .leading)
             Menu {
                 Button(role: .destructive) { workspace.removeSecurityAgent(at: index) } label: {
@@ -586,19 +768,28 @@ private struct EACardEdit: View {
 
     var body: some View {
         @Bindable var ws = workspace
-        VStack(alignment: .leading, spacing: 12) {
+        // Bounds-checked element binding — a deleted row can be re-evaluated for
+        // a stale index during SwiftUI's removal diff; a raw `[index]` subscript
+        // traps. See safeElementBinding.
+        let ea = safeElementBinding(
+            $ws.configState.customEAs, index,
+            default: ConfigCustomEA(
+                name: "", column: "", type: "text", trueValue: "",
+                warningThreshold: "", criticalThreshold: "",
+                currentVersions: [], warningDays: ""))
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Sheet name")
-                    PNPTextField(value: $ws.configState.customEAs[index].name)
+                    PNPTextField(value: ea.name)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "EA Column")
-                    PNPTextField(value: $ws.configState.customEAs[index].column, mono: true)
+                    PNPTextField(value: ea.column, mono: true)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Type")
-                    Picker("", selection: $ws.configState.customEAs[index].type) {
+                    Picker("", selection: ea.type) {
                         Text("Boolean").tag("boolean")
                         Text("Percentage").tag("percentage")
                         Text("Version").tag("version")
@@ -616,22 +807,22 @@ private struct EACardEdit: View {
                 .padding(.top, 24)
             }
 
-            let type = ws.configState.customEAs[index].type
+            let type = ea.wrappedValue.type
             HStack(spacing: 16) {
                 if type == "boolean" {
-                    eaField(label: "True value", value: $ws.configState.customEAs[index].trueValue, help: "Value that means compliant")
+                    eaField(label: "True value", value: ea.trueValue, help: "Value that means compliant")
                 } else if type == "percentage" {
-                    eaField(label: "Warning ≥", value: $ws.configState.customEAs[index].warningThreshold, unit: "%")
-                    eaField(label: "Critical ≥", value: $ws.configState.customEAs[index].criticalThreshold, unit: "%")
+                    eaField(label: "Warning ≥", value: ea.warningThreshold, unit: "%")
+                    eaField(label: "Critical ≥", value: ea.criticalThreshold, unit: "%")
                 } else if type == "date" {
-                    eaField(label: "Warning days", value: $ws.configState.customEAs[index].warningDays, unit: "days")
+                    eaField(label: "Warning days", value: ea.warningDays, unit: "days")
                 } else if type == "version" {
                     VStack(alignment: .leading, spacing: 4) {
                         FieldLabel(label: "Current versions")
                         Text("Comma-separated list").font(.caption2).foregroundStyle(Theme.Text.tertiary(contrast))
                         PNPTextField(value: Binding(
-                            get: { ws.configState.customEAs[index].currentVersions.joined(separator: ", ") },
-                            set: { ws.configState.customEAs[index].currentVersions = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+                            get: { ea.wrappedValue.currentVersions.joined(separator: ", ") },
+                            set: { ea.wrappedValue.currentVersions = $0.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
                         ), mono: true)
                     }
                 }
@@ -812,7 +1003,8 @@ private struct PlatformTab: View {
                     FieldLabel(label: "Compliance benchmarks")
                     ForEach(ws.configState.complianceBenchmarks.indices, id: \.self) { i in
                         HStack(spacing: 8) {
-                            PNPTextField(value: $ws.configState.complianceBenchmarks[i])
+                            PNPTextField(value: safeElementBinding(
+                                $ws.configState.complianceBenchmarks, i, default: ""))
                             Button(role: .destructive) { ws.removeComplianceBenchmark(at: i) } label: {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundStyle(Theme.Colors.danger)
@@ -1082,6 +1274,26 @@ private struct ColumnFieldRow: View {
             }
         }
         .font(.system(size: 12, weight: .semibold))
+    }
+}
+
+// MARK: - MobileColumnFieldRow
+
+/// One row of the Mobile Devices column editor. Same label + TextField idiom
+/// as `ColumnFieldRow`, minus the live validation icon — mobile mappings are
+/// not exercised by the macOS "Run check" flow.
+private struct MobileColumnFieldRow: View {
+    let key: String
+    let placeholder: String
+    @Binding var value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Mono(text: key, size: 11.5, color: Theme.Text.secondary)
+                .frame(width: 180, alignment: .leading)
+            PNPTextField(value: $value, placeholder: placeholder, mono: true)
+        }
+        .padding(.vertical, 6)
     }
 }
 

@@ -1181,20 +1181,17 @@ struct ReportEngine: Sendable {
     ///   if a valid `summary_<today>.json` already exists for the profile —
     ///   i.e., a full collect already completed today. Passes `force: true` for
     ///   ad-hoc Refresh so manual refreshes are never skipped.
-    /// - Cadence (PR-22 T-8): per-report time-since-last-run check; uses
-    ///   `CadenceResolver.resolve` for policy and `StateFileStore` for the
-    ///   last-success timestamp. State is written on successful save so a
-    ///   crashed/skipped run does not advance the cadence boundary.
-    ///
-    /// Between successful fetches, `pace_seconds` (PR-22 T-11) inserts a
-    /// sleep so on-prem servers don't see a burst of requests. Skipped
-    /// reports don't incur pace — only the actual fetches do.
+    /// - Cadence: per-report time-since-last-run check; uses
+    ///   `CadenceResolver.cadence(forReport:)` for the fixed cloud cadence and
+    ///   `StateFileStore` for the last-success timestamp. State is written on
+    ///   successful save so a crashed/skipped run does not advance the boundary.
+    ///   A `force: true` call bypasses the cadence check entirely.
     ///
     /// Log-prefix conventions for skip lines (operators read these in the
     /// Runs view to understand why a report didn't update):
     ///
-    /// - `[skip] <kind>: tier <t> not selected` — T-9 tier filter
-    /// - `[skip] <kind>: not due (last: ..., cadence: ...)` — T-8 cadence
+    /// - `[skip] <kind>: tier <t> not selected` — tier filter
+    /// - `[skip] <kind>: not due (last: ..., cadence: ...)` — cadence check
     /// - `[info] skipping per-device commands (...)` — PR-16 skipExpensive
     /// - `[info] already collected today — skipping (use Refresh to force)` — once-per-day guard
     /// One jamf-cli command's outcome in the collect loop, for the auth-dead verdict.
@@ -1371,7 +1368,7 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "mobile-device-inventory-details", "list", "--output", "json"],
              "mobile-device-inventory-details"),
             // Health audit — single cheap server call; matches CLIBridge.audit() shape that
-            // AuditView, HealthCheckView, and WorkspaceStore+Refresh all consume as "audit".
+            // AuditView and WorkspaceStore+Refresh all consume as "audit".
             // audit-platform-checks omitted: no Swift reader for that kind yet.
             (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
         ]
@@ -1391,13 +1388,8 @@ struct ReportEngine: Sendable {
             plannedCommands = commands
         }
 
-        // PR-22 T-8/T-9/T-11 setup: cadence config, state store, pace.
-        // All three reduce to no-ops when their config is absent — a fresh
-        // workspace with no collect_cadence: block runs everything daily
-        // (on-prem defaults) without per-report state, matching pre-PR-22.
-        let cadenceConfig = loadedConfig?.collectCadence
-        let presetForPace = cadenceConfig?.preset ?? .onPrem
-        let paceSeconds = cadenceConfig?.paceSeconds ?? presetForPace.paceSeconds
+        // Cadence state store: persists per-kind last-success timestamps so
+        // the cadence filter skips reports that aren't due yet.
         let stateStore: StateFileStore? = (try? workspacePaths.stateDir(for: profile))
             .map(StateFileStore.init(directory:))
         let collectStart = Date()
@@ -1414,7 +1406,6 @@ struct ReportEngine: Sendable {
         } ?? false
 
         let bridge = CLIBridge()
-        var didFetchPrior = false
         var outcomes: [CollectOutcome] = []
         // Tracks kinds where saveSnapshot actually wrote a file this run.
         // Used to build liveKinds for R4 provenance — exit-0 non-JSON output
@@ -1432,24 +1423,17 @@ struct ReportEngine: Sendable {
                 continue
             }
 
-            // T-8 cadence filter: skip when last-run + cadence is in the future.
-            let cadence = CadenceResolver.resolve(report: kind, config: cadenceConfig)
+            // Cadence filter: skip when last-run + cadence is in the future.
+            // Bypassed entirely when force == true so ad-hoc refreshes always refetch.
+            let cadence = CadenceResolver.cadence(forReport: kind)
             let lastRun = stateStore?.lastRun(report: kind)
-            if !CadenceResolver.isDue(lastRun: lastRun, cadence: cadence, now: collectStart) {
+            if !force, !CadenceResolver.isDue(lastRun: lastRun, cadence: cadence, now: collectStart) {
                 onLine(.init(
                     timestamp: Date(), level: .info,
                     text: "[skip] \(kind): not due (last: \(lastRunLabel(lastRun)), cadence: \(cadence.label))"
                 ))
                 continue
             }
-
-            // T-11 pace_seconds: sleep BETWEEN fetches, not before the first
-            // and not after a skip — skipped kinds don't burden the server,
-            // so a series of skips shouldn't introduce phantom latency.
-            if didFetchPrior && paceSeconds > 0 {
-                try await Task.sleep(for: .seconds(paceSeconds))
-            }
-            didFetchPrior = true
 
             onLine(.init(
                 timestamp: Date(), level: .info,

@@ -266,8 +266,11 @@ GUI's Sources screen and by integration tooling.
 
 **`diagnostic-bundle`** — bundle local diagnostic data into a redacted zip for
 sharing. Includes recent `automation/logs/`, last N `summary_*.json` snapshots,
-config.yaml (secrets redacted), workspace tree listing, and version metadata.
-Default output: `~/Desktop/jamf-reports-diagnostic-<profile>-<ts>.zip`.
+config.yaml (secrets redacted), workspace tree listing, version metadata, and a
+redacted `doctor.json` (`_bundle_collect_doctor` runs `jamf-cli doctor` for the
+configured profile — resolved profile, credential-resolution state, env, and a
+HEAD reachability probe; best-effort, skipped on missing binary/profile or
+non-zero exit). Default output: `~/Desktop/jamf-reports-diagnostic-<profile>-<ts>.zip`.
 Credentials (`client_secret`, `client_id`, bearer tokens, JWTs, OAuth tokens,
 passwords) are always redacted. PII (Jamf hostnames, serials, emails, device
 names in known JSON fields) is redacted by default with stable hash placeholders
@@ -508,19 +511,21 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | Service | Purpose |
 |---------|---------|
 | `WorkspaceStore` | `@Observable` per-profile state. Sidebar chip switches the active profile; every screen re-routes to that workspace's data. |
-| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. `runNow(profile:mode:)` is the canonical Schedule-mode dispatcher — see Schedule mode contract below. |
+| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. `runNow(profile:mode:)` is the canonical Schedule-mode dispatcher — see Schedule mode contract below. `explainExit(_:operation:)` (nonisolated static) maps a jamf-cli exit code to a plain-language cause + remediation (3→re-auth/401, 5→privileges/403, 6→throttled/429, 4→404, 1→network/per-command); used by every view that surfaces a non-zero exit instead of a bare number. |
 | `WorkspacePaths` | Typed, profile-validated path constants under `~/Jamf-Reports/<profile>/`. All path construction goes through here. |
 | `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
 | `LaunchAgentService` | Discovers and parses existing `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist` jobs. |
 | `LaunchAgentWriter` | Generates LaunchAgent plists and writes them atomically. |
 | `OnboardingFlow` | Orchestrates first-run: jamf-cli auth via PTY-driven `stdin`, profile creation, workspace init, first collect/generate run. Supports four connection flows: Jamf Pro OAuth2 (`config add-profile`), Platform Gateway (`config add-profile --auth-method platform --tenant-id`), Jamf Protect (`protect setup`), Jamf School (`school setup`). Protect/School are optional "Add Products" additions (also reachable post-onboarding from SourcesView via `ProductConnectSheetView`); success wires `protect.enabled/profile` and `school_cli.enabled/profile` into config.yaml. Secrets: PTY stdin only, redacted output, cleared after use; `SecureSecretField` reports a has-text Bool (never content) so the Continue button enables while typing. |
-| `ConfigService` | Reads and writes `config.yaml` within a profile workspace. |
+| `ConfigService` | Reads and writes `config.yaml` within a profile workspace. Only rewrites managed top-level keys and re-reads the rest, so unrelated/unmanaged config is preserved verbatim (this is what makes additive merges/adoptions safe). Int-typed custom-EA keys (`warning_threshold`/`critical_threshold`/`warning_days`) are omitted when empty/non-numeric — never written as `key: ""`, which the report engine's `Int?` decode rejects. |
+| `ConfigEAAdopter` | Appends CSV-detected columns into `config.yaml` as `custom_eas` and/or `security_agents` in one load/save (`adopt(eaProposals:agentProposals:connectedValues:)`); per-section case-insensitive column de-dup. `adoptEAs` is a shim over it. Backs the CSV → EA walkthrough's "Adopt as" picker. |
+| `ScaffoldService` | CSV column detection + config writing. `writeConfig` (full regenerate) is used only for the initial onboarding scaffold; **re-scaffold uses the non-destructive `mergeColumns(existing:detected:csvHeaders:)`** — fills empty mappings, repairs mappings whose CSV column was renamed, keeps valid existing mappings, flags stale-unresolved ones (`ColumnMergeReport`). Per profile, via `ConfigService.save`, so agents/EAs/thresholds survive. (Python's CLI `scaffold` still overwrites — it's an initial-setup command; use the GUI re-scaffold for safe re-runs.) |
 | `TrendStore` | Loads `summary.json` snapshots from `snapshots/computers/summaries/`; feeds the Trends screen charts. |
 | `DeviceInventoryService` | Reads cached device inventory JSON from the workspace. |
 | `ReportLibrary` | Lists generated reports in `Generated Reports/`. |
 | `RunHistoryService` | Reads run logs from `automation/logs/`. |
 | `SnapshotArchiveService` | Manages dated CSV snapshot archives. |
-| `SystemActions` | `NSWorkspace` file open/reveal, strictly bounded to allowed paths. |
+| `SystemActions` | `NSWorkspace` file open/reveal, strictly bounded to allowed paths. A refused reveal/open (path outside the allow-list, or a non-web link) posts `.systemActionDenied` with a user-facing `userInfo["message"]`; `ContentView` observes it once and shows a toast, so a blocked action is never silently swallowed. |
 | `YAMLCodec` | Minimal YAML reader/writer for `config.yaml` fields the GUI exposes. |
 | `JamfCLIInstaller` | Auto-update check and installation via Homebrew. |
 | `SecurityScoreCalculator` | v3.5-parity weighted Security Score (FV 15 + SIP 15 + Firewall 15 + CrowdStrike 10 + mSCP 20 + XProtect 5 + CVE 15 + Secure Boot 5). Drops missing metrics from the denominator and renormalizes so tenants without specific agent stacks still get a comparable score. Weights configurable via ConfigView → Scoring tab (backed by `@AppStorage("securityScoreWeights")` and `ScoringConfig`). |
@@ -533,10 +538,11 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `PolicyHealthService` | Reads `policy-status/` + `profile-status/`; surfaces config findings grouped by severity and profile assignment failures for PolicyProfileView. |
 | `ExtensionAttributeService` | Reads `ea-results/` + `computer-extension-attributes/`; computes per-EA coverage (% of fleet populated) and top-10 value distributions. Returns `.empty` Snapshot for empty content, nil only when no input URLs given. |
 | `StaleDeviceService` | Buckets DeviceInventoryService records into Recent (0–30d) / Offline (31–90d) / Inactive (91–180d) / Dormant (180d+) for OutreachView. |
-| `ProtectDashboardService` | Reads `protect-overview/` + `protect-alerts/` + `protect-computers/` + `protect-insights/`. `isDetected` flag is true when at least one file decoded successfully (even to an empty array) — distinguishes "tenant doesn't run Protect" from "tenant runs Protect, just no current data". |
+| `ProtectDashboardService` | Reads `protect-overview/` + `protect-alerts/` + `protect-computers/` + `protect-insights/` + `protect-plans/`. `isDetected` flag is true when at least one file decoded successfully (even to an empty array) — distinguishes "tenant doesn't run Protect" from "tenant runs Protect, just no current data". Plans (`ProtectPlanRow`) decode from either a bare array or a `{nodes:[]}` GraphQL envelope and surface in the ProtectView "Plans" card. |
+| `CLIDoctorService` | Runs `jamf-cli doctor --output json` for the active profile (v1.18+) and decodes `CLIDoctorReport` (resolved profile, credential-resolution state, HEAD connectivity probe). Derives a health verdict (healthy / credentials-unresolved / unauthorized / unreachable / no-profile). Mirrors `CapabilityService` (`@MainActor @Observable`, injected `CLIExecutor`, pure `nonisolated static parse`). Powers the SourcesView "Connection health" card. Distinct from `ConfigDoctorService`/`DoctorReport`, which diagnose `config.yaml`. |
 | `MobileFleetService` | Reads `mobile-devices-list/` (light) + `mobile-device-inventory-details/` (rich) + `classic-ios-profiles/`. Surfaces iOS/iPadOS KPIs, OS distribution, compliance signals. |
 | `LegacyHistoryImporter` | One-shot import from v3.5's `fleet_health_metrics_history.json` into the workspace's summaries dir. Translates snake_case + yyyyMMdd → camelCase + yyyy-MM-dd; idempotent unless overwriteExisting=true. Triggered from SettingsView. |
-| `DiagnosticBundleService` | Native port of Python `cmd_diagnostic_bundle`. Stages recent logs, last-N summaries, redacted config, a workspace tree, and version metadata into a zip under `~/Jamf-Reports/<profile>/diagnostics/` (an allow-listed dir, so `SystemActions.reveal` accepts it). Never executes the bundled script. `DiagnosticRedactor` reproduces the Python redaction behavior: always-on credential patterns, exact-key JSON redaction, and HMAC-SHA256 `<kind>-<8hex>` PII placeholders (per-instance random salt — stable within one bundle only, by design). Powers SettingsView's "Generate diagnostic bundle now". |
+| `DiagnosticBundleService` | Native port of Python `cmd_diagnostic_bundle`. Stages recent logs, last-N summaries, redacted config, a workspace tree, and version metadata into a zip under `~/Jamf-Reports/<profile>/diagnostics/` (an allow-listed dir, so `SystemActions.reveal` accepts it). Never executes the bundled script. `DiagnosticRedactor` reproduces the Python redaction behavior: always-on credential patterns, exact-key JSON redaction, and HMAC-SHA256 `<kind>-<8hex>` PII placeholders (per-instance random salt — stable within one bundle only, by design). Also stages a redacted `doctor.json` (`collectDoctor` runs `jamf-cli doctor` for the workspace profile; pure `stageDoctorJSON` parses + redacts — the server hostname is the only PII, stripped via `redactJSON`; best-effort, skipped if the binary/profile is absent or the run fails). Powers SettingsView's "Generate diagnostic bundle now". |
 | `ScheduledRunRecorder` | (v2.2.0) Writes the per-run artifacts the Run History screen and Schedules "Last Run" column read: `automation/logs/<label>.<timestamp>.log` + `automation/<label>_status.json`. Used by the headless `--scheduled-run` path, which both launchd and the GUI "Run now" button invoke. Prunes its own logs at 50 per workspace; never touches legacy `.out.log`/`.err.log` files. |
 | `ExportNaming` | (v2.2.0) Single filename convention for exports and engine reports: `<kind>-<profile>-<yyyy-MM-dd_HHmmss>.<ext>`. Used by every CSV/PNG export site and `ReportEngine.resolveOutputURL` (reports become `report_<profile>_<timestamp>.xlsx`). |
 | `BackupMaintenance` | (v2.2.0) Housekeeping for `backups/`: keeps the newest 10 scheduled backups (manual backups never pruned — identified by the `scheduled-` manifest label prefix) and sweeps abandoned `.tmp-*` staging dirs older than 24h. |
@@ -689,7 +695,7 @@ truth for the user-facing semver (`CFBundleShortVersionString`); keep it in sync
 `AppVersionState.fallbackVersion` (`AppVersionDriftTests` enforces this). `CFBundleVersion`
 is always a monotonic integer (git commit count) — never set it to the marketing version.
 Release-vs-beta is signalled by `RELEASE=1` → `JRReleaseChannel` in `Info.plist`, which
-`build-dmg.sh`/`build-pkg.sh` read to decide artifact naming (`-betaN` suffix for betas).
+`build-pkg.sh` reads to decide artifact naming (`-betaN` suffix for betas).
 To bump: change `MARKETING_VERSION`, roll `CHANGELOG.md`, tag `vX.Y.Z`; the build number
 takes care of itself. `.jamf-cli-tracked-version` is a separate axis (the jamf-cli
 dependency floor), unrelated to app versioning.
@@ -702,6 +708,10 @@ dependency floor), unrelated to app versioning.
 - No `UIKit` — SwiftUI only.
 - All new services must validate paths through `ProfileService.workspaceURL(for:)` before
   constructing any file paths.
+- **Never bind `$array[index]` inside `ForEach(array.indices, id: \.self)`** for an
+  editable/removable list — the disappearing row's binding is re-read with a stale index
+  during SwiftUI's removal diff and traps ("Array index out of range"). Use
+  `safeElementBinding(_:_:default:)` (ConfigView) or a binding-to-element `ForEach($array)`.
 - Test targets live in `app/Tests/JamfReportsTests/`.
 
 ---

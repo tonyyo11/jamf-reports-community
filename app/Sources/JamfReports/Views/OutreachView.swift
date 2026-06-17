@@ -30,7 +30,7 @@ struct OutreachView: View {
             )
             // DRAFT — needs visual verification at PageScaffold.minSupportedWidth
             if !workspace.demoMode {
-                CollectNowBanner(source: snapshot.cacheSource)
+                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
             }
             if snapshot.totalDevices == 0 {
                 emptyState

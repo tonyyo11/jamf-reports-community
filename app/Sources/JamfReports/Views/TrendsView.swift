@@ -113,7 +113,7 @@ struct TrendsView: View {
                 // dataset is intentionally static and not user-perceivably
                 // "stale"). Renders nothing when source is .fresh.
                 if !workspaceStore.demoMode {
-                    CollectNowBanner(source: trendStore.cacheSource)
+                    CollectNowBanner(source: trendStore.cacheSource, tiers: [.refresh])
                     if let latest = trendStore.filteredSummaries.last {
                         ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
                     }
@@ -977,7 +977,7 @@ struct TrendsView: View {
         let profile = workspaceStore.profile
         isArchiving = true
         workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
-        // Status-bar race guard — see HealthCheckView.runAudit comment.
+        // Status-bar race guard — see AuditView.runAudit comment.
         do {
             let exit = try await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspaceStore] line in
                 Task { @MainActor in

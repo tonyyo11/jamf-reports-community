@@ -21,7 +21,6 @@ enum Theme {
         static let winBG       = Color(hex: 0x1D1D1F)
         static let winBG2      = Color(hex: 0x232326)
         static let winBG3      = Color(hex: 0x2A2A2E)
-        static let titlebar    = Color(hex: 0x28282C, opacity: 0.72)
         static let codeBG      = Color(hex: 0x0E0F12)
 
         // Text

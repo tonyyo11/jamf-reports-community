@@ -24,6 +24,7 @@ struct ContentView: View {
     /// Drives the Automation tab's breadcrumb: "POLICY" in managed mode,
     /// "SCHEDULES" when the operator manages hand-built agents directly.
     @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
+    @State private var isRefreshingAll = false
 
     private var sidebarMode: SidebarMode {
         get { SidebarMode(rawValue: sidebarModeRaw) ?? .expanded }
@@ -63,39 +64,36 @@ struct ContentView: View {
     }
 
     private var shell: some View {
-        HStack(spacing: 0) {
-            if sidebarMode != .hidden {
-                Sidebar(activeTab: $tab, mode: sidebarMode)
-                    .frame(width: sidebarMode == .compact
-                           ? Theme.Metrics.sidebarWidthCompact
-                           : Theme.Metrics.sidebarWidthExpanded)
-                    .transition(.move(edge: .leading))
-            }
-            VStack(spacing: 0) {
-                Titlebar(
-                    title: tab.label,
-                    sub: subtitle(for: tab),
-                    sidebarMode: sidebarMode,
-                    onCycleSidebar: cycleSidebar
-                )
-                Divider().background(Theme.Colors.hairline)
-
-                ZStack(alignment: .bottom) {
-                    detailView
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Theme.Colors.winBG)
-
-                    if let toast = workspace.toast {
-                        toastView(toast)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                            .zIndex(100)
-                    }
+        NavigationStack {
+            HStack(spacing: 0) {
+                if sidebarMode != .hidden {
+                    Sidebar(activeTab: $tab, mode: sidebarMode)
+                        .frame(width: sidebarMode == .compact
+                               ? Theme.Metrics.sidebarWidthCompact
+                               : Theme.Metrics.sidebarWidthExpanded)
+                        .transition(.move(edge: .leading))
                 }
+                VStack(spacing: 0) {
+                    ZStack(alignment: .bottom) {
+                        detailView
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Theme.Colors.winBG)
 
-                StatusBar(status: workspace.globalStatus)
+                        if let toast = workspace.toast {
+                            toastView(toast)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                                .zIndex(100)
+                        }
+                    }
+
+                    StatusBar(status: workspace.globalStatus)
+                }
             }
+            .background(Theme.Colors.winBG.ignoresSafeArea())
+            .navigationTitle(tab.label)
+            .navigationSubtitle(subtitle(for: tab) ?? "")
+            .toolbar { shellToolbar }
         }
-        .background(Theme.Colors.winBG.ignoresSafeArea())
         .onReceive(NotificationCenter.default.publisher(for: .cycleSidebar)) { _ in
             cycleSidebar()
         }
@@ -138,6 +136,46 @@ struct ContentView: View {
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
         .animation(.snappy, value: workspace.toast != nil)
+        .onReceive(NotificationCenter.default.publisher(for: .systemActionDenied)) { note in
+            if let message = note.userInfo?["message"] as? String {
+                workspace.toast = Toast(message: message, style: .danger)
+            }
+        }
+    }
+
+    /// Shell chrome moved into the system (Liquid Glass) toolbar: the sidebar
+    /// toggle on the leading edge, the jamf-cli status chip and global refresh
+    /// button on the trailing edge. The title/subtitle come from
+    /// navigationTitle/navigationSubtitle; per-view `.searchable` fields render
+    /// in the same toolbar.
+    @ToolbarContentBuilder
+    private var shellToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button(action: cycleSidebar) {
+                Image(systemName: "sidebar.left")
+            }
+            .help("Toggle sidebar")
+            .accessibilityLabel("Toggle sidebar")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            CLIStatusChip()
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                guard !isRefreshingAll, !workspace.demoMode else { return }
+                Task {
+                    isRefreshingAll = true
+                    defer { isRefreshingAll = false }
+                    await workspace.runTierRefresh(Set(CollectionTier.allCases))
+                    NotificationCenter.default.post(name: .refreshActiveTab, object: nil)
+                }
+            } label: {
+                Image(systemName: isRefreshingAll ? "hourglass" : "arrow.clockwise")
+            }
+            .disabled(isRefreshingAll || workspace.demoMode)
+            .help("Refresh all data now")
+            .accessibilityLabel("Refresh all data")
+        }
     }
 
     @ViewBuilder

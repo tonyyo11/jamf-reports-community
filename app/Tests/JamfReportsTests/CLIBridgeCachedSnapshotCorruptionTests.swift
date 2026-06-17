@@ -6,7 +6,7 @@ import XCTest
 //
 // silent-failure-hunter (Phase 0 + PR-1 review) surfaced that
 // `CachedDataFallback.loadFromCache` has zero production callers — the
-// AuditView / HealthCheckView / CustomizationWizard read path runs
+// AuditView / CustomizationWizard read path runs
 // through `CLIBridge.cachedJSONSnapshots`. A JSON-structural validity
 // probe in CachedDataFallback alone protected only test-only code. This
 // test exercises the production path: a corrupted snapshot dropped into

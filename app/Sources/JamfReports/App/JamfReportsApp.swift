@@ -13,6 +13,7 @@ struct JamfReportsApp: App {
 
     init() {
         FontRegistry.registerBundledFonts()
+        AppTips.configure()
     }
 
     var body: some Scene {
@@ -31,7 +32,12 @@ struct JamfReportsApp: App {
                     NSApp.windows.first?.makeKeyAndOrderFront(nil)
                 }
         }
-        .windowStyle(.hiddenTitleBar)
+        // Liquid Glass shell (2a): use the standard titled window so the system
+        // toolbar renders as Liquid Glass on macOS 26 (under .hiddenTitleBar it
+        // was muted). The toolbar already exists — the per-view `.searchable`
+        // field lives there; the shell now also puts the title, sidebar toggle,
+        // and CLIStatusChip into it. Deployment target stays .macOS(.v14); on
+        // 14/15 this is just a normal titled window + toolbar.
         .windowResizability(.contentSize)
         .commands {
             // ⌘0 cycles the sidebar — a HIG-shaped affordance the prototype calls out.
@@ -113,4 +119,8 @@ extension Notification.Name {
     static let refreshActiveTab = Notification.Name("JamfReports.refreshActiveTab")
     static let focusSearch = Notification.Name("JamfReports.focusSearch")
     static let popToRootNavigation = Notification.Name("JamfReports.popToRootNavigation")
+    /// Posted by `SystemActions` when a reveal/open is refused (path outside the
+    /// allow-list, or a non-web link). `userInfo["message"]` carries the toast
+    /// text. Observed once in `ContentView` so the rejection is never silent.
+    static let systemActionDenied = Notification.Name("JamfReports.systemActionDenied")
 }

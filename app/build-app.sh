@@ -11,7 +11,7 @@ CONFIG="${1:-release}"
 # Marketing version (CFBundleShortVersionString) — bumped per milestone.
 # This is the single source of truth for the user-facing semver; keep it in
 # sync with AppVersionState.fallbackVersion (a test enforces this).
-MARKETING_VERSION="${MARKETING_VERSION:-2.2.2}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.3.0}"
 
 # Build number (CFBundleVersion). Always a monotonically increasing integer
 # (git commit count), independent of the marketing version — this matches
@@ -21,7 +21,7 @@ MARKETING_VERSION="${MARKETING_VERSION:-2.2.2}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 0)}"
 
 # Release channel. Set RELEASE=1 for a public release build; otherwise the
-# build is a beta and downstream build-dmg.sh / build-pkg.sh append -betaN.
+# build is a beta and downstream build-pkg.sh appends -betaN.
 # This is stamped into Info.plist (JRReleaseChannel) so the packaging scripts
 # read the channel from the .app rather than guessing from the build number.
 RELEASE="${RELEASE:-0}"
@@ -122,7 +122,7 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
     <string>${MARKETING_VERSION}</string>
     <!-- CFBundleVersion is always a monotonic integer (git commit count),
          independent of the marketing version. Release-vs-beta is signalled by
-         JRReleaseChannel below, which build-dmg.sh / build-pkg.sh read. -->
+         JRReleaseChannel below, which build-pkg.sh reads. -->
     <key>CFBundleVersion</key>
     <string>${BUILD_NUMBER}</string>
     <!-- Private key: "release" or "beta". The packaging scripts read this to

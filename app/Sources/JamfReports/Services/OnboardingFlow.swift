@@ -119,12 +119,6 @@ final class OnboardingFlow {
 
     // MARK: - State flags
 
-    /// PR-23 T-24: collection cadence preset chosen during onboarding.
-    /// Applied to `config.yaml` once the CSV-mapping step writes it.
-    /// Onboarding offers only On-prem / Cloud — Custom is opt-in later
-    /// via Settings → Performance. Defaults to On-prem (conservative).
-    var selectedCollectionPreset: CadencePreset = .onPrem
-
     var jamfCLIInstalled = false
     var jamfCLIVersion: String?
     var workspaceCreated = false
@@ -720,7 +714,6 @@ final class OnboardingFlow {
                 timestamp: Date(), level: .ok,
                 text: "[ok] config.yaml written to \(outputConfig.lastPathComponent)"
             ))
-            applySelectedPreset(profile: profile)
             csvScaffolded = true
         } catch {
             lastError = error.localizedDescription
@@ -757,39 +750,9 @@ final class OnboardingFlow {
                 timestamp: Date(), level: .ok,
                 text: "[ok] config.yaml written — edit column mappings before running generate"
             ))
-            applySelectedPreset(profile: profile)
             csvMappingSkipped = true
         } catch {
             lastError = error.localizedDescription
-        }
-    }
-
-    /// PR-23 T-24: stamp the onboarding preset choice into the freshly
-    /// written `config.yaml`. Called only after a config-writing step
-    /// succeeds, so `setCadencePreset` mutates a real file.
-    ///
-    /// A failure here is non-fatal: the workspace and config are already
-    /// valid, and `CadenceResolver` defaults to on-prem when the
-    /// `collect_cadence` block is absent. The operator can still set the
-    /// preset later in Settings → Performance — so this warns rather than
-    /// throwing and aborting onboarding.
-    private func applySelectedPreset(profile: String) {
-        do {
-            try ConfigService.setCadencePreset(
-                profile: profile, preset: selectedCollectionPreset
-            )
-            csvOutput.append(.init(
-                timestamp: Date(), level: .ok,
-                text: "[ok] cadence preset set to \(selectedCollectionPreset.displayName)"
-            ))
-        } catch {
-            AppLogger.engine.warning(
-                "OnboardingFlow: failed to apply cadence preset: \(error.localizedDescription, privacy: .private)"
-            )
-            csvOutput.append(.init(
-                timestamp: Date(), level: .warn,
-                text: "[warn] could not write cadence preset — set it later in Settings → Performance"
-            ))
         }
     }
 
@@ -956,7 +919,7 @@ final class OnboardingFlow {
         clearSchoolAPIKey()
     }
 
-    // MARK: - Config wiring helpers (surgical writes, mirror setCadencePreset pattern)
+    // MARK: - Config wiring helpers
 
     internal func writeProtectConfig(profileSlug: String, protectProfileName: String) throws {
         let url = try ConfigService.configURL(for: profileSlug)
