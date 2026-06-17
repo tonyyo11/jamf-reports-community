@@ -19,7 +19,7 @@ struct DDMBlueprintService: Sendable {
     /// Everything the view needs to render. `.empty` when the workspace
     /// has no cached blueprint or DDM data — the view falls back to its
     /// locked or empty state in that case.
-    struct Snapshot: Sendable, Equatable, CacheSourceProviding {
+    struct Snapshot: Sendable, Equatable {
         let blueprints: [Blueprint]
         let declarations: [Declaration]
         let blueprintsSourceFile: URL?

@@ -121,7 +121,6 @@ final class AccessibilitySweepTests: XCTestCase {
         _ = SettingsView().environment(workspace)
         _ = SourcesView().environment(workspace)
         _ = CustomizeView().environment(workspace)
-        _ = WorkspaceView().environment(workspace)
 
         // OnboardingView requires no specific environment
         _ = OnboardingView()

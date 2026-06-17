@@ -2931,11 +2931,6 @@ def _yes_no_unknown(value: Any) -> str:
     return "Yes" if parsed else "No"
 
 
-def _days_since_timestamp(value: Any) -> Optional[int]:
-    """Return whole days since a timestamp-like value, or None when unavailable."""
-    return _days_since(value)
-
-
 def _mobile_device_family(model: Any, name: Any) -> str:
     """Infer a friendly device-family label from mobile model/name fields."""
     text = f"{model} {name}".strip().lower()
@@ -2984,7 +2979,7 @@ def _normalize_mobile_inventory_row(item: Any) -> dict[str, Any]:
         ).strip(),
         "Building": str(_first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["building"])).strip(),
         "Last Inventory Update": str(last_inventory or "").strip(),
-        "Days Since Inventory": _days_since_timestamp(last_inventory),
+        "Days Since Inventory": _days_since(last_inventory),
         "Activation Lock": _yes_no_unknown(
             _first_value(flat, MOBILE_INVENTORY_FIELD_CANDIDATES["activation_lock"])
         ),
@@ -7086,9 +7081,7 @@ def _pct_format(fmts: dict, pct: float) -> Any:
 
 def _legacy_benchmark_slug(title: str) -> str:
     """Return the legacy benchmark slug used by earlier cache layouts."""
-    import re as _re
-
-    return _re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:48]
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:48]
 
 
 def _benchmark_slug(title: str) -> str:

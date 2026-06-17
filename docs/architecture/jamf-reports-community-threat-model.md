@@ -14,7 +14,7 @@ Scope basis: full repo (`app/`, `jamf-reports-community.py`, CI workflows, scrip
 ### In scope
 - Native macOS app under `app/` (Swift 6, SwiftPM, macOS 14+).
 - Python single-file CLI `jamf-reports-community.py`.
-- Build/release tooling: `app/build-app.sh`, `app/build-dmg.sh`, `app/scripts/build-python-runtime.sh`, `app/python-runtime.lock`.
+- Build/release tooling: `app/build-app.sh`, `app/build-pkg.sh`, `app/scripts/` (sign/notarize/package), `app/scripts/build-python-runtime.sh`, `app/python-runtime.lock`.
 - GitHub Actions workflows in `.github/workflows/`.
 - Per-profile workspaces at `~/Jamf-Reports/<profile>/`.
 - User-space LaunchAgents written to `~/Library/LaunchAgents/com.jamfreports.*.plist`.

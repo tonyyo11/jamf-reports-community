@@ -18,7 +18,7 @@ struct ComplianceBenchmarksService: Sendable {
     /// Everything the view needs to render. `.empty` when the workspace has
     /// no cached compliance data — the view falls back to its locked or
     /// empty state in that case.
-    struct Snapshot: Sendable, Equatable, CacheSourceProviding {
+    struct Snapshot: Sendable, Equatable {
         let rules: [Rule]
         let devices: [Device]
         let rulesSourceFile: URL?

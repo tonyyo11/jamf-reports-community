@@ -15,9 +15,6 @@ import Foundation
 ///     working from stale data. Closes the PR-7 BACKLOG CONSIDER item where
 ///     the device-lookup banner always fired on first launch.
 ///
-/// The enum is the contract callers consume; the freshness threshold (and any
-/// service-specific source-of-truth for the snapshot mtime) lives inside the
-/// individual `CacheSourceProviding` conformers.
 enum CacheSource: Equatable, Sendable {
     case fresh
     case stale(at: Date)
@@ -32,17 +29,6 @@ enum CacheSource: Equatable, Sendable {
     }
 }
 
-/// Protocol seam for services that surface cached snapshot data and want to
-/// expose freshness to a `StaleDataBanner` consumer.
-///
-/// PR-13 wires `TrendStore` (and `OverviewView` via the same store) onto this
-/// seam alongside the existing `DeviceLookupView` migration. Five additional
-/// services (`PolicyHealthService`, `CompliancePostureService`,
-/// `SecurityPostureService`, `MobileFleetService`, `ProtectDashboardService`)
-/// are tracked in `BACKLOG.md` for a follow-up PR.
-protocol CacheSourceProviding {
-    var cacheSource: CacheSource { get }
-}
 
 extension CacheSource {
     /// Convenience constructor for callers that have a snapshot mtime (or nil
