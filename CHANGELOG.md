@@ -9,6 +9,11 @@ versions in this repository map to git tags.
 
 ### Added
 
+- The app now adopts macOS 26 (Tahoe) **Liquid Glass** for its window chrome:
+  the title, sidebar toggle, jamf-cli status chip, and per-view search share one
+  system toolbar that renders as Liquid Glass, with content refracting under it
+  as you scroll. On macOS 14 and 15 this is a standard titled window — no change,
+  and no new minimum OS.
 - Data Sources gains a "Connection health" check (jamf-cli `doctor`): on demand,
   it diagnoses the active profile's credential resolution and runs a live server
   reachability probe, then shows a plain verdict (healthy, credentials
