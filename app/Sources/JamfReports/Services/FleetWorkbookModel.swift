@@ -188,9 +188,7 @@ struct FleetWorkbookModel: Sendable, Equatable {
 }
 
 extension MSCPBandCounts {
-    static var zero: MSCPBandCounts {
-        MSCPBandCounts(pass: 0, low: 0, medLow: 0, medium: 0, high: 0, noData: 0)
-    }
+    static let zero = MSCPBandCounts(pass: 0, low: 0, medLow: 0, medium: 0, high: 0, noData: 0)
 
     func adding(_ other: MSCPBandCounts) -> MSCPBandCounts {
         MSCPBandCounts(

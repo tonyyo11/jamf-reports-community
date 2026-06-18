@@ -61,9 +61,9 @@ enum FleetWorkbookEmitter {
         for (i, m) in model.universal.enumerated() {
             let r = head + 1 + i
             ws.write(m.label, row: r, col: 0, format: .cell)
-            ws.write(metricValue(m.value, m.unit), row: r, col: 1, format: .cell)
-            ws.write(metricValue(m.previous, m.unit), row: r, col: 2, format: .cell)
-            ws.write(metricDelta(m.delta, m.unit), row: r, col: 3, format: .cell)
+            ws.write(FleetReportEmitter.format(m.value, unit: m.unit), row: r, col: 1, format: .cell)
+            ws.write(FleetReportEmitter.format(m.previous, unit: m.unit), row: r, col: 2, format: .cell)
+            ws.write(FleetReportEmitter.formatDelta(m.delta, unit: m.unit), row: r, col: 3, format: .cell)
         }
         let withFV = model.perProfile.filter { $0.fileVaultPct != nil }
         guard !withFV.isEmpty else { return }
@@ -112,7 +112,7 @@ enum FleetWorkbookEmitter {
         let controls = model.universal.filter { $0.unit == .percent }
         for (i, m) in controls.enumerated() {
             ws.write(m.label, row: i + 1, col: 0, format: .cell)
-            ws.write(metricValue(m.value, m.unit), row: i + 1, col: 1, format: .cell)
+            ws.write(FleetReportEmitter.format(m.value, unit: m.unit), row: i + 1, col: 1, format: .cell)
         }
         let present = controls.filter { $0.value != nil }
         guard !present.isEmpty else { return }
@@ -172,12 +172,14 @@ enum FleetWorkbookEmitter {
         if group.series.count >= 2, let png = bandStackplot(group) {
             ws.insertImage(row: row + 1, col: 0, data: png,
                            filename: "fleet-bandtrend-\(ExportNaming.sanitize(group.baseline)).png")
+            // reserve ~26 rows for the embedded stackplot before the next baseline block
             row += 26
         }
         return row
     }
 
     private static func bandStackplot(_ group: FleetWorkbookModel.BandGroup) -> Data? {
+        // 5 bands only — "No Data" has no area in a stacked trend (the donut includes it; this doesn't).
         let bandKeys: [(label: String, value: (MSCPBandCounts) -> Int)] = [
             ("Pass", { $0.pass }), ("Low", { $0.low }), ("Med-Low", { $0.medLow }),
             ("Medium", { $0.medium }), ("High", { $0.high })]
@@ -241,20 +243,4 @@ enum FleetWorkbookEmitter {
         value.map { String(format: "%.1f%%", $0) } ?? "—"
     }
 
-    private static func metricValue(_ value: Double?, _ unit: FleetRollup.Unit) -> String {
-        guard let value else { return "—" }
-        switch unit {
-        case .count:   return String(Int(value.rounded()))
-        case .percent: return String(format: "%.1f%%", value)
-        }
-    }
-
-    private static func metricDelta(_ delta: Double?, _ unit: FleetRollup.Unit) -> String {
-        guard let delta else { return "—" }
-        let sign = delta > 0 ? "+" : ""
-        switch unit {
-        case .count:   return "\(sign)\(Int(delta.rounded()))"
-        case .percent: return "\(sign)\(String(format: "%.1f", delta))pp"
-        }
-    }
 }
