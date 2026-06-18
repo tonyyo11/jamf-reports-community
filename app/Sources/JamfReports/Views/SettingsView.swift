@@ -538,15 +538,6 @@ struct SettingsView: View {
                 }
 
                 HStack(spacing: 8) {
-                    PNPButton(title: "Copy Diagnostic Command", icon: "doc.on.clipboard", size: .sm) {
-                        runDiagnosticBundle()
-                    }
-                    .help(
-                        "Copies the diagnostic-bundle command to your clipboard and opens Terminal. " +
-                        "Paste and run to generate the bundle on your Desktop."
-                    )
-                    .accessibilityHint("Copies a diagnostic-bundle command to the clipboard and opens Terminal.")
-
                     PNPButton(title: "Reveal Workspace", size: .sm) {
                         if let url = currentWorkspaceURL {
                             NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -694,34 +685,6 @@ struct SettingsView: View {
         return url
     }
 
-    /// Build the diagnostic-bundle CLI command for the active workspace and
-    /// hand it off to Terminal via the clipboard, matching the "Add connection"
-    /// pattern. The Python CLI is the source of truth; the app is a launcher.
-    private func runDiagnosticBundle() {
-        guard let workspaceURL = currentWorkspaceURL else {
-            diagnosticBundleMessage = "Select a workspace profile first."
-            return
-        }
-        let configPath = workspaceURL.appendingPathComponent("config.yaml").path
-        let result = SettingsView.buildDiagnosticBundleCommand(
-            configPath: configPath,
-            bundledScriptURL: SettingsView.bundledDiagnosticScriptURL()
-        )
-        SystemActions.copyToClipboard(result.command)
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-a", "Terminal", "-n"]
-        do {
-            try process.run()
-            diagnosticBundleMessage = result.successMessage
-        } catch {
-            diagnosticBundleMessage =
-                "Command copied — could not open Terminal automatically. " +
-                "Paste it into a Terminal window manually."
-        }
-    }
-
     /// Generate the diagnostic bundle natively (no bundled-script execution) and
     /// reveal it in Finder. The redaction/zip work runs off the main actor in a
     /// detached task; `DiagnosticBundleService.generate` is a `nonisolated`
@@ -751,56 +714,6 @@ struct SettingsView: View {
             }
             isGeneratingBundle = false
         }
-    }
-
-    /// Locate `jamf-reports-community.py` inside the bundled `.app` so the
-    /// emitted command uses an absolute path and works regardless of the
-    /// user's Terminal cwd. Returns `nil` for dev builds (`swift run`) and
-    /// for any bundle layout that doesn't include the script — the caller
-    /// then falls back to the relative-path command.
-    nonisolated static func bundledDiagnosticScriptURL() -> URL? {
-        Bundle.main.url(forResource: "jamf-reports-community", withExtension: "py")
-    }
-
-    /// Pure-function command + toast builder so PR-19's bundled-script
-    /// behavior is testable without launching Terminal. `bundledScriptURL`
-    /// is the absolute path to `jamf-reports-community.py` inside
-    /// `Contents/Resources` of the running `.app` bundle, or `nil` for dev
-    /// builds where bundling doesn't apply.
-    nonisolated static func buildDiagnosticBundleCommand(
-        configPath: String,
-        bundledScriptURL: URL?
-    ) -> (command: String, successMessage: String) {
-        if let scriptURL = bundledScriptURL {
-            // Shell-escape both paths with single quotes; embedded single
-            // quotes in either path become `'\''`. Workspace paths under
-            // `~/Jamf-Reports/<slug>/` never contain single quotes given the
-            // slug regex, but config paths supplied via custom seed could.
-            let command =
-                "python3 '\(shellEscape(scriptURL.path))' " +
-                "diagnostic-bundle --config '\(shellEscape(configPath))'"
-            let message =
-                "Command copied. Paste it in the Terminal window that just opened. " +
-                "It uses the script bundled inside the app, so any working directory " +
-                "is fine. The zip will land on your Desktop."
-            return (command, message)
-        }
-        // Dev-build fallback: relative path, with a hint to cd first.
-        let command =
-            "python3 jamf-reports-community.py diagnostic-bundle " +
-            "--config '\(shellEscape(configPath))'"
-        let message =
-            "Command copied. Paste it in the Terminal window that just opened. " +
-            "cd to your jamf-reports-community checkout first (this is a dev build " +
-            "without the script bundled). The zip will land on your Desktop."
-        return (command, message)
-    }
-
-    /// Escape single-quote characters for single-quoted shell strings:
-    /// `'` becomes `'\''`. Leaves everything else untouched — single-quoted
-    /// strings in POSIX shells are otherwise literal.
-    nonisolated private static func shellEscape(_ s: String) -> String {
-        s.replacingOccurrences(of: "'", with: "'\\''")
     }
 
     // MARK: - Experimental features
