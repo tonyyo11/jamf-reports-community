@@ -7,6 +7,20 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- Consolidated fleet reports now emit a multi-sheet `.xlsx` workbook — Fleet
+  Summary, Per-Profile Breakdown, Security Posture, Compliance, and Fleet Trend,
+  with embedded charts — alongside the existing machine-readable CSV.
+
+### Changed
+
+- The consolidated fleet report now reports SIP %, Firewall %, and Gatekeeper %
+  and no longer blends a single fleet-wide Compliance % across profiles.
+  Compliance is reported per security baseline in the new workbook's Compliance
+  sheet, because mSCP/STIG baselines (e.g. NIST 800-53 vs CIS) are not comparable
+  when summed across different frameworks.
+
 ## [2.3.0] - 2026-06-17
 
 ### Added
