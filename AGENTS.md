@@ -1071,4 +1071,7 @@ Do not port org-specific logic, hardcoded column names, or tenant-specific EA na
 - Do not expose new CLI operations unless the Python CLI has a corresponding command to back
   them. The app is a GUI shell; the Python script is the engine.
 - Do not add Xcode project files (`.xcodeproj`, `.xcworkspace`) — the project is SwiftPM-only.
+  (Using Xcode as your IDE is fine and encouraged: it opens `app/Package.swift` natively, with
+  SwiftUI previews, Instruments, and the Xcode agentic assistant. This rule bans the project
+  *format*, not the editor.)
 - Do not request `sudo` or install LaunchDaemons. The security model is user-agent-only.
