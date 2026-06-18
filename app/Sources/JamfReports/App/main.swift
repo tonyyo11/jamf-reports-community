@@ -41,6 +41,11 @@ private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in
             ) {
                 print("[ok] consolidated fleet report: \(url.lastPathComponent)")
             }
+            if let xlsxURL = try FleetWorkbookEmitter.emit(
+                group: group, lookbackDays: lookback, timestamp: stamp
+            ) {
+                print("[ok] consolidated fleet workbook: \(xlsxURL.lastPathComponent)")
+            }
         } catch {
             let message = "[warn] consolidated report for '\(group.name)' failed: \(error.localizedDescription)"
             fputs(message + "\n", stderr)
