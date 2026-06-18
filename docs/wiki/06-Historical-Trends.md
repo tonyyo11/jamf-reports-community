@@ -35,7 +35,7 @@ weekly trend points; irregular collection produces irregular timelines.
 
 ## Two historical stores
 
-The Python CLI's chart path uses two on-disk stores, kept separate on purpose:
+Trend data uses two on-disk stores, kept separate on purpose:
 
 - **CSV snapshot history** (`snapshots/`) — dated Jamf Pro CSV exports. The trend source
   for export-only data: Extension Attributes, compliance failure lists, department and
@@ -44,13 +44,11 @@ The Python CLI's chart path uses two on-disk stores, kept separate on purpose:
   for API-native summaries: OS adoption from `inventory-summary`, device-state trend from
   `device-compliance`, security posture from `security`.
 
-The app's Trends screen and the CLI's chart engine both read the same `summary.json`
-snapshots, so a metric tracked in one is consistent with the other. Treat `snapshots/`
+The app's Trends screen reads these `summary.json` snapshots. Treat `snapshots/`
 and `jamf-cli-data/` as append-only — generated workbooks and PNGs are disposable output,
 not the historical record.
 
 ## HTML report timeline
 
 The self-contained HTML report renders a macOS adoption timeline once two or more
-OS-version snapshots exist for the same instance. See [CLI Workflow](07-CLI-Workflow) for
-the `html` command and its `track_history` option.
+OS-version snapshots exist for the same instance.

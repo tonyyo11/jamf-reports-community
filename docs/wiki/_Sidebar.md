@@ -12,10 +12,6 @@
 - [Historical Trends](06-Historical-Trends)
 - [Data Provenance](11-Data-Provenance)
 
-### Python CLI
-
-- [CLI Workflow](07-CLI-Workflow)
-
 ### Reference
 
 - [Jamf School](08-Jamf-School)

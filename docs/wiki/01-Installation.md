@@ -1,7 +1,6 @@
 # Installation
 
-This page covers installing the macOS app and `jamf-cli`. The Python CLI's own
-prerequisites (Python and packages) are on the [CLI Workflow](07-CLI-Workflow) page.
+This page covers installing the macOS app and `jamf-cli`.
 
 ## Requirements
 
@@ -11,7 +10,7 @@ prerequisites (Python and packages) are on the [CLI Workflow](07-CLI-Workflow) p
 | jamf-cli | v1.16.1 or later — optional; powers live collection |
 | Xcode | 16 or later — only needed to build the app from source |
 
-`jamf-cli` is optional. The app and the Python CLI both work from a Jamf Pro CSV export
+`jamf-cli` is optional. The app works from a Jamf Pro CSV export
 and cached snapshots with no jamf-cli installed — jamf-cli adds live collection and the
 API-driven dashboards.
 
@@ -105,5 +104,4 @@ dashboards are simply skipped.
 
 ## Next
 
-- App users: continue to [App Onboarding](02-App-Onboarding).
-- CLI users: continue to [CLI Workflow](07-CLI-Workflow).
+- Continue to [App Onboarding](02-App-Onboarding).
