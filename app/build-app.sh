@@ -85,18 +85,6 @@ if [[ -f "../config.example.yaml" ]]; then
   cp "../config.example.yaml" "$APP_OUT/Contents/Resources/config.example.yaml"
 fi
 
-# PR-19: bundle jamf-reports-community.py so the Settings → "Copy Diagnostic
-# Command" flow can emit an absolute-path command that works regardless of
-# the user's Terminal cwd. The app itself never executes this script — it
-# only puts an absolute path into the clipboard and opens Terminal. The user
-# pastes and runs. Bundling is a narrow exception to the CLAUDE.md
-# "Python is not bundled or required" rule, scoped only to the diagnostic
-# support workflow. See ADR-PR-19 (TODO) for the long-term migration plan
-# to a native Swift implementation that drops the Python dependency.
-if [[ -f "../jamf-reports-community.py" ]]; then
-  cp "../jamf-reports-community.py" "$APP_OUT/Contents/Resources/jamf-reports-community.py"
-fi
-
 cat > "$APP_OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
