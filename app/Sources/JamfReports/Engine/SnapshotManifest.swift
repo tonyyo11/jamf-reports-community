@@ -1,21 +1,24 @@
 import Foundation
 import CryptoKit
 
-/// Reads SHA-256 manifests written by the Python collector alongside every
-/// cached jamf-cli JSON snapshot. Lets the Swift engine detect tampering
-/// between collect (Python) and generate (Swift), per threat-model T-2
-/// (Google Gemini security-review 2026-05-12).
+/// Reads and verifies SHA-256 manifests that stamp cached jamf-cli JSON
+/// snapshots, so the engine can detect tampering between collect and
+/// generate (threat-model T-2, Google Gemini security-review 2026-05-12).
+///
+/// VERIFY-ONLY: no Swift code currently PRODUCES these snapshot manifests
+/// (the writer was the now-removed Python collector), so `verify` returns
+/// `.absent` for app-collected snapshots and `jamf_cli.require_manifest`
+/// has nothing to satisfy until a Swift snapshot-manifest writer is added.
+/// Tracked as the top threat-model T-2/T-11/T-12 follow-up.
 ///
 /// `verify` returns the `VerificationResult` so callers can surface UI
 /// state like "Unverified snapshot" (PR-10, threat-model T-11). Callers
-/// may ignore the return value via `@discardableResult`. The engine side
-/// preserves no-abort behavior — a tampered file and a partial-collect
-/// (Python crashed before manifest rewrite) look identical at this layer,
-/// so strict aborting lives behind the Python `--strict-manifest` flag /
-/// `jamf_cli.require_manifest` config gate, not in the Swift engine.
+/// may ignore the return value via `@discardableResult`. A tampered file
+/// and a missing manifest look identical at this layer, so strict aborting
+/// lives behind the `jamf_cli.require_manifest` config gate, not here.
 enum SnapshotManifest {
 
-    /// On-disk filename, kept in lockstep with the Python constant.
+    /// On-disk filename of a snapshot manifest.
     static let fileName = "manifest.json"
 
     /// Outcome of `verify`. Inspect to surface UI state; ignore to keep

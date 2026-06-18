@@ -14,7 +14,8 @@ Xcode 16+ for previews and runtime, or build from the command line with `swift b
 - **Build target:** macOS 14+ (Sonoma), Swift 6, SwiftPM (no `.xcodeproj`).
 - **State:** shipped in v2.0.0 — all dashboards, scheduling, config editing, report
   generation, and Historical Trends are implemented. Reports are produced by a native
-  Swift engine; Python is not required for report generation.
+  Swift engine (`ReportEngine`); there is no Python in the report-generation path and no
+  Python runtime is bundled or required.
 - **Distribution:** local builds are ad-hoc signed; Developer ID signing, notarization,
   and stapling remain manual steps (see Build distribution below).
 
@@ -40,13 +41,6 @@ behavior — needed because SwiftPM only emits a bare executable):
 cd app
 ./build-app.sh release             # → app/build/JamfReports.app
 open build/JamfReports.app
-```
-
-Release builds bundle a private Python runtime by default. For a fast local
-debug package without downloading Python, run:
-
-```bash
-JRC_BUNDLE_PYTHON=0 ./build-app.sh debug
 ```
 
 The script ad-hoc signs the bundle so Gatekeeper allows it on the local
@@ -78,7 +72,7 @@ app/
 │   │   ├── Models.swift                # Schedule, Report, ColumnMapping, etc.
 │   │   └── DemoData.swift              # Meridian Health fictional org
 │   ├── Services/
-│   │   ├── CLIBridge.swift             # Process wrapper for jrc / jamf-cli
+│   │   ├── CLIBridge.swift             # Process wrapper for jamf-cli + native ReportEngine
 │   │   ├── DeviceInventoryService.swift # Read-only device inventory loader
 │   │   └── WorkspaceStore.swift        # @Observable state per profile
 │   ├── Views/
@@ -105,9 +99,9 @@ app/
 
 - `WorkspaceStore` — `@Observable` per-profile state. Sidebar bottom chip switches
   the active profile; every screen re-routes to that workspace's data.
-- `CLIBridge` — `Process`-based async wrapper for `jrc` and `jamf-cli`. Streams
-  stdout/stderr through a callback so the Runs screen can render lines as they
-  arrive. Auto-detects binaries on PATH (Homebrew + system locations).
+- `CLIBridge` — `Process`-based async wrapper for `jamf-cli` and the native Swift
+  `ReportEngine`. Streams stdout/stderr through a callback so the Runs screen can render
+  lines as they arrive. Auto-detects `jamf-cli` on PATH (Homebrew + system locations).
 - `Theme` — single source of truth for colors, fonts, metrics. Hex values and font
   weights mirror the prototype's `pnp-tokens.css` and `app.css`. Body remains San
   Francisco; only mono and serif H1s use brand fonts.
@@ -126,32 +120,9 @@ bundle can run on the local development machine. For distribution to other Macs:
 
 These steps are currently manual and not yet integrated into the `build-app.sh` script.
 
-### Bundled Python runtime
-
-`build-app.sh release` invokes `scripts/build-python-runtime.sh` unless
-`JRC_BUNDLE_PYTHON=0` is set. The runtime flow is:
-
-1. Read `python-runtime.lock` for the pinned `python-build-standalone` release,
-   Python series, archive variant, direct asset URLs, and SHA256 checksums.
-2. Download the matching macOS `install_only_stripped` archive for the host
-   architecture.
-3. Install pinned packages from `requirements-runtime.txt` into that private
-   runtime at build time.
-4. Copy the finished runtime to
-   `JamfReports.app/Contents/Resources/python`.
-5. Smoke-test imports for `pandas`, `xlsxwriter`, `yaml`, and `matplotlib`.
-
-Useful controls:
-
-```bash
-JRC_BUNDLE_PYTHON=0 ./build-app.sh debug       # skip runtime bundling
-JRC_BUNDLE_PYTHON=1 ./build-app.sh release     # require runtime bundling
-JRC_PYTHON_CACHE_DIR=/tmp/jrc-python-cache ./build-app.sh release
-```
-
-Fill in `PBS_ARM64_SHA256` and `PBS_X86_64_SHA256` in `python-runtime.lock`
-after selecting the exact assets. The script refuses to download, extract, or
-copy a runtime until the matching checksum is present.
+No Python runtime is bundled into the app — `build-app.sh` builds and signs the SwiftPM
+executable only, and report generation is performed entirely by the native Swift
+`ReportEngine`.
 
 ## Security model
 

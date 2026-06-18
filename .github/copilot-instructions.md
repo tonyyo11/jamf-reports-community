@@ -4,84 +4,85 @@ This file provides context for GitHub Copilot and other AI coding assistants wor
 
 ## Project Overview
 
-A single-file Python script (`jamf_reports_community.py`, ~3,800 lines) that generates multi-sheet Excel workbooks from Jamf Pro CSV exports and/or jamf-cli JSON data. Configuration-driven: users edit `config.yaml` to map their Jamf Pro column names to logical field names; no Python code changes are needed for normal use.
+A native macOS app (`app/`) — a SwiftUI GUI (macOS 14+, Swift 6) for fleet reporting against Jamf Pro and Jamf School. It collects data from `jamf-cli` (or a Jamf Pro CSV export, or cached snapshots), generates multi-sheet Excel workbooks and self-contained HTML reports, schedules unattended runs via LaunchAgents, tracks run history, and surfaces a Historical Trends screen built on archived `summary.json` snapshots.
 
-**Key constraint:** Must work for any organization running Jamf Pro without requiring hardcoded org-specific values (column names, policy names, IP addresses, etc.) in the code.
+All report generation is performed by a native Swift engine (`ReportEngine`); **there is no Python in the report-generation path.** The app is config-driven: users map their CSV column names to logical field names in `config.yaml` (edited through the GUI), with no code changes needed for normal use. It is a SwiftPM project (`app/Package.swift`), not a hand-rolled `.xcodeproj`.
+
+**Key constraint:** Must work for any organization running Jamf Pro or Jamf School without requiring hardcoded org-specific values (column names, policy names, IP addresses, etc.) in the code.
 
 ## Architecture
 
-### Single-File Design
+The macOS app lives in `app/` and is a SwiftPM executable target (`JamfReports`).
+Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 
-The entire implementation lives in `jamf_reports_community.py`. Do not split into modules—it's designed to be dropped into any directory and run as-is.
+### Two run paths
 
-### Core Classes
+- **GUI** (`JamfReports.app`): the SwiftUI app — dashboards, config editing, report
+  generation, scheduling, run history, Historical Trends.
+- **Headless** (`main.swift --scheduled-run --mode <mode>`): invoked by LaunchAgent
+  timers (and by the GUI "Run now" button). Collects and/or generates without a window.
 
-| Class | Purpose |
-|-------|---------|
-| `Config` | Loads `config.yaml`, deep-merges with `DEFAULT_CONFIG`, exposes typed properties via `resolve_path()` |
-| `ColumnMapper` | Resolves logical field names → CSV column names. Key methods: `.get(field)`, `.extract(row, field)` |
-| `JamfCLIBridge` | Subprocess wrapper for jamf-cli. Saves JSON to `jamf-cli-data/`. Optional—gracefully no-ops if unavailable. Supports multi-tenant via `profile`. Falls back to cached JSON when live calls fail. |
-| `CoreDashboard` | Generates 9 sheets from jamf-cli JSON: Fleet Overview, Inventory Summary, Security Posture, Device Compliance, EA Coverage, EA Definitions, Software Installs, Policy Health, Patch Compliance. |
-| `CSVDashboard` | Generates sheets from Jamf Pro CSV export (only when `--csv` provided): Device Inventory, Stale Devices, Security Controls, Security Agents, Compliance, plus one sheet per `custom_eas` entry. |
-| `ChartGenerator` | Generates matplotlib PNG charts and embeds in xlsx. Skipped if matplotlib not installed (`HAS_MATPLOTLIB` flag). |
+### Key services
 
-### CLI Commands
+| Service | Purpose |
+|---------|---------|
+| `WorkspaceStore` | `@Observable` per-profile state. Sidebar chip switches the active profile; every screen re-routes to that workspace's data. |
+| `ReportEngine` | Native Swift report engine. Reads cached jamf-cli JSON (and optional CSV), writes multi-sheet XLSX, self-contained HTML, and CSV. `collect` fetches/saves snapshots and emits `summary.json`; `generate` renders reports from cached snapshots. |
+| `CLIBridge` / `CLIBridge+Run` | `Process`-based async wrapper for `jamf-cli` and `ReportEngine`. Streams stdout/stderr live to the Runs screen. All report generation uses the native Swift engine; no Python subprocess calls. |
+| `WorkspacePaths` | Typed, profile-validated path constants under `~/Jamf-Reports/<profile>/`. All path construction goes through here. |
+| `ProfileService` | Validates profile slugs (`^[a-z0-9][a-z0-9._-]*$`), resolves workspace URLs, discovers local profiles. |
+| `ConfigService` | Reads and writes `config.yaml` within a profile workspace. Only rewrites managed top-level keys and re-reads the rest, so unrelated/unmanaged config is preserved verbatim. |
+| `ScaffoldService` | CSV column detection + config writing. Initial onboarding scaffold regenerates `config.yaml`; re-scaffold uses the non-destructive `mergeColumns` path so existing agents/EAs/thresholds survive. |
+| `DiagnosticBundleService` | Stages recent logs, last-N summaries, redacted config, a workspace tree, and version metadata into a zip under `~/Jamf-Reports/<profile>/diagnostics/`. Powers Settings → "Generate diagnostic bundle now". Never executes any external script. |
+| `LaunchAgentService` / `LaunchAgentWriter` | Discover/parse and atomically write the app's `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist` jobs. |
 
-```bash
-# Generate report from CSV ± jamf-cli data
-python3 jamf_reports_community.py generate [--config config.yaml] [--csv path/to/export.csv]
-                                           [--out-file report.xlsx]
-                                           [--historical-csv-dir snapshots/]
-
-# Fetch live jamf-cli snapshots and archive CSV
-python3 jamf_reports_community.py collect [--config config.yaml] [--csv path/to/export.csv]
-                                          [--historical-csv-dir snapshots/]
-
-# Export wide inventory CSV from jamf-cli
-python3 jamf_reports_community.py inventory-csv [--config config.yaml]
-                                                [--out-file inventory.csv]
-
-# Scaffold config.yaml from CSV headers (fuzzy-matches via COLUMN_HINTS/COLUMN_EXCLUDES)
-python3 jamf_reports_community.py scaffold [--csv path/to/export.csv] [--out config.yaml]
-
-# Validate jamf-cli auth and config column mappings
-python3 jamf_reports_community.py check [--csv path/to/export.csv]
-```
+The full service and view inventory lives in `CLAUDE.md` / `AGENTS.md` — read those
+before touching architecture.
 
 ## Critical Invariants (Do Not Break)
 
-1. **`_safe_write()` for all CSV-sourced data.** Never call `worksheet.write()` directly with user data. Always route through `_safe_write()` which sanitizes None, NaN/inf, control chars, and formula injection. Static labels (written by script) can use `worksheet.write()` directly.
+1. **Formula-injection safety on all CSV-/Jamf-sourced data.** Every cell written from
+   user/Jamf data goes through `OOXMLWriter.sanitizeString` (XLSX) or the equivalent CSV
+   escaper, which neutralizes a leading `=`, `+`, `-`, `@`, or tab. Static labels written
+   by the engine are exempt.
 
-2. **No hardcoded column names.** All column names come from config via `ColumnMapper`. Strings like `"Computer Name"` appear only in `config.example.yaml` and `config.yaml`, never in code.
+2. **HTML escaping is centralized.** Every dynamic insertion in the HTML report routes
+   through `HtmlSectionFormatters.escapeHTML`. No remote `<script src>` — HTML output is
+   self-contained.
 
-3. **No hardcoded org-specific values.** No IP addresses, URLs, usernames, department names, policy names, or EA names in code.
+3. **No hardcoded column names.** All column names come from `config.yaml`. Strings like
+   `"Computer Name"` appear only in `config.example.yaml` and `config.yaml`, never in code.
 
-4. **jamf-cli is optional.** Always check `JamfCLIBridge.is_available()` before jamf-cli calls. Script continues with CSV-only output if jamf-cli absent.
+4. **No hardcoded org-specific values.** No IP addresses, URLs, usernames, department
+   names, policy names, or EA names in code.
 
-5. **matplotlib is optional.** Use `_load_matplotlib()` before chart code. Gate all chart logic on `HAS_MATPLOTLIB`.
+5. **No phantom config keys.** Never add a key to `config.example.yaml` that the app does
+   not read. The app's config decoding/defaults (`ConfigDecoder` and per-service readers)
+   are the source of truth for which keys exist.
 
-6. **Single file—always.** Drop-in script design. No modules, no package structure.
+6. **All file paths go through `ProfileService.workspaceURL(for:)` + `WorkspacePaths`.**
+   Never construct workspace paths by string interpolation.
 
 ## Config System
 
 ### Single Source of Truth
 
-`DEFAULT_CONFIG` (top of script) defines all keys. `config.example.yaml` mirrors that structure exactly—no phantom keys.
-
-**Rule:** Never add a config key to `config.example.yaml` that isn't read by the code.
+The app's config defaults and decoding (`ConfigDecoder` and the per-service config
+readers in `app/Sources`) define all keys. `config.example.yaml` mirrors that structure
+exactly — no phantom keys.
 
 ### When Adding a Config Key
 
-1. Add to `DEFAULT_CONFIG` with sensible default
-2. Read it in the relevant class/function
-3. Document in `config.example.yaml` with comment
-4. Update `README.md` if user-facing
+1. Give it a sensible default in the app's config decoding/defaults.
+2. Read it from config in the relevant service.
+3. Document it in `config.example.yaml` with a comment.
+4. Update `README.md` if it's user-facing.
 
 ### Key Names (Common Confusion Points)
 
 Use these exact names:
 
-| Section | Key | ❌ NOT |
+| Section | Key | NOT |
 |---------|-----|--------|
 | `columns` | `operating_system` | `os_version` |
 | `columns` | `last_checkin` | `last_contact` |
@@ -91,84 +92,66 @@ Use these exact names:
 | `security_agents` | `connected_value` | `installed_value` |
 | `compliance` | `failures_count_column` | `failed_count_column` |
 
+The full key reference and per-type custom-EA fields are in `CLAUDE.md` ("Config System —
+Critical Rules").
+
+## Custom EA Types
+
+`custom_eas` is a list. Each entry has a `type` that selects how the value is rendered:
+
+| Type | Behavior | Key config fields |
+|------|----------|-------------------|
+| `boolean` | Pass/fail counts, optional "Unknown" row | `true_value` |
+| `percentage` | Distribution table, color-coded rows | `warning_threshold`, `critical_threshold` |
+| `version` | Version distribution, optional status coloring | `current_versions` (list) |
+| `text` | Value frequency table | — |
+| `date` | Days-until-expiry, color-coded by proximity | `warning_days` |
+
 ## Testing & Validation
 
-### Manual Test Workflow
-
-No automated test suite. Test CSV: `Jamf Reports/97 Computers.csv` (96 sanitized dummy devices).
+Run the Swift test suite from the `app/` directory:
 
 ```bash
-cd /path/to/jamf-reports-community
-
-# 1. Verify syntax
-python3 -c "import py_compile; py_compile.compile('jamf_reports_community.py', doraise=True)"
-
-# 2. Scaffold from test CSV
-python3 jamf_reports_community.py scaffold --csv "Jamf Reports/97 Computers.csv"
-
-# 3. Validate column mapping
-python3 jamf_reports_community.py check --csv "Jamf Reports/97 Computers.csv"
-
-# 4. Generate report (CSV only, no jamf-cli needed)
-python3 jamf_reports_community.py generate --csv "Jamf Reports/97 Computers.csv"
-
-# 5. Collect jamf-cli snapshots (optional, or use dummy profile)
-python3 jamf_reports_community.py collect
-
-# 6. Export inventory CSV from jamf-cli (optional)
-python3 jamf_reports_community.py inventory-csv
+cd app
+swift test
 ```
 
-**All five commands must exit cleanly before any change is ready.**
+Verify the app compiles before committing any Swift change:
+
+```bash
+cd app && swift build 2>&1 | tail -20
+```
+
+**Pre-push CI parity:** CI pins Xcode to `16.4` (bundled Swift 6.1.x). Local Swift 6.3+
+relaxes `@MainActor` enforcement and will silently compile code that fails on CI. Before
+pushing, run:
+
+```bash
+cd app && swift build --build-tests 2>&1 | grep "error:" || echo "OK"
+```
 
 ### Dummy Profile Testing
 
 For offline testing without live Jamf Pro:
-- Set `jamf_cli.profile: "dummy"` in `config.yaml`
-- Pre-saved JSON lives in `jamf-cli-data/dummy/`
-- Fully offline—no credentials required
-
-### Useful Test EAs (in the test CSV)
-
-- `McAfee Agent Version` (text type)
-- `SysTrack Install Status` (boolean type)
-- `SysTrack Agent Version` (version type)
-- `KerberosSSO - password_expires_date` (date type)
-- `EC - adBound` (boolean type)
-- `Apply All Updates - Date` (date type)
-
-## Custom EA Types
-
-Extension Attributes are dispatched in `CSVDashboard._write_custom_ea()`:
-
-```python
-dispatch = {
-    "boolean": self._ea_boolean,
-    "percentage": self._ea_percentage,
-    "version": self._ea_version,
-    "text": self._ea_text,
-    "date": self._ea_date,
-}
-```
-
-To add a new type:
-1. Add method `_ea_<typename>(self, ws, row_i, col, ea)` to `CSVDashboard`
-2. Add key to `dispatch` dict
-3. Document in `config.example.yaml`
-4. Update type table in `README.md`
+- Set `jamf_cli.profile: "dummy"` in `config.yaml`.
+- Point `data_dir` at a directory of pre-saved JSON (`jamf-cli-data/dummy/`).
+- Fully offline — no credentials required.
 
 ## Code Conventions
 
-- **Python 3.11+** with type hints on all method signatures
-- **Google-style docstrings** on classes and public methods
-- **Functions ≤100 lines**, cyclomatic complexity ≤8
-- **100-character line length**
-- **No relative imports** (only one file anyway)
-- **Comment only what needs explaining.** Code should be self-documenting. No commented-out code—delete it.
+- **Swift 6** with strict concurrency (`@MainActor`, `Sendable`, `async/await` throughout).
+- `@Observable` for state; no `ObservableObject` / `@Published`.
+- SwiftUI only — no `UIKit`; use `NSViewRepresentable` only where SwiftUI has no equivalent.
+- **Functions ≤100 lines**, cyclomatic complexity ≤8.
+- **100-character line length.**
+- No force-unwrap (`!`) in production paths — use `guard let` / `if let`.
+- New jamf-cli command wrappers go through the `CLICommand` enum and `CLIExecutor`
+  protocol, not bespoke `CLIBridge` methods.
 
 ## jamf-cli JSON Data Shapes
 
-CoreDashboard parses these exact shapes (jamf-cli v1.2.0). Don't change parsing without verifying against jamf-cli source:
+`ReportEngine` parses these exact shapes (minimum supported jamf-cli is **v1.18.0**).
+Don't change parsing without verifying against jamf-cli source:
 
 **`pro report security --output json`**
 ```json
@@ -189,39 +172,33 @@ CoreDashboard parses these exact shapes (jamf-cli v1.2.0). Don't change parsing 
 [{"title": "Firefox", "id": "123", "on_latest": 100, "on_other": 20, ...}]
 ```
 
-Note: Patch-status parser handles both `installed/total` and `on_latest/on_other` field shapes for compatibility.
+The full set of parsed shapes is documented in `CLAUDE.md` ("jamf-cli JSON Shapes").
 
-## Key Top-Level Utility Functions
+## Schedule modes
 
-| Function | Purpose |
-|----------|---------|
-| `_safe_write(ws, row, col, value, fmt)` | Sanitizes cell values: None, NaN/inf, control chars, formula injection |
-| `_parse_manager(raw)` | Parses AD Distinguished Names into readable names |
-| `_load_matplotlib()` | Lazy-loads matplotlib; sets `HAS_MATPLOTLIB`, `plt`, `mdates` globals |
-| `_archive_old_output_runs(...)` | Moves older timestamped report files to archive_dir |
-| `_archive_csv_snapshot(csv_path, hist_dir)` | Copies current CSV into historical snapshot dir with timestamp |
-| `_semantic_warnings(config, df)` | Checks for likely column mapping mistakes before writing |
+A `Schedule.RunMode` is honored identically by the GUI "Run now" path and the headless
+LaunchAgent path:
 
-## File Dependencies
-
-- `config.example.yaml` — Annotated config template. Must stay in sync with `DEFAULT_CONFIG`. Users copy to `config.yaml`.
-- `config.yaml` — Gitignored. Users create this via `scaffold` or by copying example.
-- `Jamf Reports/97 Computers.csv` — Test data (96 sanitized dummy devices)
-- `jamf-cli-data/` — Cached jamf-cli JSON output. Ignored in git.
-- `Generated Reports/` — Output xlsx files and PNG charts. Ignored in git.
+| Mode | Behavior |
+|------|----------|
+| `snapshot-only` | `collect` only — emits `summary.json`; no workbook |
+| `jamf-cli-only` | `generate` only — from cached snapshots; no collect |
+| `jamf-cli-full` | collect + generate; no CSV |
+| `csv-assisted` | collect + generate; requires a CSV in `csv-inbox/` |
+| `backup` | `jamf-cli pro backup` only — config objects to `backups/` |
 
 ## Related Documentation
 
-- **CLAUDE.md / AGENTS.md** — Detailed architecture, config system reference, invariants, conventions
-- **README.md** — End-user setup and usage guide
-- **PROJECT_CONTEXT.md** — Session context, known issues, enhancement backlog
-- **docs/wiki/** — Extended documentation (GitHub Wiki source)
+- **CLAUDE.md / AGENTS.md** — Detailed architecture, config system reference, invariants, conventions.
+- **README.md** (repo root) — End-user setup and usage guide.
+- **app/README.md** — App build, distribution, and security model.
+- **docs/wiki/** — Extended documentation (GitHub Wiki source).
 
 ## Before You Change Anything
 
-1. Read CLAUDE.md or AGENTS.md for the complete invariants and architecture
-2. Understand that ALL CSV-sourced data must go through `_safe_write()`
-3. Remember: **single file design**—no modules, no splits
-4. Run the manual test workflow (all 5 commands) after your change
-5. Verify no hardcoded org-specific values leak into the code
-6. Check that config keys are in `DEFAULT_CONFIG` before using them
+1. Read `CLAUDE.md` or `AGENTS.md` for the complete invariants and architecture.
+2. Understand that all CSV-/Jamf-sourced data must go through the formula-injection escaper,
+   and all HTML through `escapeHTML`.
+3. Build (`swift build`) and run the relevant Swift tests after your change.
+4. Verify no hardcoded org-specific values leak into the code.
+5. Check that config keys are read by the app before adding them to `config.example.yaml`.
