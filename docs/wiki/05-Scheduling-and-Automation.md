@@ -1,8 +1,8 @@
 # Scheduling & Automation
 
-Historical reporting is only as good as the cadence behind it. The app and the Python CLI
-both schedule unattended runs through macOS **LaunchAgents** — user-scoped jobs that run
-as the logged-in user, never as root.
+Historical reporting is only as good as the cadence behind it. The app schedules unattended
+runs through macOS **LaunchAgents** — user-scoped jobs that run as the logged-in user, never
+as root.
 
 > **v2.2.0 is moving to "set policy, not cron jobs."** The per-schedule builder below is
 > being replaced by an **Automation** screen: one global policy keeps every profile's data
@@ -100,16 +100,3 @@ A scheduled run logs in two places:
 - **Per-run logs** at `~/Jamf-Reports/<profile>/automation/logs/<timestamp>.log` — one
   file per run, read by the **Run History** screen. These are not auto-pruned; clear them
   manually if a high-frequency schedule grows the directory.
-
-## The CLI scheduling path
-
-For headless setups, the Python CLI creates the same kind of LaunchAgent:
-
-```bash
-python3 jamf-reports-community.py launchagent-setup --config config.yaml \
-    --mode jamf-cli-full --schedule weekdays --time-of-day 07:15
-```
-
-`launchagent-setup` is interactive and writes the plist, log paths, and a status file,
-pointing the job back at the internal `launchagent-run` command. See
-[CLI Workflow](07-CLI-Workflow) for the full command set.

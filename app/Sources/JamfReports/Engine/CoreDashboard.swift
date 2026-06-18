@@ -50,8 +50,7 @@ struct CoreDashboard: Sendable {
     ///
     /// **Adding a new sheet:** append to the appropriate group comment, update the group
     /// range comment (e.g., "sheets 28–32"), and add a corresponding test in
-    /// `SheetOrderTests.swift`. Also add a matching sheet in the Python `CoreDashboard`
-    /// in `jamf-reports-community.py` to keep both implementations in sync.
+    /// `SheetOrderTests.swift`.
     var sheetPlan: [(name: String, write: () throws -> Void)] {
         [
             // --- Framing / exec-priority (sheets 1–8) ---

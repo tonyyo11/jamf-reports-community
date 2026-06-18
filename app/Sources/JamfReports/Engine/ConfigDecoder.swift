@@ -173,7 +173,7 @@ struct ColumnConfig: Decodable, Sendable {
     }
 }
 
-/// Logical column field identifiers, matching `DEFAULT_CONFIG["columns"]` keys in Python.
+/// Logical column field identifiers (the `columns` keys in `config.example.yaml`).
 ///
 /// This enum is a hub — adding a new case requires edits in five places:
 ///
@@ -186,8 +186,7 @@ struct ColumnConfig: Decodable, Sendable {
 ///    as an optional column in the Device Inventory sheet.
 /// 5. **`CustomizeView.swift`** — add the field if it should appear in the column-picker UI.
 ///
-/// Also add a matching key to `DEFAULT_CONFIG["columns"]` in `jamf-reports-community.py`
-/// and document it in `config.example.yaml`. See CLAUDE.md "Config-shape change checklist".
+/// Also document it in `config.example.yaml`. See CLAUDE.md "Config-shape change checklist".
 enum ColumnField: String, CaseIterable, Sendable {
     case computerName, serialNumber, operatingSystem, lastCheckin
     case department, manager, email

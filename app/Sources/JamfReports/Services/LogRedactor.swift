@@ -3,8 +3,7 @@ import Foundation
 /// Redacts credential patterns from free-text log lines before they leave the host
 /// (clipboard exports, on-disk exports, UI display).
 ///
-/// Mirrors the secret-only tier of the Python `LogRedactor` (in
-/// `jamf-reports-community.py`) — PII patterns (hostnames/serials/emails) are
+/// Secret-only redaction tier — PII patterns (hostnames/serials/emails) are
 /// out of scope for run-log redaction because jamf-cli output rarely contains
 /// raw PII and the false-positive cost on log noise is high.
 ///

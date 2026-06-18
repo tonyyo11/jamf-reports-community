@@ -21,6 +21,13 @@ versions in this repository map to git tags.
   sheet, because mSCP/STIG baselines (e.g. NIST 800-53 vs CIS) are not comparable
   when summed across different frameworks.
 
+### Removed
+
+- The standalone Python CLI engine (`jamf-reports-community.py`) and its test
+  suite have been removed. The native macOS app is now the single report engine —
+  all generation, collection, scheduling, and diagnostics run through it. macOS is
+  the only supported platform.
+
 ## [2.3.0] - 2026-06-17
 
 ### Added
