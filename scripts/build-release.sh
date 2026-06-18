@@ -31,8 +31,6 @@ ARCHIVE_PATH="$DIST_DIR/$ARCHIVE_BASENAME"
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
 
-cp jamf-reports-community.py "$STAGE_DIR/"
-cp requirements.txt "$STAGE_DIR/"
 cp config.example.yaml "$STAGE_DIR/"
 cp CHANGELOG.md "$STAGE_DIR/"
 cp README.md "$STAGE_DIR/"
