@@ -46,8 +46,10 @@ struct FleetRollup: Sendable, Equatable {
             // Unknown stale counts are skipped, not coerced to 0 — a nil→measured
             // flip between periods must not fabricate a delta from a phantom 0.
             sumMetric("stale", "Stale Devices", current, previous) { $0.staleCount.map(Double.init) },
-            weightedMetric("compliance", "Compliance %", current, previous, \.compliancePct),
             weightedMetric("fileVault", "FileVault %", current, previous, \.fileVaultPct),
+            weightedMetric("sip", "SIP %", current, previous, \.sipPct),
+            weightedMetric("firewall", "Firewall %", current, previous, \.firewallPct),
+            weightedMetric("gatekeeper", "Gatekeeper %", current, previous, \.gatekeeperPct),
             weightedMetric("patch", "Patch %", current, previous, \.patchPct),
             weightedMetric("osCurrent", "OS Current %", current, previous, \.osCurrentPct),
             weightedMetric("securityScore", "Security Score", current, previous, \.securityScore),
@@ -98,8 +100,9 @@ struct FleetRollup: Sendable, Equatable {
 
     /// Device-weighted average of a percent KPI: Σ(pct × devices) / Σ(devices)
     /// over profiles that report it. nil when no profile reports the KPI (or all
-    /// reporting profiles have zero devices).
-    private static func deviceWeighted(
+    /// reporting profiles have zero devices). Internal (not private) — reused by
+    /// `FleetWorkbookModel` for per-date and per-baseline weighting.
+    static func deviceWeighted(
         _ summaries: [DailySummary], _ keyPath: KeyPath<DailySummary, Double?>
     ) -> Double? {
         var weightedSum = 0.0

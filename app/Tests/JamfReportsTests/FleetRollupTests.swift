@@ -6,13 +6,16 @@ import XCTest
 final class FleetRollupTests: XCTestCase {
 
     private func summary(
-        date: String, devices: Int, compliance: Double?, stale: Int? = 0,
-        security: Double? = nil
+        date: String, devices: Int, compliance: Double? = nil, stale: Int? = 0,
+        security: Double? = nil, fileVault: Double? = nil,
+        sip: Double? = nil, firewall: Double? = nil, gatekeeper: Double? = nil
     ) -> DailySummary {
         DailySummary(
-            date: date, totalDevices: devices, fileVaultPct: nil,
+            date: date, totalDevices: devices, fileVaultPct: fileVault,
             compliancePct: compliance, staleCount: stale, osCurrentPct: nil,
-            crowdstrikePct: nil, patchPct: nil, securityScore: security
+            crowdstrikePct: nil, patchPct: nil,
+            sipPct: sip, firewallPct: firewall, gatekeeperPct: gatekeeper,
+            securityScore: security
         )
     }
 
@@ -73,31 +76,58 @@ final class FleetRollupTests: XCTestCase {
         XCTAssertNil(metric(rollup, "stale")?.delta)
     }
 
-    func testComplianceIsDeviceWeightedNotSimpleMean() throws {
+    func testFileVaultIsDeviceWeightedNotSimpleMean() throws {
         // 1000@90% + 10@50% → weighted ≈ 89.6%, NOT the 70% simple mean.
         let rollup = FleetRollup.compute(
             groupName: "Fleet",
             current: [
-                summary(date: "2026-06-06", devices: 1000, compliance: 90),
-                summary(date: "2026-06-06", devices: 10, compliance: 50),
+                summary(date: "2026-06-06", devices: 1000, fileVault: 90),
+                summary(date: "2026-06-06", devices: 10, fileVault: 50),
             ],
             previous: []
         )
-        let compliance = try XCTUnwrap(metric(rollup, "compliance")?.value)
+        let fileVault = try XCTUnwrap(metric(rollup, "fileVault")?.value)
         // Precomputed as explicit Double — inline mixed-literal arithmetic in
         // XCTAssertEqual trips the Swift 6.1 type-checker (CI gate).
         let weightedSum = 90.0 * 1000.0 + 50.0 * 10.0
         let expected = weightedSum / 1010.0
-        XCTAssertEqual(compliance, expected, accuracy: 0.01)
+        XCTAssertEqual(fileVault, expected, accuracy: 0.01)
     }
 
     func testPercentMetricNilWhenNoProfileReportsIt() {
         let rollup = FleetRollup.compute(
             groupName: "Fleet",
-            current: [summary(date: "2026-06-06", devices: 100, compliance: nil)],
+            current: [summary(date: "2026-06-06", devices: 100, fileVault: nil)],
             previous: []
         )
-        XCTAssertNil(metric(rollup, "compliance")?.value)
+        XCTAssertNil(metric(rollup, "fileVault")?.value)
+    }
+
+    // MARK: - Universal metric set (2.4.0)
+
+    func testUniversalMetricSetDropsComplianceAddsControls() {
+        // Compliance is baseline-dependent (NIST vs CIS aren't comparable) so it
+        // is no longer blended into the universal fleet aggregate; SIP / Firewall /
+        // Gatekeeper are universal controls and now are.
+        let rollup = FleetRollup.compute(
+            groupName: "Fleet",
+            current: [summary(date: "2026-06-01", devices: 100, compliance: 80,
+                              sip: 100, firewall: 90, gatekeeper: 95)],
+            previous: []
+        )
+        let keys = Set(rollup.metrics.map(\.key))
+        XCTAssertFalse(keys.contains("compliance"))
+        XCTAssertTrue(keys.isSuperset(of: ["sip", "firewall", "gatekeeper"]))
+    }
+
+    func testDeviceWeightedSharedHelperIsReusable() {
+        // FleetWorkbookModel reuses this helper for trend / baseline weighting.
+        let summaries = [
+            summary(date: "2026-06-01", devices: 100, fileVault: 90),
+            summary(date: "2026-06-01", devices: 100, fileVault: 70),
+        ]
+        let weighted = FleetRollup.deviceWeighted(summaries, \.fileVaultPct) ?? 0
+        XCTAssertEqual(weighted, 80, accuracy: 0.001)
     }
 
     // MARK: - Deltas
@@ -105,21 +135,21 @@ final class FleetRollupTests: XCTestCase {
     func testDeltaIsCurrentMinusPrevious() {
         let rollup = FleetRollup.compute(
             groupName: "Fleet",
-            current: [summary(date: "2026-06-06", devices: 100, compliance: 92, stale: 8)],
-            previous: [summary(date: "2026-05-30", devices: 100, compliance: 88, stale: 12)]
+            current: [summary(date: "2026-06-06", devices: 100, stale: 8, fileVault: 92)],
+            previous: [summary(date: "2026-05-30", devices: 100, stale: 12, fileVault: 88)]
         )
-        let complianceDelta: Double = metric(rollup, "compliance")?.delta ?? 0
-        XCTAssertEqual(complianceDelta, 4.0, accuracy: 0.01)
+        let fileVaultDelta: Double = metric(rollup, "fileVault")?.delta ?? 0
+        XCTAssertEqual(fileVaultDelta, 4.0, accuracy: 0.01)
         XCTAssertEqual(metric(rollup, "stale")?.delta, -4)
     }
 
     func testDeltaNilWhenNoPrevious() {
         let rollup = FleetRollup.compute(
             groupName: "Fleet",
-            current: [summary(date: "2026-06-06", devices: 100, compliance: 92)],
+            current: [summary(date: "2026-06-06", devices: 100, fileVault: 92)],
             previous: []
         )
-        XCTAssertNil(metric(rollup, "compliance")?.delta)
+        XCTAssertNil(metric(rollup, "fileVault")?.delta)
     }
 
     // MARK: - Emitter: prior-period selection
@@ -157,14 +187,14 @@ final class FleetRollupTests: XCTestCase {
     func testCSVHasHeaderAndFormattedDeltaColumns() {
         let rollup = FleetRollup.compute(
             groupName: "Fleet",
-            current: [summary(date: "2026-06-06", devices: 100, compliance: 92, stale: 8)],
-            previous: [summary(date: "2026-05-30", devices: 100, compliance: 88, stale: 12)]
+            current: [summary(date: "2026-06-06", devices: 100, stale: 8, fileVault: 92)],
+            previous: [summary(date: "2026-05-30", devices: 100, stale: 12, fileVault: 88)]
         )
         let csv = FleetReportEmitter.csv(for: rollup)
         let lines = csv.split(separator: "\n")
         XCTAssertEqual(lines.first, "Metric,Current,Previous,Delta")
-        let compliance = try? XCTUnwrap(lines.first { $0.hasPrefix("Compliance %,") })
-        XCTAssertEqual(compliance, "Compliance %,92.0%,88.0%,+4.0pp")
+        let fileVault = try? XCTUnwrap(lines.first { $0.hasPrefix("FileVault %,") })
+        XCTAssertEqual(fileVault, "FileVault %,92.0%,88.0%,+4.0pp")
         let stale = try? XCTUnwrap(lines.first { $0.hasPrefix("Stale Devices,") })
         XCTAssertEqual(stale, "Stale Devices,8,12,-4")
     }
