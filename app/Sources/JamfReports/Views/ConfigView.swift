@@ -1141,12 +1141,6 @@ private struct OutputTab: View {
                         PNPTextField(value: $ws.configState.keepLatestRuns, mono: true)
                             .frame(width: 80)
                     }
-                    Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
-                    outputToggleRow(
-                        title: "Export PPTX Summary",
-                        detail: "PowerPoint executive summary deck",
-                        isOn: $ws.configState.exportPptx
-                    )
                 }
             }
 

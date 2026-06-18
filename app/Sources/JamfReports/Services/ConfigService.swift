@@ -42,7 +42,6 @@ struct ConfigState: Equatable, Sendable {
     var timestampOutputs: Bool
     var archiveEnabled: Bool
     var keepLatestRuns: String
-    var exportPptx: Bool
     var jamfCLIUseCachedData: Bool
     var jamfCLIRequireManifest: Bool
     var orgName: String
@@ -119,7 +118,6 @@ struct ConfigState: Equatable, Sendable {
         timestampOutputs: true,
         archiveEnabled: true,
         keepLatestRuns: "10",
-        exportPptx: false,
         jamfCLIUseCachedData: true,
         jamfCLIRequireManifest: false,
         orgName: "",
@@ -346,7 +344,6 @@ enum ConfigService {
             state.timestampOutputs = output.value(for: "timestamp_outputs")?.boolValue ?? state.timestampOutputs
             state.archiveEnabled = output.value(for: "archive_enabled")?.boolValue ?? state.archiveEnabled
             state.keepLatestRuns = string(output, "keep_latest_runs", fallback: state.keepLatestRuns)
-            state.exportPptx = output.value(for: "export_pptx")?.boolValue ?? state.exportPptx
         }
 
         if let jamfCLI = root.value(for: "jamf_cli")?.mapping {
@@ -419,7 +416,6 @@ enum ConfigService {
         output.set("timestamp_outputs", value: .scalar(.bool(state.timestampOutputs)))
         output.set("archive_enabled", value: .scalar(.bool(state.archiveEnabled)))
         output.set("keep_latest_runs", value: intScalar(state.keepLatestRuns))
-        output.set("export_pptx", value: .scalar(.bool(state.exportPptx)))
         root.set("output", value: .mapping(output))
 
         var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? .init(entries: [])
