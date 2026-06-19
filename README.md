@@ -65,7 +65,7 @@ config, schedules, and generated reports, switchable from the sidebar.
 
 macOS 14 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) v1.18.0+ is
 optional — it powers live collection, but the app also works from CSV exports and cached
-snapshots.
+snapshots. v1.19.0+ is recommended for full partial-failure handling (exit code 7).
 
 Download the latest build from the
 [Releases page](https://github.com/tonyyo11/jamf-reports-community/releases), or build

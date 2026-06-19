@@ -1212,11 +1212,12 @@ struct ReportEngine: Sendable {
     /// ran) is never auth-dead.
     static func isCollectAuthDead(_ outcomes: [CollectOutcome]) -> Bool {
         guard !outcomes.isEmpty else { return false }
-        // exit 0 proves the credential was accepted (auth precedes the response
-        // body), so it counts as a success even with an empty body — mirrors the
-        // Python tally, which counts any non-raising call. A single such success
-        // means auth is alive, so a co-occurring 401 is transient, not auth-dead.
-        let anySuccess = outcomes.contains { $0.exitCode == 0 }
+        // exit 0 and exit 7 (partial failure, v1.19.0+) both prove auth was accepted
+        // (auth precedes the response body), so both count as success here. A single
+        // such success means auth is alive, so a co-occurring 401 is transient.
+        let anySuccess = outcomes.contains {
+            $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
+        }
         let anyAuthFailure = outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
         return !anySuccess && anyAuthFailure
     }
@@ -1234,10 +1235,12 @@ struct ReportEngine: Sendable {
     /// this function is only reached when no 401 was present.
     ///
     /// Returns false for an empty outcome set (no live calls were attempted) and for any
-    /// outcome set that includes at least one `exit 0` success.
+    /// outcome set that includes at least one `exit 0` or `exit 7` (partial failure) success.
     static func isCollectDead(_ outcomes: [CollectOutcome]) -> Bool {
         guard !outcomes.isEmpty else { return false }
-        return !outcomes.contains { $0.exitCode == 0 }
+        return !outcomes.contains {
+            $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
+        }
     }
 
     static func collect(
@@ -1465,7 +1468,15 @@ struct ReportEngine: Sendable {
             // continued) carry no exit code and are not auth signals, so they are
             // intentionally excluded.
             outcomes.append(CollectOutcome(kind: kind, exitCode: exitCode))
-            if exitCode == 0, !data.isEmpty {
+            let isPartialFailure = exitCode == CLIBridge.exitCodePartialFailure
+            if (exitCode == 0 || isPartialFailure), !data.isEmpty {
+                if isPartialFailure {
+                    // exit 7 (v1.19.0+): some sub-operations failed, but stdout
+                    // contains valid JSON for the successful subset. Save it and
+                    // log a warning so the operator knows to check the full log.
+                    onLine(.init(timestamp: Date(), level: .warn,
+                        text: "[warn] \(kind): exit 7 (partial failure) — partial data returned"))
+                }
                 // Cobra prints the parent help and exits 0 for an unknown
                 // subcommand — saving that as a snapshot poisons the cache
                 // (a renamed command filled classic-macos-profiles with help
@@ -1484,8 +1495,10 @@ struct ReportEngine: Sendable {
                 // not undo the snapshot we already wrote. The worst case
                 // is a redundant fetch next cycle, which is recoverable.
                 try? stateStore?.recordRun(report: kind, at: collectStart)
-                onLine(.init(timestamp: Date(), level: .ok,
-                             text: "[ok] \(kind): \(data.count) bytes"))
+                if !isPartialFailure {
+                    onLine(.init(timestamp: Date(), level: .ok,
+                                 text: "[ok] \(kind): \(data.count) bytes"))
+                }
             } else if useCachedData {
                 // use_cached_data=true: warn and skip; cached snapshot (if any) used at generate time.
                 onLine(.init(timestamp: Date(), level: .warn,

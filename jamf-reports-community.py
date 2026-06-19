@@ -2116,6 +2116,12 @@ def _supports_quiet_flags(version: Optional[str]) -> bool:
     return _version_tuple(version) >= (1, 18, 0)
 
 
+# jamf-cli exit 7 = partial failure (v1.19.0+). Some sub-operations failed
+# but stdout still contains valid JSON for the successful subset. Callers
+# should treat the returned data as usable and log a warning.
+_JAMF_CLI_EXIT_PARTIAL_FAILURE = 7
+
+
 def _find_jamf_cli_binary() -> Optional[str]:
     """Return the best available jamf-cli binary path."""
     env_override = os.environ.get("JAMFCLI_PATH", "")
@@ -5357,7 +5363,7 @@ class JamfCLIBridge:
         effective_timeout = self._command_timeout if timeout is None else max(1, int(timeout))
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True,
+                cmd, capture_output=True, text=True, check=False,
                 timeout=effective_timeout, stdin=subprocess.DEVNULL,
                 env=_jamf_cli_env(),
             )
@@ -5367,9 +5373,18 @@ class JamfCLIBridge:
             ) from e
         except PermissionError:
             raise RuntimeError("jamf-cli is not executable. Check file permissions.")
-        except subprocess.CalledProcessError as exc:
-            detail = (exc.stderr or exc.stdout).strip()
-            raise RuntimeError(f"jamf-cli failed ({exc.returncode}): {detail}") from exc
+        if result.returncode == _JAMF_CLI_EXIT_PARTIAL_FAILURE:
+            # Partial failure (exit 7, introduced in jamf-cli v1.19.0): some
+            # sub-operations failed, but stdout still contains valid JSON for
+            # the successful subset. Warn and fall through to parse the output.
+            stderr_note = (result.stderr or "").strip()
+            print(
+                f"  [warn] jamf-cli partial failure (exit 7):"
+                f"{(' ' + stderr_note) if stderr_note else ' some operations failed.'}"
+            )
+        elif result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise RuntimeError(f"jamf-cli failed ({result.returncode}): {detail}")
         stdout = result.stdout or ""
         stderr = result.stderr or ""
         candidates = [stdout, "\n".join(part for part in [stdout, stderr] if part)]

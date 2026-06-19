@@ -7,6 +7,14 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated jamf-cli dependency tracking to v1.19.0. Both the Python engine and
+  the Swift app now handle jamf-cli's new exit code 7 (partial failure, introduced
+  in v1.19.0): when some sub-operations fail but valid JSON is returned for the
+  rest, the partial data is saved with a warning instead of being discarded. This
+  is backward-compatible — v1.18.x never emits exit 7.
+
 ## [2.3.0] - 2026-06-17
 
 ### Added

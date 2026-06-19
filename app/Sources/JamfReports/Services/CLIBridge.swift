@@ -725,6 +725,7 @@ final class CLIBridge {
     nonisolated static let exitCodeNotFound: Int32 = 4       // HTTP 404 — resource does not exist
     nonisolated static let exitCodePermissionDenied: Int32 = 5  // HTTP 403 — account lacks required API privileges
     nonisolated static let exitCodeRateLimited: Int32 = 6    // HTTP 429 — server throttling; transient, self-resolving
+    nonisolated static let exitCodePartialFailure: Int32 = 7 // partial failure (v1.19.0+): some ops succeeded, stdout has valid JSON
 
     /// Translate a jamf-cli exit code into a plain-language explanation with a
     /// remediation hint, prefixed by the operation. Replaces raw "… exit N"
@@ -748,6 +749,9 @@ final class CLIBridge {
         case exitCodeRateLimited:
             detail = "rate limited (429) — Jamf Pro is throttling requests. Wait a minute, "
                 + "then try again."
+        case exitCodePartialFailure:
+            detail = "partial failure (exit 7) — some sub-operations failed but partial data "
+                + "was returned and saved. Check Run History for the specific failures."
         case exitCodeUsage:
             detail = "internal argument error (exit 2) — please report this with the Run "
                 + "History log."
