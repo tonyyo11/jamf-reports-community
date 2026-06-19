@@ -10,5 +10,3 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-
-  # jamf-cli version tracking is handled by .github/workflows/update-jamf-cli-version.yml
