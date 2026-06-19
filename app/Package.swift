@@ -13,7 +13,7 @@ let package = Package(
         // ZIPFoundation — pure-Swift ZIP creation for the OOXML (.xlsx) writer
         // and validator. Required by `Engine/OOXMLWriter.swift` and
         // `Engine/Validators/XLSXValidator.swift`.
-        .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.19"),
+        .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.20"),
         // swift-argument-parser — subcommand parsing for the included `jamf-reports`
         // CLI (Sources/JamfReports/CLI/). Apple-official; resolves to the latest 1.x.
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
