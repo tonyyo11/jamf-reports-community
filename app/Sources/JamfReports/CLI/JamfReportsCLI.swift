@@ -6,6 +6,11 @@ import Foundation
 /// subcommand here. Each subcommand is a thin shell over an existing engine
 /// entry point. xlsx + HTML only — PDF stays a GUI feature (WKWebView needs an
 /// AppKit run loop a headless CLI lacks).
+///
+/// The availability annotation is required because we invoke `main()` manually
+/// (the binary is GUI-first, so there's no `@main` to synthesize it); without
+/// it ArgumentParser's async runtime refuses to dispatch `run()`.
+@available(macOS 10.15, macCatalyst 13, iOS 13, tvOS 13, watchOS 6, *)
 struct JamfReportsCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "jamf-reports",
@@ -53,5 +58,30 @@ enum CLIRun {
     static func fail(_ message: String, code: Int32 = 1) -> Never {
         FileHandle.standardError.write(Data(("error: " + message + "\n").utf8))
         exit(code)
+    }
+
+    /// Load a profile's parsed config + snapshot data dir — the setup the
+    /// `generate`/`html` commands share. A missing workspace is an operator
+    /// error (immediate exit); config decode errors propagate to ArgumentParser.
+    static func loadProfile(_ profile: String) throws -> (config: ReportConfig, dataDir: URL) {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            fail("no workspace for profile '\(profile)'")
+        }
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        let dataDir = try WorkspacePaths.dataDir(for: profile)
+        return (config, dataDir)
+    }
+
+    /// Resolve the `--template` id. nil → `FullInstanceTemplate` (the CLI default,
+    /// matching GUI generation). `custom` needs a sheet selection the CLI doesn't
+    /// expose, so it's rejected like any unknown id rather than silently downgraded.
+    static func resolveTemplate(_ id: String?) throws -> any ReportTemplate {
+        guard let id else { return FullInstanceTemplate() }
+        let known = TemplateResolver.allTemplates.map(\.identifier).filter { $0 != "custom" }
+        guard known.contains(id) else {
+            throw ValidationError(
+                "unknown template '\(id)'. Known: \(known.joined(separator: ", "))")
+        }
+        return TemplateResolver.resolve(identifier: id)
     }
 }

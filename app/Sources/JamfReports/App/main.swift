@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import SwiftUI
 
@@ -647,6 +648,22 @@ private func schoolScaffoldMappings(from headers: [String]) -> [String: String] 
     return result
 }
 
+// MARK: - Included CLI dispatch
+
+/// Run the included `jamf-reports` CLI for `arguments` (subcommand + its args,
+/// binary name already dropped).
+///
+/// Isolated in an `@available`-annotated function on purpose: ArgumentParser's
+/// async `main`/`run` entry points are gated `@available(macOS 10.15, *)`, and in
+/// unannotated top-level executable code overload resolution falls back to the
+/// synchronous overloads — which refuse to execute an async root command (they
+/// print help and exit). The explicit availability context makes the async
+/// overloads win, so `AsyncParsableCommand.run()` is actually awaited.
+@available(macOS 14, *)
+func runIncludedCLI(_ arguments: [String]) async {
+    await JamfReportsCLI.main(arguments)
+}
+
 // MARK: - Entry point
 
 // Install uncaught-exception handler before any UI or CLI work. Crash logs land at
@@ -663,7 +680,7 @@ if cliArgs.contains("--scheduled-run"),
     exit(exitCode)
 } else if cliArgs.count > 1, JamfReportsCLI.isKnownSubcommand(cliArgs[1]) {
     // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/).
-    await JamfReportsCLI.main(Array(cliArgs.dropFirst()))
+    await runIncludedCLI(Array(cliArgs.dropFirst()))
 } else {
     // No recognized subcommand (incl. double-click launch) → the GUI.
     JamfReportsApp.main()

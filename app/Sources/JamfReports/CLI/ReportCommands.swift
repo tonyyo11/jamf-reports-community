@@ -9,7 +9,15 @@ struct Generate: AsyncParsableCommand {
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
-        CLIRun.fail("generate: not yet implemented", code: 2)
+        let resolved = try CLIRun.resolveTemplate(template)
+        let (config, dataDir) = try CLIRun.loadProfile(profile)
+        let engine = ReportEngine(config: config, dataDir: dataDir)
+        let outputURL = output.map { URL(fileURLWithPath: $0) }
+            ?? engine.resolveOutputURL(stem: "report", profile: profile)
+        let failures = try await engine.generate(
+            csvURL: nil, outputURL: outputURL, template: resolved, onLine: CLIRun.printLogLine)
+        if !failures.isEmpty { CLIRun.fail("\(failures.count) sheet(s) failed to write", code: 1) }
+        print(outputURL.path)
     }
 }
 
@@ -38,6 +46,15 @@ struct Html: AsyncParsableCommand {
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
-        CLIRun.fail("html: not yet implemented", code: 2)
+        let (config, dataDir) = try CLIRun.loadProfile(profile)
+        // Reuse the xlsx naming convention (timestamp + profile attribution),
+        // swapping the extension — there's no HTML-specific path resolver.
+        let defaultURL = ReportEngine(config: config, dataDir: dataDir)
+            .resolveOutputURL(stem: "report", profile: profile)
+            .deletingPathExtension().appendingPathExtension("html")
+        let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL
+        _ = try await ReportEngine.generateHTML(
+            config: config, dataDir: dataDir, outputURL: outputURL, onLine: CLIRun.printLogLine)
+        print(outputURL.path)
     }
 }

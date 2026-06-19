@@ -7,7 +7,9 @@ struct Backup: AsyncParsableCommand {
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
-        CLIRun.fail("backup: not yet implemented", code: 2)
+        let bridge = await MainActor.run { CLIBridge() }
+        let code = try await bridge.backup(profile: profile, label: nil, onLine: CLIRun.printLogLine)
+        if code != 0 { CLIRun.fail("backup failed (exit \(code))", code: code) }
     }
 }
 
@@ -18,7 +20,14 @@ struct Scaffold: AsyncParsableCommand {
     @Option(help: "Output config.yaml path.") var out: String
 
     func run() async throws {
-        CLIRun.fail("scaffold: not yet implemented", code: 2)
+        let outURL = URL(fileURLWithPath: out)
+        try FileManager.default.createDirectory(
+            at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Profile-agnostic: empty slug → `jamf_cli.profile: ""` (matches the
+        // old Python `scaffold`; the user sets the profile when they wire it up).
+        let result = try ScaffoldService.matchColumns(from: URL(fileURLWithPath: csv), profile: "")
+        try ScaffoldService.writeConfig(to: outURL, result: result, profile: "")
+        print(outURL.path)
     }
 }
 
@@ -40,8 +49,29 @@ struct Capabilities: AsyncParsableCommand {
     @Flag(help: "Emit machine-readable JSON.") var json = false
 
     func run() async throws {
-        CLIRun.fail("capabilities: not yet implemented", code: 2)
+        let bridge = await MainActor.run { CLIBridge() }
+        let snapshot = await CapabilityService.probe(executor: DefaultCLIExecutor(bridge: bridge))
+        if json {
+            let commands = snapshot.availability.mapValues { $0 == .available ? "available" : "blocked" }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(CapabilityJSON(version: snapshot.version, commands: commands))
+            print(String(decoding: data, as: UTF8.self))
+        } else {
+            print("jamf-cli " + (snapshot.version ?? "(not installed)"))
+            for cmd in CapabilityService.trackedCommands {
+                let state = snapshot.availability[cmd] == .available ? "available" : "blocked"
+                print("  \(cmd.padding(toLength: 34, withPad: " ", startingAt: 0)) \(state)")
+            }
+        }
     }
+}
+
+/// `capabilities --json` payload — keeps serialization out of the model so the
+/// CLI shape can evolve without touching `CLICapabilitySnapshot`.
+private struct CapabilityJSON: Encodable {
+    let version: String?
+    let commands: [String: String]
 }
 
 struct DiagnosticBundleCommand: AsyncParsableCommand {
@@ -66,7 +96,16 @@ struct Device: AsyncParsableCommand {
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
-        CLIRun.fail("device: not yet implemented", code: 2)
+        let bridge = await MainActor.run { CLIBridge() }
+        guard let result = await bridge.deviceDetailWithProvenance(
+            profile: profile, deviceID: id, onLine: CLIRun.printLogLine) else {
+            CLIRun.fail("device lookup failed for '\(id)' (auth, or device not found)", code: 1)
+        }
+        if result.fromCache {
+            FileHandle.standardError.write(
+                Data("warning: live lookup failed — returned last-known-good cache\n".utf8))
+        }
+        print(String(decoding: result.data, as: UTF8.self))
     }
 }
 

@@ -56,4 +56,21 @@ final class CLIParsingTests: XCTestCase {
         XCTAssertNil(cmd.profile)
         XCTAssertTrue(cmd.json)
     }
+
+    func testResolveTemplateDefaultsToFullInstance() throws {
+        XCTAssertEqual(try CLIRun.resolveTemplate(nil).identifier, "full-instance")
+    }
+
+    func testResolveTemplateMatchesKnownIdentifier() throws {
+        XCTAssertEqual(try CLIRun.resolveTemplate("executive").identifier, "executive")
+    }
+
+    func testResolveTemplateRejectsCustom() {
+        // `custom` needs a sheet selection the CLI can't supply — must reject, not downgrade.
+        XCTAssertThrowsError(try CLIRun.resolveTemplate("custom"))
+    }
+
+    func testResolveTemplateRejectsUnknown() {
+        XCTAssertThrowsError(try CLIRun.resolveTemplate("nonsense"))
+    }
 }
