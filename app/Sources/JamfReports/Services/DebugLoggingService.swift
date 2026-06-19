@@ -25,6 +25,13 @@ enum DebugLoggingService {
             .appendingPathComponent("Library/Preferences/Logging/Subsystems/\(subsystem).plist")
     }
 
+    /// URL of the bundled MDM debug-logging profile (`com.apple.system.logging`,
+    /// persist-verbose only), for the Settings "Reveal MDM profile" affordance and
+    /// admin Jamf deployment. Resolved via the module bundle that ships `Resources/`.
+    static var bundledProfileURL: URL? {
+        Bundle.module.url(forResource: "JamfReports-Debug-Logging", withExtension: "mobileconfig")
+    }
+
     static func current(at url: URL = defaultPlistURL) -> DebugLoggingState {
         guard let data = try? Data(contentsOf: url),
               let root = try? PropertyListSerialization.propertyList(from: data, format: nil),
