@@ -147,7 +147,11 @@ struct DevicesView: View {
                         .onTapGesture { exportError = nil }
                 }
                 if !workspace.demoMode && activeSnapshot.devices.isEmpty && !isLoading {
-                    emptyState
+                    if activeSnapshot.warnings.isEmpty {
+                        emptyState
+                    } else {
+                        deviceErrorState
+                    }
                 } else {
                     controls
                     summary
@@ -693,6 +697,21 @@ struct DevicesView: View {
                 systemImage: "desktopcomputer.and.arrow.down",
                 title: "No device inventory yet",
                 message: "run Generate Report to populate"
+            )
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// Shown when the inventory came back empty *and* the loader recorded warnings —
+    /// a true read failure (broken workspace path, unreadable/undecodable source file),
+    /// distinct from the not-collected-yet `emptyState`.
+    private var deviceErrorState: some View {
+        Card(padding: 32) {
+            ErrorStateView(
+                title: "Couldn't read device inventory",
+                message: activeSnapshot.warnings.joined(separator: "\n"),
+                commands: ["Re-run collection from Data Sources, then Refresh."],
+                retry: { Task { await reload() } }
             )
             .frame(maxWidth: .infinity)
         }
