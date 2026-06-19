@@ -149,7 +149,7 @@ enum SnapshotRetentionService {
         if candidate.path == allowedRoot || candidate.path.hasPrefix(allowedRoot + "/") {
             return URL(fileURLWithPath: expanded, isDirectory: true)
         }
-        AppLogger.engine.warning(
+        AppLogger.collect.warning(
             "SnapshotRetentionService: archive_dir '\(expanded, privacy: .public)' is outside workspacesRoot — falling back to default _archive"
         )
         return defaultArchive
@@ -293,7 +293,7 @@ enum SnapshotRetentionService {
             catch {
                 let name = url.lastPathComponent
                 let desc = error.localizedDescription
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "SnapshotRetentionService: delete failed for \(name, privacy: .public): \(desc, privacy: .public)"
                 )
                 onLine(.init(
@@ -313,7 +313,7 @@ enum SnapshotRetentionService {
             } catch {
                 let name = url.lastPathComponent
                 let desc = error.localizedDescription
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "SnapshotRetentionService: archive failed for \(name, privacy: .public): \(desc, privacy: .public)"
                 )
                 onLine(.init(

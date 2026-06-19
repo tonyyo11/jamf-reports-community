@@ -130,12 +130,12 @@ struct PolicyHealthService: Sendable {
                         forKeys: [.contentModificationDateKey]))?
                         .contentModificationDate
                 } else {
-                    AppLogger.engine.warning(
+                    AppLogger.collect.info(
                         "PolicyHealthService: failed to decode policy-status file \(policyURL.lastPathComponent, privacy: .public)"
                     )
                 }
             } else {
-                AppLogger.engine.warning(
+                AppLogger.collect.info(
                     "PolicyHealthService: could not read policy-status file \(policyURL.lastPathComponent, privacy: .public)"
                 )
             }
@@ -159,17 +159,17 @@ struct PolicyHealthService: Sendable {
                                 .contentModificationDate
                         }
                     } else {
-                        AppLogger.engine.info(
+                        AppLogger.collect.info(
                             "PolicyHealthService: profile-status snapshot decoded but contains no envelope — treating as no data"
                         )
                     }
                 } else {
-                    AppLogger.engine.warning(
+                    AppLogger.collect.warning(
                         "PolicyHealthService: failed to decode profile-status file \(profileURL.lastPathComponent, privacy: .public)"
                     )
                 }
             } else {
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "PolicyHealthService: could not read profile-status file \(profileURL.lastPathComponent, privacy: .public)"
                 )
             }

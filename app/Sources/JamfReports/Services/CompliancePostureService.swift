@@ -79,13 +79,13 @@ struct CompliancePostureService: Sendable {
 
     private static func decode(at url: URL) -> Snapshot? {
         guard let data = try? Data(contentsOf: url) else {
-            AppLogger.engine.warning(
+            AppLogger.platform.warning(
                 "CompliancePostureService: could not read security file \(url.lastPathComponent, privacy: .public)"
             )
             return nil
         }
         guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data) else {
-            AppLogger.engine.warning(
+            AppLogger.platform.warning(
                 "CompliancePostureService: failed to decode security file \(url.lastPathComponent, privacy: .public)"
             )
             return nil

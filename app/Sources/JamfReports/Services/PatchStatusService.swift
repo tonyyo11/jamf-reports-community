@@ -107,14 +107,14 @@ struct PatchStatusService: Sendable {
         }
 
         guard let titlesData = try? Data(contentsOf: titlesURL) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.info(
                 "PatchStatusService: could not read patch-status file \(titlesURL.lastPathComponent, privacy: .public)"
             )
             return nil
         }
 
         guard let titles = (try? JSONDecoder().decode([PatchStatusRow].self, from: titlesData)) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.info(
                 "PatchStatusService: failed to decode patch-status file \(titlesURL.lastPathComponent, privacy: .public)"
             )
             return nil
@@ -128,12 +128,12 @@ struct PatchStatusService: Sendable {
                 ) {
                     failures = decodedFailures
                 } else {
-                    AppLogger.engine.warning(
+                    AppLogger.collect.warning(
                         "PatchStatusService: failed to decode patch-device-failures file \(failuresURL.lastPathComponent, privacy: .public)"
                     )
                 }
             } else {
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "PatchStatusService: could not read patch-device-failures file \(failuresURL.lastPathComponent, privacy: .public)"
                 )
             }

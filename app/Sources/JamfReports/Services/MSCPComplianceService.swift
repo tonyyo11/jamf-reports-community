@@ -83,13 +83,13 @@ struct MSCPComplianceService: Sendable {
         guard let url = FileManager.newestJSONFile(in: resultsDir) else { return [] }
 
         guard let data = try? Data(contentsOf: url) else {
-            AppLogger.engine.warning(
+            AppLogger.platform.warning(
                 "MSCPComplianceService: could not read ea-results file \(url.lastPathComponent, privacy: .public)"
             )
             return []
         }
         guard let rows = try? JSONDecoder().decode([EAResultRow].self, from: data) else {
-            AppLogger.engine.warning(
+            AppLogger.platform.warning(
                 "MSCPComplianceService: failed to decode ea-results file \(url.lastPathComponent, privacy: .public)"
             )
             return []

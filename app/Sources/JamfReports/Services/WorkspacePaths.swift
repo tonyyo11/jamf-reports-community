@@ -214,11 +214,11 @@ enum WorkspacePaths {
             // keys, tab indentation) ends up parsed as nil, this entry shows
             // *why* the user got "Disallowed absolute path" rather than the
             // expected acceptance.
-            AppLogger.engine.info(
+            AppLogger.collect.info(
                 "WorkspacePaths: allow_absolute_paths resolved to \(optedIn ?? "<nil>", privacy: .public)"
             )
             if isTruthyConfigValue(optedIn) {
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "WorkspacePaths: accepting absolute path outside workspace via opt-in"
                 )
                 return resolved
@@ -283,7 +283,7 @@ enum WorkspacePaths {
             // mapping (e.g. an empty file or a sequence at the root). Both
             // are legitimate "no value here" outcomes; surface a debug log
             // so an unparseable config doesn't masquerade as a missing key.
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "WorkspacePaths: could not parse config.yaml: \(error.localizedDescription, privacy: .private)"
             )
         }

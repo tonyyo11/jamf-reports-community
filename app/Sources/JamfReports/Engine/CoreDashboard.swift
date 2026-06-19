@@ -3010,7 +3010,7 @@ struct CoreDashboard: Sendable {
         do {
             return try JSONDecoder().decode(type, from: rawData)
         } catch {
-            AppLogger.engine.warning(
+            AppLogger.report.warning(
                 "CoreDashboard: failed to decode \(names.first ?? "?") as \(String(describing: type)): \(error)"
             )
             return nil

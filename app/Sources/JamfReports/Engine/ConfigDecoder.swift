@@ -838,7 +838,7 @@ struct HTMLSectionLimits: Decodable, Sendable {
     var resolvedProtectAlerts: Int {
         let raw = protectAlerts ?? 25
         if raw < 1 || raw > 200 {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "html.section_limits.protect_alerts=\(raw) out of [1,200]; clamped."
             )
             return max(1, min(200, raw))
@@ -850,7 +850,7 @@ struct HTMLSectionLimits: Decodable, Sendable {
     var resolvedInsightsDriftSnapshots: Int {
         let raw = insightsDriftSnapshots ?? 2
         if raw < 1 || raw > 12 {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "html.section_limits.insights_drift_snapshots=\(raw) out of [1,12]; clamped."
             )
             return max(1, min(12, raw))

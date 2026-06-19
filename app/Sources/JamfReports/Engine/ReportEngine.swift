@@ -70,11 +70,14 @@ struct ReportEngine: Sendable {
         let core = CoreDashboard(config: config, dataDir: dataDir, workbook: workbook,
                                  provenance: prov)
         let registry = SheetRegistry(plan: core.sheetPlan)
+        for sheetID in template.includedSheets {
+            AppLogger.report.debug("sheet \(sheetID.rawValue, privacy: .public)")
+        }
         let (writtenCore, coreFailures, unimplementedSheets) = registry.writeSelected(template: template)
         for sheetID in unimplementedSheets {
             let msg = "[warn] template '\(template.identifier)': SheetID '\(sheetID.rawValue)' " +
                       "has no writer in CoreDashboard — skipped (engine follow-up required)"
-            AppLogger.engine.warning("\(msg, privacy: .private)")
+            AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
         }
@@ -199,7 +202,7 @@ struct ReportEngine: Sendable {
             try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         } catch {
             let msg = "[warn] Could not create archive dir \(archiveDir.lastPathComponent): \(error)"
-            AppLogger.engine.warning("\(msg, privacy: .private)")
+            AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return
@@ -214,7 +217,7 @@ struct ReportEngine: Sendable {
                 try fm.moveItem(at: file, to: dest)
             } catch {
                 let msg = "[warn] Could not archive \(file.lastPathComponent): \(error)"
-                AppLogger.engine.warning("\(msg, privacy: .private)")
+                AppLogger.report.warning("\(msg, privacy: .private)")
                 print(msg)
                 onLine?(.init(timestamp: Date(), level: .warn, text: msg))
                 // Skip sidecar move when the xlsx move failed — sidecars without
@@ -236,7 +239,7 @@ struct ReportEngine: Sendable {
                     try fm.moveItem(at: sidecar, to: sidecarDest)
                 } catch {
                     let msg = "[warn] Could not archive sidecar \(sidecar.lastPathComponent): \(error)"
-                    AppLogger.engine.warning("\(msg, privacy: .private)")
+                    AppLogger.report.warning("\(msg, privacy: .private)")
                     onLine?(.init(timestamp: Date(), level: .warn, text: msg))
                 }
             }
@@ -262,7 +265,7 @@ struct ReportEngine: Sendable {
             try fm.createDirectory(at: historicalDir, withIntermediateDirectories: true)
         } catch {
             let msg = "[warn] Could not create historical dir: \(error)"
-            AppLogger.engine.warning("\(msg, privacy: .private)")
+            AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return
@@ -275,7 +278,7 @@ struct ReportEngine: Sendable {
             try fm.copyItem(at: csvURL, to: dest)
         } catch {
             let msg = "[warn] Could not archive CSV snapshot: \(error)"
-            AppLogger.engine.warning("\(msg, privacy: .private)")
+            AppLogger.report.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
         }
@@ -305,7 +308,7 @@ struct ReportEngine: Sendable {
             try fm.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         } catch {
             let msg = "[warn] Could not create summaries dir: \(error)"
-            AppLogger.engine.warning("\(msg, privacy: .private)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return
@@ -325,12 +328,12 @@ struct ReportEngine: Sendable {
                let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
                Self.freshSummaryIsBetter(existing: existing, fresh: fresh) {
                 let upgradeMsg = "[info] summary_\(today).json upgraded (proxy→real mSCP)"
-                AppLogger.engine.info("\(upgradeMsg, privacy: .public)")
+                AppLogger.collect.info("\(upgradeMsg, privacy: .public)")
                 onLine?(.init(timestamp: Date(), level: .info, text: upgradeMsg))
                 writeSummaryFile(fresh, to: summaryFile, onLine: onLine)
             } else {
                 let msg = "[info] summary_\(today).json already exists — leaving existing file in place"
-                AppLogger.engine.info("\(msg, privacy: .public)")
+                AppLogger.collect.info("\(msg, privacy: .public)")
                 onLine?(.init(timestamp: Date(), level: .info, text: msg))
             }
             return
@@ -343,7 +346,7 @@ struct ReportEngine: Sendable {
             // the trend chart and StaleDataBanner won't refresh on this run.
             let msg = "[warn] summary JSON not written: no jamf-cli snapshots available to summarize " +
                       "(run `collect` first, or this is expected for CSV-only generation)"
-            AppLogger.engine.warning("\(msg, privacy: .public)")
+            AppLogger.collect.warning("\(msg, privacy: .public)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return
@@ -392,11 +395,11 @@ struct ReportEngine: Sendable {
             let data = try encoder.encode(summary)
             try data.write(to: url, options: .atomic)
             let msg = "[ok] wrote \(url.lastPathComponent) — trend chart and StaleDataBanner will reflect this run"
-            AppLogger.engine.info("\(msg, privacy: .public)")
+            AppLogger.collect.info("\(msg, privacy: .public)")
             onLine?(.init(timestamp: Date(), level: .ok, text: msg))
         } catch {
             let msg = "[warn] could not write summary JSON: \(error.localizedDescription)"
-            AppLogger.engine.warning("\(msg, privacy: .private)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
         }
@@ -976,7 +979,7 @@ struct ReportEngine: Sendable {
         do {
             try png.write(to: url, options: .atomic)
         } catch {
-            AppLogger.engine.warning(
+            AppLogger.report.warning(
                 "[warn] PNG export failed for \(kind, privacy: .public): \(error)"
             )
         }
@@ -1011,7 +1014,7 @@ struct ReportEngine: Sendable {
         } catch {
             let msg = "[warn] could not resolve historical_csv_dir for '\(profile)': " +
                       "\(error.localizedDescription) — CSV archival skipped"
-            AppLogger.engine.warning("\(msg, privacy: .public)")
+            AppLogger.report.warning("\(msg, privacy: .public)")
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return nil
         }
@@ -1040,7 +1043,7 @@ struct ReportEngine: Sendable {
             let fallback = outputDir.appendingPathComponent("archive", isDirectory: true)
             let msg = "[warn] could not resolve archive_dir for '\(profile)': " +
                       "\(error.localizedDescription) — using \(fallback.lastPathComponent)"
-            AppLogger.engine.warning("\(msg, privacy: .public)")
+            AppLogger.report.warning("\(msg, privacy: .public)")
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
             return fallback
         }
@@ -1276,7 +1279,7 @@ struct ReportEngine: Sendable {
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
                 let msg = "[info] already collected today — skipping (use Refresh to force)"
-                AppLogger.engine.info("\(msg, privacy: .public)")
+                AppLogger.collect.info("\(msg, privacy: .public)")
                 onLine(.init(timestamp: Date(), level: .info, text: msg))
                 return
             }
@@ -1438,6 +1441,7 @@ struct ReportEngine: Sendable {
                 continue
             }
 
+            AppLogger.collect.debug("collect kind=\(kind, privacy: .public)")
             onLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[info] collecting \(kind) for \(profile)"
@@ -1527,7 +1531,7 @@ struct ReportEngine: Sendable {
             let msg = "[error] auth failed for '\(profile)': \(authFailures) live call(s) " +
                 "returned 401 and none succeeded — re-authenticate " +
                 "(jamf-cli -p \(profile) pro auth token). No snapshot written."
-            AppLogger.engine.error("\(msg, privacy: .public)")
+            AppLogger.collect.error("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             throw ReportEngineError.authExpired(profile: profile, failedCount: authFailures)
         }
@@ -1541,7 +1545,7 @@ struct ReportEngine: Sendable {
             let failedCount = outcomes.count
             let msg = "[error] all \(failedCount) live jamf-cli call(s) failed for '\(profile)' " +
                 "(server unreachable or jamf-cli broken) — no snapshot written."
-            AppLogger.engine.error("\(msg, privacy: .public)")
+            AppLogger.collect.error("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             throw ReportEngineError.collectDead(profile: profile, failedCount: failedCount)
         }
@@ -1984,7 +1988,7 @@ struct ReportEngine: Sendable {
             let failedCount = schoolOutcomes.count
             let msg = "[error] all \(failedCount) live jamf-cli school call(s) failed for " +
                 "'\(profile)' — server unreachable or credentials broken. No snapshot written."
-            AppLogger.engine.error("\(msg, privacy: .public)")
+            AppLogger.collect.error("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
             throw ReportEngineError.collectDead(profile: profile, failedCount: failedCount)
         }
@@ -2179,7 +2183,7 @@ struct ReportEngine: Sendable {
             do {
                 try fm.setAttributes(attrs, ofItemAtPath: url.path)
             } catch {
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "initializeWorkspace: setAttributes failed for \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
                 )
             }
@@ -2255,7 +2259,7 @@ struct ReportEngine: Sendable {
                 ofItemAtPath: file.path
             )
         } catch {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
         }

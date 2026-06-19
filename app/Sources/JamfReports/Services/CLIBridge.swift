@@ -777,6 +777,7 @@ final class CLIBridge {
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Bool {
+        AppLogger.auth.debug("auth probe profile=\(profile, privacy: .public)")
         let authMethod = ProfileService.discoverLocal()
             .first(where: { $0.name == profile })?
             .authMethod ?? ""
@@ -855,7 +856,7 @@ final class CLIBridge {
         } catch {
             // tokenStatus is the auth prober — codesign rejection or launch failure
             // here means we cannot confirm auth; treat as invalid/expired token.
-            AppLogger.cli.warning(
+            AppLogger.auth.warning(
                 "tokenStatus: runAndCapture threw for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
             return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: "")
@@ -914,7 +915,7 @@ final class CLIBridge {
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         guard await authGuard(profile: profile, onLine: { line in
-            AppLogger.cli.warning("deviceDetail auth: \(line.text, privacy: .private)")
+            AppLogger.auth.warning("deviceDetail auth: \(line.text, privacy: .private)")
         }) else { return nil }
         return await singleDeviceDetail(
             profile: profile,
@@ -934,7 +935,7 @@ final class CLIBridge {
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         guard await authGuard(profile: profile, onLine: { line in
-            AppLogger.cli.warning("mobileDeviceDetail auth: \(line.text, privacy: .private)")
+            AppLogger.auth.warning("mobileDeviceDetail auth: \(line.text, privacy: .private)")
         }) else { return nil }
         return await singleDeviceDetail(
             profile: profile,

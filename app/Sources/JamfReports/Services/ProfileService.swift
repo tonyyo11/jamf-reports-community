@@ -89,7 +89,7 @@ enum ProfileService {
         } catch let error as NSError where error.code == NSFileReadNoSuchFileError {
             return [] // workspace root doesn't exist yet — first-run state
         } catch {
-            AppLogger.engine.error(
+            AppLogger.collect.error(
                 "dottedLegacyWorkspaces: enumeration failed at \(root.path, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
             return []
@@ -141,7 +141,7 @@ enum ProfileService {
         // discovery is gated.
         let dotted = dottedLegacyWorkspaces()
         if !dotted.isEmpty {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "ProfileService.discoverLocal: \(dotted.count, privacy: .public) legacy workspace dir(s) contain '.' and are no longer valid profile slugs; rename them under ~/Jamf-Reports/ to surface them again. Names: \(dotted.joined(separator: ", "), privacy: .public)"
             )
         }

@@ -25,7 +25,7 @@ final class AppLoggerOSLogStoreTests: XCTestCase {
 
         // Emit a known marker. %{public} so we can match on the stored string.
         let marker = "JRC.AppLoggerOSLogStoreTests.\(UUID().uuidString)"
-        AppLogger.engine.notice("oslog-test marker=\(marker, privacy: .public)")
+        AppLogger.collect.notice("oslog-test marker=\(marker, privacy: .public)")
 
         // Give the logging pipeline a moment to flush.
         let start = Date().addingTimeInterval(-5)

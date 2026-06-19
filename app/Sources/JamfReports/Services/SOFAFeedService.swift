@@ -298,7 +298,7 @@ struct SOFAFeedService: Sendable {
             try? FileManager.default.removeItem(at: tmp)
             let msg = "SOFAFeedService: could not write cache \(url.lastPathComponent): " +
                       error.localizedDescription
-            AppLogger.engine.warning("\(msg, privacy: .private)")
+            AppLogger.collect.warning("\(msg, privacy: .private)")
         }
     }
 

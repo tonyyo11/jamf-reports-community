@@ -255,7 +255,7 @@ struct SummaryJSONParser {
                 do {
                     return try parse(url)
                 } catch {
-                    AppLogger.engine.warning(
+                    AppLogger.collect.warning(
                         "SummaryJSONParser: skipping corrupt summary \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
                     )
                     return nil

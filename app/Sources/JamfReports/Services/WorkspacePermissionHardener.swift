@@ -50,7 +50,7 @@ enum WorkspacePermissionHardener {
             .resolvingSymlinksInPath().standardizedFileURL.path
         if resolved != workspacesRoot,
            !resolved.hasPrefix(workspacesRoot + "/") {
-            AppLogger.engine.error(
+            AppLogger.collect.error(
                 "WorkspacePermissionHardener: refusing sweep — profile=\(profile, privacy: .public) resolves outside workspaces root"
             )
             return SweepResult(touched: 0, failed: 0, enumerated: false)
@@ -59,7 +59,7 @@ enum WorkspacePermissionHardener {
         // sweep ran on a given profile + timestamp. Profile name is %{public}
         // because the slug is also visible in LaunchAgent labels and is not
         // itself a secret.
-        AppLogger.engine.info(
+        AppLogger.collect.info(
             "WorkspacePermissionHardener.tighten profile=\(profile, privacy: .public)"
         )
         return tighten(directory: workspace)
@@ -83,7 +83,7 @@ enum WorkspacePermissionHardener {
             // Workspace deleted, unreadable, or otherwise un-enumerable. Surface
             // this loudly: a CLI run that completes "successfully" without a
             // matching tighten leaves files at 0644.
-            AppLogger.engine.error(
+            AppLogger.collect.error(
                 "WorkspacePermissionHardener: cannot enumerate \(root.lastPathComponent, privacy: .public) — sweep skipped"
             )
             return SweepResult(touched: 0, failed: 0, enumerated: false)
@@ -114,7 +114,7 @@ enum WorkspacePermissionHardener {
             } catch {
                 failed += 1
                 let name = url.lastPathComponent
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "WorkspacePermissionHardener: chmod failed on \(name): \(error.localizedDescription)"
                 )
             }

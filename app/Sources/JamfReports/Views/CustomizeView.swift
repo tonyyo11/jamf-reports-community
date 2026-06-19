@@ -358,7 +358,7 @@ struct CustomizeView: View {
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false
             } catch {
-                AppLogger.engine.warning(
+                AppLogger.ui.warning(
                     "CustomizeView: saveConfig failed: \(error.localizedDescription, privacy: .private)"
                 )
                 saveError = error.localizedDescription

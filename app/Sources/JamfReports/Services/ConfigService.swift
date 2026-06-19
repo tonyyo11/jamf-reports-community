@@ -167,7 +167,7 @@ enum ConfigService {
         let text = try String(contentsOf: url, encoding: .utf8)
         let document = try YAMLCodec.decode(text)
         if !document.repairedKeys.isEmpty {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "ConfigService: repaired malformed sequence(s) under \(document.repairedKeys.sorted().joined(separator: ", "), privacy: .public) in config.yaml — saving from the Config screen heals the file"
             )
         }

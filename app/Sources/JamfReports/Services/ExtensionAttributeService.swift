@@ -110,7 +110,7 @@ struct ExtensionAttributeService: Sendable {
     /// least one file was read successfully but contained empty arrays — this
     /// distinguishes "no input given" from "input given but empty".
     ///
-    /// Decode failures are logged via `AppLogger.engine.warning` so a
+    /// Decode failures are logged via `AppLogger.collect.warning` so a
     /// truncated/malformed snapshot from a previous collect run shows up in
     /// `Console.app` instead of silently rendering the same empty state as
     /// pre-first-collect.
@@ -131,7 +131,7 @@ struct ExtensionAttributeService: Sendable {
                         .contentModificationDate
                     readSomething = true
                 } catch {
-                    AppLogger.engine.warning(
+                    AppLogger.collect.warning(
                         "ExtensionAttributeService: failed to decode definitions at \(definitionsURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
                     )
                 }
@@ -150,7 +150,7 @@ struct ExtensionAttributeService: Sendable {
                     }
                     readSomething = true
                 } catch {
-                    AppLogger.engine.warning(
+                    AppLogger.collect.warning(
                         "ExtensionAttributeService: failed to decode results at \(resultsURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
                     )
                 }

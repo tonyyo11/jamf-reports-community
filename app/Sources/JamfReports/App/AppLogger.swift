@@ -5,13 +5,24 @@ import OSLog
 
 /// Central logging entry point. Subsystem and categories match the bundle identifier prefix.
 /// Usage: `AppLogger.ui.debug("view appeared")`
+///
+/// Level convention — apply consistently:
+///   .error   actionable failure the operator must address
+///   .warning degraded but continuing (a fallback fired / a non-fatal skip)
+///   .notice  significant state transition (kept at default persistence)
+///   .info    milestone / progress (verbose; persisted only with debug logging on)
+///   .debug   fine-grained per-item / per-seam trace (verbose-only)
 enum AppLogger {
     private static let subsystem = "com.github.tonyyo11.jamf-reports-community"
 
-    static let engine   = Logger(subsystem: subsystem, category: "engine")
-    static let cli      = Logger(subsystem: subsystem, category: "cli")
-    static let schedule = Logger(subsystem: subsystem, category: "schedule")
-    static let ui       = Logger(subsystem: subsystem, category: "ui")
+    static let cli      = Logger(subsystem: subsystem, category: "cli")       // jamf-cli spawn/exec/exit
+    static let collect  = Logger(subsystem: subsystem, category: "collect")   // snapshot collection + parsing
+    static let report   = Logger(subsystem: subsystem, category: "report")    // xlsx/html/chart generation
+    static let auth     = Logger(subsystem: subsystem, category: "auth")      // credential/token/auth-guard
+    static let schedule = Logger(subsystem: subsystem, category: "schedule")  // launchd/scheduled runs
+    static let webhook  = Logger(subsystem: subsystem, category: "webhook")   // Teams/Slack notify
+    static let platform = Logger(subsystem: subsystem, category: "platform")  // Protect/School/DDM/compliance
+    static let ui       = Logger(subsystem: subsystem, category: "ui")        // views/state
 }
 
 // MARK: - Crash log writer

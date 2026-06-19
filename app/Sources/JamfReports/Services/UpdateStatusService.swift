@@ -90,7 +90,7 @@ struct UpdateStatusService: Sendable {
     /// Test seam: load directly from an arbitrary file URL.
     static func load(from url: URL) -> Snapshot? {
         guard let data = try? Data(contentsOf: url) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "UpdateStatusService: could not read update-status file \(url.lastPathComponent, privacy: .public)"
             )
             return nil
@@ -108,7 +108,7 @@ struct UpdateStatusService: Sendable {
             return decode(status: statusReport, url: url)
         }
 
-        AppLogger.engine.warning(
+        AppLogger.collect.warning(
             "UpdateStatusService: failed to decode update-status file \(url.lastPathComponent, privacy: .public)"
         )
         return nil

@@ -50,7 +50,7 @@ enum WorkspaceMigration {
             defaults.set(version, forKey: sentinelKey)
         } else {
             let failed = result.failedProfiles.joined(separator: ", ")
-            AppLogger.engine.error(
+            AppLogger.collect.error(
                 "WorkspaceMigration: sentinel NOT stamped — failures: \(failed, privacy: .public)"
             )
         }
@@ -80,11 +80,11 @@ enum WorkspaceMigration {
         let root = ProfileService.workspacesRoot()
         let fm = FileManager.default
         guard fm.fileExists(atPath: root.path) else {
-            AppLogger.engine.info("WorkspaceMigration: workspaces root absent — skipping")
+            AppLogger.collect.info("WorkspaceMigration: workspaces root absent — skipping")
             return RunResult(profiles: [])
         }
         let profiles = discoverProfiles(under: root)
-        AppLogger.engine.info(
+        AppLogger.collect.info(
             "WorkspaceMigration: starting Spotlight + permissions backfill for \(profiles.count, privacy: .public) profile(s)"
         )
 
@@ -136,7 +136,7 @@ enum WorkspaceMigration {
                     forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
                 )
                 if vals?.isSymbolicLink == true {
-                    AppLogger.engine.warning(
+                    AppLogger.collect.warning(
                         "WorkspaceMigration: skipping symlink entry \(url.lastPathComponent, privacy: .public)"
                     )
                     return false
@@ -160,12 +160,12 @@ enum WorkspaceMigration {
                 [.posixPermissions: NSNumber(value: Int16(0o600))],
                 ofItemAtPath: marker.path
             )
-            AppLogger.engine.info(
+            AppLogger.collect.info(
                 "WorkspaceMigration: dropped .metadata_never_index in \(workspace.lastPathComponent, privacy: .private)"
             )
             return true
         } catch {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "WorkspaceMigration: failed to write .metadata_never_index: \(error.localizedDescription, privacy: .private)"
             )
             return false
@@ -181,7 +181,7 @@ enum WorkspaceMigration {
     private static func disableSpotlight(at workspace: URL) -> Bool {
         let mdutil = URL(fileURLWithPath: "/usr/bin/mdutil")
         guard FileManager.default.isExecutableFile(atPath: mdutil.path) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "WorkspaceMigration: mdutil unavailable — relying on .metadata_never_index marker only"
             )
             // Marker alone is sufficient for `mdimport` to skip indexing, so we
@@ -199,13 +199,13 @@ enum WorkspaceMigration {
             if process.terminationStatus != 0 {
                 // Common: a workspace that was never indexed returns non-zero with
                 // "Indexing and searching disabled." — informational, not a failure.
-                AppLogger.engine.info(
+                AppLogger.collect.info(
                     "WorkspaceMigration: mdutil -i off exited \(process.terminationStatus, privacy: .public) (best-effort)"
                 )
             }
             return true
         } catch {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "WorkspaceMigration: mdutil invocation failed: \(error.localizedDescription, privacy: .private)"
             )
             return false

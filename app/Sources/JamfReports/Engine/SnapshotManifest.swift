@@ -51,7 +51,7 @@ enum SnapshotManifest {
             return .absent
         }
         guard let manifest = try? JSONDecoder().decode(Manifest.self, from: manifestData) else {
-            AppLogger.engine.warning(
+            AppLogger.report.warning(
                 "SnapshotManifest: manifest.json present but unparseable for \(snapshot.lastPathComponent, privacy: .public)"
             )
             return .corrupt
@@ -61,7 +61,7 @@ enum SnapshotManifest {
         }
         let actual = sha256Hex(data)
         if actual.lowercased() != expected.lowercased() {
-            AppLogger.engine.warning(
+            AppLogger.report.warning(
                 "SnapshotManifest: SHA-256 mismatch for \(snapshot.lastPathComponent, privacy: .public) — expected \(String(expected.prefix(12)), privacy: .public)…, got \(String(actual.prefix(12)), privacy: .public)…"
             )
             return .mismatch

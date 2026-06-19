@@ -94,7 +94,7 @@ struct MSCPChartDataBuilder: Sendable {
         for url in jsonFiles {
             guard let data = try? Data(contentsOf: url),
                   let rows = try? JSONDecoder().decode([EAResultRow].self, from: data) else {
-                AppLogger.engine.debug(
+                AppLogger.platform.debug(
                     "MSCPChartDataBuilder: skipping undecodable ea-results file \(url.lastPathComponent, privacy: .public)"
                 )
                 continue
