@@ -1,0 +1,33 @@
+school_cli:
+  enabled: false
+  data_dir: "school-cli-data"
+  profile: "school"
+  use_cached_data: true
+
+school_columns:
+  device_name: "Name"
+  serial_number: "SerialNumber"
+  os_version: "OsVersion"
+  model: "Model"
+  location_name: "LocationName"
+  owner_email: "OwnerEmail"
+  owner_first_name: "OwnerFirstName"
+  owner_last_name: "OwnerLastName"
+  owner_username: "OwnerUsername"
+  managed: "IsManaged"
+  supervised: "IsSupervised"
+  shared: "IsShared"
+  lost_mode: "IsLostModeEnabled"
+  last_checkin: "LastConnected"
+  enrollment_date: "EnrollmentDate"
+  enroll_type: "EnrollType"
+  member_of: "MemberOf"
+  available_capacity: "AvailableCapacity"
+
+thresholds:
+  stale_device_days: 30
+
+output:
+  output_dir: "Generated Reports"
+  timestamp_outputs: false
+  archive_enabled: false

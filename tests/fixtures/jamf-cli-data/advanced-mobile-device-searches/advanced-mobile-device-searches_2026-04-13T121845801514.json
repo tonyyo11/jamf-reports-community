@@ -1,0 +1,42 @@
+{
+  "totalCount": 2,
+  "results": [
+    {
+      "id": "211",
+      "name": "All Devices",
+      "criteria": [],
+      "displayFields": [
+        "Device ID",
+        "Model Identifier",
+        "JSS Mobile Device ID",
+        "OS Version",
+        "Serial Number",
+        "Display Name"
+      ],
+      "siteId": "-1"
+    },
+    {
+      "id": "212",
+      "name": "Last Inventory 7+ Days",
+      "criteria": [
+        {
+          "name": "Last Inventory Update",
+          "priority": 0,
+          "andOr": "and",
+          "searchType": "more than x days ago",
+          "value": "7",
+          "openingParen": false,
+          "closingParen": false
+        }
+      ],
+      "displayFields": [
+        "Display Name",
+        "Model Identifier",
+        "OS Version",
+        "Serial Number",
+        "JSS Mobile Device ID"
+      ],
+      "siteId": "-1"
+    }
+  ]
+}

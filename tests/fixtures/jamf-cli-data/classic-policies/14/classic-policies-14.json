@@ -1,0 +1,60 @@
+{
+  "general": {
+    "id": 14,
+    "name": "DiffMerge",
+    "enabled": true,
+    "trigger": "",
+    "trigger_checkin": false,
+    "trigger_enrollment_complete": false,
+    "trigger_login": false,
+    "trigger_logout": false,
+    "trigger_network_state_changed": false,
+    "trigger_startup": false,
+    "trigger_other": "",
+    "frequency": "Once per computer",
+    "retry_event": "none",
+    "retry_attempts": -1,
+    "notify_on_each_failed_retry": false,
+    "location_user_only": false,
+    "target_drive": "/",
+    "offline": false,
+    "category": {
+      "id": -1,
+      "name": "No category assigned"
+    }
+  },
+  "scope": {
+    "all_computers": false,
+    "computers": [],
+    "computer_groups": [],
+    "buildings": [],
+    "departments": [],
+    "limit_to_users": {
+      "user_groups": []
+    },
+    "limitations": {
+      "users": [],
+      "user_groups": [],
+      "network_segments": [],
+      "ibeacons": []
+    },
+    "exclusions": {
+      "computers": [],
+      "computer_groups": [],
+      "buildings": [],
+      "departments": [],
+      "users": [],
+      "user_groups": [],
+      "network_segments": [],
+      "ibeacons": []
+    }
+  },
+  "scripts": [
+    {"id": "1", "name": "__AA_Script", "priority": "After"}
+  ],
+  "package_configuration": {
+    "packages": [
+      {"id": "1", "name": "DiffMerge420_2014-08-10.pkg", "action": "Install"}
+    ]
+  }
+}

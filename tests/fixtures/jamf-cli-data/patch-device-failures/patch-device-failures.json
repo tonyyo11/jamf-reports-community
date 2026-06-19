@@ -1,0 +1,50 @@
+[
+  {
+    "policy": "Test Firefox 130.0",
+    "policy_id": "42",
+    "device": "test-macbook-001",
+    "device_id": "1001",
+    "status_date": "2026-04-01T10:15:22Z",
+    "attempt": 3,
+    "last_action": "Retrying",
+    "serial": "TEST-ABC0001",
+    "os_version": "15.7.3",
+    "username": "tuser1@example.com"
+  },
+  {
+    "policy": "Test Chrome 125.0",
+    "policy_id": "43",
+    "device": "test-macbook-002",
+    "device_id": "1002",
+    "status_date": "2026-04-02T09:01:08Z",
+    "attempt": 2,
+    "last_action": "Download Failed",
+    "serial": "TEST-ABC0002",
+    "os_version": "15.7.3",
+    "username": "tuser2@example.com"
+  },
+  {
+    "policy": "Test Office 365",
+    "policy_id": "44",
+    "device": "test-imac-003",
+    "device_id": "1003",
+    "status_date": "2026-04-03T14:42:01Z",
+    "attempt": 1,
+    "last_action": "Pending",
+    "serial": "TEST-ABC0003",
+    "os_version": "14.7.5",
+    "username": ""
+  },
+  {
+    "policy": "Test Firefox 130.0",
+    "policy_id": "42",
+    "device": "test-macbook-004",
+    "device_id": "1004",
+    "status_date": "2026-04-01T11:11:11Z",
+    "attempt": 2,
+    "last_action": "Failed",
+    "serial": "TEST-ABC0004",
+    "os_version": "15.7.3",
+    "username": "tuser4@example.com"
+  }
+]

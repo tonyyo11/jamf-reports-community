@@ -1,0 +1,85 @@
+[
+  {
+    "total": 12,
+    "status_summary": [
+      { "status": "PENDING", "count": 6 },
+      { "status": "FAILED", "count": 4 },
+      { "status": "COMPLETE", "count": 2 }
+    ],
+    "error_devices": [
+      {
+        "name": "test-macbook-001",
+        "serial": "TEST-ABC0001",
+        "device_type": "COMPUTER",
+        "os_version": "15.7.3",
+        "username": "tuser1@example.com",
+        "status": "DOWNLOAD_FAILED",
+        "product_key": "MSU_TEST_140_1",
+        "updated": "2026-04-01T10:15:22Z"
+      },
+      {
+        "name": "test-macbook-002",
+        "serial": "TEST-ABC0002",
+        "device_type": "COMPUTER",
+        "os_version": "15.7.3",
+        "username": "tuser2@example.com",
+        "status": "INSTALL_FAILED",
+        "product_key": "MSU_TEST_140_1",
+        "updated": "2026-04-02T09:01:08Z"
+      },
+      {
+        "name": "test-ipad-101",
+        "serial": "TEST-IPAD0101",
+        "device_type": "MOBILE_DEVICE",
+        "os_version": "17.5.1",
+        "username": "",
+        "status": "PREPARING",
+        "product_key": "iOS_TEST_175",
+        "updated": "2026-04-03T14:42:01Z"
+      }
+    ],
+    "plan_total": 8,
+    "plan_state_summary": [
+      { "state": "Activated", "count": 5 },
+      { "state": "Failed", "count": 3 }
+    ],
+    "failed_plans": [
+      {
+        "name": "test-macbook-001",
+        "serial": "TEST-ABC0001",
+        "device_type": "COMPUTER",
+        "os_version": "15.7.3",
+        "username": "tuser1@example.com",
+        "state": "Failed",
+        "action": "DOWNLOAD_INSTALL",
+        "version": "14.0",
+        "error": "DownloadFailed: TimedOut",
+        "last_event": "2026-04-01T10:15:22Z"
+      },
+      {
+        "name": "test-macbook-004",
+        "serial": "TEST-ABC0004",
+        "device_type": "COMPUTER",
+        "os_version": "15.7.3",
+        "username": "tuser4@example.com",
+        "state": "Failed",
+        "action": "DOWNLOAD_INSTALL",
+        "version": "14.0",
+        "error": "PreconditionNotMet: BatteryLow",
+        "last_event": "2026-04-01T11:11:11Z"
+      },
+      {
+        "name": "test-imac-003",
+        "serial": "TEST-ABC0003",
+        "device_type": "COMPUTER",
+        "os_version": "14.7.5",
+        "username": "",
+        "state": "Failed",
+        "action": "DOWNLOAD_INSTALL",
+        "version": "15.0",
+        "error": "InstallationFailed: DiskSpace",
+        "last_event": "2026-04-03T14:42:01Z"
+      }
+    ]
+  }
+]

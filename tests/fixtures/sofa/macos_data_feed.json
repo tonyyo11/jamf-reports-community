@@ -1,0 +1,66 @@
+{
+  "SchemaVersion": "2026.04.11.2",
+  "Version": "2.0",
+  "UpdateHash": "4591c6e92f73262bf4fcb4bb53d23c310d32ebdb790f1935d571bb8c2fa8726c",
+  "LastCheck": "2026-06-02T08:08:40.420885904+00:00",
+  "OSVersions": [
+    {
+      "OSVersion": "Tahoe 26",
+      "Latest": {
+        "ProductVersion": "26.5.1",
+        "Build": "25F80",
+        "ReleaseDate": "2026-06-01T00:00:00Z",
+        "ExpirationDate": "2026-08-31",
+        "SecurityInfo": "https://support.apple.com/en-us/100100",
+        "UniqueCVEsCount": 0,
+        "ActivelyExploitedCVEs": []
+      },
+      "SecurityReleases": [
+        {
+          "ProductVersion": "26.5.1",
+          "ReleaseDate": "2026-06-01T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        },
+        {
+          "ProductVersion": "26.5",
+          "ReleaseDate": "2026-05-11T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        },
+        {
+          "ProductVersion": "26.4.1",
+          "ReleaseDate": "2026-04-09T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        }
+      ]
+    },
+    {
+      "OSVersion": "Sequoia 15",
+      "Latest": {
+        "ProductVersion": "15.7.7",
+        "Build": "24G720",
+        "ReleaseDate": "2026-05-11T00:00:00Z",
+        "ExpirationDate": "2026-08-31",
+        "SecurityInfo": "https://support.apple.com/en-us/127116",
+        "UniqueCVEsCount": 45,
+        "ActivelyExploitedCVEs": []
+      },
+      "SecurityReleases": [
+        {
+          "ProductVersion": "15.7.7",
+          "ReleaseDate": "2026-05-11T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        },
+        {
+          "ProductVersion": "15.7.5",
+          "ReleaseDate": "2026-03-24T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        },
+        {
+          "ProductVersion": "15.7.4",
+          "ReleaseDate": "2026-02-11T00:00:00Z",
+          "ActivelyExploitedCVEs": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,175 @@
+[
+  {
+    "config_findings": [
+      {
+        "check": "no_scope",
+        "detail": "No targets in scope",
+        "policy": "Add Institutional Key: Invalid Individual Key, Mgmt Acct is FV2 User",
+        "policy_id": "10",
+        "severity": "warning"
+      },
+      {
+        "check": "no_scope",
+        "detail": "No targets in scope",
+        "policy": "Add Institutional Key: Valid Individual Key",
+        "policy_id": "8",
+        "severity": "warning"
+      },
+      {
+        "check": "no_scope",
+        "detail": "No targets in scope",
+        "policy": "Enable Management Account as FV2 User",
+        "policy_id": "4",
+        "severity": "warning"
+      },
+      {
+        "check": "no_scope",
+        "detail": "No targets in scope",
+        "policy": "Reset My Software Update Server",
+        "policy_id": "15",
+        "severity": "warning"
+      },
+      {
+        "check": "no_scope",
+        "detail": "No targets in scope",
+        "policy": "Rotate Mgmt Account Password (Weekly)",
+        "policy_id": "17",
+        "severity": "warning"
+      },
+      {
+        "check": "no_scope",
+        "detail": "No targets in scope",
+        "policy": "Secure Print RPS3",
+        "policy_id": "24",
+        "severity": "warning"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Add Institutional Key: Invalid Individual Key, Mgmt Acct is FV2 User",
+        "policy_id": "10",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Add Institutional Key: Valid Individual Key",
+        "policy_id": "8",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Adobe Bridge CC",
+        "policy_id": "16",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Adobe Illustrator CC 2014",
+        "policy_id": "12",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Adobe InCopy CC 2014",
+        "policy_id": "2",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Adobe InDesign CC 2014",
+        "policy_id": "19",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Balsamiq Mockups for Desktop",
+        "policy_id": "18",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "DiffMerge",
+        "policy_id": "14",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Enable Management Account as FV2 User",
+        "policy_id": "4",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Maintenance",
+        "policy_id": "26",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Reset My Software Update Server",
+        "policy_id": "15",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Rotate Mgmt Account Password (On Enroll, Trigger)",
+        "policy_id": "5",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Rotate Mgmt Account Password (Weekly)",
+        "policy_id": "17",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "RubyMine 6",
+        "policy_id": "21",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Secure Print RPS3",
+        "policy_id": "24",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "SourceTree",
+        "policy_id": "13",
+        "severity": "info"
+      },
+      {
+        "check": "no_category",
+        "detail": "Uncategorised",
+        "policy": "Update Inventory",
+        "policy_id": "1",
+        "severity": "info"
+      }
+    ],
+    "summary": {
+      "config_findings": 23,
+      "disabled": 0,
+      "enabled": 17,
+      "info": 17,
+      "total_policies": 17,
+      "warnings": 6
+    }
+  }
+]

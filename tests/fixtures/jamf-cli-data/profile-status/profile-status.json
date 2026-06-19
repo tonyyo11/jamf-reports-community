@@ -1,0 +1,13 @@
+[
+  {
+    "device_failures": [],
+    "device_pending": [],
+    "failures": [],
+    "summary": {
+      "days": 30,
+      "total_errors": 0,
+      "unique_devices": 0,
+      "unique_profiles": 0
+    }
+  }
+]

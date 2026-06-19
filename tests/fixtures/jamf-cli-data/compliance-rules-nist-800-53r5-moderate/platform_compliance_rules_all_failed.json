@@ -1,0 +1,26 @@
+[
+  {
+    "rule": "Firewall Check",
+    "passed": 5,
+    "failed": 85,
+    "unknown": 0,
+    "devices": 90,
+    "passRate": "5.6%"
+  },
+  {
+    "rule": "FileVault Check",
+    "passed": 10,
+    "failed": 80,
+    "unknown": 0,
+    "devices": 90,
+    "passRate": "11.1%"
+  },
+  {
+    "rule": "Gatekeeper Check",
+    "passed": 0,
+    "failed": 90,
+    "unknown": 0,
+    "devices": 90,
+    "passRate": "0%"
+  }
+]
