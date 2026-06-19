@@ -415,6 +415,17 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 
 ---
 
+### T-22. Debug-logging profile / OSLog store as a local data surface (NEW, 2.4.0, accepted)
+- **Goal:** Read sensitive fleet data (serials, hostnames, usernames) from the local unified-log store, or use the debug-logging toggle to widen what is captured.
+- **Path:** The Settings → Logging panel writes `~/Library/Preferences/Logging/Subsystems/com.github.tonyyo11.jamf-reports-community.plist` (`DebugLoggingService`, user-owned, no escalation). With `revealPrivate` on, interpolated values OSLog normally renders `<private>` are written in full to the **local** log store; `LogStoreReader` (`OSLogStore`, `.currentProcessIdentifier`) and Console.app can then read them. The bundled `JamfReports-Debug-Logging.mobileconfig` only enables persist-verbose (never `Enable-Private-Data`).
+- **Assets:** Device serials / hostnames / usernames already present on the same machine.
+- **Existing mitigations:** Default posture is redacted — `revealPrivate` defaults off, is warned inline, and is intentionally absent from the MDM profile so it cannot be pushed org-wide (a `DebugLoggingProfileTests` test asserts the profile contains no `Enable-Private-Data`). All writes are to the user's own `~/Library/Preferences` (no privilege escalation, no system-wide config). In-app log **export** is always `LogRedactor`-scrubbed regardless of the reveal toggle. The reader uses `.currentProcessIdentifier` scope (this app's own entries), not the whole-system log.
+- **Likelihood:** Low (requires local access already; reveal is an explicit, warned opt-in).
+- **Impact:** Low (data is local-only and already on the box; nothing leaves the device).
+- **Priority: LOW (accepted).** A local admin who can flip the toggle can already read the same data via `log`/Console directly; the feature surfaces an existing OS capability behind a redacted default. In a gov/CBP build, leave `revealPrivate` off (and the MDM profile already cannot enable it).
+
+---
+
 ## 7. Priority Summary (current state)
 
 Open threats first, then those closed by PR-10..PR-12.
