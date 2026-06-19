@@ -33,6 +33,10 @@ The app is config-driven: users map their CSV column names to logical field name
 `config.yaml` (edited through the GUI), with no code changes needed for normal use. It is a
 SwiftPM project (`app/Package.swift`), not a hand-rolled `.xcodeproj`.
 
+The same binary also ships an included `jamf-reports` command-line interface (a recognized
+subcommand runs headlessly; no arguments opens the GUI), so reports, collection, backups,
+and diagnostics can be scripted. See **Included CLI** below.
+
 Target audience: Mac/iPad admins at any organization running Jamf Pro or Jamf School.
 The code must not contain any org-specific values.
 
@@ -319,6 +323,7 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `FleetReportEmitter` | (v2.2.0) Emits a `ReportGroup`'s consolidated report as a `Metric,Current,Previous,Delta` CSV (formula-injection-safe by construction; group name only in the filename) under `_fleet-reports/` in the workspaces root. `priorSummary` selects the delta baseline by lookback (daily 1d / weekly 7d / monthly 30d). `main.swift`'s all-profiles **reports** run emits one CSV per group after the per-profile loop (and a rich workbook via `FleetWorkbookEmitter`). |
 | `FleetWorkbookModel` | (2.4.0) Pure aggregator behind the consolidated fleet **workbook**: builds the universal aggregate (via `FleetRollup`, compliance excluded), per-profile rows, baseline-grouped mSCP bands (summed only within a shared baseline — never across frameworks), and a date-aligned trend. Universal KPIs are device-weighted; nil metrics render "—". |
 | `FleetWorkbookEmitter` | (2.4.0) Renders a `FleetWorkbookModel` into a 5-sheet `.xlsx` (Fleet Summary / Per-Profile Breakdown / Security Posture / Compliance / Fleet Trend) with embedded `ChartRenderer` PNGs via `OOXMLWriter`, written beside the CSV under `_fleet-reports/`. Pure `workbook(for:)` + thin `emit` IO, mirroring `FleetReportEmitter`; percentages render as `"%.1f%%"` strings (the `CoreDashboard` convention). |
+| `CLIInstaller` | (2.4.0) Symlinks the in-bundle executable to `/usr/local/bin/jamf-reports` so the GUI binary doubles as the included CLI (the `code`/`subl` pattern). No privilege escalation: writes the symlink only when the target dir is app-writable, otherwise returns the exact `sudo mkdir -p && ln -sf` command. Inspects the destination first — replaces a stale symlink, never clobbers a real file. `source`/`targetDir`/`fileManager` are injectable for tests. Powers SettingsView's "Install command-line tool". Distinct from `JamfCLIInstaller` (which installs the `jamf-cli` dependency). |
 
 **Managed automation model (v2.2.0 — "set policy, not cron jobs").** `AutomationPolicy` (Models/AutomationPolicy.swift) is a single app-level `@AppStorage` JSON value (key `automationPolicy`, lenient `decodeIfPresent` so a new field never wipes a saved policy). `isManaged` is the master switch and **defaults off** — until the operator opts in via `AutomationView` (Phase 5) or the deferred Phase 6 migration, `ManagedAutomation.reconcile` installs and removes nothing. The managed agents are `--all-profiles` plists that resolve the profile set at run time, so adding/removing a profile auto-adjusts with no agent rewrite; `excludedProfiles` is enforced as a run-time exclusion (discover all, minus excluded — never a positive `--multi-profiles` list). `report_groups` (a `[ReportGroup]` on `AutomationPolicy`, NOT in config.yaml) drives the consolidated fleet report. The opt-in webhook digest lives in config.yaml's `notify:` block (`NotifyConfig`). Catch-up-on-wake (`WorkspaceStore.catchUpCollectIfNeeded`, launch + `willBecomeActive`) collects the day's freshness snapshot if a scheduled run was missed, gated by the Phase-1 once-per-day `force:false` collect guard.
 
@@ -432,6 +437,43 @@ file (legacy import or live run) populates that field.
   prevent corruption on power loss or crash.
 - **Hardened Runtime + entitlements:** The release bundle is built with Hardened Runtime
   enabled. Entitlements are in `app/JamfReports.entitlements`.
+
+#### Included CLI (2.4.0)
+
+The same binary is both the GUI and a `jamf-reports` command-line tool.
+`App/main.swift` dispatches on the arguments: `--scheduled-run` keeps its
+dedicated headless path (LaunchAgent back-compat); a recognized subcommand
+(`JamfReportsCLI.isKnownSubcommand(argv[1])`) routes to the CLI; anything else
+(including double-click launch) opens the GUI.
+
+The CLI lives in `Sources/JamfReports/CLI/` and uses `swift-argument-parser`
+(the second and only other dependency, after ZIPFoundation). `JamfReportsCLI`
+is the `AsyncParsableCommand` root; each of the 11 subcommands is a thin shell
+over an already-tested engine entry point — `generate`/`html`
+(`ReportEngine.generate`/`generateHTML`), `collect` (`ReportEngine.collect`),
+`backup`/`device` (`CLIBridge`, MainActor hop), `scaffold` (`ScaffoldService`),
+`check`/`school-check`/`school-scaffold` (the `runCheck`/`runSchoolCheck`/
+`runSchoolScaffold` helpers in `main.swift`), `capabilities` (`CapabilityService`
++ `DefaultCLIExecutor`), and `diagnostic-bundle` (`DiagnosticBundleService`).
+`CLIRun` holds the shared helpers (`loadProfile`, `resolveTemplate`, tier
+parsing, log-line stream routing).
+
+**xlsx + HTML only — no PDF.** PDF generation uses `WKWebView`, which needs an
+AppKit run loop a headless CLI lacks; it stays a GUI feature.
+
+**Dispatch gotcha — do not "simplify" it.** CLI dispatch goes through the
+`@available(macOS 14, *) runIncludedCLI()` helper, NOT a bare
+`JamfReportsCLI.main()` at top level. ArgumentParser's async `main`/`run`
+overloads are `@available(macOS 10.15, *)`-gated; in unannotated top-level code
+overload resolution binds to the synchronous overloads, which refuse to run an
+async root (they print help and exit 0). The `@available` wrapper supplies the
+context that makes the async overloads win. `JamfReportsCLI` carries the same
+annotation.
+
+**School commands ship untested** — `school-check`/`school-scaffold` are
+first-class but unvalidated (no Jamf School tenant); they invite community
+feedback. Install the `jamf-reports` symlink via `CLIInstaller` (Settings →
+"Command-line tool"). User guide: `docs/wiki/07-Command-Line.md`.
 
 #### Building the app
 
@@ -668,7 +710,8 @@ jamf-reports-community/
 │   ├── build-app.sh            # Produces app/build/JamfReports.app with ad-hoc signing
 │   ├── iconset/                # App icon source and build script
 │   ├── Sources/JamfReports/
-│   │   ├── App/                # @main entry point, ContentView
+│   │   ├── App/                # @main entry point, ContentView, CLI/GUI dispatch
+│   │   ├── CLI/                # Included jamf-reports CLI (root + subcommands)
 │   │   ├── Models/             # Data models + DemoData
 │   │   ├── Services/           # Business logic, CLIBridge, workspace management
 │   │   ├── Theme/              # Design tokens, shared components

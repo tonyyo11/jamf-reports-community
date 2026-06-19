@@ -17,6 +17,7 @@ unattended runs, and tracks fleet health — all from a GUI. Read these pages in
 4. [Configuration & Templates](04-Configuration-and-Templates) — `config.yaml`, custom EAs, report templates
 5. [Scheduling & Automation](05-Scheduling-and-Automation) — run modes and LaunchAgent jobs
 6. [Historical Trends](06-Historical-Trends) — snapshots and the Trends screen
+7. [Command Line](07-Command-Line) — the included `jamf-reports` CLI for scripting
 
 ### Reference for everyone
 

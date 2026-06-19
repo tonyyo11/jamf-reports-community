@@ -58,7 +58,8 @@ Scope basis: full repo (`app/`, CI workflows, scripts)
 | TB-4 | App ↔ macOS Keychain | Indirect — only `jamf-cli` reads/writes; secret passed by app via stdin during onboarding (`OnboardingFlow.swift:250-264`) with `resetBytes` zeroing after dispatch. |
 | TB-5 | LaunchAgent ↔ app daemon mode | `~/Library/LaunchAgents/*.plist` written atomically by `LaunchAgentWriter`; only user-agents, never LaunchDaemons. |
 | TB-6 | Generated HTML report ↔ downstream readers | Centralized escaping via `HtmlSectionFormatters.escapeHTML` — every dynamic insertion in `HtmlReport` routes through it. HTML output is self-contained (no remote `<script src>`). PR-3 added landmarks + table captions; PR-3 follow-up added keyboard navigation. **Not** signed/integrity-stamped (see T-13). |
-| TB-7 | Build pipeline ↔ shipped artifacts | SwiftPM dependency graph pinned by `Package.resolved`; ad-hoc-signed dev builds; Developer-ID signing + notarization is manual (`ARCHITECTURE.md:307-309`). |
+| TB-7 | Build pipeline ↔ shipped artifacts | SwiftPM dependency graph pinned by `Package.resolved` (currently two dependencies: ZIPFoundation and, as of 2.4.0, swift-argument-parser); ad-hoc-signed dev builds; Developer-ID signing + notarization is manual (`ARCHITECTURE.md:307-309`). |
+| TB-11 | **(2.4.0)** App ↔ `/usr/local/bin` (CLI install) | `CLIInstaller` symlinks the in-bundle binary into a PATH dir on user request. No privilege escalation — writes only when the target dir is already user-writable, otherwise returns a `sudo` command for the user to run. Inspects the destination first: replaces a stale symlink, refuses to clobber a real file. |
 | TB-8 | Repo CI workflows ↔ release artifacts | `.github/workflows/{ci,release,report,update-jamf-cli-version}.yml`. |
 | TB-9 | **(NEW)** Build host ↔ external recipient | Notarized DMG and PKG installer downloaded by other-org Mac admins via GitHub Releases or a Homebrew tap. Integrity hint via GitHub-served SHA-256 only; no signed manifest of releases. See "External Distribution Annex" §11. |
 | TB-10 | **(NEW)** PKG installer pre/post-install scripts ↔ recipient root | Only relevant if the PKG runs scripts with root privileges (current default for `productbuild`-style packages). Privilege boundary; currently nothing in scope requires root install. Documented to avoid scope creep. |
@@ -115,7 +116,8 @@ When the app is shipped to external organizations via notarized DMG or PKG insta
 | Entry point | Component | Notes |
 |---|---|---|
 | GUI invocation (`JamfReports.app`) | App | Trusted; same-user only |
-| Daemon-mode invocation by LaunchAgent | `main.swift` | `argv[1] == "--daemon"` style; LaunchAgent plists are app-written |
+| CLI subcommand invocation (`jamf-reports <cmd>`) | `main.swift` → `JamfReportsCLI` (`CLI/`) | Same-user, same trust as GUI; thin shells over existing engine entry points, args parsed by `swift-argument-parser`. Profile slugs validated via `ProfileService.isValid`; output/CSV paths reuse the GUI's workspace path guards. No new privileged operation |
+| Daemon-mode invocation by LaunchAgent | `main.swift` | `argv[1] == "--scheduled-run"`; LaunchAgent plists are app-written |
 | `config.yaml` parsing | `YAMLCodec` (Swift) | Untrusted-ish: user-edited, but could be replaced by A1 |
 | Cached JSON parsed by `ReportEngine` | `app/Sources/JamfReports/Engine/*` | Source-of-truth originates from Jamf, but file is replaceable by A1; **integrity-checked against manifest** (PR-7) for files under `jamf-cli-data/` |
 | `summary.json` parsed by `RunHistoryService.isPartialRun` + `LaunchAgentService.checkSummaryFileForPartialStatus` | partial-status authoritative source | **Not manifest-covered** (T-12) |

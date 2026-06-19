@@ -12,6 +12,11 @@ versions in this repository map to git tags.
 - Consolidated fleet reports now emit a multi-sheet `.xlsx` workbook — Fleet
   Summary, Per-Profile Breakdown, Security Posture, Compliance, and Fleet Trend,
   with embedded charts — alongside the existing machine-readable CSV.
+- A new included `jamf-reports` command-line tool. The app binary now doubles as a
+  CLI — generate reports, collect snapshots, back up Jamf Pro config, run checks, and
+  build redacted diagnostic bundles from Terminal or a script, using the same engine
+  as the app. Install it from Settings → Command-line tool (no administrator rights
+  required). Produces `.xlsx` and HTML reports; PDF remains a GUI feature.
 
 ### Changed
 
