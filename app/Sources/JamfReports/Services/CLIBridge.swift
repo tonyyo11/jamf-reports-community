@@ -764,6 +764,23 @@ final class CLIBridge {
         return "\(operation) failed: \(detail)"
     }
 
+    /// Maps a thrown operation error to a user-facing cause+remediation string,
+    /// routing exit-code-bearing engine errors through `explainExit`. Codeless
+    /// verdicts map to their canonical code (auth-dead → 401, all-kinds-dead → 1);
+    /// anything else falls back to the localized description.
+    nonisolated static func explainOperationError(_ error: Error, operation: String) -> String {
+        if case let ReportEngineError.collectFailed(_, exitCode) = error {
+            return explainExit(exitCode, operation: operation)
+        }
+        if case ReportEngineError.authExpired = error {
+            return explainExit(exitCodeUnauthorized, operation: operation)   // 3 / 401
+        }
+        if case ReportEngineError.collectDead = error {
+            return explainExit(1, operation: operation)                       // all kinds failed
+        }
+        return "\(operation) failed — \(error.localizedDescription)"
+    }
+
     /// Guards a live-API operation by probing `pro auth token` first.
     ///
     /// Resolves the profile's auth method via `jamf-cli config list` (falls back to local
