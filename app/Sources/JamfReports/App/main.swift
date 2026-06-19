@@ -472,7 +472,7 @@ private func scheduledRun(profile: String) async -> Int32 {
 // MARK: - check subcommand
 
 @Sendable
-private func runCheck(profile: String) -> Int32 {
+func runCheck(profile: String) -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
         return 1
@@ -516,7 +516,7 @@ private func runCheck(profile: String) -> Int32 {
 // MARK: - school-check subcommand
 
 @Sendable
-private func runSchoolCheck(profile: String) -> Int32 {
+func runSchoolCheck(profile: String) -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
         return 1
@@ -555,7 +555,7 @@ private func runSchoolCheck(profile: String) -> Int32 {
 
 // MARK: - school-scaffold subcommand
 
-private func runSchoolScaffold(csvPath: String, outPath: String) -> Int32 {
+func runSchoolScaffold(csvPath: String, outPath: String) -> Int32 {
     let csvURL = URL(fileURLWithPath: csvPath)
     let outURL = URL(fileURLWithPath: outPath)
     guard FileManager.default.fileExists(atPath: csvURL.path) else {
@@ -661,24 +661,10 @@ if cliArgs.contains("--scheduled-run"),
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)
-} else if cliArgs.contains("check"),
-          let profileIdx = cliArgs.firstIndex(of: "--profile"),
-          profileIdx + 1 < cliArgs.count {
-    let profile = cliArgs[profileIdx + 1]
-    exit(runCheck(profile: profile))
-} else if cliArgs.contains("school-check"),
-          let profileIdx = cliArgs.firstIndex(of: "--profile"),
-          profileIdx + 1 < cliArgs.count {
-    let profile = cliArgs[profileIdx + 1]
-    exit(runSchoolCheck(profile: profile))
-} else if cliArgs.contains("school-scaffold"),
-          let csvIdx = cliArgs.firstIndex(of: "--csv"),
-          let outIdx = cliArgs.firstIndex(of: "--out"),
-          csvIdx + 1 < cliArgs.count,
-          outIdx + 1 < cliArgs.count {
-    let csv = cliArgs[csvIdx + 1]
-    let out = cliArgs[outIdx + 1]
-    exit(runSchoolScaffold(csvPath: csv, outPath: out))
+} else if cliArgs.count > 1, JamfReportsCLI.isKnownSubcommand(cliArgs[1]) {
+    // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/).
+    await JamfReportsCLI.main(Array(cliArgs.dropFirst()))
 } else {
+    // No recognized subcommand (incl. double-click launch) → the GUI.
     JamfReportsApp.main()
 }
