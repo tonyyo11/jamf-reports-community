@@ -35,12 +35,12 @@ manages under `~/Jamf-Reports/<profile>/`), except `scaffold` and
 | Command | What it does | Key options |
 |---------|--------------|-------------|
 | `generate` | Generate an `.xlsx` workbook from cached snapshots | `--profile`, `--output <path>`, `--template <id>` |
-| `collect` | Collect fresh `jamf-cli` snapshots | `--profile`, `--tiers refresh,inventory,scan` |
+| `collect` | Collect fresh `jamf-cli` snapshots | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
 | `html` | Generate the self-contained HTML report | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`) | `--profile` |
 | `scaffold` | Build a `config.yaml` from a Jamf Pro CSV export | `--csv <path>`, `--out <path>` |
 | `check` | Validate a profile's `config.yaml` and `jamf-cli` auth | `--profile` |
-| `capabilities` | Report which `jamf-cli` commands are available | `--profile`, `--json` |
+| `capabilities` | Report which `jamf-cli` commands are available | `--json` |
 | `diagnostic-bundle` | Build a redacted diagnostic zip | `--profile` |
 | `device` | Print one device's detail JSON | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School profile | `--profile` |
@@ -48,6 +48,14 @@ manages under `~/Jamf-Reports/<profile>/`), except `scaffold` and
 
 Run `jamf-reports help <command>` (or `jamf-reports <command> --help`) for the
 full option list of any command.
+
+A few behaviors worth knowing:
+
+- `collect` runs at most once per profile per day; a second run the same day
+  exits successfully without re-collecting. Pass `--force` to override.
+- `scaffold` **overwrites** the `--out` file if it already exists — it's an
+  initial-setup command. To safely update an existing `config.yaml`, use the
+  app's re-scaffold (which merges non-destructively) instead.
 
 ### Templates
 

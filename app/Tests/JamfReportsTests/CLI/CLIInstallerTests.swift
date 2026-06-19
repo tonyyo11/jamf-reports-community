@@ -41,6 +41,22 @@ final class CLIInstallerTests: XCTestCase {
         XCTAssertEqual(outcome, .alreadyInstalled(path: binDir.appendingPathComponent("jamf-reports").path))
     }
 
+    func testReplacesStaleSymlink() throws {
+        let binDir = tmp.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
+        // A symlink pointing somewhere else entirely must be replaced, not kept.
+        let stale = tmp.appendingPathComponent("old-binary")
+        try Data("old".utf8).write(to: stale)
+        let dest = binDir.appendingPathComponent(CLIInstaller.linkName)
+        try FileManager.default.createSymbolicLink(at: dest, withDestinationURL: stale)
+
+        let outcome = CLIInstaller.install(source: source, targetDir: binDir)
+        XCTAssertEqual(outcome, .installed(path: dest.path))
+        let target = try FileManager.default.destinationOfSymbolicLink(atPath: dest.path)
+        XCTAssertEqual(URL(fileURLWithPath: target).resolvingSymlinksInPath().path,
+                       source.resolvingSymlinksInPath().path)
+    }
+
     func testMissingTargetDirReturnsManualCommand() {
         let missing = tmp.appendingPathComponent("does-not-exist", isDirectory: true)
         let outcome = CLIInstaller.install(source: source, targetDir: missing)

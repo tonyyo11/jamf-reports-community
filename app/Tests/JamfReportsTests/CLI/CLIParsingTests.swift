@@ -51,10 +51,9 @@ final class CLIParsingTests: XCTestCase {
         XCTAssertEqual(cmd.id, "ABC123")
     }
 
-    func testCapabilitiesProfileOptionalAndJsonFlag() throws {
-        let cmd = try Capabilities.parse(["--json"])
-        XCTAssertNil(cmd.profile)
-        XCTAssertTrue(cmd.json)
+    func testCapabilitiesJsonFlag() throws {
+        XCTAssertTrue(try Capabilities.parse(["--json"]).json)
+        XCTAssertFalse(try Capabilities.parse([]).json)
     }
 
     func testResolveTemplateDefaultsToFullInstance() throws {

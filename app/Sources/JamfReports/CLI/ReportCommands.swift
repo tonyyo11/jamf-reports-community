@@ -16,8 +16,12 @@ struct Generate: AsyncParsableCommand {
             ?? engine.resolveOutputURL(stem: "report", profile: profile)
         let failures = try await engine.generate(
             csvURL: nil, outputURL: outputURL, template: resolved, onLine: CLIRun.printLogLine)
-        if !failures.isEmpty { CLIRun.fail("\(failures.count) sheet(s) failed to write", code: 1) }
+        // The workbook is written even when some sheets error, so always emit the
+        // path (scripts can still find the artifact); exit non-zero to flag partial.
         print(outputURL.path)
+        if !failures.isEmpty {
+            CLIRun.fail("\(failures.count) sheet(s) failed to write (workbook still written)", code: 1)
+        }
     }
 }
 
@@ -25,6 +29,7 @@ struct Collect: AsyncParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Collect jamf-cli snapshots for a profile.")
     @Option(help: "Workspace profile slug.") var profile: String
     @Option(help: "Comma-separated collection tiers (refresh,inventory,scan). Default: all.") var tiers: String?
+    @Flag(help: "Collect even if a snapshot was already taken today.") var force = false
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
@@ -32,6 +37,7 @@ struct Collect: AsyncParsableCommand {
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: CLIRun.parseTiers(tiers),
+            force: force,
             onLine: CLIRun.printLogLine
         )
         print("[ok] collect complete for \(profile)")

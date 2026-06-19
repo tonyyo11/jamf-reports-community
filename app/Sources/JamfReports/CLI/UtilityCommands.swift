@@ -8,8 +8,14 @@ struct Backup: AsyncParsableCommand {
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
         let bridge = await MainActor.run { CLIBridge() }
-        let code = try await bridge.backup(profile: profile, label: nil, onLine: CLIRun.printLogLine)
+        // Label like the GUI/scheduled path so a cron'd `backup` participates in
+        // the same "keep newest 10" retention instead of growing unbounded.
+        let label = "scheduled-\(BackupMaintenance.dateStamp())"
+        let code = try await bridge.backup(profile: profile, label: label, onLine: CLIRun.printLogLine)
         if code != 0 { CLIRun.fail("backup failed (exit \(code))", code: code) }
+        // Third caller of the shared housekeeping (GUI + scheduled are the others):
+        // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
+        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: CLIRun.printLogLine)
     }
 }
 
@@ -23,8 +29,10 @@ struct Scaffold: AsyncParsableCommand {
         let outURL = URL(fileURLWithPath: out)
         try FileManager.default.createDirectory(
             at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // Profile-agnostic: empty slug → `jamf_cli.profile: ""` (matches the
-        // old Python `scaffold`; the user sets the profile when they wire it up).
+        // Profile-agnostic: empty slug → `jamf_cli.profile: ""` (matches the old
+        // Python `scaffold`; the user sets the profile when they wire it up). Like
+        // Python's `scaffold`, this OVERWRITES `--out` if it exists — it's an
+        // initial-setup command; the GUI re-scaffold does a non-destructive merge.
         let result = try ScaffoldService.matchColumns(from: URL(fileURLWithPath: csv), profile: "")
         try ScaffoldService.writeConfig(to: outURL, result: result, profile: "")
         print(outURL.path)
@@ -45,7 +53,7 @@ struct Check: AsyncParsableCommand {
 struct Capabilities: AsyncParsableCommand {
     static let configuration =
         CommandConfiguration(abstract: "Report detected jamf-cli command capabilities.")
-    @Option(help: "Workspace profile slug.") var profile: String?
+    // No --profile: the probe runs `jamf-cli pro --help`, which is profile-less.
     @Flag(help: "Emit machine-readable JSON.") var json = false
 
     func run() async throws {
