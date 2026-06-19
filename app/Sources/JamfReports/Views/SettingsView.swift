@@ -27,6 +27,10 @@ struct SettingsView: View {
     @State private var diagnosticBundleMessage: String? = nil
     @State private var isGeneratingBundle = false
     @State private var tipsResetConfirmation: String? = nil
+    // Included-CLI install (CLIInstaller). `cliInstallCommand` is set only when
+    // the target dir isn't app-writable and the user must run the command.
+    @State private var cliInstallMessage: String? = nil
+    @State private var cliInstallCommand: String? = nil
     // Legacy v3.5 history import (LegacyHistoryImporter).
     @State private var legacyImportMessage: String? = nil
     @State private var isImportingLegacyHistory = false
@@ -46,6 +50,7 @@ struct SettingsView: View {
                     cliCard
                     connectionsCard
                 }
+                commandLineToolCard
                 dataAndChartsCard
                 diagnosticsCard
                 sidebarVisibilityCard
@@ -119,6 +124,74 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Included CLI install
+
+    private var commandLineToolCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Command-line tool")
+                Text(
+                    "Install a `jamf-reports` command so you can generate reports, " +
+                    "collect snapshots, and back up from Terminal or a script — the same " +
+                    "engine the app uses. This links the app into a directory on your PATH; " +
+                    "the app never uses administrator rights."
+                )
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    PNPButton(title: "Install command-line tool", icon: "terminal", size: .sm) {
+                        installCommandLineTool()
+                    }
+                    .help("Create a `jamf-reports` symlink in /usr/local/bin, or show the command to run if it isn't writable.")
+                    .accessibilityHint("Installs the jamf-reports command-line tool.")
+                }
+
+                if let msg = cliInstallMessage {
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let cmd = cliInstallCommand {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(cmd)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        PNPButton(title: "Copy command", icon: "doc.on.doc", size: .sm) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(cmd, forType: .string)
+                        }
+                        .help("Copy the install command to the clipboard.")
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Command-line tool")
+    }
+
+    private func installCommandLineTool() {
+        switch CLIInstaller.install() {
+        case let .installed(path):
+            cliInstallMessage = "Installed — open a new Terminal and run `jamf-reports --help`. (\(path))"
+            cliInstallCommand = nil
+        case let .alreadyInstalled(path):
+            cliInstallMessage = "Already installed at \(path)."
+            cliInstallCommand = nil
+        case let .manual(command):
+            cliInstallMessage =
+                "The app can't write to /usr/local/bin. Run this in Terminal to finish installing:"
+            cliInstallCommand = command
+        case let .failed(reason):
+            cliInstallMessage = "Couldn't install: \(reason)"
+            cliInstallCommand = nil
+        }
     }
 
     private var jamfCLISubtitle: String {
