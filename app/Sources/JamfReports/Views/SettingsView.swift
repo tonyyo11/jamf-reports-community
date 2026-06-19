@@ -34,6 +34,9 @@ struct SettingsView: View {
     // Legacy v3.5 history import (LegacyHistoryImporter).
     @State private var legacyImportMessage: String? = nil
     @State private var isImportingLegacyHistory = false
+    // Debug logging (DebugLoggingService) — toggles apply on next launch.
+    @State private var debugState: DebugLoggingState = .off
+    @State private var loggingApplyMessage: String? = nil
 
     var body: some View {
         ScrollView {
@@ -53,6 +56,7 @@ struct SettingsView: View {
                 commandLineToolCard
                 dataAndChartsCard
                 diagnosticsCard
+                loggingCard
                 sidebarVisibilityCard
                 experimentalFeaturesCard
                 aboutCard
@@ -652,6 +656,94 @@ struct SettingsView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Diagnostics")
+    }
+
+    // MARK: - Logging
+
+    private var loggingCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Logging")
+                Text(
+                    "Control verbose diagnostics and view recent log entries. Changes to the "
+                    + "toggles apply after you quit and reopen JamfReports."
+                )
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Persist verbose logs", isOn: Binding(
+                    get: { debugState.persistVerbose },
+                    set: { debugState.persistVerbose = $0; applyDebugState() }))
+                Toggle("Reveal private values in logs (serials, hostnames, usernames)", isOn: Binding(
+                    get: { debugState.revealPrivate },
+                    set: { debugState.revealPrivate = $0; applyDebugState() }))
+                if debugState.revealPrivate {
+                    Text("⚠︎ Private values are written in full to the local log store on this Mac. "
+                        + "Leave off unless actively debugging.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.warn)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let loggingApplyMessage {
+                    Text(loggingApplyMessage)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 8) {
+                    PNPButton(title: "Quit to apply", icon: "power", size: .sm) {
+                        NSApplication.shared.terminate(nil)
+                    }
+                    .help("Quit JamfReports so the logging toggles take effect on next launch.")
+                    PNPButton(title: "Reveal MDM profile", icon: "doc.badge.gearshape", size: .sm) {
+                        revealDebugProfile()
+                    }
+                    .help("Reveal the bundled debug-logging .mobileconfig in Finder for Jamf deployment.")
+                }
+
+                Divider().background(Theme.Hairline.standard)
+                LogViewerView()
+
+                Divider().background(Theme.Hairline.standard)
+                consoleInstructions
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Logging")
+        .onAppear { debugState = DebugLoggingService.current() }
+    }
+
+    private func applyDebugState() {
+        do {
+            try DebugLoggingService.apply(debugState)
+            loggingApplyMessage = "Saved — applies on next launch."
+        } catch {
+            loggingApplyMessage = "Couldn't write the logging config: \(error.localizedDescription)"
+        }
+    }
+
+    private func revealDebugProfile() {
+        // The bundle resource lives outside the SystemActions allow-list; revealing a
+        // read-only app-bundle file is benign, so use NSWorkspace directly.
+        if let url = DebugLoggingService.bundledProfileURL {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
+    @ViewBuilder private var consoleInstructions: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("View live logs in Terminal").font(.caption.weight(.semibold))
+            Mono(text: "log stream --predicate 'subsystem == "
+                + "\"com.github.tonyyo11.jamf-reports-community\"' --level debug", size: 11)
+                .textSelection(.enabled)
+            Text("Or open Console.app and filter on subsystem "
+                + "“com.github.tonyyo11.jamf-reports-community”.")
+                .font(.caption)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: - Legacy v3.5 history import
