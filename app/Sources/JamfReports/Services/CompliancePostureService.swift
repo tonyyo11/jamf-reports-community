@@ -21,6 +21,9 @@ struct CompliancePostureService: Sendable {
         let controlGaps: [ControlGap]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Non-nil only when a snapshot file existed but could not be read/decoded —
+        /// a true failure, distinct from `.empty` (no data collected yet).
+        var loadError: String? = nil
 
         struct ControlGap: Sendable, Equatable, Identifiable {
             let control: String
@@ -48,6 +51,7 @@ struct CompliancePostureService: Sendable {
                 && lhs.sourceFile == rhs.sourceFile
                 && lhs.snapshotDate == rhs.snapshotDate
                 && lhs.perOSMajor.map(\.osMajor) == rhs.perOSMajor.map(\.osMajor)
+                && lhs.loadError == rhs.loadError
         }
 
         static let empty = Snapshot(
@@ -58,6 +62,13 @@ struct CompliancePostureService: Sendable {
             sourceFile: nil,
             snapshotDate: nil
         )
+
+        /// A true read/decode failure (file present but unreadable), distinct from `.empty`.
+        static func failed(_ reason: String) -> Snapshot {
+            var s = empty
+            s.loadError = reason
+            return s
+        }
     }
 
     /// Load the newest security report and derive a compliance snapshot.
@@ -68,7 +79,10 @@ struct CompliancePostureService: Sendable {
         }
         let securityDir = dir.appendingPathComponent("security", isDirectory: true)
         guard let newest = FileManager.newestJSONFile(in: securityDir) else { return .empty }
-        return decode(at: newest) ?? .empty
+        guard let snapshot = decode(at: newest) else {
+            return .failed("Couldn't read the latest compliance snapshot — \(newest.lastPathComponent) may be corrupt.")
+        }
+        return snapshot
     }
 
     static func load(from url: URL) -> Snapshot? {

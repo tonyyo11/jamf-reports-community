@@ -23,6 +23,9 @@ struct SecurityPostureService: Sendable {
         let osVersions: [OSVersion]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Non-nil only when a snapshot file existed but could not be read/decoded —
+        /// a true failure, distinct from `.empty` (no data collected yet).
+        var loadError: String? = nil
 
         struct OSVersion: Sendable, Equatable, Identifiable {
             let osVersion: String
@@ -49,6 +52,13 @@ struct SecurityPostureService: Sendable {
             sourceFile: nil,
             snapshotDate: nil
         )
+
+        /// A true read/decode failure (file present but unreadable), distinct from `.empty`.
+        static func failed(_ reason: String) -> Snapshot {
+            var s = empty
+            s.loadError = reason
+            return s
+        }
     }
 
     enum LoadError: Error, Equatable {
@@ -68,7 +78,13 @@ struct SecurityPostureService: Sendable {
         guard let newest = FileManager.newestJSONFile(in: securityDir) else {
             return .empty
         }
-        return decode(at: newest) ?? .empty
+        do {
+            return try decode(at: newest)
+        } catch let LoadError.decodeFailed(reason) {
+            return .failed("Couldn't read the latest security snapshot — \(reason).")
+        } catch {
+            return .failed("Couldn't read the latest security snapshot.")
+        }
     }
 
     /// Test seam: load directly from an arbitrary file URL.
@@ -76,26 +92,23 @@ struct SecurityPostureService: Sendable {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LoadError.noSnapshot
         }
-        guard let snapshot = decode(at: url) else {
-            throw LoadError.decodeFailed("Failed to decode \(url.lastPathComponent)")
-        }
-        return snapshot
+        return try decode(at: url)
     }
 
     // MARK: - Internals
 
-    private static func decode(at url: URL) -> Snapshot? {
+    private static func decode(at url: URL) throws -> Snapshot {
         guard let data = try? Data(contentsOf: url) else {
             AppLogger.platform.warning(
                 "SecurityPostureService: could not read security file \(url.lastPathComponent, privacy: .public)"
             )
-            return nil
+            throw LoadError.decodeFailed("could not read \(url.lastPathComponent)")
         }
         guard let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data) else {
             AppLogger.platform.warning(
                 "SecurityPostureService: failed to decode security file \(url.lastPathComponent, privacy: .public)"
             )
-            return nil
+            throw LoadError.decodeFailed("failed to decode \(url.lastPathComponent)")
         }
 
         var summary: SecuritySummaryData?
