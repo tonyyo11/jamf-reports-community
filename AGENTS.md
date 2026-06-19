@@ -383,8 +383,9 @@ Named constants in `CLIBridge`. Reference: jamf-cli Error Handling & Exit Codes 
 | 4 | `exitCodeNotFound` | HTTP 404 — resource does not exist | Warn; use cached data |
 | 5 | `exitCodePermissionDenied` | HTTP 403 — account lacks required API privileges | Warn with specific message; use cached data |
 | 6 | `exitCodeRateLimited` | HTTP 429 — server throttling | Warn with specific message; use cached data |
+| 7 | `exitCodePartialFailure` | Partial failure (v1.19.0+) — some sub-operations failed, stdout contains valid JSON for the successful subset | Warn; save the returned partial data |
 
-The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data.
+The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data. Exit code 7 counts as a success for the auth-dead verdict (auth was accepted; only some sub-operations failed).
 
 #### Key views (41 Swift view files as of v2.2.0; tables last synced at v2.0 — see Views/ and Services/ for the current set)
 

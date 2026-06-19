@@ -20,6 +20,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Updated jamf-cli dependency tracking to v1.19.0 and added handling for its new
+  exit code 7 (partial failure): when some sub-operations fail but valid JSON is
+  returned for the rest, the partial data is now saved with a warning instead of
+  discarded. Backward-compatible — v1.18.x never emits exit code 7.
 - The consolidated fleet report now reports SIP %, Firewall %, and Gatekeeper %
   and no longer blends a single fleet-wide Compliance % across profiles.
   Compliance is reported per security baseline in the new workbook's Compliance
