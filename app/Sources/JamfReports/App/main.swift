@@ -559,6 +559,10 @@ func runSchoolCheck(profile: String) -> Int32 {
 func runSchoolScaffold(csvPath: String, outPath: String) -> Int32 {
     let csvURL = URL(fileURLWithPath: csvPath)
     let outURL = URL(fileURLWithPath: outPath)
+    if WorkspacePaths.isSensitiveAbsolutePath(outURL) {
+        fputs("[error] refusing to write into a sensitive path: \(outPath)\n", stderr)
+        return 1
+    }
     guard FileManager.default.fileExists(atPath: csvURL.path) else {
         fputs("[error] CSV not found: \(csvPath)\n", stderr)
         return 1
@@ -584,7 +588,7 @@ func runSchoolScaffold(csvPath: String, outPath: String) -> Int32 {
     ]
     for key in orderedKeys {
         let value = mappings[key] ?? ""
-        lines.append("  \(key): \"\(value)\"")
+        lines.append("  \(key): \"\(ScaffoldService.yamlEscape(value))\"")
     }
     lines.append("")
 

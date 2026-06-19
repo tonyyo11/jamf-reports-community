@@ -60,6 +60,16 @@ enum CLIRun {
         exit(code)
     }
 
+    /// Reject a user-supplied output path that lands in a sensitive directory
+    /// (`~/.ssh`, `~/Library`, …). The GUI applies this deny-list in `CLIBridge`;
+    /// the CLI calls the engine directly, so it must guard the path itself —
+    /// otherwise `--output ~/.ssh/authorized_keys` would be overwritten.
+    static func requireSafeOutput(_ path: String) {
+        if WorkspacePaths.isSensitiveAbsolutePath(URL(fileURLWithPath: path)) {
+            fail("refusing to write into a sensitive path: \(path)")
+        }
+    }
+
     /// Load a profile's parsed config + snapshot data dir — the setup the
     /// `generate`/`html` commands share. A missing workspace is an operator
     /// error (immediate exit); config decode errors propagate to ArgumentParser.

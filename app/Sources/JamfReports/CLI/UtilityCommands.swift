@@ -26,6 +26,7 @@ struct Scaffold: AsyncParsableCommand {
     @Option(help: "Output config.yaml path.") var out: String
 
     func run() async throws {
+        CLIRun.requireSafeOutput(out)
         let outURL = URL(fileURLWithPath: out)
         try FileManager.default.createDirectory(
             at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
