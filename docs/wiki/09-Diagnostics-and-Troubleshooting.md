@@ -15,6 +15,45 @@ workspace tree listing, and version metadata into a zip under the workspace's
 (hostnames, serials, emails, device names) is redacted by default with stable hash
 placeholders.
 
+## Logging
+
+Every action logs through the unified `os.Logger` under subsystem
+`com.github.tonyyo11.jamf-reports-community`, split across eight categories — `cli`,
+`collect`, `report`, `auth`, `schedule`, `webhook`, `platform`, `ui` — so you can filter
+to the area you care about in Console.app or the in-app viewer.
+
+**Settings → Diagnostics → Logging** controls verbosity and shows recent entries:
+
+- **Persist verbose logs** — keeps `debug`/`info` entries in the local log store (off by
+  default; the OS otherwise persists only `notice` and above). Interpolated values stay
+  redacted as `<private>`.
+- **Reveal private values in logs** — writes serials, hostnames, and usernames in full to
+  the **local** store on this Mac. Off by default and warned; leave it off on managed or
+  government Macs.
+- **Log viewer** — a snapshot of this session's entries, filterable by minimum level, time
+  window, and free-text search. **Export** writes a redacted copy regardless of the reveal
+  toggle.
+- **Reveal MDM profile** — reveals the bundled `JamfReports-Debug-Logging.mobileconfig`
+  (persist-verbose only; never `Enable-Private-Data`) for org-wide deployment via Jamf.
+
+Toggle changes take effect at the **next launch** — quit and reopen the app. To watch logs
+live in Terminal:
+
+```bash
+log stream --predicate 'subsystem == "com.github.tonyyo11.jamf-reports-community"' --level debug
+```
+
+Or open Console.app and filter on the subsystem.
+
+## Surfaced errors
+
+Operation failures (collect, refresh, generate, backup) and `jamf-cli` exit codes are
+translated into a plain-language cause and remediation rather than a raw error string — for
+example, a `401` surfaces as "authentication failed (401) — re-authenticate this profile
+from Data Sources." Dashboards that read a snapshot which exists but cannot be parsed show a
+distinct **error state with a Retry**, separate from the normal "no data collected yet"
+empty state.
+
 ## Common failure modes
 
 **`jamf-cli: command not found` / "jamf-cli not detected".** The binary is not installed

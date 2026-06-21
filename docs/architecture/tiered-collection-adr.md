@@ -12,7 +12,7 @@ original 2026-05-18 plan, not the final PR split (PR-24 became the
 
 ## Context
 
-The reference Python/zsh deployment at
+The reference zsh deployment at
 `~/Documents/Mac_Engineering/Jamf Reports/jamf-cli-data/collect.zsh`
 schedules jamf-cli commands at **per-report cadences**:
 

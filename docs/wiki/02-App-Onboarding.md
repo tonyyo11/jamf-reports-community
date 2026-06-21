@@ -17,7 +17,7 @@ later, open the **workspace switcher** at the bottom of the sidebar and choose *
 workspace…**, or click **Settings → jamf-cli → Connections → Add connection**. Both
 routes start the same onboarding flow.
 
-## The seven-step flow
+## The onboarding flow
 
 1. **Welcome** — a short intro to what onboarding will do.
 2. **Install CLI** — the app checks that `jamf-cli` is installed and on `PATH`, and shows
@@ -25,18 +25,21 @@ routes start the same onboarding flow.
    [Installation](01-Installation) for details.
 3. **Workspace** — choose a profile name. The name becomes a folder under
    `~/Jamf-Reports/<profile>/` and must match `^[a-z0-9][a-z0-9._-]*$` — lowercase, no
-   spaces. Pick something short like `prod`. This step also asks whether the Jamf Pro
-   instance is on-prem or cloud, to seed the collection-cadence preset.
-4. **Authenticate** — enter the Jamf Pro URL, API client ID, and client secret. The
-   secret is passed to `jamf-cli` over a controlling TTY and cleared immediately; the app
-   never persists it. `jamf-cli` stores the resulting token in the macOS keychain.
+   spaces. Pick something short like `prod`.
+4. **Authenticate** — connect Jamf Pro with either OAuth2 API client credentials (URL,
+   client ID, client secret) or a Platform Gateway tenant ID. The secret is passed to
+   `jamf-cli` over a controlling TTY and cleared immediately; the app never persists it.
+   `jamf-cli` stores the resulting token in the macOS keychain.
 5. **Validate** — the app runs `jamf-cli config validate` against the new profile and
    reports success or a redacted error.
 6. **CSV mapping** — optionally pick a Jamf Pro CSV export. The app scaffolds a
    `config.yaml` with best-guess column mappings from the export's headers. You can also
    **Skip for now** — the app writes a minimal config and works from `jamf-cli` data
    alone (see [Running without a CSV](#running-without-a-csv)).
-7. **First report** — the app generates a first report so the dashboards have data to
+7. **Add products (optional)** — if you use Jamf Protect or Jamf School, connect them here
+   (`protect setup` / `school setup`); they augment the Jamf Pro reports. You can also add
+   them later from the **Data Sources** screen.
+8. **First report** — the app generates a first report so the dashboards have data to
    render. If the output looks off you can **Skip & finish setup** — the workspace is
    fully configured at this point and you can run reports later from the Reports tab.
 

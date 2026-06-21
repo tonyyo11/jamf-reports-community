@@ -29,7 +29,7 @@ cd app
 ./build-app.sh release      # → app/build/JamfReports.app
 ```
 
-Full build instructions — including the bundled Python runtime and Developer ID signing
+Full build instructions — including Developer ID signing
 for wider distribution — are in
 [`app/README.md`](https://github.com/tonyyo11/jamf-reports-community/blob/main/app/README.md).
 

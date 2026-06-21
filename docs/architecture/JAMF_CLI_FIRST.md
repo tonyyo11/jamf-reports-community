@@ -1,8 +1,8 @@
 # jamf-cli First
 
 JamfReports is built on a single architectural decision: `jamf-cli` is the engine.
-Everything else — the SwiftUI app, the cached JSON files on disk, the Python script —
-is an orchestrator around it.
+Everything else — the SwiftUI app and the cached JSON files on disk — is an
+orchestrator around it.
 
 ## Why
 
