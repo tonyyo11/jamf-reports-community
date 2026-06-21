@@ -89,13 +89,13 @@ struct MobileFleetView: View {
         )
     }
 
-    private nonisolated(unsafe) static let demoOwnershipTypes: [String] = [
+    private nonisolated static let demoOwnershipTypes: [String] = [
         "Institutional", "UserEnrollment",
         "AccountDrivenUserEnrollment", "AccountDrivenDeviceEnrollment",
     ]
 
-    private nonisolated(unsafe) static let demoOSVersions: [String] = ["18.2.1", "18.1.1", "17.6.1"]
-    private nonisolated(unsafe) static let demoDepartments: [String] = ["IT", "Sales", "Marketing"]
+    private nonisolated static let demoOSVersions: [String] = ["18.2.1", "18.1.1", "17.6.1"]
+    private nonisolated static let demoDepartments: [String] = ["IT", "Sales", "Marketing"]
 
     private nonisolated static func makeDemoDevice(index i: Int) -> MobileDeviceInventoryItem {
         let isIPad = i <= 15
