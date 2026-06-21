@@ -27,9 +27,21 @@ enum DebugLoggingService {
 
     /// URL of the bundled MDM debug-logging profile (`com.apple.system.logging`,
     /// persist-verbose only), for the Settings "Reveal MDM profile" affordance and
-    /// admin Jamf deployment. Resolved via the module bundle that ships `Resources/`.
+    /// admin Jamf deployment.
+    ///
+    /// In the packaged `.app`, `build-app.sh` flattens the profile into
+    /// `Contents/Resources/` (`Bundle.main`). SwiftPM's `Bundle.module` accessor
+    /// `fatalError`s when the resource bundle is absent from a signed `.app`, so it is
+    /// only touched in DEBUG (`swift run` / tests) — mirrors `Theme.FontRegistry`.
     static var bundledProfileURL: URL? {
-        Bundle.module.url(forResource: "JamfReports-Debug-Logging", withExtension: "mobileconfig")
+        if let url = Bundle.main.url(forResource: "JamfReports-Debug-Logging", withExtension: "mobileconfig") {
+            return url
+        }
+        #if DEBUG
+        return Bundle.module.url(forResource: "JamfReports-Debug-Logging", withExtension: "mobileconfig")
+        #else
+        return nil
+        #endif
     }
 
     static func current(at url: URL = defaultPlistURL) -> DebugLoggingState {

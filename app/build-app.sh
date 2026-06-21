@@ -59,16 +59,18 @@ mkdir -p "$APP_OUT/Contents/Resources"
 cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 
-# Copy bundled font assets directly into Contents/Resources/ so Bundle.main
+# Copy bundled resource assets directly into Contents/Resources/ so Bundle.main
 # can find them on any Mac. SwiftPM's auto-generated `Bundle.module` accessor
 # is incompatible with macOS .app code-signing rules (it expects the resource
 # bundle at the .app root, outside Contents/, which violates the "unsealed
-# contents" check), so FontRegistry uses a Bundle.main lookup instead — see
-# Theme.swift `FontRegistry.locateFont(named:)`. The SwiftPM bundle is
-# deliberately NOT copied into the packaged .app.
+# contents" check), so callers use a Bundle.main lookup instead — see
+# Theme.swift `FontRegistry.locateFont(named:)` and
+# DebugLoggingService.bundledProfileURL. The SwiftPM bundle is deliberately NOT
+# copied into the packaged .app.
 if [[ -d "$BUNDLE" ]]; then
   find "$BUNDLE" -mindepth 1 -maxdepth 1 -type f \
-    \( -name "*.ttf" -o -name "*.otf" -o -name "*.png" -o -name "*.json" \) \
+    \( -name "*.ttf" -o -name "*.otf" -o -name "*.png" -o -name "*.json" \
+       -o -name "*.mobileconfig" \) \
     -print0 | while IFS= read -r -d '' asset; do
     cp "$asset" "$APP_OUT/Contents/Resources/"
   done
