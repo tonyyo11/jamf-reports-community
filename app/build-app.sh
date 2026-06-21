@@ -11,7 +11,7 @@ CONFIG="${1:-release}"
 # Marketing version (CFBundleShortVersionString) — bumped per milestone.
 # This is the single source of truth for the user-facing semver; keep it in
 # sync with AppVersionState.fallbackVersion (a test enforces this).
-MARKETING_VERSION="${MARKETING_VERSION:-2.3.0}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.4.0}"
 
 # Build number (CFBundleVersion). Always a monotonically increasing integer
 # (git commit count), independent of the marketing version — this matches
