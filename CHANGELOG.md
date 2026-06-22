@@ -7,6 +7,10 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+<!-- jamf-cli v1.20.0 sync reviewed 2026-06-22: new `mcp serve` command (MCP
+     server for AI clients) and its JAMF_CLI_MCP=1 child-process env var have
+     no impact on this project's jamf-cli usage. No code changes required. -->
+
 ## [2.4.0] - 2026-06-21
 
 ### Added
