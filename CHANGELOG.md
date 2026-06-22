@@ -14,6 +14,10 @@ versions in this repository map to git tags.
   in v1.19.0): when some sub-operations fail but valid JSON is returned for the
   rest, the partial data is saved with a warning instead of being discarded. This
   is backward-compatible — v1.18.x never emits exit 7.
+- Bumped tracked jamf-cli version to v1.20.0. The sole CLI-facing change in
+  v1.20.0 is a new `mcp serve` command that exposes jamf-cli as a Model Context
+  Protocol server for AI clients; this command is not invoked by this project, and
+  no code changes are required.
 
 ## [2.3.0] - 2026-06-17
 
