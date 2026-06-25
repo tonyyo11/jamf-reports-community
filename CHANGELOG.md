@@ -7,7 +7,7 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
-## [2.4.0] - 2026-06-21
+## [2.4.0] - 2026-06-25
 
 ### Added
 
@@ -28,7 +28,7 @@ versions in this repository map to git tags.
 
 ### Changed
 
-- Updated jamf-cli dependency tracking to v1.20.0 and added handling for exit code 7
+- Updated jamf-cli dependency tracking to v1.21.1 and added handling for exit code 7
   (partial failure, v1.19+): when some sub-operations fail but valid JSON is
   returned for the rest, the partial data is now saved with a warning instead of
   discarded. Backward-compatible — v1.18.x never emits exit code 7.

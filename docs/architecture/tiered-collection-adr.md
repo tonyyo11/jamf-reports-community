@@ -13,7 +13,7 @@ original 2026-05-18 plan, not the final PR split (PR-24 became the
 ## Context
 
 The reference zsh deployment at
-`~/Documents/Mac_Engineering/Jamf Reports/jamf-cli-data/collect.zsh`
+`~/Jamf-Reports/jamf-cli-data/collect.zsh`
 schedules jamf-cli commands at **per-report cadences**:
 
 - **Daily** (every 86400 s): `overview`, `policy-status`
@@ -390,7 +390,7 @@ configurable.
 
 ## References
 
-- `~/Documents/Mac_Engineering/Jamf Reports/jamf-cli-data/collect.zsh` —
+- `~/Jamf-Reports/jamf-cli-data/collect.zsh` —
   reference implementation, lines 253-328 cover the daily/weekly/biweekly
   tier definitions and the `is_due()` mechanic
 - `app/Sources/JamfReports/Services/CollectionTier.swift` — existing
