@@ -10,11 +10,8 @@
 - [Configuration & Templates](04-Configuration-and-Templates)
 - [Scheduling & Automation](05-Scheduling-and-Automation)
 - [Historical Trends](06-Historical-Trends)
+- [Command Line](07-Command-Line)
 - [Data Provenance](11-Data-Provenance)
-
-### Python CLI
-
-- [CLI Workflow](07-CLI-Workflow)
 
 ### Reference
 

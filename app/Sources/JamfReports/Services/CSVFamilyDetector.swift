@@ -14,10 +14,9 @@ enum CSVFamily: String, Sendable, Equatable {
 
 /// Detects whether a Jamf Pro CSV export contains computers or mobile devices.
 ///
-/// Discriminator tables ported verbatim from Python
-/// ``COMPUTER_CSV_DISCRIMINATORS`` / ``MOBILE_CSV_DISCRIMINATORS``
-/// (jamf-reports-community.py). Detection counts header hits per set;
-/// the winning set wins. Returns `nil` on a tie or zero hits.
+/// Discriminator tables (`computerDiscriminators` / `mobileDiscriminators`) are
+/// curated sets of headers that appear in only one export family. Detection counts
+/// header hits per set; the winning set wins. Returns `nil` on a tie or zero hits.
 enum CSVFamilyDetector {
 
     // Pre-normalized (lowercase, single-spaced) headers that appear ONLY in a

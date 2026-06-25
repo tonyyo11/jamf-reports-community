@@ -6,20 +6,53 @@ run — copy that into an issue if a failure is not listed here.
 
 ## Diagnostic bundle
 
-To share diagnostics safely, build a redacted bundle:
-
-```bash
-python3 jamf-reports-community.py diagnostic-bundle
-```
+To share diagnostics safely, build a redacted bundle from the app:
+**Settings → Diagnostics → Generate diagnostic bundle now**.
 
 It collects recent logs, the last few `summary.json` snapshots, `config.yaml`, a
-workspace tree listing, and version metadata into a zip on the Desktop. Credentials are
-always redacted; PII (hostnames, serials, emails, device names) is redacted by default
-with stable hash placeholders. `--keep-*` flags preserve specific categories;
-`--no-redact` disables redaction for local debugging only — never share that zip.
+workspace tree listing, and version metadata into a zip under the workspace's
+`diagnostics/` folder, and reveals it in Finder. Credentials are always redacted; PII
+(hostnames, serials, emails, device names) is redacted by default with stable hash
+placeholders.
 
-In the app, **Settings → Diagnostics → Copy Diagnostic Command** copies this command to
-the clipboard and opens Terminal.
+## Logging
+
+Every action logs through the unified `os.Logger` under subsystem
+`com.github.tonyyo11.jamf-reports-community`, split across eight categories — `cli`,
+`collect`, `report`, `auth`, `schedule`, `webhook`, `platform`, `ui` — so you can filter
+to the area you care about in Console.app or the in-app viewer.
+
+**Settings → Diagnostics → Logging** controls verbosity and shows recent entries:
+
+- **Persist verbose logs** — keeps `debug`/`info` entries in the local log store (off by
+  default; the OS otherwise persists only `notice` and above). Interpolated values stay
+  redacted as `<private>`.
+- **Reveal private values in logs** — writes serials, hostnames, and usernames in full to
+  the **local** store on this Mac. Off by default and warned; leave it off on managed or
+  government Macs.
+- **Log viewer** — a snapshot of this session's entries, filterable by minimum level, time
+  window, and free-text search. **Export** writes a redacted copy regardless of the reveal
+  toggle.
+- **Reveal MDM profile** — reveals the bundled `JamfReports-Debug-Logging.mobileconfig`
+  (persist-verbose only; never `Enable-Private-Data`) for org-wide deployment via Jamf.
+
+Toggle changes take effect at the **next launch** — quit and reopen the app. To watch logs
+live in Terminal:
+
+```bash
+log stream --predicate 'subsystem == "com.github.tonyyo11.jamf-reports-community"' --level debug
+```
+
+Or open Console.app and filter on the subsystem.
+
+## Surfaced errors
+
+Operation failures (collect, refresh, generate, backup) and `jamf-cli` exit codes are
+translated into a plain-language cause and remediation rather than a raw error string — for
+example, a `401` surfaces as "authentication failed (401) — re-authenticate this profile
+from Data Sources." Dashboards that read a snapshot which exists but cannot be parsed show a
+distinct **error state with a Retry**, separate from the normal "no data collected yet"
+empty state.
 
 ## Common failure modes
 
@@ -32,7 +65,8 @@ brew install Jamf-Concepts/tap/jamf-cli
 which jamf-cli
 ```
 
-The CLI falls back to CSV-only mode when jamf-cli is absent; the app shows a notice.
+The app falls back to CSV-only / cached-snapshot mode when jamf-cli is absent and shows a
+notice.
 
 **`401 Unauthorized` / token expired.** The OAuth token jamf-cli stored has expired or
 been revoked. Re-authenticate:
@@ -57,21 +91,16 @@ persist, force a collection — in the app, "Run now" on a `jamf-cli-full` sched
 
 **Health Audit shows red EAs.** A Custom EA's `column:` value does not match the name
 `jamf-cli` returns (renamed in Jamf Pro, trailing whitespace, or deleted). Fix the
-`column:` value in the Config screen's Custom EAs tab, or re-run `scaffold`.
+`column:` value in the Config screen's Custom EAs tab, or re-scaffold from the Config
+screen.
 
 **Data Sources shows zero devices.** Cached JSON exists but the active profile points at
 a different `data_dir`, or the profile was switched without a refresh. Confirm the
 sidebar profile chip, check `jamf_cli.data_dir` in `config.yaml`, and regenerate.
 
-**`Column not found: "..."` (CLI).** A column name in `config.yaml` does not match the
-CSV. Run `python3 jamf-reports-community.py check --csv "export.csv"` for a list of
-mismatches and suggestions.
-
-**`ModuleNotFoundError` (CLI).** Install the dependencies:
-`pip install xlsxwriter pandas pyyaml`.
-
-**Charts missing from the workbook.** `matplotlib` is not installed: `pip install
-matplotlib`, then regenerate.
+**Column not found / empty CSV-sourced sheets.** A column name in `config.yaml` does not
+match the CSV. Open the Config screen, re-scaffold against your CSV export, and confirm
+each mapping resolves to the right header.
 
 **Notarization warning on first launch.** A local build is ad-hoc signed, not
 Developer-ID notarized. Right-click the app in Finder, choose Open, and confirm — macOS
@@ -79,7 +108,7 @@ remembers the choice.
 
 ## jamf-cli exit codes
 
-`jamf-cli` returns a typed exit code; the app and CLI react accordingly:
+`jamf-cli` returns a typed exit code; the app reacts accordingly:
 
 | Code | Meaning | Handling |
 |---|---|---|

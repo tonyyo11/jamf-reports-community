@@ -237,7 +237,7 @@ final class DiagnosticRedactor {
             // Seeding only augments free-text redaction; key-based and regex
             // PII/credential redaction are unaffected. Log so the rare
             // (length-limit) gap is observable rather than silent.
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "DiagnosticRedactor: seed compile failed for \(category, privacy: .public)")
         }
     }
@@ -461,7 +461,7 @@ enum DiagnosticBundleService {
             )
         } catch {
             let msg = error.localizedDescription
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "DiagnosticBundle: chmod zip failed: \(msg, privacy: .public)"
             )
         }

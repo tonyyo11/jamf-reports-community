@@ -263,13 +263,13 @@ struct MobileFleetService: Sendable {
     ) -> [MobileDeviceListRow] {
         guard let url else { return [] }
         guard let data = try? Data(contentsOf: url) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.info(
                 "MobileFleetService: could not read mobile-devices-list file \(url.lastPathComponent, privacy: .public)"
             )
             return []
         }
         guard let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.info(
                 "MobileFleetService: failed to decode mobile-devices-list at \(url.lastPathComponent, privacy: .public)"
             )
             return []
@@ -283,13 +283,13 @@ struct MobileFleetService: Sendable {
     ) -> [MobileDeviceInventoryItem] {
         guard let url else { return [] }
         guard let data = try? Data(contentsOf: url) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.info(
                 "MobileFleetService: could not read mobile-device-inventory-details file \(url.lastPathComponent, privacy: .public)"
             )
             return []
         }
         guard let devices = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.info(
                 "MobileFleetService: failed to decode mobile-device-inventory-details at \(url.lastPathComponent, privacy: .public)"
             )
             return []
@@ -303,7 +303,7 @@ struct MobileFleetService: Sendable {
     ) -> [MobileConfigProfileRow] {
         guard let url else { return [] }
         guard let data = try? Data(contentsOf: url) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.info(
                 "MobileFleetService: could not read classic-ios-profiles file \(url.lastPathComponent, privacy: .public)"
             )
             return []
@@ -312,7 +312,7 @@ struct MobileFleetService: Sendable {
             success = true
             return profiles
         }
-        AppLogger.engine.warning(
+        AppLogger.collect.info(
             "MobileFleetService: failed to decode classic-ios-profiles at \(url.lastPathComponent, privacy: .public)"
         )
         return []

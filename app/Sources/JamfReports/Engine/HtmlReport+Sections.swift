@@ -999,13 +999,13 @@ extension HtmlReport {
         do {
             data = try Data(contentsOf: newest)
         } catch {
-            AppLogger.engine.warning(
+            AppLogger.platform.debug(
                 "loadProtectJSON: could not read '\(newest.path, privacy: .private)' — \(error, privacy: .private)"
             )
             return []
         }
         guard let result = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
-            AppLogger.engine.warning(
+            AppLogger.platform.debug(
                 "loadProtectJSON: JSON parse failed for '\(newest.path, privacy: .private)'"
             )
             return []
@@ -1037,14 +1037,14 @@ extension HtmlReport {
                 do {
                     data = try Data(contentsOf: url)
                 } catch {
-                    AppLogger.engine.warning(
+                    AppLogger.platform.debug(
                         // swiftlint:disable:next line_length
                         "loadProtectInsightSnapshots: could not read \(url.path, privacy: .private) — \(error, privacy: .private)"
                     )
                     return nil
                 }
                 guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                    AppLogger.engine.warning(
+                    AppLogger.platform.debug(
                         "loadProtectInsightSnapshots: JSON parse failed for '\(url.path, privacy: .private)'"
                     )
                     return nil
@@ -1437,7 +1437,7 @@ extension HtmlReport {
         }
 
         if skipped > 0 {
-            AppLogger.engine.warning(
+            AppLogger.report.warning(
                 "loadSummarySnapshots: \(skipped, privacy: .public) snapshot file(s) could not be parsed and were skipped"
             )
         }

@@ -299,7 +299,6 @@ final class ConfigServiceTests: XCTestCase {
             timestampOutputs: false,
             archiveEnabled: false,
             keepLatestRuns: "42",
-            exportPptx: true,
             jamfCLIUseCachedData: false,
             jamfCLIRequireManifest: true,
             orgName: "Example Org",

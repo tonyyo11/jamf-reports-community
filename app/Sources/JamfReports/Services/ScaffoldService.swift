@@ -357,7 +357,8 @@ enum ScaffoldService {
 
     /// Escape a string for embedding inside a YAML double-quoted scalar.
     /// YAML requires `\` → `\\`, `"` → `\"`, and control chars to be escaped.
-    private static func yamlEscape(_ value: String) -> String {
+    /// Internal (not private) so `runSchoolScaffold` shares the same escaping.
+    static func yamlEscape(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")

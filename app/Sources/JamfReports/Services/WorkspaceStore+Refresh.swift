@@ -125,7 +125,7 @@ extension WorkspaceStore {
                 )
             }
         } catch {
-            toast = Toast(message: "Refresh failed — \(error.localizedDescription)", style: .danger)
+            toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
         }
     }
 
@@ -151,7 +151,7 @@ extension WorkspaceStore {
                 )
             }
         } catch {
-            toast = Toast(message: "Refresh failed — \(error.localizedDescription)", style: .danger)
+            toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
         }
     }
 
@@ -199,7 +199,7 @@ extension WorkspaceStore {
             recorder?.record("[error] \(error.localizedDescription)")
             recorder?.finish(exitCode: 1)
             toast = Toast(
-                message: "Collect failed — \(error.localizedDescription)", style: .danger
+                message: CLIBridge.explainOperationError(error, operation: "Collect"), style: .danger
             )
         }
         await checkHeavyTierStaleness()

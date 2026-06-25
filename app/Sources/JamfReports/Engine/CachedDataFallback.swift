@@ -67,7 +67,7 @@ enum CachedDataFallback {
             do {
                 try saveSnapshot(data)
             } catch {
-                AppLogger.engine.warning("Cache write failed: \(error.localizedDescription)")
+                AppLogger.collect.info("Cache write failed: \(error.localizedDescription)")
             }
             return (data, .live)
         } catch {
@@ -141,7 +141,7 @@ enum CachedDataFallback {
                 // disk-full or permission-denied should not be reported
                 // as "no cached snapshot found" or accuse a different
                 // file of corruption.
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "Cached snapshot read failed for \(cachedURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
                 )
                 lastIOError = error
@@ -155,7 +155,7 @@ enum CachedDataFallback {
             // is an array or object, so a fragment is by definition
             // truncated.
             guard (try? JSONSerialization.jsonObject(with: data, options: [])) != nil else {
-                AppLogger.engine.warning(
+                AppLogger.collect.warning(
                     "Cached snapshot rejected as corrupted: \(cachedURL.lastPathComponent, privacy: .public)"
                 )
                 lastCorruptedURL = cachedURL

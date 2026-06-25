@@ -276,7 +276,7 @@ final class OnboardingFlow {
                     ofItemAtPath: neverIndex.path
                 )
             } catch {
-                AppLogger.engine.warning(
+                AppLogger.auth.warning(
                     "OnboardingFlow: failed to write .metadata_never_index: \(error.localizedDescription, privacy: .private)"
                 )
             }
@@ -814,7 +814,7 @@ final class OnboardingFlow {
             }
         } else {
             // SF-7: audit-log the skip so reviewers can confirm which gate was off.
-            AppLogger.engine.info(
+            AppLogger.auth.info(
                 "OnboardingFlow: codesign verification skipped (enforce=false, teamID=\(expectedTeamID == nil ? "nil" : "set", privacy: .public))"
             )
         }

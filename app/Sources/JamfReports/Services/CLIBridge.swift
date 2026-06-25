@@ -725,6 +725,7 @@ final class CLIBridge {
     nonisolated static let exitCodeNotFound: Int32 = 4       // HTTP 404 — resource does not exist
     nonisolated static let exitCodePermissionDenied: Int32 = 5  // HTTP 403 — account lacks required API privileges
     nonisolated static let exitCodeRateLimited: Int32 = 6    // HTTP 429 — server throttling; transient, self-resolving
+    nonisolated static let exitCodePartialFailure: Int32 = 7 // partial failure (v1.19.0+): some ops succeeded, stdout has valid JSON
 
     /// Translate a jamf-cli exit code into a plain-language explanation with a
     /// remediation hint, prefixed by the operation. Replaces raw "… exit N"
@@ -748,6 +749,9 @@ final class CLIBridge {
         case exitCodeRateLimited:
             detail = "rate limited (429) — Jamf Pro is throttling requests. Wait a minute, "
                 + "then try again."
+        case exitCodePartialFailure:
+            detail = "partial failure (exit 7) — some sub-operations failed but partial data "
+                + "was returned and saved. Check Run History for the specific failures."
         case exitCodeUsage:
             detail = "internal argument error (exit 2) — please report this with the Run "
                 + "History log."
@@ -758,6 +762,23 @@ final class CLIBridge {
             detail = "exit \(code) — check Run History for details."
         }
         return "\(operation) failed: \(detail)"
+    }
+
+    /// Maps a thrown operation error to a user-facing cause+remediation string,
+    /// routing exit-code-bearing engine errors through `explainExit`. Codeless
+    /// verdicts map to their canonical code (auth-dead → 401, all-kinds-dead → 1);
+    /// anything else falls back to the localized description.
+    nonisolated static func explainOperationError(_ error: Error, operation: String) -> String {
+        if case let ReportEngineError.collectFailed(_, exitCode) = error {
+            return explainExit(exitCode, operation: operation)
+        }
+        if case ReportEngineError.authExpired = error {
+            return explainExit(exitCodeUnauthorized, operation: operation)   // 3 / 401
+        }
+        if case ReportEngineError.collectDead = error {
+            return explainExit(1, operation: operation)                       // all kinds failed
+        }
+        return "\(operation) failed — \(error.localizedDescription)"
     }
 
     /// Guards a live-API operation by probing `pro auth token` first.
@@ -773,6 +794,7 @@ final class CLIBridge {
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> Bool {
+        AppLogger.auth.debug("auth probe profile=\(profile, privacy: .public)")
         let authMethod = ProfileService.discoverLocal()
             .first(where: { $0.name == profile })?
             .authMethod ?? ""
@@ -851,7 +873,7 @@ final class CLIBridge {
         } catch {
             // tokenStatus is the auth prober — codesign rejection or launch failure
             // here means we cannot confirm auth; treat as invalid/expired token.
-            AppLogger.cli.warning(
+            AppLogger.auth.warning(
                 "tokenStatus: runAndCapture threw for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
             return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: "")
@@ -910,7 +932,7 @@ final class CLIBridge {
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         guard await authGuard(profile: profile, onLine: { line in
-            AppLogger.cli.warning("deviceDetail auth: \(line.text, privacy: .private)")
+            AppLogger.auth.warning("deviceDetail auth: \(line.text, privacy: .private)")
         }) else { return nil }
         return await singleDeviceDetail(
             profile: profile,
@@ -930,7 +952,7 @@ final class CLIBridge {
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         guard await authGuard(profile: profile, onLine: { line in
-            AppLogger.cli.warning("mobileDeviceDetail auth: \(line.text, privacy: .private)")
+            AppLogger.auth.warning("mobileDeviceDetail auth: \(line.text, privacy: .private)")
         }) else { return nil }
         return await singleDeviceDetail(
             profile: profile,

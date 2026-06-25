@@ -48,7 +48,14 @@ struct SecurityPostureView: View {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
             }
 
-            if snapshot.totalDevices == 0 {
+            if let reason = snapshot.loadError {
+                ErrorStateView(
+                    title: "Couldn't read security data",
+                    message: reason,
+                    commands: ["Re-run collection from Data Sources, then Refresh."],
+                    retry: { reload() }
+                )
+            } else if snapshot.totalDevices == 0 {
                 emptyState
             } else {
                 heroScoreCard

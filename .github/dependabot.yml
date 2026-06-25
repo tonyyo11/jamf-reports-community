@@ -1,11 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-
   - package-ecosystem: "swift"
     directory: "/app"
     schedule:
@@ -16,5 +10,3 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-
-  # jamf-cli version tracking is handled by .github/workflows/update-jamf-cli-version.yml

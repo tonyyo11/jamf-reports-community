@@ -86,6 +86,16 @@ final class CollectAuthDeadVerdictTests: XCTestCase {
         ]
         XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
     }
+
+    /// exit 7 (partial failure, v1.19.0+) also proves auth was accepted, so a
+    /// co-occurring 401 is transient — not auth-dead.
+    func testExit7CountsAsSuccess_isNotAuthDead() {
+        let outcomes = [
+            outcome("ea-results", 7),
+            outcome("security", 3),
+        ]
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
+    }
 }
 
 // MARK: - isCollectDead verdict
@@ -142,6 +152,12 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("patch-status", 4),
         ]
         XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+    }
+
+    /// exit 7 (partial failure, v1.19.0+) counts as a success for the outage
+    /// verdict — partial data was returned and saved, so the run is not dead.
+    func testExit7IsNotCollectDead() {
+        XCTAssertFalse(ReportEngine.isCollectDead([outcome("security", 7)]))
     }
 
     /// All calls succeed → not collect-dead.

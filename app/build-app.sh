@@ -11,7 +11,7 @@ CONFIG="${1:-release}"
 # Marketing version (CFBundleShortVersionString) — bumped per milestone.
 # This is the single source of truth for the user-facing semver; keep it in
 # sync with AppVersionState.fallbackVersion (a test enforces this).
-MARKETING_VERSION="${MARKETING_VERSION:-2.3.0}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.4.0}"
 
 # Build number (CFBundleVersion). Always a monotonically increasing integer
 # (git commit count), independent of the marketing version — this matches
@@ -59,16 +59,18 @@ mkdir -p "$APP_OUT/Contents/Resources"
 cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 
-# Copy bundled font assets directly into Contents/Resources/ so Bundle.main
+# Copy bundled resource assets directly into Contents/Resources/ so Bundle.main
 # can find them on any Mac. SwiftPM's auto-generated `Bundle.module` accessor
 # is incompatible with macOS .app code-signing rules (it expects the resource
 # bundle at the .app root, outside Contents/, which violates the "unsealed
-# contents" check), so FontRegistry uses a Bundle.main lookup instead — see
-# Theme.swift `FontRegistry.locateFont(named:)`. The SwiftPM bundle is
-# deliberately NOT copied into the packaged .app.
+# contents" check), so callers use a Bundle.main lookup instead — see
+# Theme.swift `FontRegistry.locateFont(named:)` and
+# DebugLoggingService.bundledProfileURL. The SwiftPM bundle is deliberately NOT
+# copied into the packaged .app.
 if [[ -d "$BUNDLE" ]]; then
   find "$BUNDLE" -mindepth 1 -maxdepth 1 -type f \
-    \( -name "*.ttf" -o -name "*.otf" -o -name "*.png" -o -name "*.json" \) \
+    \( -name "*.ttf" -o -name "*.otf" -o -name "*.png" -o -name "*.json" \
+       -o -name "*.mobileconfig" \) \
     -print0 | while IFS= read -r -d '' asset; do
     cp "$asset" "$APP_OUT/Contents/Resources/"
   done
@@ -83,18 +85,6 @@ cp "Resources/AppIcon.icns" "$APP_OUT/Contents/Resources/AppIcon.icns"
 
 if [[ -f "../config.example.yaml" ]]; then
   cp "../config.example.yaml" "$APP_OUT/Contents/Resources/config.example.yaml"
-fi
-
-# PR-19: bundle jamf-reports-community.py so the Settings → "Copy Diagnostic
-# Command" flow can emit an absolute-path command that works regardless of
-# the user's Terminal cwd. The app itself never executes this script — it
-# only puts an absolute path into the clipboard and opens Terminal. The user
-# pastes and runs. Bundling is a narrow exception to the CLAUDE.md
-# "Python is not bundled or required" rule, scoped only to the diagnostic
-# support workflow. See ADR-PR-19 (TODO) for the long-term migration plan
-# to a native Swift implementation that drops the Python dependency.
-if [[ -f "../jamf-reports-community.py" ]]; then
-  cp "../jamf-reports-community.py" "$APP_OUT/Contents/Resources/jamf-reports-community.py"
 fi
 
 cat > "$APP_OUT/Contents/Info.plist" <<PLIST

@@ -7,6 +7,49 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-06-25
+
+### Added
+
+- Consolidated fleet reports now emit a multi-sheet `.xlsx` workbook — Fleet
+  Summary, Per-Profile Breakdown, Security Posture, Compliance, and Fleet Trend,
+  with embedded charts — alongside the existing machine-readable CSV.
+- A new included `jamf-reports` command-line tool. The app binary now doubles as a
+  CLI — generate reports, collect snapshots, back up Jamf Pro config, run checks, and
+  build redacted diagnostic bundles from Terminal or a script, using the same engine
+  as the app. Install it from Settings → Command-line tool (no administrator rights
+  required). Produces `.xlsx` and HTML reports; PDF remains a GUI feature.
+- Settings → Diagnostics gains a **Logging** panel: turn on verbose (debug/info)
+  logging, read recent log entries in the app — filter by level, time window, and
+  search, with a redacted export — and reveal a bundled debug-logging configuration
+  profile (`.mobileconfig`) for org-wide deployment via Jamf. Logs are split across
+  eight categories for easier filtering in Console; private values (serials,
+  hostnames, usernames) stay redacted by default.
+
+### Changed
+
+- Updated jamf-cli dependency tracking to v1.21.1 and added handling for exit code 7
+  (partial failure, v1.19+): when some sub-operations fail but valid JSON is
+  returned for the rest, the partial data is now saved with a warning instead of
+  discarded. Backward-compatible — v1.18.x never emits exit code 7.
+- Errors are clearer in the live refresh paths: a failed collect, refresh, generate,
+  or backup now shows the `jamf-cli` cause and a fix (re-authenticate, grant API
+  privileges, or wait when throttled) instead of a raw error string. A dashboard that
+  reads a snapshot which exists but cannot be parsed now shows a distinct error state
+  with a Retry, separate from the normal "no data collected yet" empty state.
+- The consolidated fleet report now reports SIP %, Firewall %, and Gatekeeper %
+  and no longer blends a single fleet-wide Compliance % across profiles.
+  Compliance is reported per security baseline in the new workbook's Compliance
+  sheet, because mSCP/STIG baselines (e.g. NIST 800-53 vs CIS) are not comparable
+  when summed across different frameworks.
+
+### Removed
+
+- The standalone Python CLI engine (`jamf-reports-community.py`) and its test
+  suite have been removed. The native macOS app is now the single report engine —
+  all generation, collection, scheduling, and diagnostics run through it. macOS is
+  the only supported platform.
+
 ## [2.3.0] - 2026-06-17
 
 ### Added

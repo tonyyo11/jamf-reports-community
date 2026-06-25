@@ -1,20 +1,17 @@
 # jamf-reports community edition — example configuration
 #
 # Copy this file to config.yaml and edit to match your Jamf Pro instance.
-# Run the scaffold command to auto-generate a starter config from your CSV:
+# The app creates and edits config.yaml for you: onboarding scaffolds a starter
+# config, and the Config screen re-scaffolds against a CSV export to auto-detect
+# the column mappings below.
 #
-#   python3 jamf-reports-community.py scaffold --csv your_export.csv
-#
-# The scaffold command reads your actual CSV headers and maps them to the
-# logical field names below. You only need to hand-edit fields it could not
-# detect automatically.
+# The scaffold reads your actual CSV headers and maps them to the logical field
+# names below. You only need to hand-edit fields it could not detect
+# automatically.
 #
 # Column names in this file must exactly match your Jamf Pro CSV headers,
-# including capitalization and spaces.
-#
-# Validate your config against your CSV at any time:
-#
-#   python3 jamf-reports-community.py check --csv your_export.csv
+# including capitalization and spaces. The Config screen's Health Audit flags
+# any mapping that no longer matches a CSV header.
 
 
 # =============================================================================
@@ -250,42 +247,12 @@ jamf_cli:
   # 0 disables the check (any cached file is accepted).
   max_cache_age_hours: 0    # 0 = no limit; raise an error if cached fallback is older than N hours
   # Hard-fail on snapshot integrity violations (missing manifest entry, SHA-256
-  # mismatch). Equivalent to passing --strict-manifest on every invocation.
-  # Recommended for production / shared workspaces; leave false for ad-hoc
-  # exploration. Threat-model T-11. The Swift app surfaces an "Unverified
-  # snapshot" pill in AuditView regardless of this setting.
+  # mismatch). NOTE: currently inert — the snapshot SHA-256 manifests were
+  # written only by the removed Python collector, so until a Swift
+  # snapshot-manifest writer exists this gate never fires (see
+  # SnapshotManifest.swift). The Swift app still surfaces an "Unverified
+  # snapshot" pill in AuditView regardless of this setting. Threat-model T-11.
   require_manifest: false
-  # Report types to skip during live collection (`jamf-reports-community collect`).
-  # Use this on on-prem Jamf Pro instances where the expensive per-device queries
-  # below stall the server or consume excessive API time. Underscores and hyphens
-  # are interchangeable ("update_status" == "update-status"). Only the report
-  # types below honor this list — core inventory commands always run.
-  #
-  # Supported values:
-  #   patch-device-failures   `pro report patch-status --scan-failures`
-  #   patch-definitions       per-title `patch-software-title-configurations
-  #                           definitions` fetches that build the patch
-  #                           release-date snapshot (Patch Compliance "Latest
-  #                           Released"/"Days Behind" columns go absent).
-  #   profile-status          `pro report profile-status`
-  #   update-status           `pro report update-status`
-  #   update-device-failures  `pro report update-status --scan-failures`
-  #   device-security-state   drop the SECURITY section from `pro computers list`
-  #                           (skips Device Security State sheet; per-device
-  #                           FileVault/SIP/Firewall/Gatekeeper/Bootstrap signals
-  #                           become empty in DevicesView).
-  #   mobile-details          skip `pro mobile-device-inventory-details list`
-  #                           (Mobile Inventory and Mobile Supervision Status
-  #                           sheets fall back to cached data or remain empty;
-  #                           Mobile Fleet KPIs in the app go blank).
-  #
-  # Example: skip update-status and its scan-failures variant on a slow server.
-  collect_skip: []
-  # collect_skip:
-  #   - update-status
-  #   - update-device-failures
-  #   - device-security-state
-  #   - mobile-details
 
 
 # ---------------------------------------------------------------------------
@@ -772,13 +739,6 @@ output:
   # each report family before older runs are moved into archive_dir.
   keep_latest_runs: 10
 
-  # Generate a PowerPoint (.pptx) executive-summary deck alongside the xlsx.
-  # Requires python-pptx: pip install python-pptx
-  # The deck contains a title slide, a report-summary slide, and a list of
-  # all sheets written.  It is intended as a starting point for presentations,
-  # not as a complete replacement for the xlsx.
-  export_pptx: false
-
 
 # =============================================================================
 # AUTOMATION OUTPUTS
@@ -804,8 +764,8 @@ automation:
 # =============================================================================
 # CHARTS
 # =============================================================================
-# Controls matplotlib PNG chart generation and embedding in the xlsx workbook.
-# Requires: pip install matplotlib
+# Controls PNG chart generation and embedding in the xlsx workbook. Charts are
+# rendered natively by the app — no extra dependencies required.
 #
 # Charts are embedded in a "Charts" sheet in the workbook AND saved as
 # standalone PNG files alongside the xlsx. PNG filenames use the workbook stem
@@ -873,18 +833,16 @@ charts:
 # Configure this section to generate Jamf School reports.
 #
 # Setup:
-#   1. Run: jamf-cli school setup --profile-name school
-#   2. Set school_cli.enabled: true below
-#   3. Map school_columns to your Jamf School CSV headers:
-#        python3 jamf-reports-community.py school-scaffold --csv school_export.csv
-#   4. Generate a report:
-#        python3 jamf-reports-community.py school-generate --config config.yaml
-#      Or with a CSV export instead of live jamf-cli data:
-#        python3 jamf-reports-community.py school-generate --csv school_export.csv
+#   1. Connect a Jamf School profile from the app (onboarding, or the Sources
+#      screen). The app runs `jamf-cli school setup` and sets the fields below.
+#   2. Map school_columns to your Jamf School CSV headers by scaffolding against
+#      a CSV export from the Config screen.
+#   3. Generate a Jamf School report from the app — from a CSV export, or from a
+#      connected School profile after a collect.
 
 school_cli:
   # Set true to use live jamf-cli school commands.
-  # When false, school-generate still works with --csv.
+  # When false, the Jamf School report still works from a CSV export.
   enabled: false
   # Directory where jamf-cli school JSON snapshots are stored.
   data_dir: "school-cli-data"
@@ -935,11 +893,8 @@ school:
 # Maps logical field names to the actual column headers in your Jamf School
 # CSV device export (the semicolon-delimited file from Device > Export).
 #
-# Run auto-scaffold to generate these mappings:
-#   python3 jamf-reports-community.py school-scaffold --csv school_export.csv
-#
-# Validate at any time:
-#   python3 jamf-reports-community.py school-check --csv school_export.csv
+# Scaffold these mappings from a CSV export in the Config screen; the Health
+# Audit flags any mapping that no longer matches a CSV header.
 
 school_columns:
   # Device display name (e.g. "Jamf School exports this as 'Name'")
@@ -1001,10 +956,7 @@ inventory_csv:
 # own schedule and writes to a designated folder, replicating the outputs that
 # Jamf Pro's built-in Advanced Computer Search reports used to produce.
 #
-# These run automatically as the last step of launchagent-run --mode jamf-cli-full,
-# or manually via:
-#
-#   python3 jamf-reports-community.py export-reports [--csv inventory.csv]
+# These run automatically as the last step of a jamf-cli-full scheduled run.
 #
 # To force all reports regardless of schedule, delete:
 #   jamf-cli-data/state/export-<name>.last

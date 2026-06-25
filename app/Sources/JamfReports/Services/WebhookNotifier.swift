@@ -130,8 +130,9 @@ enum WebhookNotifier {
     @discardableResult
     static func send(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
         guard config.isUsable, let url = URL(string: config.resolvedURL) else { return true }
+        AppLogger.webhook.debug("posting \(config.resolvedProvider.rawValue, privacy: .public) digest")
         guard let body = payload(provider: config.resolvedProvider, title: title, facts: facts) else {
-            AppLogger.cli.warning(
+            AppLogger.webhook.warning(
                 "WebhookNotifier: failed to encode \(config.resolvedProvider.rawValue, privacy: .public) payload"
             )
             return false
@@ -144,12 +145,12 @@ enum WebhookNotifier {
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                AppLogger.cli.warning("WebhookNotifier: webhook returned HTTP \(http.statusCode)")
+                AppLogger.webhook.info("WebhookNotifier: webhook returned HTTP \(http.statusCode)")
                 return false
             }
             return true
         } catch {
-            AppLogger.cli.warning(
+            AppLogger.webhook.warning(
                 "WebhookNotifier: post failed: \(error.localizedDescription, privacy: .private)"
             )
             return false
@@ -163,7 +164,7 @@ enum WebhookNotifier {
     static func sendFailed(config: NotifyConfig, title: String, facts: [Fact]) async -> Bool {
         guard config.isUsable, let url = URL(string: config.resolvedURL) else { return true }
         guard let body = failedPayload(provider: config.resolvedProvider, title: title, facts: facts) else {
-            AppLogger.cli.warning(
+            AppLogger.webhook.warning(
                 "WebhookNotifier: failed to encode failed-run \(config.resolvedProvider.rawValue, privacy: .public) payload"
             )
             return false
@@ -176,12 +177,12 @@ enum WebhookNotifier {
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                AppLogger.cli.warning("WebhookNotifier: failed-run webhook returned HTTP \(http.statusCode)")
+                AppLogger.webhook.info("WebhookNotifier: failed-run webhook returned HTTP \(http.statusCode)")
                 return false
             }
             return true
         } catch {
-            AppLogger.cli.warning(
+            AppLogger.webhook.warning(
                 "WebhookNotifier: failed-run post failed: \(error.localizedDescription, privacy: .private)"
             )
             return false

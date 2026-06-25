@@ -90,7 +90,8 @@ enum FleetReportEmitter {
 
     // MARK: - Formatting
 
-    private static func format(_ value: Double?, unit: FleetRollup.Unit) -> String {
+    /// Shared with `FleetWorkbookEmitter` — one Current/Previous formatting rule.
+    static func format(_ value: Double?, unit: FleetRollup.Unit) -> String {
         guard let value else { return "—" }
         switch unit {
         case .count:   return String(Int(value.rounded()))
@@ -98,7 +99,8 @@ enum FleetReportEmitter {
         }
     }
 
-    private static func formatDelta(_ delta: Double?, unit: FleetRollup.Unit) -> String {
+    /// Shared with `FleetWorkbookEmitter` — one Δ formatting rule.
+    static func formatDelta(_ delta: Double?, unit: FleetRollup.Unit) -> String {
         guard let delta else { return "—" }
         let sign = delta > 0 ? "+" : ""
         switch unit {

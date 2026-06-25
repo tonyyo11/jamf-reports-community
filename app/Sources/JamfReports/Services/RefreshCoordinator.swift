@@ -60,7 +60,7 @@ final class RefreshCoordinator {
     func refreshIfStale(profile: String, tier: CollectionTier) {
         guard ProfileService.isValid(profile) else { return }
         guard tier == .refresh else {
-            AppLogger.engine.info(
+            AppLogger.collect.info(
                 "RefreshCoordinator: tier \(tier.rawValue, privacy: .public) not wired; only .refresh is handled"
             )
             return

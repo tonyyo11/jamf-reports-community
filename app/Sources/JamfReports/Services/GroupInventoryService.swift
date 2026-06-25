@@ -137,7 +137,7 @@ struct GroupInventoryService: Sendable {
     ) -> [AdvancedMobileSearchRow] {
         guard let url else { return [] }
         guard let data = try? Data(contentsOf: url) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "GroupInventoryService: could not read advanced-mobile-device-searches file \(url.lastPathComponent, privacy: .public)"
             )
             return []
@@ -146,7 +146,7 @@ struct GroupInventoryService: Sendable {
             success = true
             return envelope.results
         }
-        AppLogger.engine.warning(
+        AppLogger.collect.warning(
             "GroupInventoryService: failed to decode advanced-mobile-device-searches at \(url.lastPathComponent, privacy: .public)"
         )
         return []
@@ -157,7 +157,7 @@ struct GroupInventoryService: Sendable {
     ) -> [ClassicGroupRow] {
         guard let url else { return [] }
         guard let data = try? Data(contentsOf: url) else {
-            AppLogger.engine.warning(
+            AppLogger.collect.warning(
                 "GroupInventoryService: could not read \(kind, privacy: .public) file \(url.lastPathComponent, privacy: .public)"
             )
             return []
@@ -166,7 +166,7 @@ struct GroupInventoryService: Sendable {
             success = true
             return groups
         }
-        AppLogger.engine.warning(
+        AppLogger.collect.warning(
             "GroupInventoryService: failed to decode \(kind, privacy: .public) at \(url.lastPathComponent, privacy: .public)"
         )
         return []

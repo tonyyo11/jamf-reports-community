@@ -49,7 +49,14 @@ struct CompliancePostureView: View {
                 proxyNoteCard
             }
 
-            if snapshot.totalDevices == 0 && mscpResults.isEmpty {
+            if let reason = snapshot.loadError {
+                ErrorStateView(
+                    title: "Couldn't read compliance data",
+                    message: reason,
+                    commands: ["Re-run collection from Data Sources, then Refresh."],
+                    retry: { reload() }
+                )
+            } else if snapshot.totalDevices == 0 && mscpResults.isEmpty {
                 emptyState
             } else {
                 // Show mSCP baseline donuts when available, otherwise proxy bands

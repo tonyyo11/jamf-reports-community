@@ -647,7 +647,7 @@ final class JamfCLIInstaller {
             } else {
                 // SF-7: surface the skip in install-audit logs so reviewers can
                 // confirm which gate was off (the feature flag, or the team ID).
-                AppLogger.engine.info(
+                AppLogger.collect.info(
                     "JamfCLIInstaller: codesign verification skipped (enforce=\(Self.enforceCodesignVerification, privacy: .public), teamID=\(Self.expectedJamfTeamID.isEmpty ? "empty" : "set", privacy: .public))"
                 )
             }

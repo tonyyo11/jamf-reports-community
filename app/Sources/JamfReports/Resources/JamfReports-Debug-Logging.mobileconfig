@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key><string>com.apple.system.logging</string>
+      <key>PayloadIdentifier</key><string>com.github.tonyyo11.jamf-reports-community.logging</string>
+      <key>PayloadUUID</key><string>ED13CEDB-DF7F-4D76-B7D3-413580CCACAF</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>PayloadDisplayName</key><string>JamfReports Verbose Logging</string>
+      <key>Subsystems</key>
+      <dict>
+        <key>com.github.tonyyo11.jamf-reports-community</key>
+        <dict>
+          <key>DEFAULT-OPTIONS</key>
+          <dict>
+            <key>Enable-Level</key><string>Debug</string>
+            <key>Persist</key><string>Debug</string>
+          </dict>
+        </dict>
+      </dict>
+    </dict>
+  </array>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadIdentifier</key><string>com.github.tonyyo11.jamf-reports-community.debug-logging</string>
+  <key>PayloadUUID</key><string>76D5D86C-D281-4586-BDE7-EFE4F3B2B82C</string>
+  <key>PayloadVersion</key><integer>1</integer>
+  <key>PayloadDisplayName</key><string>JamfReports — Debug Logging</string>
+  <key>PayloadDescription</key><string>Enables verbose (debug/info) log persistence for JamfReports diagnostics. Does not reveal private values — interpolated serials, hostnames, and usernames remain redacted.</string>
+  <key>PayloadScope</key><string>User</string>
+</dict>
+</plist>

@@ -41,7 +41,7 @@ epic (or a new issue) and strike it here once tracked on GitHub.
   patch-trend re-baselining step.
 - **Version-tracking shell logic has no automated coverage** (epic #102, test
   coverage) — `build-app.sh` RELEASE / BUILD_NUMBER / channel-naming logic is not
-  covered by CI (CI runs pytest + `swift build`, not `.app` packaging). Until it
+  covered by CI (CI runs `swift build`, not `.app` packaging). Until it
   is, the version-bump checklist must run BOTH build modes (beta and `RELEASE=1`)
   by hand.
 - **"Verify intent" data-flow items** (epic #104, code hygiene) — two items each

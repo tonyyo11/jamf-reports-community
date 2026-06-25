@@ -350,8 +350,7 @@ scheduled run collects this tier only. *see also: Collection tier.*
 
 ### ReportEngine
 The native Swift engine that generates XLSX, HTML, and PDF reports from
-cached jamf-cli JSON. Replaces the Python CLI's role inside the GUI app.
-The Python CLI still exists for headless and non-Mac use.
+cached jamf-cli JSON.
 
 ### Risk Score
 A per-device multi-factor weighted score producing a Critical / High /

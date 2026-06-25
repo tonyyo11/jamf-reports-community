@@ -47,7 +47,7 @@ enum TemplateResolver {
     static func resolve(identifier: String) -> any ReportTemplate {
         // Special case: "custom" requires specific sheets and should not be resolved here
         if identifier == "custom" {
-            AppLogger.engine.warning(
+            AppLogger.report.warning(
                 """
                 TemplateResolver: 'custom' template requires sheets selection; \
                 use resolveCustom(sheets:) instead. Falling back to ExecutiveTemplate.
@@ -60,7 +60,7 @@ enum TemplateResolver {
             return match
         }
         let known = allTemplates.map(\.identifier).joined(separator: ", ")
-        AppLogger.engine.warning(
+        AppLogger.report.warning(
             """
             TemplateResolver: unknown identifier '\(identifier, privacy: .public)'. \
             Known: \(known, privacy: .public). Falling back to ExecutiveTemplate.
@@ -77,7 +77,7 @@ enum TemplateResolver {
     ///            or ExecutiveTemplate if the sheets list is empty.
     static func resolveCustom(sheets: [SheetID]) -> any ReportTemplate {
         guard !sheets.isEmpty else {
-            AppLogger.engine.warning(
+            AppLogger.report.warning(
                 """
                 TemplateResolver: custom template requires at least one sheet. \
                 Falling back to ExecutiveTemplate.

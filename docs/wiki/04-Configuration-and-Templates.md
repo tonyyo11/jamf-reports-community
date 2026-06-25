@@ -13,9 +13,6 @@ ones.
 
 - **During onboarding** — the CSV-mapping step scaffolds a `config.yaml` with best-guess
   column mappings from a Jamf Pro CSV export (or a minimal config if you skip).
-- **From the CLI** — `python3 jamf-reports-community.py scaffold --csv export.csv` does
-  the same from the command line. `check` then validates it. See
-  [CLI Workflow](07-CLI-Workflow).
 
 Scaffolding is a starting point, not a final answer. Always review the result.
 

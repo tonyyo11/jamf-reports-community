@@ -5,38 +5,6 @@ on:
   pull_request:
 
 jobs:
-  pytest:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
-
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-
-      - name: Install dependencies
-        # requirements-dev.lock.txt is a uv --universal --generate-hashes lockfile
-        # covering Python 3.11+ with multi-platform wheel hashes. pip's
-        # --require-hashes mode verifies every downloaded artifact against the
-        # recorded hash, preventing silent supply-chain substitution.
-        run: pip install --require-hashes -r requirements-dev.lock.txt
-
-      - name: Compile
-        run: python3 -c "import py_compile; py_compile.compile('jamf-reports-community.py', doraise=True)"
-
-      - name: Run tests
-        run: python3 -m pytest tests -q
-
   swift-app:
     runs-on: ${{ matrix.os }}
     permissions:

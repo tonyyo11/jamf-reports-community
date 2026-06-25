@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import SwiftUI
 
@@ -40,6 +41,11 @@ private func emitConsolidatedReports(record: @Sendable (String) -> Void = { _ in
                 group: group, lookbackDays: lookback, timestamp: stamp
             ) {
                 print("[ok] consolidated fleet report: \(url.lastPathComponent)")
+            }
+            if let xlsxURL = try FleetWorkbookEmitter.emit(
+                group: group, lookbackDays: lookback, timestamp: stamp
+            ) {
+                print("[ok] consolidated fleet workbook: \(xlsxURL.lastPathComponent)")
             }
         } catch {
             let message = "[warn] consolidated report for '\(group.name)' failed: \(error.localizedDescription)"
@@ -467,7 +473,7 @@ private func scheduledRun(profile: String) async -> Int32 {
 // MARK: - check subcommand
 
 @Sendable
-private func runCheck(profile: String) -> Int32 {
+func runCheck(profile: String) -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
         return 1
@@ -511,7 +517,7 @@ private func runCheck(profile: String) -> Int32 {
 // MARK: - school-check subcommand
 
 @Sendable
-private func runSchoolCheck(profile: String) -> Int32 {
+func runSchoolCheck(profile: String) -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
         return 1
@@ -550,9 +556,13 @@ private func runSchoolCheck(profile: String) -> Int32 {
 
 // MARK: - school-scaffold subcommand
 
-private func runSchoolScaffold(csvPath: String, outPath: String) -> Int32 {
+func runSchoolScaffold(csvPath: String, outPath: String) -> Int32 {
     let csvURL = URL(fileURLWithPath: csvPath)
     let outURL = URL(fileURLWithPath: outPath)
+    if WorkspacePaths.isSensitiveAbsolutePath(outURL) {
+        fputs("[error] refusing to write into a sensitive path: \(outPath)\n", stderr)
+        return 1
+    }
     guard FileManager.default.fileExists(atPath: csvURL.path) else {
         fputs("[error] CSV not found: \(csvPath)\n", stderr)
         return 1
@@ -578,7 +588,7 @@ private func runSchoolScaffold(csvPath: String, outPath: String) -> Int32 {
     ]
     for key in orderedKeys {
         let value = mappings[key] ?? ""
-        lines.append("  \(key): \"\(value)\"")
+        lines.append("  \(key): \"\(ScaffoldService.yamlEscape(value))\"")
     }
     lines.append("")
 
@@ -642,6 +652,22 @@ private func schoolScaffoldMappings(from headers: [String]) -> [String: String] 
     return result
 }
 
+// MARK: - Included CLI dispatch
+
+/// Run the included `jamf-reports` CLI for `arguments` (subcommand + its args,
+/// binary name already dropped).
+///
+/// Isolated in an `@available`-annotated function on purpose: ArgumentParser's
+/// async `main`/`run` entry points are gated `@available(macOS 10.15, *)`, and in
+/// unannotated top-level executable code overload resolution falls back to the
+/// synchronous overloads — which refuse to execute an async root command (they
+/// print help and exit). The explicit availability context makes the async
+/// overloads win, so `AsyncParsableCommand.run()` is actually awaited.
+@available(macOS 14, *)
+func runIncludedCLI(_ arguments: [String]) async {
+    await JamfReportsCLI.main(arguments)
+}
+
 // MARK: - Entry point
 
 // Install uncaught-exception handler before any UI or CLI work. Crash logs land at
@@ -656,24 +682,10 @@ if cliArgs.contains("--scheduled-run"),
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)
-} else if cliArgs.contains("check"),
-          let profileIdx = cliArgs.firstIndex(of: "--profile"),
-          profileIdx + 1 < cliArgs.count {
-    let profile = cliArgs[profileIdx + 1]
-    exit(runCheck(profile: profile))
-} else if cliArgs.contains("school-check"),
-          let profileIdx = cliArgs.firstIndex(of: "--profile"),
-          profileIdx + 1 < cliArgs.count {
-    let profile = cliArgs[profileIdx + 1]
-    exit(runSchoolCheck(profile: profile))
-} else if cliArgs.contains("school-scaffold"),
-          let csvIdx = cliArgs.firstIndex(of: "--csv"),
-          let outIdx = cliArgs.firstIndex(of: "--out"),
-          csvIdx + 1 < cliArgs.count,
-          outIdx + 1 < cliArgs.count {
-    let csv = cliArgs[csvIdx + 1]
-    let out = cliArgs[outIdx + 1]
-    exit(runSchoolScaffold(csvPath: csv, outPath: out))
+} else if cliArgs.count > 1, JamfReportsCLI.isKnownSubcommand(cliArgs[1]) {
+    // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/).
+    await runIncludedCLI(Array(cliArgs.dropFirst()))
 } else {
+    // No recognized subcommand (incl. double-click launch) → the GUI.
     JamfReportsApp.main()
 }
