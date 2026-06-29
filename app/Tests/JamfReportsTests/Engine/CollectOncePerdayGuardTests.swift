@@ -129,6 +129,38 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         }
         // Test passes if we reach here: the guard did not intercept the call.
     }
+
+    /// Regression: a tier-scoped collect (e.g. the weekly `managed-scan` run with
+    /// tiers `[.scan]`) must NOT be intercepted by the once-per-day guard just
+    /// because the daily `managed-freshness` run (tiers `[.refresh, .inventory]`)
+    /// already wrote today's summary. The guard applies only to a FULL collect;
+    /// tier-scoped collects fall through to the per-kind cadence check, otherwise
+    /// the scan tier (`patch-device-failures`/`update-device-failures`) would never
+    /// be collected by automation. Asserts the skip line is absent.
+    func testProceedsForTierScopedCollectEvenIfTodaySummaryExists() async throws {
+        try writeTodaySummary()
+
+        let collector = LogLineTextCollector()
+        do {
+            try await ReportEngine.collect(
+                profile: testProfile,
+                workspacePaths: WorkspacePaths.self,
+                tiers: [.scan],
+                force: false,
+                onLine: { line in collector.append(line.text) }
+            )
+        } catch ReportEngineError.jamfCLINotFound {
+            // Expected when jamf-cli is absent: the guard was bypassed and the
+            // binary check was reached — exactly the behavior under test.
+        } catch {
+            // Auth/network errors also prove the guard was bypassed.
+        }
+
+        XCTAssertFalse(
+            collector.texts.contains { $0.contains("already collected today") },
+            "Tier-scoped collect must not be skipped by the once-per-day guard; got: \(collector.texts)"
+        )
+    }
 }
 
 // MARK: - Test helper
