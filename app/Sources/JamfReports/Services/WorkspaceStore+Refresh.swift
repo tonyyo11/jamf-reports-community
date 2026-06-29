@@ -113,8 +113,10 @@ extension WorkspaceStore {
         do {
             let exit = try await CLIBridge().collect(
                 profile: activeProfile, tiers: Set(tiers), force: true,
-                onLine: CLIBridge.noOpOnLine
+                onLine: CLIBridge.bufferingOnLine
             )
+            AppLogger.event(.collect, exit == 0 ? .notice : .error,
+                            "heavy-tier refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
                 staleHeavyTiers = []
                 toast = Toast(message: "\(labels) data refreshed", style: .success)
@@ -140,8 +142,10 @@ extension WorkspaceStore {
         do {
             let exit = try await CLIBridge().collect(
                 profile: activeProfile, tiers: tiers, force: true,
-                onLine: CLIBridge.noOpOnLine
+                onLine: CLIBridge.bufferingOnLine
             )
+            AppLogger.event(.collect, exit == 0 ? .notice : .error,
+                            "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
                 toast = Toast(message: "Data refreshed", style: .success)
             } else {

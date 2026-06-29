@@ -1,16 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// Snapshot+refresh viewer over the app's OSLog entries (this session), embedded in
-/// Settings → Diagnostics. Loads on appear and on manual Refresh — no continuous polling.
-/// Filter by minimum level, time window, and free-text search (which also matches the
-/// `[category]` prefix). Export is `LogRedactor`-scrubbed.
+/// Snapshot+refresh viewer over the in-app `LogBuffer` (this session's diagnostic
+/// events), embedded in Settings → Diagnostics. Loads on appear and on manual
+/// Refresh — no continuous polling. Filter by minimum level, time window, and
+/// free-text search (which also matches the `[category]` prefix). Messages are
+/// `LogRedactor`-scrubbed at display and export.
 struct LogViewerView: View {
     @State private var entries: [LogEntry] = []
     @State private var search = ""
     @State private var minLevel: LogEntry.Level = .info
     @State private var windowHours = 4
-    @State private var loadError: String?
     @State private var isLoading = false
 
     private var filtered: [LogEntry] {
@@ -24,18 +24,12 @@ struct LogViewerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             controls
-            if let loadError {
-                ErrorStateView(
-                    title: "Couldn't read the log store",
-                    message: loadError,
-                    retry: { Task { await load() } }
-                )
-            } else if filtered.isEmpty {
+            if filtered.isEmpty {
                 EmptyStateView(
                     systemImage: "doc.text.magnifyingglass",
-                    title: "No matching log entries",
-                    message: "The local store keeps debug/info only while verbose logging is on. "
-                        + "Turn on “Persist verbose logs” above, reproduce the issue, then Refresh."
+                    title: "No diagnostic events yet",
+                    message: "Events are captured as you use the app this session — "
+                        + "trigger a Refresh or report run, then Refresh this view."
                 )
             } else {
                 logRows
@@ -71,7 +65,7 @@ struct LogViewerView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 4) {
                 ForEach(filtered) { entry in
-                    Text("\(time(entry.date))  [\(entry.category)]  \(entry.message)")
+                    Text("\(time(entry.date))  [\(entry.category)]  \(LogRedactor.redact(entry.message))")
                         .font(Theme.Fonts.mono(11.5))
                         .foregroundStyle(color(for: entry.level))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,13 +83,7 @@ struct LogViewerView: View {
         isLoading = true
         defer { isLoading = false }
         let since = Date().addingTimeInterval(-Double(windowHours) * 3600)
-        let lvl = minLevel
-        do {
-            entries = try await Task.detached { try LogStoreReader.recent(minLevel: lvl, since: since) }.value
-            loadError = nil
-        } catch {
-            loadError = error.localizedDescription
-        }
+        entries = LogBuffer.shared.snapshot(minLevel: minLevel, since: since)
     }
 
     private func export() {

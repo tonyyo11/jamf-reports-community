@@ -67,6 +67,23 @@ final class CLIBridge {
     /// (e.g. `codesignGate` call sites in `LaunchAgentWriter`, `ProfileService`).
     nonisolated static let noOpOnLine: @Sendable (LogLine) -> Void = { _ in }
 
+    /// Feeds streamed run lines into the in-app `LogBuffer` so the Settings →
+    /// Logging viewer shows live collect progress in signed builds (where the
+    /// old `OSLogStore` reader failed with a generic error). These are the
+    /// user-facing run lines; `LogViewerView` scrubs them with `LogRedactor` at
+    /// display and export.
+    nonisolated static let bufferingOnLine: @Sendable (LogLine) -> Void = { line in
+        let level: LogEntry.Level
+        switch line.level {
+        case .info, .ok: level = .info
+        case .warn:      level = .notice
+        case .fail:      level = .error
+        }
+        LogBuffer.shared.append(
+            LogEntry(date: line.timestamp, category: "collect", level: level, message: line.text)
+        )
+    }
+
     struct CachedJSONSnapshot: Sendable {
         let data: Data
         let modified: Date
