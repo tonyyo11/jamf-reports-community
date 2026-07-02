@@ -35,6 +35,7 @@ struct CustomTemplate: ReportTemplate {
         for sheet in includedSheets {
             switch sheet {
             case .executiveSummary:
+                if !sections.contains(.aiNarrative) { sections.append(.aiNarrative) }
                 if !sections.contains(.execSummary) { sections.append(.execSummary) }
             case .securityPosture:
                 if !sections.contains(.securityTiles) { sections.append(.securityTiles) }

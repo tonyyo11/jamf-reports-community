@@ -39,9 +39,15 @@ else
   swift build
 fi
 
-ARCH=$(uname -m)
-TRIPLE="${ARCH}-apple-macosx"
-BUILT_DIR=".build/${TRIPLE}/${CONFIG}"
+# Resolve the built products dir from SwiftPM rather than a hardcoded triple
+# path. Xcode 27's SwiftPM defaults to the swiftbuild build system, which places
+# products under .build/out/Products/<config> instead of the classic
+# .build/<triple>/<config>; --show-bin-path returns the right dir under either.
+if [[ "$CONFIG" == "release" ]]; then
+  BUILT_DIR="$(swift build -c release --show-bin-path)"
+else
+  BUILT_DIR="$(swift build --show-bin-path)"
+fi
 BIN="${BUILT_DIR}/JamfReports"
 BUNDLE="${BUILT_DIR}/JamfReports_JamfReports.bundle"
 

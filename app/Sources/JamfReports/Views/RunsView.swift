@@ -10,6 +10,11 @@ struct RunsView: View {
     @State private var logLines: [CLIBridge.LogLine] = []
     @State private var showExportError = false
     @State private var exportError: String? = nil
+    @State private var aiConfig = AIConfig()
+    @State private var aiAvailability: ModelAvailability = .requiresMacOS27
+    @State private var explanation: RunFailureExplanation? = nil
+    @State private var isExplaining = false
+    @State private var explainError: String? = nil
 
     private static let dateFmt: DateFormatter = {
         let f = DateFormatter()
@@ -30,7 +35,13 @@ struct RunsView: View {
                 }
             }
         }
-        .task(id: workspace.profile) { reload() }
+        .task(id: workspace.profile) {
+            reload()
+            aiConfig = AIConfigLoader.load(profile: workspace.profile)
+            // Explainer is on-device-only: probe availability for the LOCKED
+            // copy so a pcc tier without the entitlement can't hide the button.
+            aiAvailability = ModelAvailability.current(for: aiConfig.lockedOnDeviceCopy)
+        }
         .alert("Export Failed", isPresented: $showExportError) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -207,6 +218,11 @@ struct RunsView: View {
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 Divider().background(Theme.Colors.hairlineStrong)
 
+                if canExplainSelectedRun {
+                    explainSection
+                    Divider().background(Theme.Colors.hairlineStrong)
+                }
+
                 ScrollView {
                     if logLines.isEmpty {
                         Mono(text: selectedRun == nil ? "—" : "Empty log", size: 11.5)
@@ -230,6 +246,104 @@ struct RunsView: View {
         }
     }
 
+    // MARK: - Explain this run (AI, on-device only)
+
+    /// Only on a FAILED run whose log is already loaded, and only when the AI
+    /// block is enabled and the on-device model is ready.
+    private var canExplainSelectedRun: Bool {
+        selectedRun?.status == .fail && !logLines.isEmpty
+            && aiConfig.isUsable && aiAvailability.isReady
+    }
+
+    /// DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
+    @ViewBuilder
+    private var explainSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let explanation {
+                Text(explanation.summary)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.fg)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !explanation.likelyCause.isEmpty {
+                    explainDetailRow(label: "Likely cause", text: explanation.likelyCause)
+                }
+                if !explanation.firstStep.isEmpty {
+                    explainDetailRow(label: "First step", text: explanation.firstStep)
+                }
+                // Same provenance-cue pattern as AIInsightCard.
+                Text("AI-generated — verify against the log.")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                PNPButton(title: "Explain again", icon: "sparkles", size: .sm) { explainRun() }
+            } else if isExplaining {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Explaining run…")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+            } else if let explainError {
+                Text(explainError)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.warn)
+                    .fixedSize(horizontal: false, vertical: true)
+                PNPButton(title: "Try again", icon: "sparkles", size: .sm) { explainRun() }
+            } else {
+                PNPButton(title: "Explain this run", icon: "sparkles", size: .sm) { explainRun() }
+                    .help("Summarize why this run failed using on-device intelligence")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+
+    private func explainDetailRow(label: String, text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("\(label):")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Theme.Colors.fg2)
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.fg2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func explainRun() {
+        guard let run = selectedRun, !isExplaining, !logLines.isEmpty else { return }
+        isExplaining = true
+        explanation = nil
+        explainError = nil
+        // Redaction + tail-truncation happen INSIDE build — raw log text never
+        // enters the input struct (RunFailureInput's init is private).
+        let input = RunFailureInput.build(
+            label: run.label,
+            exitCode: run.exitCode,
+            runDate: run.date,
+            rawLog: logLines.map(\.text).joined(separator: "\n")
+        )
+        let explainer = makeRunFailureExplainer(config: aiConfig, availability: aiAvailability)
+        let runID = run.id
+        Task { @MainActor in
+            defer { isExplaining = false }
+            do {
+                let result = try await explainer.explain(input)
+                if selectedRun?.id == runID { explanation = result }
+            } catch let error as FleetInsightError {
+                guard selectedRun?.id == runID else { return }
+                switch error {
+                case .unavailable(let reason): explainError = reason.message
+                case .generationFailed(let message): explainError = message
+                }
+            } catch {
+                AppLogger.platform.error(
+                    "Run explanation failed: \(error.localizedDescription, privacy: .private)")
+                if selectedRun?.id == runID { explainError = "Explanation failed." }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func reload() {
@@ -240,6 +354,8 @@ struct RunsView: View {
     private func selectRun(_ run: RunHistoryService.RunSummary) {
         selectedRun = run
         logLines = RunHistoryService.loadLog(run.logURL)
+        explanation = nil
+        explainError = nil
     }
 
     private func copyLog() {

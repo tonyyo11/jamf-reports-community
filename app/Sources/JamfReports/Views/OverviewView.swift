@@ -10,7 +10,9 @@ struct OverviewView: View {
     @ScaledMetric(relativeTo: .title) private var summaryKPISize: CGFloat = 22
     @ScaledMetric(relativeTo: .title) private var deviceCountSize: CGFloat = 26
     @State private var bridge = CLIBridge()
-    @State private var trendStore = TrendStore()
+    /// Shared, navigation-surviving instance (see WorkspaceStore.trendStore) so
+    /// re-entering Overview shows cached data instantly instead of a cold scan.
+    private var trendStore: TrendStore { workspace.trendStore }
     @State private var isRunning = false
     /// True while the heavy-tier "Refresh now" prompt's collection is running.
     @State private var isRefreshingHeavyTiers = false
@@ -93,6 +95,19 @@ struct OverviewView: View {
                     if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
                         ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
                     }
+                    // v2.5 (macOS 27, opt-in): turns the same daily digest into a
+                    // plain-language insight card. Renders on every OS version —
+                    // resolves to "Requires macOS 27" below that. DRAFT — needs
+                    // visual verification at PageScaffold.minSupportedWidth.
+                    if !workspace.demoMode {
+                        AIInsightCard(
+                            profile: workspace.profile,
+                            current: trendStore.filteredSummaries.last,
+                            previous: trendStore.filteredSummaries.count >= 2
+                                ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
+                                : nil
+                        )
+                    }
                     statRow
                     if workspace.demoMode {
                         osAndRules
@@ -107,31 +122,28 @@ struct OverviewView: View {
                                     bottom: Theme.Metrics.pagePadBottom,
                                     trailing: Theme.Metrics.pagePadH))
             }
+            .overlay {
+                if !workspace.demoMode, trendStore.isLoading, trendStore.filteredSummaries.isEmpty {
+                    trendsLoadingOverlay
+                }
+            }
             .navigationDestination(for: OverviewDrillDown.self) { destination in
                 overviewDetail(destination)
             }
         }
         .tint(Theme.Colors.goldBright)
         .onAppear {
-            if !workspace.demoMode {
-                // `load` sets profile + range on first appear (required for initial state);
-                // `reload` follows unconditionally so re-navigating to Overview picks up
-                // any summary files written since the last load — e.g. a same-day
-                // proxy→real mSCP upgrade or a background LaunchAgent run that completed
-                // while the user was on another tab.
-                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
-                trendStore.reload()
-            }
+            // Kick the summaries + ea-results scan OFF the main thread so
+            // navigating to Overview never freezes; cached data stays on screen
+            // and refreshes when the scan completes.
+            Task { await loadTrendsOffMain() }
         }
-        .onChange(of: workspace.profile) { _, newValue in
-            if !workspace.demoMode {
-                trendStore.load(profile: newValue, range: defaultTrendRange)
-            }
+        .onChange(of: workspace.profile) { _, _ in
+            Task { await loadTrendsOffMain() }
         }
         .onChange(of: defaultTrendRangeRaw) { _, _ in
-            if !workspace.demoMode {
-                trendStore.load(profile: workspace.profile, range: defaultTrendRange)
-            }
+            // Range change only re-filters cached data — no disk read.
+            if !workspace.demoMode { trendStore.setRange(defaultTrendRange) }
         }
         .task(id: workspace.profile) {
             guard !workspace.demoMode else { return }
@@ -139,12 +151,10 @@ struct OverviewView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             workspace.reloadFromDisk()
-            if !workspace.demoMode {
-                // Same as the Refresh button — `load(profile:range:)` would
-                // short-circuit on unchanged profile and leave staleness stale.
-                trendStore.reload()
+            Task {
+                await loadTrendsOffMain()
+                await reloadChecklist()
             }
-            Task { await reloadChecklist() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
             if !navigationPath.isEmpty {
@@ -174,7 +184,7 @@ struct OverviewView: View {
                     isRefreshingHeavyTiers = true
                     defer { isRefreshingHeavyTiers = false }
                     await workspace.runHeavyTierRefresh()
-                    trendStore.reload()
+                    await loadTrendsOffMain()
                 }
             }
             .help("Run the per-device collections now. Can take several minutes on on-prem servers.")
@@ -206,6 +216,37 @@ struct OverviewView: View {
             + "Patch, Updates, and EA dashboards show stale values."
     }
 
+    /// Run the trend-store disk scan (summaries + ea-results) OFF the main
+    /// thread, then publish on the main actor. That scan is what froze the UI
+    /// when it ran synchronously from `.onAppear`; cached data stays on screen
+    /// while it runs, so re-entering Overview never beachballs.
+    private func loadTrendsOffMain() async {
+        guard !workspace.demoMode else { return }
+        let profile = workspace.profile
+        let range = defaultTrendRange
+        // On a profile switch, drop the previous tenant's data so the overlay
+        // (not stale data) shows during the new scan; same-profile is a no-op.
+        trendStore.clearForProfileSwitch(to: profile)
+        let generation = trendStore.beginLoading()
+        let snapshot = await Task.detached(priority: .userInitiated) {
+            TrendStore.computeSnapshot(profile: profile)
+        }.value
+        trendStore.apply(snapshot, profile: profile, range: range, generation: generation)
+    }
+
+    /// First-load overlay: shown only while the initial scan runs with no cached
+    /// data. Re-entry keeps data visible (no overlay) and refreshes silently.
+    private var trendsLoadingOverlay: some View {
+        VStack(spacing: 12) {
+            ProgressView().controlSize(.large)
+            Text("Loading fleet data…")
+                .font(.callout)
+                .foregroundStyle(Theme.Colors.fg2)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.ultraThinMaterial)
+    }
+
     /// #181: the never-fetched banner's "Collect now". Full first collect via
     /// the workspace, then reload the trend store so the banner clears as soon
     /// as the first summary.json lands.
@@ -215,7 +256,7 @@ struct OverviewView: View {
             isRunningFirstCollect = true
             defer { isRunningFirstCollect = false }
             await workspace.runFirstCollect()
-            trendStore.reload()
+            await loadTrendsOffMain()
             await reloadChecklist()
         }
     }
@@ -353,14 +394,12 @@ struct OverviewView: View {
                 HStack(spacing: 8) {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
-                        if !workspace.demoMode {
-                            // `load(profile:range:)` short-circuits when the profile
-                            // hasn't changed (the common case for an explicit Refresh
-                            // click); `reload()` forces a fresh filesystem scan so
-                            // the StaleDataBanner picks up any newly-written summaries.
-                            trendStore.reload()
+                        Task {
+                            // Off-main scan so the explicit Refresh doesn't freeze
+                            // the UI; picks up any newly-written summaries.
+                            await loadTrendsOffMain()
+                            await reloadChecklist()
                         }
-                        Task { await reloadChecklist() }
                     }
                     .help("Reload workspace state and trend snapshots from disk. Doesn't run jamf-cli.")
                     PNPButton(
@@ -454,7 +493,9 @@ struct OverviewView: View {
                 await MainActor.run { workspace.globalStatus = skipMessage }
                 AppLogger.cli.info("\(skipMessage, privacy: .public)")
 
-                exit = try await bridge.generate(profile: profile, csvPath: nil) { [weak workspace] line in
+                // F3: GUI-only AI executive narrative, time-boxed (nil = section omitted).
+                let narrative = workspace.demoMode ? nil : await ReportNarrative.makeForGUIGenerate(profile: profile)
+                exit = try await bridge.generate(profile: profile, csvPath: nil, aiNarrative: narrative) { [weak workspace] line in
                     Task { @MainActor in
                         guard let workspace, self.isRunning else { return }
                         if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
@@ -489,9 +530,7 @@ struct OverviewView: View {
                 workspace.toast = Toast(message: message, style: .success)
                 workspace.reloadFromDisk()
                 generatedHashes.removeAll()
-                if !workspace.demoMode {
-                    trendStore.reload()
-                }
+                await loadTrendsOffMain()
                 // A generated report completes the checklist's last step — re-derive
                 // it so the card ticks "Generate a report" and auto-hides.
                 await reloadChecklist()
@@ -1202,7 +1241,13 @@ struct OverviewView: View {
         guard ProfileService.isValid(profile) else { return }
 
         let connected = !workspace.profiles.isEmpty
-        let collected = !trendStore.filteredSummaries.isEmpty
+        // Check disk directly, not the in-memory store: the trend load is now
+        // async/off-main and races this checklist task, so filteredSummaries can
+        // be transiently empty even when summary files exist (and it's also
+        // range-filtered). A summary file on disk = the collect step is done.
+        let collected = await Task.detached(priority: .utility) {
+            TrendStore.readLatestSnapshotMTime(profile: profile) != nil
+        }.value
         let policyRaw = automationPolicyRaw
 
         let scheduled = await Task.detached(priority: .utility) {

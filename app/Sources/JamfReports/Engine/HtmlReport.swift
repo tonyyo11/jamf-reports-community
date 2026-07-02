@@ -30,6 +30,9 @@ let HTMLReportSHA256Placeholder = String(repeating: "0", count: 64)
 struct HtmlReport: Sendable {
     let config: ReportConfig
     let dataDir: URL
+    /// GUI-generate-only AI executive narrative (F3). nil (the default) omits
+    /// the `.aiNarrative` section entirely — headless callers never set it.
+    var aiNarrative: String? = nil
 
     // MARK: - HTML local config
 
@@ -146,13 +149,19 @@ struct HtmlReport: Sendable {
     ) async throws -> String {
         let sectionMap = try await buildSectionMap(outputURL: outputURL, profileName: profileName)
 
+        // F3: with no narrative the AI section is dropped BEFORE rendering (no
+        // placeholder comment) so nil keeps the output byte-identical to today.
+        let effectiveSections = (aiNarrative?.isEmpty ?? true)
+            ? sections.filter { $0 != .aiNarrative }
+            : sections
+
         // De-duplicate rendered fragments: when two SectionIDs map to the same HTML
         // block (e.g. .kpiTiles/.fleetSummary/.securityTiles all share tilesHTML, and
         // .osAdoptionChart/.patchBar share chartsHTML), emitting the same block twice
         // would produce duplicate canvas IDs that break Chart.js. Track which fragment
         // strings have already been emitted; identical aliases render as a comment.
         var emittedFragments: Set<String> = []
-        let bodyParts = sections.map { id -> String in
+        let bodyParts = effectiveSections.map { id -> String in
             if let fragment = sectionMap[id] {
                 let fragmentKey = fragment
                 if emittedFragments.contains(fragmentKey) {
@@ -237,13 +246,9 @@ struct HtmlReport: Sendable {
     /// - `.complianceBands` — compliance posture hero tile + top non-compliant table
     /// - `.orgInfo`         — catalog appendix (sites, buildings, departments, scripts, etc.)
     ///
-    /// Unimplemented (engine-team follow-ups):
-    /// - `.recentFailures`, `.interventionList`, `.patchQueue` — Operational sections
-    /// - `.auditEvidence`, `.exceptionList` — Compliance/Security audit sections
-    /// - `.assetMap`, `.warrantyTable`, `.purchaseCohorts` — Asset sections
-    /// - `.buildingBreakdown`, `.departmentBreakdown` — Asset breakdown sections
-    /// - `.protectAlerts`, `.insightsDrift`, `.agentHealth` — Security Posture sections
-    /// - `.execSummary` — Executive narrative section
+    /// Sections listed above are the base map; `buildNewSectionEntries` adds the
+    /// rest (`.execSummary`, operational, audit, asset, and Protect sections).
+    /// `.aiNarrative` is added only when a narrative was passed in (F3).
     private func buildSectionMap(
         outputURL: URL,
         profileName: String
@@ -331,7 +336,7 @@ struct HtmlReport: Sendable {
         let updateFailures = loadJSONList(kinds: ["update-device-failures", "update-failures"])
         let auditFindings = loadJSONList(kinds: ["audit-findings", "audit"])
 
-        let baseMap: [SectionID: String] = [
+        var baseMap: [SectionID: String] = [
             .kpiTiles:        tilesHTML,
             .fleetSummary:    tilesHTML,
             .securityTiles:   tilesHTML,
@@ -342,6 +347,11 @@ struct HtmlReport: Sendable {
             .complianceBands: complianceBlock,
             .orgInfo:         orgInfoBlock,
         ]
+        // F3: present only when the GUI passed a narrative in; the model output
+        // is escaped like any other dynamic string.
+        if let narrative = aiNarrative, !narrative.isEmpty {
+            baseMap[.aiNarrative] = buildAINarrativeSection(narrative)
+        }
 
         let newEntries = buildNewSectionEntries(
             security: security,

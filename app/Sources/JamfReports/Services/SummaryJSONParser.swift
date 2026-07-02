@@ -238,7 +238,16 @@ struct SummaryJSONParser {
         return f
     }()
 
+    /// Real summaries are a few KB; anything near this is corrupt or hostile.
+    /// Bounds the whole-file read (T-26 — the workspace sits on synced storage
+    /// other software can write to).
+    static let maxSummaryFileBytes = 2 * 1024 * 1024
+
     static func parse(_ url: URL) throws -> DailySummary {
+        if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           size > maxSummaryFileBytes {
+            throw CocoaError(.fileReadTooLarge, userInfo: [NSFilePathErrorKey: url.path])
+        }
         let data = try Data(contentsOf: url)
         let decoder = JSONDecoder()
         return try decoder.decode(DailySummary.self, from: data)

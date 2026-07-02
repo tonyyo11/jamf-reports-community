@@ -835,12 +835,17 @@ struct GenerateSheet: View {
             return
         }
 
+        // F3: GUI-only AI executive narrative. Time-boxed inside makeForGUIGenerate
+        // (nil on disabled/not-ready/no-data/timeout/error) so generate never blocks.
+        let narrative = workspace.demoMode ? nil : await ReportNarrative.makeForGUIGenerate(profile: profile)
+
         let result = await bridge.generateAll(
             types: state.selectedTypes,
             collectFresh: state.collectFresh,
             outputDir: outputDir,
             profile: profile,
-            template: state.resolvedTemplate
+            template: state.resolvedTemplate,
+            aiNarrative: narrative
         ) { line in
             Task { @MainActor in
                 state.appendLine(line)

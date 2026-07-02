@@ -89,6 +89,8 @@ extension CLIBridge {
     /// - Parameter schoolMode: When `true`, XLSX generation calls the school-generate
     ///   CLI command instead of the standard generate command. Other output types
     ///   (HTML, PDF) still use their standard paths — school HTML/PDF are not yet wired.
+    /// - Parameter aiNarrative: F3 GUI-only AI executive narrative, threaded to the
+    ///   XLSX and HTML generators (school/PDF/CSV paths ignore it). Default nil.
     func generateAll(
         types: Set<GenerateOutputType>,
         collectFresh: Bool,
@@ -96,6 +98,7 @@ extension CLIBridge {
         profile: String,
         schoolMode: Bool = false,
         template: any ReportTemplate = FullInstanceTemplate(),
+        aiNarrative: String? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async -> GenerateAllResult {
         await Self.runGenerateAll(
@@ -110,13 +113,14 @@ extension CLIBridge {
                 }
                 return try await self.generate(
                     profile: profile, csvPath: nil, template: template,
-                    outputDir: outputDir, onLine: onLine
+                    outputDir: outputDir, aiNarrative: aiNarrative, onLine: onLine
                 )
             },
             generateHTML: {
                 let outURL = self.htmlOutputURL(profile: profile, outputDir: outputDir)
                 return try await self.generateHTML(
-                    profile: profile, outFile: outURL.path, template: template, onLine: onLine
+                    profile: profile, outFile: outURL.path, template: template,
+                    aiNarrative: aiNarrative, onLine: onLine
                 )
             },
             generatePDF: {

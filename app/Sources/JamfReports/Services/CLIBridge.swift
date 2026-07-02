@@ -434,11 +434,14 @@ final class CLIBridge {
     }
 
     /// Fluent helper for the most common CLI flows the GUI surfaces.
+    /// `aiNarrative` (F3) is set only by GUI-generate call sites; the schedule
+    /// dispatcher (`runNow`) and onboarding leave the nil default.
     func generate(
         profile: String,
         csvPath: String?,
         template: any ReportTemplate = FullInstanceTemplate(),
         outputDir: URL? = nil,
+        aiNarrative: String? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
@@ -480,7 +483,8 @@ final class CLIBridge {
         }
         do {
             let failures = try await engine.generate(
-                csvURL: csvURL, outputURL: outputURL, template: template, onLine: onLine
+                csvURL: csvURL, outputURL: outputURL, template: template,
+                aiNarrative: aiNarrative, onLine: onLine
             )
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -705,6 +709,7 @@ final class CLIBridge {
     func collectThenGenerate(
         profile: String,
         csvPath: String?,
+        aiNarrative: String? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // Auth is checked inside collect(); skipping a separate probe here avoids calling
@@ -716,7 +721,8 @@ final class CLIBridge {
         guard collectExit == 0 else { return collectExit }
 
         onLine(.init(timestamp: Date(), level: .info, text: "[info] generating report from cached snapshots"))
-        return try await generate(profile: profile, csvPath: csvPath, onLine: onLine)
+        return try await generate(profile: profile, csvPath: csvPath,
+                                  aiNarrative: aiNarrative, onLine: onLine)
     }
 
     // MARK: - jamf-cli exit codes (jamf-cli Error Handling & Exit Codes spec)
@@ -1099,6 +1105,7 @@ final class CLIBridge {
         profile: String,
         outFile: String?,
         template: any ReportTemplate = FullInstanceTemplate(),
+        aiNarrative: String? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
@@ -1150,6 +1157,7 @@ final class CLIBridge {
                 dataDir: dataDir,
                 outputURL: outputURL,
                 template: template,
+                aiNarrative: aiNarrative,
                 onLine: onLine
             )
             onLine(.init(timestamp: Date(), level: .ok,

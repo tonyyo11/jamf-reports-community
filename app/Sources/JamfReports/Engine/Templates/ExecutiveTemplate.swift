@@ -31,6 +31,7 @@ struct ExecutiveTemplate: ReportTemplate {
 
     var htmlSections: [SectionID] {
         [
+            .aiNarrative,
             .kpiTiles,
             .osAdoptionChart,
             .complianceBands,
