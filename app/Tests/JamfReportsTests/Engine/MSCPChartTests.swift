@@ -296,6 +296,97 @@ final class MSCPChartTests: XCTestCase {
         XCTAssertTrue(points.isEmpty)
     }
 
+    // MARK: - buildAllSeries: multi-baseline from one row set
+
+    /// Two baselines sourcing DIFFERENT EA columns from ONE set of ea-results rows
+    /// must produce independent per-baseline series — band counts are not summed.
+    func testBuildAllSeriesMultiBaselineIndependentSeries() throws {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let stigCol = "STIG - Failures"
+        let nistCol = "NIST - Failures"
+        // Same devices carry both EA columns; the two baselines differ in the
+        // failure counts they report (STIG all-pass; NIST 3 pass + 2 high).
+        let eaDir = tmp.appendingPathComponent("ea-results", isDirectory: true)
+        try FileManager.default.createDirectory(at: eaDir, withIntermediateDirectories: true)
+        var rows: [[String: Any]] = []
+        for i in 0..<5 { rows.append(["device": "mac-\(i)", "ea_name": stigCol, "value": 0]) }
+        for i in 0..<3 { rows.append(["device": "mac-\(i)", "ea_name": nistCol, "value": 0]) }
+        for i in 3..<5 { rows.append(["device": "mac-\(i)", "ea_name": nistCol, "value": 60]) }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        try data.write(to: eaDir.appendingPathComponent("ea-results_20240601T120000.json"))
+
+        let stig = makeBaseline(name: "DISA STIG", col: stigCol)
+        let nist = makeBaseline(name: "NIST 800-53r5", col: nistCol)
+        let series = MSCPChartDataBuilder.buildAllSeries(
+            baselines: [stig, nist], dataDir: tmp, summaries: [])
+
+        let stigPts = try XCTUnwrap(series["DISA STIG"])
+        let nistPts = try XCTUnwrap(series["NIST 800-53r5"])
+        XCTAssertEqual(stigPts.count, 1)
+        XCTAssertEqual(nistPts.count, 1)
+        // STIG: all 5 devices pass.
+        XCTAssertEqual(stigPts.first?.counts.pass, 5)
+        XCTAssertEqual(stigPts.first?.counts.high, 0)
+        // NIST: 3 pass, 2 high — different from STIG (not summed together).
+        XCTAssertEqual(nistPts.first?.counts.pass, 3)
+        XCTAssertEqual(nistPts.first?.counts.high, 2)
+    }
+
+    // MARK: - Zero-band point is skipped (all-noData crater)
+
+    /// A summary point whose banded total is 0 (all devices No Data) must be
+    /// SKIPPED — the prod 2026-06-05 all-zero/noData=659 crater must not chart.
+    func testBuildAllSeriesSkipsZeroBandSummaryPoint() throws {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let crater = MSCPBandCounts(pass: 0, low: 0, medLow: 0, medium: 0, high: 0, noData: 659)
+        let good = MSCPBandCounts(pass: 50, low: 10, medLow: 5, medium: 2, high: 1, noData: 0)
+        let day1 = DailySummary(
+            date: "2026-06-05", totalDevices: 659,
+            fileVaultPct: nil, compliancePct: nil, staleCount: 0,
+            osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", mscpBands: ["Compliance": crater])
+        let day2 = DailySummary(
+            date: "2026-06-06", totalDevices: 68,
+            fileVaultPct: nil, compliancePct: nil, staleCount: 0,
+            osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", mscpBands: ["Compliance": good])
+
+        let baseline = makeBaseline(name: "Compliance", col: "Compliance Failures")
+        let series = MSCPChartDataBuilder.buildAllSeries(
+            baselines: [baseline], dataDir: tmp, summaries: [day1, day2])
+
+        let pts = try XCTUnwrap(series["Compliance"])
+        XCTAssertEqual(pts.count, 1, "The all-noData crater point must be skipped")
+        XCTAssertEqual(pts.first?.counts.pass, 50)
+    }
+
+    // MARK: - dateFromSnapshotFilename: python-era dashed form
+
+    func testDateFromSnapshotFilenameDashedPythonEraFormat() throws {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        // Python-era: dashed date + microsecond tail.
+        let url = tmp.appendingPathComponent("ea-results_2026-04-15T210038673146.json")
+        try Data("[]".utf8).write(to: url)
+
+        let date = MSCPChartDataBuilder.dateFromSnapshotFilename(url)
+        // Formatter parses in local time (same as the canonical yyyyMMdd'T'HHmmss
+        // form), so assert with a local-timezone calendar.
+        let cal = Calendar(identifier: .iso8601)
+        let c = cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        XCTAssertEqual(c.year, 2026)
+        XCTAssertEqual(c.month, 4)
+        XCTAssertEqual(c.day, 15)
+        XCTAssertEqual(c.hour, 21)
+        XCTAssertEqual(c.minute, 0)
+        XCTAssertEqual(c.second, 38)
+    }
+
     // MARK: - toStackedSeries
 
     func testStackedSeriesHasFiveBands() throws {

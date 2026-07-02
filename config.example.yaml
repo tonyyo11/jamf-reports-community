@@ -427,6 +427,28 @@ retention:
   archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir)
 
 # =============================================================================
+# AI INSIGHTS (macOS 27+; opt-in; OFF by default)
+# =============================================================================
+# Turn already-collected fleet data (the daily summary) into a plain-language
+# insight card using Apple's on-device Foundation Model. OFF by default and
+# inert on any macOS below 27 — set enabled: true to opt in per profile.
+#
+# tier: "on_device" runs entirely on-device (no data leaves the Mac).
+#   "pcc" uses Apple Private Cloud Compute (still Apple-private, but off-device).
+#   "external" is RESERVED — not yet built.
+# lock_on_device: true refuses any non-on-device model even if tier says pcc —
+#   a defense-in-depth switch for high-security or regulated environments.
+ai:
+  enabled: false            # opt-in; inert on macOS < 27
+  tier: "on_device"         # on_device | pcc | external (external not yet built)
+  lock_on_device: false     # refuse any non-on-device model even if tier says otherwise
+  reasoning_level: "light"  # light | moderate | deep
+  external:                 # RESERVED — ignored until the external tier ships (P5)
+    provider: ""            # anthropic | google | openai_compatible
+    endpoint: ""            # https-only, for openai_compatible / self-hosted
+    keychain_key: ""        # name of a system-keychain item; secret never stored here
+
+# =============================================================================
 # JAMF PLATFORM API
 # =============================================================================
 # Preview workbook support for jamf-cli builds that expose Platform API report
@@ -526,7 +548,8 @@ compliance:
   #
   # The first entry is the "primary" baseline: its Pass % surfaces in the daily
   # summary, the Compliance Benchmark trend chart, and the Stability Index.
-  # Additional entries are evaluated but do not affect the trend today.
+  # Every entry gets its own compliance-band donut and Trends band series;
+  # a baseline picker appears on the Trends band charts when more than one is set.
   #
   # failures_count_column must match the `ea_name` field in your ea-results
   # snapshot exactly (case-insensitive match at query time).
@@ -535,11 +558,21 @@ compliance:
   # failures_count_column + baseline_label above — no migration needed.
   baselines: []
   # Example multi-baseline configuration (uncomment and edit to enable):
+  # Per entry:
+  #   rule_count           - optional; total rules in the baseline. When set, a
+  #                          failure count above it is rejected as a garbage EA
+  #                          value (No Data) instead of banding the device High.
+  #   failures_list_column - optional; the pipe-delimited failed-rule-ID EA.
+  #                          Enables the count-vs-list accuracy cross-check.
   # baselines:
   #   - name: "NIST 800-53r5"
   #     failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+  #     failures_list_column: "Compliance - Failed mSCP Result List - NIST 800-53r5 Audit"
+  #     rule_count: 315
   #   - name: "DISA STIG"
   #     failures_count_column: "Compliance - Failed mSCP Results Count - DISA STIG"
+  #     failures_list_column: "Compliance - Failed mSCP Result List - DISA STIG"
+  #     rule_count: 280
 
 
 # =============================================================================

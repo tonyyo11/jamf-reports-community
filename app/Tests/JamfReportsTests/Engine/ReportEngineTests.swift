@@ -637,6 +637,28 @@ final class ReportEngineTests: XCTestCase {
         XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("\"text\"".utf8)))
     }
 
+    /// schoolCollect and protectCollect gate saves on the same isJSONSnapshot
+    /// check as the Pro collect loop — Cobra's exit-0 help text for a renamed/
+    /// unsupported `school`/`protect` subcommand must never poison the cache
+    /// (both entry points call the shared `isJSONSnapshot` before saveSnapshot).
+    func testIsJSONSnapshotRejectsCobraHelpTextForSchoolAndProtectCommands() {
+        let schoolHelpText = Data(
+            "Commands for interacting with Jamf School\n\nUsage:\n  jamf-cli school [command]\n".utf8
+        )
+        XCTAssertFalse(ReportEngine.isJSONSnapshot(schoolHelpText),
+                       "School Cobra help text must be rejected as a snapshot payload")
+
+        let protectHelpText = Data(
+            "Commands for interacting with Jamf Protect\n\nUsage:\n  jamf-cli protect [command]\n".utf8
+        )
+        XCTAssertFalse(ReportEngine.isJSONSnapshot(protectHelpText),
+                       "Protect Cobra help text must be rejected as a snapshot payload")
+
+        // Valid JSON school/protect payloads must still pass the same gate.
+        XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("[{\"id\": \"1\", \"name\": \"school-class\"}]".utf8)))
+        XCTAssertTrue(ReportEngine.isJSONSnapshot(Data("[{\"id\": \"1\", \"type\": \"protect-alert\"}]".utf8)))
+    }
+
     // MARK: - Fix 1: buildLiveKinds only includes actually-saved kinds
 
     /// A kind with exitCode==0 but a non-JSON body is NOT saved and must NOT

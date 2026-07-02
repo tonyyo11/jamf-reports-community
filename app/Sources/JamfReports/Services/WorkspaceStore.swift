@@ -14,6 +14,15 @@ final class WorkspaceStore {
     var customEAs: [CustomEA]
     var columnMappings: [ColumnMapping]
     var demoMode: Bool
+
+    /// Shared trend store, owned here so it SURVIVES tab navigation. Overview and
+    /// Trends are conditional views (recreated on every tab switch), so a per-view
+    /// `@State TrendStore` was empty on each entry — forcing a full cold ea-results
+    /// scan (and the "Loading fleet data…" overlay) every time. Sharing one instance
+    /// keeps the last-loaded data on screen and refreshes it silently in the
+    /// background. Both views also share the same loaded snapshot.
+    let trendStore = TrendStore()
+
     /// Overview score-card selection. Persisted across launches (UserDefaults) —
     /// before v2.2.0 this reset to the default four metrics on every start.
     var selectedScoreCards: [TrendSeries.Metric] {

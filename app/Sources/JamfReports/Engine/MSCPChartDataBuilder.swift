@@ -49,29 +49,67 @@ struct MSCPChartDataBuilder: Sendable {
         summaries: [DailySummary],
         singleBaselineWorkspace: Bool = false
     ) -> [BandPoint] {
-        var byDate: [String: BandPoint] = [:]
+        // Thin wrapper over `buildAllSeries` (single-element list), threading the
+        // caller's explicit `singleBaselineWorkspace` flag so a multi-baseline
+        // caller passing one baseline keeps its no-coalesce behavior verbatim.
+        buildAllSeries(
+            baselines: [baseline], dataDir: dataDir, summaries: summaries,
+            coalesceLoneKey: singleBaselineWorkspace
+        )[baseline.name] ?? []
+    }
 
-        // --- Source 1: summary.json mscpBands (baseline → cheap, available first) ---
+    /// Build one ordered band series per baseline, keyed by baseline name.
+    ///
+    /// Decodes each ea-results snapshot exactly ONCE and evaluates the full
+    /// baseline list against those rows (`MSCPComplianceService.evaluate` already
+    /// returns one result per baseline) — never re-decoding a multi-megabyte file
+    /// per baseline. Band counts from different baselines are never summed;
+    /// each baseline keeps its own independent series.
+    ///
+    /// The summary source matches each baseline by EXACT name. The single-baseline
+    /// lone-key coalesce (bridging a config-label rename) applies when
+    /// `coalesceLoneKey` is true (defaults to `baselines.count == 1`) AND a summary
+    /// carries exactly one mscpBands key — same semantics as `singleBaselineWorkspace`.
+    ///
+    /// Points whose banded total (pass+low+medLow+medium+high) == 0 are SKIPPED in
+    /// both sources; an all-noData result is not charted as a crater.
+    ///
+    /// - Returns: `[baselineName: [BandPoint]]`; each series sorted ascending by
+    ///   date, deduped to one entry per day. Baselines with no data are omitted.
+    static func buildAllSeries(
+        baselines: [ComplianceBaselineConfig],
+        dataDir: URL,
+        summaries: [DailySummary],
+        coalesceLoneKey: Bool? = nil
+    ) -> [String: [BandPoint]] {
+        guard !baselines.isEmpty else { return [:] }
+        let coalesceLoneKey = coalesceLoneKey ?? (baselines.count == 1)
+
+        // Per-baseline accumulator keyed by day-string.
+        var byBaseline: [String: [String: BandPoint]] = [:]
+        for b in baselines { byBaseline[b.name] = [:] }
+
+        // --- Source 1: summary.json mscpBands (cheap, available first) ---
         for summary in summaries {
             guard let bands = summary.mscpBands else { continue }
-            // Exact-name match first.
-            let counts: MSCPBandCounts?
-            if let exact = bands[baseline.name] {
-                counts = exact
-            } else if singleBaselineWorkspace, bands.count == 1, let sole = bands.values.first {
-                // Single-baseline workspace with a renamed baseline: coalesce the
-                // lone key's value onto the current baseline name so a config
-                // fix (e.g. typo correction) doesn't fork the trend series.
-                counts = sole
-            } else {
-                counts = nil
-            }
-            guard let counts else { continue }
             let date = SummaryJSONParser.dateFormatter.date(from: summary.date) ?? .distantPast
             guard date != .distantPast else { continue }
-            let key = summary.date
-            if byDate[key] == nil {
-                byDate[key] = BandPoint(date: date, counts: counts)
+            for b in baselines {
+                let counts: MSCPBandCounts?
+                if let exact = bands[b.name] {
+                    counts = exact
+                } else if coalesceLoneKey, bands.count == 1, let sole = bands.values.first {
+                    // Single-baseline workspace with a renamed baseline: coalesce
+                    // the lone key onto the current name so a config fix doesn't
+                    // fork the series.
+                    counts = sole
+                } else {
+                    counts = nil
+                }
+                guard let counts, bandedTotal(counts) > 0 else { continue }
+                if byBaseline[b.name]?[summary.date] == nil {
+                    byBaseline[b.name]?[summary.date] = BandPoint(date: date, counts: counts)
+                }
             }
         }
 
@@ -83,33 +121,40 @@ struct MSCPChartDataBuilder: Sendable {
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else {
-            return sorted(byDate)
+            return sortedByBaseline(byBaseline)
         }
 
         // Sort ascending by snapshot date so last-writer-wins is deterministic:
-        // the newest file for a given date overwrites earlier ones in byDate.
+        // the newest file for a given date overwrites earlier ones.
         let jsonFiles = files
-            .filter { $0.pathExtension == "json" }
+            .filter { $0.pathExtension == "json" && $0.lastPathComponent != "manifest.json" }
             .sorted { dateFromSnapshotFilename($0) < dateFromSnapshotFilename($1) }
         for url in jsonFiles {
-            guard let data = try? Data(contentsOf: url),
-                  let rows = try? JSONDecoder().decode([EAResultRow].self, from: data) else {
-                AppLogger.platform.debug(
-                    "MSCPChartDataBuilder: skipping undecodable ea-results file \(url.lastPathComponent, privacy: .public)"
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let decoded = EAResultRow.decodeSnapshot(data)
+            guard let rows = decoded.rows else {
+                // `.notice` (not `.debug`) so the shape surfaces without verbose
+                // logging; `reason` is keys-only (PII-safe).
+                AppLogger.platform.notice(
+                    "MSCPChartDataBuilder: ea-results \(url.lastPathComponent, privacy: .public) undecodable — \(decoded.reason, privacy: .public)"
                 )
                 continue
             }
             let snapshotDate = dateFromSnapshotFilename(url, fm: fm)
             let dayKey = SummaryJSONParser.dateFormatter.string(from: snapshotDate)
 
-            let results = MSCPComplianceService.evaluate(rows: rows, baselines: [baseline])
-            guard let result = results.first, result.totalDevices > 0 else { continue }
-            let counts = bandCountsFromResult(result)
-            // ea-results takes precedence over summary.json for the same date.
-            byDate[dayKey] = BandPoint(date: snapshotDate, counts: counts)
+            // ONE decode, ONE evaluate over the full list — one result per baseline.
+            let results = MSCPComplianceService.evaluate(rows: rows, baselines: baselines)
+            for result in results {
+                let counts = bandCountsFromResult(result)
+                // Skip all-noData / empty results (a crater point in prod data).
+                guard bandedTotal(counts) > 0 else { continue }
+                // ea-results takes precedence over summary.json for the same date.
+                byBaseline[result.name]?[dayKey] = BandPoint(date: snapshotDate, counts: counts)
+            }
         }
 
-        return sorted(byDate)
+        return sortedByBaseline(byBaseline)
     }
 
     // MARK: - ChartSeries conversion
@@ -174,6 +219,22 @@ struct MSCPChartDataBuilder: Sendable {
         byDate.values.sorted { $0.date < $1.date }
     }
 
+    /// Sort each baseline's day-keyed points into an ordered series; drop empties.
+    private static func sortedByBaseline(
+        _ byBaseline: [String: [String: BandPoint]]
+    ) -> [String: [BandPoint]] {
+        var out: [String: [BandPoint]] = [:]
+        for (name, byDate) in byBaseline where !byDate.isEmpty {
+            out[name] = sorted(byDate)
+        }
+        return out
+    }
+
+    /// Banded device total (excludes No Data). Zero → point is a crater; skip it.
+    private static func bandedTotal(_ c: MSCPBandCounts) -> Int {
+        c.pass + c.low + c.medLow + c.medium + c.high
+    }
+
     /// Extract band counts from `result.bands` (always 6 elements in Band.allCases order).
     private static func bandCountsFromResult(
         _ result: MSCPComplianceService.BaselineResult
@@ -208,16 +269,35 @@ struct MSCPChartDataBuilder: Sendable {
         return f
     }()
 
+    // Python-era dashed form: ea-results_2026-04-15T210038673146 (microsecond tail).
+    // Same POSIX/UTC settings as the canonical formatter; only the pattern differs.
+    private static let dashedSnapshotDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HHmmss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .iso8601)
+        return f
+    }()
+
     /// Extract a date from an ea-results snapshot filename.
     ///
-    /// `saveSnapshot` writes `<kind>_yyyyMMddTHHmmss.json`. Falls back to the
-    /// file modification time when the filename doesn't match the pattern.
+    /// Handles the canonical `saveSnapshot` form `<kind>_yyyyMMddTHHmmss.json`
+    /// and the python-era dashed form `<kind>_yyyy-MM-ddTHHmmss<microseconds>.json`
+    /// (trailing microsecond digits ignored). Falls back to the file modification
+    /// time when neither pattern matches.
     static func dateFromSnapshotFilename(_ url: URL, fm: FileManager = .default) -> Date {
         let stem = url.deletingPathExtension().lastPathComponent
         // Canonical saveSnapshot format: ea-results_20240615T120000
         if let range = stem.range(of: #"(\d{8})T(\d{6})$"#, options: .regularExpression) {
             let match = String(stem[range])
             if let date = snapshotDateFormatter.date(from: match) { return date }
+        }
+        // Python-era dashed format: ea-results_2026-04-15T210038673146
+        // Take the first 6 digits after 'T' as HHmmss; ignore trailing microseconds.
+        if let range = stem.range(of: #"(\d{4})-(\d{2})-(\d{2})T(\d{6})"#,
+                                  options: .regularExpression) {
+            let match = String(stem[range])
+            if let date = dashedSnapshotDateFormatter.date(from: match) { return date }
         }
         let attrs = try? fm.attributesOfItem(atPath: url.path)
         return (attrs?[.modificationDate] as? Date) ?? .distantPast

@@ -25,6 +25,7 @@ struct ReportConfig: Decodable, Sendable {
     var schoolCli: SchoolCLIConfig?
     var notify: NotifyConfig?
     var retention: RetentionConfig?
+    var ai: AIConfig?
     var html: HTMLReportConfig?
 
     private enum CodingKeys: String, CodingKey {
@@ -45,6 +46,7 @@ struct ReportConfig: Decodable, Sendable {
         case schoolCli = "school_cli"
         case notify
         case retention
+        case ai
         case html
     }
 
@@ -345,21 +347,41 @@ enum ComplianceFramework: String, CaseIterable, Codable, Sendable {
 /// failure count for this baseline. Must match the `ea_name` field in
 /// `ea-results` snapshots exactly (case-sensitive).
 ///
-/// `ruleCount` is reserved for future use (e.g. compliance percentage relative
-/// to total rules). Nothing reads it in the foundation increment; declare it now
-/// so the on-disk config format is stable and parsers can round-trip it without
-/// data loss.
+/// `failuresListColumn` is the optional EA name carrying the pipe-delimited list
+/// of failed rule IDs; when set it enables the count-vs-list accuracy cross-check.
+///
+/// `ruleCount`, when a positive Int, is the validity bound for the failure count:
+/// a parsed count greater than the baseline's total rule count is a garbage EA
+/// value (broken audit script) and is treated as No Data rather than banding the
+/// device High.
 struct ComplianceBaselineConfig: Decodable, Sendable {
     var name: String
     var failuresCountColumn: String
-    /// Total rule count for this baseline. Reserved — not read by any engine
-    /// path in the foundation increment.
+    /// Optional EA column carrying the pipe-delimited failed-rule-ID list.
+    var failuresListColumn: String?
+    /// Total rule count for this baseline. When positive, a parsed failure count
+    /// above this value is rejected as unparseable (No Data).
     var ruleCount: Int?
 
     private enum CodingKeys: String, CodingKey {
         case name
         case failuresCountColumn = "failures_count_column"
+        case failuresListColumn = "failures_list_column"
         case ruleCount = "rule_count"
+    }
+
+    /// `failuresListColumn` defaults to `nil` so existing positional call sites
+    /// `(name:failuresCountColumn:ruleCount:)` keep compiling unchanged.
+    init(
+        name: String,
+        failuresCountColumn: String,
+        failuresListColumn: String? = nil,
+        ruleCount: Int? = nil
+    ) {
+        self.name = name
+        self.failuresCountColumn = failuresCountColumn
+        self.failuresListColumn = failuresListColumn
+        self.ruleCount = ruleCount
     }
 }
 
@@ -431,9 +453,11 @@ struct ComplianceConfig: Decodable, Sendable {
               !col.trimmingCharacters(in: .whitespaces).isEmpty
         else { return [] }
         let label = baselineLabel?.trimmingCharacters(in: .whitespaces)
+        let listCol = failuresListColumn?.trimmingCharacters(in: .whitespaces)
         return [ComplianceBaselineConfig(
             name: label.flatMap { $0.isEmpty ? nil : $0 } ?? "Compliance",
             failuresCountColumn: col,
+            failuresListColumn: listCol.flatMap { $0.isEmpty ? nil : $0 },
             ruleCount: nil
         )]
     }
@@ -451,8 +475,9 @@ struct CustomEAConfig: Decodable, Sendable {
     var currentVersions: [String]?  // key is `current_versions` (list)
     var warningDays: Int?            // key is `warning_days`
 
-    enum EAType: String, Decodable, Sendable {
+    enum EAType: String, Decodable, Sendable, CaseIterable, Identifiable {
         case boolean, percentage, version, text, date
+        var id: String { rawValue }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -720,6 +745,72 @@ struct NotifyConfig: Decodable, Sendable {
     /// Usable only when enabled AND a usable https URL is present — the gate
     /// every send path checks so an off/misconfigured block silently no-ops.
     var isUsable: Bool { isEnabled && resolvedURL.lowercased().hasPrefix("https://") }
+}
+
+// MARK: - ai (macOS 27 opt-in intelligence layer)
+
+/// `ai:` block — opt-in on-device/PCC fleet-insight generation (macOS 27+).
+/// OFF by default; inert on every OS below 27. Mirrors the `notify:` pattern:
+/// the struct decodes on every toolchain (config parsing is independent of
+/// FoundationModels availability); the actual model code is gated elsewhere.
+struct AIConfig: Decodable, Sendable {
+    enum Tier: String, Decodable, Sendable, CaseIterable {
+        case onDevice = "on_device"
+        case pcc
+        case external
+    }
+
+    enum ReasoningLevel: String, Decodable, Sendable, CaseIterable {
+        case light, moderate, deep
+    }
+
+    var enabled: Bool?
+    var tier: String?
+    var lockOnDevice: Bool?
+    var reasoningLevel: String?
+    var external: AIExternalConfig?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, tier
+        case lockOnDevice = "lock_on_device"
+        case reasoningLevel = "reasoning_level"
+        case external
+    }
+
+    var isEnabled: Bool { enabled ?? false }
+    var resolvedTier: Tier {
+        Tier(rawValue: (tier ?? "on_device").lowercased()) ?? .onDevice
+    }
+    /// High-security guarantee: when true, refuse any non-on-device model even
+    /// if `tier` says otherwise. Enforced at generator selection.
+    var isLockedOnDevice: Bool { lockOnDevice ?? false }
+    var resolvedReasoningLevel: ReasoningLevel {
+        ReasoningLevel(rawValue: (reasoningLevel ?? "light").lowercased()) ?? .light
+    }
+    /// Usable only when enabled — the on/off gate every generator-construction
+    /// site checks so a disabled block never spins up any model. On-device needs
+    /// no URL/key, so `isEnabled` is the whole test.
+    var isUsable: Bool { isEnabled }
+}
+
+/// Reserved `external:` sub-block — specced now, built in a later phase (P5).
+/// Present so config.yaml round-trips a stable shape before the tier ships;
+/// inert today.
+///
+/// P5 IMPLEMENTATION REQUIREMENT (threat model T-28): a pre-existing `endpoint`
+/// in config.yaml must NEVER auto-activate when the external tier ships — an
+/// attacker could pre-plant it on synced storage and have it go live on app
+/// update. Require explicit in-app re-consent plus https-only validation (the
+/// `NotifyConfig.isUsable` prefix-check pattern) before the first external send.
+struct AIExternalConfig: Decodable, Sendable {
+    var provider: String?
+    var endpoint: String?
+    var keychainKey: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case provider, endpoint
+        case keychainKey = "keychain_key"
+    }
 }
 
 // MARK: - retention (snapshot archive/cleanup)

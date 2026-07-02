@@ -22,10 +22,16 @@ struct CSVEAWalkthroughSheet: View {
     /// Per-proposal connected-value override for Security Agent adoption; absent
     /// falls back to the proposal's sample value.
     @State private var connectedValues: [String: String] = [:]
+    /// Per-proposal type override, defaulting to the detected guess. Drives both
+    /// adoption and the dry-run parse-health verdict.
+    @State private var typeOverrides: [String: CustomEAConfig.EAType] = [:]
     @State private var sourceName: String?
     @State private var loaded = false
     @State private var adoptError: String?
     @State private var confirmation: String?
+    /// Full sample rows from the source CSV, kept for the dry-run parse check —
+    /// `proposals` only carries one sample value per column.
+    @State private var csvSample: ScaffoldService.CSVSample?
 
     private enum AdoptTarget: Hashable { case customEA, securityAgent }
 
@@ -166,6 +172,23 @@ struct CSVEAWalkthroughSheet: View {
                         .frame(width: 220)
                         Spacer()
                     }
+                    if !agentTargets.contains(ea.id) {
+                        HStack(spacing: 8) {
+                            Text("Type")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                            Picker("", selection: typeBinding(ea)) {
+                                ForEach(CustomEAConfig.EAType.allCases) { type in
+                                    Text(type.rawValue.capitalized).tag(type)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .frame(width: 160)
+                            Spacer()
+                        }
+                        parseHealthVerdict(for: ea)
+                    }
                     if agentTargets.contains(ea.id) {
                         // Own line so it never reads as a third picker segment or
                         // overflows the sheet at minWidth.
@@ -216,6 +239,71 @@ struct CSVEAWalkthroughSheet: View {
             get: { connectedValues[ea.id] ?? ea.sampleValue },
             set: { connectedValues[ea.id] = $0 }
         )
+    }
+
+    /// EA type for a proposal; defaults to `ScaffoldService`'s detected guess.
+    private func typeBinding(_ ea: ScaffoldService.ProposedEA) -> Binding<CustomEAConfig.EAType> {
+        Binding(
+            get: { typeOverrides[ea.id] ?? Self.eaType(from: ea.type) },
+            set: { typeOverrides[ea.id] = $0 }
+        )
+    }
+
+    /// Map `ScaffoldService`'s detected type string to the Models.swift twin.
+    /// `ScaffoldService.guessEAType` only ever returns these five strings; an
+    /// unrecognized value (future scaffold change) falls back to `.text`.
+    private static func eaType(from raw: String) -> CustomEAConfig.EAType {
+        CustomEAConfig.EAType(rawValue: raw) ?? .text
+    }
+
+    /// In-memory dry-run parse verdict for a proposal's chosen type, computed
+    /// from the sample rows already loaded for the walkthrough (cheap — capped
+    /// at `ScaffoldService.readSample`'s default 50-row sample).
+    private func parseHealth(
+        for ea: ScaffoldService.ProposedEA
+    ) -> EAParseHealthService.ColumnHealth? {
+        guard let csvSample, let colIndex = csvSample.headers.firstIndex(of: ea.column) else {
+            return nil
+        }
+        let values = csvSample.rows.compactMap { row in
+            colIndex < row.count ? row[colIndex] : nil
+        }
+        let type = typeOverrides[ea.id] ?? Self.eaType(from: ea.type)
+        return EAParseHealthService.assess(column: ea.column, values: values, type: type)
+    }
+
+    @ViewBuilder
+    private func parseHealthVerdict(for ea: ScaffoldService.ProposedEA) -> some View {
+        if let health = parseHealth(for: ea), let rate = health.parseRate {
+            let type = typeOverrides[ea.id] ?? Self.eaType(from: ea.type)
+            let pct = Int((rate * 100).rounded())
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: verdictIcon(rate))
+                        .foregroundStyle(verdictColor(rate))
+                        .font(.caption2)
+                    Text("Parses as \(type.rawValue) for \(pct)% of \(health.nonEmpty) "
+                        + "non-empty row\(health.nonEmpty == 1 ? "" : "s")")
+                        .font(.caption2)
+                        .foregroundStyle(verdictColor(rate))
+                }
+                if rate < 0.9, let top = health.topUnparseable.first {
+                    Text("Most common unparsed shape: \(top.skeleton) (×\(top.count))")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+            }
+        }
+    }
+
+    private func verdictIcon(_ rate: Double) -> String {
+        rate >= 0.9 ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+    }
+
+    private func verdictColor(_ rate: Double) -> Color {
+        if rate >= 0.9 { return Theme.Colors.ok }
+        if rate >= 0.5 { return Theme.Colors.warn }
+        return Theme.Colors.danger
     }
 
     private var loadingState: some View {
@@ -305,6 +393,7 @@ struct CSVEAWalkthroughSheet: View {
         guard let url = newestInboxCSV() else { return }
         sourceName = url.lastPathComponent
         guard let sample = try? ScaffoldService.readSample(from: url) else { return }
+        csvSample = sample
         let mapped = mappedHeaders(for: sample.headers)
         let detected = ScaffoldService.proposeEAs(
             headers: sample.headers,
@@ -316,9 +405,21 @@ struct CSVEAWalkthroughSheet: View {
         selected = Set(detected.filter { $0.type != "text" }.map { $0.id })
     }
 
+    /// The operator's type pick is what gets adopted — rebuild the proposal
+    /// when it differs from the scaffold's guess.
+    private func applyingTypeOverride(
+        _ ea: ScaffoldService.ProposedEA
+    ) -> ScaffoldService.ProposedEA {
+        guard let override = typeOverrides[ea.id], override.rawValue != ea.type else { return ea }
+        return ScaffoldService.ProposedEA(
+            name: ea.name, column: ea.column,
+            type: override.rawValue, sampleValue: ea.sampleValue)
+    }
+
     private func adopt() {
         adoptError = nil
         let eas = selectedProposals.filter { !agentTargets.contains($0.id) }
+            .map { applyingTypeOverride($0) }
         let agents = selectedProposals.filter { agentTargets.contains($0.id) }
         do {
             let result = try ConfigEAAdopter.adopt(

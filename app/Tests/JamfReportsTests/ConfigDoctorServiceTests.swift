@@ -334,4 +334,319 @@ final class ConfigDoctorServiceTests: XCTestCase {
             row(rows, id: "security_agent.CrowdStrike.column.structural")?.severity, .warn
         )
     }
+
+    // MARK: - Accuracy: cross-source reconciliation (check 1)
+
+    private let reconcileYAML = """
+    columns:
+      serial_number: "Serial Number"
+    """
+
+    private func csvRows(serials: [String]) -> [CSVRow] {
+        serials.map { ["Serial Number": $0] }
+    }
+
+    func testReconciliationWithinToleranceEmitsOK() throws {
+        let config = try makeConfig(reconcileYAML)
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: ["Serial Number"],
+            rows: csvRows(serials: (1...100).map { "S\($0)" }),
+            ageDays: 0, fileName: "export.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: 105, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertEqual(row(rows, id: "accuracy.reconciliation")?.severity, .pass)
+    }
+
+    func testReconciliationDivergenceWarnsNamingBothSources() throws {
+        let config = try makeConfig(reconcileYAML)
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: ["Serial Number"],
+            rows: csvRows(serials: (1...100).map { "S\($0)" }),
+            ageDays: 0, fileName: "export.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: 130, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let recon = row(rows, id: "accuracy.reconciliation")
+        XCTAssertEqual(recon?.severity, .warn)
+        XCTAssertTrue(recon?.detail.contains("100") ?? false)
+        XCTAssertTrue(recon?.detail.contains("130") ?? false)
+    }
+
+    func testReconciliationDedupesSerials() throws {
+        let config = try makeConfig(reconcileYAML)
+        // 200 rows but only 100 distinct serials (case-insensitive dupes).
+        let dupes = (1...100).map { "S\($0)" } + (1...100).map { "s\($0)" }
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: ["Serial Number"], rows: csvRows(serials: dupes),
+            ageDays: 0, fileName: "export.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: 100, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        // 100 deduped vs 100 snapshot → within tolerance despite 200 raw rows.
+        XCTAssertEqual(row(rows, id: "accuracy.reconciliation")?.severity, .pass)
+    }
+
+    func testReconciliationSkippedWithFewerThanTwoSources() throws {
+        let config = try makeConfig(reconcileYAML)
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: 100, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertNil(row(rows, id: "accuracy.reconciliation"),
+                     "one source is not enough to reconcile")
+    }
+
+    // MARK: - Accuracy: stale CSV age (check 1b)
+
+    func testStaleCSVAgeWarns() throws {
+        let yaml = """
+        thresholds:
+          stale_device_days: 30
+        """
+        let config = try makeConfig(yaml)
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: ["Serial Number"], rows: [], ageDays: 63, fileName: "old.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: nil, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let age = row(rows, id: "accuracy.csv_age")
+        XCTAssertEqual(age?.severity, .warn)
+        XCTAssertTrue(age?.detail.contains("old.csv") ?? false)
+        XCTAssertTrue(age?.detail.contains("63") ?? false)
+    }
+
+    func testFreshCSVEmitsNoAgeRow() throws {
+        let yaml = """
+        thresholds:
+          stale_device_days: 30
+        """
+        let config = try makeConfig(yaml)
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: [], rows: [], ageDays: 5, fileName: "fresh.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: nil, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertNil(row(rows, id: "accuracy.csv_age"))
+    }
+
+    // MARK: - Accuracy: per-column parse health (check 2)
+
+    func testParseHealthWarnsOnLowRateWithSkeleton() throws {
+        let yaml = """
+        custom_eas:
+          - name: "Battery"
+            column: "Battery Health"
+            type: percentage
+        """
+        let config = try makeConfig(yaml)
+        // 8 of 10 non-empty values are non-numeric junk → 20% parse rate.
+        let good = ["50", "75"]
+        let bad = Array(repeating: "ERR", count: 8)
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: ["Battery Health"],
+            rows: (good + bad).map { ["Battery Health": $0] },
+            ageDays: 0, fileName: "x.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: nil, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let warn = row(rows, id: "accuracy.parse_health.Battery Health")
+        XCTAssertEqual(warn?.severity, .warn)
+        XCTAssertTrue(warn?.detail.contains("20%") ?? false)
+        // Skeleton of "ERR" is "xxx"; a raw value must never appear.
+        XCTAssertTrue(warn?.detail.contains("xxx") ?? false)
+        XCTAssertFalse(warn?.detail.contains("ERR") ?? true)
+    }
+
+    func testParseHealthAggregatesCleanColumnsIntoOneOK() throws {
+        let yaml = """
+        custom_eas:
+          - name: "OSVer"
+            column: "OS Version"
+            type: version
+          - name: "State"
+            column: "State"
+            type: text
+        """
+        let config = try makeConfig(yaml)
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: ["OS Version", "State"],
+            rows: [
+                ["OS Version": "15.4", "State": "Managed"],
+                ["OS Version": "14.7.1", "State": "Managed"],
+            ],
+            ageDays: 0, fileName: "x.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: nil, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let ok = row(rows, id: "accuracy.parse_health.ok")
+        XCTAssertEqual(ok?.severity, .pass)
+        XCTAssertTrue(ok?.detail.contains("2 columns") ?? false)
+        XCTAssertFalse(rows.contains { $0.id.hasPrefix("accuracy.parse_health.OS") })
+    }
+
+    func testParseHealthOnBaselineIntColumnFromEAResults() throws {
+        let yaml = """
+        compliance:
+          enabled: true
+          failures_count_column: "STIG Count"
+          baseline_label: "STIG"
+        """
+        let config = try makeConfig(yaml)
+        // 3 valid ints, 7 junk → 30% parse rate on the ea-results int column.
+        var eaRows: [EAResultRow] = (1...3).map {
+            EAResultRow(device: "d\($0)", eaName: "STIG Count", value: $0)
+        }
+        eaRows += (4...10).map {
+            EAResultRow(device: "d\($0)", eaName: "STIG Count", stringValue: "N/A")
+        }
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: eaRows, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertEqual(row(rows, id: "accuracy.parse_health.STIG Count")?.severity, .warn)
+    }
+
+    // MARK: - Accuracy: EA coverage drift (check 3)
+
+    func testCoverageDriftFlagsBigDropsAndCaps() throws {
+        let config = try makeConfig(cleanYAML)
+        // 7 EAs each dropped 20 points → 5 warns + 1 "more" row.
+        let drops = (1...7).map {
+            EAParseHealthService.CoverageDrift(
+                eaName: "EA\($0)", previousPct: 90, currentPct: 70
+            )
+        }
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: nil, coverageDrift: drops
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let driftWarns = rows.filter {
+            $0.id.hasPrefix("accuracy.coverage_drift.") && $0.id != "accuracy.coverage_drift.more"
+        }
+        XCTAssertEqual(driftWarns.count, 5, "capped at 5 named EAs")
+        let more = row(rows, id: "accuracy.coverage_drift.more")
+        XCTAssertEqual(more?.severity, .warn)
+        XCTAssertTrue(more?.detail.contains("+2 more") ?? false)
+    }
+
+    func testCoverageDriftStableEmitsOK() throws {
+        let config = try makeConfig(cleanYAML)
+        let stable = [
+            EAParseHealthService.CoverageDrift(eaName: "EA1", previousPct: 90, currentPct: 89)
+        ]
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: nil, coverageDrift: stable
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertEqual(row(rows, id: "accuracy.coverage_drift.ok")?.severity, .pass)
+    }
+
+    func testCoverageDriftSkippedWhenNoDriftData() throws {
+        let config = try makeConfig(cleanYAML)
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertFalse(rows.contains { $0.id.hasPrefix("accuracy.coverage_drift") },
+                       "fewer than two snapshot days means no drift rows at all")
+    }
+
+    // MARK: - Accuracy: mSCP count-vs-list cross-check (check 4)
+
+    func testCrossCheckWarnsOnDisagreement() throws {
+        let yaml = """
+        compliance:
+          enabled: true
+          failures_count_column: "STIG Count"
+          failures_list_column: "STIG List"
+          baseline_label: "STIG"
+        """
+        let config = try makeConfig(yaml)
+        // 10 devices: 9 disagree (count 5 vs list length 1) → 90% > 5%.
+        var eaRows: [EAResultRow] = []
+        for i in 1...10 {
+            eaRows.append(EAResultRow(device: "d\(i)", eaName: "STIG Count", value: 5))
+            let list = i == 1 ? "a|b|c|d|e" : "a"  // d1 agrees (5), rest disagree
+            eaRows.append(EAResultRow(device: "d\(i)", eaName: "STIG List", stringValue: list))
+        }
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: eaRows, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let cc = row(rows, id: "accuracy.cross_check.STIG")
+        XCTAssertEqual(cc?.severity, .warn)
+        XCTAssertTrue(cc?.detail.contains("10") ?? false, "names devices compared")
+    }
+
+    func testCrossCheckPassesWhenCountsAgree() throws {
+        let yaml = """
+        compliance:
+          enabled: true
+          failures_count_column: "STIG Count"
+          failures_list_column: "STIG List"
+          baseline_label: "STIG"
+        """
+        let config = try makeConfig(yaml)
+        let eaRows: [EAResultRow] = [
+            EAResultRow(device: "d1", eaName: "STIG Count", value: 2),
+            EAResultRow(device: "d1", eaName: "STIG List", stringValue: "a|b"),
+            EAResultRow(device: "d2", eaName: "STIG Count", value: 0),
+            EAResultRow(device: "d2", eaName: "STIG List", stringValue: ""),
+        ]
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: eaRows, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertEqual(row(rows, id: "accuracy.cross_check.STIG")?.severity, .pass)
+    }
+
+    func testCrossCheckSkippedWhenNoListColumn() throws {
+        let yaml = """
+        compliance:
+          enabled: true
+          failures_count_column: "STIG Count"
+          baseline_label: "STIG"
+        """
+        let config = try makeConfig(yaml)
+        let eaRows = [EAResultRow(device: "d1", eaName: "STIG Count", value: 0)]
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: eaRows, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertFalse(rows.contains { $0.id.hasPrefix("accuracy.cross_check") },
+                       "no failures_list_column means no cross-check row")
+    }
+}
+
+// MARK: - EAResultRow test fixtures
+
+private extension EAResultRow {
+    init(device: String, eaName: String, value: Int) {
+        self.init(
+            computerId: nil, computerName: nil, serial: nil, eaId: nil,
+            eaName: eaName, device: device, value: AnyCodable(value)
+        )
+    }
+
+    init(device: String, eaName: String, stringValue: String) {
+        self.init(
+            computerId: nil, computerName: nil, serial: nil, eaId: nil,
+            eaName: eaName, device: device, value: AnyCodable(stringValue)
+        )
+    }
 }

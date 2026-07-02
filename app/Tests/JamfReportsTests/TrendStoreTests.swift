@@ -75,6 +75,30 @@ final class TrendStoreTests: XCTestCase {
         SummaryJSONParser.dateFormatter.string(from: date)
     }
 
+    /// A same-profile reload (tab re-entry) keeps data on screen; switching to a
+    /// different profile drops the previous tenant's data so the loading overlay
+    /// shows (not the wrong tenant's numbers under the new header).
+    func testClearForProfileSwitchDropsOnlyPreviousTenant() {
+        let store = TrendStore()
+        let snap = TrendStore.TrendSnapshot(
+            summaries: [summary(date: "2026-07-01")],
+            latestSnapshotDate: nil, hasEverFetchedLive: true,
+            bandSeries: [:], baselineNames: [])
+        store.apply(snap, profile: "prod", range: .all, generation: store.beginLoading())
+        XCTAssertEqual(store.currentProfile, "prod")
+        XCTAssertFalse(store.filteredSummaries.isEmpty)
+
+        // Same profile → no-op (data retained).
+        store.clearForProfileSwitch(to: "prod")
+        XCTAssertFalse(store.filteredSummaries.isEmpty)
+        XCTAssertEqual(store.currentProfile, "prod")
+
+        // Different profile → cleared.
+        store.clearForProfileSwitch(to: "dev")
+        XCTAssertTrue(store.filteredSummaries.isEmpty)
+        XCTAssertNil(store.currentProfile)
+    }
+
     // MARK: - stabilityIndex sourcing tests
 
     /// Regression guard for the prod observation (2026-06-06) where the Overview

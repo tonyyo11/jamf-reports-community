@@ -77,13 +77,16 @@ enum ConfigDoctorService {
         let csvFamily = csvHeaders.map { CSVFamilyDetector.detect(headers: $0) } ?? nil
         let eaNames = ExtensionAttributeService.load(profile: profile).coverage.map(\.eaName)
 
-        let rows = evaluate(
+        var rows = evaluate(
             config: config,
             parseError: parseError,
             csvHeaders: csvHeaders,
             csvFamily: csvFamily,
             eaCoverageNames: eaNames
         )
+        if let config, parseError == nil {
+            rows += accuracyRows(config: config, profile: profile)
+        }
         return DoctorReport(rows: rows)
     }
 
@@ -499,6 +502,339 @@ enum ConfigDoctorService {
     private static func nonEmpty(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespaces) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+// MARK: - Data-accuracy family (checks 1–4)
+
+extension ConfigDoctorService {
+
+    // MARK: Pure inputs (test seam)
+
+    /// Newest CSV export, pre-parsed. `columns` is the header row; `rows` are the
+    /// data rows (dictionary per row). `ageDays` is the file's age in whole days.
+    /// Absent when no CSV is present.
+    struct AccuracyCSV: Sendable {
+        let columns: [String]
+        let rows: [CSVRow]
+        let ageDays: Int
+        let fileName: String
+    }
+
+    /// Everything the accuracy checks need, already loaded off `evaluate`'s path so
+    /// the pure seam never touches disk. Any field may be nil/empty — each check
+    /// degrades to a single info row or no row rather than failing the doctor.
+    struct AccuracyInputs: Sendable {
+        var csv: AccuracyCSV?
+        /// Device count from the newest `computers` snapshot; nil when absent.
+        var computersCount: Int?
+        /// Newest decodable `ea-results` rows; nil when absent/undecodable.
+        var eaRows: [EAResultRow]?
+        /// Coverage drift between the two newest ea-results days; nil when fewer
+        /// than two decodable days exist (drift can't be computed → skip).
+        var coverageDrift: [EAParseHealthService.CoverageDrift]?
+    }
+
+    // MARK: IO gather (real run)
+
+    /// Load the on-disk inputs (decoding the ~13 MB ea-results snapshot ONCE and
+    /// sharing it across checks 1/2/4), then evaluate the pure seam.
+    static func accuracyRows(config: ReportConfig, profile: String) -> [DoctorRow] {
+        let dataDir = try? WorkspacePaths.dataDir(for: profile)
+
+        let inputs = AccuracyInputs(
+            csv: loadAccuracyCSV(profile: profile),
+            computersCount: loadComputersCount(dataDir: dataDir),
+            eaRows: loadNewestEARows(dataDir: dataDir),
+            coverageDrift: dataDir.map { EAParseHealthService.coverageDrift(dataDir: $0) }
+        )
+        return evaluateAccuracy(config: config, inputs: inputs)
+    }
+
+    /// Read + parse the newest csv-inbox CSV and stamp its age. Nil when absent or
+    /// unreadable (its dependent checks then skip).
+    private static func loadAccuracyCSV(profile: String) -> AccuracyCSV? {
+        guard let url = CLIBridge.newestCSV(in: profile),
+              let data = try? Data(contentsOf: url),
+              let (columns, rows) = try? CSVParser.parse(data) else { return nil }
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate ?? Date()
+        let ageDays = Calendar(identifier: .gregorian)
+            .dateComponents([.day], from: modified, to: Date()).day ?? 0
+        return AccuracyCSV(
+            columns: columns, rows: rows,
+            ageDays: max(0, ageDays), fileName: url.lastPathComponent
+        )
+    }
+
+    /// Device count from the newest `computers` snapshot (a bare JSON array). Nil
+    /// when the snapshot is absent or not an array.
+    private static func loadComputersCount(dataDir: URL?) -> Int? {
+        guard let dataDir else { return nil }
+        let dir = dataDir.appendingPathComponent("computers", isDirectory: true)
+        guard let url = FileManager.newestJSONFile(in: dir),
+              let data = try? Data(contentsOf: url),
+              let items = try? JSONSerialization.jsonObject(with: data) as? [Any]
+        else { return nil }
+        return items.count
+    }
+
+    /// Decode the newest `ea-results` snapshot ONCE. Nil when absent/undecodable.
+    private static func loadNewestEARows(dataDir: URL?) -> [EAResultRow]? {
+        guard let dataDir else { return nil }
+        let dir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
+        guard let url = FileManager.newestJSONFile(in: dir),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return EAResultRow.decodeSnapshot(data).rows
+    }
+
+    // MARK: Pure evaluator
+
+    /// Pure over already-loaded inputs. Emits the accuracy family in check order.
+    /// Every check degrades gracefully — a missing input drops its rows, never an
+    /// error that blocks the doctor.
+    static func evaluateAccuracy(config: ReportConfig, inputs: AccuracyInputs) -> [DoctorRow] {
+        var rows: [DoctorRow] = []
+        rows += reconciliationRows(config: config, inputs: inputs)
+        rows += staleCSVRows(config: config, inputs: inputs)
+        rows += parseHealthRows(config: config, inputs: inputs)
+        rows += coverageDriftRows(inputs: inputs)
+        rows += crossCheckRows(config: config, inputs: inputs)
+        return rows
+    }
+
+    // MARK: Check 1 — cross-source device-count reconciliation
+
+    private struct CountSource { let label: String; let count: Int }
+
+    private static func reconciliationRows(
+        config: ReportConfig,
+        inputs: AccuracyInputs
+    ) -> [DoctorRow] {
+        var sources: [CountSource] = []
+        if let csv = inputs.csv, let serial = mappedSerialColumn(config) {
+            let deduped = distinctSerials(rows: csv.rows, column: serial)
+            if deduped > 0 { sources.append(CountSource(label: "CSV export", count: deduped)) }
+        }
+        if let computers = inputs.computersCount, computers > 0 {
+            sources.append(CountSource(label: "computers snapshot", count: computers))
+        }
+        if let eaRows = inputs.eaRows {
+            let ids = MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
+            if ids > 0 { sources.append(CountSource(label: "ea-results", count: ids)) }
+        }
+
+        guard sources.count >= 2 else { return [] }  // < 2 comparable sources → skip
+
+        if let divergent = firstDivergentPair(sources) {
+            let (a, b) = divergent
+            return [DoctorRow(
+                id: "accuracy.reconciliation", severity: .warn,
+                title: "Device counts disagree",
+                detail: "\(a.label) has \(a.count) devices but \(b.label) has \(b.count) "
+                    + "(over 10% apart).",
+                hint: "Re-collect, or replace the stale export, so the sources agree."
+            )]
+        }
+        let summary = sources.map { "\($0.label) \($0.count)" }.joined(separator: ", ")
+        return [DoctorRow(
+            id: "accuracy.reconciliation", severity: .pass,
+            title: "Device counts agree",
+            detail: "Within 10% across sources (\(summary)).", hint: nil
+        )]
+    }
+
+    /// First pair (in source order) whose counts diverge by more than 10% of the
+    /// larger count. Nil when every pair is within tolerance.
+    private static func firstDivergentPair(
+        _ sources: [CountSource]
+    ) -> (CountSource, CountSource)? {
+        for i in sources.indices {
+            for j in sources.index(after: i)..<sources.endIndex {
+                let a = sources[i], b = sources[j]
+                let larger = Double(max(a.count, b.count))
+                guard larger > 0 else { continue }
+                if Double(abs(a.count - b.count)) / larger > 0.10 { return (a, b) }
+            }
+        }
+        return nil
+    }
+
+    private static func mappedSerialColumn(_ config: ReportConfig) -> String? {
+        nonEmpty(config.columns?.columnName(for: .serialNumber))
+    }
+
+    /// Distinct non-empty values in `column` across `rows` (case-insensitive).
+    private static func distinctSerials(rows: [CSVRow], column: String) -> Int {
+        var seen: Set<String> = []
+        for row in rows {
+            let value = (row[column] ?? "").trimmingCharacters(in: .whitespaces)
+            if !value.isEmpty { seen.insert(value.lowercased()) }
+        }
+        return seen.count
+    }
+
+    // MARK: Check 1b — stale CSV age
+
+    private static func staleCSVRows(config: ReportConfig, inputs: AccuracyInputs) -> [DoctorRow] {
+        guard let csv = inputs.csv else { return [] }
+        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        guard csv.ageDays > staleDays else { return [] }
+        return [DoctorRow(
+            id: "accuracy.csv_age", severity: .warn,
+            title: "CSV export is stale",
+            detail: "'\(csv.fileName)' is \(csv.ageDays) days old "
+                + "(stale after \(staleDays)).",
+            hint: "Delete or replace the stale export in csv-inbox."
+        )]
+    }
+
+    // MARK: Check 2 — per-column parse health
+
+    private static func parseHealthRows(config: ReportConfig, inputs: AccuracyInputs) -> [DoctorRow] {
+        var healths: [EAParseHealthService.ColumnHealth] = []
+
+        // custom_eas assessed against the CSV column.
+        if let csv = inputs.csv {
+            for ea in config.customEas ?? [] {
+                let column = ea.column.trimmingCharacters(in: .whitespaces)
+                guard !column.isEmpty, csv.columns.contains(column) else { continue }
+                let values = csv.rows.map { $0[column] ?? "" }
+                healths.append(EAParseHealthService.assess(
+                    column: column, values: values, type: ea.type
+                ))
+            }
+        }
+
+        // compliance baselines assessed against the ea-results failure-count column.
+        if let eaRows = inputs.eaRows {
+            for baseline in config.compliance?.resolvedBaselines ?? [] {
+                let column = baseline.failuresCountColumn.trimmingCharacters(in: .whitespaces)
+                guard !column.isEmpty else { continue }
+                let values = eaRows
+                    .filter { $0.eaName?.caseInsensitiveCompare(column) == .orderedSame }
+                    .map { $0.value?.stringValue ?? "" }
+                guard !values.isEmpty else { continue }
+                healths.append(EAParseHealthService.assessIntCount(
+                    column: column, values: values, maxValid: baseline.ruleCount
+                ))
+            }
+        }
+
+        guard !healths.isEmpty else { return [] }
+
+        var rows: [DoctorRow] = []
+        var cleanCount = 0
+        for health in healths {
+            guard let rate = health.parseRate else { continue }  // no non-empty values → skip
+            if rate < 0.90 {
+                rows.append(parseHealthWarnRow(health, rate: rate))
+            } else {
+                cleanCount += 1
+            }
+        }
+        if cleanCount > 0 {
+            rows.insert(DoctorRow(
+                id: "accuracy.parse_health.ok", severity: .pass,
+                title: "Column values parse cleanly",
+                detail: "\(cleanCount) column\(cleanCount == 1 ? "" : "s") parse cleanly (≥90%).",
+                hint: nil
+            ), at: 0)
+        }
+        return rows
+    }
+
+    private static func parseHealthWarnRow(
+        _ health: EAParseHealthService.ColumnHealth,
+        rate: Double
+    ) -> DoctorRow {
+        let pct = Int((rate * 100).rounded())
+        var detail = "Only \(pct)% of '\(health.column)' values parse "
+            + "(\(health.parseable) of \(health.nonEmpty))."
+        if let top = health.topUnparseable.first {
+            detail += " Most common unparseable shape: \(top.skeleton) (\(top.count))."
+        }
+        return DoctorRow(
+            id: "accuracy.parse_health.\(health.column)", severity: .warn,
+            title: "Column parses poorly",
+            detail: detail,
+            hint: "Check the EA type or the source column — bad values become No Data."
+        )
+    }
+
+    // MARK: Check 3 — EA coverage drift
+
+    private static let coverageDriftCap = 5
+
+    private static func coverageDriftRows(inputs: AccuracyInputs) -> [DoctorRow] {
+        guard let drift = inputs.coverageDrift else { return [] }  // < 2 days → skip
+        let drops = drift.filter { $0.deltaPP <= -15 }
+        guard !drops.isEmpty else {
+            return [DoctorRow(
+                id: "accuracy.coverage_drift.ok", severity: .pass,
+                title: "EA coverage stable",
+                detail: "No EA lost more than 15 points of coverage since the prior snapshot.",
+                hint: nil
+            )]
+        }
+        var rows: [DoctorRow] = drops.prefix(coverageDriftCap).map { drop in
+            let delta = Int(drop.deltaPP.rounded())
+            return DoctorRow(
+                id: "accuracy.coverage_drift.\(drop.eaName)", severity: .warn,
+                title: "EA coverage dropped",
+                detail: "'\(drop.eaName)' coverage fell \(delta) points "
+                    + "(\(Int(drop.previousPct.rounded()))% → \(Int(drop.currentPct.rounded()))%).",
+                hint: "Confirm the EA still populates — a drop can silently thin a report."
+            )
+        }
+        if drops.count > coverageDriftCap {
+            let more = drops.count - coverageDriftCap
+            rows.append(DoctorRow(
+                id: "accuracy.coverage_drift.more", severity: .warn,
+                title: "More EAs dropped coverage",
+                detail: "+\(more) more EA\(more == 1 ? "" : "s") dropped over 15 points.",
+                hint: "Review the ea-results snapshot for a broader collection failure."
+            ))
+        }
+        return rows
+    }
+
+    // MARK: Check 4 — mSCP count-vs-list cross-check
+
+    private static func crossCheckRows(config: ReportConfig, inputs: AccuracyInputs) -> [DoctorRow] {
+        guard let eaRows = inputs.eaRows else { return [] }
+        let baselines = config.compliance?.resolvedBaselines ?? []
+        let results = MSCPComplianceService.crossCheck(rows: eaRows, baselines: baselines)
+        guard !results.isEmpty else { return [] }  // no list columns configured → skip
+
+        return results.compactMap { result in
+            guard let rate = result.disagreementRate else {
+                // Both columns configured but no device had both rows → nothing to
+                // compare; surface as a benign OK rather than a false alarm.
+                return DoctorRow(
+                    id: "accuracy.cross_check.\(result.baselineName)", severity: .pass,
+                    title: "Baseline count vs list: \(result.baselineName)",
+                    detail: "No devices had both a count and a list value to compare.",
+                    hint: nil
+                )
+            }
+            if rate > 0.05 {
+                let pct = Int((rate * 100).rounded())
+                return DoctorRow(
+                    id: "accuracy.cross_check.\(result.baselineName)", severity: .warn,
+                    title: "Baseline count vs list disagree: \(result.baselineName)",
+                    detail: "\(pct)% of \(result.devicesCompared) compared devices have a "
+                        + "failure count that doesn't match their failure list length.",
+                    hint: "One EA is out of date — re-run the mSCP audit so both agree."
+                )
+            }
+            return DoctorRow(
+                id: "accuracy.cross_check.\(result.baselineName)", severity: .pass,
+                title: "Baseline count vs list agree: \(result.baselineName)",
+                detail: "Count and list agree on \(result.devicesCompared) compared devices.",
+                hint: nil
+            )
+        }
     }
 }
 

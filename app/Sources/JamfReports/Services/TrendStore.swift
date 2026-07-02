@@ -23,15 +23,34 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// for the active profile. Distinguishes `.stale` from `.neverFetchedLive`.
     private(set) var hasEverFetchedLive: Bool = false
 
-    /// Cached band-history from both ea-results snapshots (primary) and
+    /// Cached band-history per baseline from ea-results snapshots (primary) and
     /// summary.json mscpBands (fallback). Rebuilt once per load/reload; never
-    /// re-scanned during view rendering.
-    private var cachedBandPoints: [MSCPChartDataBuilder.BandPoint] = []
+    /// re-scanned during view rendering. Keyed by baseline name.
+    private var cachedBandSeries: [String: [MSCPChartDataBuilder.BandPoint]] = [:]
 
-    /// The primary baseline used to build `cachedBandPoints`. Matches the
-    /// first resolved baseline from config when loaded from disk, or the
-    /// first key found in summary mscpBands when constructed in-memory.
-    private var cachedBaseline: ComplianceBaselineConfig?
+    /// Ordered baseline names for the mSCP band trend picker. Config order
+    /// (resolvedBaselines) when loaded from disk, or the sorted set of summary
+    /// mscpBands keys in the no-config fallback path.
+    private(set) var mscpBaselineNames: [String] = []
+
+    /// The baseline whose series `mscpStackedSeries()` and `.mscpBandTrend`
+    /// derivation read. Defaults to the first name; user-settable via
+    /// `selectMSCPBaseline`. Nil only when no baseline has band history.
+    var selectedMSCPBaseline: String?
+
+    /// True while an off-main snapshot scan is in flight. Views show a loading
+    /// placeholder only when this is set AND there is no cached data yet — a
+    /// re-entry keeps the existing data on screen and refreshes silently.
+    private(set) var isLoading = false
+
+    /// Immutable result of the off-main disk scan, applied back on the main actor.
+    struct TrendSnapshot: Sendable {
+        var summaries: [DailySummary]
+        var latestSnapshotDate: Date?
+        var hasEverFetchedLive: Bool
+        var bandSeries: [String: [MSCPChartDataBuilder.BandPoint]]
+        var baselineNames: [String]
+    }
 
     init(summaries: [DailySummary] = [], range: TrendRange = .w4) {
         allSummaries = summaries
@@ -39,34 +58,118 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         hasEverFetchedLive = summaries.contains(where: { $0.source == "jamf-cli" })
         filterSummaries(range: range)
         // In-memory init: build band points from summaries only. The inaccessible
-        // dataDir degrades gracefully to summaries-only inside buildSeries.
-        rebuildBandPoints(profile: nil)
+        // dataDir degrades gracefully to summaries-only inside buildAllSeries.
+        let built = Self.computeBandPoints(profile: nil, summaries: summaries)
+        cachedBandSeries = built.series
+        mscpBaselineNames = built.names
+        selectedMSCPBaseline = built.names.first
     }
 
-    func load(profile: String, range: TrendRange) {
-        if profile != currentProfile {
-            allSummaries = readSummaries(profile: profile)
-            latestSnapshotDate = readLatestSnapshotMTime(profile: profile)
-            hasEverFetchedLive = allSummaries.contains(where: { $0.source == "jamf-cli" })
-            currentProfile = profile
-            rebuildBandPoints(profile: profile)
-        }
+    /// Select the baseline whose band series the mSCP trend surfaces render.
+    /// No-op if the name is not one of `mscpBaselineNames`.
+    func selectMSCPBaseline(_ name: String) {
+        guard mscpBaselineNames.contains(name) else { return }
+        selectedMSCPBaseline = name
+    }
 
+    /// The band series for the currently-selected baseline (or the first).
+    private var selectedBandPoints: [MSCPChartDataBuilder.BandPoint] {
+        let name = selectedMSCPBaseline ?? mscpBaselineNames.first
+        guard let name else { return [] }
+        return cachedBandSeries[name] ?? []
+    }
+
+    // MARK: - Off-main snapshot loading
+
+    /// Read summaries + band history from disk. Pure and `nonisolated` so callers
+    /// run it OFF the main actor (`Task.detached`) — the summaries decode and the
+    /// ea-results scan are exactly what froze the UI when this ran synchronously
+    /// from `.onAppear`.
+    nonisolated static func computeSnapshot(profile: String) -> TrendSnapshot {
+        let summaries = readSummaries(profile: profile)
+        let built = computeBandPoints(profile: profile, summaries: summaries)
+        return TrendSnapshot(
+            summaries: summaries,
+            latestSnapshotDate: readLatestSnapshotMTime(profile: profile),
+            hasEverFetchedLive: summaries.contains { $0.source == "jamf-cli" },
+            bandSeries: built.series,
+            baselineNames: built.names
+        )
+    }
+
+    /// Monotonic load-request generation. Each `beginLoading` supersedes every
+    /// in-flight scan; `apply` discards snapshots from superseded generations so
+    /// a slow scan of profile A can never overwrite a newer load of profile B
+    /// (cross-profile stale-writer race — mislabeled tenant data).
+    private var loadGeneration = 0
+
+    /// Mark a load in flight (main actor). Views call this before the detached
+    /// scan and pass the returned generation token to `apply`.
+    func beginLoading() -> Int {
+        isLoading = true
+        loadGeneration += 1
+        return loadGeneration
+    }
+
+    /// Publish an off-main snapshot to the observable state. Fast (no I/O); must
+    /// run on the main actor — the views call it from a `.task`. Clears `isLoading`.
+    /// Snapshots from a superseded generation are dropped (see `loadGeneration`).
+    func apply(_ snapshot: TrendSnapshot, profile: String, range: TrendRange, generation: Int) {
+        guard generation == loadGeneration else { return }
+        allSummaries = snapshot.summaries
+        latestSnapshotDate = snapshot.latestSnapshotDate
+        hasEverFetchedLive = snapshot.hasEverFetchedLive
+        cachedBandSeries = snapshot.bandSeries
+        mscpBaselineNames = snapshot.baselineNames
+        // Preserve a still-valid selection across reloads; else default to first.
+        let keepSelection = selectedMSCPBaseline.map(snapshot.baselineNames.contains) ?? false
+        if !keepSelection { selectedMSCPBaseline = snapshot.baselineNames.first }
+        currentProfile = profile
+        currentRange = range
+        filterSummaries(range: range)
+        isLoading = false
+    }
+
+    /// Re-filter for a new range without re-reading disk (range-picker changes).
+    func setRange(_ range: TrendRange) {
         currentRange = range
         filterSummaries(range: range)
     }
 
-    /// Force a re-scan of the on-disk summaries directory for the active
-    /// profile. The cheap `load(profile:range:)` short-circuits when the
-    /// profile is unchanged; callers that just generated a new summary use
-    /// `reload()` to invalidate that cache.
+    /// Clear displayed data when switching to a DIFFERENT profile, so the loading
+    /// overlay shows for the new profile rather than the previous tenant's data
+    /// during the scan. A same-profile reload (tab re-entry) is a no-op — data
+    /// stays on screen and refreshes silently. No-op on first load (nil profile).
+    func clearForProfileSwitch(to profile: String) {
+        guard let current = currentProfile, current != profile else { return }
+        allSummaries = []
+        filteredSummaries = []
+        cachedBandSeries = [:]
+        mscpBaselineNames = []
+        selectedMSCPBaseline = nil
+        latestSnapshotDate = nil
+        hasEverFetchedLive = false
+        currentProfile = nil
+    }
+
+    /// Synchronous load, preserved for any non-view caller. Views use the async
+    /// off-main path (`computeSnapshot` + `apply`) so the disk scan never blocks
+    /// the main thread. A profile change re-reads; same profile just re-filters.
+    func load(profile: String, range: TrendRange) {
+        if profile != currentProfile {
+            apply(Self.computeSnapshot(profile: profile), profile: profile, range: range,
+                  generation: beginLoading())
+        } else {
+            setRange(range)
+        }
+    }
+
+    /// Synchronous re-scan of the on-disk summaries for the active profile.
+    /// Views prefer the off-main path; kept for parity with existing callers.
     func reload() {
         guard let profile = currentProfile else { return }
-        allSummaries = readSummaries(profile: profile)
-        latestSnapshotDate = readLatestSnapshotMTime(profile: profile)
-        hasEverFetchedLive = allSummaries.contains(where: { $0.source == "jamf-cli" })
-        rebuildBandPoints(profile: profile)
-        filterSummaries(range: currentRange)
+        apply(Self.computeSnapshot(profile: profile), profile: profile, range: currentRange,
+              generation: beginLoading())
     }
 
     /// Freshness signal for `StaleDataBanner` consumers. `.neverFetchedLive`
@@ -83,8 +186,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     }
 
     /// Read summaries from the configured `charts.historical_csv_dir/summaries`
-    /// (or the workspace fallback if config is unavailable).
-    private func readSummaries(profile: String) -> [DailySummary] {
+    /// (or the workspace fallback if config is unavailable). `nonisolated static`
+    /// so it runs off the main actor inside `computeSnapshot`.
+    nonisolated static func readSummaries(profile: String) -> [DailySummary] {
         // Validate at the boundary — string-interpolating an unvalidated profile
         // into a path component is a traversal vector.
         guard let summariesDir = (try? WorkspacePaths.summariesDir(for: profile))
@@ -94,7 +198,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return SummaryJSONParser.parseDirectory(summariesDir)
     }
 
-    private func fallbackSummariesDir(for profile: String) -> URL? {
+    nonisolated static func fallbackSummariesDir(for profile: String) -> URL? {
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
         return workspace.appendingPathComponent("snapshots/summaries", isDirectory: true)
     }
@@ -104,7 +208,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// embedded date because the user-visible "stale" signal is when the
     /// last *run* happened, which `contentModificationDate` captures
     /// directly (even if the summary's logical date string lags).
-    private func readLatestSnapshotMTime(profile: String) -> Date? {
+    nonisolated static func readLatestSnapshotMTime(profile: String) -> Date? {
         guard let summariesDir = (try? WorkspacePaths.summariesDir(for: profile))
             ?? fallbackSummariesDir(for: profile) else {
             return nil
@@ -202,22 +306,25 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .patch:         return summary.patchPct
         case .securityScore: return summary.securityScore
         case .mscpBandTrend:
-            // Derive from cachedBandPoints: find the point whose date matches
-            // this summary's date (string-matched), then sum the 5 bands.
-            // Falls back to summary.mscpBands when no ea-results point exists.
+            // Derive from the SELECTED baseline's points: find the point whose
+            // date matches this summary's date (string-matched), then sum the 5
+            // bands. Falls back to that baseline's summary.mscpBands entry.
             let dayKey = summary.date
-            if let pt = cachedBandPoints.first(where: {
+            if let pt = selectedBandPoints.first(where: {
                 SummaryJSONParser.dateFormatter.string(from: $0.date) == dayKey
             }) {
                 let total = pt.counts.pass + pt.counts.low + pt.counts.medLow
                     + pt.counts.medium + pt.counts.high
                 return total > 0 ? Double(total) : nil
             }
-            // Summary-only fallback for in-memory paths where cachedBandPoints
-            // was built from summaries and the date keys match exactly.
+            // Summary-only fallback: read the selected/first baseline's entry
+            // rather than reducing across all baselines (frameworks differ).
             guard let bands = summary.mscpBands, !bands.isEmpty else { return nil }
-            let totalWithData = bands.values.map { $0.total - $0.noData }.reduce(0, max)
-            return totalWithData > 0 ? Double(totalWithData) : nil
+            let key = selectedMSCPBaseline ?? mscpBaselineNames.first
+            let counts = key.flatMap { bands[$0] } ?? (bands.count == 1 ? bands.values.first : nil)
+            guard let counts else { return nil }
+            let withData = counts.total - counts.noData
+            return withData > 0 ? Double(withData) : nil
         }
     }
 
@@ -233,35 +340,37 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// or summary.json mscpBands. The pill for `.mscpBandTrend` is visible only
     /// when this is true.
     var hasMSCPBandHistory: Bool {
-        !cachedBandPoints.isEmpty
+        cachedBandSeries.values.contains { !$0.isEmpty }
     }
 
     /// X-axis domain for the mSCP band stacked-area chart.
     ///
     /// Prefers `chartDomain` (summary-driven) so the axis matches the rest of
-    /// the Trends screen. Falls back to a domain derived from `cachedBandPoints`
-    /// when summaries are absent (e.g. deleted or interrupted collect) but
+    /// the Trends screen. Falls back to a domain derived from the selected
+    /// baseline's band points when summaries are absent (e.g. deleted collect) but
     /// ea-results-only band data exists. Returns `nil` only when both sources
     /// are empty, in which case the band chart shows the unavailable empty-state.
     var bandChartDomain: ClosedRange<Date>? {
         if let domain = chartDomain { return domain }
-        guard let first = cachedBandPoints.first?.date,
-              let last  = cachedBandPoints.last?.date else { return nil }
+        let pts = selectedBandPoints
+        guard let first = pts.first?.date, let last = pts.last?.date else { return nil }
         return first <= last ? first...last : last...first
     }
 
-    /// Returns the primary baseline name for mSCP band trending.
+    /// The baseline name whose mSCP band trend is currently surfaced
+    /// (selected, or the first when unset).
     var primaryMSCPBaseline: String? {
-        cachedBaseline?.name
+        selectedMSCPBaseline ?? mscpBaselineNames.first
     }
 
-    /// Build mSCP stacked-area chart series for the primary baseline,
+    /// Build mSCP stacked-area chart series for the SELECTED baseline,
     /// range-filtered to match `filteredSummaries`.
     ///
     /// Returns 5 series (Pass, Low, Med-Low, Medium, High) with device counts.
     /// Used by TrendsView when metric == .mscpBandTrend.
     func mscpStackedSeries() -> [ChartSeries] {
-        guard !cachedBandPoints.isEmpty else { return [] }
+        let points = selectedBandPoints
+        guard !points.isEmpty else { return [] }
 
         // Determine the date range from filteredSummaries so the stackplot
         // respects the user-selected trend range.
@@ -270,9 +379,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
         let inRange: [MSCPChartDataBuilder.BandPoint]
         if let start = rangeStart, let end = rangeEnd {
-            inRange = cachedBandPoints.filter { $0.date >= start && $0.date <= end }
+            inRange = points.filter { $0.date >= start && $0.date <= end }
         } else {
-            inRange = cachedBandPoints
+            inRange = points
         }
 
         return MSCPChartDataBuilder.toStackedSeries(points: inRange)
@@ -280,38 +389,37 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     // MARK: - Band-point cache
 
-    /// Rebuild `cachedBandPoints` from ea-results snapshots (primary) and
-    /// summary.json mscpBands (fallback). Called once at load/reload time;
-    /// never called during view rendering.
+    /// Build per-baseline band-history from ea-results snapshots (primary) and
+    /// summary.json mscpBands (fallback). `nonisolated static` so it runs off the
+    /// main actor inside `computeSnapshot` — the ea-results directory scan is the
+    /// expensive part that froze the UI.
     ///
     /// When `profile` is nil (in-memory init path) there is no config.yaml or
-    /// dataDir to read, so `buildSeries` runs with a non-existent dir and
-    /// degrades to summaries-only. The existing tests that pass `summaries:`
-    /// with mscpBands continue to work through this path.
-    private func rebuildBandPoints(profile: String?) {
-        // 1. Resolve the baseline to use.
-        let baseline: ComplianceBaselineConfig
-        let isSingleBaseline: Bool
+    /// dataDir to read, so `buildAllSeries` runs with a non-existent dir and
+    /// degrades to summaries-only.
+    ///
+    /// - Returns: `series` keyed by baseline name, and `names` in display order
+    ///   (config order when a config exists, else sorted summary keys). `names`
+    ///   is filtered to baselines that actually produced points, so the picker
+    ///   never lists an empty series.
+    nonisolated static func computeBandPoints(
+        profile: String?, summaries: [DailySummary]
+    ) -> (series: [String: [MSCPChartDataBuilder.BandPoint]], names: [String]) {
+        // 1. Resolve the baseline list to use (config order preferred).
+        let baselines: [ComplianceBaselineConfig]
         if let profile,
            let workspaceURL = ProfileService.workspaceURL(for: profile),
-           let config = try? ConfigLoader.load(from: workspaceURL.appendingPathComponent("config.yaml")),
-           let resolved = config.compliance?.resolvedBaselines.first {
-            baseline = resolved
-            isSingleBaseline = (config.compliance?.resolvedBaselines.count ?? 0) <= 1
-        } else if let firstSummaryBaseline = firstBaselineFromSummaries() {
-            baseline = firstSummaryBaseline
-            // No config available; treat as single-baseline so the summary-only
-            // coalesce path bridges any name drift in the fallback case.
-            isSingleBaseline = true
+           let config = try? ConfigLoader.load(
+               from: workspaceURL.appendingPathComponent("config.yaml")),
+           let resolved = config.compliance?.resolvedBaselines, !resolved.isEmpty {
+            baselines = resolved
         } else {
-            cachedBandPoints = []
-            cachedBaseline = nil
-            return
+            baselines = fallbackBaselines(from: summaries)
         }
-        cachedBaseline = baseline
+        guard !baselines.isEmpty else { return ([:], []) }
 
         // 2. Resolve the data directory. Uses a non-existent temp URL when the
-        //    profile is nil or dataDir lookup fails; buildSeries degrades to
+        //    profile is nil or dataDir lookup fails; buildAllSeries degrades to
         //    summaries-only gracefully.
         let dataDir: URL
         if let profile, let dir = try? WorkspacePaths.dataDir(for: profile) {
@@ -319,28 +427,34 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         } else if let profile, let workspace = ProfileService.workspaceURL(for: profile) {
             dataDir = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
         } else {
-            // No on-disk path available; buildSeries will use summaries only.
             dataDir = URL(fileURLWithPath: "/tmp/nonexistent-\(UUID().uuidString)")
         }
 
-        cachedBandPoints = MSCPChartDataBuilder.buildSeries(
-            baseline: baseline,
-            dataDir: dataDir,
-            summaries: allSummaries,
-            singleBaselineWorkspace: isSingleBaseline
-        )
+        let series = MSCPChartDataBuilder.buildAllSeries(
+            baselines: baselines, dataDir: dataDir, summaries: summaries)
+        // Preserve config order, but only keep baselines that produced points.
+        let names = baselines.map(\.name).filter { !(series[$0]?.isEmpty ?? true) }
+        return (series, names)
     }
 
-    /// Extract a synthetic `ComplianceBaselineConfig` from the first summary
-    /// that contains mscpBands. Used as a fallback when no config.yaml is
-    /// readable (in-memory test path).
-    private func firstBaselineFromSummaries() -> ComplianceBaselineConfig? {
-        for summary in allSummaries {
-            guard let bands = summary.mscpBands,
-                  let name = bands.keys.sorted().first else { continue }
-            // failuresCountColumn is unused by buildSeries when ea-results is absent.
-            return ComplianceBaselineConfig(name: name, failuresCountColumn: name, ruleCount: nil)
+    /// Synthesize baseline configs from ALL distinct mscpBands keys across
+    /// summaries (sorted), used as a fallback when no config.yaml is readable
+    /// (pre-config workspace / in-memory test path). `failuresCountColumn` is
+    /// unused when ea-results is absent, so the key stands in for the column.
+    nonisolated static func fallbackBaselines(
+        from summaries: [DailySummary]
+    ) -> [ComplianceBaselineConfig] {
+        var seen = Set<String>()
+        var names: [String] = []
+        for summary in summaries {
+            guard let bands = summary.mscpBands else { continue }
+            for name in bands.keys where !seen.contains(name) {
+                seen.insert(name)
+                names.append(name)
+            }
         }
-        return nil
+        return names.sorted().map {
+            ComplianceBaselineConfig(name: $0, failuresCountColumn: $0, ruleCount: nil)
+        }
     }
 }
