@@ -7,6 +7,50 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- Multi-baseline mSCP compliance tracking: configure one baseline per OS (or per
+  framework — CIS, DISA STIG, NIST) under `compliance.baselines`, and each gets its
+  own compliance-band donut and Trends band series. A baseline picker appears on the
+  Trends band charts when more than one baseline is configured.
+- Data-accuracy review layer: per-EA parse health (how much of the fleet's data
+  actually parses under each configured EA type, with privacy-safe samples of what
+  doesn't), CSV-vs-snapshot device-count reconciliation and CSV freshness checks in
+  the Config Doctor, and EA coverage-drift detection that flags an extension
+  attribute whose fleet coverage suddenly drops between collects.
+- mSCP failure counts are now validity-bounded: set `rule_count` on a baseline and
+  counts above it (a broken EA script) are treated as No Data instead of banding the
+  device High. An optional per-baseline `failures_list_column` enables a
+  count-vs-list cross-check that reports devices whose two compliance EAs disagree.
+
+### Changed
+
+- The Extension Attributes screen no longer grades EAs by "coverage %". Extension
+  attributes carry custom, often legitimately sparse data — a serial-number EA
+  populating 11 devices means 11 Macs run that app, not a broken EA. The list now
+  shows neutral devices-reporting counts (sortable by devices or name), and the
+  coverage-percentage tiles and red judgment bars are gone. Sharp *drops* in an
+  EA's own reporting base (a broken EA script) are still flagged by the
+  coverage-drift check.
+
+### Fixed
+
+- The Extension Attributes screen showed "0 devices" against jamf-cli data: device
+  counting only recognized the legacy `computer_id` field, not the `device` field
+  current snapshots carry. It now uses the same identity fallback chain as the
+  mSCP compliance join.
+- Historical mSCP band trends no longer render as a garbled single-color mass. Three
+  fixes: truncated `ea-results` snapshots (cut off mid-write by a since-fixed
+  collector bug) are now salvaged instead of discarded — recovering weeks of band
+  history; days where a baseline has only No-Data are skipped instead of charting as
+  zero; and the stacked band charts use a corrected rendering that stacks bands
+  properly.
+- The daily summary now uses the same robust `ea-results` decoder as the dashboards,
+  so a malformed snapshot can no longer silently freeze the compliance figure on the
+  4-control proxy value while Compliance Posture shows real mSCP data.
+- Jamf School and Jamf Protect collects now validate CLI output is JSON before
+  caching it, matching the Jamf Pro collect path.
+
 ## [2.4.0] - 2026-06-25
 
 ### Added
