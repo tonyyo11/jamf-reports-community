@@ -7,6 +7,24 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Tracked jamf-cli dependency updated to v1.22.0. No code changes required for
+  existing functionality. Notable upstream changes in v1.22.0:
+  - New `pro jamf-protect-deployment-tasks retry-failed` command for retrying
+    failed Jamf Protect deployment tasks by serial, management ID, UDID, or
+    failure status. Future integration candidate for the ProtectView "Plans"
+    card.
+  - New `-o ndjson` line-delimited JSON output format for programmatic
+    consumers. Existing `-o json` output used by the app is unchanged.
+  - 403 error responses now surface the specific required Jamf privileges in
+    the error detail — these flow through `CLIBridge.explainExit` exit-code-5
+    handling and will appear automatically in remediation messages.
+  - New `agent-context` command providing operating guidance for AI agents
+    (exit codes, conventions). Not used by the app.
+  - Determinate pagination progress for `--all` operations in interactive
+    terminals; silent/piped mode is unchanged.
+
 ## [2.4.0] - 2026-06-25
 
 ### Added
