@@ -97,7 +97,8 @@ struct EAParseHealthService {
             let trimmed = raw.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
             nonEmpty += 1
-            if let n = Int(trimmed), n >= 0, maxValid.map({ n <= $0 }) ?? true {
+            // Match the banding lens: intValue tolerates whole doubles ("2.0" → 2).
+            if let n = intCount(trimmed), n >= 0, maxValid.map({ n <= $0 }) ?? true {
                 parseable += 1
             } else {
                 unparseable.append(trimmed)
@@ -111,6 +112,15 @@ struct EAParseHealthService {
             parseable: parseable,
             topUnparseable: topSkeletons(unparseable)
         )
+    }
+
+    /// Int an `AnyCodable.intValue`-fed banding accepts for a string count:
+    /// an exact Int, else a whole non-negative Double ("2.0" → 2).
+    private static func intCount(_ trimmed: String) -> Int? {
+        if let n = Int(trimmed) { return n }
+        guard let d = Double(trimmed), d >= 0,
+              d.truncatingRemainder(dividingBy: 1) == 0 else { return nil }
+        return Int(d)
     }
 
     // MARK: - Type parsing (mirrors the engine)
@@ -252,7 +262,7 @@ struct EAParseHealthService {
         var devicesByEA: [String: Set<String>] = [:]
         for row in rows {
             guard let name = row.eaName,
-                  let id = primaryIdentifier(for: row),
+                  let id = MSCPComplianceService.primaryIdentifier(for: row),
                   !(row.value?.stringValue.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
             else { continue }
             devicesByEA[name, default: []].insert(id.lowercased())
@@ -260,13 +270,5 @@ struct EAParseHealthService {
 
         let denom = Double(universe.count)
         return devicesByEA.mapValues { Double($0.count) / denom * 100.0 }
-    }
-
-    /// Primary device identifier for a row. Mirrors `MSCPComplianceService`'s
-    /// private `primaryIdentifier` fallback order (`computerId ?? serial ?? device
-    /// ?? computerName`) so coverage joins match the compliance universe exactly.
-    private static func primaryIdentifier(for row: EAResultRow) -> String? {
-        let candidates: [String?] = [row.computerId, row.serial, row.device, row.computerName]
-        return candidates.compactMap { $0 }.first { !$0.isEmpty }
     }
 }

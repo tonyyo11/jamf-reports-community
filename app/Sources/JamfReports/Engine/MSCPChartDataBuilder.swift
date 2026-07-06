@@ -66,10 +66,12 @@ struct MSCPChartDataBuilder: Sendable {
     /// per baseline. Band counts from different baselines are never summed;
     /// each baseline keeps its own independent series.
     ///
-    /// The summary source matches each baseline by EXACT name. The single-baseline
-    /// lone-key coalesce (bridging a config-label rename) applies when
-    /// `coalesceLoneKey` is true (defaults to `baselines.count == 1`) AND a summary
-    /// carries exactly one mscpBands key — same semantics as `singleBaselineWorkspace`.
+    /// The summary source matches each baseline by EXACT name first; else, if the
+    /// summary carries `mscpBandColumns`, by stable `failuresCountColumn` identity
+    /// (multi-baseline-safe bridging of a display-name rename); else the
+    /// single-baseline lone-key coalesce, which applies when `coalesceLoneKey` is
+    /// true (defaults to `baselines.count == 1`) AND a summary carries exactly one
+    /// mscpBands key — same semantics as `singleBaselineWorkspace`.
     ///
     /// Points whose banded total (pass+low+medLow+medium+high) == 0 are SKIPPED in
     /// both sources; an all-noData result is not charted as a crater.
@@ -98,6 +100,13 @@ struct MSCPChartDataBuilder: Sendable {
                 let counts: MSCPBandCounts?
                 if let exact = bands[b.name] {
                     counts = exact
+                } else if let cols = summary.mscpBandColumns,
+                          let key = cols.first(where: { $0.value == b.failuresCountColumn })?.key,
+                          let bridged = bands[key] {
+                    // Multi-baseline-safe: the summary predates a display-name
+                    // rename, but its stable column identity still matches this
+                    // baseline's failures_count_column — heal the series across it.
+                    counts = bridged
                 } else if coalesceLoneKey, bands.count == 1, let sole = bands.values.first {
                     // Single-baseline workspace with a renamed baseline: coalesce
                     // the lone key onto the current name so a config fix doesn't

@@ -556,6 +556,9 @@ struct ReportEngine: Sendable {
         var complianceFinalPct: Double? = complianceProxyPct
         var complianceIsRealData = false
         var mscpBandsSnapshot: [String: MSCPBandCounts]? = nil
+        // Parallel to mscpBandsSnapshot: baseline name -> failures_count_column.
+        // Stable identity that lets the trend chart bridge a later baseline rename.
+        var mscpBandColumnsSnapshot: [String: String]? = nil
         // cachedData records the source automatically (live/cache/absent), so a single
         // call here covers both the recordSource and the data load. Guard on eaBaselines
         // so "absent" is not recorded for tenants that never configured an EA baseline.
@@ -571,7 +574,12 @@ struct ReportEngine: Sendable {
                 // Map all baseline results into the mscpBands summary field so the
                 // trend chart has per-date band data from the first collect onward.
                 let bandsMap = Self.mscpBandsMap(from: results)
-                if !bandsMap.isEmpty { mscpBandsSnapshot = bandsMap }
+                if !bandsMap.isEmpty {
+                    mscpBandsSnapshot = bandsMap
+                    // Only the baselines that produced bands carry a column entry.
+                    mscpBandColumnsSnapshot = Self.mscpBandColumnsMap(
+                        from: results, baselines: eaBaselines)
+                }
             } else {
                 // `.notice` (not `.debug`) so the shape surfaces without verbose logging;
                 // `reason` is keys-only (PII-safe).
@@ -639,6 +647,7 @@ struct ReportEngine: Sendable {
             actionItemsP1: gatekeeperCount.map { _ in p1 },
             complianceIsProxy: complianceIsProxy,
             mscpBands: mscpBandsSnapshot,
+            mscpBandColumns: mscpBandColumnsSnapshot,
             collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil
         )
     }
@@ -652,6 +661,27 @@ struct ReportEngine: Sendable {
         for result in results {
             guard result.totalDevices > 0 else { continue }
             out[result.name] = bandCountsFromBands(result.bands, noData: result.noDataCount)
+        }
+        return out
+    }
+
+    /// Map `MSCPComplianceService.BaselineResult` array → `[baselineName: failuresCountColumn]`,
+    /// parallel to `mscpBandsMap`. The column is the stable identity that lets
+    /// `MSCPChartDataBuilder` bridge a later baseline rename in multi-baseline orgs.
+    ///
+    /// Only baselines with at least one device (present in `mscpBandsMap`) get an
+    /// entry; the column is looked up from config (`baselines`) by name, falling
+    /// back to the result's own `failuresCountColumn`.
+    static func mscpBandColumnsMap(
+        from results: [MSCPComplianceService.BaselineResult],
+        baselines: [ComplianceBaselineConfig]
+    ) -> [String: String] {
+        let colByName = Dictionary(
+            baselines.map { ($0.name, $0.failuresCountColumn) },
+            uniquingKeysWith: { first, _ in first })
+        var out: [String: String] = [:]
+        for result in results where result.totalDevices > 0 {
+            out[result.name] = colByName[result.name] ?? result.failuresCountColumn
         }
         return out
     }

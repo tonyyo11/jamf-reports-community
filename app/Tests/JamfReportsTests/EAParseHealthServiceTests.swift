@@ -139,6 +139,18 @@ final class EAParseHealthServiceTests: XCTestCase {
         XCTAssertEqual(health.parseable, 1)
     }
 
+    func testIntCountAcceptsWholeDoublesLikeBanding() {
+        // The banding lens (intValue) tolerates whole doubles ("2.0" → 2); a
+        // fractional or negative value stays unparseable.
+        let health = Service.assessIntCount(
+            column: "mSCP Failures",
+            values: ["3", "2.0", "4.5", "-1"],
+            maxValid: nil
+        )
+        XCTAssertEqual(health.nonEmpty, 4)
+        XCTAssertEqual(health.parseable, 2, "3 and 2.0 parse; 4.5 fractional and -1 negative fail")
+    }
+
     // MARK: - skeleton PII property
 
     func testSkeletonNeverLeaksInputCharacters() {

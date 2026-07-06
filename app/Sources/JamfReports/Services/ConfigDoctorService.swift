@@ -572,7 +572,7 @@ extension ConfigDoctorService {
     private static func loadComputersCount(dataDir: URL?) -> Int? {
         guard let dataDir else { return nil }
         let dir = dataDir.appendingPathComponent("computers", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: dir),
+        guard let url = FileManager.newestSnapshotFile(in: dir),
               let data = try? Data(contentsOf: url),
               let items = try? JSONSerialization.jsonObject(with: data) as? [Any]
         else { return nil }
@@ -583,7 +583,7 @@ extension ConfigDoctorService {
     private static func loadNewestEARows(dataDir: URL?) -> [EAResultRow]? {
         guard let dataDir else { return nil }
         let dir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: dir),
+        guard let url = FileManager.newestSnapshotFile(in: dir),
               let data = try? Data(contentsOf: url) else { return nil }
         return EAResultRow.decodeSnapshot(data).rows
     }
@@ -632,7 +632,7 @@ extension ConfigDoctorService {
                 id: "accuracy.reconciliation", severity: .warn,
                 title: "Device counts disagree",
                 detail: "\(a.label) has \(a.count) devices but \(b.label) has \(b.count) "
-                    + "(over 10% apart).",
+                    + "(more than 10% apart).",
                 hint: "Re-collect, or replace the stale export, so the sources agree."
             )]
         }
@@ -692,7 +692,8 @@ extension ConfigDoctorService {
     // MARK: Check 2 — per-column parse health
 
     private static func parseHealthRows(config: ReportConfig, inputs: AccuracyInputs) -> [DoctorRow] {
-        var healths: [EAParseHealthService.ColumnHealth] = []
+        // Each health carries its assessed type (nil = int-count) for hint wording.
+        var healths: [(health: EAParseHealthService.ColumnHealth, type: CustomEAConfig.EAType?)] = []
 
         // custom_eas assessed against the CSV column.
         if let csv = inputs.csv {
@@ -700,9 +701,9 @@ extension ConfigDoctorService {
                 let column = ea.column.trimmingCharacters(in: .whitespaces)
                 guard !column.isEmpty, csv.columns.contains(column) else { continue }
                 let values = csv.rows.map { $0[column] ?? "" }
-                healths.append(EAParseHealthService.assess(
+                healths.append((EAParseHealthService.assess(
                     column: column, values: values, type: ea.type
-                ))
+                ), ea.type))
             }
         }
 
@@ -715,9 +716,9 @@ extension ConfigDoctorService {
                     .filter { $0.eaName?.caseInsensitiveCompare(column) == .orderedSame }
                     .map { $0.value?.stringValue ?? "" }
                 guard !values.isEmpty else { continue }
-                healths.append(EAParseHealthService.assessIntCount(
+                healths.append((EAParseHealthService.assessIntCount(
                     column: column, values: values, maxValid: baseline.ruleCount
-                ))
+                ), nil))
             }
         }
 
@@ -725,10 +726,10 @@ extension ConfigDoctorService {
 
         var rows: [DoctorRow] = []
         var cleanCount = 0
-        for health in healths {
-            guard let rate = health.parseRate else { continue }  // no non-empty values → skip
+        for entry in healths {
+            guard let rate = entry.health.parseRate else { continue }  // no non-empty → skip
             if rate < 0.90 {
-                rows.append(parseHealthWarnRow(health, rate: rate))
+                rows.append(parseHealthWarnRow(entry.health, type: entry.type, rate: rate))
             } else {
                 cleanCount += 1
             }
@@ -746,19 +747,29 @@ extension ConfigDoctorService {
 
     private static func parseHealthWarnRow(
         _ health: EAParseHealthService.ColumnHealth,
+        type: CustomEAConfig.EAType?,
         rate: Double
     ) -> DoctorRow {
         let pct = Int((rate * 100).rounded())
         var detail = "Only \(pct)% of '\(health.column)' values parse "
             + "(\(health.parseable) of \(health.nonEmpty))."
-        if let top = health.topUnparseable.first {
+        let topSkeleton = health.topUnparseable.first
+        if let top = topSkeleton {
             detail += " Most common unparseable shape: \(top.skeleton) (\(top.count))."
         }
+        // A percentage EA whose worst skeleton is all-digits is usually a raw-count
+        // column mis-typed by the scaffold (values >100 fail the 0–100 clamp).
+        let looksLikeCounts = type == .percentage
+            && topSkeleton?.skeleton.range(of: #"^9+$"#, options: .regularExpression) != nil
+        let hint = looksLikeCounts
+            ? "Values look like raw counts — if this EA holds counts rather than "
+                + "percentages, change its type (percentage expects 0–100)."
+            : "Check the EA type or the source column — bad values become No Data."
         return DoctorRow(
             id: "accuracy.parse_health.\(health.column)", severity: .warn,
             title: "Column parses poorly",
             detail: detail,
-            hint: "Check the EA type or the source column — bad values become No Data."
+            hint: hint
         )
     }
 

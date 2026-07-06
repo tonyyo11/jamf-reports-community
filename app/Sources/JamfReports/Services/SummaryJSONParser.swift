@@ -45,6 +45,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // Per-baseline band counts for mSCP/STIG compliance trend charts.
              // Key = baseline name; value = band distribution for that date.
              mscpBands,
+             // S4: baseline display name -> its failures_count_column (EA name).
+             // Stable identity that bridges a baseline rename in multi-baseline orgs.
+             mscpBandColumns,
              // R4: which of the digest's input kinds came from this collect
              // (live), an older snapshot (cache), or nowhere (absent).
              collectionSources
@@ -102,6 +105,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// Per-baseline mSCP band counts for trend charts.
     /// Key = baseline name (e.g. "NIST 800-53r5"). Absent in legacy summaries.
     let mscpBands: [String: MSCPBandCounts]?
+    /// Baseline display name -> its `failures_count_column` (EA name), parallel
+    /// to `mscpBands`. The stable identity used to bridge a baseline rename in
+    /// multi-baseline orgs. Absent in legacy summaries.
+    let mscpBandColumns: [String: String]?
     /// Per-input-kind provenance of this digest: kind -> "live" | "cache" |
     /// "absent". Absent in legacy summaries and generate-time rewrites.
     let collectionSources: [String: String]?
@@ -136,6 +143,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         noBaselineActive: Int? = nil,
         complianceIsProxy: Bool? = nil,
         mscpBands: [String: MSCPBandCounts]? = nil,
+        mscpBandColumns: [String: String]? = nil,
         collectionSources: [String: String]? = nil
     ) {
         self.date = date
@@ -163,6 +171,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.noBaselineActive = noBaselineActive
         self.complianceIsProxy = complianceIsProxy
         self.mscpBands = mscpBands
+        self.mscpBandColumns = mscpBandColumns
         self.collectionSources = collectionSources
     }
 
@@ -194,6 +203,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         complianceIsProxy = try container.decodeIfPresent(Bool.self, forKey: .complianceIsProxy)
         mscpBands = try container.decodeIfPresent(
             [String: MSCPBandCounts].self, forKey: .mscpBands)
+        mscpBandColumns = try container.decodeIfPresent(
+            [String: String].self, forKey: .mscpBandColumns)
         collectionSources = try container.decodeIfPresent(
             [String: String].self, forKey: .collectionSources)
     }
@@ -225,6 +236,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(noBaselineActive, forKey: .noBaselineActive)
         try container.encodeIfPresent(complianceIsProxy, forKey: .complianceIsProxy)
         try container.encodeIfPresent(mscpBands, forKey: .mscpBands)
+        try container.encodeIfPresent(mscpBandColumns, forKey: .mscpBandColumns)
         try container.encodeIfPresent(collectionSources, forKey: .collectionSources)
     }
 }

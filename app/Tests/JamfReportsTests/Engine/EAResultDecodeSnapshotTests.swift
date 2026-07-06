@@ -90,6 +90,32 @@ final class EAResultDecodeSnapshotTests: XCTestCase {
         XCTAssertTrue(d.reason.contains("salvaged"))
     }
 
+    /// Brackets and a lone `]` inside a string value must not fool the depth
+    /// scan — normal decode and truncated-salvage must both keep them intact.
+    func testBracketsInStringValueRoundTrip() {
+        let obj = #"{"device":"Mac0","ea_name":"note","value":"array-ish: [1,2,3] and ] alone"}"#
+        let full = EAResultRow.decodeSnapshot(("[" + obj + "]").data(using: .utf8)!)
+        XCTAssertEqual(full.rows?.count, 1)
+        XCTAssertEqual(full.reason, "array")
+        XCTAssertEqual(full.rows?.first?.value?.stringValue, "array-ish: [1,2,3] and ] alone")
+
+        // Same value in a completed row, then a truncated trailing row.
+        let truncated = "[" + obj + #",{"device":"Mac1","ea_name":"n","value":"part"#
+        let salv = EAResultRow.decodeSnapshot(truncated.data(using: .utf8)!)
+        XCTAssertEqual(salv.rows?.count, 1)
+        XCTAssertEqual(salv.rows?.first?.value?.stringValue, "array-ish: [1,2,3] and ] alone")
+        XCTAssertTrue(EAResultRow.isSalvageReason(salv.reason))
+    }
+
+    func testIsSalvageReason() {
+        let salvaged = EAResultRow.decodeSnapshot(
+            (validArrayJSON(count: 5).dropLast() + #",{"dev"#).data(using: .utf8)!
+        )
+        XCTAssertTrue(EAResultRow.isSalvageReason(salvaged.reason))
+        XCTAssertFalse(EAResultRow.isSalvageReason("array"))
+        XCTAssertFalse(EAResultRow.isSalvageReason("envelope"))
+    }
+
     /// A truncated OBJECT payload (leading `{`) is not an array — no salvage;
     /// falls through to the PII-safe structural summary.
     func testTruncatedObjectPayloadNotSalvaged() {

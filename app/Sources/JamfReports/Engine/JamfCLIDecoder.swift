@@ -389,8 +389,17 @@ extension EAResultRow {
         var slice = data.subdata(in: data.startIndex ..< (data.startIndex + lastEnd + 1))
         slice.append(UInt8(ascii: "]"))
         guard let rows = try? JSONDecoder().decode([EAResultRow].self, from: slice) else { return nil }
+        // Announce at the source: consumers only log `reason` on failure, so a
+        // salvaged partial day would otherwise read as a complete one.
+        AppLogger.platform.notice(
+            "EAResultRow.decodeSnapshot: salvaged \(rows.count, privacy: .public) rows from truncated array (\(data.count, privacy: .public) bytes) — partial snapshot, counts may understate the fleet"
+        )
         return (rows, "salvaged \(rows.count) rows from truncated array (\(data.count) bytes)")
     }
+
+    /// True when a `decodeSnapshot` reason denotes a salvaged partial snapshot —
+    /// the seam consumers use to flag understated counts without string-matching.
+    static func isSalvageReason(_ reason: String) -> Bool { reason.hasPrefix("salvaged") }
 
     /// First non-whitespace byte, or nil if the payload is empty/all-whitespace.
     private static func firstNonWhitespaceByte(_ data: Data) -> UInt8? {

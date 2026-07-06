@@ -470,6 +470,58 @@ final class ConfigDoctorServiceTests: XCTestCase {
         XCTAssertFalse(warn?.detail.contains("ERR") ?? true)
     }
 
+    func testPercentageEAWithRawCountsGetsCountsHint() throws {
+        let yaml = """
+        custom_eas:
+          - name: "Failures"
+            column: "STIG Failures"
+            type: percentage
+        """
+        let config = try makeConfig(yaml)
+        // A raw-count column mis-typed percentage: >100 all-digit values fail the
+        // 0–100 clamp, so the worst skeleton is all-9s → the counts hint fires.
+        let good = ["10", "20"]
+        let counts = ["420", "381", "512", "277", "633", "199", "808", "144"]
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: ["STIG Failures"],
+            rows: (good + counts).map { ["STIG Failures": $0] },
+            ageDays: 0, fileName: "x.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: nil, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let warn = row(rows, id: "accuracy.parse_health.STIG Failures")
+        XCTAssertEqual(warn?.severity, .warn)
+        XCTAssertTrue(warn?.hint?.contains("raw counts") ?? false)
+        XCTAssertTrue(warn?.hint?.contains("0–100") ?? false)
+    }
+
+    func testParseHealthGenericHintWhenNotPercentageCounts() throws {
+        let yaml = """
+        custom_eas:
+          - name: "OSVer"
+            column: "OS Version"
+            type: version
+        """
+        let config = try makeConfig(yaml)
+        let good = ["15.4", "14.7"]
+        let bad = Array(repeating: "n/a", count: 8)
+        let csv = ConfigDoctorService.AccuracyCSV(
+            columns: ["OS Version"],
+            rows: (good + bad).map { ["OS Version": $0] },
+            ageDays: 0, fileName: "x.csv"
+        )
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: csv, computersCount: nil, eaRows: nil, coverageDrift: nil
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let warn = row(rows, id: "accuracy.parse_health.OS Version")
+        XCTAssertEqual(warn?.severity, .warn)
+        XCTAssertTrue(warn?.hint?.contains("Check the EA type") ?? false)
+        XCTAssertFalse(warn?.hint?.contains("raw counts") ?? true)
+    }
+
     func testParseHealthAggregatesCleanColumnsIntoOneOK() throws {
         let yaml = """
         custom_eas:

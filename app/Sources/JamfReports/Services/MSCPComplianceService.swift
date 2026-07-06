@@ -80,7 +80,7 @@ struct MSCPComplianceService: Sendable {
               let dataDir = try? WorkspacePaths.dataDir(for: profile)
         else { return [] }
         let resultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: resultsDir) else { return [] }
+        guard let url = FileManager.newestSnapshotFile(in: resultsDir) else { return [] }
 
         guard let data = try? Data(contentsOf: url) else {
             AppLogger.platform.warning(
