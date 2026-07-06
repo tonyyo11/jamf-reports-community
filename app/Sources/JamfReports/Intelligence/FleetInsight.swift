@@ -32,10 +32,6 @@ struct FleetInsightInput: Sendable {
     var current: DailySummary
     var previous: DailySummary?
 
-    static func build(current: DailySummary, previous: DailySummary?) -> FleetInsightInput {
-        FleetInsightInput(current: current, previous: previous)
-    }
-
     /// Plain-language prompt context: current fleet facts plus deltas vs. the
     /// prior period. Absent metrics are omitted (never rendered as a misleading
     /// 0%), matching how the trend surfaces treat nil.

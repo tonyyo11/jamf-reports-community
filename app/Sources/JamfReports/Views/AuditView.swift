@@ -536,36 +536,46 @@ struct AuditView: View {
     /// JSON could not be verified against its sibling `manifest.json`. Renders
     /// nothing when the workspace is clean — additive, no layout cost.
     ///
-    /// Card copy distinguishes legacy snapshots (`.absent` / `.omitted` —
-    /// expected for snapshots collected before PR-7 introduced manifests;
-    /// fix is "re-run Collect") from security-sensitive failures
-    /// (`.mismatch` / `.corrupt` — possible tampering or bit-rot; fix
-    /// requires investigation). Prevents first-launch support questions
-    /// from users seeing "Unverified" on legitimately-old workspaces.
+    /// The manifest *writer* doesn't exist yet (planned 2.6) — nothing
+    /// currently writes a `manifest.json` for a collected snapshot, so every
+    /// snapshot verifies `.absent` today and would otherwise show a
+    /// permanent warning card. A warning that can never clear trains the
+    /// operator to ignore it, which would mask a real `.mismatch`/`.corrupt`
+    /// finding. So an absent-only (or absent+omitted) result renders as a
+    /// single neutral status line, not a warning card. `.mismatch`/`.corrupt`
+    /// (possible tampering or bit-rot) still render the full warning/danger
+    /// card with the shield icon and count pill.
     @ViewBuilder
     private var integrityCard: some View {
         if let summary = integritySummary, summary.unverified > 0 {
-            Card(padding: 14) {
-                HStack(spacing: 12) {
-                    Image(systemName: integrityIcon(summary))
-                        .font(.title3)
-                        .foregroundStyle(integrityTint(summary))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(integrityTitle(summary))
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(Theme.Colors.fg)
-                        Text(integrityDetail(summary))
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+            if hasSecuritySensitiveFailure(summary) {
+                Card(padding: 14) {
+                    HStack(spacing: 12) {
+                        Image(systemName: integrityIcon(summary))
+                            .font(.title3)
+                            .foregroundStyle(integrityTint(summary))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(integrityTitle(summary))
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Text(integrityDetail(summary))
+                                .font(.caption)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                        Spacer()
+                        Pill(text: "\(summary.unverified)", tone: integrityTone(summary),
+                             icon: "shield.lefthalf.filled")
                     }
-                    Spacer()
-                    Pill(text: "\(summary.unverified)", tone: integrityTone(summary),
-                         icon: "shield.lefthalf.filled")
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(integrityTitle(summary)): \(summary.unverified) snapshot directories")
+                .accessibilityHint(integrityHint(summary))
+            } else {
+                Text("Snapshot integrity manifests are not yet written for collected " +
+                     "snapshots — integrity verification will activate in a future release.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(integrityTitle(summary)): \(summary.unverified) snapshot directories")
-            .accessibilityHint(integrityHint(summary))
         }
     }
 

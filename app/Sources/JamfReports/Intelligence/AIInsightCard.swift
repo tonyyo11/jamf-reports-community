@@ -5,8 +5,6 @@ import SwiftUI
 /// resolves to `.requiresMacOS27` and shows the same messaging a disabled/
 /// unavailable model would, all through the `ModelAvailability`/
 /// `FleetInsightGenerator` seam. Never imports FoundationModels directly.
-///
-/// DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
 struct AIInsightCard: View {
     let profile: String
     let current: DailySummary?
@@ -38,6 +36,10 @@ struct AIInsightCard: View {
             availability = ModelAvailability.current(for: config)
             insight = nil
             errorMessage = nil
+            // A superseded generate() Task from the prior profile guards its own
+            // writes against `profile`, but it never clears the spinner it set —
+            // do that here so a new profile never inherits a stuck "Generating…".
+            isGenerating = false
             // Hold the generator so its prewarmed session survives to the first
             // request; prepare() is a no-op for the stub.
             let prepared = makeInsightGenerator(config: config, availability: availability)
@@ -145,21 +147,30 @@ struct AIInsightCard: View {
         let generatorConfig = config
         let generatorAvailability = availability
         let heldGenerator = generator
-        let input = FleetInsightInput.build(current: current, previous: previous)
+        let input = FleetInsightInput(current: current, previous: previous)
+        // The profile at click time: if the sidebar switches profiles mid-stream,
+        // this Task's view identity survives (only its data props change), so
+        // every state write below must be re-checked against the CURRENT
+        // profile — otherwise a stale stream renders the old tenant's insight
+        // under the new tenant's header.
+        let requestProfile = profile
         Task { @MainActor in
             // Prefer the held (prewarmed) generator; fall back for the first
             // click racing the .task that creates it.
             let generator = heldGenerator
                 ?? makeInsightGenerator(config: generatorConfig, availability: generatorAvailability)
-            defer { isGenerating = false }
             do {
                 for try await partial in generator.generateStream(input) {
+                    guard self.profile == requestProfile else { return }
                     insight = partial
                 }
+                if self.profile == requestProfile { isGenerating = false }
             } catch let error as FleetInsightError {
+                guard self.profile == requestProfile else { return }
                 // Drop any mid-stream partial: it would mask the error branch
                 // and an interrupted insight isn't trustworthy anyway.
                 insight = nil
+                isGenerating = false
                 switch error {
                 case .unavailable(let reason):
                     errorMessage = reason.message
@@ -167,7 +178,9 @@ struct AIInsightCard: View {
                     errorMessage = message
                 }
             } catch {
+                guard self.profile == requestProfile else { return }
                 insight = nil
+                isGenerating = false
                 AppLogger.platform.error("AIInsightCard generate failed: \(error.localizedDescription, privacy: .private)")
                 errorMessage = "Insight generation failed."
             }

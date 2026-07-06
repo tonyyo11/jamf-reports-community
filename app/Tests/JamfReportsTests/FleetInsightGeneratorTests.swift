@@ -19,7 +19,7 @@ final class FleetInsightGeneratorTests: XCTestCase {
 
     func testStubReturnsDeterministicPlaceholder() async throws {
         let result = try await StubInsightGenerator().generate(
-            .build(current: summary(), previous: nil)
+            FleetInsightInput(current: summary(), previous: nil)
         )
         XCTAssertTrue(result.bullets.isEmpty)
         XCTAssertFalse(result.headline.isEmpty)
@@ -27,7 +27,7 @@ final class FleetInsightGeneratorTests: XCTestCase {
 
     func testStubSurfacesAvailabilityMessage() async throws {
         let result = try await StubInsightGenerator(availability: .disabledByConfig).generate(
-            .build(current: summary(), previous: nil)
+            FleetInsightInput(current: summary(), previous: nil)
         )
         XCTAssertEqual(result.headline, ModelAvailability.disabledByConfig.message)
     }

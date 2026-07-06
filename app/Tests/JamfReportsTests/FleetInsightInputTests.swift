@@ -26,20 +26,20 @@ final class FleetInsightInputTests: XCTestCase {
     func testBuildCarriesCurrentAndPrevious() {
         let current = summary(date: "2026-06-06")
         let previous = summary(date: "2026-06-05")
-        let input = FleetInsightInput.build(current: current, previous: previous)
+        let input = FleetInsightInput(current: current, previous: previous)
         XCTAssertEqual(input.current.date, "2026-06-06")
         XCTAssertEqual(input.previous?.date, "2026-06-05")
     }
 
     func testBuildAllowsNilPrevious() {
-        let input = FleetInsightInput.build(current: summary(date: "2026-06-06"), previous: nil)
+        let input = FleetInsightInput(current: summary(date: "2026-06-06"), previous: nil)
         XCTAssertNil(input.previous)
     }
 
     // MARK: - Prompt context
 
     func testContextIncludesPresentMetricsOnly() {
-        let input = FleetInsightInput.build(
+        let input = FleetInsightInput(
             current: summary(date: "2026-06-06", fileVault: 98.0, patch: nil),
             previous: nil
         )
@@ -50,7 +50,7 @@ final class FleetInsightInputTests: XCTestCase {
     }
 
     func testContextRendersDeltasVsPrior() {
-        let input = FleetInsightInput.build(
+        let input = FleetInsightInput(
             current: summary(date: "2026-06-06", fileVault: 98.0, stale: 12),
             previous: summary(date: "2026-06-05", fileVault: 95.0, stale: 20)
         )
@@ -60,7 +60,7 @@ final class FleetInsightInputTests: XCTestCase {
     }
 
     func testContextFlagsProxyCompliance() {
-        let input = FleetInsightInput.build(
+        let input = FleetInsightInput(
             current: summary(date: "2026-06-06", compliance: 88.0, complianceProxy: true),
             previous: nil
         )
@@ -68,7 +68,7 @@ final class FleetInsightInputTests: XCTestCase {
     }
 
     func testContextNotesMissingPriorPeriod() {
-        let input = FleetInsightInput.build(current: summary(date: "2026-06-06"), previous: nil)
+        let input = FleetInsightInput(current: summary(date: "2026-06-06"), previous: nil)
         XCTAssertTrue(input.promptContext().contains("deltas omitted"))
     }
 
@@ -93,7 +93,7 @@ final class FleetInsightInputTests: XCTestCase {
     }
 
     func testContextRespectsSmallBudget() {
-        let input = FleetInsightInput.build(
+        let input = FleetInsightInput(
             current: summary(date: "2026-06-06", fileVault: 98, patch: 90, security: 95),
             previous: nil
         )

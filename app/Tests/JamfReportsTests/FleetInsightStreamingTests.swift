@@ -16,7 +16,7 @@ final class FleetInsightStreamingTests: XCTestCase {
     }
 
     private func input() -> FleetInsightInput {
-        .build(current: summary(), previous: nil)
+        FleetInsightInput(current: summary(), previous: nil)
     }
 
     // MARK: - Test doubles
