@@ -25,6 +25,9 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Recovered (truncated) `ea-results` snapshots now announce themselves in the log
+  ("salvaged N rows"), so a partially recovered day is never silently mistaken for
+  a complete one in compliance-band history.
 - Tracked jamf-cli dependency updated to v1.22.0. No code changes required for
   existing functionality. Notable upstream changes in v1.22.0:
   - New `pro jamf-protect-deployment-tasks retry-failed` command for retrying
@@ -48,6 +51,14 @@ versions in this repository map to git tags.
   coverage-percentage tiles and red judgment bars are gone. Sharp *drops* in an
   EA's own reporting base (a broken EA script) are still flagged by the
   coverage-drift check.
+- The Health Audit no longer shows a standing "unverified snapshots" warning card
+  for the not-yet-shipped snapshot manifest feature — no manifests are written
+  yet, so every snapshot registered as unverified and the warning could never
+  clear. It now shows a neutral note instead, and only warns when a manifest
+  actually mismatches or a snapshot is corrupt.
+- Config Doctor parse-health warnings for a percentage-typed EA whose values are
+  mostly raw counts now name the likely cause (the EA is probably mistyped)
+  instead of a generic "check the EA type or source column" hint.
 
 ### Fixed
 
@@ -66,6 +77,35 @@ versions in this repository map to git tags.
   4-control proxy value while Compliance Posture shows real mSCP data.
 - Jamf School and Jamf Protect collects now validate CLI output is JSON before
   caching it, matching the Jamf Pro collect path.
+- Scheduled tier-scoped collects (for example, the weekly scan tier) were being
+  skipped whenever the day's freshness collect had already run and written a
+  summary. The skip-if-already-collected-today guard now only applies to a full
+  collect, so a tier-scoped collect always runs on its own schedule.
+- The in-app log viewer showed "Couldn't read the log store" in signed builds. It
+  now reads an in-app log buffer fed by live collect activity instead of the macOS
+  log store, which fails with a generic error in signed, hardened-runtime builds.
+- The AI Fleet Insight card could briefly show the previous profile's insight after
+  switching profiles mid-generation. Insight updates are now discarded if the
+  profile changes before generation finishes.
+- The Config Doctor's data-accuracy checks could compare different snapshot days
+  than the coverage-drift check on cloud-synced workspaces, and could pick up
+  `manifest.json` as if it were a data snapshot. All of the accuracy checks now
+  pick the newest snapshot the same way (by the date in its filename, excluding
+  the manifest), so they always compare the same day.
+- Compliance failure-count columns encoded as decimal numbers (for example,
+  "2.0") no longer trigger a false "parses poorly" warning in the Config Doctor.
+- Multi-baseline compliance trend history now survives renaming a baseline's
+  display name — band history is additionally matched by the baseline's stable
+  EA column, not just its display name.
+
+### Removed
+
+- Config keys that were never read by the app have been removed from
+  `config.example.yaml`: the `inventory_csv`, `report_families`, `school`, and
+  `sofa` sections, `jamf_cli`'s multi-profile and timeout keys,
+  `experimental.protect_features_enabled`, and `platform.audit_platform`.
+  (`school_columns` stays for now — the `school-scaffold` command still writes
+  it; wiring a reader or retiring it together is a tracked follow-up.)
 
 ## [2.4.0] - 2026-06-25
 
