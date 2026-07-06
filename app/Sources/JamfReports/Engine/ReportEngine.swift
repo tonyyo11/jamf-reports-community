@@ -1290,7 +1290,15 @@ struct ReportEngine: Sendable {
         // Mirrors the emitSummaryJSON first-run-of-day check (required keys: date,
         // totalDevices, source). Ad-hoc Refresh paths pass force: true so they are
         // never gated by a prior scheduled collect.
-        if !force, let summariesDir = try? workspacePaths.summariesDir(for: profile) {
+        //
+        // Only a FULL collect (all tiers) is gated here. A tier-scoped collect (e.g.
+        // the weekly managed-scan run, tiers [.scan]) must fall through to the
+        // per-kind cadence check below, or its tier — skipped by the daily freshness
+        // run that already wrote today's summary — would never be collected. The
+        // per-kind cadence check already prevents redundant work, so dropping the
+        // coarse day-guard for tier subsets is safe.
+        let isFullCollect = tiers == Set(CollectionTier.allCases)
+        if !force, isFullCollect, let summariesDir = try? workspacePaths.summariesDir(for: profile) {
             let today = SummaryJSONParser.dateFormatter.string(from: Date())
             let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
             if FileManager.default.fileExists(atPath: summaryFile.path),
