@@ -7,8 +7,18 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-06
+
 ### Added
 
+- On-device AI fleet insights (macOS 27+, opt-in): a new `ai:` config block turns
+  the daily fleet digest into a plain-language insight card on Overview, adds an
+  "Explain this run" action for failed scheduled runs (analyzed on-device only,
+  after full log redaction), and can prepend an AI executive-summary paragraph to
+  GUI-generated reports. Off by default and completely inert below macOS 27.
+  Model choice is Apple's on-device Foundation Model or Private Cloud Compute;
+  `lock_on_device: true` refuses any non-on-device model for high-security
+  environments. Settings gains an "AI Insights" panel.
 - Multi-baseline mSCP compliance tracking: configure one baseline per OS (or per
   framework — CIS, DISA STIG, NIST) under `compliance.baselines`, and each gets its
   own compliance-band donut and Trends band series. A baseline picker appears on the
