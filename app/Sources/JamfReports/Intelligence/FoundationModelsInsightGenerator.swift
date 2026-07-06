@@ -108,7 +108,13 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
         let kind = GeneratorKind.select(config: config)
         // Audit trail: successes were previously silent, so a tier flipped by an
         // out-of-band config edit would generate via PCC with no log evidence.
-        AppLogger.platform.notice("Fleet insight requested via \(String(describing: kind), privacy: .public)")
+        // Logging the configured tier and lock flag alongside the resolved kind
+        // lets an auditor tell "user chose on-device" from "lock overrode pcc".
+        AppLogger.platform.notice("""
+            Fleet insight requested via \(String(describing: kind), privacy: .public) \
+            (tier=\(self.config.resolvedTier.rawValue, privacy: .public), \
+            locked=\(self.config.isLockedOnDevice, privacy: .public))
+            """)
 
         do {
             switch kind {
@@ -214,7 +220,11 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
         // Mirrors `generate` exactly: kind selection, tier audit log, PCC
         // entitlement refusal, availability guards.
         let kind = GeneratorKind.select(config: config)
-        AppLogger.platform.notice("Fleet insight stream requested via \(String(describing: kind), privacy: .public)")
+        AppLogger.platform.notice("""
+            Fleet insight stream requested via \(String(describing: kind), privacy: .public) \
+            (tier=\(self.config.resolvedTier.rawValue, privacy: .public), \
+            locked=\(self.config.isLockedOnDevice, privacy: .public))
+            """)
 
         switch kind {
         case .onDevice:
@@ -351,45 +361,6 @@ extension FleetIntelligence {
                 )
             }
         )
-    }
-}
-
-// MARK: - Availability mapping into the ungated enum
-
-@available(macOS 27, *)
-extension ModelAvailability {
-    /// Map `SystemLanguageModel.Availability` into the portable enum.
-    static func map(_ availability: SystemLanguageModel.Availability) -> ModelAvailability {
-        switch availability {
-        case .available:
-            return .available
-        case .unavailable(let reason):
-            switch reason {
-            case .deviceNotEligible: return .deviceNotEligible
-            case .appleIntelligenceNotEnabled: return .appleIntelligenceNotEnabled
-            case .modelNotReady: return .modelNotReady
-            @unknown default: return .unknown("\(reason)")
-            }
-        @unknown default:
-            return .unknown("\(availability)")
-        }
-    }
-
-    /// Map `PrivateCloudComputeLanguageModel.Availability` (two unavailable
-    /// reasons: `.deviceNotEligible` and `.systemNotReady`).
-    static func mapPCC(_ availability: PrivateCloudComputeLanguageModel.Availability) -> ModelAvailability {
-        switch availability {
-        case .available:
-            return .available
-        case .unavailable(let reason):
-            switch reason {
-            case .deviceNotEligible: return .deviceNotEligible
-            case .systemNotReady: return .pccSystemNotReady
-            @unknown default: return .unknown("\(reason)")
-            }
-        @unknown default:
-            return .unknown("\(availability)")
-        }
     }
 }
 

@@ -152,26 +152,6 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         currentProfile = nil
     }
 
-    /// Synchronous load, preserved for any non-view caller. Views use the async
-    /// off-main path (`computeSnapshot` + `apply`) so the disk scan never blocks
-    /// the main thread. A profile change re-reads; same profile just re-filters.
-    func load(profile: String, range: TrendRange) {
-        if profile != currentProfile {
-            apply(Self.computeSnapshot(profile: profile), profile: profile, range: range,
-                  generation: beginLoading())
-        } else {
-            setRange(range)
-        }
-    }
-
-    /// Synchronous re-scan of the on-disk summaries for the active profile.
-    /// Views prefer the off-main path; kept for parity with existing callers.
-    func reload() {
-        guard let profile = currentProfile else { return }
-        apply(Self.computeSnapshot(profile: profile), profile: profile, range: currentRange,
-              generation: beginLoading())
-    }
-
     /// Freshness signal for `StaleDataBanner` consumers. `.neverFetchedLive`
     /// when no jamf-cli-sourced summary file exists; `.fresh` when the newest
     /// summary mtime is within the 36-hour window (daily-schedule cadence

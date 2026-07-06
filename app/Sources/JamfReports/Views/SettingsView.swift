@@ -759,8 +759,6 @@ struct SettingsView: View {
     /// (`ai:` block) via `AIConfigWriter`, scoped to just that key — the same
     /// pattern as `DebugLoggingService`'s own plist, not the Config-tab's
     /// managed-key round-trip.
-    ///
-    /// DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
     private var aiInsightsCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {

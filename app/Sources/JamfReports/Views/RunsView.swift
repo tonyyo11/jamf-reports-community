@@ -255,7 +255,6 @@ struct RunsView: View {
             && aiConfig.isUsable && aiAvailability.isReady
     }
 
-    /// DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
     @ViewBuilder
     private var explainSection: some View {
         VStack(alignment: .leading, spacing: 8) {

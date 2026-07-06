@@ -84,37 +84,47 @@ extension ModelAvailability {
             // is a fatalError — probe the entitlement BEFORE creating the model.
             guard PCCEntitlement.isPresent else { return .pccEntitlementMissing }
             let pcc = PrivateCloudComputeLanguageModel()
-            switch pcc.availability {
-            case .available:
-                return .available
-            case .unavailable(let reason):
-                switch reason {
-                case .deviceNotEligible: return .deviceNotEligible
-                case .systemNotReady: return .pccSystemNotReady
-                @unknown default: return .unknown("\(reason)")
-                }
-            @unknown default:
-                return .unknown("\(pcc.availability)")
-            }
+            return mapPCC(pcc.availability)
 
         case .onDevice, .external:
             // Locked configs resolve to `.onDevice` here, so the PCC type is
             // never constructed under a lock. `.external` (not UI-selectable and
             // stubbed by the factory) harmlessly reports on-device readiness.
-            let model = SystemLanguageModel.default
-            switch model.availability {
-            case .available:
-                return .available
-            case .unavailable(let reason):
-                switch reason {
-                case .deviceNotEligible: return .deviceNotEligible
-                case .appleIntelligenceNotEnabled: return .appleIntelligenceNotEnabled
-                case .modelNotReady: return .modelNotReady
-                @unknown default: return .unknown("\(reason)")
-                }
-            @unknown default:
-                return .unknown("\(model.availability)")
+            return map(SystemLanguageModel.default.availability)
+        }
+    }
+
+    /// Map `SystemLanguageModel.Availability` into the portable enum.
+    static func map(_ availability: SystemLanguageModel.Availability) -> ModelAvailability {
+        switch availability {
+        case .available:
+            return .available
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible: return .deviceNotEligible
+            case .appleIntelligenceNotEnabled: return .appleIntelligenceNotEnabled
+            case .modelNotReady: return .modelNotReady
+            @unknown default: return .unknown("\(reason)")
             }
+        @unknown default:
+            return .unknown("\(availability)")
+        }
+    }
+
+    /// Map `PrivateCloudComputeLanguageModel.Availability` (two unavailable
+    /// reasons: `.deviceNotEligible` and `.systemNotReady`).
+    static func mapPCC(_ availability: PrivateCloudComputeLanguageModel.Availability) -> ModelAvailability {
+        switch availability {
+        case .available:
+            return .available
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible: return .deviceNotEligible
+            case .systemNotReady: return .pccSystemNotReady
+            @unknown default: return .unknown("\(reason)")
+            }
+        @unknown default:
+            return .unknown("\(availability)")
         }
     }
 }

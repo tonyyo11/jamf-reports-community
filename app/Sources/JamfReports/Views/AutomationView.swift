@@ -70,8 +70,7 @@ struct AutomationTab: View {
     }
 }
 
-/// v2.2.0 Phase 5 — the "set policy, not cron jobs" Automation screen (DRAFT,
-/// owes visual sign-off at `PageScaffold.minSupportedWidth`).
+/// v2.2.0 Phase 5 — the "set policy, not cron jobs" Automation screen.
 ///
 /// Edits the single app-level `AutomationPolicy` (@AppStorage). When "Manage
 /// automation" is on, `ManagedAutomation.reconcile` (run at launch) installs the
@@ -334,7 +333,7 @@ struct AutomationView: View {
         }
     }
 
-    // MARK: - Consolidation (DRAFT — needs visual sign-off at minSupportedWidth)
+    // MARK: - Consolidation
 
     private var consolidationCard: some View {
         Card {

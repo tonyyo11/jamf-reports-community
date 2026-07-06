@@ -201,8 +201,11 @@ struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
 
     func narrative(_ input: ReportNarrativeInput) async throws -> String {
         let kind = GeneratorKind.select(config: config)
-        AppLogger.platform.notice(
-            "Report narrative requested via \(String(describing: kind), privacy: .public)")
+        AppLogger.platform.notice("""
+            Report narrative requested via \(String(describing: kind), privacy: .public) \
+            (tier=\(config.resolvedTier.rawValue, privacy: .public), \
+            locked=\(config.isLockedOnDevice, privacy: .public))
+            """)
 
         do {
             switch kind {

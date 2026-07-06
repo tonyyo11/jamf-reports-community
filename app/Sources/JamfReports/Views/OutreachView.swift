@@ -28,7 +28,6 @@ struct OutreachView: View {
                 subtitle: subtitle,
                 lastModified: snapshot.snapshotDate
             )
-            // DRAFT — needs visual verification at PageScaffold.minSupportedWidth
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
             }
@@ -212,7 +211,6 @@ struct OutreachView: View {
                     action: copyTableCSV
                 )
 
-                // DRAFT — needs visual verification at PageScaffold.minSupportedWidth
                 PNPButton(
                     title: "Export CSV",
                     icon: "square.and.arrow.up",

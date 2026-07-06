@@ -97,8 +97,7 @@ struct OverviewView: View {
                     }
                     // v2.5 (macOS 27, opt-in): turns the same daily digest into a
                     // plain-language insight card. Renders on every OS version —
-                    // resolves to "Requires macOS 27" below that. DRAFT — needs
-                    // visual verification at PageScaffold.minSupportedWidth.
+                    // resolves to "Requires macOS 27" below that.
                     if !workspace.demoMode {
                         AIInsightCard(
                             profile: workspace.profile,

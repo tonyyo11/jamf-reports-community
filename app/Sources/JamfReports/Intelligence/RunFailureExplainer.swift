@@ -197,8 +197,11 @@ struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
 
     func explain(_ input: RunFailureInput) async throws -> RunFailureExplanation {
         let kind = GeneratorKind.select(config: config)
-        AppLogger.platform.notice(
-            "Run failure explanation requested via \(String(describing: kind), privacy: .public)")
+        AppLogger.platform.notice("""
+            Run failure explanation requested via \(String(describing: kind), privacy: .public) \
+            (tier=\(config.resolvedTier.rawValue, privacy: .public), \
+            locked=\(config.isLockedOnDevice, privacy: .public))
+            """)
 
         // The factory's locked copy makes this unreachable — refuse (never
         // construct an off-box model) if a future caller bypasses the factory.
