@@ -107,9 +107,8 @@ columns:
 # MOBILE CSV COLUMN MAPPING
 # =============================================================================
 # Used when you want workbook CSV sheets from a mobile-device export instead of
-# a computer export. This is separate from `columns` because one config can keep
-# both families defined in `report_families` without forcing one header mapping
-# to fit both schemas.
+# a computer export. This is separate from `columns` because a computer CSV and
+# a mobile CSV use different header schemas.
 #
 # The first mobile CSV release writes dedicated Mobile Device Inventory and
 # Mobile Stale Devices sheets plus custom_eas sheets. Trend charts still remain
@@ -214,20 +213,6 @@ jamf_cli:
   # specific folder so cached snapshots do not mix between tenants.
   profile: ""
 
-  # jamf-cli multi support (v1.9+)
-  # Run commands against multiple profiles. When enabled, report results
-  # are aggregated into a single JSON snapshot by jamf-cli.
-  multi:
-    # Set true to use 'jamf-cli multi' for all live data collection.
-    enabled: false
-    # Optional glob pattern to filter profiles (e.g., 'prod-*').
-    filter: ""
-    # Optional comma-separated list of profile names.
-    profiles: ""
-    # Optional path to a file containing profile names or instance URLs.
-    from_file: ""
-    # Set true to run profiles sequentially instead of in parallel.
-    sequential: false
   # Reuse the latest saved JSON snapshot when a live jamf-cli command fails.
   # This helps generate/check keep working from cached report data, but
   # inventory-csv still requires live jamf-cli auth.
@@ -235,17 +220,6 @@ jamf_cli:
   # Fetch Fleet Overview live by default. Set false if you want overview to use
   # cached JSON only for a specific tenant or troubleshooting scenario.
   allow_live_overview: true
-  # Per-call timeout for jamf-cli subprocess invocations, in seconds. Raise this
-  # for slow Jamf Pro instances or large fleets. The default of 300s is a safe
-  # ceiling for routine report calls.
-  command_timeout_seconds: 300
-  # Override timeout for `pro report ea-results --all`, which queries every EA
-  # value for every device and is consistently the slowest jamf-cli call. Bump
-  # this when inventory-csv runs hit "jamf-cli timed out" errors.
-  ea_results_timeout_seconds: 600
-  # Maximum age of a cached snapshot used on live-call fallback, in hours.
-  # 0 disables the check (any cached file is accepted).
-  max_cache_age_hours: 0    # 0 = no limit; raise an error if cached fallback is older than N hours
   # Hard-fail on snapshot integrity violations (missing manifest entry, SHA-256
   # mismatch). NOTE: currently inert — the snapshot SHA-256 manifests were
   # written only by the removed Python collector, so until a Swift
@@ -253,37 +227,6 @@ jamf_cli:
   # SnapshotManifest.swift). The Swift app still surfaces an "Unverified
   # snapshot" pill in AuditView regardless of this setting. Threat-model T-11.
   require_manifest: false
-
-
-# ---------------------------------------------------------------------------
-# SOFA OS currency feed (optional)
-# ---------------------------------------------------------------------------
-# SOFA (https://sofa.macadmins.io) publishes the latest available Apple OS
-# versions. The "OS Currency" workbook sheet and the HTML "OS Currency" card
-# join this feed against your fleet's OS-version distribution to show how
-# current each platform is. Feeds are fetched with curl (the system trust
-# store), so no extra Python packages are required.
-sofa:
-  # Set false to disable all SOFA fetches (e.g. air-gapped servers). The OS
-  # Currency sheet still renders, with a single "feed unavailable" note row.
-  enabled: true
-
-  # Where to cache the downloaded feeds. Blank defaults to
-  # <jamf_cli.data_dir>/sofa. Relative paths resolve from this config file.
-  cache_dir: ""
-
-  # Re-fetch a feed only when its cached copy is older than this many hours.
-  max_cache_age_hours: 24
-
-  # Per-feed curl timeout, in seconds.
-  timeout_seconds: 30
-
-  # Which feeds to fetch. iPadOS shares the "ios" feed.
-  platforms:
-    - macos
-    - ios
-    - tvos
-    - watchos
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +370,28 @@ retention:
   archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir)
 
 # =============================================================================
+# AI INSIGHTS (macOS 27+; opt-in; OFF by default)
+# =============================================================================
+# Turn already-collected fleet data (the daily summary) into a plain-language
+# insight card using Apple's on-device Foundation Model. OFF by default and
+# inert on any macOS below 27 — set enabled: true to opt in per profile.
+#
+# tier: "on_device" runs entirely on-device (no data leaves the Mac).
+#   "pcc" uses Apple Private Cloud Compute (still Apple-private, but off-device).
+#   "external" is RESERVED — not yet built.
+# lock_on_device: true refuses any non-on-device model even if tier says pcc —
+#   a defense-in-depth switch for high-security or regulated environments.
+ai:
+  enabled: false            # opt-in; inert on macOS < 27
+  tier: "on_device"         # on_device | pcc | external (external not yet built)
+  lock_on_device: false     # refuse any non-on-device model even if tier says otherwise
+  reasoning_level: "light"  # light | moderate | deep
+  external:                 # RESERVED — ignored until the external tier ships (P5)
+    provider: ""            # anthropic | google | openai_compatible
+    endpoint: ""            # https-only, for openai_compatible / self-hosted
+    keychain_key: ""        # name of a system-keychain item; secret never stored here
+
+# =============================================================================
 # JAMF PLATFORM API
 # =============================================================================
 # Preview workbook support for jamf-cli builds that expose Platform API report
@@ -463,14 +428,6 @@ platform:
   compliance_benchmarks:
     # - "NIST 800-53r5 Moderate"
     # - "DISA STIG"
-  # Platform-only health checks via `jamf-cli pro audit --checks platform`.
-  # Adds a "Platform Health" sheet with seven platform-specific findings
-  # (undeployed blueprints, deployment failures, stale blueprints,
-  # benchmark updates available, monitor-mode benchmarks, empty platform
-  # scope, devices with failed DDM declarations). Gated by platform.enabled
-  # plus the experimental Platform API gate.
-  audit_platform:
-    enabled: true
 
 
 # =============================================================================
@@ -492,11 +449,6 @@ experimental:
   #   jamf-cli config add-profile <name> --auth-method platform \
   #     --url <gateway-url> --tenant-id <id>
   platform_features_enabled: false
-
-  # Jamf Protect deep-dive features (per-device alert timeline, kill-chain
-  # stage breakdown). Requires a configured Jamf Protect tenant in your
-  # jamf-cli profile.
-  protect_features_enabled: false
 
 
 # =============================================================================
@@ -526,7 +478,8 @@ compliance:
   #
   # The first entry is the "primary" baseline: its Pass % surfaces in the daily
   # summary, the Compliance Benchmark trend chart, and the Stability Index.
-  # Additional entries are evaluated but do not affect the trend today.
+  # Every entry gets its own compliance-band donut and Trends band series;
+  # a baseline picker appears on the Trends band charts when more than one is set.
   #
   # failures_count_column must match the `ea_name` field in your ea-results
   # snapshot exactly (case-insensitive match at query time).
@@ -535,11 +488,21 @@ compliance:
   # failures_count_column + baseline_label above — no migration needed.
   baselines: []
   # Example multi-baseline configuration (uncomment and edit to enable):
+  # Per entry:
+  #   rule_count           - optional; total rules in the baseline. When set, a
+  #                          failure count above it is rejected as a garbage EA
+  #                          value (No Data) instead of banding the device High.
+  #   failures_list_column - optional; the pipe-delimited failed-rule-ID EA.
+  #                          Enables the count-vs-list accuracy cross-check.
   # baselines:
   #   - name: "NIST 800-53r5"
   #     failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
+  #     failures_list_column: "Compliance - Failed mSCP Result List - NIST 800-53r5 Audit"
+  #     rule_count: 315
   #   - name: "DISA STIG"
   #     failures_count_column: "Compliance - Failed mSCP Results Count - DISA STIG"
+  #     failures_list_column: "Compliance - Failed mSCP Result List - DISA STIG"
+  #     rule_count: 280
 
 
 # =============================================================================
@@ -624,62 +587,6 @@ custom_eas:
   - name: "Patch Agent Status"
     column: "Patch Management - Agent Status"
     type: text
-
-
-# =============================================================================
-# REPORT FAMILIES
-# =============================================================================
-# Optional manifest for tenants that keep many emailed/exported Jamf CSVs.
-# Use this when you want one workspace to preserve multiple raw report streams
-# while still making it explicit which family drives the main workbook.
-#
-# Current behavior:
-# - report_families.computers drives generate/check when --csv is omitted
-# - if no computers family matches, report_families.mobile is the fallback
-# - collect archives the newest matching CSV for every enabled family into that
-#   family's historical_dir
-# - mobile can drive dedicated mobile CSV workbook sheets when mobile_columns is
-#   configured
-# - compliance remains an archival/discovery path today
-
-report_families:
-
-  computers:
-    enabled: false
-    # Folder where the current/raw computer-family exports land.
-    current_dir: "Jamf Reports/Pro"
-    # Historical store just for this family.
-    historical_dir: "snapshots/computers"
-    # Optional glob filters. Match on filename and path relative to current_dir.
-    include_globs:
-      - "*Computers*.csv"
-    exclude_globs:
-      - "*Portal - Applications*.csv"
-      - "*Out of date OS*.csv"
-    # Optional filename fragments used to prefer a baseline inventory export
-    # when multiple candidates match the include globs.
-    prefer_name_contains:
-      - "All Devices"
-      - "Checked in"
-
-  mobile:
-    enabled: false
-    current_dir: "Jamf Reports/Pro"
-    historical_dir: "snapshots/mobile"
-    include_globs:
-      - "*Mobile Devices*.csv"
-    exclude_globs: []
-    prefer_name_contains:
-      - "All Devices"
-
-  compliance:
-    enabled: false
-    current_dir: "Jamf Reports/Compliance"
-    historical_dir: "snapshots/compliance"
-    include_globs:
-      - "*Compliance*.csv"
-    exclude_globs: []
-    prefer_name_contains: []
 
 
 # =============================================================================
@@ -835,9 +742,7 @@ charts:
 # Setup:
 #   1. Connect a Jamf School profile from the app (onboarding, or the Sources
 #      screen). The app runs `jamf-cli school setup` and sets the fields below.
-#   2. Map school_columns to your Jamf School CSV headers by scaffolding against
-#      a CSV export from the Config screen.
-#   3. Generate a Jamf School report from the app — from a CSV export, or from a
+#   2. Generate a Jamf School report from the app — from a CSV export, or from a
 #      connected School profile after a collect.
 
 school_cli:
@@ -865,26 +770,6 @@ school_cli:
 
   # Fall back to cached snapshots when live commands fail.
   use_cached_data: true
-
-
-# ---------------------------------------------------------------------------
-# Jamf School sheet toggles (jamf-cli v1.9+)
-# ---------------------------------------------------------------------------
-# Optional sheets sourced from jamf-cli school read-only resources. Each is
-# enabled by default; set enabled: false to skip the sheet without affecting
-# the rest of the school workbook.
-
-school:
-  # DEP Devices sheet — DEP-enrolled inventory via `jamf-cli school dep-devices list`.
-  # Columns: Serial Number, Model, Color, Status, Profile Name, Device Name.
-  # Note: jamf-cli's flatten drops dateAdded / datePushed; those columns are
-  # only available via the Jamf School REST API directly.
-  dep_devices:
-    enabled: true
-  # iBeacons sheet — registered iBeacons via `jamf-cli school ibeacons list`.
-  # Columns: Name, UUID, Major, Minor, Description.
-  ibeacons:
-    enabled: true
 
 
 # ---------------------------------------------------------------------------
@@ -926,26 +811,6 @@ school_columns:
   member_of: ""
   # Available storage capacity (float, GB)
   available_capacity: ""
-
-
-# =============================================================================
-# INVENTORY CSV PERFORMANCE
-# =============================================================================
-# Controls the per-device security detail enrichment step in inventory-csv.
-# This step fetches FileVault, SIP, Firewall, Bootstrap Token, and Gatekeeper
-# status for every computer via live jamf-cli API calls. On large fleets it
-# is the primary driver of run time.
-
-inventory_csv:
-  # Concurrent jamf-cli subprocesses when fetching per-device security details.
-  # Increasing this reduces wall-clock time on large fleets. Keep below ~25 to
-  # avoid overwhelming an on-prem Jamf Pro server.
-  max_workers: 20
-
-  # Set true to skip security detail enrichment entirely. Saves several minutes
-  # on fleets of 500+ devices when FileVault/SIP/Firewall data is already
-  # available from a Jamf Pro CSV export or is not needed in the inventory CSV.
-  skip_security_enrichment: false
 
 
 # =============================================================================

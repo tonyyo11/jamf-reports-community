@@ -307,11 +307,10 @@ struct SourcesView: View {
 
     // MARK: - Capability matrix
 
-    /// Capability matrix card. DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
-    /// On-demand `jamf-cli doctor` health probe: profile resolution, credential
-    /// state, and a live HEAD reachability check of the configured server. Runs
-    /// only when the user clicks — it makes a network call, unlike the local
-    /// `pro --help` capability probe.
+    /// Connection health card. On-demand `jamf-cli doctor` health probe: profile
+    /// resolution, credential state, and a live HEAD reachability check of the
+    /// configured server. Runs only when the user clicks — it makes a network
+    /// call, unlike the local `pro --help` capability probe.
     private var doctorCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {

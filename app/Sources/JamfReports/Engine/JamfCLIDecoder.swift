@@ -351,6 +351,113 @@ struct EAResultRow: Decodable, Sendable {
     }
 }
 
+extension EAResultRow {
+    /// Decode an `ea-results` snapshot, tolerating the shapes jamf-cli has emitted
+    /// across versions: a bare `[EAResultRow]` array, or an envelope object with a
+    /// `results` / `nodes` / `data` array. On no match, `rows` is nil and `reason`
+    /// carries a PII-SAFE structural summary (top-level kind + first-element KEYS,
+    /// never values) so a new shape shows up in the log instead of silently
+    /// producing an empty/garbled compliance chart.
+    static func decodeSnapshot(_ data: Data) -> (rows: [EAResultRow]?, reason: String) {
+        let decoder = JSONDecoder()
+        if let rows = try? decoder.decode([EAResultRow].self, from: data) {
+            return (rows, "array")
+        }
+        struct Envelope: Decodable {
+            let results: [EAResultRow]?
+            let nodes: [EAResultRow]?
+            let data: [EAResultRow]?
+        }
+        if let env = try? decoder.decode(Envelope.self, from: data),
+           let r = env.results ?? env.nodes ?? env.data {
+            return (r, "envelope")
+        }
+        // Bare arrays truncated mid-record at 16KB pipe boundaries (old reader bug)
+        // fail whole-array decode; salvage everything up to the last complete element.
+        if let salvaged = salvageTruncatedArray(data) {
+            return salvaged
+        }
+        return (nil, structuralSummary(data))
+    }
+
+    /// Recovers rows from a bare `[EAResultRow]` array truncated mid-element by
+    /// trimming to the end of the last complete top-level object and closing the
+    /// array. Bare-array shapes only; nil if the payload isn't an unclosed array.
+    private static func salvageTruncatedArray(_ data: Data) -> (rows: [EAResultRow]?, reason: String)? {
+        guard firstNonWhitespaceByte(data) == UInt8(ascii: "[") else { return nil }
+        guard let lastEnd = lastDepth1ObjectEnd(data) else { return nil }
+        var slice = data.subdata(in: data.startIndex ..< (data.startIndex + lastEnd + 1))
+        slice.append(UInt8(ascii: "]"))
+        guard let rows = try? JSONDecoder().decode([EAResultRow].self, from: slice) else { return nil }
+        // Announce at the source: consumers only log `reason` on failure, so a
+        // salvaged partial day would otherwise read as a complete one.
+        AppLogger.platform.notice(
+            "EAResultRow.decodeSnapshot: salvaged \(rows.count, privacy: .public) rows from truncated array (\(data.count, privacy: .public) bytes) — partial snapshot, counts may understate the fleet"
+        )
+        return (rows, "salvaged \(rows.count) rows from truncated array (\(data.count) bytes)")
+    }
+
+    /// True when a `decodeSnapshot` reason denotes a salvaged partial snapshot —
+    /// the seam consumers use to flag understated counts without string-matching.
+    static func isSalvageReason(_ reason: String) -> Bool { reason.hasPrefix("salvaged") }
+
+    /// First non-whitespace byte, or nil if the payload is empty/all-whitespace.
+    private static func firstNonWhitespaceByte(_ data: Data) -> UInt8? {
+        for b in data where b != 0x20 && b != 0x09 && b != 0x0A && b != 0x0D {
+            return b
+        }
+        return nil
+    }
+
+    /// O(n), allocation-light byte scan (string/escape aware) returning the offset
+    /// of the last `}` that closes a depth-1 top-level array element, or nil.
+    private static func lastDepth1ObjectEnd(_ data: Data) -> Int? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var lastEnd: Int?
+        data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+            for i in 0 ..< buf.count {
+                let b = buf[i]
+                if inString {
+                    if escaped { escaped = false }
+                    else if b == UInt8(ascii: "\\") { escaped = true }
+                    else if b == UInt8(ascii: "\"") { inString = false }
+                    continue
+                }
+                switch b {
+                case UInt8(ascii: "\""): inString = true
+                case UInt8(ascii: "["), UInt8(ascii: "{"): depth += 1
+                case UInt8(ascii: "]"), UInt8(ascii: "}"):
+                    depth -= 1
+                    if b == UInt8(ascii: "}") && depth == 1 { lastEnd = i }
+                default: break
+                }
+            }
+        }
+        return lastEnd
+    }
+
+    /// PII-free description of an undecodable snapshot: array vs object, and the
+    /// KEYS of the first element — never any values.
+    private static func structuralSummary(_ data: Data) -> String {
+        guard let json = try? JSONSerialization.jsonObject(with: data) else {
+            return "not-json-or-empty"
+        }
+        if let arr = json as? [Any] {
+            guard let first = arr.first else { return "empty-array" }
+            if let obj = first as? [String: Any] {
+                return "array-of-objects keys=[\(obj.keys.sorted().joined(separator: ","))]"
+            }
+            return "array-of-\(type(of: first))"
+        }
+        if let obj = json as? [String: Any] {
+            return "object keys=[\(obj.keys.sorted().joined(separator: ","))]"
+        }
+        return "\(type(of: json))"
+    }
+}
+
 // MARK: - Computer extension attributes list
 // `jamf-cli pro computer-extension-attributes list --output json`
 

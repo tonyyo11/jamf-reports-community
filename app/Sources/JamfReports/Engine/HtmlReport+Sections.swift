@@ -11,6 +11,21 @@ import Foundation
 
 extension HtmlReport {
 
+    // MARK: - 0. aiNarrative (F3 — GUI-generate only)
+
+    /// AI-generated executive narrative, rendered above the exec-summary KPI
+    /// cards. Model output is untrusted dynamic text — always escaped.
+    func buildAINarrativeSection(_ narrative: String) -> String {
+        let f = HtmlSectionFormatters.self
+        return """
+        <section class="content-section" id="ai-narrative">
+          <h2>AI Fleet Summary</h2>
+          <p>\(f.escapeHTML(narrative))</p>
+          <p style="font-size:12px;opacity:0.7">AI-generated summary — verify against the metrics below.</p>
+        </section>
+        """
+    }
+
     // MARK: - 1. execSummary
 
     /// Three-paragraph executive narrative synthesised from KPI snapshots.

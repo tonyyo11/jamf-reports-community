@@ -344,6 +344,38 @@ final class MSCPTrendTests: XCTestCase {
             "Multi-baseline workspace must not coalesce a non-matching key even when no exact match exists")
     }
 
+    // MARK: - Multi-baseline selection
+
+    /// A multi-baseline workspace exposes both baseline names, and switching the
+    /// selection changes which baseline's series `mscpStackedSeries()` returns.
+    func testSelectMSCPBaselineSwitchesSeries() {
+        // Two baselines with distinct band distributions on the same date.
+        let bands: [String: MSCPBandCounts] = [
+            "DISA STIG": MSCPBandCounts(pass: 45, low: 25, medLow: 20, medium: 8, high: 2, noData: 0),
+            "NIST 800-53r5": MSCPBandCounts(pass: 50, low: 30, medLow: 15, medium: 4, high: 1, noData: 0),
+        ]
+        let store = TrendStore(summaries: [makeSummary(date: "2026-05-01", mscpBands: bands)],
+                               range: .all)
+
+        // Both names are listed (order = sorted in the no-config fallback path).
+        XCTAssertEqual(Set(store.mscpBaselineNames), ["DISA STIG", "NIST 800-53r5"])
+        XCTAssertNotNil(store.selectedMSCPBaseline)
+
+        // Select STIG → its Pass band is 45.
+        store.selectMSCPBaseline("DISA STIG")
+        let stigPass = store.mscpStackedSeries().first { $0.label == "Pass (0)" }
+        XCTAssertEqual(stigPass?.points.first?.value, 45.0)
+
+        // Select NIST → its Pass band is 50.
+        store.selectMSCPBaseline("NIST 800-53r5")
+        let nistPass = store.mscpStackedSeries().first { $0.label == "Pass (0)" }
+        XCTAssertEqual(nistPass?.points.first?.value, 50.0)
+
+        // Unknown name is a no-op — selection unchanged.
+        store.selectMSCPBaseline("Does Not Exist")
+        XCTAssertEqual(store.selectedMSCPBaseline, "NIST 800-53r5")
+    }
+
     // MARK: - Helpers
 
     private func makeSummary(date: String, mscpBands: [String: MSCPBandCounts]?) -> DailySummary {

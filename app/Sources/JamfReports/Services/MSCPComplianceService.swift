@@ -80,7 +80,7 @@ struct MSCPComplianceService: Sendable {
               let dataDir = try? WorkspacePaths.dataDir(for: profile)
         else { return [] }
         let resultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: resultsDir) else { return [] }
+        guard let url = FileManager.newestSnapshotFile(in: resultsDir) else { return [] }
 
         guard let data = try? Data(contentsOf: url) else {
             AppLogger.platform.warning(
@@ -88,9 +88,10 @@ struct MSCPComplianceService: Sendable {
             )
             return []
         }
-        guard let rows = try? JSONDecoder().decode([EAResultRow].self, from: data) else {
-            AppLogger.platform.warning(
-                "MSCPComplianceService: failed to decode ea-results file \(url.lastPathComponent, privacy: .public)"
+        let decoded = EAResultRow.decodeSnapshot(data)
+        guard let rows = decoded.rows else {
+            AppLogger.platform.notice(
+                "MSCPComplianceService: ea-results \(url.lastPathComponent, privacy: .public) undecodable — \(decoded.reason, privacy: .public)"
             )
             return []
         }
@@ -129,10 +130,14 @@ struct MSCPComplianceService: Sendable {
                   let id = primaryIdentifier(for: row)
             else { continue }
             // intValue handles Int, Double-encoded-as-int, and String-encoded counts.
-            if let count = row.value?.intValue, count >= 0 {
+            // A count above the baseline's rule count is a garbage EA value
+            // (broken audit script) → reject as unparseable (No Data), so it
+            // never silently bands the device High.
+            if let count = row.value?.intValue,
+               isValidCount(count, ruleCount: baseline.ruleCount) {
                 failuresByDevice[id.lowercased()] = count
             }
-            // Unparseable / nil value → treated as No Data (no entry in the dict).
+            // Unparseable / nil / out-of-bounds value → No Data (no entry in the dict).
         }
 
         // Build failure array over the whole universe:
@@ -160,8 +165,102 @@ struct MSCPComplianceService: Sendable {
     /// Primary device identifier for a row. Mirrors `RiskScoringService.agentStatusLookup`
     /// fallback order so per-device joins work against both the modern shape
     /// (`device` field) and the legacy shape (`computer_id` / `serial`).
-    private static func primaryIdentifier(for row: EAResultRow) -> String? {
+    /// Internal: `ExtensionAttributeService` reuses it for its device universe.
+    static func primaryIdentifier(for row: EAResultRow) -> String? {
         let candidates: [String?] = [row.computerId, row.serial, row.device, row.computerName]
         return candidates.compactMap { $0 }.first { !$0.isEmpty }
+    }
+
+    /// A non-negative count is valid unless a positive `ruleCount` bound is set
+    /// and the count exceeds it (garbage EA value → treated as No Data).
+    private static func isValidCount(_ count: Int, ruleCount: Int?) -> Bool {
+        guard count >= 0 else { return false }
+        if let bound = ruleCount, bound > 0, count > bound { return false }
+        return true
+    }
+}
+
+// MARK: - Count-vs-list cross-check
+
+extension MSCPComplianceService {
+
+    /// Per-baseline agreement between the failure count EA and the failure list EA.
+    ///
+    /// A device disagrees when its parsed integer count differs from the number
+    /// of non-empty pipe-separated segments in its list cell. Devices lacking a
+    /// parseable count or a list row are skipped, not counted as disagreements.
+    struct CrossCheckResult: Sendable, Equatable {
+        /// The configured baseline name.
+        let baselineName: String
+        /// Devices with BOTH a parseable count and a list row.
+        let devicesCompared: Int
+        /// Count of compared devices where count != number of list entries.
+        let disagreements: Int
+        /// `disagreements ÷ devicesCompared`. `nil` when `devicesCompared == 0`.
+        var disagreementRate: Double? {
+            devicesCompared > 0 ? Double(disagreements) / Double(devicesCompared) : nil
+        }
+    }
+
+    /// Cross-check the failure count against the failure list for every baseline
+    /// that configures a non-empty `failuresListColumn`. Baselines without a list
+    /// column are omitted from the result.
+    static func crossCheck(
+        rows: [EAResultRow],
+        baselines: [ComplianceBaselineConfig]
+    ) -> [CrossCheckResult] {
+        baselines.compactMap { baseline in
+            let listCol = (baseline.failuresListColumn ?? "")
+                .trimmingCharacters(in: .whitespaces)
+            guard !listCol.isEmpty else { return nil }
+            return crossCheckBaseline(baseline, listColumn: listCol, rows: rows)
+        }
+    }
+
+    private static func crossCheckBaseline(
+        _ baseline: ComplianceBaselineConfig,
+        listColumn: String,
+        rows: [EAResultRow]
+    ) -> CrossCheckResult {
+        let countCol = baseline.failuresCountColumn.trimmingCharacters(in: .whitespaces)
+
+        var countByDevice: [String: Int] = [:]
+        var listLenByDevice: [String: Int] = [:]
+        for row in rows {
+            guard let eaName = row.eaName, let id = primaryIdentifier(for: row) else { continue }
+            let key = id.lowercased()
+            if eaName.caseInsensitiveCompare(countCol) == .orderedSame {
+                if let count = row.value?.intValue,
+                   isValidCount(count, ruleCount: baseline.ruleCount) {
+                    countByDevice[key] = count
+                }
+            } else if eaName.caseInsensitiveCompare(listColumn) == .orderedSame {
+                listLenByDevice[key] = listEntryCount(row.value?.stringValue)
+            }
+        }
+
+        var compared = 0
+        var disagreements = 0
+        for (device, count) in countByDevice {
+            guard let listLen = listLenByDevice[device] else { continue }
+            compared += 1
+            if count != listLen { disagreements += 1 }
+        }
+
+        return CrossCheckResult(
+            baselineName: baseline.name,
+            devicesCompared: compared,
+            disagreements: disagreements
+        )
+    }
+
+    /// Number of non-empty pipe-separated segments in a list cell. A blank/nil
+    /// cell has 0 entries (should agree with a count of 0).
+    private static func listEntryCount(_ cell: String?) -> Int {
+        guard let cell else { return 0 }
+        return cell
+            .split(separator: "|")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .count
     }
 }

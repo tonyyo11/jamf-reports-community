@@ -222,6 +222,10 @@ enum YAMLCodec {
             || value.contains("\n") || value.contains("\r")
             || ["true", "false", "null", "~"].contains(value.lowercased())
             || Int(value) != nil
+            // A string that LOOKS like flow/block syntax must stay quoted, or the
+            // round-trip type-flips it (e.g. "[a, b]" re-parses as a sequence and
+            // the whole config decode fails on the type mismatch).
+            || value.hasPrefix("[") || value.hasPrefix("{") || value.hasPrefix("-")
         guard needsQuote else { return value }
         // Escape in order: backslash first, then other special chars.
         // \n and \r are always escaped so a value containing a literal newline

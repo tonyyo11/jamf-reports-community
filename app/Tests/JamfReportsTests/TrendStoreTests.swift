@@ -75,6 +75,30 @@ final class TrendStoreTests: XCTestCase {
         SummaryJSONParser.dateFormatter.string(from: date)
     }
 
+    /// A same-profile reload (tab re-entry) keeps data on screen; switching to a
+    /// different profile drops the previous tenant's data so the loading overlay
+    /// shows (not the wrong tenant's numbers under the new header).
+    func testClearForProfileSwitchDropsOnlyPreviousTenant() {
+        let store = TrendStore()
+        let snap = TrendStore.TrendSnapshot(
+            summaries: [summary(date: "2026-07-01")],
+            latestSnapshotDate: nil, hasEverFetchedLive: true,
+            bandSeries: [:], baselineNames: [])
+        store.apply(snap, profile: "prod", range: .all, generation: store.beginLoading())
+        XCTAssertEqual(store.currentProfile, "prod")
+        XCTAssertFalse(store.filteredSummaries.isEmpty)
+
+        // Same profile → no-op (data retained).
+        store.clearForProfileSwitch(to: "prod")
+        XCTAssertFalse(store.filteredSummaries.isEmpty)
+        XCTAssertEqual(store.currentProfile, "prod")
+
+        // Different profile → cleared.
+        store.clearForProfileSwitch(to: "dev")
+        XCTAssertTrue(store.filteredSummaries.isEmpty)
+        XCTAssertNil(store.currentProfile)
+    }
+
     // MARK: - stabilityIndex sourcing tests
 
     /// Regression guard for the prod observation (2026-06-06) where the Overview
@@ -332,15 +356,15 @@ final class TrendStoreTests: XCTestCase {
         XCTAssertEqual(store.cacheSource, .neverFetchedLive)
     }
 
-    // MARK: - PR-18: reload() vs load(profile:range:) cache invalidation
+    // MARK: - PR-18: cache invalidation via computeSnapshot + apply
 
-    /// `load(profile:range:)` short-circuits the filesystem scan when the
-    /// profile hasn't changed (intentional optimization for range-only
-    /// re-filters). When a sibling write (Generate, Refresh) lands on the
-    /// same profile, callers must use `reload()` to pick up the new
-    /// `summary_*.json` mtime — otherwise `cacheSource` stays stuck on
-    /// the previous run's mtime and `StaleDataBanner` keeps showing the
-    /// old "last fetched" timestamp.
+    /// Every `apply(computeSnapshot(...))` composition re-scans the filesystem
+    /// for the given profile — there is no cached short-circuit left in
+    /// `TrendStore` (the old `load`/`reload` methods, which had zero production
+    /// callers, were removed). When a sibling write (Generate, Refresh) lands,
+    /// a fresh `computeSnapshot` + `apply` immediately picks up the new
+    /// `summary_*.json` mtime, so `cacheSource` and `StaleDataBanner` reflect
+    /// the latest run.
     func testReloadPicksUpFreshSummaryAfterLoadCachedAnOlderMTime() throws {
         let env = try TrendStoreTestEnv.make()
         defer { env.tearDown() }
@@ -350,7 +374,10 @@ final class TrendStoreTests: XCTestCase {
         let weekAgo = Date(timeIntervalSinceNow: -7 * 86_400)
         try env.writeSummary(date: "2026-05-11", mtime: weekAgo, source: "jamf-cli")
         let store = TrendStore()
-        store.load(profile: env.profile, range: .w4)
+        store.apply(
+            TrendStore.computeSnapshot(profile: env.profile),
+            profile: env.profile, range: .w4, generation: store.beginLoading()
+        )
         XCTAssertEqual(
             store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
             weekAgo.timeIntervalSince1970.rounded()
@@ -361,22 +388,17 @@ final class TrendStoreTests: XCTestCase {
         let now = Date()
         try env.writeSummary(date: "2026-05-18", mtime: now, source: "jamf-cli")
 
-        // Bug-repro guard: `load()` with the same profile must NOT pick up
-        // the new mtime (this is the documented short-circuit behavior the
-        // Refresh-button bug relied on).
-        store.load(profile: env.profile, range: .w4)
-        XCTAssertEqual(
-            store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
-            weekAgo.timeIntervalSince1970.rounded(),
-            "load(profile:range:) must short-circuit on unchanged profile — this is the documented optimization Refresh used to misuse"
+        // Every apply re-scans the filesystem (there is no short-circuit path
+        // left in TrendStore), so a fresh generation immediately picks up the
+        // new file's mtime.
+        store.apply(
+            TrendStore.computeSnapshot(profile: env.profile),
+            profile: env.profile, range: .w4, generation: store.beginLoading()
         )
-
-        // Fix: `reload()` re-scans and picks up the fresh file's mtime.
-        store.reload()
         XCTAssertEqual(
             store.latestSnapshotDate.map { round($0.timeIntervalSince1970) },
             now.timeIntervalSince1970.rounded(),
-            "reload() must re-scan the filesystem — this is what the Refresh button and Generate completion now call"
+            "apply(computeSnapshot(...)) must re-scan the filesystem — this is what the Refresh button and Generate completion call"
         )
     }
 

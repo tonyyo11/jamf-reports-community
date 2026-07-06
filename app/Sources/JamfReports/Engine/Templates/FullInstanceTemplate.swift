@@ -75,6 +75,7 @@ struct FullInstanceTemplate: ReportTemplate {
 
     var htmlSections: [SectionID] {
         [
+            .aiNarrative,
             .execSummary,
             .kpiTiles,
             .fleetSummary,

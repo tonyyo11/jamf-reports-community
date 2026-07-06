@@ -296,6 +296,197 @@ final class MSCPChartTests: XCTestCase {
         XCTAssertTrue(points.isEmpty)
     }
 
+    // MARK: - buildAllSeries: multi-baseline from one row set
+
+    /// Two baselines sourcing DIFFERENT EA columns from ONE set of ea-results rows
+    /// must produce independent per-baseline series — band counts are not summed.
+    func testBuildAllSeriesMultiBaselineIndependentSeries() throws {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let stigCol = "STIG - Failures"
+        let nistCol = "NIST - Failures"
+        // Same devices carry both EA columns; the two baselines differ in the
+        // failure counts they report (STIG all-pass; NIST 3 pass + 2 high).
+        let eaDir = tmp.appendingPathComponent("ea-results", isDirectory: true)
+        try FileManager.default.createDirectory(at: eaDir, withIntermediateDirectories: true)
+        var rows: [[String: Any]] = []
+        for i in 0..<5 { rows.append(["device": "mac-\(i)", "ea_name": stigCol, "value": 0]) }
+        for i in 0..<3 { rows.append(["device": "mac-\(i)", "ea_name": nistCol, "value": 0]) }
+        for i in 3..<5 { rows.append(["device": "mac-\(i)", "ea_name": nistCol, "value": 60]) }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        try data.write(to: eaDir.appendingPathComponent("ea-results_20240601T120000.json"))
+
+        let stig = makeBaseline(name: "DISA STIG", col: stigCol)
+        let nist = makeBaseline(name: "NIST 800-53r5", col: nistCol)
+        let series = MSCPChartDataBuilder.buildAllSeries(
+            baselines: [stig, nist], dataDir: tmp, summaries: [])
+
+        let stigPts = try XCTUnwrap(series["DISA STIG"])
+        let nistPts = try XCTUnwrap(series["NIST 800-53r5"])
+        XCTAssertEqual(stigPts.count, 1)
+        XCTAssertEqual(nistPts.count, 1)
+        // STIG: all 5 devices pass.
+        XCTAssertEqual(stigPts.first?.counts.pass, 5)
+        XCTAssertEqual(stigPts.first?.counts.high, 0)
+        // NIST: 3 pass, 2 high — different from STIG (not summed together).
+        XCTAssertEqual(nistPts.first?.counts.pass, 3)
+        XCTAssertEqual(nistPts.first?.counts.high, 2)
+    }
+
+    // MARK: - Zero-band point is skipped (all-noData crater)
+
+    /// A summary point whose banded total is 0 (all devices No Data) must be
+    /// SKIPPED — the prod 2026-06-05 all-zero/noData=659 crater must not chart.
+    func testBuildAllSeriesSkipsZeroBandSummaryPoint() throws {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let crater = MSCPBandCounts(pass: 0, low: 0, medLow: 0, medium: 0, high: 0, noData: 659)
+        let good = MSCPBandCounts(pass: 50, low: 10, medLow: 5, medium: 2, high: 1, noData: 0)
+        let day1 = DailySummary(
+            date: "2026-06-05", totalDevices: 659,
+            fileVaultPct: nil, compliancePct: nil, staleCount: 0,
+            osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", mscpBands: ["Compliance": crater])
+        let day2 = DailySummary(
+            date: "2026-06-06", totalDevices: 68,
+            fileVaultPct: nil, compliancePct: nil, staleCount: 0,
+            osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli", mscpBands: ["Compliance": good])
+
+        let baseline = makeBaseline(name: "Compliance", col: "Compliance Failures")
+        let series = MSCPChartDataBuilder.buildAllSeries(
+            baselines: [baseline], dataDir: tmp, summaries: [day1, day2])
+
+        let pts = try XCTUnwrap(series["Compliance"])
+        XCTAssertEqual(pts.count, 1, "The all-noData crater point must be skipped")
+        XCTAssertEqual(pts.first?.counts.pass, 50)
+    }
+
+    // MARK: - S4: baseline-rename bridge via mscpBandColumns (multi-baseline)
+
+    /// Two baselines; summaries written under the OLD display names, carrying
+    /// `mscpBandColumns` (name -> failures_count_column). Config now renames one
+    /// baseline (same column). The renamed baseline's series must stay continuous
+    /// under the NEW name, and the other baseline must be unaffected.
+    func testBuildAllSeriesBridgesRenameByColumnMultiBaseline() throws {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let stigCol = "STIG - Failures"
+        let nistCol = "NIST - Failures"
+        // Summaries under the OLD display names, with the stable column map.
+        let stigBands = MSCPBandCounts(pass: 5, low: 0, medLow: 0, medium: 0, high: 0, noData: 0)
+        let nistBands = MSCPBandCounts(pass: 3, low: 0, medLow: 0, medium: 0, high: 2, noData: 0)
+        let summary = DailySummary(
+            date: "2026-06-01", totalDevices: 5,
+            fileVaultPct: nil, compliancePct: nil, staleCount: 0,
+            osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli",
+            mscpBands: ["DISA STIG (old)": stigBands, "NIST (old)": nistBands],
+            mscpBandColumns: ["DISA STIG (old)": stigCol, "NIST (old)": nistCol])
+
+        // Config now carries the RENAMED STIG baseline (same column) + unchanged NIST-by-column.
+        let stigRenamed = makeBaseline(name: "DISA STIG r2", col: stigCol)
+        let nistRenamed = makeBaseline(name: "NIST 800-53r5", col: nistCol)
+        let series = MSCPChartDataBuilder.buildAllSeries(
+            baselines: [stigRenamed, nistRenamed], dataDir: tmp, summaries: [summary])
+
+        // STIG series is continuous under the NEW name, bridged by column identity.
+        let stigPts = try XCTUnwrap(series["DISA STIG r2"])
+        XCTAssertEqual(stigPts.count, 1)
+        XCTAssertEqual(stigPts.first?.counts.pass, 5)
+        // The other baseline is bridged independently — not summed with STIG.
+        let nistPts = try XCTUnwrap(series["NIST 800-53r5"])
+        XCTAssertEqual(nistPts.count, 1)
+        XCTAssertEqual(nistPts.first?.counts.pass, 3)
+        XCTAssertEqual(nistPts.first?.counts.high, 2)
+        // The old display-name keys must not leak through as their own series.
+        XCTAssertNil(series["DISA STIG (old)"])
+        XCTAssertNil(series["NIST (old)"])
+    }
+
+    /// A legacy multi-baseline summary WITHOUT `mscpBandColumns` must behave exactly
+    /// as before: exact-name match only (no column-bridge), and the lone-key coalesce
+    /// stays gated to the single-baseline case — so a renamed baseline finds nothing.
+    func testBuildAllSeriesLegacySummaryNoColumnBridge() throws {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let bands = MSCPBandCounts(pass: 4, low: 1, medLow: 0, medium: 0, high: 0, noData: 0)
+        // Legacy summary: mscpBands only, no mscpBandColumns.
+        let summary = DailySummary(
+            date: "2026-05-01", totalDevices: 5,
+            fileVaultPct: nil, compliancePct: nil, staleCount: 0,
+            osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli",
+            mscpBands: ["STIG (old)": bands, "NIST (old)": bands])
+        XCTAssertNil(summary.mscpBandColumns)
+
+        // Two baselines with renamed display names → no exact match, no columns to
+        // bridge, and coalesceLoneKey is false (baselines.count == 2) → empty.
+        let stig = makeBaseline(name: "STIG new", col: "STIG - Failures")
+        let nist = makeBaseline(name: "NIST new", col: "NIST - Failures")
+        let series = MSCPChartDataBuilder.buildAllSeries(
+            baselines: [stig, nist], dataDir: tmp, summaries: [summary])
+        XCTAssertTrue(series.isEmpty,
+            "Legacy summary without mscpBandColumns must not bridge a rename in a multi-baseline org")
+
+        // Exact-name match still works for a legacy summary.
+        let stigExact = makeBaseline(name: "STIG (old)", col: "STIG - Failures")
+        let exactSeries = MSCPChartDataBuilder.buildAllSeries(
+            baselines: [stigExact], dataDir: tmp, summaries: [summary])
+        XCTAssertEqual(exactSeries["STIG (old)"]?.count, 1)
+    }
+
+    // MARK: - S4: mscpBandColumns decode round-trip
+
+    func testMSCPBandColumnsAbsentInLegacySummary() throws {
+        let json = """
+        {"date":"2025-01-01","totalDevices":100,"staleCount":2,"source":"jamf-cli"}
+        """
+        let decoded = try JSONDecoder().decode(DailySummary.self, from: Data(json.utf8))
+        XCTAssertNil(decoded.mscpBandColumns, "mscpBandColumns must be nil in legacy summaries")
+    }
+
+    func testMSCPBandColumnsRoundTrip() throws {
+        let counts = MSCPBandCounts(pass: 70, low: 20, medLow: 5, medium: 3, high: 2, noData: 0)
+        let summary = DailySummary(
+            date: "2026-01-15", totalDevices: 100,
+            fileVaultPct: nil, compliancePct: nil,
+            staleCount: 0, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "jamf-cli",
+            mscpBands: ["NIST": counts],
+            mscpBandColumns: ["NIST": "NIST - Failures"])
+        let data = try JSONEncoder().encode(summary)
+        let decoded = try JSONDecoder().decode(DailySummary.self, from: data)
+        XCTAssertEqual(decoded.mscpBandColumns?["NIST"], "NIST - Failures")
+    }
+
+    // MARK: - dateFromSnapshotFilename: python-era dashed form
+
+    func testDateFromSnapshotFilenameDashedPythonEraFormat() throws {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        // Python-era: dashed date + microsecond tail.
+        let url = tmp.appendingPathComponent("ea-results_2026-04-15T210038673146.json")
+        try Data("[]".utf8).write(to: url)
+
+        let date = MSCPChartDataBuilder.dateFromSnapshotFilename(url)
+        // Formatter parses in local time (same as the canonical yyyyMMdd'T'HHmmss
+        // form), so assert with a local-timezone calendar.
+        let cal = Calendar(identifier: .iso8601)
+        let c = cal.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        XCTAssertEqual(c.year, 2026)
+        XCTAssertEqual(c.month, 4)
+        XCTAssertEqual(c.day, 15)
+        XCTAssertEqual(c.hour, 21)
+        XCTAssertEqual(c.minute, 0)
+        XCTAssertEqual(c.second, 38)
+    }
+
     // MARK: - toStackedSeries
 
     func testStackedSeriesHasFiveBands() throws {

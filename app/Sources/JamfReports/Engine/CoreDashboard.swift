@@ -16,17 +16,22 @@ struct CoreDashboard: Sendable {
     /// Provenance captured at run start. Injected by the caller (e.g. `ReportEngine`).
     /// When nil, the Cover sheet shows placeholder values for provenance fields.
     let provenance: Provenance?
+    /// GUI-generate-only AI executive narrative (F3). nil (the default) writes
+    /// no AI block on the Executive Summary sheet — headless callers never set it.
+    let aiNarrative: String?
 
     init(
         config: ReportConfig,
         dataDir: URL,
         workbook: Workbook,
-        provenance: Provenance? = nil
+        provenance: Provenance? = nil,
+        aiNarrative: String? = nil
     ) {
         self.config = config
         self.dataDir = dataDir
         self.workbook = workbook
         self.provenance = provenance
+        self.aiNarrative = aiNarrative
     }
 
     private var accentColor: String { config.branding?.resolvedAccentColor ?? "#2D5EA2" }
@@ -2509,6 +2514,14 @@ struct CoreDashboard: Sendable {
         return m
     }
 
+    /// Workbook-free access to the SAME aggregates the Executive Summary sheet
+    /// renders. Used by `ReportNarrative` (F3) so the AI narrative is grounded
+    /// in exactly the sheet's numbers — never a second aggregation path.
+    static func executiveMetrics(config: ReportConfig, dataDir: URL) -> ExecutiveSummaryMetrics {
+        CoreDashboard(config: config, dataDir: dataDir, workbook: Workbook())
+            .buildExecutiveMetrics()
+    }
+
     /// Populate security-derived fields from the cached `security` snapshot.
     private func applySecurityMetrics(to m: inout ExecutiveSummaryMetrics) {
         guard let items = loadLatestTyped(names: ["security"],
@@ -2597,7 +2610,8 @@ struct CoreDashboard: Sendable {
     func renderExecutiveSummaryRows(
         into ws: Worksheet,
         metrics m: ExecutiveSummaryMetrics,
-        subtitle: String = "Fleet KPIs · KPI source: security + patch-status + device-compliance"
+        subtitle: String = "Fleet KPIs · KPI source: security + patch-status + device-compliance",
+        aiNarrative: String? = nil
     ) {
         var row = ws.writeSheetHeader(
             title: t("Executive Summary"),
@@ -2648,6 +2662,19 @@ struct CoreDashboard: Sendable {
             ws.write(value, row: row, col: 1, format: .cell)
             row += 1
         }
+
+        // F3: AI narrative block — present only on GUI-generated reports.
+        // Formula-injection neutralization is automatic on every write.
+        if let narrative = aiNarrative, !narrative.isEmpty {
+            row += 1
+            ws.write("AI-Generated Summary", row: row, col: 0, format: .header)
+            row += 1
+            ws.mergeRange(firstRow: row, firstCol: 0, lastRow: row, lastCol: 1,
+                          value: narrative, format: .cell)
+            row += 1
+            ws.write("AI-generated summary — verify against the metrics above.",
+                     row: row, col: 0, format: .cell)
+        }
     }
 
     /// Sheet 1: fleet KPIs aggregated from cached snapshots. Gracefully omits
@@ -2675,7 +2702,8 @@ struct CoreDashboard: Sendable {
         )
 
         let ws = workbook.addSheet("Executive Summary")
-        renderExecutiveSummaryRows(into: ws, metrics: metrics, subtitle: subtitle)
+        renderExecutiveSummaryRows(into: ws, metrics: metrics, subtitle: subtitle,
+                                   aiNarrative: aiNarrative)
     }
 
     // MARK: - Cover sheet

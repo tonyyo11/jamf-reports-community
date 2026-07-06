@@ -37,6 +37,10 @@ struct SettingsView: View {
     // Debug logging (DebugLoggingService) — toggles apply on next launch.
     @State private var debugState: DebugLoggingState = .off
     @State private var loggingApplyMessage: String? = nil
+    // AI Insights (macOS 27+, opt-in). Loaded/saved via AIConfigLoader/Writer,
+    // not the Config-tab managed-key surface.
+    @State private var aiConfig: AIConfig = AIConfig()
+    @State private var aiSaveMessage: String? = nil
 
     var body: some View {
         ScrollView {
@@ -57,6 +61,7 @@ struct SettingsView: View {
                 dataAndChartsCard
                 diagnosticsCard
                 loggingCard
+                aiInsightsCard
                 sidebarVisibilityCard
                 experimentalFeaturesCard
                 aboutCard
@@ -743,6 +748,81 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - AI Insights (macOS 27+, opt-in)
+
+    /// Turns already-collected fleet data into a plain-language insight card
+    /// on Overview. Off by default; requires macOS 27 for on-device or Private
+    /// Cloud Compute generation. Persists to this profile's `config.yaml`
+    /// (`ai:` block) via `AIConfigWriter`, scoped to just that key — the same
+    /// pattern as `DebugLoggingService`'s own plist, not the Config-tab's
+    /// managed-key round-trip.
+    private var aiInsightsCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "AI Insights")
+                Text(
+                    "Turn already-collected fleet data into a plain-language insight card "
+                    + "on Overview, using Apple's on-device Foundation Model (or Private Cloud "
+                    + "Compute, if you opt in). Off by default; nothing leaves this Mac unless "
+                    + "you choose Private Cloud Compute."
+                )
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+
+                Toggle("Enable AI insights", isOn: Binding(
+                    get: { aiConfig.isEnabled },
+                    set: { aiConfig.enabled = $0; saveAIConfig() }))
+
+                if aiConfig.isEnabled {
+                    Picker("Model", selection: Binding(
+                        get: { aiConfig.resolvedTier },
+                        set: { aiConfig.tier = $0.rawValue; saveAIConfig() })) {
+                        Text("On-device").tag(AIConfig.Tier.onDevice)
+                        Text("Private Cloud Compute").tag(AIConfig.Tier.pcc)
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: 260, alignment: .leading)
+
+                    Toggle("Lock to on-device (high security)", isOn: Binding(
+                        get: { aiConfig.isLockedOnDevice },
+                        set: { aiConfig.lockOnDevice = $0; saveAIConfig() }))
+                    Text("Ignores the model selection above and never uses Private Cloud Compute.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .padding(.leading, 2)
+                }
+
+                Text(ModelAvailability.current(for: aiConfig).message)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+
+                if let aiSaveMessage {
+                    Text(aiSaveMessage)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.warn)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("AI Insights")
+        .task(id: workspace.profile) {
+            aiConfig = AIConfigLoader.load(profile: workspace.profile)
+            aiSaveMessage = nil
+        }
+    }
+
+    private func saveAIConfig() {
+        do {
+            try AIConfigWriter.save(aiConfig, profile: workspace.profile)
+            aiSaveMessage = nil
+        } catch {
+            aiSaveMessage = "Couldn't save AI settings: \(error.localizedDescription)"
         }
     }
 

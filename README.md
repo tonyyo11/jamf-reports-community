@@ -97,8 +97,8 @@ page for the full command reference.
 
 - **OS Currency** — an "OS Currency" workbook sheet and HTML card show the latest available
   macOS/iOS/iPadOS/tvOS/watchOS versions from the [SOFA](https://sofa.macadmins.io) feed,
-  joined to your fleet's OS distribution. Configure it in the `sofa:` block; set
-  `sofa.enabled: false` for air-gapped use.
+  joined to your fleet's OS distribution. The feed is fetched automatically with the
+  regular refresh-tier collect and cached for offline use.
 - **Patch release dates** — the Patch Compliance sheet gains "Latest Released" and
   "Days Behind" columns when patch-title definitions are collected.
 

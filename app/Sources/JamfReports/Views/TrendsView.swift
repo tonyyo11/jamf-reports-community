@@ -11,7 +11,9 @@ struct TrendsView: View {
 
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
     @ScaledMetric(relativeTo: .largeTitle) private var heroMetricSize: CGFloat = 44
-    @State private var trendStore = TrendStore()
+    /// Shared, navigation-surviving instance (see WorkspaceStore.trendStore) so
+    /// re-entering Trends shows cached charts instantly instead of a cold scan.
+    private var trendStore: TrendStore { workspaceStore.trendStore }
     @State private var bridge = CLIBridge()
     @State private var metric: TrendSeries.Metric = .stability
     @State private var range: TrendRange = .w4
@@ -104,7 +106,9 @@ struct TrendsView: View {
 
     var body: some View {
         PageScaffold(spacing: 16) {
-            if !workspaceStore.demoMode && trendStore.isEmpty {
+            if !workspaceStore.demoMode && trendStore.isLoading && trendStore.isEmpty {
+                trendsLoadingState
+            } else if !workspaceStore.demoMode && trendStore.isEmpty {
                 emptyState
             } else {
                 heroHeader
@@ -128,35 +132,54 @@ struct TrendsView: View {
             if let preferred = TrendRange(rawValue: defaultTrendRangeRaw), preferred != range {
                 range = preferred
             }
-            if !workspaceStore.demoMode {
-                trendStore.load(profile: workspaceStore.profile, range: range)
-            }
+            // Off-main scan so entering Trends never freezes the UI.
+            Task { await loadTrendsOffMain() }
         }
-        .onChange(of: workspaceStore.profile) { _, newValue in
-            if !workspaceStore.demoMode {
-                withAnimation(.snappy) {
-                    trendStore.load(profile: newValue, range: range)
-                }
-            }
+        .onChange(of: workspaceStore.profile) { _, _ in
+            Task { await loadTrendsOffMain() }
         }
         .onChange(of: range) { _, newValue in
             selectedDate = nil
             defaultTrendRangeRaw = newValue.rawValue
+            // Range change only re-filters cached data — no disk read.
             if !workspaceStore.demoMode {
-                withAnimation(.snappy) {
-                    trendStore.load(profile: workspaceStore.profile, range: newValue)
-                }
+                withAnimation(.snappy) { trendStore.setRange(newValue) }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
-            if !workspaceStore.demoMode {
-                withAnimation(.snappy) {
-                    // `load(profile:range:)` short-circuits on unchanged profile;
-                    // `reload()` forces a fresh filesystem scan so the
-                    // StaleDataBanner picks up any newly-written summaries.
-                    trendStore.reload()
-                }
+            Task { await loadTrendsOffMain() }
+        }
+    }
+
+    /// Run the trend-store disk scan OFF the main thread, then publish on the
+    /// main actor — keeps entering Trends from freezing the UI. Cached charts
+    /// stay visible while it runs.
+    private func loadTrendsOffMain() async {
+        guard !workspaceStore.demoMode else { return }
+        let profile = workspaceStore.profile
+        let r = range
+        // Profile switch: drop the previous tenant's data so the loading state
+        // (not stale data) shows during the new scan; same-profile is a no-op.
+        trendStore.clearForProfileSwitch(to: profile)
+        let generation = trendStore.beginLoading()
+        let snapshot = await Task.detached(priority: .userInitiated) {
+            TrendStore.computeSnapshot(profile: profile)
+        }.value
+        trendStore.apply(snapshot, profile: profile, range: r, generation: generation)
+    }
+
+    /// First-load placeholder: shown only while the initial scan runs with no
+    /// cached data. Re-entry keeps charts visible and refreshes silently.
+    private var trendsLoadingState: some View {
+        Card(padding: 24) {
+            VStack(spacing: 12) {
+                ProgressView().controlSize(.large)
+                Text("Loading trend history…")
+                    .font(.callout)
+                    .foregroundStyle(Theme.Colors.fg2)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
         }
     }
 
@@ -379,20 +402,30 @@ struct TrendsView: View {
                     }
                 }
 
+                if metric == .mscpBandTrend, !workspaceStore.demoMode, trendStore.mscpBaselineNames.count > 1 {
+                    HStack {
+                        Spacer()
+                        mscpBaselinePicker
+                    }
+                }
+
                 // Swift Charts line + area mark OR stacked area for mSCP bands
                 if let domain = chartDomain {
                     Chart {
                         if metric == .mscpBandTrend {
-                            // Stacked area chart for mSCP compliance bands
+                            // Stacked area chart for mSCP compliance bands.
+                            // Series identity (`by:`) is what makes Charts stack correctly —
+                            // a constant foregroundStyle collapses every band into one mass.
                             let stackedSeries = trendStore.mscpStackedSeries()
-                            ForEach(stackedSeries.reversed(), id: \.label) { series in
+                            ForEach(stackedSeries, id: \.label) { series in
                                 ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
                                     AreaMark(
                                         x: .value("Date", point.date),
                                         y: .value("Count", point.value),
                                         stacking: .standard
                                     )
-                                    .foregroundStyle(Color(cgColor: series.color))
+                                    .foregroundStyle(by: .value("Band", series.label))
+                                    .interpolationMethod(.monotone)
                                     .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
                                 }
                             }
@@ -469,6 +502,10 @@ struct TrendsView: View {
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
+                    .chartForegroundStyleScale(
+                        domain: mscpBandChartScale.labels,
+                        range: mscpBandChartScale.colors
+                    )
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
                     .accessibilityLabel(Self.metricTrendChartLabel(metric.displayLabel))
@@ -529,11 +566,14 @@ struct TrendsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         SectionHeader(title: "Compliance Distribution Over Time")
-                        Text("Devices grouped by failed-rule count, weekly")
+                        Text(complianceBandCardSubtitle)
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Spacer()
+                    if !workspaceStore.demoMode, trendStore.mscpBaselineNames.count > 1 {
+                        mscpBaselinePicker
+                    }
                 }
                 if workspaceStore.demoMode {
                     stackedBandsChart
@@ -546,6 +586,53 @@ struct TrendsView: View {
                 }
             }
         }
+    }
+
+    /// Subtitle tracks the selected baseline once more than one exists.
+    private var complianceBandCardSubtitle: String {
+        guard let name = trendStore.primaryMSCPBaseline, trendStore.mscpBaselineNames.count > 1 else {
+            return "Devices grouped by failed-rule count, weekly"
+        }
+        return "\(name) · devices grouped by failed-rule count, weekly"
+    }
+
+    /// Compact baseline switcher — visible only when multiple mSCP/STIG
+    /// baselines are present. Styled to match the sm/ghost buttons in this file.
+    private var mscpBaselinePicker: some View {
+        Menu {
+            ForEach(trendStore.mscpBaselineNames, id: \.self) { name in
+                Button {
+                    trendStore.selectMSCPBaseline(name)
+                } label: {
+                    if name == trendStore.primaryMSCPBaseline {
+                        Label(name, systemImage: "checkmark")
+                    } else {
+                        Text(name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "list.bullet.indent").font(.system(size: 10, weight: .semibold))
+                Text(trendStore.primaryMSCPBaseline ?? "Baseline")
+                    .font(.callout.weight(.medium))
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 22)
+            .foregroundStyle(Theme.Colors.fg2)
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .accessibilityLabel("mSCP baseline")
+        .accessibilityValue(trendStore.primaryMSCPBaseline ?? "None selected")
+        .help("Switch which compliance baseline this chart shows")
     }
 
     private var securityPostureCard: some View {
@@ -598,14 +685,15 @@ struct TrendsView: View {
             if let domain = trendStore.bandChartDomain {
                 let stackedSeries = trendStore.mscpStackedSeries()
                 Chart {
-                    ForEach(stackedSeries.reversed(), id: \.label) { series in
+                    ForEach(stackedSeries, id: \.label) { series in
                         ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
                             AreaMark(
                                 x: .value("Date", point.date),
                                 y: .value("Count", point.value),
                                 stacking: .standard
                             )
-                            .foregroundStyle(Color(cgColor: series.color))
+                            .foregroundStyle(by: .value("Band", series.label))
+                            .interpolationMethod(.monotone)
                             .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
                         }
                     }
@@ -619,12 +707,28 @@ struct TrendsView: View {
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                 }
+                .chartForegroundStyleScale(
+                    domain: mscpBandChartScale.labels,
+                    range: mscpBandChartScale.colors
+                )
+                // liveBandsLegend below renders the manual legend for this chart.
+                .chartLegend(.hidden)
                 .frame(height: 200)
                 .accessibilityLabel(Self.complianceTrendChartLabel)
             } else {
                 complianceBandUnavailable
             }
         }
+    }
+
+    /// Label/color arrays for `.chartForegroundStyleScale`, derived once from
+    /// the selected baseline's series so both band charts share one mapping.
+    /// Falls back to a single neutral entry when no series exist yet (Charts
+    /// requires a non-empty domain/range even before data loads).
+    private var mscpBandChartScale: (labels: [String], colors: [Color]) {
+        let series = trendStore.mscpStackedSeries()
+        guard !series.isEmpty else { return (["Band"], [Theme.Colors.fg2]) }
+        return (series.map(\.label), series.map { Color(cgColor: $0.color) })
     }
 
     /// Band legend for the live stacked-area chart.
@@ -989,12 +1093,10 @@ struct TrendsView: View {
             workspaceStore.globalStatus = nil
             if exit == 0 {
                 workspaceStore.toast = Toast(message: "Archive generated successfully", style: .success)
-                withAnimation(.snappy) {
-                    // Archive just wrote new files on the same profile — `load`
-                    // would short-circuit and leave the chart stale. `reload()`
-                    // forces the re-scan.
-                    trendStore.reload()
-                }
+                // Archive just wrote new files on the same profile — force a
+                // re-scan, off-main like every other load (a sync reload here
+                // was the last surviving main-thread scan).
+                Task { await loadTrendsOffMain() }
             } else {
                 workspaceStore.toast = Toast(message: "Archive failed · exit \(exit)", style: .danger)
             }

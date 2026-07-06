@@ -7,6 +7,116 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-06
+
+### Added
+
+- On-device AI fleet insights (macOS 27+, opt-in): a new `ai:` config block turns
+  the daily fleet digest into a plain-language insight card on Overview, adds an
+  "Explain this run" action for failed scheduled runs (analyzed on-device only,
+  after full log redaction), and can prepend an AI executive-summary paragraph to
+  GUI-generated reports. Off by default and completely inert below macOS 27.
+  Model choice is Apple's on-device Foundation Model or Private Cloud Compute;
+  `lock_on_device: true` refuses any non-on-device model for high-security
+  environments. Settings gains an "AI Insights" panel.
+- Multi-baseline mSCP compliance tracking: configure one baseline per OS (or per
+  framework — CIS, DISA STIG, NIST) under `compliance.baselines`, and each gets its
+  own compliance-band donut and Trends band series. A baseline picker appears on the
+  Trends band charts when more than one baseline is configured.
+- Data-accuracy review layer: per-EA parse health (how much of the fleet's data
+  actually parses under each configured EA type, with privacy-safe samples of what
+  doesn't), CSV-vs-snapshot device-count reconciliation and CSV freshness checks in
+  the Config Doctor, and EA coverage-drift detection that flags an extension
+  attribute whose fleet coverage suddenly drops between collects.
+- mSCP failure counts are now validity-bounded: set `rule_count` on a baseline and
+  counts above it (a broken EA script) are treated as No Data instead of banding the
+  device High. An optional per-baseline `failures_list_column` enables a
+  count-vs-list cross-check that reports devices whose two compliance EAs disagree.
+
+### Changed
+
+- Recovered (truncated) `ea-results` snapshots now announce themselves in the log
+  ("salvaged N rows"), so a partially recovered day is never silently mistaken for
+  a complete one in compliance-band history.
+- Tracked jamf-cli dependency updated to v1.22.0. No code changes required for
+  existing functionality. Notable upstream changes in v1.22.0:
+  - New `pro jamf-protect-deployment-tasks retry-failed` command for retrying
+    failed Jamf Protect deployment tasks by serial, management ID, UDID, or
+    failure status. Future integration candidate for the ProtectView "Plans"
+    card.
+  - New `-o ndjson` line-delimited JSON output format for programmatic
+    consumers. Existing `-o json` output used by the app is unchanged.
+  - 403 error responses now surface the specific required Jamf privileges in
+    the error detail — these flow through `CLIBridge.explainExit` exit-code-5
+    handling and will appear automatically in remediation messages.
+  - New `agent-context` command providing operating guidance for AI agents
+    (exit codes, conventions). Not used by the app.
+  - Determinate pagination progress for `--all` operations in interactive
+    terminals; silent/piped mode is unchanged.
+
+- The Extension Attributes screen no longer grades EAs by "coverage %". Extension
+  attributes carry custom, often legitimately sparse data — a serial-number EA
+  populating 11 devices means 11 Macs run that app, not a broken EA. The list now
+  shows neutral devices-reporting counts (sortable by devices or name), and the
+  coverage-percentage tiles and red judgment bars are gone. Sharp *drops* in an
+  EA's own reporting base (a broken EA script) are still flagged by the
+  coverage-drift check.
+- The Health Audit no longer shows a standing "unverified snapshots" warning card
+  for the not-yet-shipped snapshot manifest feature — no manifests are written
+  yet, so every snapshot registered as unverified and the warning could never
+  clear. It now shows a neutral note instead, and only warns when a manifest
+  actually mismatches or a snapshot is corrupt.
+- Config Doctor parse-health warnings for a percentage-typed EA whose values are
+  mostly raw counts now name the likely cause (the EA is probably mistyped)
+  instead of a generic "check the EA type or source column" hint.
+
+### Fixed
+
+- The Extension Attributes screen showed "0 devices" against jamf-cli data: device
+  counting only recognized the legacy `computer_id` field, not the `device` field
+  current snapshots carry. It now uses the same identity fallback chain as the
+  mSCP compliance join.
+- Historical mSCP band trends no longer render as a garbled single-color mass. Three
+  fixes: truncated `ea-results` snapshots (cut off mid-write by a since-fixed
+  collector bug) are now salvaged instead of discarded — recovering weeks of band
+  history; days where a baseline has only No-Data are skipped instead of charting as
+  zero; and the stacked band charts use a corrected rendering that stacks bands
+  properly.
+- The daily summary now uses the same robust `ea-results` decoder as the dashboards,
+  so a malformed snapshot can no longer silently freeze the compliance figure on the
+  4-control proxy value while Compliance Posture shows real mSCP data.
+- Jamf School and Jamf Protect collects now validate CLI output is JSON before
+  caching it, matching the Jamf Pro collect path.
+- Scheduled tier-scoped collects (for example, the weekly scan tier) were being
+  skipped whenever the day's freshness collect had already run and written a
+  summary. The skip-if-already-collected-today guard now only applies to a full
+  collect, so a tier-scoped collect always runs on its own schedule.
+- The in-app log viewer showed "Couldn't read the log store" in signed builds. It
+  now reads an in-app log buffer fed by live collect activity instead of the macOS
+  log store, which fails with a generic error in signed, hardened-runtime builds.
+- The AI Fleet Insight card could briefly show the previous profile's insight after
+  switching profiles mid-generation. Insight updates are now discarded if the
+  profile changes before generation finishes.
+- The Config Doctor's data-accuracy checks could compare different snapshot days
+  than the coverage-drift check on cloud-synced workspaces, and could pick up
+  `manifest.json` as if it were a data snapshot. All of the accuracy checks now
+  pick the newest snapshot the same way (by the date in its filename, excluding
+  the manifest), so they always compare the same day.
+- Compliance failure-count columns encoded as decimal numbers (for example,
+  "2.0") no longer trigger a false "parses poorly" warning in the Config Doctor.
+- Multi-baseline compliance trend history now survives renaming a baseline's
+  display name — band history is additionally matched by the baseline's stable
+  EA column, not just its display name.
+
+### Removed
+
+- Config keys that were never read by the app have been removed from
+  `config.example.yaml`: the `inventory_csv`, `report_families`, `school`, and
+  `sofa` sections, `jamf_cli`'s multi-profile and timeout keys,
+  `experimental.protect_features_enabled`, and `platform.audit_platform`.
+  (`school_columns` stays for now — the `school-scaffold` command still writes
+  it; wiring a reader or retiring it together is a tracked follow-up.)
+
 ## [2.4.0] - 2026-06-25
 
 ### Added

@@ -11,10 +11,17 @@ struct ExtensionAttributesView: View {
     @State private var snapshot: ExtensionAttributeService.Snapshot = .empty
     @State private var hasLoaded = false
     @State private var selectedEA: String?
-    @State private var sortOrder: SortOrder = .coverage
+    @State private var sortOrder: SortOrder = .devices
+    @State private var coverageDrift: [EAParseHealthService.CoverageDrift] = []
+
+    /// Only EAs whose fleet coverage dropped sharply since the previous collect.
+    private static let driftAlertThresholdPP: Double = -15
+
+    /// Cap the drift callout's row list; the rest collapse into "+N more".
+    private static let driftDisplayCap = 5
 
     private enum SortOrder: String, CaseIterable {
-        case coverage = "Coverage"
+        case devices = "Devices"
         case name = "Name"
     }
 
@@ -42,6 +49,7 @@ struct ExtensionAttributesView: View {
                 emptyState
             } else {
                 kpiGrid
+                driftCard
                 coverageCard
                 if let selectedEA, !selectedEA.isEmpty {
                     valueDistributionCard(for: selectedEA)
@@ -78,6 +86,28 @@ struct ExtensionAttributesView: View {
         // Set default selection to the most-covered EA
         if selectedEA == nil {
             selectedEA = snapshot.coverage.max(by: { $0.populatedDevices < $1.populatedDevices })?.eaName
+        }
+
+        loadCoverageDrift()
+    }
+
+    /// Coverage drift needs a directory scan across dated `ea-results` snapshots —
+    /// runs off-main so a large fleet's history never blocks the UI.
+    private func loadCoverageDrift() {
+        guard !workspace.demoMode else {
+            coverageDrift = []
+            return
+        }
+        let profile = workspace.profile
+        coverageDrift = []
+        Task {
+            typealias Drift = [EAParseHealthService.CoverageDrift]
+            let drift = await Task.detached(priority: .utility) { () -> Drift in
+                guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return [] }
+                return EAParseHealthService.coverageDrift(dataDir: dir)
+            }.value
+            guard workspace.profile == profile else { return }
+            coverageDrift = drift
         }
     }
 
@@ -164,29 +194,10 @@ struct ExtensionAttributesView: View {
 
     // MARK: - Computed values
 
-    private var eaFullCoverage: Int {
-        snapshot.coverage.filter { $0.coveragePct >= 100.0 }.count
-    }
-
-    private var eaZeroData: Int {
-        snapshot.coverage.filter { $0.populatedDevices == 0 }.count
-    }
-
-    private var medianCoveragePct: Double {
-        guard !snapshot.coverage.isEmpty else { return 0 }
-        let sorted = snapshot.coverage.map { $0.coveragePct }.sorted()
-        let mid = sorted.count / 2
-        if sorted.count % 2 == 0 {
-            return sorted.count > 1 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[0]
-        } else {
-            return sorted[mid]
-        }
-    }
-
     private var sortedCoverage: [ExtensionAttributeService.Snapshot.Coverage] {
         switch sortOrder {
-        case .coverage:
-            return snapshot.coverage.sorted { $0.populatedDevices < $1.populatedDevices }
+        case .devices:
+            return snapshot.coverage.sorted { $0.populatedDevices > $1.populatedDevices }
         case .name:
             return snapshot.coverage.sorted { $0.eaName < $1.eaName }
         }
@@ -217,29 +228,92 @@ struct ExtensionAttributesView: View {
                 value: "\(snapshot.totalDevices)",
                 sub: "With EA result data"
             )
-            StatTile(
-                label: "Full Coverage",
-                value: "\(eaFullCoverage)",
-                sub: "EAs with 100% coverage"
-            )
-            StatTile(
-                label: "Zero Data",
-                value: "\(eaZeroData)",
-                sub: "EAs with no populated values"
-            )
-            StatTile(
-                label: "Median Coverage",
-                value: String(format: "%.1f%%", medianCoveragePct),
-                sub: "Across all EAs"
-            )
         }
     }
 
+    private var significantDrops: [EAParseHealthService.CoverageDrift] {
+        coverageDrift.filter { $0.deltaPP <= Self.driftAlertThresholdPP }
+    }
+
+    /// Sharp coverage drops since the previous collect — renders nothing when
+    /// there's nothing worth flagging (no empty-state card).
+    @ViewBuilder
+    private var driftCard: some View {
+        let drops = significantDrops
+        if !drops.isEmpty {
+            let shown = Array(drops.prefix(Self.driftDisplayCap))
+            let remaining = drops.count - shown.count
+
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.right.circle.fill")
+                            .foregroundStyle(Theme.Colors.warn)
+                            .accessibilityHidden(true)
+                        SectionHeader(title: "Coverage drift")
+                        Spacer()
+                    }
+                    Text("Fleet coverage dropped sharply for these Extension Attributes since "
+                        + "the previous collect. Check the source (script, EA config, or agent "
+                        + "rollout) if this is unexpected.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(shown, id: \.eaName) { drift in
+                            driftRow(drift)
+                        }
+                        if remaining > 0 {
+                            Text("+\(remaining) more")
+                                .font(.caption)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Theme.Colors.warn.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
+                        )
+                )
+            }
+        }
+    }
+
+    private func driftRow(_ drift: EAParseHealthService.CoverageDrift) -> some View {
+        HStack(spacing: 6) {
+            Text(drift.eaName)
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(Theme.Colors.fg)
+            Text("—")
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+            Text("\(Int(drift.previousPct.rounded()))% → \(Int(drift.currentPct.rounded()))%")
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+            Text("(\(Int(drift.deltaPP.rounded()))pp)")
+                .font(Theme.Fonts.mono(11, weight: .semibold))
+                .foregroundStyle(Theme.Colors.warn)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(drift.eaName) coverage dropped from \(Int(drift.previousPct.rounded())) "
+            + "percent to \(Int(drift.currentPct.rounded())) percent"
+        )
+    }
+
+    // EAs carry custom, often legitimately sparse data — a serial-number EA
+    // populating 11 devices means 11 Macs run that app, not a broken EA. So
+    // this list shows neutral devices-reporting counts, never a coverage %.
     private var coverageCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeader(title: "EA Coverage")
+                    SectionHeader(title: "Extension Attributes")
                     Spacer()
                     SegmentedControl(
                         selection: $sortOrder,
@@ -270,59 +344,30 @@ struct ExtensionAttributesView: View {
     @ViewBuilder
     private func coverageRow(for coverage: ExtensionAttributeService.Snapshot.Coverage) -> some View {
         let isSelected = selectedEA == coverage.eaName
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(coverage.eaName)
-                    .font(.callout.weight(isSelected ? .semibold : .medium))
-                    .foregroundStyle(isSelected ? Theme.Colors.fg : Theme.Colors.fg2)
-                Spacer()
-                Text("\(coverage.populatedDevices) / \(coverage.totalDevices)")
-                    .font(Theme.Fonts.mono(11))
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                Text(String(format: "%.1f%%", coverage.coveragePct))
-                    .font(Theme.Fonts.mono(11, weight: .semibold))
-                    .foregroundStyle(coverageColor(for: coverage.coveragePct))
-                    .frame(minWidth: 56, alignment: .trailing)
-                    .monospacedDigit()
-            }
-
-            // Coverage bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Theme.Colors.hairline)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(coverageColor(for: coverage.coveragePct))
-                        .frame(width: max(0, min(geo.size.width, geo.size.width * coverage.coveragePct / 100)))
-                }
-            }
-            .frame(height: 6)
+        HStack {
+            Text(coverage.eaName)
+                .font(.callout.weight(isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Theme.Colors.fg : Theme.Colors.fg2)
+            Spacer()
+            Text("\(coverage.populatedDevices) device\(coverage.populatedDevices == 1 ? "" : "s")")
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .monospacedDigit()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
         .background(
             isSelected ? Theme.Colors.hairline : Color.clear,
             in: RoundedRectangle(cornerRadius: 6)
         )
+        .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(coverage.eaName) extension attribute coverage, \(String(format: "%.1f", coverage.coveragePct)) percent, \(coverage.populatedDevices) of \(coverage.totalDevices) devices")
+        .accessibilityLabel("\(coverage.eaName) extension attribute, \(coverage.populatedDevices) devices reporting a value")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: "View distribution") {
             selectedEA = coverage.eaName
         }
         .focusable()
-    }
-
-    private func coverageColor(for pct: Double) -> Color {
-        // Maps coverage percentage to Theme tokens. Theme has no separate
-        // "orange/fair" tier, so 50–100% all resolve to `warn` (orange)
-        // before tipping to `ok` (green) at 100%.
-        switch pct {
-        case 100:      return Theme.Colors.ok
-        case 80..<100: return Theme.Colors.goldBright
-        case 50..<80:  return Theme.Colors.warn
-        case 1..<50:   return Theme.Colors.danger
-        default:       return Theme.Colors.fgMuted
-        }
     }
 
     @ViewBuilder

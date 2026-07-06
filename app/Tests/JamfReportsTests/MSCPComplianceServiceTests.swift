@@ -30,6 +30,19 @@ private extension EAResultRow {
             value: AnyCodable(value)
         )
     }
+
+    /// Convenience init for a string-valued cell (e.g. a pipe-delimited list).
+    init(device: String, eaName: String, stringValue: String) {
+        self.init(
+            computerId: nil,
+            computerName: nil,
+            serial: nil,
+            eaId: nil,
+            eaName: eaName,
+            device: device,
+            value: AnyCodable(stringValue)
+        )
+    }
 }
 
 // MARK: - Fixtures
@@ -37,6 +50,7 @@ private extension EAResultRow {
 private let stig = "Compliance - Failed mSCP Results Count - DISA STIG"
 private let nist = "Compliance - Failed mSCP Results Count - NIST 800-53r5 Audit"
 private let tailored  = "Compliance - Failed mSCP Results Count - Org Tailored Baseline"
+private let stigList = "Compliance - Failed mSCP Result List - DISA STIG"
 
 /// Synthetic ea-results fixture with fabricated device identifiers.
 /// Shape uses the prod `device` field (no computer_id / serial).
@@ -381,5 +395,178 @@ final class MSCPComplianceServiceTests: XCTestCase {
 
         XCTAssertEqual(result.devicesWithData, 2)
         XCTAssertNotNil(result.compliancePct)
+    }
+
+    // MARK: - Task 1: rule-count validity bound
+
+    /// A count above the baseline's rule count is a garbage EA value → No Data,
+    /// never High.
+    func testCountAboveRuleCountBecomesNoData() {
+        let rows: [EAResultRow] = [
+            .init(device: "mac-garbage", eaName: stig, value: 9999),  // > ruleCount
+            .init(device: "mac-ok", eaName: stig, value: 0),
+        ]
+        let baseline = ComplianceBaselineConfig(
+            name: "STIG", failuresCountColumn: stig, ruleCount: 280)
+        let results = MSCPComplianceService.evaluate(rows: rows, baselines: [baseline])
+        let r = try! XCTUnwrap(results.first)
+
+        let byLabel = Dictionary(uniqueKeysWithValues: r.bands.map { ($0.label, $0.count) })
+        XCTAssertEqual(byLabel["No Data"], 1, "count > ruleCount must be No Data")
+        // bands includes zero-count entries, so High is present with count 0.
+        XCTAssertEqual(byLabel["High"], 0, "the garbage device must NOT band High")
+        XCTAssertEqual(r.devicesWithData, 1, "only mac-ok has a valid count")
+    }
+
+    /// A count equal to the rule count is still valid (boundary is inclusive).
+    func testCountEqualToRuleCountIsValid() {
+        let rows: [EAResultRow] = [.init(device: "mac-edge", eaName: stig, value: 280)]
+        let baseline = ComplianceBaselineConfig(
+            name: "STIG", failuresCountColumn: stig, ruleCount: 280)
+        let results = MSCPComplianceService.evaluate(rows: rows, baselines: [baseline])
+        let r = try! XCTUnwrap(results.first)
+        XCTAssertEqual(r.devicesWithData, 1, "count == ruleCount is in-bounds")
+    }
+
+    /// With no ruleCount configured, the bound is off — a huge count still bands
+    /// High (pins today's unbounded default behavior).
+    func testNilRuleCountLeavesHugeCountBandedHigh() {
+        let rows: [EAResultRow] = [.init(device: "mac-huge", eaName: stig, value: 9999)]
+        let baseline = ComplianceBaselineConfig(
+            name: "STIG", failuresCountColumn: stig, ruleCount: nil)
+        let results = MSCPComplianceService.evaluate(rows: rows, baselines: [baseline])
+        let r = try! XCTUnwrap(results.first)
+        let byLabel = Dictionary(uniqueKeysWithValues: r.bands.map { ($0.label, $0.count) })
+        XCTAssertEqual(byLabel["High"], 1, "no ruleCount → no bound → still High")
+        XCTAssertEqual(r.devicesWithData, 1)
+    }
+
+    // MARK: - Task 2: count-vs-list cross-check
+
+    private func crossCheckBaseline() -> ComplianceBaselineConfig {
+        ComplianceBaselineConfig(
+            name: "STIG", failuresCountColumn: stig,
+            failuresListColumn: stigList, ruleCount: 280)
+    }
+
+    func testCrossCheckAgreement() {
+        let rows: [EAResultRow] = [
+            .init(device: "mac-001", eaName: stig, value: 2),
+            .init(device: "mac-001", eaName: stigList, stringValue: "os_ssh_disable|os_filevault_enable"),
+        ]
+        let results = MSCPComplianceService.crossCheck(rows: rows, baselines: [crossCheckBaseline()])
+        let r = try! XCTUnwrap(results.first)
+        XCTAssertEqual(r.baselineName, "STIG")
+        XCTAssertEqual(r.devicesCompared, 1)
+        XCTAssertEqual(r.disagreements, 0)
+        XCTAssertEqual(r.disagreementRate, 0.0)
+    }
+
+    func testCrossCheckDisagreement() {
+        let rows: [EAResultRow] = [
+            .init(device: "mac-001", eaName: stig, value: 12),
+            .init(device: "mac-001", eaName: stigList, stringValue: "a|b|c"),  // 3 entries != 12
+        ]
+        let results = MSCPComplianceService.crossCheck(rows: rows, baselines: [crossCheckBaseline()])
+        let r = try! XCTUnwrap(results.first)
+        XCTAssertEqual(r.devicesCompared, 1)
+        XCTAssertEqual(r.disagreements, 1)
+        XCTAssertEqual(r.disagreementRate, 1.0)
+    }
+
+    func testCrossCheckBlankListCellAgreesWithCountZero() {
+        let rows: [EAResultRow] = [
+            .init(device: "mac-001", eaName: stig, value: 0),
+            .init(device: "mac-001", eaName: stigList, stringValue: "   "),  // blank → 0 entries
+        ]
+        let results = MSCPComplianceService.crossCheck(rows: rows, baselines: [crossCheckBaseline()])
+        let r = try! XCTUnwrap(results.first)
+        XCTAssertEqual(r.devicesCompared, 1)
+        XCTAssertEqual(r.disagreements, 0, "blank list (0 entries) agrees with count 0")
+    }
+
+    func testCrossCheckDeviceMissingOneSideIsSkipped() {
+        let rows: [EAResultRow] = [
+            // mac-001 has both → compared
+            .init(device: "mac-001", eaName: stig, value: 1),
+            .init(device: "mac-001", eaName: stigList, stringValue: "os_ssh_disable"),
+            // mac-002 has only a count → skipped
+            .init(device: "mac-002", eaName: stig, value: 4),
+            // mac-003 has only a list → skipped
+            .init(device: "mac-003", eaName: stigList, stringValue: "a|b"),
+        ]
+        let results = MSCPComplianceService.crossCheck(rows: rows, baselines: [crossCheckBaseline()])
+        let r = try! XCTUnwrap(results.first)
+        XCTAssertEqual(r.devicesCompared, 1, "only mac-001 has both sides")
+        XCTAssertEqual(r.disagreements, 0)
+    }
+
+    func testCrossCheckOmitsBaselineWithoutListColumn() {
+        let withList = crossCheckBaseline()
+        let withoutList = ComplianceBaselineConfig(
+            name: "NIST", failuresCountColumn: nist, ruleCount: nil)  // no list column
+        let rows: [EAResultRow] = [
+            .init(device: "mac-001", eaName: stig, value: 1),
+            .init(device: "mac-001", eaName: stigList, stringValue: "x"),
+            .init(device: "mac-001", eaName: nist, value: 0),
+        ]
+        let results = MSCPComplianceService.crossCheck(
+            rows: rows, baselines: [withList, withoutList])
+        XCTAssertEqual(results.count, 1, "only the list-configured baseline is returned")
+        XCTAssertEqual(results[0].baselineName, "STIG")
+    }
+
+    func testCrossCheckGarbageCountExcludedFromComparison() {
+        let rows: [EAResultRow] = [
+            .init(device: "mac-001", eaName: stig, value: 9999),  // > ruleCount → invalid count
+            .init(device: "mac-001", eaName: stigList, stringValue: "a|b"),
+        ]
+        let results = MSCPComplianceService.crossCheck(rows: rows, baselines: [crossCheckBaseline()])
+        let r = try! XCTUnwrap(results.first)
+        XCTAssertEqual(r.devicesCompared, 0,
+                       "an out-of-bounds count has no valid count side → device skipped")
+        XCTAssertNil(r.disagreementRate)
+    }
+
+    // MARK: - Task 2: resolvedBaselines carries failures_list_column
+
+    func testResolvedBaselinesCarriesLegacyFailuresListColumn() {
+        let config = ComplianceConfig(
+            enabled: true,
+            failuresCountColumn: stig,
+            failuresListColumn: stigList,
+            baselineLabel: "STIG",
+            framework: nil,
+            baselines: nil
+        )
+        let resolved = config.resolvedBaselines
+        XCTAssertEqual(resolved.count, 1)
+        XCTAssertEqual(resolved[0].failuresListColumn, stigList,
+                       "legacy synthesis must carry failures_list_column")
+    }
+
+    /// The new per-baseline `failures_list_column` key decodes through JSON.
+    func testBaselineFailuresListColumnDecodesFromJSON() throws {
+        let json = """
+        {
+          "compliance": {
+            "enabled": true,
+            "baselines": [
+              {
+                "name": "DISA STIG",
+                "failures_count_column": "Compliance - Failed mSCP Results Count - DISA STIG",
+                "failures_list_column": "Compliance - Failed mSCP Result List - DISA STIG",
+                "rule_count": 280
+              }
+            ]
+          }
+        }
+        """
+        let config = try JSONDecoder().decode(ReportConfig.self, from: Data(json.utf8))
+        let baselines = try XCTUnwrap(config.compliance?.baselines)
+        XCTAssertEqual(baselines.count, 1)
+        XCTAssertEqual(baselines[0].failuresListColumn,
+                       "Compliance - Failed mSCP Result List - DISA STIG")
+        XCTAssertEqual(baselines[0].ruleCount, 280)
     }
 }

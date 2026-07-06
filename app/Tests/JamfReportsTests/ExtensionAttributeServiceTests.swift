@@ -85,6 +85,34 @@ final class ExtensionAttributeServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.coverage.last?.eaName, "FileVault Status", "FileVault should be last (best coverage)")
     }
 
+    /// Prod ea-results carry only `{definition_id, device, ea_name, value}` — no
+    /// computer_id/serial. Device counting must use the identity fallback chain,
+    /// or the whole view renders "0 devices" (regression: prod 2026-07-02).
+    func testCoverageCountsDevicesFromDeviceKeyOnlyRows() throws {
+        let resultsJSON = """
+        [
+          {"definition_id": "10", "device": "mac-001", "ea_name": "FileVault Status", "value": "Encrypted"},
+          {"definition_id": "10", "device": "mac-002", "ea_name": "FileVault Status", "value": "Not Encrypted"},
+          {"definition_id": "10", "device": "mac-003", "ea_name": "FileVault Status", "value": null},
+          {"definition_id": "11", "device": "mac-001", "ea_name": "Office Version", "value": "16.91"}
+        ]
+        """
+        let resultsURL = writeTempFile(content: resultsJSON, suffix: "ea-results.json")
+        defer { try? FileManager.default.removeItem(at: resultsURL) }
+
+        let snapshot = try XCTUnwrap(
+            ExtensionAttributeService.load(resultsURL: resultsURL, definitionsURL: nil)
+        )
+
+        XCTAssertEqual(snapshot.totalDevices, 3, "device-key rows must count into the universe")
+        let coverageByName = Dictionary(uniqueKeysWithValues:
+            snapshot.coverage.map { ($0.eaName, ($0.populatedDevices, $0.totalDevices)) }
+        )
+        XCTAssertEqual(coverageByName["FileVault Status"]?.0, 2)
+        XCTAssertEqual(coverageByName["FileVault Status"]?.1, 3)
+        XCTAssertEqual(coverageByName["Office Version"]?.0, 1)
+    }
+
     /// Tests that when definitions exist but no results are loaded, totalEAs
     /// comes from definitions count.
     func testDefinitionsOnlySnapshot() throws {

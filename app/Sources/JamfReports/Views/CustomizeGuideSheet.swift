@@ -1,7 +1,5 @@
 import SwiftUI
 
-// DRAFT — needs visual sign-off at PageScaffold.minSupportedWidth
-
 /// Sheet presented from CustomizeView's "How to customize" button.
 /// One row per customization surface: what it controls and where to find it.
 struct CustomizeGuideSheet: View {

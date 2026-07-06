@@ -141,17 +141,19 @@ struct ExtensionAttributeService: Sendable {
         if let resultsURL,
            FileManager.default.fileExists(atPath: resultsURL.path) {
             if let data = try? Data(contentsOf: resultsURL) {
-                do {
-                    results = try JSONDecoder().decode([EAResultRow].self, from: data)
+                let decoded = EAResultRow.decodeSnapshot(data)
+                if let rows = decoded.rows {
+                    results = rows
                     if sourceFile == nil {
                         sourceFile = resultsURL
                         snapshotDate = (try? resultsURL.resourceValues(forKeys: [.contentModificationDateKey]))?
                             .contentModificationDate
                     }
                     readSomething = true
-                } catch {
+                } else {
+                    // `reason` is keys-only (PII-safe).
                     AppLogger.collect.warning(
-                        "ExtensionAttributeService: failed to decode results at \(resultsURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                        "ExtensionAttributeService: failed to decode results at \(resultsURL.lastPathComponent, privacy: .public): \(decoded.reason, privacy: .public)"
                     )
                 }
             }
@@ -203,13 +205,16 @@ struct ExtensionAttributeService: Sendable {
         var allDeviceIds: Set<String> = []
 
         for row in results {
-            if let cid = row.computerId { allDeviceIds.insert(cid) }
+            // Identity fallback chain (computerId ?? serial ?? device ?? computerName):
+            // prod ea-results carry only `device`, so computerId alone yields 0 devices.
+            let cid = MSCPComplianceService.primaryIdentifier(for: row)?.lowercased()
+            if let cid { allDeviceIds.insert(cid) }
             let eaName = row.eaName ?? "Unknown"
             let normalized = normalizedPopulatedValue(row.value)
 
             var acc = accumulators[eaName] ?? Accumulator()
             if let normalized {
-                if let cid = row.computerId { acc.populatedDeviceIds.insert(cid) }
+                if let cid { acc.populatedDeviceIds.insert(cid) }
                 acc.valueCounts[normalized, default: 0] += 1
             }
             accumulators[eaName] = acc

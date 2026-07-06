@@ -33,6 +33,9 @@ struct ReportEngine: Sendable {
     ///   - template: The `ReportTemplate` that controls which sheets are included and
     ///               in what order. Defaults to `ExecutiveTemplate()` — preserving the
     ///               legacy behavior for callers that do not supply a template.
+    ///   - aiNarrative: Optional AI executive narrative (F3). GUI-generate flows pass
+    ///                  a pre-generated paragraph; headless callers (scheduled runs,
+    ///                  included CLI) leave the default nil and no AI block is written.
     ///   - onLine: Optional streaming log callback. Post-generate side-effect warnings
     ///             (archive rotation, CSV snapshot, summary JSON) are routed here when
     ///             provided, so callers with a live log view (e.g. GenerateSheet) see them.
@@ -44,6 +47,7 @@ struct ReportEngine: Sendable {
         csvURL: URL?,
         outputURL: URL,
         template: any ReportTemplate = FullInstanceTemplate(),
+        aiNarrative: String? = nil,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
         // PR-10 / threat-model T-11: strict-mode pre-flight. Abort before any
@@ -68,7 +72,7 @@ struct ReportEngine: Sendable {
         // template order rather than plan order. Unknown SheetID values are skipped
         // with a warning — they are engine-team follow-ups, not fatal errors.
         let core = CoreDashboard(config: config, dataDir: dataDir, workbook: workbook,
-                                 provenance: prov)
+                                 provenance: prov, aiNarrative: aiNarrative)
         let registry = SheetRegistry(plan: core.sheetPlan)
         for sheetID in template.includedSheets {
             AppLogger.report.debug("sheet \(sheetID.rawValue, privacy: .public)")
@@ -552,22 +556,37 @@ struct ReportEngine: Sendable {
         var complianceFinalPct: Double? = complianceProxyPct
         var complianceIsRealData = false
         var mscpBandsSnapshot: [String: MSCPBandCounts]? = nil
+        // Parallel to mscpBandsSnapshot: baseline name -> failures_count_column.
+        // Stable identity that lets the trend chart bridge a later baseline rename.
+        var mscpBandColumnsSnapshot: [String: String]? = nil
         // cachedData records the source automatically (live/cache/absent), so a single
         // call here covers both the recordSource and the data load. Guard on eaBaselines
         // so "absent" is not recorded for tenants that never configured an EA baseline.
         let eaBaselines = config.compliance?.resolvedBaselines ?? []
-        if !eaBaselines.isEmpty,
-           let eaData = cachedData(kind: "ea-results"),
-           let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData) {
-            let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
-            if let primary = results.first, let realPct = primary.compliancePct {
-                complianceFinalPct = realPct
-                complianceIsRealData = true
+        if !eaBaselines.isEmpty, let eaData = cachedData(kind: "ea-results") {
+            let decoded = EAResultRow.decodeSnapshot(eaData)
+            if let eaRows = decoded.rows {
+                let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
+                if let primary = results.first, let realPct = primary.compliancePct {
+                    complianceFinalPct = realPct
+                    complianceIsRealData = true
+                }
+                // Map all baseline results into the mscpBands summary field so the
+                // trend chart has per-date band data from the first collect onward.
+                let bandsMap = Self.mscpBandsMap(from: results)
+                if !bandsMap.isEmpty {
+                    mscpBandsSnapshot = bandsMap
+                    // Only the baselines that produced bands carry a column entry.
+                    mscpBandColumnsSnapshot = Self.mscpBandColumnsMap(
+                        from: results, baselines: eaBaselines)
+                }
+            } else {
+                // `.notice` (not `.debug`) so the shape surfaces without verbose logging;
+                // `reason` is keys-only (PII-safe).
+                AppLogger.platform.notice(
+                    "ReportEngine: ea-results undecodable — \(decoded.reason, privacy: .public)"
+                )
             }
-            // Map all baseline results into the mscpBands summary field so the
-            // trend chart has per-date band data from the first collect onward.
-            let bandsMap = Self.mscpBandsMap(from: results)
-            if !bandsMap.isEmpty { mscpBandsSnapshot = bandsMap }
         }
 
         // Derive per-control percentages and the weighted v3.5 security
@@ -628,6 +647,7 @@ struct ReportEngine: Sendable {
             actionItemsP1: gatekeeperCount.map { _ in p1 },
             complianceIsProxy: complianceIsProxy,
             mscpBands: mscpBandsSnapshot,
+            mscpBandColumns: mscpBandColumnsSnapshot,
             collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil
         )
     }
@@ -641,6 +661,27 @@ struct ReportEngine: Sendable {
         for result in results {
             guard result.totalDevices > 0 else { continue }
             out[result.name] = bandCountsFromBands(result.bands, noData: result.noDataCount)
+        }
+        return out
+    }
+
+    /// Map `MSCPComplianceService.BaselineResult` array → `[baselineName: failuresCountColumn]`,
+    /// parallel to `mscpBandsMap`. The column is the stable identity that lets
+    /// `MSCPChartDataBuilder` bridge a later baseline rename in multi-baseline orgs.
+    ///
+    /// Only baselines with at least one device (present in `mscpBandsMap`) get an
+    /// entry; the column is looked up from config (`baselines`) by name, falling
+    /// back to the result's own `failuresCountColumn`.
+    static func mscpBandColumnsMap(
+        from results: [MSCPComplianceService.BaselineResult],
+        baselines: [ComplianceBaselineConfig]
+    ) -> [String: String] {
+        let colByName = Dictionary(
+            baselines.map { ($0.name, $0.failuresCountColumn) },
+            uniquingKeysWith: { first, _ in first })
+        var out: [String: String] = [:]
+        for result in results where result.totalDevices > 0 {
+            out[result.name] = colByName[result.name] ?? result.failuresCountColumn
         }
         return out
     }
@@ -767,7 +808,15 @@ struct ReportEngine: Sendable {
         // Load the mSCP baseline data for the current snapshot — needed even when
         // summaries is empty (first-run case: ea-results exists, summary not yet written).
         let eaData = try? Self.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir)
-        let eaRows = eaData.flatMap { try? JSONDecoder().decode([EAResultRow].self, from: $0) }
+        let eaDecoded = eaData.map { EAResultRow.decodeSnapshot($0) }
+        if let eaDecoded, eaDecoded.rows == nil {
+            // `.notice` (not `.debug`) so the shape surfaces without verbose logging;
+            // `reason` is keys-only (PII-safe).
+            AppLogger.platform.notice(
+                "ReportEngine.renderChartSheet: ea-results undecodable — \(eaDecoded.reason, privacy: .public)"
+            )
+        }
+        let eaRows = eaDecoded?.rows
         let mscpResults: [MSCPComplianceService.BaselineResult] = {
             guard !baselines.isEmpty, let rows = eaRows else { return [] }
             return MSCPComplianceService.evaluate(rows: rows, baselines: baselines)
@@ -1271,7 +1320,15 @@ struct ReportEngine: Sendable {
         // Mirrors the emitSummaryJSON first-run-of-day check (required keys: date,
         // totalDevices, source). Ad-hoc Refresh paths pass force: true so they are
         // never gated by a prior scheduled collect.
-        if !force, let summariesDir = try? workspacePaths.summariesDir(for: profile) {
+        //
+        // Only a FULL collect (all tiers) is gated here. A tier-scoped collect (e.g.
+        // the weekly managed-scan run, tiers [.scan]) must fall through to the
+        // per-kind cadence check below, or its tier — skipped by the daily freshness
+        // run that already wrote today's summary — would never be collected. The
+        // per-kind cadence check already prevents redundant work, so dropping the
+        // coarse day-guard for tier subsets is safe.
+        let isFullCollect = tiers == Set(CollectionTier.allCases)
+        if !force, isFullCollect, let summariesDir = try? workspacePaths.summariesDir(for: profile) {
             let today = SummaryJSONParser.dateFormatter.string(from: Date())
             let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
             if FileManager.default.fileExists(atPath: summaryFile.path),
@@ -1799,13 +1856,14 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         outputURL: URL,
         template: any ReportTemplate = FullInstanceTemplate(),
+        aiNarrative: String? = nil,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> String {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to HTML
         // generation too — otherwise the GUI's "Require snapshot manifest"
         // toggle would be a false promise for users who generate HTML reports.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
-        let report = HtmlReport(config: config, dataDir: dataDir)
+        let report = HtmlReport(config: config, dataDir: dataDir, aiNarrative: aiNarrative)
         let digest = try await report.generate(
             outputURL: outputURL, sections: template.htmlSections
         )
@@ -1970,6 +2028,15 @@ struct ReportEngine: Sendable {
             guard let (exitCode, data) = schoolResult else { continue }
             schoolOutcomes.append(CollectOutcome(kind: kind, exitCode: exitCode))
             if exitCode == 0, !data.isEmpty {
+                // Cobra prints the parent help and exits 0 for an unknown
+                // subcommand — saving that as a snapshot poisons the cache.
+                // See the matching guard in the Pro collect loop above.
+                guard isJSONSnapshot(data) else {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                        text: "[warn] \(kind): output is not JSON (renamed/unsupported "
+                            + "command on this jamf-cli?) — snapshot not saved"))
+                    continue
+                }
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
@@ -2044,6 +2111,15 @@ struct ReportEngine: Sendable {
             }
             guard let (exitCode, data) = protectResult else { continue }
             if exitCode == 0, !data.isEmpty {
+                // Cobra prints the parent help and exits 0 for an unknown
+                // subcommand — saving that as a snapshot poisons the cache.
+                // See the matching guard in the Pro collect loop above.
+                guard isJSONSnapshot(data) else {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                        text: "[warn] \(kind): output is not JSON (renamed/unsupported "
+                            + "command on this jamf-cli?) — snapshot not saved"))
+                    continue
+                }
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))

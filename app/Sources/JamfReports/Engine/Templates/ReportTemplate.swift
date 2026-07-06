@@ -87,6 +87,9 @@ enum SectionID: String, Sendable, CaseIterable {
     case buildingBreakdown = "building_breakdown"
     case departmentBreakdown = "department_breakdown"
     case execSummary     = "exec_summary"
+    // AI executive narrative (F3) — renders only when a narrative was passed
+    // into the engine (GUI-generate only); omitted entirely otherwise.
+    case aiNarrative     = "ai_narrative"
     case cleanupAnalysis = "cleanup_analysis"
     case timeline        = "timeline"
     case osCurrency      = "os_currency"

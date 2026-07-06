@@ -23,6 +23,47 @@ enum AppLogger {
     static let webhook  = Logger(subsystem: subsystem, category: "webhook")   // Teams/Slack notify
     static let platform = Logger(subsystem: subsystem, category: "platform")  // Protect/School/DDM/compliance
     static let ui       = Logger(subsystem: subsystem, category: "ui")        // views/state
+
+    /// The eight categories above, addressable by name for `event(_:_:_:)`.
+    enum Category: String, Sendable {
+        case cli, collect, report, auth, schedule, webhook, platform, ui
+    }
+
+    private static func logger(for category: Category) -> Logger {
+        switch category {
+        case .cli: return cli
+        case .collect: return collect
+        case .report: return report
+        case .auth: return auth
+        case .schedule: return schedule
+        case .webhook: return webhook
+        case .platform: return platform
+        case .ui: return ui
+        }
+    }
+
+    private static func osType(_ level: LogEntry.Level) -> OSLogType {
+        switch level {
+        case .debug:  return .debug
+        case .info:   return .info
+        case .notice: return .default
+        case .error:  return .error
+        case .fault:  return .fault
+        }
+    }
+
+    /// Log an operational event to OSLog AND mirror it into `LogBuffer`, so the
+    /// in-app viewer can show it in signed builds (where `OSLogStore` reads fail
+    /// with a generic error). `message` MUST be free of secrets — it is stored
+    /// raw and scrubbed by `LogRedactor` only at display/export time. Secret- or
+    /// PII-bearing logs keep using the category `Logger`s directly with
+    /// `privacy: .private`; those never reach the buffer.
+    static func event(_ category: Category, _ level: LogEntry.Level, _ message: String) {
+        logger(for: category).log(level: osType(level), "\(message, privacy: .public)")
+        LogBuffer.shared.append(
+            LogEntry(date: Date(), category: category.rawValue, level: level, message: message)
+        )
+    }
 }
 
 // MARK: - Crash log writer
