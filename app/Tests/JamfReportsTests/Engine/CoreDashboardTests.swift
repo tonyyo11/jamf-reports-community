@@ -24,15 +24,7 @@ final class CoreDashboardTests: XCTestCase {
         super.tearDown()
     }
 
-    private var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures")
-    }
+    private var fixturesDir: URL { TestFixtures.root }
 
     /// Copy a fixture directory into a temp dataDir and return the temp URL.
     /// Tracked for cleanup in `tearDown`.
@@ -45,9 +37,7 @@ final class CoreDashboardTests: XCTestCase {
         for name in names {
             let from = src.appendingPathComponent(name, isDirectory: true)
             let to = tmp.appendingPathComponent(name, isDirectory: true)
-            if FileManager.default.fileExists(atPath: from.path) {
-                try FileManager.default.copyItem(at: from, to: to)
-            }
+            try? TestFixtures.copyDir(from, to: to)
         }
         return tmp
     }
@@ -65,9 +55,7 @@ final class CoreDashboardTests: XCTestCase {
         for pair in map {
             let from = src.appendingPathComponent(pair.src, isDirectory: true)
             let to = tmp.appendingPathComponent(pair.dst, isDirectory: true)
-            if FileManager.default.fileExists(atPath: from.path) {
-                try FileManager.default.copyItem(at: from, to: to)
-            }
+            try? TestFixtures.copyDir(from, to: to)
         }
         return tmp
     }
@@ -97,8 +85,8 @@ final class CoreDashboardTests: XCTestCase {
         }
         let subdirURL = tmp.appendingPathComponent(subdir, isDirectory: true)
         try FileManager.default.createDirectory(at: subdirURL, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(
-            at: src,
+        try TestFixtures.copyFile(
+            src,
             to: subdirURL.appendingPathComponent(src.lastPathComponent)
         )
         return tmp
@@ -399,9 +387,7 @@ final class CoreDashboardTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
             throw XCTSkip("Fixture not available")
         }
-        let files = try FileManager.default.contentsOfDirectory(
-            at: fixtureURL, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" }
+        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
         guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
         let data = try Data(contentsOf: first)
         XCTAssertNoThrow(try JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data))
@@ -412,9 +398,7 @@ final class CoreDashboardTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
             throw XCTSkip("Fixture not available")
         }
-        let files = try FileManager.default.contentsOfDirectory(
-            at: fixtureURL, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" }
+        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
         guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
         let data = try Data(contentsOf: first)
         let rows = try JSONDecoder().decode([GroupRow].self, from: data)
@@ -427,9 +411,7 @@ final class CoreDashboardTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
             throw XCTSkip("Fixture not available")
         }
-        let files = try FileManager.default.contentsOfDirectory(
-            at: fixtureURL, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" }
+        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
         guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
         let data = try Data(contentsOf: first)
         let rows = try JSONDecoder().decode([PackageRow].self, from: data)

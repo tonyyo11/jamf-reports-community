@@ -15,7 +15,8 @@ final class OutputValidatorTests: XCTestCase {
 
     /// Resolve a fixture URL from the test bundle.
     private func fixtureURL(_ name: String) throws -> URL {
-        guard let url = Bundle.module.url(forResource: name, withExtension: nil) else {
+        let url = TestFixtures.dir(name)
+        guard FileManager.default.fileExists(atPath: url.path) else {
             throw XCTSkip("Fixture '\(name)' not found in test bundle — skipping")
         }
         return url

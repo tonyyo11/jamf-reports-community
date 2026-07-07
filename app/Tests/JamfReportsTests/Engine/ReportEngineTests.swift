@@ -607,15 +607,7 @@ final class ReportEngineTests: XCTestCase {
         }
     }
 
-    private var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures")
-    }
+    private var fixturesDir: URL { TestFixtures.root }
 
     // MARK: - Snapshot JSON gate
 

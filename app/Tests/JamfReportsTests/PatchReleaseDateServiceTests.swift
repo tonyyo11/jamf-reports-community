@@ -156,12 +156,7 @@ final class PatchReleaseDateServiceTests: XCTestCase {
     }
 
     private func fixtureURL(_ filename: String) -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures/jamf-cli-data/patch-release-dates")
+        TestFixtures.dir("jamf-cli-data/patch-release-dates")
             .appendingPathComponent(filename)
     }
 

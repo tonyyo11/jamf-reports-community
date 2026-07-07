@@ -861,15 +861,7 @@ final class JamfCLIDecoderTests: XCTestCase {
 
     // MARK: - Helper
 
-    private var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures")
-    }
+    private var fixturesDir: URL { TestFixtures.root }
 
     // MARK: - Negative key-mapping (Epic #102, item #5)
     //

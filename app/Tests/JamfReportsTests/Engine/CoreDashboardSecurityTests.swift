@@ -37,21 +37,13 @@ final class CoreDashboardSecurityTests: XCTestCase {
     }
 
     private func fixtureData(kind: String) -> String? {
-        let fixtureDir = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("tests/fixtures/jamf-cli-data")
+        let fixtureDir = TestFixtures.dir("jamf-cli-data")
             .appendingPathComponent(kind)
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: fixtureDir, includingPropertiesForKeys: nil
-        ).filter({ $0.pathExtension == "json" }),
-              // `contentsOfDirectory` order is undefined. Sort by filename so the
-              // test deterministically pins to the same fixture every run — for
-              // `security` the corpus holds three files (Epic #102).
-              let first = files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first,
+        let files = TestFixtures.listDir(fixtureDir).filter { $0.pathExtension == "json" }
+        // `listDir` order is undefined. Sort by filename so the test
+        // deterministically pins to the same fixture every run — for
+        // `security` the corpus holds three files (Epic #102).
+        guard let first = files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }).first,
               let content = try? String(contentsOf: first, encoding: .utf8)
         else { return nil }
         return content
