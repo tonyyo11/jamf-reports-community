@@ -7,6 +7,66 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- Metric-threshold webhook alerting (opt-in): a new `alerts:` config block defines
+  rules like "FileVault below 90%" or "patch compliance drops more than 5 points
+  week-over-week", evaluated against each scheduled run's daily summary. When a
+  rule trips, an attention card posts to the existing `notify:` webhook — no rule
+  tripped, no message. Off by default; requires the notify webhook.
+- Scheduled-run dead-man switch: the app now notices when a scheduled run *should*
+  have fired but didn't. Overview shows an "overdue" banner naming the schedule and
+  when it last succeeded, the Automation screen gains an Automation Health section,
+  and (when the notify webhook is configured) one overdue digest posts per day.
+- Per-kind data freshness on operational screens: Patch, Security Posture, Updates,
+  and Devices show compact chips with the age of each underlying data source, so a
+  screen mixing fresh and week-old inputs no longer reads as uniformly current.
+  Devices previously had no freshness surface at all and now also gets the
+  "Collect now" banner.
+- Snapshot integrity manifests are now written by the app: with
+  `jamf_cli.require_manifest: true`, every collected snapshot is recorded in a
+  per-kind `manifest.json` (SHA-256), making tamper detection in the Health Audit
+  fully functional end-to-end.
+- Webhook notifications are now configurable in the app: the Automation screen
+  gains a Notifications section (per profile) with the enable toggle, Teams/Slack
+  picker, webhook URL, payload-detail level, and a "Send test notification"
+  button — no more hand-editing `notify:` in config.yaml (which still works).
+
+### Security
+
+- Webhook cards can now be minimized for high-security deployments: new
+  `notify.detail: minimal` sends event facts only ("2 alert rules tripped",
+  "run failed", "1 schedule overdue") with no metric values, error text, or
+  schedule names — the webhook becomes a doorbell, not a data channel. The
+  default (`full`) is unchanged.
+- The failure webhook's error text is now redacted (secrets and PII, including
+  server hostnames) before it leaves the machine — previously a network error
+  could embed the Jamf server address in the card.
+- Webhook titles and facts are sanitized against Slack mention/link injection
+  (`<!channel>`, `<@user>`, disguised links) across all card types.
+- Hardened the new `alerts:` config parsing: a malformed rule (fractional,
+  quoted, negative, or garbage threshold) can no longer break loading of the
+  whole `config.yaml` — bad rules are dropped individually and decimal
+  thresholds like `90.5` now work.
+- Snapshot integrity manifests are excluded from every "newest snapshot"
+  reader, so enabling `jamf_cli.require_manifest` can't cause the manifest
+  file itself to be read as data.
+- The Config Doctor now reports "EA coverage drift unavailable" (naming the
+  reason, e.g. truncated snapshots) instead of a green "stable" row when it
+  lacks the data to actually check.
+
+### Changed
+
+- Cached data now has a shelf life: new `jamf_cli.max_cache_age_hours` (default
+  168 — 7 days). When live collection fails and the newest cached snapshot is older
+  than the limit, the daily digest reports that kind as absent (with a log line
+  naming the age) instead of silently presenting week-old data as current. Set to
+  `0` to keep the previous keep-forever behavior.
+- Days recovered from truncated snapshot files ("salvaged") are now marked on the
+  compliance band trend chart with a warning marker and excluded from EA
+  coverage-drift comparisons, so a partially-recovered day never reads as a real
+  fleet change.
+
 ## [2.5.0] - 2026-07-06
 
 ### Added
