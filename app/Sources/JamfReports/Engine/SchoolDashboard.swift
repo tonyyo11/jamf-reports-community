@@ -461,7 +461,10 @@ struct SchoolDashboard: Sendable {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
                ) {
-                candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
+                candidates.append(contentsOf: files.filter {
+                    $0.pathExtension == "json"
+                    && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
+                })
             }
         }
         guard !candidates.isEmpty else {

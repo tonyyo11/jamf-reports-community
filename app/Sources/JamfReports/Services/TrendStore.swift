@@ -367,6 +367,27 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return MSCPChartDataBuilder.toStackedSeries(points: inRange)
     }
 
+    /// Dates (for the SELECTED baseline, range-filtered same as
+    /// `mscpStackedSeries()`) whose band point was recovered from a truncated
+    /// ea-results file. `TrendsView` annotates these on the band chart so a
+    /// salvaged (partial-fleet) day is never mistaken for real fleet change.
+    var salvagedBandDates: Set<Date> {
+        let points = selectedBandPoints
+        guard !points.isEmpty else { return [] }
+
+        let rangeStart = filteredSummaries.first?.parsedDate
+        let rangeEnd   = filteredSummaries.last?.parsedDate
+
+        let inRange: [MSCPChartDataBuilder.BandPoint]
+        if let start = rangeStart, let end = rangeEnd {
+            inRange = points.filter { $0.date >= start && $0.date <= end }
+        } else {
+            inRange = points
+        }
+
+        return MSCPChartDataBuilder.salvagedDates(in: inRange)
+    }
+
     // MARK: - Band-point cache
 
     /// Build per-baseline band-history from ea-results snapshots (primary) and

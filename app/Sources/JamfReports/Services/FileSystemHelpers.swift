@@ -21,6 +21,12 @@ extension FileManager {
         let dirPrefix = dir.resolvingSymlinksInPath().standardizedFileURL.path + "/"
         return files
             .filter { $0.pathExtension == "json" }
+            // manifest.json is integrity metadata, never a snapshot. Without this
+            // the 2.6 SnapshotManifest.record writer's manifest.json (always newest
+            // by mtime after a collect) would be returned as "newest" to all ~15
+            // newestJSONFile consumers, emptying their dashboards. Matches
+            // newestSnapshotFile's exclusion form.
+            .filter { $0.lastPathComponent.lowercased() != SnapshotManifest.fileName }
             .compactMap { url -> URL? in
                 let resolved = url.resolvingSymlinksInPath().standardizedFileURL
                 return resolved.path.hasPrefix(dirPrefix) ? resolved : nil

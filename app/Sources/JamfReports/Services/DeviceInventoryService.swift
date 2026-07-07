@@ -101,6 +101,36 @@ enum DeviceInventoryService {
             isDemo: false
         )
     }
+
+    /// Per-kind newest-file dates for the Devices freshness chip row. Keyed by
+    /// on-disk kind name — computed separately from `load` because
+    /// `DeviceInventorySnapshot` collapses every source to one `generatedDate`.
+    /// Returns an empty map in demo mode or when the workspace is missing.
+    static func sourceDates(profile: String, demoMode: Bool) -> [String: Date] {
+        if demoMode { return [:] }
+        guard let root = validatedWorkspaceRoot(profile: profile) else { return [:] }
+        var warnings: [String] = []
+        let config = loadConfigHints(root: root, warnings: &warnings)
+        var dates: [String: Date] = [:]
+
+        if let csv = latestInventoryCSV(config: config, root: root),
+           let d = modificationDate(csv) {
+            dates["inventory-csv"] = d
+        }
+        let jsonKinds: [(kind: String, names: [String])] = [
+            ("computers", ["computers-list", "computers_list", "computers"]),
+            ("device-compliance", ["device-compliance", "device_compliance"]),
+            ("patch-device-failures", ["patch-device-failures", "patch_device_failures"]),
+            ("patch-status", ["patch-status", "patch_status"]),
+        ]
+        for entry in jsonKinds {
+            if let url = latestCachedJSON(dataDir: config.jamfCLIDataDir, names: entry.names, root: root),
+               let d = modificationDate(url) {
+                dates[entry.kind] = d
+            }
+        }
+        return dates
+    }
 }
 
 // MARK: - Workspace validation

@@ -584,7 +584,7 @@ final class ConfigDoctorServiceTests: XCTestCase {
             )
         }
         let inputs = ConfigDoctorService.AccuracyInputs(
-            csv: nil, computersCount: nil, eaRows: nil, coverageDrift: drops
+            csv: nil, computersCount: nil, eaRows: nil, coverageDrift: .computed(drops)
         )
         let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
         let driftWarns = rows.filter {
@@ -602,7 +602,7 @@ final class ConfigDoctorServiceTests: XCTestCase {
             EAParseHealthService.CoverageDrift(eaName: "EA1", previousPct: 90, currentPct: 89)
         ]
         let inputs = ConfigDoctorService.AccuracyInputs(
-            csv: nil, computersCount: nil, eaRows: nil, coverageDrift: stable
+            csv: nil, computersCount: nil, eaRows: nil, coverageDrift: .computed(stable)
         )
         let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
         XCTAssertEqual(row(rows, id: "accuracy.coverage_drift.ok")?.severity, .pass)
@@ -615,7 +615,51 @@ final class ConfigDoctorServiceTests: XCTestCase {
         )
         let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
         XCTAssertFalse(rows.contains { $0.id.hasPrefix("accuracy.coverage_drift") },
-                       "fewer than two snapshot days means no drift rows at all")
+                       "no gathered coverageDrift input at all means no drift rows")
+    }
+
+    /// S3 (security review): insufficient data must render distinctly from a
+    /// computed-and-stable result — never the green "EA coverage stable" row.
+    func testCoverageDriftInsufficientDataRendersDistinctSuggestRow() throws {
+        let config = try makeConfig(cleanYAML)
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: nil,
+            coverageDrift: .insufficientData(reason: "Fewer than two ea-results snapshots")
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let unavailable = row(rows, id: "accuracy.coverage_drift.unavailable")
+        XCTAssertEqual(unavailable?.severity, .suggest)
+        XCTAssertTrue(unavailable?.detail.contains("Fewer than two") ?? false)
+        XCTAssertNil(row(rows, id: "accuracy.coverage_drift.ok"),
+                     "insufficient data must never render as the stable OK row")
+    }
+
+    /// S3: when the reason names a salvage, that reason text must surface in
+    /// the row detail (not be swallowed into a generic message).
+    func testCoverageDriftInsufficientDataWithSalvageReasonSurfacesIt() throws {
+        let config = try makeConfig(cleanYAML)
+        let salvageReason = "The most recent snapshot(s) were salvaged from truncated files — "
+            + "coverage change can't be verified"
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: nil,
+            coverageDrift: .insufficientData(reason: salvageReason)
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        let unavailable = row(rows, id: "accuracy.coverage_drift.unavailable")
+        XCTAssertEqual(unavailable?.severity, .suggest)
+        XCTAssertTrue(unavailable?.detail.contains("salvaged") ?? false)
+    }
+
+    /// S3: `.computed([])` (a real drift computation that found no drops) must
+    /// still render the green stable row — only `.insufficientData` changes.
+    func testCoverageDriftComputedEmptyStillEmitsOK() throws {
+        let config = try makeConfig(cleanYAML)
+        let inputs = ConfigDoctorService.AccuracyInputs(
+            csv: nil, computersCount: nil, eaRows: nil, coverageDrift: .computed([])
+        )
+        let rows = ConfigDoctorService.evaluateAccuracy(config: config, inputs: inputs)
+        XCTAssertEqual(row(rows, id: "accuracy.coverage_drift.ok")?.severity, .pass)
+        XCTAssertNil(row(rows, id: "accuracy.coverage_drift.unavailable"))
     }
 
     // MARK: - Accuracy: mSCP count-vs-list cross-check (check 4)

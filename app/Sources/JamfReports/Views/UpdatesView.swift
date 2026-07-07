@@ -43,6 +43,9 @@ struct UpdatesView: View {
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory, .scan])
+                // Per-kind file dates are the honest per-screen signal here;
+                // digest-level collectionSources belongs on summary screens only.
+                FreshnessChipRow(sourceDates: snapshot.sourceDates)
             }
             if snapshot.total == 0 {
                 emptyState

@@ -17,6 +17,10 @@ struct UpdateStatusService: Sendable {
         let failedPlans: [UpdateFailedPlan]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Per-kind newest-file dates for the freshness chip row. Keyed by the
+        /// on-disk kind name — `update-status` always, plus
+        /// `update-device-failures` when the snapshot is a `--scan-failures` run.
+        var sourceDates: [String: Date] = [:]
         /// True only when the snapshot came from a `--scan-failures` run.
         /// Without the scan, `errorDevices`/`failedPlans` are empty because
         /// the data was never fetched — NOT because nothing is failing.
@@ -32,6 +36,7 @@ struct UpdateStatusService: Sendable {
                 && lhs.failedPlans.count == rhs.failedPlans.count
                 && lhs.sourceFile == rhs.sourceFile
                 && lhs.snapshotDate == rhs.snapshotDate
+                && lhs.sourceDates == rhs.sourceDates
                 && lhs.scanFailuresAvailable == rhs.scanFailuresAvailable
         }
 
@@ -120,6 +125,13 @@ struct UpdateStatusService: Sendable {
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
 
+        var sourceDates: [String: Date] = [:]
+        if let mtime {
+            // A --scan-failures file carries both kinds' data; date both.
+            sourceDates["update-status"] = mtime
+            sourceDates["update-device-failures"] = mtime
+        }
+
         return Snapshot(
             total: failures.total,
             planTotal: failures.planTotal ?? 0,
@@ -129,6 +141,7 @@ struct UpdateStatusService: Sendable {
             failedPlans: failures.failedPlans,
             sourceFile: url,
             snapshotDate: mtime,
+            sourceDates: sourceDates,
             scanFailuresAvailable: true
         )
     }
@@ -136,6 +149,9 @@ struct UpdateStatusService: Sendable {
     private static func decode(status: UpdateStatusReport, url: URL) -> Snapshot {
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
+
+        var sourceDates: [String: Date] = [:]
+        if let mtime { sourceDates["update-status"] = mtime }
 
         return Snapshot(
             total: status.total,
@@ -145,7 +161,8 @@ struct UpdateStatusService: Sendable {
             errorDevices: [],
             failedPlans: [],
             sourceFile: url,
-            snapshotDate: mtime
+            snapshotDate: mtime,
+            sourceDates: sourceDates
         )
     }
 

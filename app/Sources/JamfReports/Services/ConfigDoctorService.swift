@@ -530,9 +530,11 @@ extension ConfigDoctorService {
         var computersCount: Int?
         /// Newest decodable `ea-results` rows; nil when absent/undecodable.
         var eaRows: [EAResultRow]?
-        /// Coverage drift between the two newest ea-results days; nil when fewer
-        /// than two decodable days exist (drift can't be computed → skip).
-        var coverageDrift: [EAParseHealthService.CoverageDrift]?
+        /// Coverage drift outcome between the two newest ea-results days; nil
+        /// when the caller never gathered a data dir to check (e.g. tests that
+        /// don't exercise this check at all). When gathered, distinguishes a
+        /// computed drift (possibly empty/stable) from insufficient data.
+        var coverageDrift: EAParseHealthService.CoverageDriftOutcome?
     }
 
     // MARK: IO gather (real run)
@@ -546,7 +548,7 @@ extension ConfigDoctorService {
             csv: loadAccuracyCSV(profile: profile),
             computersCount: loadComputersCount(dataDir: dataDir),
             eaRows: loadNewestEARows(dataDir: dataDir),
-            coverageDrift: dataDir.map { EAParseHealthService.coverageDrift(dataDir: $0) }
+            coverageDrift: dataDir.map { EAParseHealthService.coverageDriftOutcome(dataDir: $0) }
         )
         return evaluateAccuracy(config: config, inputs: inputs)
     }
@@ -778,7 +780,21 @@ extension ConfigDoctorService {
     private static let coverageDriftCap = 5
 
     private static func coverageDriftRows(inputs: AccuracyInputs) -> [DoctorRow] {
-        guard let drift = inputs.coverageDrift else { return [] }  // < 2 days → skip
+        guard let outcome = inputs.coverageDrift else { return [] }  // nothing gathered → skip
+        let drift: [EAParseHealthService.CoverageDrift]
+        switch outcome {
+        case .insufficientData(let reason):
+            // Absence of a comparable pair of days is NOT the same as "stable" —
+            // surface it distinctly rather than rendering the green OK row.
+            return [DoctorRow(
+                id: "accuracy.coverage_drift.unavailable", severity: .suggest,
+                title: "EA coverage drift unavailable",
+                detail: reason + ".",
+                hint: "Collect ea-results on two different days to enable this check."
+            )]
+        case .computed(let computedDrift):
+            drift = computedDrift
+        }
         let drops = drift.filter { $0.deltaPP <= -15 }
         guard !drops.isEmpty else {
             return [DoctorRow(

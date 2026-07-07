@@ -195,16 +195,33 @@ struct EAParseHealthService {
         var deltaPP: Double { currentPct - previousPct }
     }
 
+    /// Outcome of `coverageDriftOutcome` — distinguishes "computed a real
+    /// drift" from "couldn't compute one", so a caller never has to treat an
+    /// empty `[]` as proof of stability when the truth is "no signal yet".
+    enum CoverageDriftOutcome: Sendable, Equatable {
+        /// Drift across every EA present in the two comparison days. May
+        /// itself be `[]` when nothing changed — that IS a real "stable"
+        /// signal, unlike `.insufficientData`.
+        case computed([CoverageDrift])
+        /// Fewer than two non-salvaged decodable `ea-results` days were
+        /// available to compare. `reason` is a user-facing explanation.
+        case insufficientData(reason: String)
+    }
+
     /// Coverage drift for every EA present in the two newest decodable snapshot
-    /// DAYS under `dataDir/ea-results/`. Returns `[]` when fewer than two distinct
-    /// calendar days decode. Sorted by `deltaPP` ascending (biggest drops first).
-    static func coverageDrift(dataDir: URL) -> [CoverageDrift] {
+    /// DAYS under `dataDir/ea-results/`. Returns `.insufficientData` when fewer
+    /// than two non-salvaged distinct calendar days decode; otherwise
+    /// `.computed` with the drift sorted by `deltaPP` ascending (biggest drops
+    /// first — an empty array here means the drift was computed and is stable).
+    static func coverageDriftOutcome(dataDir: URL) -> CoverageDriftOutcome {
         let resultsDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: resultsDir,
             includingPropertiesForKeys: nil
-        ) else { return [] }
+        ) else {
+            return .insufficientData(reason: "Fewer than two ea-results snapshots")
+        }
 
         let snapshots = entries
             .filter { $0.pathExtension.lowercased() == "json" }
@@ -214,33 +231,75 @@ struct EAParseHealthService {
                     > MSCPChartDataBuilder.dateFromSnapshotFilename($1, fm: fm)
             }
 
-        guard let (current, previous) = twoNewestDistinctDays(snapshots, fm: fm) else {
-            return []
+        switch twoNewestDistinctDays(snapshots, fm: fm) {
+        case .found(let current, let previous):
+            return .computed(drift(current: current, previous: previous))
+        case .insufficientDays(let sawSalvage):
+            let reason = sawSalvage
+                ? "The most recent snapshot(s) were salvaged from truncated files — "
+                    + "coverage change can't be verified"
+                : "Fewer than two ea-results snapshots"
+            return .insufficientData(reason: reason)
         }
-        return drift(current: current, previous: previous)
+    }
+
+    /// Back-compat/UI-consumption shim over `coverageDriftOutcome` for callers
+    /// (e.g. `ExtensionAttributesView`) that only want the drift list and treat
+    /// "no signal" and "stable" the same way. `ConfigDoctorService` uses the
+    /// richer outcome directly so it can distinguish the two.
+    static func coverageDrift(dataDir: URL) -> [CoverageDrift] {
+        if case .computed(let drift) = coverageDriftOutcome(dataDir: dataDir) {
+            return drift
+        }
+        return []
+    }
+
+    /// Result of scanning for the two newest distinct comparison days.
+    private enum TwoDaysResult {
+        case found(current: [EAResultRow], previous: [EAResultRow])
+        /// Fewer than two non-salvaged distinct days decoded. `sawSalvage` is
+        /// true when at least one candidate day was skipped specifically
+        /// because it was salvaged (vs. simply absent/undecodable), so the
+        /// caller can give a more specific reason.
+        case insufficientDays(sawSalvage: Bool)
     }
 
     /// Pick the newest decodable file from each of the two most recent DISTINCT
-    /// calendar days. Returns nil if fewer than two distinct days decode.
+    /// calendar days. Returns `.insufficientDays` if fewer than two distinct
+    /// days decode.
+    ///
+    /// A day whose decode reason is a salvage (recovered from a 16KB-truncated
+    /// file) is SKIPPED entirely — it doesn't qualify as either side of the
+    /// comparison, because a partial-fleet day fabricates drift against its
+    /// neighbor rather than reflecting a real coverage change.
     private static func twoNewestDistinctDays(
         _ snapshotsNewestFirst: [URL],
         fm: FileManager
-    ) -> (current: [EAResultRow], previous: [EAResultRow])? {
+    ) -> TwoDaysResult {
         let cal = Calendar(identifier: .gregorian)
         var days: [(day: DateComponents, rows: [EAResultRow])] = []
+        var sawSalvage = false
 
         for url in snapshotsNewestFirst {
             let date = MSCPChartDataBuilder.dateFromSnapshotFilename(url, fm: fm)
             let day = cal.dateComponents([.year, .month, .day], from: date)
             if days.contains(where: { $0.day == day }) { continue }  // older file, same day
-            guard let data = try? Data(contentsOf: url),
-                  let rows = EAResultRow.decodeSnapshot(data).rows else { continue }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let decoded = EAResultRow.decodeSnapshot(data)
+            if EAResultRow.isSalvageReason(decoded.reason) {
+                sawSalvage = true
+                AppLogger.platform.notice(
+                    "EAParseHealthService.coverageDrift: skipping salvaged snapshot \(url.lastPathComponent, privacy: .public) — a truncated day fabricates drift"
+                )
+                continue
+            }
+            guard let rows = decoded.rows else { continue }
             days.append((day, rows))
             if days.count == 2 { break }
         }
 
-        guard days.count == 2 else { return nil }
-        return (days[0].rows, days[1].rows)  // newest-first, so [0] is current
+        guard days.count == 2 else { return .insufficientDays(sawSalvage: sawSalvage) }
+        return .found(current: days[0].rows, previous: days[1].rows)  // newest-first, so [0] is current
     }
 
     /// Coverage drift across all EAs present in either snapshot.

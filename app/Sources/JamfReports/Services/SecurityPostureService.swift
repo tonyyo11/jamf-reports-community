@@ -23,6 +23,9 @@ struct SecurityPostureService: Sendable {
         let osVersions: [OSVersion]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Per-kind newest-file dates for the freshness chip row. Single-kind
+        /// screen — one `security` entry when a snapshot exists.
+        var sourceDates: [String: Date] = [:]
         /// Non-nil only when a snapshot file existed but could not be read/decoded —
         /// a true failure, distinct from `.empty` (no data collected yet).
         var loadError: String? = nil
@@ -131,6 +134,8 @@ struct SecurityPostureService: Sendable {
         let total = summary?.totalDevices ?? 0
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
+        var sourceDates: [String: Date] = [:]
+        if let mtime { sourceDates["security"] = mtime }
         return Snapshot(
             totalDevices: total,
             fileVaultEncrypted: summary?.fileVaultEncrypted,
@@ -139,7 +144,8 @@ struct SecurityPostureService: Sendable {
             gatekeeperEnabled: summary?.gatekeeperEnabled,
             osVersions: osVersions.sorted { $0.osVersion > $1.osVersion },
             sourceFile: url,
-            snapshotDate: mtime
+            snapshotDate: mtime,
+            sourceDates: sourceDates
         )
     }
 

@@ -93,6 +93,7 @@ final class DeviceLookupIndex {
                 candidates.append(contentsOf: entries.filter {
                     $0.pathExtension.lowercased() == "json"
                     && !$0.lastPathComponent.contains(".partial")
+                    && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
                 })
             }
             if let flatEntries = try? fm.contentsOfDirectory(

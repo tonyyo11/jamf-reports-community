@@ -428,15 +428,29 @@ struct ReportEngine: Sendable {
                 ? (liveKinds.contains(kind) ? "live" : "cache")
                 : "absent"
         }
+        // max_cache_age_hours enforcement: an over-age snapshot is treated as
+        // ABSENT (skipped + warned, named by kind/age/key) so the daily digest
+        // and the freshness signal it feeds never silently absorb ancient cache.
+        let maxCacheAgeHours = config.jamfCli?.resolvedMaxCacheAgeHours ?? 168
         func cachedData(kind: String) -> Data? {
             if let hit = snapshotCache[kind] { return hit }
-            if let d = try? Self.loadLatestSnapshotData(kind: kind, dataDir: dataDir) {
+            do {
+                let d = try Self.loadLatestSnapshotData(
+                    kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours
+                )
                 snapshotCache[kind] = d
                 recordSource(kind: kind, present: true)
                 return d
+            } catch let expired as SnapshotCacheExpired {
+                AppLogger.collect.warning(
+                    "\(expired.kind, privacy: .public): cached snapshot \(expired.ageHours)h old exceeds max_cache_age_hours=\(expired.limitHours) — treating as absent"
+                )
+                recordSource(kind: kind, present: false)
+                return nil
+            } catch {
+                recordSource(kind: kind, present: false)
+                return nil
             }
-            recordSource(kind: kind, present: false)
-            return nil
         }
 
         var totalDevices = 0
@@ -1368,6 +1382,11 @@ struct ReportEngine: Sendable {
             loadedConfig = nil
         }
 
+        // 2.6 accuracy track: when jamf_cli.require_manifest is set, stamp each
+        // saved snapshot's sibling manifest.json so the strict-mode gate
+        // (preflightStrictManifestCheck) has something to verify against.
+        let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
+
         // Commands to collect and their snapshot kind names.
         let commands: [(args: [String], kind: String)] = [
             (["-p", profile, "pro", "overview", "--output", "json"], "overview"),
@@ -1549,7 +1568,10 @@ struct ReportEngine: Sendable {
                             + "command on this jamf-cli?) — snapshot not saved"))
                     continue
                 }
-                try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                try saveSnapshot(
+                    data: data, kind: kind, dataDir: dataDir,
+                    recordManifest: recordManifest
+                )
                 savedKinds.insert(kind)
                 // T-8: record success so the cadence boundary advances.
                 // Use try? rather than try — a state-write failure should
@@ -2316,7 +2338,12 @@ struct ReportEngine: Sendable {
         (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil
     }
 
-    private static func saveSnapshot(data: Data, kind: String, dataDir: URL) throws {
+    private static func saveSnapshot(
+        data: Data,
+        kind: String,
+        dataDir: URL,
+        recordManifest: Bool = false
+    ) throws {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         try FileManager.default.createDirectory(
             at: dir,
@@ -2339,9 +2366,41 @@ struct ReportEngine: Sendable {
                 "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
         }
+        // 2.6 accuracy track: stamp the sibling manifest.json so strict-mode
+        // verification (SnapshotManifest.verify) becomes reachable for
+        // app-collected snapshots. Gated on jamf_cli.require_manifest by the
+        // caller. Best-effort — a manifest-write failure must NOT fail the
+        // collect (worst case: verify() reads .absent/.omitted, never .verified).
+        if recordManifest {
+            do {
+                try SnapshotManifest.record(snapshotFile: file, data: data)
+            } catch {
+                AppLogger.collect.warning(
+                    "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                )
+            }
+        }
     }
 
-    private static func loadLatestSnapshotData(kind: String, dataDir: URL) throws -> Data {
+    /// Thrown by `loadLatestSnapshotData` when the newest snapshot for `kind`
+    /// is older than the `max_cache_age_hours` limit. Callers treat this like
+    /// ABSENT data (skip the kind, warn) — never a hard failure.
+    struct SnapshotCacheExpired: Error { let kind: String; let ageHours: Int; let limitHours: Int }
+
+    /// Load the newest snapshot for `kind`. When `maxCacheAgeHours > 0` and the
+    /// newest file is older than the limit, throws `SnapshotCacheExpired` so the
+    /// caller can treat stale cache as absent instead of silently serving it.
+    /// `maxCacheAgeHours <= 0` disables the age check (keep-forever).
+    ///
+    /// The age gate is deliberately asymmetric: only the daily summary/digest
+    /// path passes a non-zero `maxCacheAgeHours`. Report sheets pass 0 and render
+    /// whatever cache exists, carrying their own "data as of" subtitles — a stale
+    /// but complete report is more useful than an empty one.
+    private static func loadLatestSnapshotData(
+        kind: String,
+        dataDir: URL,
+        maxCacheAgeHours: Int = 0
+    ) throws -> Data {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
@@ -2353,6 +2412,11 @@ struct ReportEngine: Sendable {
         }
         let newest = files
             .filter { $0.pathExtension == "json" }
+            // Exclude the sibling manifest.json (2.6 SnapshotManifest.record
+            // writer). It is integrity metadata, always newest-by-mtime after a
+            // collect, and would otherwise be returned as "the snapshot" and fail
+            // the caller's decode.
+            .filter { $0.lastPathComponent.lowercased() != SnapshotManifest.fileName }
             .max {
                 let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey])
                     .contentModificationDate) ?? .distantPast
@@ -2362,6 +2426,14 @@ struct ReportEngine: Sendable {
             }
         guard let url = newest else {
             throw ReportEngineError.snapshotParseError(kind)
+        }
+        if maxCacheAgeHours > 0 {
+            let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate) ?? .distantPast
+            let ageHours = Int(Date().timeIntervalSince(mtime) / 3600)
+            if ageHours > maxCacheAgeHours {
+                throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
+            }
         }
         return try Data(contentsOf: url)
     }

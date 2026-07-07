@@ -199,7 +199,9 @@ enum CachedDataFallback {
                 options: [.skipsHiddenFiles]
             ) {
                 candidates.append(contentsOf: files.filter {
-                    $0.pathExtension == "json" && !$0.lastPathComponent.hasSuffix(".partial")
+                    $0.pathExtension == "json"
+                    && !$0.lastPathComponent.hasSuffix(".partial")
+                    && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
                 })
             }
             if let files = try? fm.contentsOfDirectory(
@@ -241,7 +243,9 @@ enum CachedDataFallback {
                 options: [.skipsHiddenFiles]
             ) {
                 candidates.append(contentsOf: files.filter {
-                    $0.pathExtension == "json" && !$0.lastPathComponent.hasSuffix(".partial")
+                    $0.pathExtension == "json"
+                    && !$0.lastPathComponent.hasSuffix(".partial")
+                    && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
                 })
             }
             // Flat pattern: <dataDir>/<name>_*.json

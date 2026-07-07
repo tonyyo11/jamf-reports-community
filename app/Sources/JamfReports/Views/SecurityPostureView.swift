@@ -46,15 +46,20 @@ struct SecurityPostureView: View {
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
+                // Per-kind file dates are the honest per-screen signal here;
+                // digest-level collectionSources belongs on summary screens only.
+                FreshnessChipRow(sourceDates: snapshot.sourceDates)
             }
 
             if let reason = snapshot.loadError {
-                ErrorStateView(
-                    title: "Couldn't read security data",
-                    message: reason,
-                    commands: ["Re-run collection from Data Sources, then Refresh."],
-                    retry: { reload() }
-                )
+                Card(padding: 24) {
+                    ErrorStateView(
+                        title: "Couldn't read security data",
+                        message: reason,
+                        commands: ["Re-run collection from Data Sources, then Refresh."],
+                        retry: { reload() }
+                    )
+                }
             } else if snapshot.totalDevices == 0 {
                 emptyState
             } else {

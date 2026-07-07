@@ -22,6 +22,21 @@ struct MSCPChartDataBuilder: Sendable {
     struct BandPoint: Sendable {
         let date: Date
         let counts: MSCPBandCounts
+        /// True when this point was recovered from a 16KB-truncated ea-results
+        /// file via `EAResultRow.decodeSnapshot`'s salvage path — the banded
+        /// counts likely UNDERSTATE the fleet (only a prefix of devices was
+        /// recovered) and must never be charted as an ordinary data point.
+        /// Points sourced from `DailySummary.mscpBands` (not ea-results) are
+        /// always `false` here — if a salvaged day's ea-results file is later
+        /// removed by retention, its summary-derived point charts unflagged.
+        /// Acceptable: retention defaults to keeping everything.
+        let isSalvaged: Bool
+
+        init(date: Date, counts: MSCPBandCounts, isSalvaged: Bool = false) {
+            self.date = date
+            self.counts = counts
+            self.isSalvaged = isSalvaged
+        }
     }
 
     // MARK: - Public API
@@ -151,6 +166,7 @@ struct MSCPChartDataBuilder: Sendable {
             }
             let snapshotDate = dateFromSnapshotFilename(url, fm: fm)
             let dayKey = SummaryJSONParser.dateFormatter.string(from: snapshotDate)
+            let isSalvaged = EAResultRow.isSalvageReason(decoded.reason)
 
             // ONE decode, ONE evaluate over the full list — one result per baseline.
             let results = MSCPComplianceService.evaluate(rows: rows, baselines: baselines)
@@ -159,7 +175,8 @@ struct MSCPChartDataBuilder: Sendable {
                 // Skip all-noData / empty results (a crater point in prod data).
                 guard bandedTotal(counts) > 0 else { continue }
                 // ea-results takes precedence over summary.json for the same date.
-                byBaseline[result.name]?[dayKey] = BandPoint(date: snapshotDate, counts: counts)
+                byBaseline[result.name]?[dayKey] = BandPoint(
+                    date: snapshotDate, counts: counts, isSalvaged: isSalvaged)
             }
         }
 
@@ -188,6 +205,13 @@ struct MSCPChartDataBuilder: Sendable {
             let pts = points.map { (date: $0.date, value: extract($0.counts)) }
             return ChartSeries(label: label, color: color, points: pts)
         }
+    }
+
+    /// Dates whose point was recovered from a truncated ea-results file —
+    /// callers use this to annotate the band chart so a salvaged (partial)
+    /// day is never mistaken for an ordinary data point.
+    static func salvagedDates(in points: [BandPoint]) -> Set<Date> {
+        Set(points.filter(\.isSalvaged).map(\.date))
     }
 
     /// Convert a `BaselineResult` into donut slices.

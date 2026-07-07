@@ -369,6 +369,73 @@ enum LaunchAgentService {
         )
     }
 
+    // MARK: - Dead-man switch (2.6 trust trio #2)
+
+    /// The raw fields the overdue evaluator needs for one scheduled agent —
+    /// deliberately smaller than `Schedule` (which carries only display strings
+    /// for last/next and so can't answer "should it have fired by now?").
+    struct ScheduleHealthInput: Sendable, Equatable {
+        let label: String
+        let displayName: String
+        let enabled: Bool
+        /// Most recent time this schedule should have fired at/before the probe.
+        let expectedFire: Date?
+        /// Newest run artifact's finish time, if any run has ever recorded one.
+        let lastRunFinishedAt: Date?
+        /// Newest run artifact's success flag (nil when no artifact recorded).
+        let lastRunSuccess: Bool?
+    }
+
+    /// Lightweight per-agent inputs for the overdue/failing evaluator. Reuses the
+    /// same plist + status-JSON parsing as `parse`, but returns the RAW expected
+    /// fire and last-run finish/success instead of formatted strings, without
+    /// changing `Schedule`'s public shape. `now` is injected so the "expected
+    /// fire" is deterministic under test.
+    ///
+    /// - Parameter dir: directory to scan (tests pass a temp dir).
+    static func healthInputs(in dir: URL = agentsDir, now: Date = Date()) -> [ScheduleHealthInput] {
+        let prefix = "\(LaunchAgentWriter.labelPrefix)."
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return entries
+            .filter { $0.pathExtension == "plist" }
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+            .compactMap { healthInput(for: $0, now: now) }
+            .sorted { $0.displayName < $1.displayName }
+    }
+
+    private static func healthInput(for url: URL, now: Date) -> ScheduleHealthInput? {
+        guard let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization
+                .propertyList(from: data, format: nil) as? [String: Any],
+              let label = plist["Label"] as? String,
+              LaunchAgentWriter.isValidLabel(label),
+              let parts = profileAndSlug(from: label) else {
+            return nil
+        }
+        let args = plist["ProgramArguments"] as? [String] ?? []
+        let enabled = !((plist["Disabled"] as? Bool) ?? false)
+        let mode = runMode(from: args) ?? .jamfCLIOnly
+        let expectedFire = lastScheduledFireDate(from: plist["StartCalendarInterval"], before: now)
+        let statusURL = parts.isMulti
+            ? multiStatusFileURL(from: args, label: label)
+            : statusFileURL(from: args, profile: parts.profile, label: label)
+        let runStatus = parts.isMulti
+            ? readMultiRunStatus(from: statusURL, label: label)
+            : readRunStatus(from: statusURL, profile: parts.profile)
+        return ScheduleHealthInput(
+            label: label,
+            displayName: humanName(from: parts.slug, mode: mode),
+            enabled: enabled,
+            expectedFire: expectedFire,
+            lastRunFinishedAt: runStatus?.finishedAt,
+            lastRunSuccess: runStatus?.success
+        )
+    }
+
     private static func plistLabel(_ url: URL) -> String? {
         guard let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization
@@ -527,6 +594,44 @@ enum LaunchAgentService {
         calendarEntries(from: raw)
             .compactMap { nextDate(for: $0, after: now) }
             .min()
+    }
+
+    /// How far back to search for the most recent past fire. A monthly schedule
+    /// (Day-of-month entry) still resolves within this window; a malformed plist
+    /// can't loop `nextDate` forward past `now` more than this many steps.
+    private static let lastFireSearchWindowDays = 35
+
+    /// The most recent time a `StartCalendarInterval` schedule SHOULD have fired
+    /// at or before `now`, across all its entries — the past-looking counterpart
+    /// of `nextRunDate`. Returns nil for a manual/empty/garbage interval.
+    ///
+    /// Implementation note: rather than `Calendar.nextDate(direction: .backward)`
+    /// — whose `matchingPolicy` semantics differ subtly going backward — this
+    /// steps the SAME forward `nextDate(for:after:)` used by `nextRunDate`
+    /// (proven correct forward) from `now - window`, keeping the last fire that
+    /// is still `<= now`. Identical matching logic, no backward edge cases. The
+    /// `<=` (not `<`) means a fire exactly at `now` counts as "already fired".
+    static func lastScheduledFireDate(from raw: Any?, before now: Date = Date()) -> Date? {
+        let entries = calendarEntries(from: raw)
+        guard !entries.isEmpty else { return nil }
+        let windowStart = now.addingTimeInterval(
+            -Double(lastFireSearchWindowDays) * 86_400
+        )
+        var latest: Date?
+        // Cap the outer loop too: real schedules have a handful of calendar
+        // entries (launchd itself struggles with large arrays), so 64 is far
+        // beyond any legitimate plist while bounding attacker-chosen work.
+        for entry in entries.prefix(64) {
+            var cursor = windowStart
+            // Cap iterations defensively so a pathological entry can't spin.
+            for _ in 0..<(lastFireSearchWindowDays * 24 + 8) {
+                guard let next = nextDate(for: entry, after: cursor),
+                      next <= now else { break }
+                if latest == nil || next > latest! { latest = next }
+                cursor = next
+            }
+        }
+        return latest
     }
 
     private static func nextDate(for entry: [String: Int], after now: Date) -> Date? {

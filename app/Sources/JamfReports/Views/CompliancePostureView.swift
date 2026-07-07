@@ -50,12 +50,14 @@ struct CompliancePostureView: View {
             }
 
             if let reason = snapshot.loadError {
-                ErrorStateView(
-                    title: "Couldn't read compliance data",
-                    message: reason,
-                    commands: ["Re-run collection from Data Sources, then Refresh."],
-                    retry: { reload() }
-                )
+                Card(padding: 24) {
+                    ErrorStateView(
+                        title: "Couldn't read compliance data",
+                        message: reason,
+                        commands: ["Re-run collection from Data Sources, then Refresh."],
+                        retry: { reload() }
+                    )
+                }
             } else if snapshot.totalDevices == 0 && mscpResults.isEmpty {
                 emptyState
             } else {

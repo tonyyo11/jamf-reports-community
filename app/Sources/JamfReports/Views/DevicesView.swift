@@ -23,6 +23,9 @@ struct DevicesView: View {
     /// by lowercased device identifiers. Feeds the security-agent risk factor
     /// (v3.5's hardcoded "Nessus" check, now driven by security_agents config).
     @State private var agentStatusLookup: [String: String] = [:]
+    /// Per-kind newest-file dates for the freshness chip row (Devices merges
+    /// several kinds; the snapshot's single generatedDate can't express that).
+    @State private var sourceDates: [String: Date] = [:]
     // Tracks the Devices page width so the inventory table can hide low-priority
     // columns under 1200pt — avoids truncation on 13" displays.
     @State private var pageWidth: CGFloat = 1400
@@ -139,6 +142,18 @@ struct DevicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                // Devices had no freshness surface before 2.6; add the shared
+                // Collect banner + per-kind chips. Per-kind file dates are the
+                // honest signal here — digest collectionSources is summary-only.
+                if !workspace.demoMode {
+                    CollectNowBanner(
+                        source: CacheSource.from(
+                            snapshotDate: activeSnapshot.generatedDate, withinHours: 36
+                        ),
+                        tiers: [.inventory]
+                    )
+                    FreshnessChipRow(sourceDates: sourceDates)
+                }
                 if let err = exportError {
                     Text(err)
                         .font(.footnote)
@@ -946,6 +961,9 @@ struct DevicesView: View {
             DeviceInventoryService.load(profile: profile, demoMode: demoMode)
         }.value
         snapshot = loaded
+        sourceDates = await Task.detached(priority: .userInitiated) {
+            DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode)
+        }.value
         if selectedID == nil || !loaded.devices.contains(where: { $0.id == selectedID }) {
             selectedID = loaded.devices.first?.id
         }

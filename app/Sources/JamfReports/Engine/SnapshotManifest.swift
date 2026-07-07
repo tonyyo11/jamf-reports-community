@@ -5,11 +5,14 @@ import CryptoKit
 /// snapshots, so the engine can detect tampering between collect and
 /// generate (threat-model T-2, Google Gemini security-review 2026-05-12).
 ///
-/// VERIFY-ONLY: no Swift code currently PRODUCES these snapshot manifests
-/// (the writer was the now-removed Python collector), so `verify` returns
-/// `.absent` for app-collected snapshots and `jamf_cli.require_manifest`
-/// has nothing to satisfy until a Swift snapshot-manifest writer is added.
-/// Tracked as the top threat-model T-2/T-11/T-12 follow-up.
+/// A Swift snapshot-manifest WRITER (``record(snapshotFile:data:)``, 2.6
+/// accuracy track) stamps each snapshot's sibling `manifest.json` as the
+/// engine saves it, gated on `jamf_cli.require_manifest`. Before this,
+/// `verify` returned `.absent` for every app-collected snapshot (the only
+/// writer was the now-removed Python collector) and `.mismatch` was
+/// unreachable, so the strict-mode gate had nothing to satisfy. The writer
+/// mirrors ``verify``'s filename/location contract exactly so a
+/// write→verify round-trip yields `.verified`.
 ///
 /// `verify` returns the `VerificationResult` so callers can surface UI
 /// state like "Unverified snapshot" (PR-10, threat-model T-11). Callers
@@ -42,7 +45,7 @@ enum SnapshotManifest {
 
     /// Verify ``data`` matches the manifest entry for ``snapshot``'s sibling
     /// `manifest.json`. Returns the verification outcome but does NOT abort —
-    /// strict-mode aborting lives in the Python collector.
+    /// strict-mode aborting lives in `ReportEngine.preflightStrictManifestCheck`.
     @discardableResult
     static func verify(snapshot: URL, data: Data) -> VerificationResult {
         let manifestURL = snapshot.deletingLastPathComponent()
@@ -67,6 +70,81 @@ enum SnapshotManifest {
             return .mismatch
         }
         return .verified
+    }
+
+    // MARK: - Writer (2.6 accuracy track)
+
+    /// Stamp ``snapshotFile``'s sibling `manifest.json` with the SHA-256 of
+    /// ``data``, read-modify-writing any existing manifest so sibling
+    /// snapshots keep their entries. Called from `ReportEngine.saveSnapshot`
+    /// only when `jamf_cli.require_manifest` is set — otherwise the strict-mode
+    /// gate (``verify`` ⇒ `.mismatch`/`.corrupt`) can never fire on
+    /// app-collected data.
+    ///
+    /// Mirrors ``verify``'s contract exactly: the manifest is a sibling of the
+    /// snapshot, keyed by ``snapshotFile``'s `lastPathComponent`, valued with
+    /// the lowercase hex digest. A pre-existing but UNPARSEABLE manifest is
+    /// tolerated — it is logged and replaced with a fresh one rather than
+    /// aborting the collect (a corrupt manifest must not block data capture).
+    /// The write is atomic (temp file + `replaceItem`) with `0o600` perms.
+    ///
+    /// **Concurrency note:** this read-modify-write has no cross-process lock.
+    /// If the GUI and a LaunchAgent collect the SAME kind at the same moment,
+    /// one writer's entry can be lost to the other's read-before-write. This
+    /// fails SAFE: the lost entry makes that snapshot's next `verify` return
+    /// `.omitted` (unverifiable), never a false `.verified` for tampered data.
+    /// Same-kind concurrent collects are already rare — the once-per-day
+    /// collect guard means this race needs two independent trigger paths
+    /// (GUI + schedule) landing in the same narrow window.
+    static func record(snapshotFile: URL, data: Data) throws {
+        let dir = snapshotFile.deletingLastPathComponent()
+        let manifestURL = dir.appendingPathComponent(fileName)
+
+        var files: [String: String] = [:]
+        if let existingData = try? Data(contentsOf: manifestURL) {
+            if let existing = try? JSONDecoder().decode(Manifest.self, from: existingData) {
+                files = existing.files
+            } else {
+                AppLogger.collect.warning(
+                    "SnapshotManifest: existing manifest.json unparseable in \(dir.lastPathComponent, privacy: .public) — starting fresh"
+                )
+            }
+        }
+        files[snapshotFile.lastPathComponent] = sha256Hex(data)
+
+        let manifest = Manifest(
+            version: currentSchemaVersion,
+            algorithm: "SHA256",
+            files: files
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let payload = try encoder.encode(manifest)
+        try writeAtomically(payload, to: manifestURL)
+    }
+
+    /// Atomic manifest write: stage to a sibling temp file with `0o600`, then
+    /// `replaceItem` into place (falling back to `.atomic` write when there is
+    /// no existing file to replace). Keeps a half-written manifest from ever
+    /// being observed by `verify`.
+    private static func writeAtomically(_ data: Data, to url: URL) throws {
+        let fm = FileManager.default
+        let dir = url.deletingLastPathComponent()
+        let tmp = dir.appendingPathComponent(".\(fileName).\(UUID().uuidString).tmp")
+        try data.write(to: tmp, options: [.atomic])
+        try? fm.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o600))],
+            ofItemAtPath: tmp.path
+        )
+        if fm.fileExists(atPath: url.path) {
+            _ = try fm.replaceItemAt(url, withItemAt: tmp)
+        } else {
+            try fm.moveItem(at: tmp, to: url)
+        }
+        try? fm.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o600))],
+            ofItemAtPath: url.path
+        )
     }
 
     // MARK: - Workspace scan (PR-10, T-11)
@@ -222,9 +300,10 @@ enum SnapshotManifest {
     /// without a `version` field decode as v1.
     static let currentSchemaVersion = 2
 
-    private struct Manifest: Decodable {
+    private struct Manifest: Codable {
         /// Optional to preserve compat with v1 manifests written by the
-        /// Python collector pre-PR-22. Treat absent ⇒ 1.
+        /// Python collector pre-PR-22. Treat absent ⇒ 1. The writer always
+        /// emits ``currentSchemaVersion``.
         let version: Int?
         let algorithm: String
         let files: [String: String]
@@ -232,7 +311,7 @@ enum SnapshotManifest {
 
     // MARK: - SHA-256
 
-    private static func sha256Hex(_ data: Data) -> String {
+    static func sha256Hex(_ data: Data) -> String {
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
     }

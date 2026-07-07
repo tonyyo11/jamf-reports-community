@@ -90,6 +90,12 @@ struct OverviewView: View {
                        trendStore.cacheSource != .neverFetchedLive {
                         heavyTierStalePrompt
                     }
+                    // 2.6 dead-man switch: a scheduled run that should have
+                    // fired but produced no artifact surfaces here instead of
+                    // silence. One banner summarizing all issues, not N banners.
+                    if !workspace.demoMode, !workspace.automationHealthIssues.isEmpty {
+                        automationHealthBanner
+                    }
                     // R1: these KPI cards render the daily digest, not live
                     // inventory — say so, and flag cached/missing inputs (R4).
                     if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
@@ -153,6 +159,7 @@ struct OverviewView: View {
             Task {
                 await loadTrendsOffMain()
                 await reloadChecklist()
+                await workspace.refreshAutomationHealth()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
@@ -166,17 +173,13 @@ struct OverviewView: View {
     /// Mirrors StaleDataBanner's visual language but adds the action button —
     /// heavy collections only ever run when the operator asks.
     private var heavyTierStalePrompt: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "clock.badge.exclamationmark")
-                .foregroundStyle(Theme.Colors.warn)
-                .accessibilityHidden(true)
-            Text(heavyTierStaleMessage)
-                .font(.footnote)
-                .foregroundStyle(Theme.Colors.warn)
-            Spacer(minLength: 8)
-            PNPButton(
-                title: isRefreshingHeavyTiers ? "Refreshing…" : "Refresh now",
-                icon: isRefreshingHeavyTiers ? "hourglass" : "arrow.clockwise"
+        InlineBanner(
+            icon: "clock.badge.exclamationmark",
+            tone: .warn,
+            action: InlineBannerAction(
+                label: isRefreshingHeavyTiers ? "Refreshing…" : "Refresh now",
+                icon: isRefreshingHeavyTiers ? "hourglass" : "arrow.clockwise",
+                help: "Run the per-device collections now. Can take several minutes on on-prem servers."
             ) {
                 guard !isRefreshingHeavyTiers else { return }
                 Task {
@@ -186,18 +189,11 @@ struct OverviewView: View {
                     await loadTrendsOffMain()
                 }
             }
-            .help("Run the per-device collections now. Can take several minutes on on-prem servers.")
+        ) {
+            Text(heavyTierStaleMessage)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.warn)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Theme.Colors.warn.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-                )
-        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(heavyTierStaleMessage)
     }
@@ -213,6 +209,51 @@ struct OverviewView: View {
         }
         return "\(names) data is missing or more than a week old — "
             + "Patch, Updates, and EA dashboards show stale values."
+    }
+
+    /// 2.6 dead-man switch banner — one summary of overdue/failing scheduled
+    /// runs, with a jump to the Automation screen. Only rendered when
+    /// `automationHealthIssues` is non-empty (gated in `body`).
+    private var automationHealthBanner: some View {
+        InlineBanner(
+            icon: "clock.badge.xmark",
+            tone: .warn,
+            action: InlineBannerAction(
+                label: "Open Automation",
+                icon: "gearshape.2",
+                help: "Review scheduled runs that are overdue or failing."
+            ) {
+                navigate(to: .schedules)
+            }
+        ) {
+            Text(automationHealthMessage)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.warn)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(automationHealthMessage)
+    }
+
+    private var automationHealthMessage: String {
+        let issues = workspace.automationHealthIssues
+        let overdue = issues.filter { $0.kind == .overdue }
+        let failing = issues.filter { $0.kind == .failing }
+        if let first = overdue.first {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.dateTimeStyle = .named
+            let when = first.expectedFire.map {
+                formatter.localizedString(for: $0, relativeTo: Date())
+            } ?? "on schedule"
+            let last = first.lastRunFinishedAt.map {
+                formatter.localizedString(for: $0, relativeTo: Date())
+            } ?? "never"
+            let more = overdue.count > 1 ? " (+\(overdue.count - 1) more)" : ""
+            return "Scheduled run overdue — \(first.displayName) should have run "
+                + "\(when); last success \(last)\(more)."
+        }
+        let name = failing.first?.displayName ?? "A scheduled run"
+        let more = failing.count > 1 ? " (+\(failing.count - 1) more)" : ""
+        return "\(name) failed on its last run\(more) — check Automation."
     }
 
     /// Run the trend-store disk scan (summaries + ea-results) OFF the main

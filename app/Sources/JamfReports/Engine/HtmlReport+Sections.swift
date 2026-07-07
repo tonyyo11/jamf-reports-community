@@ -992,7 +992,10 @@ extension HtmlReport {
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
            ) {
-            candidates = files.filter { $0.pathExtension == "json" }
+            candidates = files.filter {
+                $0.pathExtension == "json"
+                && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
+            }
         }
         if let files = try? fm.contentsOfDirectory(
             at: dataDir,

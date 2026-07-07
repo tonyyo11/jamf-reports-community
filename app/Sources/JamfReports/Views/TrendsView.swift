@@ -581,6 +581,9 @@ struct TrendsView: View {
                 } else if trendStore.hasMSCPBandHistory {
                     liveBandsChart
                     liveBandsLegend
+                    if !trendStore.salvagedBandDates.isEmpty {
+                        salvagedDataCaption
+                    }
                 } else {
                     complianceBandUnavailable
                 }
@@ -678,6 +681,23 @@ struct TrendsView: View {
         }
     }
 
+    /// Salvaged-day markers for `liveBandsChart` — a small triangle above the
+    /// stack at each date recovered from a truncated ea-results file, so a
+    /// partial-fleet day is never mistaken for real fleet change. Y-position is
+    /// the summed stack height (banded total) at that date, from `stackedSeries`
+    /// so it never falls out of sync with what's actually plotted.
+    private func salvageMarkers(stackedSeries: [ChartSeries]) -> [(date: Date, stackTop: Double)] {
+        let salvaged = trendStore.salvagedBandDates
+        guard !salvaged.isEmpty else { return [] }
+        var totals: [Date: Double] = [:]
+        for series in stackedSeries {
+            for point in series.points where salvaged.contains(point.date) {
+                totals[point.date, default: 0] += point.value
+            }
+        }
+        return totals.map { (date: $0.key, stackTop: $0.value) }
+    }
+
     /// Live stacked-area chart built from `trendStore.mscpStackedSeries()`.
     /// Mirrors the hero chart's mSCP band rendering (AreaMark, stacking: .standard).
     private var liveBandsChart: some View {
@@ -695,6 +715,19 @@ struct TrendsView: View {
                             .foregroundStyle(by: .value("Band", series.label))
                             .interpolationMethod(.monotone)
                             .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
+                        }
+                    }
+                    ForEach(salvageMarkers(stackedSeries: stackedSeries), id: \.date) { marker in
+                        PointMark(
+                            x: .value("Date", marker.date),
+                            y: .value("Count", marker.stackTop)
+                        )
+                        .symbolSize(0)
+                        .annotation(position: .top, spacing: 2) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.Colors.warn)
+                                .accessibilityLabel("Partial data (salvaged snapshot)")
                         }
                     }
                 }
@@ -744,6 +777,15 @@ struct TrendsView: View {
                 }
             }
         }
+    }
+
+    /// Footnote shown only when `liveBandsChart` has at least one salvaged
+    /// (truncated-snapshot) day — explains the ⚠ marker without requiring the
+    /// user to hover/inspect the chart.
+    private var salvagedDataCaption: some View {
+        Text("⚠ marked days recovered from truncated snapshots — counts may be low")
+            .font(.caption2)
+            .foregroundStyle(Theme.Colors.warn)
     }
 
     private func legendDot(color: Color, label: String) -> some View {

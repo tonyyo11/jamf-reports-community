@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 /// Routes the Automation tab between its two modes. Managed automation
 /// (`isManaged`) is the "set policy, not cron jobs" editor (`AutomationView`);
@@ -82,22 +83,23 @@ struct AutomationView: View {
 
     @AppStorage(AutomationPolicy.storageKey) private var policyRaw: String = ""
 
-    // Add-group form state.
-    @State private var newGroupName: String = ""
-    @State private var newGroupProfiles: Set<String> = []
+    // Decoded once per policyRaw change (not on every body pass). `update` still
+    // reads/writes `policyRaw`; the `.onChange(of: policyRaw)` below round-trips
+    // the new raw back into this @State so bindings and gates read the fresh
+    // value. Writing the same value assigns an identical struct (no re-write to
+    // policyRaw), so there is no feedback loop.
+    @State private var policy: AutomationPolicy = .init()
+
+    // Discovered profiles for the exclusions checklist and new-group form.
+    // `ProfileService.discoverLocal()` spawns a jamf-cli subprocess and scans
+    // directories, so it runs off-main once per profile switch rather than on
+    // every body evaluation.
+    @State private var discoveredProfiles: [String] = []
 
     // Consolidation (retire hand-built agents the managed policy now duplicates).
     @State private var consolidationCandidates: [ScheduleConsolidation.Candidate] = []
     @State private var selectedForRemoval: Set<String> = []
     @State private var showRemovalConfirm = false
-
-    private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-
-    private var policy: AutomationPolicy { AutomationPolicy.parse(policyRaw) }
-
-    private var discoveredProfiles: [String] {
-        workspace.demoMode ? [] : ProfileService.discoverLocal().map(\.name)
-    }
 
     var body: some View {
         PageScaffold(spacing: 16) {
@@ -112,15 +114,32 @@ struct AutomationView: View {
                     .foregroundStyle(Theme.Colors.fgMuted) }
             } else {
                 masterCard
+                if !workspace.automationHealthIssues.isEmpty || policy.isManaged {
+                    HealthCard(issues: workspace.automationHealthIssues)
+                }
+                // Notifications apply to any scheduled run — hand-built or managed —
+                // so this card shows regardless of `isManaged`.
+                NotificationsCard(profile: workspace.profile)
                 if policy.isManaged {
                     freshnessCard
                     reportsCard
                     backupsCard
                     scheduleCard
                     exclusionsCard
-                    groupsCard
+                    GroupsCard(
+                        reportGroups: policy.reportGroups,
+                        discoveredProfiles: discoveredProfiles,
+                        existingGroupNames: policy.reportGroups.map(\.name),
+                        onRemove: removeGroup,
+                        onAdd: addGroup
+                    )
                     if !consolidationCandidates.isEmpty {
-                        consolidationCard
+                        ConsolidationCard(
+                            candidates: consolidationCandidates,
+                            selectedForRemoval: $selectedForRemoval,
+                            showRemovalConfirm: $showRemovalConfirm,
+                            onConfirmRemoval: { Task { await removeSelectedAgents() } }
+                        )
                     }
                 }
             }
@@ -129,6 +148,16 @@ struct AutomationView: View {
         // the prior) on every change, so rapid edits debounce and only the
         // settled state reconciles the managed agents.
         .task(id: policyRaw) { await applyPolicyChange() }
+        // Keep the decoded `policy` @State in step with the persisted raw so
+        // bindings and visibility gates read the fresh value after any write.
+        .onChange(of: policyRaw) { _, newValue in
+            policy = AutomationPolicy.parse(newValue)
+        }
+        // Seed the decoded policy on first appearance (onChange only fires on
+        // subsequent edits).
+        .task { policy = AutomationPolicy.parse(policyRaw) }
+        // Discover profiles off-main once per profile switch (subprocess + I/O).
+        .task(id: workspace.profile) { await loadDiscoveredProfiles() }
     }
 
     /// Refresh the consolidation candidates after a policy edit. The managed-
@@ -141,6 +170,19 @@ struct AutomationView: View {
         guard !workspace.demoMode else { return }
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
         refreshConsolidationCandidates()
+    }
+
+    /// Load the discovered profiles off the main actor (subprocess + directory
+    /// scan) and assign on main. Reset to empty in demo mode.
+    private func loadDiscoveredProfiles() async {
+        guard !workspace.demoMode else {
+            discoveredProfiles = []
+            return
+        }
+        let names = await Task.detached {
+            ProfileService.discoverLocal().map(\.name)
+        }.value
+        discoveredProfiles = names
     }
 
     /// Recompute the hand-built agents the active policy duplicates. Reads the
@@ -301,126 +343,12 @@ struct AutomationView: View {
         }
     }
 
-    // MARK: - Report groups
+    // MARK: - Report group actions
 
-    private var groupsCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionTitle("Report Groups")
-                Text("Each group's profiles roll up into one consolidated fleet report; profiles "
-                    + "in no group get a per-profile report. Combine prod/dev/sandbox into one "
-                    + "fleet, or make one group per customer.")
-                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
-
-                ForEach(policy.reportGroups) { group in
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(group.name).font(.callout.weight(.semibold))
-                            Text(group.profiles.joined(separator: ", "))
-                                .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
-                        }
-                        Spacer()
-                        Button(role: .destructive) { removeGroup(group) } label: {
-                            Image(systemName: "trash")
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Divider().background(Theme.Colors.hairline)
-                }
-
-                addGroupForm
-            }
-        }
-    }
-
-    // MARK: - Consolidation
-
-    private var consolidationCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionTitle("Consolidate Schedules")
-                Text("These hand-built schedules do work managed automation now covers for "
-                    + "every profile — retiring them stops duplicate collection. Each is "
-                    + "archived to _archived-launchagents before removal, so it is recoverable.")
-                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
-
-                ForEach(consolidationCandidates) { candidate in
-                    Toggle(isOn: removalBinding(candidate.label)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(candidate.displayName).font(.callout.weight(.semibold))
-                            Text("\(candidate.mode.displayTitle) · now covered by \(candidate.coveredBy)")
-                                .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
-                        }
-                    }
-                    .toggleStyle(.checkbox)
-                    Divider().background(Theme.Colors.hairline)
-                }
-
-                PNPButton(
-                    title: "Retire \(selectedForRemoval.count) selected",
-                    style: .danger, size: .sm
-                ) { showRemovalConfirm = true }
-                .disabled(selectedForRemoval.isEmpty)
-            }
-        }
-        .confirmationDialog(
-            "Retire \(selectedForRemoval.count) hand-built schedule"
-                + (selectedForRemoval.count == 1 ? "" : "s") + "?",
-            isPresented: $showRemovalConfirm, titleVisibility: .visible
-        ) {
-            Button("Retire & archive", role: .destructive) {
-                Task { await removeSelectedAgents() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Each schedule is archived to _archived-launchagents and can be restored by "
-                + "copying its plist back to ~/Library/LaunchAgents. Managed agents are never "
-                + "affected.")
-        }
-    }
-
-    private func removalBinding(_ label: String) -> Binding<Bool> {
-        Binding(
-            get: { selectedForRemoval.contains(label) },
-            set: { isOn in
-                if isOn { selectedForRemoval.insert(label) } else { selectedForRemoval.remove(label) }
-            }
-        )
-    }
-
-    private var addGroupForm: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("New group").font(.footnote.weight(.semibold))
-            TextField("Group name (e.g. Production Fleet)", text: $newGroupName)
-                .textFieldStyle(.roundedBorder)
-            if !discoveredProfiles.isEmpty {
-                ForEach(discoveredProfiles, id: \.self) { profile in
-                    Toggle(profile, isOn: newGroupProfileBinding(profile))
-                        .toggleStyle(.checkbox)
-                }
-            }
-            PNPButton(title: "Add group", style: .gold, size: .sm) { addGroup() }
-                .disabled(!canAddGroup)
-        }
-    }
-
-    private var canAddGroup: Bool {
-        let trimmed = newGroupName.trimmingCharacters(in: .whitespaces)
-        return !trimmed.isEmpty
-            && !newGroupProfiles.isEmpty
-            && !policy.reportGroups.contains { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
-    }
-
-    private func addGroup() {
-        let trimmed = newGroupName.trimmingCharacters(in: .whitespaces)
-        guard canAddGroup else { return }
+    private func addGroup(name: String, profiles: [String]) {
         update {
-            $0.reportGroups.append(
-                ReportGroup(name: trimmed, profiles: discoveredProfiles.filter(newGroupProfiles.contains))
-            )
+            $0.reportGroups.append(ReportGroup(name: name, profiles: profiles))
         }
-        newGroupName = ""
-        newGroupProfiles = []
     }
 
     private func removeGroup(_ group: ReportGroup) {
@@ -436,7 +364,7 @@ struct AutomationView: View {
     private func weekdayPicker(_ label: String, _ value: Binding<Int>) -> some View {
         Picker(label, selection: value) {
             ForEach(0..<7, id: \.self) { index in
-                Text(Self.weekdays[index]).tag(index)
+                Text(AutomationCardShared.weekdays[index]).tag(index)
             }
         }
         .pickerStyle(.menu)
@@ -466,6 +394,352 @@ struct AutomationView: View {
         )
     }
 
+    private func update(_ mutate: (inout AutomationPolicy) -> Void) {
+        var p = AutomationPolicy.parse(policyRaw)
+        mutate(&p)
+        policyRaw = p.serialize()
+    }
+}
+
+// MARK: - Shared card constants
+
+private enum AutomationCardShared {
+    static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+    static func sectionTitle(_ text: String) -> some View {
+        Text(text).font(.headline)
+    }
+}
+
+// MARK: - Automation health (dead-man switch, 2.6)
+
+/// Overdue / failing scheduled runs — or a quiet "on time" row when managed
+/// and everything is healthy. Absence of a run is signal, so the healthy
+/// state is explicit rather than blank.
+private struct HealthCard: View {
+    let issues: [AutomationHealthIssue]
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                AutomationCardShared.sectionTitle("Automation Health")
+                if issues.isEmpty {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "checkmark.circle")
+                            .foregroundStyle(Theme.Colors.ok)
+                            .accessibilityHidden(true)
+                        Text("All scheduled runs on time.")
+                            .font(.callout)
+                            .foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                } else {
+                    ForEach(issues) { issue in
+                        healthRow(issue)
+                        Divider().background(Theme.Colors.hairline)
+                    }
+                }
+            }
+        }
+    }
+
+    private func healthRow(_ issue: AutomationHealthIssue) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: issue.kind == .overdue ? "clock.badge.xmark" : "xmark.octagon")
+                .foregroundStyle(Theme.Colors.warn)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(issue.displayName).font(.callout.weight(.semibold))
+                Text(healthDetail(issue))
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+            }
+            Spacer()
+            Text(issue.kind == .overdue ? "Overdue" : "Failing")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.Colors.warn)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(healthAccessibilityLabel(issue))
+    }
+
+    private func healthAccessibilityLabel(_ issue: AutomationHealthIssue) -> String {
+        let status = issue.kind == .overdue ? "Overdue" : "Failing"
+        return "\(issue.displayName), \(status). \(healthDetail(issue))"
+    }
+
+    private func healthDetail(_ issue: AutomationHealthIssue) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        let last = issue.lastRunFinishedAt.map {
+            "last run \(formatter.localizedString(for: $0, relativeTo: Date()))"
+        } ?? "no run recorded"
+        switch issue.kind {
+        case .overdue:
+            let when = issue.expectedFire.map {
+                formatter.localizedString(for: $0, relativeTo: Date())
+            } ?? "on schedule"
+            return "Should have run \(when) — \(last)."
+        case .failing:
+            return "Last run reported failure — \(last)."
+        }
+    }
+}
+
+// MARK: - Notifications (per-profile notify: webhook)
+
+/// Configures the active profile's `notify:` webhook. Scheduled runs already
+/// read this block at run time, so the panel only WRITES it; each control
+/// persists immediately (write-on-change), matching the Settings AI panel.
+/// The URL TextField is the exception: its binding fires per KEYSTROKE, and each
+/// save is a full config.yaml read/decode/re-encode/atomic-rename — so URL edits
+/// are debounced (600ms) instead of written per character.
+private struct NotificationsCard: View {
+    let profile: String
+
+    @State private var notifyEnabled = false
+    @State private var notifyProvider: NotifyConfig.Provider = .teams
+    @State private var notifyURL = ""
+    @State private var notifyDetail: NotifyConfig.Detail = .full
+    @State private var notifySaveMessage: String?
+    @State private var notifyTestResult: String?
+    @State private var notifyTesting = false
+    @State private var notifyURLSaveTask: Task<Void, Never>?
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                AutomationCardShared.sectionTitle("Notifications")
+                Text("Webhook for profile \"\(profile)\".")
+                    .font(.callout.weight(.semibold))
+                Text("Scheduled runs post digests, failure alerts, metric alerts, and overdue "
+                    + "notices to this webhook.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+
+                Toggle("Enable notifications", isOn: Binding(
+                    get: { notifyEnabled },
+                    set: { notifyEnabled = $0; saveNotifyConfig() }))
+                    .toggleStyle(.switch)
+                    .popoverTip(AutomationTips.notifications)
+
+                if notifyEnabled {
+                    Picker("Service", selection: Binding(
+                        get: { notifyProvider },
+                        set: { notifyProvider = $0; saveNotifyConfig() })) {
+                        ForEach(NotifyConfig.Provider.allCases, id: \.self) { provider in
+                            Text(provider == .teams ? "Microsoft Teams" : "Slack").tag(provider)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 260, alignment: .leading)
+
+                    TextField("https://...", text: Binding(
+                        get: { notifyURL },
+                        set: { notifyURL = $0; scheduleDebouncedNotifySave() }))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.body.monospaced())
+                        .frame(maxWidth: 420, alignment: .leading)
+                        .onSubmit { flushNotifySave() }
+
+                    if NotifyConfigWriter.showsInsecureURLWarning(enabled: notifyEnabled, url: notifyURL) {
+                        Text("URL must start with https:// — notifications will not send.")
+                            .font(.footnote).foregroundStyle(Theme.Colors.warn)
+                    }
+
+                    Picker("Detail", selection: Binding(
+                        get: { notifyDetail },
+                        set: { notifyDetail = $0; saveNotifyConfig() })) {
+                        Text("Full").tag(NotifyConfig.Detail.full)
+                        Text("Minimal").tag(NotifyConfig.Detail.minimal)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 260, alignment: .leading)
+                    Text("Minimal sends event counts only — no metric values, error text, or "
+                        + "schedule names.")
+                        .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+
+                    HStack(spacing: 8) {
+                        PNPButton(title: "Send test notification", icon: "paperplane", size: .sm) {
+                            Task { await sendTestNotification() }
+                        }
+                        .disabled(notifyTesting || !currentNotifyConfig.isUsable)
+                        if notifyTesting { ProgressView().controlSize(.small) }
+                    }
+
+                    if let notifyTestResult {
+                        Text(notifyTestResult)
+                            .font(.caption).foregroundStyle(Theme.Colors.fgMuted)
+                    }
+                }
+
+                if let notifySaveMessage {
+                    Text(notifySaveMessage)
+                        .font(.caption).foregroundStyle(Theme.Colors.warn)
+                }
+            }
+        }
+        // Load the active profile's `notify:` block into the form (and reset on a
+        // profile switch), mirroring the Settings AI panel's `.task(id: profile)`.
+        .task(id: profile) { loadNotifyConfig() }
+    }
+
+    /// A `NotifyConfig` built from the CURRENT form values, so the test-send uses
+    /// the in-progress URL even before it round-trips to disk.
+    private var currentNotifyConfig: NotifyConfig {
+        NotifyConfig(
+            enabled: notifyEnabled,
+            provider: notifyProvider.rawValue,
+            url: notifyURL,
+            detail: notifyDetail.rawValue
+        )
+    }
+
+    private func loadNotifyConfig() {
+        let config = NotifyConfigLoader.load(profile: profile)
+        notifyEnabled = config.isEnabled
+        notifyProvider = config.resolvedProvider
+        notifyURL = config.resolvedURL
+        notifyDetail = config.resolvedDetail
+        notifySaveMessage = nil
+        notifyTestResult = nil
+    }
+
+    private func saveNotifyConfig() {
+        do {
+            try NotifyConfigWriter.save(
+                enabled: notifyEnabled,
+                provider: notifyProvider.rawValue,
+                url: notifyURL,
+                detail: notifyDetail.rawValue,
+                profile: profile
+            )
+            notifySaveMessage = nil
+        } catch {
+            notifySaveMessage = "Couldn't save notification settings: \(error.localizedDescription)"
+        }
+    }
+
+    /// Debounce URL-keystroke saves: each save is a full config.yaml
+    /// read/decode/re-encode/rename, so coalesce rapid typing into one write.
+    private func scheduleDebouncedNotifySave() {
+        notifyURLSaveTask?.cancel()
+        notifyURLSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            saveNotifyConfig()
+        }
+    }
+
+    /// Write immediately (Return pressed) — cancel any pending debounce first.
+    private func flushNotifySave() {
+        notifyURLSaveTask?.cancel()
+        notifyURLSaveTask = nil
+        saveNotifyConfig()
+    }
+
+    private func sendTestNotification() async {
+        notifyTesting = true
+        notifyTestResult = nil
+        let delivered = await WebhookNotifier.send(
+            config: currentNotifyConfig,
+            title: "Test notification — Jamf Reports",
+            facts: [
+                .init(label: "Profile", value: profile),
+                .init(label: "Status", value: "Test"),
+            ]
+        )
+        notifyTesting = false
+        notifyTestResult = delivered ? "Delivered" : "Send failed — check the URL"
+    }
+}
+
+// MARK: - Report groups
+
+/// Lists the configured report groups and hosts the add-group form. Group
+/// mutation flows back to the parent's persisted policy via the callbacks.
+private struct GroupsCard: View {
+    let reportGroups: [ReportGroup]
+    let discoveredProfiles: [String]
+    let existingGroupNames: [String]
+    let onRemove: (ReportGroup) -> Void
+    let onAdd: (String, [String]) -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                AutomationCardShared.sectionTitle("Report Groups")
+                Text("Each group's profiles roll up into one consolidated fleet report; profiles "
+                    + "in no group get a per-profile report. Combine prod/dev/sandbox into one "
+                    + "fleet, or make one group per customer.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+
+                ForEach(reportGroups) { group in
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(group.name).font(.callout.weight(.semibold))
+                            Text(group.profiles.joined(separator: ", "))
+                                .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                        }
+                        Spacer()
+                        Button(role: .destructive) { onRemove(group) } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove group \(group.name)")
+                        .help("Remove this report group.")
+                    }
+                    Divider().background(Theme.Colors.hairline)
+                }
+
+                AddGroupForm(
+                    discoveredProfiles: discoveredProfiles,
+                    existingGroupNames: existingGroupNames,
+                    onAdd: onAdd
+                )
+            }
+        }
+    }
+}
+
+/// The "new group" entry form. Owns the in-progress name/selection @State so a
+/// keystroke here invalidates only this subtree, not the whole screen.
+private struct AddGroupForm: View {
+    let discoveredProfiles: [String]
+    let existingGroupNames: [String]
+    let onAdd: (String, [String]) -> Void
+
+    @State private var newGroupName: String = ""
+    @State private var newGroupProfiles: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("New group").font(.footnote.weight(.semibold))
+            TextField("Group name (e.g. Production Fleet)", text: $newGroupName)
+                .textFieldStyle(.roundedBorder)
+            if !discoveredProfiles.isEmpty {
+                ForEach(discoveredProfiles, id: \.self) { profile in
+                    Toggle(profile, isOn: newGroupProfileBinding(profile))
+                        .toggleStyle(.checkbox)
+                }
+            }
+            PNPButton(title: "Add group", style: .gold, size: .sm) { addGroup() }
+                .disabled(!canAddGroup)
+        }
+    }
+
+    private var canAddGroup: Bool {
+        let trimmed = newGroupName.trimmingCharacters(in: .whitespaces)
+        return !trimmed.isEmpty
+            && !newGroupProfiles.isEmpty
+            && !existingGroupNames.contains { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+    }
+
+    private func addGroup() {
+        let trimmed = newGroupName.trimmingCharacters(in: .whitespaces)
+        guard canAddGroup else { return }
+        onAdd(trimmed, discoveredProfiles.filter(newGroupProfiles.contains))
+        newGroupName = ""
+        newGroupProfiles = []
+    }
+
     private func newGroupProfileBinding(_ profile: String) -> Binding<Bool> {
         Binding(
             get: { newGroupProfiles.contains(profile) },
@@ -474,10 +748,67 @@ struct AutomationView: View {
             }
         )
     }
+}
 
-    private func update(_ mutate: (inout AutomationPolicy) -> Void) {
-        var p = AutomationPolicy.parse(policyRaw)
-        mutate(&p)
-        policyRaw = p.serialize()
+// MARK: - Consolidation
+
+/// Offers to retire hand-built schedules the managed policy now duplicates.
+private struct ConsolidationCard: View {
+    let candidates: [ScheduleConsolidation.Candidate]
+    @Binding var selectedForRemoval: Set<String>
+    @Binding var showRemovalConfirm: Bool
+    let onConfirmRemoval: () -> Void
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                AutomationCardShared.sectionTitle("Consolidate Schedules")
+                Text("These hand-built schedules do work managed automation now covers for "
+                    + "every profile — retiring them stops duplicate collection. Each is "
+                    + "archived to _archived-launchagents before removal, so it is recoverable.")
+                    .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+
+                ForEach(candidates) { candidate in
+                    Toggle(isOn: removalBinding(candidate.label)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(candidate.displayName).font(.callout.weight(.semibold))
+                            Text("\(candidate.mode.displayTitle) · now covered by \(candidate.coveredBy)")
+                                .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    Divider().background(Theme.Colors.hairline)
+                }
+
+                PNPButton(
+                    title: "Retire \(selectedForRemoval.count) selected",
+                    style: .danger, size: .sm
+                ) { showRemovalConfirm = true }
+                .disabled(selectedForRemoval.isEmpty)
+            }
+        }
+        .confirmationDialog(
+            "Retire \(selectedForRemoval.count) hand-built schedule"
+                + (selectedForRemoval.count == 1 ? "" : "s") + "?",
+            isPresented: $showRemovalConfirm, titleVisibility: .visible
+        ) {
+            Button("Retire & archive", role: .destructive) {
+                onConfirmRemoval()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Each schedule is archived to _archived-launchagents and can be restored by "
+                + "copying its plist back to ~/Library/LaunchAgents. Managed agents are never "
+                + "affected.")
+        }
+    }
+
+    private func removalBinding(_ label: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedForRemoval.contains(label) },
+            set: { isOn in
+                if isOn { selectedForRemoval.insert(label) } else { selectedForRemoval.remove(label) }
+            }
+        )
     }
 }
