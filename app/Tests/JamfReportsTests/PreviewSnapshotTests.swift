@@ -20,7 +20,10 @@ final class PreviewSnapshotTests: XCTestCase {
 
     // MARK: - Harness
 
-    private static var outputDir: URL {
+    // nonisolated: the class is @MainActor but setUpWithError overrides a
+    // nonisolated XCTest method, and Swift 6.1 rejects it referencing a
+    // MainActor-isolated static (6.3 relaxes this).
+    nonisolated private static var outputDir: URL {
         let base = ProcessInfo.processInfo.environment["JRC_PREVIEW_OUT"]
             ?? (NSTemporaryDirectory() as NSString).appendingPathComponent("jrc-previews")
         return URL(fileURLWithPath: base, isDirectory: true)

@@ -65,8 +65,9 @@ struct FreshnessChipRow: View {
 
     /// Coarse relative label: "just now" / "Nh ago" / "Nd ago". Deterministic
     /// (no locale-relative formatter) so it is unit-testable and stable across
-    /// machines.
-    static func relativeLabel(for date: Date, now: Date = Date()) -> String {
+    /// machines. `nonisolated`: View conformance MainActor-isolates statics on
+    /// Swift 6.1, which breaks nonisolated test callers (6.3 relaxes this).
+    nonisolated static func relativeLabel(for date: Date, now: Date = Date()) -> String {
         let seconds = max(0, now.timeIntervalSince(date))
         let hours = Int(seconds / 3600)
         if hours < 1 { return "just now" }
@@ -76,7 +77,7 @@ struct FreshnessChipRow: View {
     }
 
     /// Absolute timestamp for the `.help` tooltip.
-    static func absoluteLabel(for date: Date) -> String {
+    nonisolated static func absoluteLabel(for date: Date) -> String {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .short
