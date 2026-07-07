@@ -59,6 +59,15 @@ struct ProductConnectSheetView: View {
         }
         .frame(minWidth: 520, minHeight: 480)
         .background(Theme.Colors.winBG)
+        // Esc dismisses. Hidden zero-size button with .cancelAction is the
+        // canonical SwiftUI pattern (see OverviewView's drill-down dismissal).
+        .background {
+            Button("", action: { dismiss() })
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .onAppear {
             // Pre-fill profile name default based on product type.
             if product == .protect, flow.protectProfileName.isEmpty {

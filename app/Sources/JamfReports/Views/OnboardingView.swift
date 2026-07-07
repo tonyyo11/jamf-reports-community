@@ -813,20 +813,11 @@ struct OnboardingView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let error = flow.lastError {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
+            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
                 Text(error)
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg2)
-                Spacer()
             }
-            .padding(12)
-            .background(Theme.Colors.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-            )
         }
     }
 

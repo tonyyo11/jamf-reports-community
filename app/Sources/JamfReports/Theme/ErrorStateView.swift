@@ -11,7 +11,7 @@ struct ErrorStateView: View {
     let retry: (@MainActor () -> Void)?
 
     init(title: String, message: String, commands: [String] = [],
-         systemImage: String = "exclamationmark.triangle", retry: (@MainActor () -> Void)? = nil) {
+         systemImage: String = "exclamationmark.triangle.fill", retry: (@MainActor () -> Void)? = nil) {
         self.title = title
         self.message = message
         self.commands = commands

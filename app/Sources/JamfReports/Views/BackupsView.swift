@@ -142,20 +142,11 @@ struct BackupsView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let errorMessage {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
+            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
                 Text(errorMessage)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
-                Spacer()
             }
-            .padding(12)
-            .background(Theme.Colors.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-            )
         }
     }
 

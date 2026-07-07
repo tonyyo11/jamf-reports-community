@@ -199,7 +199,7 @@ struct GroupsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
                     title: "Advanced Mobile Searches",
-                    trailingTag: snapshot.advancedSearchCount <= 30 ? nil : "\(min(30, snapshot.advancedSearchCount)) of \(snapshot.advancedSearchCount)"
+                    trailing: "\(snapshot.advancedSearchCount) search\(snapshot.advancedSearchCount == 1 ? "" : "es")"
                 )
 
                 Table(Array(snapshot.advancedMobileSearches.prefix(30).enumerated()).map { SearchRowWrapper(search: $0.element, index: $0.offset) }) {

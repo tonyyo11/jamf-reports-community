@@ -226,7 +226,7 @@ struct SourcesView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "folder.fill").foregroundStyle(Theme.Colors.tealBright)
                         .font(.system(size: 16))
-                    SectionHeader(title: "CSV inbox")
+                    SectionHeader(title: "CSV Inbox")
                     Spacer()
                     Pill(text: "\(csvFiles.count) FILES", tone: .muted)
                 }
@@ -713,7 +713,7 @@ struct SourcesView: View {
                 HStack(spacing: 10) {
                     Image(systemName: "plus.app.fill").foregroundStyle(Theme.Colors.goldBright)
                         .font(.system(size: 16))
-                    SectionHeader(title: "Additional products")
+                    SectionHeader(title: "Additional Products")
                 }
                 Text("Connect Jamf Protect or Jamf School to extend report coverage for the active workspace.")
                     .font(.caption)

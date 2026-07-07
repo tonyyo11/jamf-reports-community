@@ -1,5 +1,76 @@
 import SwiftUI
 
+/// Shared recipe behind every hand-copied "warn/danger/info strip" banner in
+/// the app (StaleDataBanner, heavyTierStalePrompt, automationHealthBanner,
+/// authWarningBanner, error banners). One canonical visual: HStack, 10h/6v
+/// padding, 6pt-radius rounded rect, tone-tinted 0.08 fill / 0.35 stroke.
+///
+/// `content` carries the label (and any trailing controls); `action` adds an
+/// optional trailing button. Kept dumb — no environment reads — so every
+/// call site stays a drop-in replacement for its hand-rolled HStack.
+struct InlineBannerAction {
+    let label: String
+    let icon: String?
+    let isDisabled: Bool
+    let help: String?
+    let handler: () -> Void
+
+    init(label: String, icon: String? = nil, isDisabled: Bool = false, help: String? = nil, handler: @escaping () -> Void) {
+        self.label = label
+        self.icon = icon
+        self.isDisabled = isDisabled
+        self.help = help
+        self.handler = handler
+    }
+}
+
+enum InlineBannerTone {
+    case warn, danger, info
+
+    var color: Color {
+        switch self {
+        case .warn: Theme.Colors.warn
+        case .danger: Theme.Colors.danger
+        case .info: Theme.Colors.goldBright
+        }
+    }
+}
+
+struct InlineBanner<Content: View>: View {
+    typealias Action = InlineBannerAction
+    typealias Tone = InlineBannerTone
+
+    let icon: String
+    let tone: Tone
+    var action: Action?
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(tone.color)
+                .accessibilityHidden(true)
+            content()
+            if let action {
+                Spacer(minLength: 8)
+                PNPButton(title: action.label, icon: action.icon, size: .sm, action: action.handler)
+                    .disabled(action.isDisabled)
+                    .help(action.help ?? "")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(tone.color.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(tone.color.opacity(0.35), lineWidth: 0.5)
+                )
+        )
+    }
+}
+
 /// Inline freshness banner — surfaces when cached snapshot data is stale or
 /// when no live fetch has ever occurred. Renders nothing when the source is
 /// `.fresh`, so it is safe to drop unconditionally above any chart or KPI
@@ -37,37 +108,23 @@ struct StaleDataBanner: View {
 
     var body: some View {
         if source.shouldDisplayBanner {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "clock.badge.exclamationmark")
-                    .foregroundStyle(Theme.Colors.warn)
-                    .accessibilityHidden(true)
+            InlineBanner(
+                icon: "clock.badge.exclamationmark",
+                tone: .warn,
+                action: showsCollectButton ? InlineBannerAction(
+                    label: isCollecting ? "Collecting…" : "Collect now",
+                    icon: isCollecting ? "hourglass" : "arrow.down.circle",
+                    isDisabled: isCollecting,
+                    help: "Fetch live jamf-cli data for this profile now."
+                ) {
+                    guard !isCollecting else { return }
+                    onCollect?()
+                } : nil
+            ) {
                 Text(message)
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.warn)
-                Spacer(minLength: showsCollectButton ? 8 : 0)
-                if showsCollectButton {
-                    PNPButton(
-                        title: isCollecting ? "Collecting…" : "Collect now",
-                        icon: isCollecting ? "hourglass" : "arrow.down.circle",
-                        size: .sm
-                    ) {
-                        guard !isCollecting else { return }
-                        onCollect?()
-                    }
-                    .disabled(isCollecting)
-                    .help("Fetch live jamf-cli data for this profile now.")
-                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Theme.Colors.warn.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-                    )
-            )
             .accessibilityElement(children: .combine)
             .accessibilityLabel(message)
         }

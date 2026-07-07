@@ -201,6 +201,15 @@ struct SmartGroupApplySheet: View {
         }
         .frame(width: 560, height: 520)
         .task { await viewModel.loadPreview() }
+        // Esc dismisses. Hidden zero-size button with .cancelAction is the
+        // canonical SwiftUI pattern (see OverviewView's drill-down dismissal).
+        .background {
+            Button("", action: { dismiss() })
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
     }
 
     // MARK: - Header

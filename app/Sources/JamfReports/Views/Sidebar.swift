@@ -188,6 +188,7 @@ struct Sidebar: View {
         }
         .accessibilityLabel(navAccessibilityLabel(for: item))
         .accessibilityAddTraits(isActive ? .isSelected : [])
+        .help(mode == .compact ? item.label : "")
     }
 
     private func navAccessibilityLabel(for item: Tab) -> String {

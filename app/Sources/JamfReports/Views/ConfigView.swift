@@ -805,6 +805,8 @@ private struct EACardEdit: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 24)
+                .accessibilityLabel("Remove \(ea.wrappedValue.name.isEmpty ? "extension attribute" : ea.wrappedValue.name)")
+                .help("Remove this extension attribute mapping.")
             }
 
             let type = ea.wrappedValue.type
@@ -1368,7 +1370,11 @@ private struct ScoringTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        // Read once per body evaluation — `config` re-parses `raw` on every
+        // access, and this view reads it 9 times (8 weight rows + totalWeight).
+        let config = self.config
+        let totalWeight = Self.totalWeight(config)
+        return VStack(alignment: .leading, spacing: 14) {
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
@@ -1422,7 +1428,7 @@ private struct ScoringTab: View {
         }
     }
 
-    private var totalWeight: Double {
+    private static func totalWeight(_ config: ScoringConfig) -> Double {
         let w = config.weights
         return w.fileVault + w.sip + w.firewall + w.edrAgent +
                w.mscp + w.xprotect + w.cve + w.secureBoot

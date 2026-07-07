@@ -119,6 +119,8 @@ struct SchedulesView: View {
         }
     }
 
+    // Re-parses AutomationPolicy per access; only read once (managedModeCard's
+    // single Toggle) per body evaluation, so a @State hoist isn't warranted here.
     private var managedModeBinding: Binding<Bool> {
         Binding(
             get: { AutomationPolicy.parse(automationPolicyRaw).isManaged },
@@ -951,6 +953,8 @@ private struct NewScheduleSheet: View {
                         .font(.system(size: 16))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close new schedule")
+                .help("Close new schedule")
             }
             .padding(18)
             Divider()

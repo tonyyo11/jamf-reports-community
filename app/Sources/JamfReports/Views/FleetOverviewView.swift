@@ -511,7 +511,7 @@ struct FleetOverviewView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(Theme.Colors.warn)
                         .accessibilityHidden(true)
-                    SectionHeader(title: "Issues on this profile")
+                    SectionHeader(title: "Issues on This Profile")
                 }
                 ForEach(fleetProfileIssues(row.summary)) { issue in
                     VStack(alignment: .leading, spacing: 4) {

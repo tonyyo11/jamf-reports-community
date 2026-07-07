@@ -250,7 +250,7 @@ struct ExtensionAttributesView: View {
                         Image(systemName: "arrow.down.right.circle.fill")
                             .foregroundStyle(Theme.Colors.warn)
                             .accessibilityHidden(true)
-                        SectionHeader(title: "Coverage drift")
+                        SectionHeader(title: "Coverage Drift")
                         Spacer()
                     }
                     Text("Fleet coverage dropped sharply for these Extension Attributes since "

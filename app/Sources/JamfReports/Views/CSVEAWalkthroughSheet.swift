@@ -67,6 +67,15 @@ struct CSVEAWalkthroughSheet: View {
         .frame(minWidth: 460, idealWidth: 540, minHeight: 420, idealHeight: 600)
         .background(Theme.Colors.winBG)
         .task { await load() }
+        // Esc dismisses. Hidden zero-size button with .cancelAction is the
+        // canonical SwiftUI pattern (see OverviewView's drill-down dismissal).
+        .background {
+            Button("", action: { dismiss() })
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
     }
 
     // MARK: - Sections
@@ -86,7 +95,7 @@ struct CSVEAWalkthroughSheet: View {
     private var guidanceCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                SectionHeader(title: "Before you export")
+                SectionHeader(title: "Before You Export")
                 Text("When exporting from Jamf Pro, add your Extension Attribute "
                     + "columns to the export. Built-in inventory fields alone won't "
                     + "include EA values — pick the EAs you track (compliance state, "
