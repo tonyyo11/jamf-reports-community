@@ -293,7 +293,7 @@ final class CoreDashboardTests: XCTestCase {
             "Check-in Health", "Active Devices", "Group Hygiene",
             // Update & patch details
             "Patch Failures", "Update Status", "Update Failures", "Smart Groups",
-            "Patch Summary Dashboard",
+            "Patch Summary Dashboard", "Patch Velocity",
             // Device security & supervision detail
             "Device Security State", "Mobile Supervision Status",
             // Platform / DDM (optional)

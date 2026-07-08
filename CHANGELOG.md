@@ -31,6 +31,13 @@ versions in this repository map to git tags.
   gains a Notifications section (per profile) with the enable toggle, Teams/Slack
   picker, webhook URL, payload-detail level, and a "Send test notification"
   button — no more hand-editing `notify:` in config.yaml (which still works).
+- Patch velocity: adoption measured against release dates. The Patch screen
+  gains a "Days Behind" column and a velocity card charting the five
+  slowest-adopting titles' adoption curves with "days to 50% / 90%" figures,
+  and reports gain a "Patch Velocity" sheet. Computed entirely from the dated
+  patch history the app already collects — curves fill in as history
+  accumulates; velocity figures are only shown when the crossing was actually
+  observed, never estimated.
 
 ### Security
 

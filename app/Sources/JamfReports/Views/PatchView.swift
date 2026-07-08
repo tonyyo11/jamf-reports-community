@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Charts
 
 /// Patch management dashboard. Surfaces Jamf Pro patch-management status and
 /// failure detail from `pro report patch-status` and `patch-status --scan-failures`
@@ -13,6 +14,16 @@ struct PatchView: View {
     /// title_id → release_date from the patch-release-dates snapshot.
     /// Empty when the snapshot hasn't been collected yet — table column shows "—".
     @State private var releaseLookup: [String: String] = [:]
+    /// Per-title adoption velocity, computed off-main from dated patch-status
+    /// history. Empty until a few days of collected history exist.
+    @State private var velocity: [TitleVelocity] = []
+
+    /// Distinct colors for up to 5 slowest-title chart series, following the
+    /// TrendsView `.chartForegroundStyleScale` idiom.
+    private static let velocitySeriesColors: [Color] = [
+        Theme.Colors.gold, Theme.Colors.teal, Theme.Colors.purple,
+        Theme.Colors.info, Theme.Colors.danger
+    ]
 
     var body: some View {
         PageScaffold {
@@ -36,6 +47,7 @@ struct PatchView: View {
             } else {
                 kpiGrid
                 patchTitlesCard
+                patchVelocityCard
                 if !snapshot.failures.isEmpty {
                     recentFailuresCard
                 }
@@ -47,6 +59,14 @@ struct PatchView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reload()
         }
+        .task(id: reloadToken) { await loadVelocity() }
+    }
+
+    /// Recomputes whenever the profile changes or a manual reload fires —
+    /// mirrors `.onChange(of: workspace.profile)`/`.refreshActiveTab` above
+    /// without duplicating those triggers into a second state variable.
+    private var reloadToken: String {
+        "\(workspace.profile)|\(snapshot.snapshotDate?.timeIntervalSince1970 ?? 0)"
     }
 
     private var subtitle: String? {
@@ -70,6 +90,29 @@ struct PatchView: View {
             let rows = PatchReleaseDateService.load(profile: workspace.profile)
             releaseLookup = PatchReleaseDateService.releaseDateLookup(from: rows)
         }
+    }
+
+    /// Computes patch adoption velocity off-main. Demo mode shows no
+    /// velocity card (the static demo dataset has no dated history to derive
+    /// a trend from). `PatchVelocityBuilder.compute` walks the workspace's
+    /// dated patch-status history — the same `dataDir` other services here
+    /// resolve via `WorkspacePaths.dataDir(for:)`.
+    private func loadVelocity() async {
+        guard !workspace.demoMode else {
+            velocity = []
+            return
+        }
+        let profile = workspace.profile
+        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+            velocity = []
+            return
+        }
+        let releaseRows = PatchReleaseDateService.load(dataDir: dataDir)
+        let computed = await Task.detached(priority: .utility) {
+            PatchVelocityBuilder.compute(dataDir: dataDir, releaseRows: releaseRows)
+        }.value
+        guard workspace.profile == profile else { return }
+        velocity = computed
     }
 
     private static let demoSnapshot = PatchStatusService.Snapshot(
@@ -191,6 +234,19 @@ struct PatchView: View {
                     }
                     .width(min: 90, ideal: 110)
 
+                    TableColumn("Days Behind") { title in
+                        let dateStr = releaseLookup[title.id] ?? ""
+                        let days = PatchReleaseDateService.daysBehind(releaseDate: dateStr)
+                        // >30 days behind the latest release is the warn threshold —
+                        // matches the failure-count warn styling in the Failures column.
+                        Text(days.map { "\($0)d" } ?? "—")
+                            .font(Theme.Fonts.mono(11))
+                            .foregroundStyle((days ?? 0) > 30 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
+                            .monospacedDigit()
+                            .accessibilityLabel(days.map { "\($0) days behind the latest release" } ?? "Days behind unavailable")
+                    }
+                    .width(min: 80, ideal: 100)
+
                     TableColumn("Compliance") { title in
                         let pct = PatchStatusService.parseCompliancePct(title.compliancePct)
                         HStack(spacing: 3) {
@@ -241,6 +297,128 @@ struct PatchView: View {
             let rhsPct = PatchStatusService.parseCompliancePct(rhs.compliancePct)
             return lhsPct < rhsPct
         }
+    }
+
+    // MARK: - Patch Velocity
+
+    /// The 5 titles adopting slowest (lowest known adoption %), oldest-data-first
+    /// for ties. `nil` adoptionPct titles (no dated history yet) are excluded —
+    /// they can't be ranked.
+    private var slowestVelocityTitles: [TitleVelocity] {
+        velocity
+            .filter { $0.adoptionPct != nil }
+            .sorted { ($0.adoptionPct ?? 0) < ($1.adoptionPct ?? 0) }
+            .prefix(5)
+            .map { $0 }
+    }
+
+    @ViewBuilder
+    private var patchVelocityCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Patch Velocity")
+                if slowestVelocityTitles.isEmpty {
+                    Text("Velocity appears after a few days of collected patch history.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                } else {
+                    velocityRows
+                    velocityChart
+                }
+            }
+        }
+    }
+
+    private var velocityRows: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(slowestVelocityTitles) { title in
+                velocityRow(for: title)
+            }
+        }
+    }
+
+    private func velocityRow(for title: TitleVelocity) -> some View {
+        let pctText = title.adoptionPct.map { String(format: "%.1f%%", $0) } ?? "—"
+        let daysBehindText = title.daysBehind.map { "\($0)d behind" } ?? "—"
+        let milestoneText = velocityMilestoneText(for: title)
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title.title)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
+                Text(milestoneText)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            Spacer(minLength: 8)
+            Text(daysBehindText)
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle((title.daysBehind ?? 0) > 30 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
+            Text(pctText)
+                .font(Theme.Fonts.mono(12, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fg2)
+                .frame(minWidth: 56, alignment: .trailing)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title.title), \(pctText) adopted, \(daysBehindText), \(milestoneText)")
+    }
+
+    private func velocityMilestoneText(for title: TitleVelocity) -> String {
+        switch (title.daysTo50, title.daysTo90) {
+        case let (d50?, d90?):
+            return "50% in \(d50)d · 90% in \(d90)d"
+        case let (d50?, nil):
+            return "50% in \(d50)d"
+        case let (nil, d90?):
+            return "90% in \(d90)d"
+        default:
+            return "Adoption pace not yet available"
+        }
+    }
+
+    /// Compact multi-series adoption chart for the slowest titles — same
+    /// `ForEach` + `.foregroundStyle(by:)` + `.chartForegroundStyleScale`
+    /// idiom TrendsView uses for its stacked mSCP band series. Values are
+    /// precomputed as typed `let`s before the chart body; inline mixed-literal
+    /// arithmetic inside a Chart body has previously broken the Swift 6.1 CI
+    /// type-checker on this class.
+    private var velocityChart: some View {
+        let titles = slowestVelocityTitles
+        let labels: [String] = titles.map(\.title)
+        let colors: [Color] = Array(Self.velocitySeriesColors.prefix(titles.count))
+        return Chart {
+            ForEach(titles) { title in
+                ForEach(Array(title.series.enumerated()), id: \.offset) { _, point in
+                    let pct: Double = point.adoptionPct
+                    LineMark(
+                        x: .value("Date", point.date),
+                        y: .value("Adoption %", pct)
+                    )
+                    .foregroundStyle(by: .value("Title", title.title))
+                    .interpolationMethod(.monotone)
+                    .accessibilityLabel("\(title.title): \(Int(pct))% adopted")
+                }
+            }
+        }
+        .chartYScale(domain: 0...100)
+        .chartForegroundStyleScale(domain: labels, range: colors)
+        .chartXAxis {
+            AxisMarks {
+                AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                AxisValueLabel().font(.caption2.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) {
+                AxisGridLine().foregroundStyle(Theme.Colors.hairline)
+                AxisValueLabel().font(.caption2.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+        }
+        .frame(height: 160)
+        .accessibilityLabel("Adoption velocity for the \(titles.count) slowest-adopting patch titles")
     }
 
     private func complianceColor(for pct: Double) -> Color {
