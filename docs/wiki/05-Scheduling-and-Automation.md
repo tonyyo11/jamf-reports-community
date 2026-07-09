@@ -4,6 +4,11 @@ Historical reporting is only as good as the cadence behind it. The app runs unat
 work through macOS **LaunchAgents** — user-scoped jobs that run as the logged-in user,
 never as root.
 
+Every run mode below collects via `jamf-cli` — there is no schedule that reads only a
+CSV. A CSV-only workspace (no jamf-cli connection) can't use managed automation, the
+per-schedule builder, alerts, the dead-man switch, or webhook digests; generate reports
+there manually by dropping a fresh CSV export and clicking **Generate Report**.
+
 There are two ways to schedule work, and they are mutually exclusive per host:
 
 - **Managed automation** (recommended) — you set one policy and the app derives and
@@ -16,7 +21,7 @@ default**: a fresh install manages nothing and installs no agents until you opt 
 
 For how to tell whether your automation is actually running — dead-man overdue detection,
 metric alerts, and webhook notifications — see
-[Automation Trust](05b-Automation-Trust).
+[Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
 
 ## Managed automation — set policy, not cron jobs
 
@@ -61,11 +66,13 @@ the excluded-profiles list), the Automation screen carries three operational sec
 - **Automation Health** — a dead-man switch. It lists any managed or hand-built schedule
   that is **overdue** (should have fired and produced nothing) or **failing** (its last
   run reported failure), or reports "All scheduled runs on time." See
-  [Automation Trust](05b-Automation-Trust) for the exact rules.
+  [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust) for the exact rules.
 - **Notifications** — the active profile's opt-in Teams/Slack webhook: enable, choose the
   provider, paste an `https://` URL, pick a full/minimal detail level, and send a test
   card. Scheduled runs post digests, failure alerts, metric alerts, and overdue notices
-  here. Notifications settings apply to any scheduled run, managed or hand-built.
+  through this webhook, managed or hand-built. The Notifications section itself is only
+  reachable when **Manage automation** is on — with it off, edit the `notify:` block in
+  `config.yaml` directly (a known limitation of the per-schedule builder).
 - **Report Groups** — grouping for consolidated fleet reports (below).
 
 ### Report Groups and consolidated fleet reports
@@ -202,8 +209,8 @@ scan cadence rather than forcing scans more often.
 
 ## See also
 
-- [Automation Trust](05b-Automation-Trust) — dead-man detection, metric alerts, and
+- [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust) — dead-man detection, metric alerts, and
   webhook notifications: knowing your automation is actually running.
-- [Historical Trends](06-Historical-Trends) — what the daily `summary.json` snapshots feed.
-- [Security & Operational Considerations](10-Security-and-Operational-Considerations) —
+- [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) — what the daily `summary.json` snapshots feed.
+- [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations) —
   the LaunchAgent and webhook threat model.

@@ -108,4 +108,4 @@ dashboards are simply skipped.
 
 ## Next
 
-- Continue to [App Onboarding](02-App-Onboarding).
+- Continue to [App Onboarding](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding).

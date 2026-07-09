@@ -6,12 +6,23 @@ page covers the three features that tell you your automation is actually running
 dead-man switch, metric alerts, and webhook notifications.
 
 For how to set up schedules in the first place, see
-[Scheduling & Automation](05-Scheduling-and-Automation).
+[Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation).
+
+## What counts as a scheduled run
+
+All three features below fire only from the app's own scheduled-run path — a LaunchAgent
+this app writes, whether managed or hand-built in the Schedules screen. A cron job or a
+`launchd` plist you write yourself that calls the `jamf-reports` CLI does not evaluate
+alerts, does not post webhooks, does not appear in Run History, and is invisible to the
+dead-man switch — none of that machinery is wired into the CLI's `collect`/`generate`
+commands. If you want these features and still want to control the timing yourself, use
+the app's per-schedule builder (unmanaged mode) rather than your own cron/launchd job.
 
 ## The dead-man switch
 
 The dead-man switch treats the **absence** of a run as signal. It looks at every JamfReports
-LaunchAgent — managed or hand-built — and flags two conditions:
+LaunchAgent — managed or hand-built (hand-built = created in the app's Schedules screen)
+— and flags two conditions:
 
 - **Overdue** — the schedule is enabled, it should have fired at some past time, that
   expected fire plus a **60-minute grace window** has elapsed, and no run has recorded a
@@ -154,9 +165,9 @@ card becomes a signal that something happened, with the detail kept on the host.
 
 ## See also
 
-- [Scheduling & Automation](05-Scheduling-and-Automation) — managed automation, the
+- [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) — managed automation, the
   per-schedule builder, run modes, and collection cadence.
-- [Security & Operational Considerations](10-Security-and-Operational-Considerations) —
+- [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations) —
   the webhook egress and LaunchAgent threat model.
-- [Diagnostics & Troubleshooting](09-Diagnostics-and-Troubleshooting) — the Config Doctor
+- [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting) — the Config Doctor
   and Run History.

@@ -56,6 +56,11 @@ A few behaviors worth knowing:
 - `scaffold` **overwrites** the `--out` file if it already exists — it's an
   initial-setup command. To safely update an existing `config.yaml`, use the
   app's re-scaffold (which merges non-destructively) instead.
+- `collect` tolerates a missing `config.yaml` and proceeds with defaults; `generate`
+  and `html` require one to exist and fail without it. There is currently no CLI way to
+  create a `config.yaml` without a CSV — `scaffold` requires `--csv`. The only no-CSV
+  config writer today is running the GUI onboarding flow once and choosing **Skip for
+  now** at the CSV step.
 
 ### Templates
 
@@ -108,8 +113,15 @@ jamf-reports collect --profile prod && jamf-reports generate --profile prod
 ## Scheduling
 
 The app's built-in **Automation** still schedules unattended runs through
-LaunchAgents (see [Scheduling & Automation](05-Scheduling-and-Automation)) — that
+LaunchAgents (see [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation)) — that
 path is unchanged. The CLI is for interactive use and for building your own
 automation. To schedule the CLI yourself, point a `launchd` job or `cron` entry
 at the installed `jamf-reports` command. PDF output is GUI-only; the CLI produces
 `.xlsx` and HTML.
+
+A schedule you build yourself around the CLI gets none of the app's automation-trust
+machinery — no metric alerts, no webhook notifications, no Run History records, and no
+dead-man-switch coverage, since that's wired only into the app's own scheduled-run path.
+See [Automation Trust → What counts as a scheduled run](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust#what-counts-as-a-scheduled-run)
+for the exact boundary. If you want those features, let the app's Automation screen
+manage the LaunchAgent instead of a self-written cron/launchd job.

@@ -297,7 +297,8 @@ slug. Lives in jamf-cli's own keychain entry. JamfReports' "profile" maps
 jamf-cli's subcommand groups: `pro` (Jamf Pro), `protect` (Jamf Protect),
 `school` (Jamf School), `classic` (legacy classic-API endpoints).
 JamfReports' `CoreDashboard` consumes `pro` and `protect`;
-`SchoolDashboard` consumes `school`.
+`SchoolDashboard` consumes `school` (both are internal engine modules, not sidebar
+screens).
 
 ---
 
@@ -311,10 +312,10 @@ alongside the Run History failure explainer and the report executive-summary nar
 
 ### Collection tier
 One of three per-report cadence tiers — **Refresh**, **Inventory**, and
-**Scan** — modeled by `CollectionTier`. Each report is assigned a tier,
-and the tier sets how often it is re-fetched. On-prem / Cloud / Custom
-presets (Settings → Performance) pick the per-tier cadences. *see also:
-Refresh tier, Inventory tier, Scan tier.*
+**Scan** — modeled by `CollectionTier`. Each report is assigned a tier, and the tier
+sets how often it is re-fetched: Refresh every 12 hours, Inventory every 2 days, Scan
+every 7 days. These are fixed cloud cadences — the On-prem/Cloud/Custom preset picker was
+removed in 2.3.0. *see also: Refresh tier, Inventory tier, Scan tier.*
 
 ### Custom EA
 A `custom_eas:` config entry that drives a dedicated sheet in generated
@@ -517,7 +518,7 @@ compliance UI.
 
 ## See also
 
-- [App Onboarding](02-App-Onboarding) — the guided first run.
-- [Dashboards](03-App-Dashboards) — every screen in the app.
+- [App Onboarding](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding) — the guided first run.
+- [Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards) — every screen in the app.
 - `docs/architecture/` in the repository — design decisions and the
   threat model.

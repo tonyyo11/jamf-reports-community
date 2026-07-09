@@ -138,7 +138,7 @@ not usable and no send is attempted.
   destroys Slack's mention/directive syntax (`<!channel>`, `<@U123>`, `<https://…|…>`) —
   untrusted text in a fact value can never trigger a broadcast ping or a disguised link.
 
-See [Automation Trust](05b-Automation-Trust) for the dead-man switch, metric alerts, and
+See [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust) for the dead-man switch, metric alerts, and
 notification setup this webhook serves.
 
 ## Managed Automation Policy and Validation
@@ -153,10 +153,12 @@ time.
 - **On change:** the app diffs the policy, applies only the differences, and never
   overwrites hand-built schedules (exact name match required for ownership).
 
-The policy JSON is stored in macOS AppStorage (not visible from the CLI) — if you need
-to migrate an automation policy, export it from SettingsView and save the JSON as a
-recovery document.
+The policy JSON is stored in macOS AppStorage (not visible from the CLI, and there is no
+export/import affordance in Settings). To move an automation policy to another Mac,
+re-create the same settings on the **Automation** screen — reconcile derives and installs
+the same LaunchAgents from the policy on any host running the app, so there is nothing
+else to migrate.
 
 The same Automation screen that hosts this policy also drives the opt-in Notifications
 webhook and shows Automation Health (the dead-man switch for overdue or failing
-schedules) — see [Automation Trust](05b-Automation-Trust).
+schedules) — see [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).

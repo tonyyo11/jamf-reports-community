@@ -45,7 +45,7 @@ calls:
 - **Dated patch-status history.** The velocity card and sheet need more than one day
   of collected `patch-status` snapshots to plot a curve; a single day's data isn't
   enough to show a trend. Curves fill in as history accumulates. Retention keeps raw
-  snapshots indefinitely by default (see [Configuration & Templates](04-Configuration-and-Templates)
+  snapshots indefinitely by default (see [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates)
   → Snapshot Retention), so this history is not pruned unless retention is explicitly
   turned on.
 - **The `patch-release-dates` snapshot.** Without it, the card and sheet still show
@@ -57,8 +57,8 @@ calls:
 
 ## Related pages
 
-- [Historical Trends](06-Historical-Trends) covers fleet-wide metrics over time
+- [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) covers fleet-wide metrics over time
   (compliance, FileVault, device counts). Patch adoption velocity is a title-level
   view scoped to the Patch screen, not a Trends metric.
-- [App Dashboards](03-App-Dashboards) — see the Patch Compliance bullet under
+- [App Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards) — see the Patch Compliance bullet under
   Operations for the rest of that screen.

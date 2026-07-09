@@ -2,7 +2,11 @@
 
 Most likely failure modes, what they mean, and the recovery path. Walk this list before
 opening an issue. The app's **Run History** screen streams full `jamf-cli` output for any
-run — copy that into an issue if a failure is not listed here.
+run the app itself scheduled or ran — a schedule built in the Automation screen, or a
+manual Collect/Generate from the GUI. A run you triggered yourself through the
+`jamf-reports` CLI (your own cron/launchd job, or an interactive terminal run) does not
+appear there; use `log stream` (below) for those. Copy whichever output applies into an
+issue if a failure is not listed here.
 
 ## Diagnostic bundle
 
@@ -14,6 +18,9 @@ workspace tree listing, and version metadata into a zip under the workspace's
 `diagnostics/` folder, and reveals it in Finder. Credentials are always redacted; PII
 (hostnames, serials, emails, device names) is redacted by default with stable hash
 placeholders.
+
+The headless equivalent is `jamf-reports diagnostic-bundle --profile <profile>` (see
+[Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line)) — same redaction, no GUI required.
 
 ## Logging
 

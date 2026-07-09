@@ -6,7 +6,15 @@ screens (Overview, Devices, Data Sources, Settings) cannot be hidden.
 
 Most dashboards read cached `jamf-cli` snapshots already on disk — opening a dashboard
 does not issue new API calls. Data is refreshed by collection (see
-[Scheduling & Automation](05-Scheduling-and-Automation)).
+[Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation)).
+
+With no jamf-cli connection at all — a CSV-only workspace — most of these screens have
+nothing to show: Devices and Offline Outreach render from CSV columns (plus
+`custom_eas` / `security_agents`) and stay populated; everything else on this page needs
+jamf-cli data. See [App Onboarding → Running without jamf-cli credentials](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding) for how a
+CSV-only or Jamf School-only setup gets through onboarding. Jamf School data doesn't feed
+these interactive dashboards either — it produces a separate generated workbook; see
+[Jamf School](https://github.com/tonyyo11/jamf-reports-community/wiki/08-Jamf-School).
 
 ## Reports
 
@@ -15,10 +23,10 @@ does not issue new API calls. Data is refreshed by collection (see
 - **Overview** — the fleet home screen: headline KPIs, an OS-distribution donut, top
   failing compliance rules, security-agent coverage, and recent activity. On a
   macOS 27+ host with AI insights enabled, an AI Fleet Insight card turns the same daily
-  digest into a plain-language summary — see [AI Insights](03b-AI-Insights). A banner
+  digest into a plain-language summary — see [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights). A banner
   also surfaces when a scheduled run should have fired but didn't — see
-  [Automation Trust](05b-Automation-Trust).
-  Data source: daily summary digest (tier 3) — see [Data Provenance](11-Data-Provenance).
+  [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+  Data source: daily summary digest (tier 3) — see [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance).
 - **Fleet Overview** — a multi-profile roll-up: one card per workspace with per-profile
   health signals, so MSPs and teams can scan every tenant at once.
   Data source: daily summary digest (tier 3) aggregated across profiles.
@@ -30,16 +38,18 @@ does not issue new API calls. Data is refreshed by collection (see
 - **Device Lookup** — find one device by serial, hostname, asset tag, or ID.
   Data source: per-device snapshot of computer detail from `pro device <id>` (tier 1).
 - **Trends** — historical charts over archived snapshots. See
-  [Historical Trends](06-Historical-Trends).
+  [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends).
   Data source: daily summary digest (tier 3) over time; see Data Provenance for metric
   definitions.
 - **Health Audit** — instance health findings plus computer-group hygiene (empty and
-  unused smart/static groups).
+  unused smart/static groups). Also hosts the Config Doctor's checks — config drift,
+  Alerts rule validation, and Data accuracy (EA parse health, device-count
+  reconciliation, EA coverage drift) — see [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting).
   Data source: `pro audit` (instance-config checks, fetched by the Run Audit button)
   and group lists (tier 1).
 - **Generated** — the library of reports already produced, with actions to generate new
   workbooks, HTML reports, and inventory CSVs.
-  Data source: generated report catalog (no single tier; see [Data Provenance](11-Data-Provenance) for report composition).
+  Data source: generated report catalog (no single tier; see [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) for report composition).
 
 ![Devices](images/devices.png)
 
@@ -56,7 +66,7 @@ does not issue new API calls. Data is refreshed by collection (see
   `compliance.baselines` configures more than one mSCP/STIG baseline (for example, one per
   OS or one per framework), each baseline gets its own donut; a device whose failure count
   exceeds that baseline's configured rule count is treated as No Data rather than a real
-  High band. [Historical Trends](06-Historical-Trends) gains a matching baseline picker on
+  High band. [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) gains a matching baseline picker on
   its compliance-band chart once more than one baseline is configured.
   Data source: per-device EA results for mSCP/STIG baselines (tier 1) and device inventory
   (tier 1).
@@ -77,7 +87,7 @@ does not issue new API calls. Data is refreshed by collection (see
 
 - **Patch Compliance** — per-title patch compliance with a failures drawer; a "Days
   Behind" column and a Patch Velocity card chart how quickly titles reach adoption once
-  released — see [Patch Velocity](06b-Patch-Velocity). Freshness chips show the age of
+  released — see [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity). Freshness chips show the age of
   the underlying data. Exports to CSV and PNG.
   Data source: `pro report patch-status` per-title (tier 2); per-device failures from
   `--scan-failures` (tier 1); title release dates from `pro patch-software-title-configurations
@@ -125,17 +135,17 @@ does not issue new API calls. Data is refreshed by collection (see
   schedules), a Notifications section (Teams/Slack webhook configuration), and
   report-group management for consolidated multi-profile reports. When managed
   automation is off, it's the manual schedule editor instead. See
-  [Scheduling & Automation](05-Scheduling-and-Automation) and
-  [Automation Trust](05b-Automation-Trust).
+  [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) and
+  [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
   Data source: no tier (configuration and schedule management).
 - **Run History** — streamed output from past collect and generate runs, including an
-  "Explain this run" AI action on failed runs — see [AI Insights](03b-AI-Insights).
+  "Explain this run" AI action on failed runs — see [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
   Data source: no tier (local log files, not API data).
 
 ## Configuration
 
 - **Config** — the `config.yaml` editor. See
-  [Configuration & Templates](04-Configuration-and-Templates).
+  [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
   Data source: no tier (configuration only).
 - **Customize** — choose which sheets a generated workbook includes and which metrics the
   Overview score cards show.
@@ -148,6 +158,6 @@ does not issue new API calls. Data is refreshed by collection (see
 
 ## System
 
-- **Settings** — app preferences: the jamf-cli install/update check, connections, the
-  collection-cadence preset, diagnostics, and Sidebar Visibility.
+- **Settings** — app preferences: the jamf-cli install/update check, connections,
+  diagnostics, and Sidebar Visibility.
   Data source: no tier (app configuration).

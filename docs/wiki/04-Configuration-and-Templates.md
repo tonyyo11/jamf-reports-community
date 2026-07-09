@@ -54,6 +54,11 @@ Not every config block has a screen in the app. The Config screen's seven tabs c
 (linked below). `alerts`, `retention`, and `compliance.baselines` are hand-edited in
 `config.yaml` directly — there is no editor for them in the app yet.
 
+Hand-editing is safe alongside the GUI: the app's config editor only rewrites its own
+managed keys and preserves everything else verbatim, and scheduled runs read
+`config.yaml` fresh at each run — an edit to `alerts:` or `notify:` takes effect on the
+next scheduled run, no relaunch required.
+
 - **`security_agents`** — a list of third-party agents. Each entry drives a row in the
   Security Agents sheet. `connected_value` is a case-insensitive substring match.
 - **`sheets`** — optional `only` / `skip` lists to trim the workbook by tab name.
@@ -71,7 +76,7 @@ For more than one baseline (an enforced baseline and an audit baseline, or separ
 baselines per department), use `compliance.baselines` — a list of
 `{name, failures_count_column, failures_list_column, rule_count}` entries. Each
 baseline gets its own compliance-band donut and its own Trends band series (see
-[Historical Trends](06-Historical-Trends)); a baseline picker appears once more than
+[Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends)); a baseline picker appears once more than
 one is configured. `rule_count`, when set, bounds validity: a failure count above the
 baseline's total rule count is treated as bad data (No Data), not banded as a High
 failure count. When `baselines` is empty, the app synthesizes a single baseline from
@@ -99,7 +104,7 @@ counts and statuses, no values or free text — for headless or high-security
 deployments). Unlike `alerts`/`retention`, `notify` has an in-app editor: the
 Automation screen's Notifications section (enable toggle, provider picker, URL field,
 detail level, and a "Send test notification" button). See
-[Automation Trust](05b-Automation-Trust).
+[Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
 
 ### Snapshot retention (`retention`)
 
@@ -118,7 +123,7 @@ Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` | `pcc` 
 `external` — `external` is reserved, not yet built), `lock_on_device` (refuses any
 non-on-device model even if `tier` says otherwise — a defense-in-depth switch for
 high-security environments), and `reasoning_level` (`light` | `moderate` | `deep`).
-See [AI Insights](03b-AI-Insights) for what the feature does and its in-app Settings
+See [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights) for what the feature does and its in-app Settings
 panel.
 
 ### jamf-cli cache & integrity (`jamf_cli`)
@@ -154,11 +159,10 @@ custom_eas:
     type: boolean
     true_value: "Encrypted"
 
-  - name: "mSCP NIST 800-53r5 Failures"
-    column: "mSCP - NIST 800-53r5 Failure Count"
-    type: percentage
-    warning_threshold: 5
-    critical_threshold: 15
+  # mSCP/STIG failure counts don't belong here — `percentage` is bounded 0-100 and a
+  # rule-failure count isn't a percentage. Configure them under `compliance.baselines`
+  # instead (see Compliance baselines above) — that's what drives the compliance-band
+  # donut and the Trends band series.
 
   - name: "User Cert Expiry"
     column: "User Certificate - Expiry Date"

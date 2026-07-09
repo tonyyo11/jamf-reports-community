@@ -72,6 +72,16 @@ Feeds these screens:
 Do not expect these screens to update immediately when a device changes. They reflect the
 most recent collection run, which may be hours or days old depending on your schedule.
 
+## CSV-only workspaces
+
+None of the three tiers above populate without a jamf-cli connection. A workspace running
+on a CSV export alone (no jamf-cli, or jamf-cli installed but never authenticated) only
+populates **Devices** and **Offline Outreach** — both render from CSV columns plus
+`custom_eas` / `security_agents`, not from any jamf-cli tier. Every other screen in this
+document stays empty until jamf-cli is connected and collecting. See
+[App Onboarding → Running without jamf-cli credentials](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding) for how a CSV-only setup
+gets through onboarding in the first place.
+
 ## Summary field derivations
 
 This table shows where each Overview KPI number comes from:
@@ -135,7 +145,7 @@ Collection is split into three API-cost tiers. The per-device kinds (ea-results,
 patch/update device failures, device-compliance) are expensive, so the app gates them
 behind collection-tier prompts.
 
-See [Scheduling & Automation](05-Scheduling-and-Automation) for the full collection
+See [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) for the full collection
 mechanics and presets.
 
 The **Collect now** button in the app (visible in **Data Sources**) runs a full, forced
@@ -160,5 +170,5 @@ audit trails and app inventories are report outputs, not interactive screens.
 ## Cross-reference: Historical Trends
 
 The **Trends** screen reads `summary.json` snapshots. See
-[Historical Trends](06-Historical-Trends) for details on how these files are managed and
+[Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) for details on how these files are managed and
 how the trend timeline is built from them.

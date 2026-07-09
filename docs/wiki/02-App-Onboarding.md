@@ -22,7 +22,7 @@ routes start the same onboarding flow.
 1. **Welcome** — a short intro to what onboarding will do.
 2. **Install CLI** — the app checks that `jamf-cli` is installed and on `PATH`, and shows
    the `brew install Jamf-Concepts/tap/jamf-cli` command if it is not. See
-   [Installation](01-Installation) for details.
+   [Installation](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation) for details.
 3. **Workspace** — choose a profile name. The name becomes a folder under
    `~/Jamf-Reports/<profile>/` and must match `^[a-z0-9][a-z0-9._-]*$` — lowercase, no
    spaces. Pick something short like `prod`.
@@ -38,7 +38,9 @@ routes start the same onboarding flow.
    alone (see [Running without a CSV](#running-without-a-csv)).
 7. **Add products (optional)** — if you use Jamf Protect or Jamf School, connect them here
    (`protect setup` / `school setup`); they augment the Jamf Pro reports. You can also add
-   them later from the **Data Sources** screen.
+   them later from the **Data Sources** screen. For a Jamf School-only district, this is
+   where the real connection happens — the Jamf Pro credentials from the Authenticate
+   step can stay as placeholders.
 8. **First report** — the app generates a first report so the dashboards have data to
    render. If the output looks off you can **Skip & finish setup** — the workspace is
    fully configured at this point and you can run reports later from the Reports tab.
@@ -92,7 +94,32 @@ failure lists, and custom Extension Attribute sheets. If your tenant has not con
 those EAs in Jamf Pro, a CSV cannot add them either. Drop a CSV in any time from the
 **Data Sources** screen and regenerate.
 
+## Running without jamf-cli credentials
+
+Real Jamf Pro credentials are not required to get through onboarding. `jamf-cli` itself
+must be **installed** — the Install CLI step won't let you continue until the app detects
+it on `PATH` — but installing it is a free Homebrew download that needs no Jamf Pro
+server access.
+
+The Authenticate step only checks that the fields are well-formed (a URL plus a client ID
+and secret); it does not contact your Jamf Pro server, and registering the profile is a
+local `jamf-cli` config write. The Validate step that follows runs a real connection
+check and will report failure against placeholder values — but advancing past it only
+requires that the profile registered, not that the check passed. So a CSV-only or Jamf
+School-only admin can complete onboarding with placeholder Jamf Pro values, map a CSV at
+the CSV-mapping step, and connect Jamf School at **Add products**.
+
+There is no in-app "re-authenticate an existing profile" affordance. To add real
+credentials later, run this in Terminal for the same profile name:
+
+```bash
+jamf-cli pro setup --url https://your-instance.jamfcloud.com
+```
+
+This only writes to jamf-cli's own credential store — the app's `config.yaml` and the
+rest of the workspace are untouched, so nothing else needs to be redone.
+
 ## Next
 
-- [Dashboards](03-App-Dashboards) — a tour of every screen.
-- [Configuration & Templates](04-Configuration-and-Templates) — tune `config.yaml`.
+- [Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards) — a tour of every screen.
+- [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates) — tune `config.yaml`.
