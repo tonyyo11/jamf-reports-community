@@ -103,6 +103,32 @@ Examples:
 This is intentional: missing data does not drag down your health scores. When you add that
 data source to your collection schedule, the metric appears and the index recalculates.
 
+## Freshness
+
+**Patch Compliance, Security Posture, OS Updates, and Devices** each show a row of
+per-kind freshness chips — one per raw jamf-cli kind that screen reads, showing the age of
+the newest on-disk snapshot for that kind. A kind the screen expects but has never
+collected renders a distinct red "never" chip rather than silently omitting it, so a
+data source that stopped being collected is visible rather than invisible. A kind you have
+turned off via Settings' **Skip expensive collections** toggle is not "expected" and does
+not get a "never" chip.
+
+**`jamf_cli.max_cache_age_hours`** (default `168`, i.e. 7 days) governs how the Tier 3
+digest treats old cache: past this age, the daily digest reports the kind as absent
+instead of serving the old snapshot as if it were current. This only applies to the
+digest — the xlsx/HTML report sheets still render whatever cache exists, with their own
+"data as of" subtitles, because a stale-but-complete report is more useful than an empty
+one. Set the value to `0` or below to disable the age check and keep cache forever.
+
+Both the digest's age check and its "which file is newest" pick are based on the
+**timestamp encoded in the snapshot's filename**, not the file's modification time on
+disk — so a cloud-sync provider (iCloud, SharePoint) re-stamping mtimes on sync cannot
+make a fresh snapshot look old, or vice versa.
+
+A snapshot recovered from a truncated file (a "salvaged" day) is excluded from the EA
+coverage-drift comparison in Config Doctor — a partial day would otherwise be
+misread as a real coverage change.
+
 ## Collection tiers and the "Collect now" button
 
 Collection is split into three API-cost tiers. The per-device kinds (ea-results,

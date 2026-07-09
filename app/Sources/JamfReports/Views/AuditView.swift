@@ -536,13 +536,12 @@ struct AuditView: View {
     /// JSON could not be verified against its sibling `manifest.json`. Renders
     /// nothing when the workspace is clean — additive, no layout cost.
     ///
-    /// The manifest *writer* doesn't exist yet (planned 2.6) — nothing
-    /// currently writes a `manifest.json` for a collected snapshot, so every
-    /// snapshot verifies `.absent` today and would otherwise show a
-    /// permanent warning card. A warning that can never clear trains the
-    /// operator to ignore it, which would mask a real `.mismatch`/`.corrupt`
-    /// finding. So an absent-only (or absent+omitted) result renders as a
-    /// single neutral status line, not a warning card. `.mismatch`/`.corrupt`
+    /// Snapshots collected before `require_manifest` was enabled (or by
+    /// pre-2.6 builds, before the manifest writer existed) verify `.absent`
+    /// and would otherwise show a permanent warning card. A warning that can
+    /// never clear trains the operator to ignore it, which would mask a real
+    /// `.mismatch`/`.corrupt` finding. So an absent-only (or absent+omitted)
+    /// result renders as a single neutral status line, not a warning card. `.mismatch`/`.corrupt`
     /// (possible tampering or bit-rot) still render the full warning/danger
     /// card with the shield icon and count pill.
     @ViewBuilder

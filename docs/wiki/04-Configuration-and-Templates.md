@@ -48,13 +48,90 @@ header comments list every field.
 
 ## Tracked sections
 
+Not every config block has a screen in the app. The Config screen's seven tabs cover
+`columns`, `security_agents`, `custom_eas`, `thresholds`, `platform`, `output`, and
+`scoring`. `notify` and `ai` each have their own dedicated panel elsewhere in the app
+(linked below). `alerts`, `retention`, and `compliance.baselines` are hand-edited in
+`config.yaml` directly — there is no editor for them in the app yet.
+
 - **`security_agents`** — a list of third-party agents. Each entry drives a row in the
   Security Agents sheet. `connected_value` is a case-insensitive substring match.
-- **`compliance`** — a failures-count EA column and a pipe-delimited failures-list EA
-  column, for mSCP / STIG reporting.
 - **`sheets`** — optional `only` / `skip` lists to trim the workbook by tab name.
 - **`thresholds`**, **`output`**, **`charts`** — stale-device window, disk-usage bands,
   output retention, chart toggles.
+
+### Compliance baselines (`compliance`)
+
+`compliance.failures_count_column` and `compliance.failures_list_column` are the
+single-baseline shorthand: an EA column carrying the integer failed-rule count, and an
+optional pipe-delimited EA column carrying the failed rule IDs, for mSCP/STIG
+reporting.
+
+For more than one baseline (an enforced baseline and an audit baseline, or separate
+baselines per department), use `compliance.baselines` — a list of
+`{name, failures_count_column, failures_list_column, rule_count}` entries. Each
+baseline gets its own compliance-band donut and its own Trends band series (see
+[Historical Trends](06-Historical-Trends)); a baseline picker appears once more than
+one is configured. `rule_count`, when set, bounds validity: a failure count above the
+baseline's total rule count is treated as bad data (No Data), not banded as a High
+failure count. When `baselines` is empty, the app synthesizes a single baseline from
+`failures_count_column` + `baseline_label`.
+
+### Metric alerts (`alerts`)
+
+Opt-in threshold alerting, off by default. Each rule in `alerts.rules` names a metric
+(`filevault_pct`, `patch_pct`, `stale_count`, and similar daily-summary fields), a
+comparison (`below`, `above`, or `drops_more_than`), a `threshold`, and — for
+`drops_more_than` only — a `lookback_days` (default 7). Rules are evaluated only on
+scheduled runs that actually collect fresh data (a `jamf-cli-only` schedule generates
+from cache and never evaluates alerts). When a rule trips, one attention card posts to
+the `notify` webhook below; a rule with no data that day never fires. A rule with an
+unknown metric, an unknown comparison, or a missing/invalid threshold is dropped
+rather than breaking the whole config, and shows up as a warning in the Health Audit
+screen's Config Doctor. `alerts` has no in-app editor — edit `config.yaml` directly.
+
+### Webhook notifications (`notify`)
+
+Opt-in scheduled-run digest to a Microsoft Teams or Slack incoming webhook:
+`enabled`, `provider` (`teams` | `slack`), `url` (must be `https://`), and `detail`
+(`full` sends metric values and schedule names; `minimal` sends event facts only —
+counts and statuses, no values or free text — for headless or high-security
+deployments). Unlike `alerts`/`retention`, `notify` has an in-app editor: the
+Automation screen's Notifications section (enable toggle, provider picker, URL field,
+detail level, and a "Send test notification" button). See
+[Automation Trust](05b-Automation-Trust).
+
+### Snapshot retention (`retention`)
+
+Off by default — raw `jamf-cli-data/` snapshots are kept indefinitely, since they are
+a reporting input (day-over-day and week-over-week history), not just disk cost. When
+`enabled: true`: `mode` is `archive` (moves old snapshots to `archive_dir`, still on
+disk) or `delete`; `snapshot_keep_days` (default 365, `<= 0` disables the age rule) and
+`snapshot_keep_count` (default 0, a floor on newest-N files per kind) both protect a
+file — either one keeps it; `include_summaries` (default false) leaves the durable
+trend summaries alone unless explicitly set true; `archive_dir` defaults to
+`<workspace>/_archive`. `retention` has no in-app editor.
+
+### AI insights (`ai`)
+
+Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` | `pcc` |
+`external` — `external` is reserved, not yet built), `lock_on_device` (refuses any
+non-on-device model even if `tier` says otherwise — a defense-in-depth switch for
+high-security environments), and `reasoning_level` (`light` | `moderate` | `deep`).
+See [AI Insights](03b-AI-Insights) for what the feature does and its in-app Settings
+panel.
+
+### jamf-cli cache & integrity (`jamf_cli`)
+
+- **`max_cache_age_hours`** (default 168, one week) — how old a cached snapshot can be
+  before the daily summary digest treats it as absent rather than serving it as
+  current. `0` (or any value `<= 0`) keeps cache forever. This only affects the daily
+  digest path; report sheets still render an older cache with their own "data as of"
+  subtitles rather than an empty section.
+- **`require_manifest`** — when `true`, every collected snapshot is recorded in a
+  per-kind `manifest.json` (SHA-256), and a mismatch or corrupt manifest is surfaced as
+  a real finding on the Health Audit screen instead of a neutral "not yet verified"
+  line.
 
 ## Custom Extension Attribute sheets
 

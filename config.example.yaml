@@ -226,12 +226,12 @@ jamf_cli:
   # Fetch Fleet Overview live by default. Set false if you want overview to use
   # cached JSON only for a specific tenant or troubleshooting scenario.
   allow_live_overview: true
-  # Hard-fail on snapshot integrity violations (missing manifest entry, SHA-256
-  # mismatch). NOTE: currently inert — the snapshot SHA-256 manifests were
-  # written only by the removed Python collector, so until a Swift
-  # snapshot-manifest writer exists this gate never fires (see
-  # SnapshotManifest.swift). The Swift app still surfaces an "Unverified
-  # snapshot" pill in AuditView regardless of this setting. Threat-model T-11.
+  # Hard-fail on snapshot integrity violations (SHA-256 mismatch or corrupt
+  # manifest). When true, every collected snapshot is also recorded in a
+  # per-kind manifest.json (2.6), so tamper detection works end-to-end:
+  # generate aborts on .mismatch/.corrupt; legacy snapshots with no manifest
+  # (.absent/.omitted) are tolerated. AuditView surfaces verify results
+  # regardless of this setting. Threat-model T-11.
   require_manifest: false
 
 

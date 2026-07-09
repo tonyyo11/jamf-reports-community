@@ -28,6 +28,17 @@ control (GitHub/GitLab), or SIEM integration to back them up instead.
 (archive or delete) and `retention.snapshot_keep_days` are read from `config.yaml` at
 collect time, not stored in the app. If a synced config is modified to `mode: delete` and
 `snapshot_keep_days: 1`, a snapshot collection will purge older raw data before you notice.
+Note that `retention.enabled` is **off by default** — raw `jamf-cli-data/` snapshots are
+kept indefinitely until an admin opts in, so this risk only applies to workspaces that
+have already turned retention on.
+
+**`jamf_cli.require_manifest` hardens against tampered snapshots.** When set to `true`,
+each collected raw snapshot gets a sibling SHA-256 `manifest.json`, and every report-
+generation entry point (xlsx, HTML, PDF, School) refuses to run at all if the newest
+snapshot in any kind folder fails verification (hash mismatch or a corrupt manifest) —
+rather than silently generating a report from tampered data. It does not trigger on
+`absent` or `omitted` results, since legacy snapshots and partial collects cannot be
+retroactively verified. Off by default.
 
 **Recommendation:** store `config.yaml` in version control (local git, internal GitHub, etc.)
 if your operational security practices require configuration audit trails. Generated reports
@@ -107,6 +118,29 @@ Do not share the workspace directory (`~/Jamf-Reports/<profile>/`) or the `jamf-
 credential across team members — use separate profiles and credentials for audit trail
 isolation.
 
+## Webhook Egress
+
+**The opt-in `notify:` webhook digest never carries report files or device-level rows —
+only aggregate metrics, statuses, and operational names** (profile, schedule label, run
+status, counts). It requires `notify.url` to be `https://`; an `http://` URL is treated as
+not usable and no send is attempted.
+
+- **`notify.detail: minimal`** reduces every card to event facts only — counts and
+  statuses ("2 alert rules tripped", "1 schedule overdue") with no metric values, no
+  error text, and no schedule names. Use it for headless or high-security hosts where the
+  webhook should act as a doorbell rather than a data channel. `full` (the default) sends
+  metric names/values, error text, and schedule names.
+- **Failure-card error text is redacted before it leaves the Mac** — the same secret and
+  PII redaction used elsewhere in the app (server hostnames included) is applied to a run's
+  error description before it is placed in a card fact.
+- **Slack/Teams mention and link injection is escaped.** Every fact label and value is
+  HTML-entity-escaped (`&`, `<`, `>`) before it enters a payload, which structurally
+  destroys Slack's mention/directive syntax (`<!channel>`, `<@U123>`, `<https://…|…>`) —
+  untrusted text in a fact value can never trigger a broadcast ping or a disguised link.
+
+See [Automation Trust](05b-Automation-Trust) for the dead-man switch, metric alerts, and
+notification setup this webhook serves.
+
 ## Managed Automation Policy and Validation
 
 **The app's "Automation" policy is declarative, not scriptable.** Setting a master toggle
@@ -122,3 +156,7 @@ time.
 The policy JSON is stored in macOS AppStorage (not visible from the CLI) — if you need
 to migrate an automation policy, export it from SettingsView and save the JSON as a
 recovery document.
+
+The same Automation screen that hosts this policy also drives the opt-in Notifications
+webhook and shows Automation Health (the dead-man switch for overdue or failing
+schedules) — see [Automation Trust](05b-Automation-Trust).

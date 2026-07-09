@@ -15,6 +15,24 @@ the hero chart; comparison charts stack compliance bands and overlay multiple se
 The trend range defaults to four weeks and is configurable in **Settings → Data &
 Charts** (up to roughly a year of history).
 
+Title-level patch adoption speed (days to 50%/90% adoption after a release) is a
+separate view on the Patch screen, not a Trends metric; see
+[Patch Velocity](06b-Patch-Velocity).
+
+## Compliance band history
+
+When `compliance.baselines` (see [Configuration & Templates](04-Configuration-and-Templates))
+configures more than one mSCP/STIG baseline, the compliance band chart shows a
+baseline picker — each baseline keeps its own independent band series, and counts are
+never summed across frameworks.
+
+Some `ea-results` snapshot files are recovered from a truncated download rather than
+decoded whole. A day recovered this way is marked on the band chart with a warning
+triangle and a caption explaining it, so a partially-recovered day is never read as a
+real change in fleet compliance. Salvaged days are also excluded from the Extension
+Attributes screen's coverage-drift comparison for the same reason — a truncated
+snapshot would otherwise look like a genuine coverage drop.
+
 ## summary.json snapshots
 
 Every collect or generate run writes one `summary.json` file to:

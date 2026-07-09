@@ -53,6 +53,20 @@ Every non-core dashboard is toggleable, so unused screens disappear from the sid
   native Swift engine.
 - **Included command-line tool** — the same app binary is also a `jamf-reports` CLI for
   scripting reports, collection, backups, and diagnostics. Install it from Settings.
+- **Automation you can trust** — opt-in metric alerts on daily summary changes, and a
+  dead-man switch that flags overdue or failing scheduled runs, both posting to the same
+  webhook digest. See
+  [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+- **Patch adoption velocity** — track how many days each patch title lags its release
+  date and how long it took to reach 50%/90% fleet adoption. See
+  [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity).
+- **On-device AI insights** — an optional plain-language fleet insight card powered by
+  Apple's on-device Foundation Model. macOS 27+ only, off by default, and hidden entirely
+  on earlier macOS. See
+  [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
+- **Multi-baseline mSCP tracking** — configure more than one compliance baseline (for
+  example NIST 800-53r5 and DISA STIG) and get an independent compliance-band trend
+  series for each.
 
 ### First run and multiple tenants
 
@@ -63,9 +77,10 @@ config, schedules, and generated reports, switchable from the sidebar.
 
 ### Requirements and install
 
-macOS 14 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) v1.18.0+ is
-optional — it powers live collection, but the app also works from CSV exports and cached
-snapshots. v1.19.0+ is recommended for full partial-failure handling (exit code 7).
+macOS 14 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) is optional — it
+powers live collection, but the app also works from CSV exports and cached snapshots.
+Minimum supported version is v1.18.0, v1.19.0+ is recommended for full partial-failure
+handling (exit code 7), and this project currently tracks v1.22.0.
 
 Download the latest notarized `.dmg` or `.pkg` from the
 [Releases page](https://github.com/tonyyo11/jamf-reports-community/releases), or build from
@@ -109,6 +124,9 @@ page for the full command reference.
 **Full setup and usage:**
 the [project wiki](https://github.com/tonyyo11/jamf-reports-community/wiki) covers
 installation, the app walkthrough, dashboards, scheduling, configuration, and Jamf School.
+New to the project? Start with
+[Getting Started](https://github.com/tonyyo11/jamf-reports-community/wiki/00-Getting-Started)
+for the shortest path to a first report.
 
 - [`CHANGELOG.md`](CHANGELOG.md) — release history.
 - [`docs/testing.md`](docs/testing.md) — the Swift test suite.
