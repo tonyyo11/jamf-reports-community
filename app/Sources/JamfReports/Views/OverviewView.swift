@@ -102,9 +102,10 @@ struct OverviewView: View {
                         ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
                     }
                     // v2.5 (macOS 27, opt-in): turns the same daily digest into a
-                    // plain-language insight card. Renders on every OS version —
-                    // resolves to "Requires macOS 27" below that.
-                    if !workspace.demoMode {
+                    // plain-language insight card. `platformSupported` is a
+                    // synchronous, config-free check — macOS 26 hosts never see
+                    // this card at all (no "requires macOS 27" placeholder).
+                    if !workspace.demoMode, ModelAvailability.platformSupported {
                         AIInsightCard(
                             profile: workspace.profile,
                             current: trendStore.filteredSummaries.last,

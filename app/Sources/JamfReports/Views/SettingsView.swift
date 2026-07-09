@@ -61,7 +61,11 @@ struct SettingsView: View {
                 dataAndChartsCard
                 diagnosticsCard
                 loggingCard
-                aiInsightsCard
+                // Config-free, synchronous: macOS 26 hosts never see this
+                // panel at all — the config still round-trips for CLI/parity.
+                if ModelAvailability.platformSupported {
+                    aiInsightsCard
+                }
                 sidebarVisibilityCard
                 experimentalFeaturesCard
                 aboutCard

@@ -64,6 +64,10 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- On macOS 26 and earlier the AI Insights surfaces (Overview card, Settings
+  panel) are now hidden entirely instead of explaining that they need
+  macOS 27 — the feature can never run there, so the app no longer
+  advertises it. Nothing changes on macOS 27.
 - Cached data now has a shelf life: new `jamf_cli.max_cache_age_hours` (default
   168 — 7 days). When live collection fails and the newest cached snapshot is older
   than the limit, the daily digest reports that kind as absent (with a log line

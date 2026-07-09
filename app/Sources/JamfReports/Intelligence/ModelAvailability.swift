@@ -131,6 +131,21 @@ extension ModelAvailability {
 #endif
 
 extension ModelAvailability {
+    /// Whether this host/toolchain combination can EVER show intelligence
+    /// features — independent of any `AIConfig`, and synchronous (no model
+    /// construction, no I/O). False exactly when `current(for:)` would
+    /// collapse to `.requiresMacOS27` regardless of config: macOS < 27, or a
+    /// toolchain older than Swift 6.4. Views use this to decide whether an AI
+    /// surface belongs in the layout at all, without waiting on a config load
+    /// first — there's no flash of "unsupported" chrome before an async
+    /// resolve completes, because there's nothing to await.
+    static var platformSupported: Bool {
+        #if canImport(FoundationModels) && compiler(>=6.4)
+        if #available(macOS 27, *) { return true }
+        #endif
+        return false
+    }
+
     /// Resolves the availability for a config across every toolchain. On the
     /// default toolchain (Swift < 6.4) or a host below macOS 27 the FoundationModels
     /// types don't exist, so this always returns `.requiresMacOS27`. Under Xcode 27
