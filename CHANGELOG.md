@@ -41,6 +41,29 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Fixed a crash that could take down the whole Patch screen (and the velocity
+  report sheet) when the patch-release-dates snapshot contained two entries for
+  the same title id — possible with duplicated patch title configurations or a
+  sync-merged file.
+- The daily digest now picks and ages cached snapshots by the timestamp in the
+  snapshot's filename instead of the file's modification time, matching every
+  other reader. On cloud-synced storage (iCloud/SharePoint), sync re-stamps
+  modification times, which could make the digest report a data kind as absent
+  — or serve older content — while the posture screens showed full data from
+  the same folder.
+- mSCP failure counts arriving as float-formatted strings ("3.0") from an audit
+  EA now band correctly instead of being dropped to No Data; genuinely
+  fractional counts ("3.9") are still rejected rather than silently truncated.
+- The fleet patch-compliance average no longer counts titles with zero enrolled
+  devices (some jamf-cli builds report those as a parseable "0%", dragging the
+  average down).
+- Patch adoption can no longer chart above 100% when jamf-cli double-counts
+  devices across patch policies.
+- A "drops more than" alert now compares against a summary genuinely as old as
+  its lookback window. Previously, with sparse history it silently fell back to
+  the most recent prior summary — firing a "7-day drop" rule on a 1-day wobble,
+  or on a month-old baseline. With no old-enough summary the rule simply
+  doesn't fire.
 - Managed automation schedules no longer read as permanently overdue: the
   dead-man switch now finds the per-profile run records the all-profiles
   scheduled runs actually write, so a healthy managed setup stops producing a

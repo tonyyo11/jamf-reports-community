@@ -169,6 +169,17 @@ final class PreviewSnapshotTests: XCTestCase {
                 name: "freshnesschiprow-\(label)",
                 width: width
             )
+            // 2.6 absent-kind variant: an expected kind with no snapshot on
+            // disk renders a danger "never" chip; row wraps via FlowLayout.
+            try render(
+                FreshnessChipRow(
+                    sourceDates: sourceDates,
+                    expectedKinds: Array(sourceDates.keys) + ["update-status"],
+                    now: now
+                ),
+                name: "freshnesschiprow-absent-\(label)",
+                width: width
+            )
         }
     }
 

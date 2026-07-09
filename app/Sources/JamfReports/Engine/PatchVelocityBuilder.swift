@@ -83,7 +83,9 @@ enum PatchVelocityBuilder {
         for day in daily.sorted(by: { $0.date < $1.date }) {
             for row in day.rows {
                 guard row.total > 0 else { continue }  // no denominator — skip.
-                let pct = Double(row.onLatest) / Double(row.total) * 100.0
+                // Clamp at 100: jamf-cli can double-count devices across patch
+                // policies (on_latest > total) — never chart >100% adoption.
+                let pct = min(Double(row.onLatest) / Double(row.total) * 100.0, 100.0)
                 var acc = byTitle[row.id] ?? TitleAccumulator(titleId: row.id, title: row.title)
                 // Keep the most recent title label seen (last-writer-wins on name).
                 acc.title = row.title

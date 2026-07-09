@@ -5,6 +5,18 @@ import CryptoKit
 
 final class ReportEngineTests: XCTestCase {
 
+    /// Filename stamp 1h ago for snapshots feeding the DIGEST path: its
+    /// cache-age gate reads the FILENAME timestamp (2.6, synced-storage mtimes
+    /// lie), so a pinned old stamp reads as expired cache and the summary is
+    /// silently suppressed. Sheet-path snapshots (audit, update-status) pass
+    /// maxCacheAgeHours 0 and can keep pinned stamps.
+    private var recentStamp: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd'T'HHmmss"
+        return f.string(from: Date().addingTimeInterval(-3600))
+    }
+
     // MARK: - resolveOutputURL
 
     func testResolveOutputURLAddsTimestampWhenEnabled() {
@@ -386,7 +398,7 @@ final class ReportEngineTests: XCTestCase {
           "sip_enabled":3,"firewall_enabled":3,"gatekeeper_enabled":3}}]
         """
         try Data(secPayload.utf8).write(
-            to: secDir.appendingPathComponent("security_20260101T000000.json"))
+            to: secDir.appendingPathComponent("security_\(recentStamp).json"))
 
         // Write device-compliance with:
         //   - device A: server flag stale=true, but only 10 days since checkin → NOT stale at 30d
@@ -402,7 +414,7 @@ final class ReportEngineTests: XCTestCase {
         ]
         """
         try Data(compPayload.utf8).write(
-            to: compDir.appendingPathComponent("device-compliance_20260101T000000.json"))
+            to: compDir.appendingPathComponent("device-compliance_\(recentStamp).json"))
 
         // Config with default stale_device_days = 30.
         let config = ReportConfig()
@@ -745,7 +757,7 @@ final class ReportEngineTests: XCTestCase {
           "sip_enabled":10,"firewall_enabled":9,"gatekeeper_enabled":10}}]
         """
         try Data(secPayload.utf8).write(
-            to: secDir.appendingPathComponent("security_20260101T000000.json"))
+            to: secDir.appendingPathComponent("security_\(recentStamp).json"))
 
         // Write a device-compliance snapshot for the "cache" case.
         let compDir = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
@@ -753,7 +765,7 @@ final class ReportEngineTests: XCTestCase {
         try Data("""
         [{"name":"A","serial":"AA","managed":true,"stale":false,"days_since_checkin":5}]
         """.utf8).write(
-            to: compDir.appendingPathComponent("device-compliance_20260101T000000.json"))
+            to: compDir.appendingPathComponent("device-compliance_\(recentStamp).json"))
 
         // liveKinds: "security" was fetched live; "device-compliance" was NOT (cache);
         // "patch-status" has no snapshot at all (absent).

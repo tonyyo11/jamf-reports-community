@@ -558,7 +558,11 @@ struct ReportEngine: Sendable {
         var patchPct: Double? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {
-            let values = rows.compactMap { parsePercentString($0.compliancePct) }
+            // total > 0 guard matches PatchVelocityBuilder: a 0-device title
+            // carries no compliance signal, and some jamf-cli builds emit a
+            // parseable "0%" for it that would drag the unweighted mean down.
+            let values = rows.filter { $0.total > 0 }
+                .compactMap { parsePercentString($0.compliancePct) }
             if !values.isEmpty {
                 patchPct = values.reduce(0, +) / Double(values.count)
             }
@@ -2419,6 +2423,17 @@ struct ReportEngine: Sendable {
         ), !files.isEmpty else {
             throw ReportEngineError.snapshotParseError(kind)
         }
+        // Order and age snapshots by the timestamp encoded in the FILENAME
+        // (mtime fallback for non-canonical names), matching newestSnapshotFile
+        // and the chart/drift builders. On synced storage (iCloud/SharePoint)
+        // mtimes lie — the file provider re-stamps them on sync — so an
+        // mtime-ordered pick here would disagree with every filename-ordered
+        // reader: the digest could report a kind absent (or serve older
+        // content) while Compliance Posture shows full data from the same dir.
+        func snapshotDate(_ url: URL) -> Date {
+            // Non-optional: falls back to mtime internally for non-canonical names.
+            MSCPChartDataBuilder.dateFromSnapshotFilename(url)
+        }
         let newest = files
             .filter { $0.pathExtension == "json" }
             // Exclude the sibling manifest.json (2.6 SnapshotManifest.record
@@ -2426,20 +2441,12 @@ struct ReportEngine: Sendable {
             // collect, and would otherwise be returned as "the snapshot" and fail
             // the caller's decode.
             .filter { $0.lastPathComponent.lowercased() != SnapshotManifest.fileName }
-            .max {
-                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate) ?? .distantPast
-                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate) ?? .distantPast
-                return a < b
-            }
+            .max { snapshotDate($0) < snapshotDate($1) }
         guard let url = newest else {
             throw ReportEngineError.snapshotParseError(kind)
         }
         if maxCacheAgeHours > 0 {
-            let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate) ?? .distantPast
-            let ageHours = Int(Date().timeIntervalSince(mtime) / 3600)
+            let ageHours = Int(Date().timeIntervalSince(snapshotDate(url)) / 3600)
             if ageHours > maxCacheAgeHours {
                 throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
             }

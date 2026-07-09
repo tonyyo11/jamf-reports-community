@@ -238,11 +238,21 @@ private func notifyMetricAlerts(
             "metric alerts skipped — newest summary \(current.date) is not today (\(today))")
         return
     }
-    // Prior for drops_more_than: pick the largest lookback across drop rules so
-    // one directory read serves every rule; below/above ignore prior.
-    let lookback = rules.map { $0.resolvedLookbackDays }.max() ?? 7
-    let prior = FleetReportEmitter.priorSummary(summaries, lookbackDays: lookback)
-    let hits = MetricAlertEvaluator.evaluate(rules: rules, current: current, prior: prior)
+    // Strict prior PER LOOKBACK for drops_more_than: the prior must be
+    // genuinely >= lookback_days older. FleetReportEmitter.priorSummary's
+    // fall-back-to-yesterday is right for fleet-report deltas but would fire
+    // a "7-day drop" rule on a 1-day wobble (or a 30-day drift) when history
+    // is sparse. No old-enough summary → drop rules simply don't fire;
+    // below/above ignore the prior entirely.
+    var hits: [MetricAlertHit] = []
+    for (lookback, group) in Dictionary(grouping: rules, by: { $0.resolvedLookbackDays }) {
+        let cutoff = current.parsedDate.addingTimeInterval(-Double(lookback) * 86_400)
+        let prior = summaries.dropLast().filter { $0.parsedDate <= cutoff }.last
+        hits.append(contentsOf:
+            MetricAlertEvaluator.evaluate(rules: group, current: current, prior: prior))
+    }
+    // Dictionary grouping order is nondeterministic — keep card fact order stable.
+    hits.sort { MetricAlertEvaluator.dedupKey(for: $0) < MetricAlertEvaluator.dedupKey(for: $1) }
     guard !hits.isEmpty else { return }
     // Dedup per-day per-rule: a second same-day run (managed freshness + scan)
     // doesn't re-card, but a rule that trips for the first time later today does.

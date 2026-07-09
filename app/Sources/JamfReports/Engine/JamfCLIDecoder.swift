@@ -1042,7 +1042,16 @@ struct AnyCodable: Codable, Sendable, CustomStringConvertible {
         switch value {
         case let n as Int: return n
         case let d as Double: return Int(d)
-        case let s as String: return Int(s)
+        case let s as String:
+            if let i = Int(s) { return i }
+            // Audit EAs sometimes print counts float-formatted ("3.0"). Accept
+            // a whole-number Double string; a fractional one ("3.9") stays nil
+            // rather than silently truncating to a different count.
+            if let d = Double(s), d.truncatingRemainder(dividingBy: 1) == 0,
+               d >= -2_147_483_648, d <= 2_147_483_647 {
+                return Int(d)
+            }
+            return nil
         default: return nil
         }
     }

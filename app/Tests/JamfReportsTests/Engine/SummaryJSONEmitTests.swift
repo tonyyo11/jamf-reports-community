@@ -480,6 +480,16 @@ final class SummaryJSONEmitTests: XCTestCase {
         try writeMinimalSecuritySnapshot(to: engine.dataDir)
     }
 
+    /// Filename stamp 1h ago: the digest's cache-age gate reads the FILENAME
+    /// timestamp (2.6, synced-storage mtimes lie), so a pinned 2024 stamp
+    /// would read as expired cache and suppress the summary entirely.
+    private var recentStamp: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd'T'HHmmss"
+        return f.string(from: Date().addingTimeInterval(-3600))
+    }
+
     private func writeMinimalSecuritySnapshot(to dataDir: URL) throws {
         let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
         try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
@@ -497,7 +507,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             ]
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
-        let file = secDir.appendingPathComponent("security_20240615T120000.json")
+        let file = secDir.appendingPathComponent("security_\(recentStamp).json")
         try data.write(to: file)
     }
 
@@ -530,7 +540,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             ])
         }
         let data = try JSONSerialization.data(withJSONObject: rows)
-        let file = secDir.appendingPathComponent("security_20240615T120000.json")
+        let file = secDir.appendingPathComponent("security_\(recentStamp).json")
         try data.write(to: file)
     }
 
@@ -553,7 +563,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             rows.append(["device": "mac-fail-\(i)", "ea_name": eaColumn, "value": 60])
         }
         let data = try JSONSerialization.data(withJSONObject: rows)
-        let file = eaDir.appendingPathComponent("ea-results_20240615T120000.json")
+        let file = eaDir.appendingPathComponent("ea-results_\(recentStamp).json")
         try data.write(to: file)
     }
 }

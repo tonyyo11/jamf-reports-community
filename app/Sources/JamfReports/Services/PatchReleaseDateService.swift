@@ -52,8 +52,11 @@ struct PatchReleaseDateService: Sendable {
     }
 
     /// Build a lookup dictionary: patch title id → releaseDate ISO string.
+    /// First-writer-wins on a duplicate title_id — the snapshot is disk data
+    /// (hand-editable, sync-mergeable) and `uniqueKeysWithValues` would trap,
+    /// taking down the whole Patch screen on one duplicate row.
     static func releaseDateLookup(from rows: [Row]) -> [String: String] {
-        Dictionary(uniqueKeysWithValues: rows.map { ($0.titleId, $0.releaseDate) })
+        Dictionary(rows.map { ($0.titleId, $0.releaseDate) }, uniquingKeysWith: { first, _ in first })
     }
 
     // MARK: - Matching logic
