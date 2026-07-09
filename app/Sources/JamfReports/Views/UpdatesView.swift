@@ -45,7 +45,10 @@ struct UpdatesView: View {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory, .scan])
                 // Per-kind file dates are the honest per-screen signal here;
                 // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(sourceDates: snapshot.sourceDates)
+                FreshnessChipRow(
+                    sourceDates: snapshot.sourceDates,
+                    expectedKinds: ["update-status", "update-device-failures"]
+                )
             }
             if snapshot.total == 0 {
                 emptyState

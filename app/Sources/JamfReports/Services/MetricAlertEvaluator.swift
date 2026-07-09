@@ -129,7 +129,6 @@ enum MetricAlertEvaluator {
                 "alert rule for \(metric.rawValue) skipped — metric not present in today's summary")
             return nil
         }
-
         switch comparison {
         case .below:
             guard value < threshold else { return nil }
@@ -144,6 +143,15 @@ enum MetricAlertEvaluator {
         case .dropsMoreThan:
             guard let priorSummary = prior,
                   let priorValue = metric.value(in: priorSummary) else { return nil }
+            // A compliance_pct drop isn't comparable across a measurement-basis
+            // change: the 4-control proxy (~96%) and a real mSCP failure count
+            // (~67%) are different scales, so enabling compliance.baselines would
+            // fabricate a huge false drop. Absent (nil) basis on both sides is
+            // treated as unchanged and still fires.
+            if metric == .compliancePct,
+               current.complianceIsProxy != priorSummary.complianceIsProxy {
+                return nil
+            }
             let drop = priorValue - value
             guard drop > threshold else { return nil }
             let unit = metric.isPercentage ? "pp" : ""
@@ -163,6 +171,15 @@ enum MetricAlertEvaluator {
             metricLabel: metric.label, ruleDescription: ruleDescription,
             current: value, prior: prior, message: message
         )
+    }
+
+    /// Stable per-rule dedup identity for a hit. `metricLabel` maps 1:1 to the
+    /// metric and `ruleDescription` restates the operator + threshold, so two
+    /// runs that trip the same rule produce the same key — the per-day ledger
+    /// uses it to card each rule at most once per day. Derived from the hit's own
+    /// fields (no separate rule handle needed).
+    static func dedupKey(for hit: MetricAlertHit) -> String {
+        "\(hit.metricLabel)|\(hit.ruleDescription)"
     }
 
     /// Format a value with its unit for the message (percentages get a "%").

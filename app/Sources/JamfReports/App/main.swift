@@ -206,28 +206,80 @@ private func notifyScheduledRun(
 private func notifyMetricAlerts(
     config: ReportConfig?,
     profile: String,
+    workspace: URL,
     recorder: ScheduledRunRecorder?
 ) async {
-    guard let config, let alerts = config.alerts, alerts.isEnabled,
-          let notify = config.notify, notify.isUsable else { return }
+    guard let config, let alerts = config.alerts, alerts.isEnabled else { return }
     let rules = alerts.resolvedRules
+    // Surface rules dropped by resolvedRules (unknown metric/operator, invalid
+    // threshold) BEFORE the webhook guard — one config problem must not mask
+    // the other.
+    reportDroppedAlertRules(
+        configured: alerts.rules ?? [], resolved: rules, recorder: recorder
+    )
+    // Alerts on but no usable webhook = total silence. Warn loudly (Console +
+    // Run History) so a misconfigured URL isn't discovered only by absence.
+    guard let notify = config.notify, notify.isUsable else {
+        let message = "[warn] alerts enabled but no usable notify webhook — alerts cannot be delivered"
+        AppLogger.webhook.warning("\(message, privacy: .public)")
+        recorder?.record(message)
+        return
+    }
     guard !rules.isEmpty else { return }
     guard let summariesDir = try? WorkspacePaths.summariesDir(for: profile) else { return }
     let summaries = SummaryJSONParser.parseDirectory(summariesDir)
     guard let current = summaries.last else { return }
+    // Only evaluate a summary this run actually wrote today. A day that produced
+    // no fresh summary (e.g. totalDevices == 0) leaves an older newest-summary
+    // that would be carded as if it were today's — skip it.
+    let today = SummaryJSONParser.dateFormatter.string(from: Date())
+    guard current.date == today else {
+        AppLogger.event(.webhook, .notice,
+            "metric alerts skipped — newest summary \(current.date) is not today (\(today))")
+        return
+    }
     // Prior for drops_more_than: pick the largest lookback across drop rules so
     // one directory read serves every rule; below/above ignore prior.
     let lookback = rules.map { $0.resolvedLookbackDays }.max() ?? 7
     let prior = FleetReportEmitter.priorSummary(summaries, lookbackDays: lookback)
     let hits = MetricAlertEvaluator.evaluate(rules: rules, current: current, prior: prior)
     guard !hits.isEmpty else { return }
-    let facts = alertFacts(detail: notify.resolvedDetail, profile: profile, hits: hits)
+    // Dedup per-day per-rule: a second same-day run (managed freshness + scan)
+    // doesn't re-card, but a rule that trips for the first time later today does.
+    let ledger = MetricAlertLedger(workspace: workspace)
+    let newKeys = Set(ledger.filterAndRecord(
+        day: today, keys: hits.map(MetricAlertEvaluator.dedupKey(for:))
+    ))
+    let newHits = hits.filter { newKeys.contains(MetricAlertEvaluator.dedupKey(for: $0)) }
+    guard !newHits.isEmpty else { return }
+    let facts = alertFacts(detail: notify.resolvedDetail, profile: profile, hits: newHits)
     let sent = await WebhookNotifier.sendAlert(
         config: notify, title: "Jamf Reports alert — \(profile)", facts: facts
     )
     if !sent {
         let message = "[warn] metric-alert webhook failed for '\(profile)'"
         fputs(message + "\n", stderr)
+        recorder?.record(message)
+    }
+}
+
+/// Log a warning + `[warn]` recorder line (so it lands in Run History, not only
+/// `~/Library/Logs`) for every configured alert rule that `resolvedRules` drops
+/// — a rule with an unknown metric/operator or an invalid threshold. Names the
+/// offending metric/when strings (config keys, not PII). No-op when none were
+/// dropped. `AlertRule` is `Equatable`, so "dropped" = configured minus resolved.
+private func reportDroppedAlertRules(
+    configured: [AlertRule],
+    resolved: [AlertRule],
+    recorder: ScheduledRunRecorder?
+) {
+    guard configured.count != resolved.count else { return }
+    for rule in configured where !resolved.contains(rule) {
+        let metricStr = rule.metric ?? "(none)"
+        let whenStr = rule.when ?? "(none)"
+        let message = "[warn] alert rule ignored — metric='\(metricStr)' when='\(whenStr)': "
+            + "unknown metric/operator or invalid threshold"
+        AppLogger.webhook.warning("\(message, privacy: .public)")
         recorder?.record(message)
     }
 }
@@ -260,6 +312,60 @@ private func notifyScheduledRunFailure(
         fputs(message + "\n", stderr)
         recorder?.record(message)
     }
+}
+
+/// Headless dead-man overdue digest (2.6 "trust trio" #2). The GUI publishes
+/// overdue schedules and posts a once-per-day digest at launch; a host that only
+/// ever runs the LaunchAgent (GUI never opened) would otherwise get zero
+/// overdue coverage. Call EXACTLY ONCE per `--scheduled-run` process, after all
+/// per-profile work, so a fleet-wide missed run still reaches the operator.
+///
+/// The overdue evaluation is fleet-wide (all JRC LaunchAgents); the notify
+/// webhook is resolved from the first non-excluded profile whose `notify:` is
+/// usable. The `DayMarker(name: "overdue-notify")` once-per-day gate is SHARED
+/// with the GUI path so the two never double-fire. Best-effort — never throws.
+@Sendable
+private func notifyOverdueSchedulesHeadless(profiles: [String]) async {
+    let overdue = AutomationHealth.evaluate(inputs: LaunchAgentService.healthInputs())
+        .filter { $0.kind == .overdue }
+    guard !overdue.isEmpty else { return }
+    guard let resolved = firstUsableNotify(in: profiles) else { return }
+    let marker = DayMarker(name: "overdue-notify")
+    let today = SummaryJSONParser.dateFormatter.string(from: Date())
+    guard marker.lastStampedDay(in: resolved.workspace) != today else { return }
+
+    // Reuse the GUI's fact builder so the two paths emit byte-identical cards
+    // (and honor notify.detail minimal/full the same way).
+    let facts = WorkspaceStore.overdueFacts(
+        detail: resolved.notify.resolvedDetail, profile: resolved.profile, overdue: overdue
+    )
+    let sent = await WebhookNotifier.sendFailed(
+        config: resolved.notify,
+        title: "Scheduled run overdue — \(overdue.count) schedule" + (overdue.count == 1 ? "" : "s"),
+        facts: facts
+    )
+    guard sent else { return }
+    // Stamp only on a successful send so a transient webhook failure retries next run.
+    marker.stamp(day: today, in: resolved.workspace)
+    print("[info] overdue schedule digest posted headlessly (\(overdue.count) overdue)")
+}
+
+/// First profile in `profiles` (discovery order) whose `config.yaml` `notify:`
+/// block is usable, with its notify config and workspace URL. nil when none
+/// qualifies. Best-effort per profile — an unreadable/undecodable config skips.
+private func firstUsableNotify(
+    in profiles: [String]
+) -> (profile: String, notify: NotifyConfig, workspace: URL)? {
+    for profile in profiles {
+        guard ProfileService.isValid(profile),
+              let workspace = ProfileService.workspaceURL(for: profile) else { continue }
+        let url = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: url.path),
+              let config = try? ConfigLoader.load(from: url),
+              let notify = config.notify, notify.isUsable else { continue }
+        return (profile, notify, workspace)
+    }
+    return nil
 }
 
 /// The installed jamf-cli version when it is present but below the supported
@@ -441,7 +547,7 @@ private func scheduledRunSingle(
                 artifact: nil, recorder: recorder
             )
             await notifyMetricAlerts(
-                config: routingConfig, profile: profile, recorder: recorder
+                config: routingConfig, profile: profile, workspace: workspace, recorder: recorder
             )
             recorder?.finish(exitCode: 0)
             return 0
@@ -478,7 +584,7 @@ private func scheduledRunSingle(
         // summary isn't "just produced" — skip alerting for it.
         if mode != .jamfCLIOnly {
             await notifyMetricAlerts(
-                config: config, profile: profile, recorder: recorder
+                config: config, profile: profile, workspace: workspace, recorder: recorder
             )
         }
         recorder?.finish(exitCode: 0, sheetFailures: failures.count, artifacts: [outputURL])
@@ -574,12 +680,17 @@ private func scheduledRun(profile: String) async -> Int32 {
         if mode == .jamfCLIOnly || mode == .jamfCLIFull || mode == .csvAssisted {
             emitConsolidatedReports()
         }
+        // Dead-man overdue digest for headless hosts — once per process, after
+        // all per-profile work.
+        await notifyOverdueSchedulesHeadless(profiles: profiles.map(\.name))
         return anyFailed ? 1 : 0
     }
 
-    return await scheduledRunSingle(
+    let code = await scheduledRunSingle(
         profile: profile, mode: mode, tiers: tiers, verbose: verbose, label: label
     )
+    await notifyOverdueSchedulesHeadless(profiles: [profile])
+    return code
 }
 
 // MARK: - check subcommand

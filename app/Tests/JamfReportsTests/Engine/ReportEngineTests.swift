@@ -236,6 +236,59 @@ final class ReportEngineTests: XCTestCase {
                       "Permissive mode must not abort on mismatch")
     }
 
+    // MARK: - saveSnapshot: manifest write failure must be observable (2.6 Fix 1)
+
+    /// A `SnapshotManifest.record` failure under `require_manifest` must not be
+    /// near-invisible: the snapshot itself still saves (collect keeps going),
+    /// but the failure now surfaces on the collect stream (Run History), not
+    /// just a `.warning`-level Console.app line. Simulated by marking an
+    /// existing `manifest.json` user-immutable (uchg) — `replaceItemAt` then
+    /// throws even for the owner, while sibling writes in the same folder
+    /// (the snapshot itself, the temp manifest file) are unaffected. (A
+    /// directory at the manifest path does NOT work: `replaceItemAt` replaces
+    /// an empty directory without error.)
+    func testSaveSnapshotSurfacesManifestWriteFailureOnCollectStream() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("manifest-write-fail-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let kind = "audit"
+        let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        let manifestPath = kindDir.appendingPathComponent(SnapshotManifest.fileName)
+        try Data("junk".utf8).write(to: manifestPath)
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: manifestPath.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.immutable: false], ofItemAtPath: manifestPath.path
+            )
+        }
+
+        let capture = LogCapture()
+        try ReportEngine.testableSaveSnapshot(
+            data: Data(#"{"ok":true}"#.utf8), kind: kind, dataDir: dataDir,
+            recordManifest: true, onLine: { capture.append($0) }
+        )
+
+        let savedSnapshots = try FileManager.default.contentsOfDirectory(
+            at: kindDir, includingPropertiesForKeys: nil
+        ).filter {
+            $0.pathExtension == "json" && $0.lastPathComponent != SnapshotManifest.fileName
+        }
+        XCTAssertEqual(savedSnapshots.count, 1,
+                       "The snapshot itself must still be saved despite the manifest failure")
+
+        let lines = capture.snapshot()
+        XCTAssertTrue(
+            lines.contains {
+                $0.level == .warn
+                    && $0.text.contains("manifest write failed")
+                    && $0.text.contains(kind)
+            },
+            "Manifest write failure must be observable on the collect stream, not just Console.app"
+        )
+    }
+
     // MARK: - generate() — no cached data, no CSV → throws
 
     func testGenerateProducesDiagnosticWorkbookWhenNoCachedDataAndNoCSV() async throws {

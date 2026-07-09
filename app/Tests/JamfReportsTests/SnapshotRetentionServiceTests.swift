@@ -139,6 +139,31 @@ final class SnapshotRetentionServiceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: underscoreFile.path))
     }
 
+    // MARK: - manifest.json is never a retention candidate
+
+    /// manifest.json is written last (hence always the newest file in its kind
+    /// dir). If it counted as a snapshot it would occupy a keep_count slot and
+    /// could itself be archived/deleted, ahead of a real (older) snapshot.
+    func testManifestJSONNeverCountsAsSnapshot() throws {
+        try writeSnapshot(kind: "ea-results", name: "ea1.json", ageDays: 3)
+        try writeSnapshot(kind: "ea-results", name: "ea2.json", ageDays: 2)
+        try writeSnapshot(kind: "ea-results", name: "ea3.json", ageDays: 1)
+        let manifest = dataDir.appendingPathComponent("ea-results/manifest.json")
+        try "{}".write(to: manifest, atomically: true, encoding: .utf8)
+
+        let acted = SnapshotRetentionService.sweep(
+            dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
+            policy: policy(mode: .delete, keepDays: 30, keepCount: 3)
+        )
+        XCTAssertEqual(acted, 0, "keep_count 3 protects all 3 real snapshots")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.path),
+                      "manifest.json must never be deleted by retention")
+        for name in ["ea1.json", "ea2.json", "ea3.json"] {
+            XCTAssertTrue(FileManager.default.fileExists(
+                atPath: dataDir.appendingPathComponent("ea-results/\(name)").path))
+        }
+    }
+
     // MARK: - Summaries
 
     func testSummariesUntouchedUnlessIncluded() throws {

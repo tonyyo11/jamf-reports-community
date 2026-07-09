@@ -579,6 +579,9 @@ private struct NotificationsCard: View {
         // Load the active profile's `notify:` block into the form (and reset on a
         // profile switch), mirroring the Settings AI panel's `.task(id: profile)`.
         .task(id: profile) { loadNotifyConfig() }
+        // A pending debounced save (in-flight keystroke, not yet flushed) must
+        // not be lost if the operator navigates away before it fires.
+        .onDisappear { flushNotifySave() }
     }
 
     /// A `NotifyConfig` built from the CURRENT form values, so the test-send uses

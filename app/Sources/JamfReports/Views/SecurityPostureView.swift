@@ -48,7 +48,10 @@ struct SecurityPostureView: View {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
                 // Per-kind file dates are the honest per-screen signal here;
                 // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(sourceDates: snapshot.sourceDates)
+                FreshnessChipRow(
+                    sourceDates: snapshot.sourceDates,
+                    expectedKinds: ["security"]
+                )
             }
 
             if let reason = snapshot.loadError {

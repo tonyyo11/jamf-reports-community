@@ -39,6 +39,45 @@ versions in this repository map to git tags.
   accumulates; velocity figures are only shown when the crossing was actually
   observed, never estimated.
 
+### Fixed
+
+- Managed automation schedules no longer read as permanently overdue: the
+  dead-man switch now finds the per-profile run records the all-profiles
+  scheduled runs actually write, so a healthy managed setup stops producing a
+  daily false "overdue" banner and webhook.
+- A mistyped alert rule (unknown metric or operator, bad threshold) is no longer
+  silently ignored: it's flagged in the Config Doctor's new Alerts checks, logged,
+  and recorded in Run History. The doctor also warns when alerts are enabled
+  without a usable webhook — previously that combination was total silence.
+- Alert cards are no longer duplicated when two scheduled runs collect on the
+  same day; each tripped rule now cards at most once per day (a rule tripping
+  for the first time later the same day still alerts).
+- A compliance "drops more than" alert no longer false-fires when the compliance
+  measurement changes basis (the built-in proxy vs. real mSCP baselines) between
+  the compared days.
+- Headless deployments now get dead-man coverage: scheduled runs themselves check
+  sibling schedules for overdue runs and post the once-daily overdue digest, so
+  the switch no longer requires the app window to be opened. The once-per-day
+  gate is shared with the app, and the day is only marked sent after a successful
+  delivery (a failed send retries instead of silently skipping the day).
+- Automation health re-evaluates when the Mac wakes or the app returns to the
+  foreground, not just at launch — an ops console left open for days now notices
+  a dead schedule.
+- Freshness chips now show an explicit red "never" chip for a data kind the
+  screen expects but that has never been collected, instead of the kind silently
+  vanishing from the row (kinds intentionally skipped via "Skip expensive
+  collections" are excluded). The chip row also wraps instead of overflowing at
+  narrow widths.
+- The Patch screen's velocity card and the "Patch Velocity" report sheet now say
+  when release dates are unavailable (the `patch-release-dates` snapshot hasn't
+  been collected) instead of showing bare "—" everywhere.
+- A snapshot-manifest write failure under `require_manifest` is now an error in
+  Run History naming the affected kind, instead of a buried log warning.
+- Retention no longer counts `manifest.json` as a snapshot: it can't occupy a
+  keep-count slot or be archived/deleted out from under integrity verification.
+- A webhook URL typed just before closing the Automation screen is now saved
+  (the debounced save flushes on dismissal).
+
 ### Security
 
 - Webhook cards can now be minimized for high-security deployments: new

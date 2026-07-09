@@ -40,7 +40,10 @@ struct PatchView: View {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh, .scan])
                 // Per-kind file dates are the honest per-screen signal here;
                 // digest-level collectionSources belongs on summary screens only.
-                FreshnessChipRow(sourceDates: snapshot.sourceDates)
+                FreshnessChipRow(
+                    sourceDates: snapshot.sourceDates,
+                    expectedKinds: ["patch-status", "patch-device-failures"]
+                )
             }
             if snapshot.totalTitles == 0 {
                 emptyState
@@ -324,9 +327,27 @@ struct PatchView: View {
                 } else {
                     velocityRows
                     velocityChart
+                    if releaseDatesUnavailable {
+                        releaseDatesUnavailableCaption
+                    }
                 }
             }
         }
+    }
+
+    /// True when every displayed velocity row lacks a release date — the
+    /// patch-release-dates snapshot has never been collected, so Days Behind
+    /// and the 50%/90% milestones read "—" with no explanation otherwise.
+    private var releaseDatesUnavailable: Bool {
+        !slowestVelocityTitles.isEmpty
+            && slowestVelocityTitles.allSatisfy { $0.releaseDate == nil }
+    }
+
+    private var releaseDatesUnavailableCaption: some View {
+        Text("Release dates unavailable — days behind and adoption speed need "
+            + "the patch-release-dates snapshot.")
+            .font(.caption2)
+            .foregroundStyle(Theme.Colors.warn)
     }
 
     private var velocityRows: some View {

@@ -30,10 +30,13 @@ enum NotifyConfigLoader {
 enum NotifyConfigWriter {
     enum WriteError: Error, LocalizedError {
         case invalidProfile(String)
+        case invalidDocumentRoot
 
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile): "Invalid profile name: \(profile)"
+            case .invalidDocumentRoot:
+                "config.yaml's YAML root is not a mapping — cannot save the notify block."
             }
         }
     }
@@ -58,7 +61,9 @@ enum NotifyConfigWriter {
             document = YAMLCodec.emptyDocument()
         }
 
-        guard case .mapping(var root) = document.root else { return }
+        guard case .mapping(var root) = document.root else {
+            throw WriteError.invalidDocumentRoot
+        }
         root.set("notify", value: encode(
             enabled: enabled,
             provider: provider,

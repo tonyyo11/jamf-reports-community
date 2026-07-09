@@ -149,6 +149,25 @@ final class NotifyConfigStoreTests: XCTestCase {
         }
     }
 
+    /// `YAMLCodec.decode` already refuses a non-mapping top-level root before
+    /// `save`'s own defensive `.mapping` guard is ever reached, so this exercises
+    /// the observable contract (save throws, never silently no-ops) via that
+    /// decode-level seam rather than the local guard directly.
+    func testSaveThrowsWhenConfigRootIsNotAMapping() throws {
+        let profile = profileName()
+        let workspace = try makeWorkspace(profile: profile)
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        try "- just\n- a\n- list\n".write(to: configURL, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NotifyConfigWriter.save(
+                enabled: true, provider: "teams", url: "https://x.example.com",
+                detail: "full", profile: profile
+            ),
+            "save must throw rather than silently no-op on a non-mapping config root"
+        )
+    }
+
     func testInsecureURLWarningPredicate() {
         XCTAssertFalse(NotifyConfigWriter.showsInsecureURLWarning(enabled: false, url: "http://x"),
                        "disabled never warns")

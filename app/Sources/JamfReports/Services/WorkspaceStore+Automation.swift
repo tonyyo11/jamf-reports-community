@@ -131,10 +131,6 @@ extension WorkspaceStore {
 
     // MARK: - Dead-man switch compute
 
-    /// One in-memory guard so the overdue webhook digest fires at most once per
-    /// calendar day per app run — mirrors `lastCatchUpDay`.
-    @MainActor private static var lastOverdueNotifyDay: String?
-
     /// Scan the JRC LaunchAgents, evaluate the overdue/failing model, publish the
     /// issues to the shared health model, and (once per day) post an overdue
     /// webhook digest when `notify:` is usable. No-op in demo mode. Cheap enough
@@ -161,20 +157,33 @@ extension WorkspaceStore {
     private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
         let overdue = issues.filter { $0.kind == .overdue }
         guard !overdue.isEmpty else { return }
+        guard let notify = Self.loadNotifyConfig(profile: profile), notify.isUsable,
+              let workspace = ProfileService.workspaceURL(for: profile) else { return }
+        // Persisted day marker (not an in-memory static): survives relaunch and
+        // is visible to a headless process, so the digest fires at most once per
+        // calendar day across both.
         let today = Self.dayKeyFormatter.string(from: Date())
-        guard Self.lastOverdueNotifyDay != today else { return }
-        guard let notify = Self.loadNotifyConfig(profile: profile), notify.isUsable else { return }
-        Self.lastOverdueNotifyDay = today  // claim the day before the send
+        let marker = DayMarker(name: "overdue-notify")
+        guard marker.lastStampedDay(in: workspace) != today else { return }
 
         let facts = Self.overdueFacts(
             detail: notify.resolvedDetail, profile: profile, overdue: overdue
         )
-        await WebhookNotifier.sendFailed(
+        let delivered = await WebhookNotifier.sendFailed(
             config: notify,
             title: "Scheduled run overdue — \(overdue.count) schedule"
                 + (overdue.count == 1 ? "" : "s"),
             facts: facts
         )
+        // Claim the day only after a confirmed send, so a failed post retries
+        // on the next pass instead of silently swallowing the whole day.
+        if delivered {
+            marker.stamp(day: today, in: workspace)
+        } else {
+            AppLogger.webhook.warning(
+                "Overdue dead-man digest failed to send for \(profile, privacy: .public) — day not claimed, will retry (distinct from a routine run digest failure)"
+            )
+        }
     }
 
     /// Facts for the overdue dead-man digest. `full` mode lists each overdue

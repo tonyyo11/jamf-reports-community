@@ -394,6 +394,17 @@ struct CoreDashboard: Sendable {
         }
         row += 1
 
+        // Every row nil release date is indistinguishable from "everyone's on
+        // time" — call it out so it isn't read as a clean bill of health.
+        if velocities.allSatisfy({ $0.releaseDate == nil }) {
+            ws.write(
+                "Release dates unavailable — collect patch-release-dates to compute "
+                    + "days-behind and adoption speed.",
+                row: row, col: 0, format: .cell
+            )
+            row += 1
+        }
+
         let dash = "\u{2014}"
         for v in velocities {
             ws.write(v.title, row: row, col: 0, format: .cell)

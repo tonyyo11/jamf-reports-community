@@ -1570,7 +1570,7 @@ struct ReportEngine: Sendable {
                 }
                 try saveSnapshot(
                     data: data, kind: kind, dataDir: dataDir,
-                    recordManifest: recordManifest
+                    recordManifest: recordManifest, onLine: onLine
                 )
                 savedKinds.insert(kind)
                 // T-8: record success so the cadence boundary advances.
@@ -2342,7 +2342,8 @@ struct ReportEngine: Sendable {
         data: Data,
         kind: String,
         dataDir: URL,
-        recordManifest: Bool = false
+        recordManifest: Bool = false,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
     ) throws {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         try FileManager.default.createDirectory(
@@ -2375,9 +2376,17 @@ struct ReportEngine: Sendable {
             do {
                 try SnapshotManifest.record(snapshotFile: file, data: data)
             } catch {
-                AppLogger.collect.warning(
+                // .error, not .warning — under require_manifest this snapshot will
+                // now verify as .omitted instead of .verified, quietly degrading
+                // the "no unverified data" promise. Also surfaced on the collect
+                // stream (onLine) so it lands in Run History, not just Console.app.
+                AppLogger.collect.error(
                     "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
                 )
+                onLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: "[warn] snapshot manifest write failed for \(kind) — verify will report this snapshot as unverified"
+                ))
             }
         }
     }
@@ -2501,6 +2510,20 @@ struct ReportEngine: Sendable {
     /// Internal entry point for injection-guard testing — mirrors `testableScaffoldMappings`.
     static func testableCSVEscape(_ value: String) -> String {
         csvEscape(value)
+    }
+
+    /// Test-only exposure of `saveSnapshot` — mirrors `testableScaffoldMappings`.
+    static func testableSaveSnapshot(
+        data: Data,
+        kind: String,
+        dataDir: URL,
+        recordManifest: Bool,
+        onLine: @escaping @Sendable (CLIBridge.LogLine) -> Void
+    ) throws {
+        try saveSnapshot(
+            data: data, kind: kind, dataDir: dataDir,
+            recordManifest: recordManifest, onLine: onLine
+        )
     }
 
     // MARK: - Column scaffold helpers

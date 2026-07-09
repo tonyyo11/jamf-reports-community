@@ -528,6 +528,119 @@ final class LaunchAgentServiceTests: XCTestCase {
         )
     }
 
+    // MARK: - Managed multi health-input fallback (2.6 dead-man switch FIX 1)
+    //
+    // Managed all-profiles agents (`<prefix>.multi.managed-*`) carry no
+    // `--status-file`; their run status lives per profile at
+    // `<workspace>/automation/<label>_status.json`. `healthInput` must fall
+    // back to that, else every managed agent reads as perpetually overdue.
+
+    func testMultiHealthInputFallsBackToPerProfileStatusFile() throws {
+        let root = try makeHealthWorkspacesRoot()
+        let label = "\(prefix).multi.managed-freshness"
+        let finished = try writeProfileRunStatus(
+            root: root, profile: "healthalpha", label: label,
+            success: true, finishedAt: "2026-07-06T13:00:00Z"
+        )
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T14:30:00Z"))
+        let inputs = LaunchAgentService.healthInputs(in: agentsDir, now: now)
+        let input = try XCTUnwrap(inputs.first { $0.label == label })
+        XCTAssertEqual(
+            input.lastRunFinishedAt, finished,
+            "managed multi agent with no --status-file must read the per-profile status file"
+        )
+        XCTAssertEqual(input.lastRunSuccess, true)
+    }
+
+    func testMultiHealthInputPicksNewestProfileStatus() throws {
+        let root = try makeHealthWorkspacesRoot()
+        let label = "\(prefix).multi.managed-scan"
+        try writeProfileRunStatus(
+            root: root, profile: "healthalpha", label: label,
+            success: true, finishedAt: "2026-07-06T09:00:00Z"
+        )
+        let newer = try writeProfileRunStatus(
+            root: root, profile: "healthbeta", label: label,
+            success: true, finishedAt: "2026-07-06T13:00:00Z"
+        )
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T14:30:00Z"))
+        let input = try XCTUnwrap(
+            LaunchAgentService.healthInputs(in: agentsDir, now: now).first { $0.label == label })
+        XCTAssertEqual(input.lastRunFinishedAt, newer,
+                       "the newest finished_at across profiles must win")
+    }
+
+    func testMultiHealthInputNilWhenNoStatusFilesAnywhere() throws {
+        _ = try makeHealthWorkspacesRoot()  // empty workspaces root, no status files
+        let label = "\(prefix).multi.managed-reports"
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T14:30:00Z"))
+        let input = try XCTUnwrap(
+            LaunchAgentService.healthInputs(in: agentsDir, now: now).first { $0.label == label })
+        XCTAssertNil(input.lastRunFinishedAt,
+                     "no per-profile status file anywhere → nil, as before")
+    }
+
+    /// Temp `JRC_TEST_WORKSPACES_ROOT` so profile discovery + status reads stay
+    /// off the user's real `~/Jamf-Reports/`.
+    private func makeHealthWorkspacesRoot() throws -> URL {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Health-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        return root
+    }
+
+    /// Create `<root>/<profile>/` with a config.yaml (so
+    /// `ProfileService.discoverLocal` includes it) plus
+    /// `automation/<label>_status.json`. Returns the parsed finish Date.
+    @discardableResult
+    private func writeProfileRunStatus(
+        root: URL, profile: String, label: String, success: Bool, finishedAt: String
+    ) throws -> Date {
+        let workspace = root.appendingPathComponent(profile, isDirectory: true)
+        let automation = workspace.appendingPathComponent("automation", isDirectory: true)
+        try FileManager.default.createDirectory(at: automation, withIntermediateDirectories: true)
+        try "jamf_cli:\n  profile: \"\(profile)\"\n".write(
+            to: workspace.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8
+        )
+        let status: [String: Any] = ["success": success, "finished_at": finishedAt]
+        let data = try JSONSerialization.data(withJSONObject: status)
+        try data.write(to: automation.appendingPathComponent("\(label)_status.json"))
+        return try XCTUnwrap(ISO8601DateFormatter().date(from: finishedAt))
+    }
+
+    private func writeMultiHealthPlist(
+        in dir: URL, label: String, hour: Int, minute: Int
+    ) throws {
+        let plist: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run", "--all-profiles",
+                "--mode", "snapshot-only",
+            ],
+            "StartCalendarInterval": ["Hour": hour, "Minute": minute],
+            "Disabled": false,
+        ]
+        let url = dir.appendingPathComponent("\(label).plist")
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: url)
+    }
+
     private func makeAgentsDir() throws -> URL {
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("staleAgents-\(UUID().uuidString)", isDirectory: true)

@@ -19,7 +19,8 @@ final class MetricAlertEvaluatorTests: XCTestCase {
         osCurrentPct: Double? = nil,
         patchPct: Double? = nil,
         securityScore: Double? = nil,
-        actionItemsP0: Int? = nil
+        actionItemsP0: Int? = nil,
+        complianceIsProxy: Bool? = nil
     ) -> DailySummary {
         DailySummary(
             date: date,
@@ -32,7 +33,8 @@ final class MetricAlertEvaluatorTests: XCTestCase {
             patchPct: patchPct,
             source: "test",
             securityScore: securityScore,
-            actionItemsP0: actionItemsP0
+            actionItemsP0: actionItemsP0,
+            complianceIsProxy: complianceIsProxy
         )
     }
 
@@ -139,6 +141,68 @@ final class MetricAlertEvaluatorTests: XCTestCase {
             current: current, prior: prior
         )
         XCTAssertTrue(hits.isEmpty)
+    }
+
+    // MARK: - compliance_pct measurement-basis guard
+
+    func testCompliancePctDropDoesNotFireAcrossBasisChange() {
+        // Proxy (~96%) → real mSCP (~67%): a 29pp "drop" that is a scale change,
+        // not a regression. Must not fire even though it exceeds the threshold.
+        let current = summary(date: "2026-07-06", compliancePct: 67, complianceIsProxy: false)
+        let prior = summary(date: "2026-06-29", compliancePct: 96, complianceIsProxy: true)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("compliance_pct", "drops_more_than", 5, lookback: 7)],
+            current: current, prior: prior
+        )
+        XCTAssertTrue(hits.isEmpty, "proxy→real basis change is not a comparable drop")
+    }
+
+    func testCompliancePctDropFiresWhenBasisUnchanged() {
+        let current = summary(date: "2026-07-06", compliancePct: 60, complianceIsProxy: false)
+        let prior = summary(date: "2026-06-29", compliancePct: 90, complianceIsProxy: false)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("compliance_pct", "drops_more_than", 5)],
+            current: current, prior: prior
+        )
+        XCTAssertEqual(hits.count, 1, "same-basis real drop still fires")
+    }
+
+    func testCompliancePctDropFiresWhenBasisNilOnBoth() {
+        let current = summary(date: "2026-07-06", compliancePct: 60)
+        let prior = summary(date: "2026-06-29", compliancePct: 90)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("compliance_pct", "drops_more_than", 5)],
+            current: current, prior: prior
+        )
+        XCTAssertEqual(hits.count, 1, "absent basis on both sides is unchanged — still fires")
+    }
+
+    // MARK: - dedup key stability
+
+    func testDedupKeyIsStablePerRuleAndDistinctAcrossRules() throws {
+        // Same rule tripping on different values → same key (per-day dedup holds).
+        let a = try XCTUnwrap(MetricAlertEvaluator.evaluate(
+            rules: [rule("filevault_pct", "below", 90)],
+            current: summary(fileVaultPct: 80), prior: nil
+        ).first)
+        let b = try XCTUnwrap(MetricAlertEvaluator.evaluate(
+            rules: [rule("filevault_pct", "below", 90)],
+            current: summary(fileVaultPct: 70), prior: nil
+        ).first)
+        let other = try XCTUnwrap(MetricAlertEvaluator.evaluate(
+            rules: [rule("stale_count", "above", 50)],
+            current: summary(staleCount: 60), prior: nil
+        ).first)
+        XCTAssertEqual(
+            MetricAlertEvaluator.dedupKey(for: a),
+            MetricAlertEvaluator.dedupKey(for: b),
+            "the same rule tripping on different values keys the same"
+        )
+        XCTAssertNotEqual(
+            MetricAlertEvaluator.dedupKey(for: a),
+            MetricAlertEvaluator.dedupKey(for: other),
+            "different rules key differently"
+        )
     }
 
     // MARK: - absent-data guard

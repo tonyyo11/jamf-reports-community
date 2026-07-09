@@ -152,7 +152,13 @@ struct DevicesView: View {
                         ),
                         tiers: [.inventory]
                     )
-                    FreshnessChipRow(sourceDates: sourceDates)
+                    FreshnessChipRow(
+                        sourceDates: sourceDates,
+                        expectedKinds: [
+                            "computers", "device-compliance",
+                            "patch-device-failures", "patch-status",
+                        ]
+                    )
                 }
                 if let err = exportError {
                     Text(err)

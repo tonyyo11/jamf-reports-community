@@ -383,6 +383,14 @@ notify:
 # threshold — the number to compare against (a positive drop for drops_more_than)
 # lookback_days — how far back drops_more_than looks for the prior summary
 #                 (default 7; ignored by below/above)
+#
+# Alerts are evaluated only on schedule modes that COLLECT fresh data
+# (snapshot-only, jamf-cli-full, csv-assisted) — a jamf-cli-only schedule
+# generates from cache and never evaluates alerts.
+#
+# A rule with an unknown metric or 'when', or a missing/invalid threshold, is
+# ignored rather than failing the whole config — it also shows as a warning in
+# the in-app Config Doctor.
 alerts:
   enabled: false
   rules: []

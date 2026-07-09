@@ -727,6 +727,79 @@ final class ConfigDoctorServiceTests: XCTestCase {
         XCTAssertFalse(rows.contains { $0.id.hasPrefix("accuracy.cross_check") },
                        "no failures_list_column means no cross-check row")
     }
+
+    // MARK: - Alerts (2.6 metric-threshold alerting)
+
+    func testAlertRuleWithUnknownMetricEmitsErrorRow() throws {
+        let yaml = """
+        alerts:
+          enabled: true
+          rules:
+            - metric: "filevault_percent"
+              when: "below"
+              threshold: 90
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        let rule = row(rows, id: "alerts.rule.0")
+        XCTAssertEqual(rule?.severity, .fail)
+        XCTAssertTrue(rule?.detail.contains("filevault_percent") ?? false)
+        XCTAssertTrue(rule?.detail.contains("unknown metric") ?? false)
+    }
+
+    func testAlertsEnabledWithoutUsableNotifyWarns() throws {
+        let yaml = """
+        alerts:
+          enabled: true
+          rules:
+            - metric: "filevault_pct"
+              when: "below"
+              threshold: 90
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        XCTAssertEqual(row(rows, id: "alerts.notify_missing")?.severity, .warn)
+        XCTAssertNil(row(rows, id: "alerts.armed"), "not armed without a usable webhook")
+    }
+
+    func testAlertsEnabledWithUsableNotifyAndValidRuleEmitsArmedOK() throws {
+        let yaml = """
+        alerts:
+          enabled: true
+          rules:
+            - metric: "filevault_pct"
+              when: "below"
+              threshold: 90
+        notify:
+          enabled: true
+          url: "https://hooks.example.com/webhook"
+        """
+        let config = try makeConfig(yaml)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        let armed = row(rows, id: "alerts.armed")
+        XCTAssertEqual(armed?.severity, .pass)
+        XCTAssertTrue(armed?.detail.contains("1 alert rule") ?? false)
+        XCTAssertNil(row(rows, id: "alerts.notify_missing"))
+    }
+
+    func testNoAlertsBlockEmitsNoAlertsRows() throws {
+        let config = try makeConfig(cleanYAML)
+        let rows = ConfigDoctorService.evaluate(
+            config: config, parseError: nil, csvHeaders: cleanHeaders,
+            csvFamily: .computers, eaCoverageNames: []
+        )
+        XCTAssertFalse(rows.contains { $0.id.hasPrefix("alerts.") },
+                       "a workspace that never opted into alerts gets no alerts rows")
+    }
 }
 
 // MARK: - EAResultRow test fixtures

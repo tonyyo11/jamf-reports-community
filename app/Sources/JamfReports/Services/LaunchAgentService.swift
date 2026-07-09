@@ -423,8 +423,14 @@ enum LaunchAgentService {
         let statusURL = parts.isMulti
             ? multiStatusFileURL(from: args, label: label)
             : statusFileURL(from: args, profile: parts.profile, label: label)
+        // Managed all-profiles agents carry no `--status-file`, so the
+        // multi status-file read yields nil; the run instead records status
+        // per profile at `<workspace>/automation/<label>_status.json`. Fall
+        // back to scanning those (newest finish wins) so a managed agent is
+        // not read as perpetually overdue.
         let runStatus = parts.isMulti
-            ? readMultiRunStatus(from: statusURL, label: label)
+            ? (readMultiRunStatus(from: statusURL, label: label)
+                ?? newestMultiRunStatus(label: label))
             : readRunStatus(from: statusURL, profile: parts.profile)
         return ScheduleHealthInput(
             label: label,
@@ -791,6 +797,22 @@ enum LaunchAgentService {
             success: payload["success"] as? Bool,
             artifacts: []
         )
+    }
+
+    /// Fallback run status for a multi (all-profiles) agent whose plist has no
+    /// `--status-file`: the managed scheduled run records status per profile at
+    /// `<workspace>/automation/<label>_status.json`. Scan every local profile
+    /// for that label and return the record with the newest `finishedAt`.
+    private static func newestMultiRunStatus(label: String) -> ParsedRunStatus? {
+        var best: ParsedRunStatus?
+        for profile in ProfileService.discoverLocal().map(\.name) {
+            let url = statusFileURL(from: [], profile: profile, label: label)
+            guard let status = readRunStatus(from: url, profile: profile),
+                  let finished = status.finishedAt else { continue }
+            if let bestFinished = best?.finishedAt, finished <= bestFinished { continue }
+            best = status
+        }
+        return best
     }
 
     private static func readLogSummary(

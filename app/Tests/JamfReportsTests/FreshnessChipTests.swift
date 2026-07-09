@@ -203,4 +203,52 @@ final class FreshnessChipTests: XCTestCase {
             "just now"
         )
     }
+
+    // MARK: - FreshnessChipRow.chipModels (2.6 — absent-kind "never" chips)
+
+    func testChipModelsExpectedAndPresentYieldsPresentChip() {
+        let now = Date()
+        let date = now.addingTimeInterval(-3600)
+        let models = FreshnessChipRow.chipModels(
+            sourceDates: ["security": date],
+            expectedKinds: ["security"],
+            now: now
+        )
+        XCTAssertEqual(models, [FreshnessChipRow.ChipModel(kind: "security", state: .present(date))])
+    }
+
+    func testChipModelsExpectedAndAbsentYieldsNeverChip() {
+        let models = FreshnessChipRow.chipModels(
+            sourceDates: [:],
+            expectedKinds: ["patch-device-failures"]
+        )
+        XCTAssertEqual(
+            models,
+            [FreshnessChipRow.ChipModel(kind: "patch-device-failures", state: .absent)]
+        )
+    }
+
+    func testChipModelsNotExpectedAndAbsentYieldsNoChip() {
+        // A kind that's simply not read by this screen (not in expectedKinds)
+        // must not appear at all — only present or expected-but-missing kinds render.
+        let models = FreshnessChipRow.chipModels(
+            sourceDates: [:],
+            expectedKinds: []
+        )
+        XCTAssertTrue(models.isEmpty)
+    }
+
+    func testChipModelsMixedPresentAndAbsentSortedByKind() {
+        let now = Date()
+        let date = now.addingTimeInterval(-7200)
+        let models = FreshnessChipRow.chipModels(
+            sourceDates: ["update-status": date],
+            expectedKinds: ["update-status", "update-device-failures"],
+            now: now
+        )
+        XCTAssertEqual(models, [
+            FreshnessChipRow.ChipModel(kind: "update-device-failures", state: .absent),
+            FreshnessChipRow.ChipModel(kind: "update-status", state: .present(date)),
+        ])
+    }
 }

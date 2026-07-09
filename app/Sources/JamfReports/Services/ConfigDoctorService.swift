@@ -142,6 +142,7 @@ enum ConfigDoctorService {
         }
         rows += structuralRows(config)
         rows += baselineRows(config, eaCoverageNames: eaCoverageNames)
+        rows += alertsRows(config)
         return rows
     }
 
@@ -472,6 +473,74 @@ enum ConfigDoctorService {
                 hint: "Collect EA results, or fix the baseline column name."
             )
         } ?? []
+    }
+
+    // MARK: - Alerts (2.6 metric-threshold alerting)
+
+    /// Validates the `alerts:` block. Only emitted when the block is present at
+    /// all (an unopted-in workspace gets no rows). Each malformed rule (unknown
+    /// metric/when, absent/non-finite/negative threshold — the same criteria as
+    /// `AlertsConfig.resolvedRules`) gets its own error row; an enabled-but-
+    /// undeliverable configuration warns; a healthy configuration confirms.
+    private static func alertsRows(_ config: ReportConfig) -> [DoctorRow] {
+        guard let alerts = config.alerts else { return [] }
+        var rows: [DoctorRow] = []
+
+        for (index, rule) in (alerts.rules ?? []).enumerated() {
+            guard let failure = alertRuleFailure(rule) else { continue }
+            let label = rule.metric ?? "(no metric)"
+            rows.append(DoctorRow(
+                id: "alerts.rule.\(index)", severity: .fail,
+                title: "Alert rule ignored",
+                detail: "Rule for '\(label)' ignored — \(failure).",
+                hint: "Fix the rule under alerts.rules in config.yaml, or remove it."
+            ))
+        }
+
+        let notifyUsable = config.notify?.isUsable ?? false
+        if alerts.isEnabled, !notifyUsable {
+            rows.append(DoctorRow(
+                id: "alerts.notify_missing", severity: .warn,
+                title: "Alerts enabled without a webhook",
+                detail: "Alerts are enabled but no usable webhook is configured "
+                    + "(notify.url must be https and notify.enabled true) — "
+                    + "alerts cannot be delivered.",
+                hint: "Configure notify: in config.yaml, or disable alerts."
+            ))
+        } else if alerts.isEnabled, notifyUsable, !alerts.resolvedRules.isEmpty {
+            rows.append(DoctorRow(
+                id: "alerts.armed", severity: .pass, title: "Alerts armed",
+                detail: "\(alerts.resolvedRules.count) alert rule(s) armed.", hint: nil
+            ))
+        }
+        return rows
+    }
+
+    /// Reason a raw alert rule doesn't survive `AlertsConfig.resolvedRules`, or
+    /// `nil` when the rule is valid. Mirrors that filter's criteria exactly.
+    private static func alertRuleFailure(_ rule: AlertRule) -> String? {
+        let sampleKeys = AlertMetric.allCases.prefix(4).map(\.rawValue).joined(separator: ", ")
+        guard let metricRaw = nonEmpty(rule.metric) else {
+            return "no metric set — valid keys: \(sampleKeys), … (see config.example.yaml)"
+        }
+        guard AlertMetric(rawValue: metricRaw) != nil else {
+            return "unknown metric '\(metricRaw)' — valid keys: \(sampleKeys), … "
+                + "(see config.example.yaml)"
+        }
+        guard let whenRaw = nonEmpty(rule.when) else {
+            return "no 'when' comparison set — valid values: below, above, drops_more_than"
+        }
+        guard AlertRule.Comparison(rawValue: whenRaw) != nil else {
+            return "unknown 'when' comparison '\(whenRaw)' — "
+                + "valid values: below, above, drops_more_than"
+        }
+        guard let threshold = rule.threshold else {
+            return "no threshold set"
+        }
+        guard threshold.isFinite, threshold >= 0 else {
+            return "threshold \(threshold) is not a valid non-negative number"
+        }
+        return nil
     }
 
     // MARK: - Column-mapping helpers
