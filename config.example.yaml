@@ -418,9 +418,13 @@ retention:
 # insight card using Apple's on-device Foundation Model. OFF by default and
 # inert on any macOS below 27 — set enabled: true to opt in per profile.
 #
-# tier: "on_device" runs entirely on-device (no data leaves the Mac).
-#   "pcc" uses Apple Private Cloud Compute (still Apple-private, but off-device).
-#   "external" is RESERVED — not yet built.
+# tier: "on_device" runs entirely on-device (no data leaves the Mac) — the only
+#   tier supported by official builds. "pcc" uses Apple Private Cloud Compute
+#   (still Apple-private, but off-device); it requires an Apple-granted
+#   `private-cloud-compute` entitlement, gated behind the App Store distribution
+#   program, which official (Developer ID) builds don't carry — the Settings
+#   picker only offers pcc when the running binary is entitled. "external" is
+#   RESERVED — not yet built.
 # lock_on_device: true refuses any non-on-device model even if tier says pcc —
 #   a defense-in-depth switch for high-security or regulated environments.
 ai:

@@ -57,7 +57,8 @@ enum ModelAvailability: Sendable, Equatable {
         case .pccSystemNotReady:
             return "Private Cloud Compute isn't ready on this system."
         case .pccEntitlementMissing:
-            return "Private Cloud Compute needs the private-cloud-compute entitlement, which this build doesn't include."
+            return "Private Cloud Compute requires an Apple-granted entitlement this build doesn't "
+                + "include. Set tier: on_device in this profile's config.yaml to use on-device insights."
         case .unknown(let detail):
             return "Intelligence is unavailable: \(detail)"
         }
