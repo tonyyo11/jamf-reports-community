@@ -68,6 +68,11 @@ versions in this repository map to git tags.
   panel) are now hidden entirely instead of explaining that they need
   macOS 27 — the feature can never run there, so the app no longer
   advertises it. Nothing changes on macOS 27.
+- Private Cloud Compute is no longer offered in Settings: it requires an
+  Apple-granted entitlement tied to App Store distribution that official
+  builds can't carry, so the model picker is replaced by a plain
+  "On-device" row. Builds that do carry the entitlement (e.g. a qualifying
+  fork) get the picker back automatically. On-device AI is unaffected.
 - Cached data now has a shelf life: new `jamf_cli.max_cache_age_hours` (default
   168 — 7 days). When live collection fails and the newest cached snapshot is older
   than the limit, the daily digest reports that kind as absent (with a log line
