@@ -239,6 +239,27 @@ final class AutomationHealthTests: XCTestCase {
         XCTAssertTrue(issues.isEmpty)
     }
 
+    /// Mutation-sweep survivor s5m3: pins the grace BOUNDARY — a schedule whose
+    /// expected fire is exactly `graceSeconds` ago is already overdue (`>=`,
+    /// not `>`). One second inside the window is not.
+    func testOverdueFiresAtExactGraceBoundary() {
+        let now = referenceNow()
+        let atBoundary = now.addingTimeInterval(-AutomationHealth.graceSeconds)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(expectedFire: atBoundary, lastRunFinishedAt: nil, lastRunSuccess: nil)],
+            now: now
+        )
+        XCTAssertEqual(issues.first?.kind, .overdue,
+                       "expected-fire exactly graceSeconds ago must already read overdue")
+
+        let insideWindow = now.addingTimeInterval(-AutomationHealth.graceSeconds + 1)
+        let none = AutomationHealth.evaluate(
+            inputs: [input(expectedFire: insideWindow, lastRunFinishedAt: nil, lastRunSuccess: nil)],
+            now: now
+        )
+        XCTAssertTrue(none.isEmpty, "one second inside the grace window is not overdue")
+    }
+
     func testOverdueTakesPrecedenceOverFailing() {
         let now = referenceNow()
         let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)

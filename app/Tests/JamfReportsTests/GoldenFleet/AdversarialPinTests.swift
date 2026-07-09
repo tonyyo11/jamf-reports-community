@@ -397,4 +397,52 @@ final class AdversarialPinTests: XCTestCase {
         XCTAssertEqual(v.daysTo90, 30)
         XCTAssertEqual(try XCTUnwrap(v.adoptionPct), 95.0, accuracy: 0.001)
     }
+
+    // MARK: - Mutation-sweep survivor pins (s2m6, s6m3)
+
+    /// Survivor s2m6: the starts-at-threshold BOUNDARY. A series whose FIRST
+    /// sample is exactly the threshold reports nil for that threshold (the true
+    /// crossing predates recording) — the check is `>=`, not `>`.
+    func testPinS2M6_SeriesStartingExactlyAtThresholdReportsNil() throws {
+        let root = makeRoot()
+        let dataDir = root.appendingPathComponent("data", isDirectory: true)
+        func ts(_ off: Int) -> Date {
+            GoldenFleetClock.timestamp(dayOffset: off, hour: 12, minute: 0, relativeTo: anchor)
+        }
+        // First sample exactly 50.0% on day -20; later 95% on day -5.
+        try GoldenFleetWorkspace.writePatchStatus(dataDir: dataDir, at: ts(-20),
+            rows: [GoldenFleetWorkspace.patchRow(id: "9", title: "Zed", onLatest: 50, total: 100)])
+        try GoldenFleetWorkspace.writePatchStatus(dataDir: dataDir, at: ts(-5),
+            rows: [GoldenFleetWorkspace.patchRow(id: "9", title: "Zed", onLatest: 95, total: 100)])
+        let releaseISO = GoldenFleetClock.isoLocal(ts(-20))
+        let release = try JSONDecoder().decode(
+            PatchReleaseDateService.Row.self,
+            from: Data(#"{"title_id":"9","title":"Zed","latest_version":"1.0","release_date":"\#(releaseISO)"}"#.utf8))
+        let v = try XCTUnwrap(PatchVelocityBuilder.compute(
+            dataDir: dataDir, releaseRows: [release], now: anchor).first { $0.titleId == "9" })
+        XCTAssertNil(v.daysTo50,
+                     "first sample exactly at 50% → crossing predates recording → nil, not day-0")
+        // daysTo90 IS an observed crossing: (-5) - (-20) = 15.
+        XCTAssertEqual(v.daysTo90, 15)
+    }
+
+    /// Survivor s6m3: the cache-age BOUNDARY. A snapshot whose truncated
+    /// integer age in hours EQUALS max_cache_age_hours is still served —
+    /// expiry is strictly `>`.
+    func testPinS6M3_CacheAgeExactlyAtLimitIsNotExpired() throws {
+        let root = makeRoot()
+        let dataDir = root.appendingPathComponent("data", isDirectory: true)
+        let summariesDir = root.appendingPathComponent("summaries", isDirectory: true)
+        // 90 min old → Int(1.5h) = 1 → 1 > 1 is false → NOT expired at limit 1.
+        let stamp = GoldenFleetClock.stamp(Date().addingTimeInterval(-90 * 60))
+        try GoldenFleetWorkspace.writeJSON(secPayload(total: 100),
+                                           to: securityURL(dataDir, stamp: stamp))
+        var cfg = ReportConfig()
+        var jamf = JamfCLIConfig()
+        jamf.maxCacheAgeHours = 1
+        cfg.jamfCli = jamf
+        ReportEngine(config: cfg, dataDir: dataDir).emitSummaryJSON(summariesDir: summariesDir)
+        let s = try onlySummary(in: summariesDir)
+        XCTAssertEqual(s.totalDevices, 100, "ageHours == limit is not expired (strict >)")
+    }
 }
