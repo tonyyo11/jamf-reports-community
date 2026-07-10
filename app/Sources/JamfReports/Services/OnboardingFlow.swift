@@ -310,6 +310,11 @@ final class OnboardingFlow {
         }
         if currentStep == .schoolConnect {
             clearSchoolAPIKey()
+            // Backing into csvMapping re-runs scaffold/skip, which rewrites
+            // config.yaml and clobbers the school_cli block — require the
+            // connect step to be redone so the block is rewritten too.
+            schoolConnected = false
+            schoolConnectionError = nil
         }
         currentStep = sequence[idx - 1]
         lastError = nil

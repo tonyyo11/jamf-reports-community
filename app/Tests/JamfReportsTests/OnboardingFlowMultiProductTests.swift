@@ -414,6 +414,25 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertEqual(flow.currentStep, .firstReport, "nextStep at the last School step must be a no-op")
     }
 
+    /// Backing out of schoolConnect resets the connection state: csvMapping's
+    /// scaffold/skip rewrites config.yaml (clobbering the school_cli block), so
+    /// a stale schoolConnected == true would let the flow advance past a step
+    /// whose on-disk result no longer exists.
+    func test_schoolPath_previousStep_resetsSchoolConnection() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        flow.currentStep = .schoolConnect
+        flow.schoolConnected = true
+        flow.schoolConnectionError = "stale"
+
+        flow.previousStep()
+
+        XCTAssertEqual(flow.currentStep, .csvMapping)
+        XCTAssertFalse(flow.schoolConnected,
+                       "Backing into csvMapping must force the connect step to be redone")
+        XCTAssertNil(flow.schoolConnectionError)
+    }
+
     /// previousStep walks the School sequence backwards.
     func test_schoolPath_previousStep_walksBack() {
         let flow = OnboardingFlow()

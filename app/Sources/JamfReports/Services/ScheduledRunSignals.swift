@@ -390,6 +390,10 @@ struct CLIRunSignals: Sendable {
     /// exit. Does not swallow the error — the caller still rethrows it.
     func finishFailure(_ error: Error) async {
         let desc = error.localizedDescription
+        // Redaction boundary: the local Run History log gets the raw error
+        // (operator's own workspace, matching main.swift's scheduled path);
+        // only the webhook egress below is LogRedactor/DiagnosticRedactor-
+        // scrubbed, inside notifyScheduledRunFailure.
         recorder?.record("[error] \(desc)")
         recorder?.finish(exitCode: 1)
         await ScheduledRunSignals.notifyScheduledRunFailure(
