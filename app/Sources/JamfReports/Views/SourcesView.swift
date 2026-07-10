@@ -24,6 +24,7 @@ struct SourcesView: View {
     @State private var cliBridge = CLIBridge()
     @State private var showingProductConnect: ProductConnectSheet? = nil
     @State private var showingEAWalkthrough = false
+    @State private var showingReauth = false
 
     enum ProductConnectSheet: Identifiable {
         case protect, school
@@ -104,6 +105,14 @@ struct SourcesView: View {
         }
         .sheet(isPresented: $showingEAWalkthrough) {
             CSVEAWalkthroughSheet(profile: workspace.profile)
+        }
+        .sheet(isPresented: $showingReauth) {
+            ReauthenticateSheet(
+                profileSlug: workspace.profile,
+                prefillURL: activeProfileServerURL,
+                prefillAuthMethod: activeProfileAuthMethod,
+                onSaved: { runDoctor() }
+            )
         }
         .onAppear {
             reload()
@@ -326,6 +335,10 @@ struct SourcesView: View {
                         let v = Self.healthPill(r.health)
                         Pill(text: v.label, tone: v.tone, icon: v.icon)
                     }
+                    Button("Update credentials\u{2026}") {
+                        showingReauth = true
+                    }
+                    .help("Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app.")
                     Button(doctorOutcome == nil ? "Check connection" : "Re-check") {
                         runDoctor()
                     }
@@ -373,13 +386,48 @@ struct SourcesView: View {
 
     @ViewBuilder
     private func doctorReportRows(_ report: CLIDoctorReport) -> some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             doctorRow("Profile", report.profile?.name ?? "—")
             doctorRow("Server", report.profile?.effectiveUrl ?? report.profile?.url ?? "—")
             doctorRow("Auth method", report.profile?.authMethod ?? "—")
             doctorRow("Credentials", Self.credentialSummary(report))
             doctorRow("Connectivity", Self.connectivitySummary(report.connectivity))
+
+            if Self.healthNeedsCredentials(report.health) {
+                HStack(spacing: 8) {
+                    Image(systemName: "key.slash")
+                        .foregroundStyle(Theme.Colors.gold)
+                    Text("This profile's credentials need attention.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.secondary)
+                    Spacer()
+                    PNPButton(title: "Update credentials\u{2026}", icon: "key.horizontal", size: .sm) {
+                        showingReauth = true
+                    }
+                }
+                .padding(.top, 8)
+            }
         }
+    }
+
+    /// Health verdicts where re-registering credentials is the likely remedy.
+    static func healthNeedsCredentials(_ health: CLIDoctorReport.Health) -> Bool {
+        switch health {
+        case .credentialsUnresolved, .unauthorized, .noProfile:
+            return true
+        case .healthy, .unreachable:
+            return false
+        }
+    }
+
+    /// The active profile's recorded server URL, for prefilling the reauth sheet.
+    private var activeProfileServerURL: String {
+        workspace.profiles.first(where: { $0.name == workspace.profile })?.url ?? ""
+    }
+
+    /// The active profile's recorded auth method, for selecting the reauth form.
+    private var activeProfileAuthMethod: String {
+        workspace.profiles.first(where: { $0.name == workspace.profile })?.authMethod ?? ""
     }
 
     @ViewBuilder

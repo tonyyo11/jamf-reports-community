@@ -101,6 +101,17 @@ versions in this repository map to git tags.
 - A webhook URL typed just before closing the Automation screen is now saved
   (the debounced save flushes on dismissal).
 
+- Update Jamf Pro credentials without Terminal: the Data Sources screen's
+  Connection health card gains an "Update credentials" sheet (OAuth2 or
+  Platform Gateway) for the active profile — for rotated secrets, expired API
+  clients, or profiles first created with placeholder values. Secrets follow
+  the same discipline as onboarding: entered into the system via jamf-cli
+  only, never persisted or logged by the app, wiped on cancel.
+- Jamf School-only districts get a real front door: the Welcome screen gains
+  a "Connect Jamf School" card with its own onboarding path (no Jamf Pro
+  credentials involved) ending in a first School workbook. Like the School
+  CLI commands, this path ships community-validated — the maintainer has no
+  Jamf School tenant to test against.
 - Per-kind freshness chips now cover the remaining data screens — Policies &
   Profiles, Extension Attributes, Protect, and Mobile Fleet — completing the
   rollout that started with Patch, Security Posture, Updates, and Devices.

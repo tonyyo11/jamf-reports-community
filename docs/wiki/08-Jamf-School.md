@@ -33,12 +33,29 @@ school_columns:
 
 ## Setting up a School-only workspace
 
-You don't need a real Jamf Pro connection to use Jamf School. Onboarding still runs
-through the Jamf Pro screens first — `jamf-cli` must be installed to pass the Install CLI
-step (a free Homebrew binary, no server access needed), and the Authenticate/Validate
-steps accept placeholder Jamf Pro values and let you continue even when the connection
-check fails (see [App Onboarding → Running without jamf-cli credentials](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding)). Connect the
-real Jamf School profile at the **Add products** step, or later from **Data Sources**.
+On the app's first-launch **Welcome chooser**, click **Connect Jamf School**. This runs a
+dedicated Jamf School onboarding path — Welcome, Install CLI, Workspace, CSV mapping,
+**Connect School**, First report — that skips the Jamf Pro Authenticate, Validate, and
+Add-products steps entirely. The Connect School step registers a `jamf-cli school` profile
+(School URL + Network ID + API key, passed over stdin and cleared) and wires
+`school_cli.enabled`/`profile` into the workspace config, so the first report and every
+later collect route to the Jamf School engine. `jamf-cli` must still be installed to pass
+the Install CLI step (a free Homebrew binary, no server access needed), but you never enter
+Jamf Pro credentials.
+
+Jamf School support ships community-validated — the maintainer has no Jamf School tenant to
+test against. If you run Jamf School, please
+[open an issue or pull request](https://github.com/tonyyo11/jamf-reports-community/issues)
+with feedback.
+
+Already onboarded as a Jamf Pro workspace, or set up before the Connect Jamf School card
+existed? You can still connect Jamf School from the **Add products** step during onboarding
+or later from **Data Sources**. In that older flow onboarding runs through the Jamf Pro
+screens first — the Authenticate/Validate steps accept placeholder Jamf Pro values and let
+you continue even when the connection check fails (see
+[App Onboarding → Running without jamf-cli credentials](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding)).
+A CSV-only workspace can also skip a live connection and just scaffold `school_columns`
+from a Jamf School CSV export (see below).
 
 Jamf School data feeds the standalone workbook described above — it does not appear in
 the interactive dashboards (Overview, Devices, Security Posture, and the rest), which are

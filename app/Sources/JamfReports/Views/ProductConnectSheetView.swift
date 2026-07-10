@@ -32,6 +32,7 @@ struct ProductConnectSheetView: View {
                         .foregroundStyle(Theme.Colors.fg)
                     Spacer()
                     Button {
+                        flow.clearAllSecrets()
                         dismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -62,7 +63,7 @@ struct ProductConnectSheetView: View {
         // Esc dismisses. Hidden zero-size button with .cancelAction is the
         // canonical SwiftUI pattern (see OverviewView's drill-down dismissal).
         .background {
-            Button("", action: { dismiss() })
+            Button("", action: { flow.clearAllSecrets(); dismiss() })
                 .keyboardShortcut(.cancelAction)
                 .opacity(0)
                 .frame(width: 0, height: 0)
@@ -159,6 +160,7 @@ struct ProductConnectSheetView: View {
                         .disabled(!protectCanConnect)
 
                         PNPButton(title: "Cancel", style: .neutral, size: .md) {
+                            flow.clearAllSecrets()
                             dismiss()
                         }
                     }
@@ -251,6 +253,7 @@ struct ProductConnectSheetView: View {
                         .disabled(!schoolCanConnect)
 
                         PNPButton(title: "Cancel", style: .neutral, size: .md) {
+                            flow.clearAllSecrets()
                             dismiss()
                         }
                     }

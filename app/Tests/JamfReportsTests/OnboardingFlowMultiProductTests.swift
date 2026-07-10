@@ -373,6 +373,214 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
                        "school_cli.profile must match the supplied name")
     }
 
+    // MARK: - Jamf School product path: step sequence
+
+    /// The School path skips the Pro-only Authenticate / Validate / Add-products
+    /// steps and inserts .schoolConnect AFTER .csvMapping (so csvMapping's
+    /// config.yaml rewrite can't clobber the school_cli keys).
+    func test_schoolPath_stepSequence_skipsProSteps() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        XCTAssertEqual(
+            flow.stepSequence,
+            [.welcome, .installCLI, .workspace, .csvMapping, .schoolConnect, .firstReport],
+            "School path sequence must skip authenticate/validate/addProducts and place schoolConnect after csvMapping"
+        )
+        XCTAssertEqual(flow.stepCount, 6, "School path has 6 steps")
+    }
+
+    /// nextStep from each School step lands on the expected next step.
+    func test_schoolPath_nextStep_walksSequence() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        flow.currentStep = .welcome
+
+        let expected: [OnboardingFlow.Step] =
+            [.installCLI, .workspace, .csvMapping, .schoolConnect, .firstReport]
+        for step in expected {
+            flow.nextStep()
+            XCTAssertEqual(flow.currentStep, step, "School nextStep should reach \(step)")
+        }
+    }
+
+    /// firstReport is the last School step — nextStep must NOT fall through into
+    /// any Pro/other step (the sequence-based guard replaces the old rawValue+1
+    /// stepping, which would otherwise advance firstReport(7) → schoolConnect(8)).
+    func test_schoolPath_nextStep_atFirstReportIsNoOp() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        flow.currentStep = .firstReport
+        flow.nextStep()
+        XCTAssertEqual(flow.currentStep, .firstReport, "nextStep at the last School step must be a no-op")
+    }
+
+    /// previousStep walks the School sequence backwards.
+    func test_schoolPath_previousStep_walksBack() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        flow.currentStep = .firstReport
+
+        let expected: [OnboardingFlow.Step] =
+            [.schoolConnect, .csvMapping, .workspace, .installCLI, .welcome]
+        for step in expected {
+            flow.previousStep()
+            XCTAssertEqual(flow.currentStep, step, "School previousStep should reach \(step)")
+        }
+        // At welcome (first step) previousStep is a no-op.
+        flow.previousStep()
+        XCTAssertEqual(flow.currentStep, .welcome, "previousStep at the first step must be a no-op")
+    }
+
+    func test_schoolPath_stepPosition_atSchoolConnect() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        flow.currentStep = .schoolConnect
+        XCTAssertEqual(flow.stepPosition, 5, "schoolConnect is the 5th step in the School sequence")
+    }
+
+    // MARK: - Jamf School product path: canAdvance gates
+
+    /// Advancing past schoolConnect requires a SUCCESSFUL connection (school_cli
+    /// written), not merely that fields are filled.
+    func test_schoolConnect_requiresConnectedToAdvance() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        flow.currentStep = .schoolConnect
+        flow.schoolConnected = false
+        XCTAssertFalse(flow.canAdvance, "schoolConnect must block advance until schoolConnected is true")
+
+        flow.schoolConnected = true
+        XCTAssertTrue(flow.canAdvance, "schoolConnect must allow advance once connected")
+    }
+
+    func test_schoolConnect_blocksAdvanceWhileConnecting() {
+        let flow = OnboardingFlow()
+        flow.productPath = .school
+        flow.currentStep = .schoolConnect
+        flow.schoolConnected = true
+        flow.isConnectingSchool = true
+        XCTAssertFalse(flow.canAdvance, "schoolConnect must block advance while a connection is in progress")
+    }
+
+    /// The Connect button gate: fields must be non-empty (URL valid, network ID,
+    /// and either a finalized API key or a field with keystrokes).
+    func test_canAttemptSchoolConnect_requiresAllFields() {
+        let flow = OnboardingFlow()
+        flow.schoolURL = "https://org.jamfcloud.com"
+        flow.schoolNetworkID = "net123"
+        flow.schoolAPIKeyFieldHasText = true
+        XCTAssertTrue(flow.canAttemptSchoolConnect, "all fields present → connect attempt allowed")
+    }
+
+    func test_canAttemptSchoolConnect_falseWithoutURL() {
+        let flow = OnboardingFlow()
+        flow.schoolURL = ""
+        flow.schoolNetworkID = "net123"
+        flow.schoolAPIKeyFieldHasText = true
+        XCTAssertFalse(flow.canAttemptSchoolConnect, "missing/invalid URL must block the connect attempt")
+    }
+
+    func test_canAttemptSchoolConnect_falseWithoutNetworkID() {
+        let flow = OnboardingFlow()
+        flow.schoolURL = "https://org.jamfcloud.com"
+        flow.schoolNetworkID = ""
+        flow.schoolAPIKey = "apikey"
+        XCTAssertFalse(flow.canAttemptSchoolConnect, "missing Network ID must block the connect attempt")
+    }
+
+    func test_canAttemptSchoolConnect_falseWithoutAPIKey() {
+        let flow = OnboardingFlow()
+        flow.schoolURL = "https://org.jamfcloud.com"
+        flow.schoolNetworkID = "net123"
+        flow.schoolAPIKey = ""
+        flow.schoolAPIKeyFieldHasText = false
+        XCTAssertFalse(flow.canAttemptSchoolConnect, "missing API key must block the connect attempt")
+    }
+
+    // MARK: - Jamf School product path: product-path handoff
+
+    func test_defaultFlow_isProPath() {
+        XCTAssertEqual(OnboardingFlow().productPath, .pro,
+                       "a flow constructed with no pending path defaults to Jamf Pro")
+    }
+
+    /// The first-launch chooser sets `pendingProductPath` before the view builds
+    /// the flow; init consumes and clears it (a race-free one-shot handoff).
+    func test_pendingProductPath_handoff_setsSchoolAndClears() {
+        addTeardownBlock { OnboardingFlow.pendingProductPath = nil }
+        OnboardingFlow.pendingProductPath = .school
+        let flow = OnboardingFlow()
+        XCTAssertEqual(flow.productPath, .school, "init must consume pendingProductPath")
+        XCTAssertNil(OnboardingFlow.pendingProductPath, "init must clear pendingProductPath after consuming it")
+    }
+
+    // MARK: - Jamf Pro product path: regression pins (unchanged behavior)
+
+    func test_proPath_stepSequence_unchanged() {
+        let flow = OnboardingFlow()   // defaults to .pro
+        XCTAssertEqual(
+            flow.stepSequence,
+            [.welcome, .installCLI, .workspace, .authenticate, .validate,
+             .csvMapping, .addProducts, .firstReport],
+            "Pro path step sequence must remain the original 8-step order"
+        )
+        XCTAssertEqual(flow.stepCount, 8)
+    }
+
+    /// Walking the Pro sequence must reach firstReport and stop — it must NOT
+    /// fall through into the new .schoolConnect case.
+    func test_proPath_nextStep_stopsAtFirstReport() {
+        let flow = OnboardingFlow()
+        flow.currentStep = .welcome
+        let expected: [OnboardingFlow.Step] =
+            [.installCLI, .workspace, .authenticate, .validate, .csvMapping, .addProducts, .firstReport]
+        for step in expected {
+            flow.nextStep()
+            XCTAssertEqual(flow.currentStep, step)
+        }
+        flow.nextStep()
+        XCTAssertEqual(flow.currentStep, .firstReport,
+                       "Pro nextStep at firstReport must not advance into schoolConnect")
+    }
+
+    // MARK: - Jamf School product path: config keys route detection to School (pure seam)
+
+    /// End-to-end config seam (no PTY): the same writer the School connect step
+    /// uses (writeSchoolConfig) makes ProfileProductType.detect resolve the
+    /// workspace to Jamf School, which is what routes collect/generate to the
+    /// School engine.
+    func test_schoolConfig_routesDetectionToJamfSchool() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MPSchool-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let profile = "schoolonly\(Int.random(in: 1000...9999))"
+        let flow = OnboardingFlow()
+        flow.profileName = profile
+        try flow.createWorkspace()
+        // csvMapping runs before schoolConnect on the School path — seed the
+        // minimal config first, exactly as the wizard does.
+        await flow.skipCSVMapping()
+        XCTAssertNil(flow.lastError, "skipCSVMapping should succeed: \(flow.lastError ?? "")")
+
+        // The workspace profile IS the School profile on the School-only path.
+        try flow.writeSchoolConfig(profileSlug: profile, schoolProfileName: profile)
+
+        let configURL = try ConfigService.configURL(for: profile)
+        let config = try ConfigLoader.load(from: configURL)
+        let detected = ProfileProductType.detect(from: config)
+        XCTAssertEqual(detected.type, .jamfSchool,
+                       "school_cli.enabled written by writeSchoolConfig must route detection to Jamf School")
+        XCTAssertFalse(detected.runsProtect, "a School profile never runs Protect")
+        XCTAssertEqual(config.schoolCli?.resolvedProfile, profile,
+                       "school_cli.profile must be the workspace profile on the School-only path")
+    }
+
     // MARK: - Part 1: SecureSecretField onTextChange callback
 
     func test_coordinator_onTextChange_calledOnKeystroke() {

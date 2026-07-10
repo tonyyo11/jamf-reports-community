@@ -27,15 +27,23 @@ links.
 jamf-cli is optional — the app also works from a Jamf Pro CSV export and cached
 snapshots with no jamf-cli installed. If you're skipping it, go to step 4.
 
-**Only have a CSV export, or only use Jamf School?** jamf-cli still has to be
-*installed* to get through onboarding's Install CLI step — Next stays disabled until the
-app detects it on `PATH` — even if you never connect it to a real Jamf Pro tenant. It's a
-free Homebrew binary and installing it needs no Jamf Pro server access. The Authenticate
-step that follows accepts a URL plus placeholder client ID/secret without contacting the
-server, and Validate lets you continue even when the connection check reports failure —
-so a CSV-only or Jamf School-only admin can complete onboarding with placeholder Jamf Pro
-credentials, map a CSV at the CSV step, and connect Jamf School at Add products (see
-[Jamf School](https://github.com/tonyyo11/jamf-reports-community/wiki/08-Jamf-School)).
+**Only use Jamf School?** On the Welcome chooser, choose **Connect Jamf School** — a
+dedicated path that skips the Jamf Pro Authenticate and Validate steps and connects your
+Jamf School tenant (Network ID + API key) directly, then routes reports to the Jamf School
+engine (see [Jamf School](https://github.com/tonyyo11/jamf-reports-community/wiki/08-Jamf-School)).
+jamf-cli still has to be *installed* to pass the Install CLI step (a free Homebrew binary,
+no Jamf Pro server access needed), but you never enter Jamf Pro credentials. Jamf School
+support ships community-validated — the maintainer has no Jamf School tenant to test
+against, so please report anything that looks off.
+
+**Only have a CSV export?** jamf-cli still has to be *installed* to get through the Install
+CLI step — Next stays disabled until the app detects it on `PATH` — even if you never
+connect it to a real Jamf Pro tenant. The Authenticate step accepts a URL plus placeholder
+client ID/secret without contacting the server, and Validate lets you continue even when
+the connection check reports failure, so you can complete onboarding with placeholder Jamf
+Pro credentials and map a CSV at the CSV step. (Installs set up before the Connect Jamf
+School card can still use this same placeholder workaround, then connect Jamf School at
+**Add products**.)
 One honest caveat: scheduling and automation always collect via jamf-cli, so a CSV-only
 workspace can't use managed automation, alerts, or the dead-man switch — reports there
 are a manual export-CSV-then-Generate cycle.
@@ -49,9 +57,10 @@ for the exact privilege table.
 
 ## 4. Launch the app and start onboarding
 
-Open `JamfReports.app`. On first launch you'll see a **Welcome chooser** with two
-cards — **Connect Jamf Pro** and **Try the demo first**. Choose **Connect Jamf Pro** to
-start the guided onboarding flow.
+Open `JamfReports.app`. On first launch you'll see a **Welcome chooser** with three
+cards — **Connect Jamf Pro**, **Connect Jamf School**, and **Try the demo first**.
+Choose **Connect Jamf Pro** to start the guided onboarding flow (Jamf School-only
+districts pick **Connect Jamf School** instead).
 
 ## 5. Follow the onboarding steps
 

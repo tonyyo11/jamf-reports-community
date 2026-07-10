@@ -5,9 +5,13 @@ report. This page walks through it and the workspace it creates.
 
 ## Reaching onboarding
 
-On first launch the app opens a **Welcome chooser** with two cards:
+On first launch the app opens a **Welcome chooser** with three cards:
 
-- **Connect Jamf Pro** — starts the onboarding flow.
+- **Connect Jamf Pro** — starts the Jamf Pro onboarding flow.
+- **Connect Jamf School** — starts a Jamf School-only onboarding flow (see
+  [Jamf School](https://github.com/tonyyo11/jamf-reports-community/wiki/08-Jamf-School)): the
+  same wizard, minus the Jamf Pro Authenticate / Validate / Add-products steps, with a
+  dedicated **Connect School** step instead. No Jamf Pro placeholder credentials required.
 - **Try the demo first** — loads the fictional "Meridian Health" tenant so you can explore
   every screen before connecting anything. Demo mode is not a real workspace; switch back
   to a real connection anytime from **Settings → jamf-cli → Demo mode**.
@@ -38,12 +42,27 @@ routes start the same onboarding flow.
    alone (see [Running without a CSV](#running-without-a-csv)).
 7. **Add products (optional)** — if you use Jamf Protect or Jamf School, connect them here
    (`protect setup` / `school setup`); they augment the Jamf Pro reports. You can also add
-   them later from the **Data Sources** screen. For a Jamf School-only district, this is
-   where the real connection happens — the Jamf Pro credentials from the Authenticate
-   step can stay as placeholders.
+   them later from the **Data Sources** screen. (A Jamf School-*only* district should instead
+   pick **Connect Jamf School** on the Welcome chooser, which runs the dedicated School path
+   below — no Jamf Pro placeholder credentials.)
 8. **First report** — the app generates a first report so the dashboards have data to
    render. If the output looks off you can **Skip & finish setup** — the workspace is
    fully configured at this point and you can run reports later from the Reports tab.
+
+### The Jamf School path
+
+Choosing **Connect Jamf School** on the Welcome chooser runs a shorter sequence — Welcome,
+Install CLI, Workspace, CSV mapping, **Connect School**, First report — skipping the Jamf
+Pro Authenticate, Validate, and Add-products steps. The Connect School step registers a
+`jamf-cli school` profile (School URL + Network ID + API key, passed over stdin and cleared)
+and wires `school_cli.enabled`/`profile` into the workspace config, so the first report and
+every later collect route to the Jamf School engine. jamf-cli must still be installed to get
+past the Install CLI step, but no Jamf Pro credentials are entered. Jamf School support ships
+community-validated — the maintainer has no Jamf School tenant to test against, so please
+[open an issue or pull request](https://github.com/tonyyo11/jamf-reports-community/issues) if
+something looks off. See
+[Jamf School](https://github.com/tonyyo11/jamf-reports-community/wiki/08-Jamf-School) for the
+full workflow.
 
 ![Onboarding — Connect to Jamf Pro](images/onboarding-authenticate.png)
 
@@ -105,12 +124,18 @@ The Authenticate step only checks that the fields are well-formed (a URL plus a 
 and secret); it does not contact your Jamf Pro server, and registering the profile is a
 local `jamf-cli` config write. The Validate step that follows runs a real connection
 check and will report failure against placeholder values — but advancing past it only
-requires that the profile registered, not that the check passed. So a CSV-only or Jamf
-School-only admin can complete onboarding with placeholder Jamf Pro values, map a CSV at
-the CSV-mapping step, and connect Jamf School at **Add products**.
+requires that the profile registered, not that the check passed. So a CSV-only admin can
+complete onboarding with placeholder Jamf Pro values and map a CSV at the CSV-mapping step.
+(A Jamf School-only admin can skip this placeholder workaround entirely by choosing
+**Connect Jamf School** on the Welcome chooser; the older route — placeholder Jamf Pro
+values, then connect Jamf School at **Add products** — still works for existing installs.)
 
-There is no in-app "re-authenticate an existing profile" affordance. To add real
-credentials later, run this in Terminal for the same profile name:
+To add real credentials later, open **Data Sources → Connection health → Update
+credentials…** — it re-registers the profile's jamf-cli credentials (URL, client ID,
+and secret) and runs the same connection check onboarding does, without leaving the app.
+The same button also appears when the connection-health probe reports an unauthorized or
+credentials-unresolved profile. As a Terminal alternative, run this for the same profile
+name:
 
 ```bash
 jamf-cli pro setup --url https://your-instance.jamfcloud.com
