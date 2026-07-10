@@ -70,9 +70,9 @@ the excluded-profiles list), the Automation screen carries three operational sec
 - **Notifications** — the active profile's opt-in Teams/Slack webhook: enable, choose the
   provider, paste an `https://` URL, pick a full/minimal detail level, and send a test
   card. Scheduled runs post digests, failure alerts, metric alerts, and overdue notices
-  through this webhook, managed or hand-built. The Notifications section itself is only
-  reachable when **Manage automation** is on — with it off, edit the `notify:` block in
-  `config.yaml` directly (a known limitation of the per-schedule builder).
+  through this webhook, managed or hand-built. The same Notifications card also appears
+  on the per-schedule builder (below) — notifications apply to any scheduled run, so
+  there's no need to hand-edit the `notify:` block in `config.yaml` either way.
 - **Report Groups** — grouping for consolidated fleet reports (below).
 
 ### Report Groups and consolidated fleet reports
@@ -107,7 +107,9 @@ restored if you change your mind.
 ## The per-schedule builder (unmanaged mode)
 
 With **Manage automation** off, the Automation tab shows the original **Schedules** screen
-— one LaunchAgent per schedule, built by hand.
+— one LaunchAgent per schedule, built by hand. It carries the same **Notifications** card
+described above, so the opt-in webhook is configurable here too, without switching to
+managed mode.
 
 ![The per-schedule builder (unmanaged mode)](images/schedules.png)
 

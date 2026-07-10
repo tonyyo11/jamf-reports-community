@@ -384,4 +384,31 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.managedAppCount(for: device), 0)
         XCTAssertNil(device.applications)
     }
+
+    // MARK: - sourceDates (freshness chip row)
+
+    func testSourceDatesPopulatedForPresentKinds() throws {
+        let tmp = FileManager.default.temporaryDirectory
+        let listURL = tmp.appendingPathComponent("sourcedates-mobile-list-\(UUID().uuidString).json")
+        let inventoryURL = tmp.appendingPathComponent("sourcedates-mobile-inventory-\(UUID().uuidString).json")
+        try "[]".write(to: listURL, atomically: true, encoding: .utf8)
+        try "[]".write(to: inventoryURL, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: listURL)
+            try? FileManager.default.removeItem(at: inventoryURL)
+        }
+
+        let snapshot = MobileFleetService.load(
+            listURL: listURL, inventoryURL: inventoryURL, profilesURL: nil
+        )
+
+        XCTAssertNotNil(snapshot.sourceDates["mobile-devices-list"])
+        XCTAssertNotNil(snapshot.sourceDates["mobile-device-inventory-details"])
+        XCTAssertNil(snapshot.sourceDates["classic-ios-profiles"])
+    }
+
+    func testSourceDatesEmptyWhenAllURLsNil() {
+        let snapshot = MobileFleetService.load(listURL: nil, inventoryURL: nil, profilesURL: nil)
+        XCTAssertTrue(snapshot.sourceDates.isEmpty)
+    }
 }

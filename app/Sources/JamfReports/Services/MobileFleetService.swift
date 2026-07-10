@@ -25,6 +25,11 @@ struct MobileFleetService: Sendable {
         let profiles: [MobileConfigProfileRow]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Per-kind newest-file dates for the freshness chip row. Keys are the
+        /// on-disk kind names (`mobile-devices-list`,
+        /// `mobile-device-inventory-details`, `classic-ios-profiles`); a kind
+        /// absent from disk is absent from the map.
+        var sourceDates: [String: Date] = [:]
 
         // MARK: - Computed properties
 
@@ -193,7 +198,8 @@ struct MobileFleetService: Sendable {
             lhs.richDevices.count == rhs.richDevices.count &&
             lhs.profiles.count == rhs.profiles.count &&
             lhs.sourceFile == rhs.sourceFile &&
-            lhs.snapshotDate == rhs.snapshotDate
+            lhs.snapshotDate == rhs.snapshotDate &&
+            lhs.sourceDates == rhs.sourceDates
         }
     }
 
@@ -246,13 +252,30 @@ struct MobileFleetService: Sendable {
                 .contentModificationDate
         }
 
+        // Per-kind freshness for the chip row, based on file presence — honest
+        // even when a kind's own decode failed (see PatchStatusService).
+        var sourceDates: [String: Date] = [:]
+        for (kind, url) in [
+            ("mobile-devices-list", listURL),
+            ("mobile-device-inventory-details", inventoryURL),
+            ("classic-ios-profiles", profilesURL),
+        ] {
+            guard let url, FileManager.default.fileExists(atPath: url.path),
+                  let d = (try? url.resourceValues(
+                      forKeys: [.contentModificationDateKey]
+                  ))?.contentModificationDate
+            else { continue }
+            sourceDates[kind] = d
+        }
+
         return Snapshot(
             isDetected: readSomething,
             lightDevices: lightDevices,
             richDevices: richDevices,
             profiles: profiles,
             sourceFile: sourceFile,
-            snapshotDate: snapshotDate
+            snapshotDate: snapshotDate,
+            sourceDates: sourceDates
         )
     }
 

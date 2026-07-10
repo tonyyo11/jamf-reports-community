@@ -230,8 +230,18 @@ final class ExtensionAttributeServiceTests: XCTestCase {
         let emptySnapshot = try XCTUnwrap(
             ExtensionAttributeService.load(resultsURL: emptyResultsURL, definitionsURL: emptyDefinitionsURL)
         )
-        XCTAssertEqual(emptySnapshot, .empty.with(sourceFile: emptySnapshot.sourceFile, snapshotDate: emptySnapshot.snapshotDate),
-                       "Empty arrays preserve the .empty contract (only sourceFile/snapshotDate carry over)")
+        XCTAssertEqual(
+            emptySnapshot,
+            .empty.with(
+                sourceFile: emptySnapshot.sourceFile,
+                snapshotDate: emptySnapshot.snapshotDate,
+                sourceDates: emptySnapshot.sourceDates
+            ),
+            "Empty arrays preserve the .empty contract (file-derived metadata carries over)"
+        )
+        XCTAssertEqual(Set(emptySnapshot.sourceDates.keys),
+                       ["ea-results", "computer-extension-attributes"],
+                       "on-disk files report freshness dates even with empty content")
         XCTAssertEqual(emptySnapshot.totalDevices, 0)
         XCTAssertEqual(emptySnapshot.totalEAs, 0)
         XCTAssertEqual(emptySnapshot.totalRowCount, 0)
@@ -378,6 +388,33 @@ final class ExtensionAttributeServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.cacheSource, .stale(at: staleDate))
     }
 
+    // MARK: - sourceDates (freshness chip row)
+
+    func testSourceDatesPopulatedForBothKinds() throws {
+        let resultsJSON = """
+        [{"computer_id": "1", "computer_name": "D1", "serial": "S1", "ea_id": "10", "ea_name": "EA-A", "value": "alpha"}]
+        """
+        let definitionsJSON = "[]"
+        let resultsURL = writeTempFile(content: resultsJSON, suffix: "sourcedates-results.json")
+        let definitionsURL = writeTempFile(content: definitionsJSON, suffix: "sourcedates-defs.json")
+        defer {
+            try? FileManager.default.removeItem(at: resultsURL)
+            try? FileManager.default.removeItem(at: definitionsURL)
+        }
+
+        let snapshot = try XCTUnwrap(
+            ExtensionAttributeService.load(resultsURL: resultsURL, definitionsURL: definitionsURL)
+        )
+
+        XCTAssertNotNil(snapshot.sourceDates["ea-results"])
+        XCTAssertNotNil(snapshot.sourceDates["computer-extension-attributes"])
+    }
+
+    func testSourceDatesEmptyWhenDataDirMissing() {
+        let snapshot = ExtensionAttributeService.load(profile: "no-such-profile-\(UUID().uuidString)")
+        XCTAssertTrue(snapshot.sourceDates.isEmpty)
+    }
+
     // MARK: - Test utilities
 
     private func writeTempFile(content: String, suffix: String) -> URL {
@@ -395,10 +432,14 @@ final class ExtensionAttributeServiceTests: XCTestCase {
 // MARK: - Snapshot test helpers
 
 private extension ExtensionAttributeService.Snapshot {
-    /// Returns a copy of `.empty` with `sourceFile` / `snapshotDate` swapped
-    /// in. Used by `testEmptyInputReturnsEmpty` to compare the structural
-    /// empty contract while ignoring the file-derived metadata.
-    func with(sourceFile: URL?, snapshotDate: Date?) -> ExtensionAttributeService.Snapshot {
+    /// Returns a copy of `.empty` with the file-derived metadata swapped in
+    /// (`sourceFile` / `snapshotDate` / `sourceDates`). Used by
+    /// `testEmptyInputReturnsEmpty` to compare the structural empty contract:
+    /// files that EXIST on disk still report their freshness dates even when
+    /// their content is empty — that's what the "never" chip keys off.
+    func with(
+        sourceFile: URL?, snapshotDate: Date?, sourceDates: [String: Date] = [:]
+    ) -> ExtensionAttributeService.Snapshot {
         ExtensionAttributeService.Snapshot(
             definitions: definitions,
             coverage: coverage,
@@ -407,7 +448,8 @@ private extension ExtensionAttributeService.Snapshot {
             totalRowCount: totalRowCount,
             valueDistributions: valueDistributions,
             sourceFile: sourceFile,
-            snapshotDate: snapshotDate
+            snapshotDate: snapshotDate,
+            sourceDates: sourceDates
         )
     }
 }

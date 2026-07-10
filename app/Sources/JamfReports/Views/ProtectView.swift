@@ -31,6 +31,17 @@ struct ProtectView: View {
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
                 StaleDataBanner(source: snapshot.cacheSource)
+                // A tenant that doesn't run Protect at all has no expected
+                // kinds — every one of them would render a false-alarm "never"
+                // chip. Only assert expectations once Protect is detected;
+                // present-kind chips still show either way.
+                FreshnessChipRow(
+                    sourceDates: snapshot.sourceDates,
+                    expectedKinds: snapshot.isDetected ? [
+                        "protect-overview", "protect-alerts", "protect-computers",
+                        "protect-insights", "protect-plans",
+                    ] : []
+                )
             }
 
             if !deepDiveEnabled {

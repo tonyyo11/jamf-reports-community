@@ -101,6 +101,16 @@ versions in this repository map to git tags.
 - A webhook URL typed just before closing the Automation screen is now saved
   (the debounced save flushes on dismissal).
 
+- Per-kind freshness chips now cover the remaining data screens — Policies &
+  Profiles, Extension Attributes, Protect, and Mobile Fleet — completing the
+  rollout that started with Patch, Security Posture, Updates, and Devices.
+  Protect and Mobile Fleet only expect their kinds when the product is
+  actually detected, so a Pro-only or Mac-only tenant never sees a false
+  "never" chip.
+- The webhook Notifications editor is now available in unmanaged mode too:
+  the Schedules screen gains the same card the Automation screen has, so
+  hand-built-schedule operators no longer have to edit the notify: block by
+  hand.
 - The `jamf-reports` command-line tool now participates in automation trust:
   `collect` evaluates metric alerts and posts the webhook digest like a
   scheduled snapshot run, `generate` posts its digest, both record into Run

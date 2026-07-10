@@ -179,14 +179,15 @@ notify:
 ```
 
 Read by `NotifyConfig` (the scheduled-run webhook digest). Editable in-app via
-AutomationView's Notifications section (2.6), backed by
+the shared `NotificationsCard` (Views/NotificationsCard.swift), rendered by
+both AutomationView (managed mode) and SchedulesView (unmanaged mode, the
+per-schedule builder) — notifications apply to any scheduled run, so neither
+mode requires hand-editing the YAML. Backed by
 `NotifyConfigLoader`/`NotifyConfigWriter` — the AIConfigLoader/Writer pattern: a
 scoped read/atomic write of ONLY the `notify:` top-level key, deliberately not
-routed through `ConfigService`'s managed-key contract. Known limitation:
-`AutomationTab` routes to AutomationView only in managed mode, so
-unmanaged-mode (hand-built-schedule) operators must still edit the YAML. Report
-*grouping* is NOT a config.yaml key — `report_groups` lives on the app-level
-`AutomationPolicy` (`@AppStorage`), edited in `AutomationView`.
+routed through `ConfigService`'s managed-key contract. Report *grouping* is NOT
+a config.yaml key — `report_groups` lives on the app-level `AutomationPolicy`
+(`@AppStorage`), edited in `AutomationView`.
 
 **Webhook egress discipline (2.6).** Cards never contain report files or
 device-level rows — only aggregate metrics, statuses, and operational names.

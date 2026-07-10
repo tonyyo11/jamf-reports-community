@@ -64,6 +64,17 @@ struct SchedulesView: View {
             profileFilterStrip
             nextUpCallout
             schedulesTable
+            // Notifications apply to any scheduled run — hand-built or managed —
+            // so unmanaged-mode operators get the same panel AutomationView shows,
+            // rather than having to hand-edit config.yaml's `notify:` block.
+            // Gated on !demoMode: unlike AutomationView (whose demo branch never
+            // constructs this card at all), SchedulesView has no outer demo
+            // wrapper, and the demo profile name is a syntactically valid
+            // profile — an ungated card would write a real config.yaml to
+            // ~/Jamf-Reports/<demo profile>/ on every toggle/keystroke.
+            if !workspace.demoMode {
+                NotificationsCard(profile: workspace.profile)
+            }
             runModesExplainer
         }
         .searchable(text: $query, placement: .toolbar, prompt: "Filter by name, profile, cadence, or mode")

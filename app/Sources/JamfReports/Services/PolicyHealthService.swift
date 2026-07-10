@@ -31,6 +31,10 @@ struct PolicyHealthService: Sendable {
         let profileSummary: ProfileFailureSummary?
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Per-kind newest-file dates for the freshness chip row. Keys are the
+        /// on-disk kind names (`policy-status`, `profile-status`); a kind
+        /// absent from disk is absent from the map.
+        var sourceDates: [String: Date] = [:]
 
         // MARK: - Computed aggregates
 
@@ -87,7 +91,8 @@ struct PolicyHealthService: Sendable {
             lhs.profiles == rhs.profiles &&
             lhs.profileSummary == rhs.profileSummary &&
             lhs.sourceFile == rhs.sourceFile &&
-            lhs.snapshotDate == rhs.snapshotDate
+            lhs.snapshotDate == rhs.snapshotDate &&
+            lhs.sourceDates == rhs.sourceDates
         }
     }
 
@@ -178,13 +183,30 @@ struct PolicyHealthService: Sendable {
         // Return nil if we have no data at all
         guard summary != nil || profileSummary != nil || !profiles.isEmpty else { return nil }
 
+        // Per-kind freshness for the chip row, based on file presence — honest
+        // even when a kind's own decode failed (see PatchStatusService).
+        var sourceDates: [String: Date] = [:]
+        if let policyURL, FileManager.default.fileExists(atPath: policyURL.path),
+           let d = (try? policyURL.resourceValues(
+               forKeys: [.contentModificationDateKey]
+           ))?.contentModificationDate {
+            sourceDates["policy-status"] = d
+        }
+        if let profileURL, FileManager.default.fileExists(atPath: profileURL.path),
+           let d = (try? profileURL.resourceValues(
+               forKeys: [.contentModificationDateKey]
+           ))?.contentModificationDate {
+            sourceDates["profile-status"] = d
+        }
+
         return Snapshot(
             summary: summary,
             findings: findings,
             profiles: profiles,
             profileSummary: profileSummary,
             sourceFile: sourceFile,
-            snapshotDate: snapshotDate
+            snapshotDate: snapshotDate,
+            sourceDates: sourceDates
         )
     }
 
