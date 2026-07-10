@@ -139,7 +139,14 @@ struct AIInsightCard: View {
     }
 
     private var tierLabel: String {
-        config.resolvedTier == .pcc ? "Private Cloud Compute" : "on-device intelligence"
+        // Resolve through GeneratorKind so lock_on_device is honored — a locked
+        // config runs on-device even when tier == pcc, and the card must say so
+        // rather than claiming Private Cloud Compute it will never use.
+        switch GeneratorKind.select(config: config) {
+        case .privateCloudCompute: "Private Cloud Compute"
+        case .external: "external provider"
+        case .onDevice: "on-device intelligence"
+        }
     }
 
     private func generate() {
