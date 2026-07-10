@@ -101,6 +101,23 @@ versions in this repository map to git tags.
 - A webhook URL typed just before closing the Automation screen is now saved
   (the debounced save flushes on dismissal).
 
+- The `jamf-reports` command-line tool now participates in automation trust:
+  `collect` evaluates metric alerts and posts the webhook digest like a
+  scheduled snapshot run, `generate` posts its digest, both record into Run
+  History, and failures post the failure card — so a self-managed cron or
+  launchd job is no longer invisible. Exit codes and output are unchanged;
+  the dead-man switch still tracks only app-written schedules (a cron job has
+  no schedule for it to compare against).
+- `jamf-reports scaffold` no longer requires a CSV: omit `--csv` to write the
+  same minimal jamf-cli-only config the app's onboarding "Skip for now" path
+  creates — a pure-CLI setup can now bootstrap a workspace headlessly.
+- Truncated snapshot files in the `{"results": [...]}` envelope shape are now
+  salvaged like bare-array files (complete rows recovered, day marked
+  salvaged) instead of vanishing from charts entirely.
+- A "drops more than" alert comparing against sparse history now prefers a
+  prior summary that actually carries the rule's metric, so a data-absent day
+  at the lookback boundary can't silently disarm the rule.
+
 ### Security
 
 - Webhook cards can now be minimized for high-security deployments: new

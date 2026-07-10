@@ -354,10 +354,11 @@ struct EAResultRow: Decodable, Sendable {
 extension EAResultRow {
     /// Decode an `ea-results` snapshot, tolerating the shapes jamf-cli has emitted
     /// across versions: a bare `[EAResultRow]` array, or an envelope object with a
-    /// `results` / `nodes` / `data` array. On no match, `rows` is nil and `reason`
-    /// carries a PII-SAFE structural summary (top-level kind + first-element KEYS,
-    /// never values) so a new shape shows up in the log instead of silently
-    /// producing an empty/garbled compliance chart.
+    /// `results` / `nodes` / `data` array. Both shapes are salvaged when truncated
+    /// mid-record (see `salvageTruncatedArray` / `salvageTruncatedEnvelope`). On no
+    /// match, `rows` is nil and `reason` carries a PII-SAFE structural summary
+    /// (top-level kind + first-element KEYS, never values) so a new shape shows up
+    /// in the log instead of silently producing an empty/garbled compliance chart.
     static func decodeSnapshot(_ data: Data) -> (rows: [EAResultRow]?, reason: String) {
         let decoder = JSONDecoder()
         if let rows = try? decoder.decode([EAResultRow].self, from: data) {
@@ -372,9 +373,13 @@ extension EAResultRow {
            let r = env.results ?? env.nodes ?? env.data {
             return (r, "envelope")
         }
-        // Bare arrays truncated mid-record at 16KB pipe boundaries (old reader bug)
-        // fail whole-array decode; salvage everything up to the last complete element.
+        // Truncated mid-record at 16KB pipe boundaries (old reader bug) fails
+        // whole-payload decode; salvage everything up to the last complete
+        // top-level row, whichever shape (bare array or envelope) it is.
         if let salvaged = salvageTruncatedArray(data) {
+            return salvaged
+        }
+        if let salvaged = salvageTruncatedEnvelope(data) {
             return salvaged
         }
         return (nil, structuralSummary(data))
@@ -397,6 +402,95 @@ extension EAResultRow {
         return (rows, "salvaged \(rows.count) rows from truncated array (\(data.count) bytes)")
     }
 
+    /// Recovers rows from an envelope object (`{"results": [...]}` / `"nodes"` /
+    /// `"data"`, matching the intact-envelope decode above) truncated mid-element
+    /// or missing its closing brace. Locates the array opened by whichever known
+    /// envelope key appears at the object's top level, then re-runs the SAME
+    /// last-complete-element scan `salvageTruncatedArray` uses — starting the scan
+    /// at that array's own opening `[` re-bases the depth count so the "depth == 1
+    /// closes a top-level element" invariant `lastDepth1ObjectEnd` assumes holds
+    /// exactly as it does for a bare array, even though the array here sits one
+    /// level deeper than the document root. Envelope shapes only; nil if the
+    /// payload isn't an object, or none of the known keys' arrays were reached
+    /// before truncation.
+    private static func salvageTruncatedEnvelope(_ data: Data) -> (rows: [EAResultRow]?, reason: String)? {
+        guard firstNonWhitespaceByte(data) == UInt8(ascii: "{") else { return nil }
+        guard let (key, arrayStart) = envelopeArrayStart(data) else { return nil }
+        let arraySlice = data.subdata(in: (data.startIndex + arrayStart) ..< data.endIndex)
+        guard let lastEnd = lastDepth1ObjectEnd(arraySlice) else { return nil }
+        var slice = arraySlice.subdata(in: arraySlice.startIndex ..< (arraySlice.startIndex + lastEnd + 1))
+        slice.append(UInt8(ascii: "]"))
+        guard let rows = try? JSONDecoder().decode([EAResultRow].self, from: slice) else { return nil }
+        AppLogger.platform.notice(
+            "EAResultRow.decodeSnapshot: salvaged \(rows.count, privacy: .public) rows from truncated envelope (\(key, privacy: .public)) (\(data.count, privacy: .public) bytes) — partial snapshot, counts may understate the fleet"
+        )
+        return (rows, "salvaged \(rows.count) rows from truncated envelope (\(key)) (\(data.count) bytes)")
+    }
+
+    /// Locates the array value of whichever known envelope key (`results` /
+    /// `nodes` / `data`) appears at the top level of an object payload, tracking
+    /// string/escape state the same way `lastDepth1ObjectEnd` does. A string that
+    /// closes while `depth == 1` (directly inside the outer `{}`) is checked
+    /// against the key set; if the next non-whitespace bytes are `:` then `[`,
+    /// that `[`'s offset is recorded for the matching key. Priority mirrors the
+    /// intact-envelope decode (`results` over `nodes` over `data`); nil if none of
+    /// the keys' arrays were reached before the payload ends.
+    private static func envelopeArrayStart(_ data: Data) -> (key: String, index: Int)? {
+        let keys: Set<String> = ["results", "nodes", "data"]
+        var found: [String: Int] = [:]
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var stringStart = 0
+        data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+            func isWhitespace(_ b: UInt8) -> Bool {
+                b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D
+            }
+            var i = 0
+            while i < buf.count {
+                let b = buf[i]
+                if inString {
+                    if escaped {
+                        escaped = false
+                    } else if b == UInt8(ascii: "\\") {
+                        escaped = true
+                    } else if b == UInt8(ascii: "\"") {
+                        inString = false
+                        if depth == 1 {
+                            let content = String(decoding: buf[(stringStart + 1) ..< i], as: UTF8.self)
+                            if keys.contains(content), found[content] == nil {
+                                var j = i + 1
+                                while j < buf.count, isWhitespace(buf[j]) { j += 1 }
+                                if j < buf.count, buf[j] == UInt8(ascii: ":") {
+                                    j += 1
+                                    while j < buf.count, isWhitespace(buf[j]) { j += 1 }
+                                    if j < buf.count, buf[j] == UInt8(ascii: "[") {
+                                        found[content] = j
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    i += 1
+                    continue
+                }
+                switch b {
+                case UInt8(ascii: "\""):
+                    inString = true
+                    stringStart = i
+                case UInt8(ascii: "["), UInt8(ascii: "{"): depth += 1
+                case UInt8(ascii: "]"), UInt8(ascii: "}"): depth -= 1
+                default: break
+                }
+                i += 1
+            }
+        }
+        if let idx = found["results"] { return ("results", idx) }
+        if let idx = found["nodes"] { return ("nodes", idx) }
+        if let idx = found["data"] { return ("data", idx) }
+        return nil
+    }
+
     /// True when a `decodeSnapshot` reason denotes a salvaged partial snapshot —
     /// the seam consumers use to flag understated counts without string-matching.
     static func isSalvageReason(_ reason: String) -> Bool { reason.hasPrefix("salvaged") }
@@ -411,6 +505,10 @@ extension EAResultRow {
 
     /// O(n), allocation-light byte scan (string/escape aware) returning the offset
     /// of the last `}` that closes a depth-1 top-level array element, or nil.
+    /// Depth is always measured from the START of `data`, which must be (or begin
+    /// at) an array's opening `[` — this is what lets `salvageTruncatedEnvelope`
+    /// reuse this unmodified by handing it a slice re-based at the envelope
+    /// array's `[`, rather than requiring a document-root offset.
     private static func lastDepth1ObjectEnd(_ data: Data) -> Int? {
         var depth = 0
         var inString = false

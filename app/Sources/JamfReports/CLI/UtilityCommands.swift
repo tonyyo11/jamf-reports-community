@@ -20,9 +20,14 @@ struct Backup: AsyncParsableCommand {
 }
 
 struct Scaffold: AsyncParsableCommand {
-    static let configuration =
-        CommandConfiguration(abstract: "Scaffold a config.yaml from a Jamf Pro CSV export.")
-    @Option(help: "Path to a Jamf Pro CSV export.") var csv: String
+    static let configuration = CommandConfiguration(
+        abstract: "Scaffold a config.yaml, from a Jamf Pro CSV export or as a minimal "
+            + "jamf-cli-only config.")
+    @Option(help: ArgumentHelp(
+        "Path to a Jamf Pro CSV export. Omit to write a minimal jamf-cli-only config "
+            + "(no column mapping) — the same starting point the GUI's \"Skip for now\" "
+            + "onboarding path writes."
+    )) var csv: String?
     @Option(help: "Output config.yaml path.") var out: String
 
     func run() async throws {
@@ -34,6 +39,13 @@ struct Scaffold: AsyncParsableCommand {
         // Python `scaffold`; the user sets the profile when they wire it up). Like
         // Python's `scaffold`, this OVERWRITES `--out` if it exists — it's an
         // initial-setup command; the GUI re-scaffold does a non-destructive merge.
+        guard let csv else {
+            // Same shape the GUI onboarding "Skip for now" path writes, and the
+            // same unconditional-overwrite semantics as the CSV branch below.
+            try ScaffoldService.writeMinimalConfig(to: outURL, profile: "")
+            print(outURL.path)
+            return
+        }
         let result = try ScaffoldService.matchColumns(from: URL(fileURLWithPath: csv), profile: "")
         try ScaffoldService.writeConfig(to: outURL, result: result, profile: "")
         print(outURL.path)

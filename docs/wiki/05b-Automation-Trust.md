@@ -10,13 +10,23 @@ For how to set up schedules in the first place, see
 
 ## What counts as a scheduled run
 
-All three features below fire only from the app's own scheduled-run path — a LaunchAgent
-this app writes, whether managed or hand-built in the Schedules screen. A cron job or a
-`launchd` plist you write yourself that calls the `jamf-reports` CLI does not evaluate
-alerts, does not post webhooks, does not appear in Run History, and is invisible to the
-dead-man switch — none of that machinery is wired into the CLI's `collect`/`generate`
-commands. If you want these features and still want to control the timing yourself, use
-the app's per-schedule builder (unmanaged mode) rather than your own cron/launchd job.
+Two of these features — metric alerts and webhook notifications — plus Run History records
+fire from **any** run of the report machinery, whether it comes from the app's own
+scheduled-run path (a LaunchAgent this app writes, managed or hand-built in the Schedules
+screen) or from the included `jamf-reports` CLI. A `jamf-reports collect` evaluates metric
+alerts and posts the notify digest exactly like a snapshot-only scheduled run; a
+`jamf-reports generate` posts its digest like a jamf-cli-only run (it generates from cache,
+so it does not evaluate alerts). Both record to Run History under a distinct `cli-collect` /
+`cli-generate` label, so a self-scheduled cron/launchd job that calls the CLI is no longer
+invisible.
+
+The **dead-man switch is the exception** — it can only track LaunchAgent *schedules*. It
+reasons about a `StartCalendarInterval` (an expected fire time it can measure "overdue"
+against), and a cron job or a hand-written `launchd` plist has no such schedule for the app
+to see. So if you drive the CLI from your own cron/launchd, you still get alerts, webhooks,
+and Run History, but the dead-man switch cannot tell that your timer stopped. For dead-man
+coverage, let the app's Automation screen manage the LaunchAgent, or add an external monitor
+(see [The honest limitation](#the-honest-limitation)).
 
 ## The dead-man switch
 

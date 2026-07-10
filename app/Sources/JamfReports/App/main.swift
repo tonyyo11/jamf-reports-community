@@ -93,236 +93,12 @@ private func appendFleetLog(_ message: String) {
     }
 }
 
-// MARK: - Webhook fact assembly (detail-mode reduction + egress redaction)
-
-/// Facts for a success/partial digest. `full` mode is byte-identical to the
-/// pre-2.6 payload (Profile/Run/Status, plus "Sheets failed" and "Report" when
-/// present). `minimal` keeps ONLY Profile/Run/Status — the report filename
-/// embeds the profile + timestamp and the sheet-failure count is dropped so the
-/// minimal digest is a doorbell, not a data channel.
-func successFacts(
-    detail: NotifyConfig.Detail,
-    profile: String,
-    mode: Schedule.RunMode,
-    artifact: String?,
-    sheetFailures: Int
-) -> [WebhookNotifier.Fact] {
-    let statusValue = sheetFailures > 0 ? "Partial" : "Success"
-    var facts: [WebhookNotifier.Fact] = [
-        .init(label: "Profile", value: profile),
-        .init(label: "Run", value: mode.displayTitle),
-        .init(label: "Status", value: statusValue),
-    ]
-    guard detail == .full else { return facts }
-    if sheetFailures > 0 {
-        facts.append(.init(label: "Sheets failed", value: "\(sheetFailures)"))
-    }
-    if let artifact { facts.append(.init(label: "Report", value: artifact)) }
-    return facts
-}
-
-/// Facts for a failure digest. `full` mode scrubs the error text through the
-/// strictest egress pipeline (credential patterns + full-PII incl. hostnames)
-/// before it enters a fact. `minimal` drops the error fact entirely, leaving
-/// Profile/Run/Status: Failed with no free text.
-func failureFacts(
-    detail: NotifyConfig.Detail,
-    profile: String,
-    mode: Schedule.RunMode,
-    errorDescription: String
-) -> [WebhookNotifier.Fact] {
-    var facts: [WebhookNotifier.Fact] = [
-        .init(label: "Profile", value: profile),
-        .init(label: "Run", value: mode.displayTitle),
-        .init(label: "Status", value: "Failed"),
-    ]
-    guard detail == .full else { return facts }
-    let scrubbed = DiagnosticRedactor().redactText(LogRedactor.redact(errorDescription))
-    facts.append(.init(label: "Error", value: scrubbed))
-    return facts
-}
-
-/// Facts for a metric-alert digest. `full` mode lists each tripped rule
-/// (metric label → message). `minimal` collapses to a single count fact with no
-/// metric names, values, thresholds, or dates.
-func alertFacts(
-    detail: NotifyConfig.Detail,
-    profile: String,
-    hits: [MetricAlertHit]
-) -> [WebhookNotifier.Fact] {
-    guard detail == .full else {
-        let word = hits.count == 1 ? "rule" : "rules"
-        return [
-            .init(label: "Profile", value: profile),
-            .init(label: "Alerts", value: "\(hits.count) \(word) tripped"),
-        ]
-    }
-    var facts: [WebhookNotifier.Fact] = [.init(label: "Profile", value: profile)]
-    facts.append(contentsOf: hits.map { .init(label: $0.metricLabel, value: $0.message) })
-    return facts
-}
-
-/// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
-/// is enabled with a usable https URL. Best-effort — never affects the run.
-///
-/// `sheetFailures` > 0 sets Status to "Partial" and appends a "Sheets failed"
-/// fact so degraded runs are not misreported as successes.
-/// `recorder` receives a `[warn]` line when the post fails, making the failure
-/// visible in Run History rather than only in `~/Library/Logs`.
-@Sendable
-private func notifyScheduledRun(
-    config: ReportConfig?,
-    profile: String,
-    mode: Schedule.RunMode,
-    artifact: String?,
-    sheetFailures: Int = 0,
-    recorder: ScheduledRunRecorder?
-) async {
-    guard let notify = config?.notify, notify.isUsable else { return }
-    let facts = successFacts(
-        detail: notify.resolvedDetail, profile: profile, mode: mode,
-        artifact: artifact, sheetFailures: sheetFailures
-    )
-    let sent = await WebhookNotifier.send(
-        config: notify, title: "Jamf Report — \(profile)", facts: facts
-    )
-    if !sent {
-        let message = "[warn] webhook notification failed for '\(profile)'"
-        fputs(message + "\n", stderr)
-        recorder?.record(message)
-    }
-}
-
-/// Evaluate metric-threshold alert rules against the fresh summary a collect
-/// just wrote and post ONE attention card if any rule trips (2.6 "trust trio"
-/// #1). Gated on `alerts.isEnabled` AND a usable `notify:` webhook — alerts
-/// reuse the notify webhook and add no URL of their own. Only called after a
-/// run that COLLECTED (snapshot-only, full, csv-assisted); jamf-cli-only
-/// generates from cache and produces no fresh summary.
-///
-/// Best-effort: a summary-load or send failure logs a warning and never throws
-/// into the run, mirroring `notifyScheduledRun`.
-@Sendable
-private func notifyMetricAlerts(
-    config: ReportConfig?,
-    profile: String,
-    workspace: URL,
-    recorder: ScheduledRunRecorder?
-) async {
-    guard let config, let alerts = config.alerts, alerts.isEnabled else { return }
-    let rules = alerts.resolvedRules
-    // Surface rules dropped by resolvedRules (unknown metric/operator, invalid
-    // threshold) BEFORE the webhook guard — one config problem must not mask
-    // the other.
-    reportDroppedAlertRules(
-        configured: alerts.rules ?? [], resolved: rules, recorder: recorder
-    )
-    // Alerts on but no usable webhook = total silence. Warn loudly (Console +
-    // Run History) so a misconfigured URL isn't discovered only by absence.
-    guard let notify = config.notify, notify.isUsable else {
-        let message = "[warn] alerts enabled but no usable notify webhook — alerts cannot be delivered"
-        AppLogger.webhook.warning("\(message, privacy: .public)")
-        recorder?.record(message)
-        return
-    }
-    guard !rules.isEmpty else { return }
-    guard let summariesDir = try? WorkspacePaths.summariesDir(for: profile) else { return }
-    let summaries = SummaryJSONParser.parseDirectory(summariesDir)
-    guard let current = summaries.last else { return }
-    // Only evaluate a summary this run actually wrote today. A day that produced
-    // no fresh summary (e.g. totalDevices == 0) leaves an older newest-summary
-    // that would be carded as if it were today's — skip it.
-    let today = SummaryJSONParser.dateFormatter.string(from: Date())
-    guard current.date == today else {
-        AppLogger.event(.webhook, .notice,
-            "metric alerts skipped — newest summary \(current.date) is not today (\(today))")
-        return
-    }
-    // Strict prior PER LOOKBACK for drops_more_than: the prior must be
-    // genuinely >= lookback_days older. FleetReportEmitter.priorSummary's
-    // fall-back-to-yesterday is right for fleet-report deltas but would fire
-    // a "7-day drop" rule on a 1-day wobble (or a 30-day drift) when history
-    // is sparse. No old-enough summary → drop rules simply don't fire;
-    // below/above ignore the prior entirely.
-    var hits: [MetricAlertHit] = []
-    for (lookback, group) in Dictionary(grouping: rules, by: { $0.resolvedLookbackDays }) {
-        let cutoff = current.parsedDate.addingTimeInterval(-Double(lookback) * 86_400)
-        let prior = summaries.dropLast().filter { $0.parsedDate <= cutoff }.last
-        hits.append(contentsOf:
-            MetricAlertEvaluator.evaluate(rules: group, current: current, prior: prior))
-    }
-    // Dictionary grouping order is nondeterministic — keep card fact order stable.
-    hits.sort { MetricAlertEvaluator.dedupKey(for: $0) < MetricAlertEvaluator.dedupKey(for: $1) }
-    guard !hits.isEmpty else { return }
-    // Dedup per-day per-rule: a second same-day run (managed freshness + scan)
-    // doesn't re-card, but a rule that trips for the first time later today does.
-    let ledger = MetricAlertLedger(workspace: workspace)
-    let newKeys = Set(ledger.filterAndRecord(
-        day: today, keys: hits.map(MetricAlertEvaluator.dedupKey(for:))
-    ))
-    let newHits = hits.filter { newKeys.contains(MetricAlertEvaluator.dedupKey(for: $0)) }
-    guard !newHits.isEmpty else { return }
-    let facts = alertFacts(detail: notify.resolvedDetail, profile: profile, hits: newHits)
-    let sent = await WebhookNotifier.sendAlert(
-        config: notify, title: "Jamf Reports alert — \(profile)", facts: facts
-    )
-    if !sent {
-        let message = "[warn] metric-alert webhook failed for '\(profile)'"
-        fputs(message + "\n", stderr)
-        recorder?.record(message)
-    }
-}
-
-/// Log a warning + `[warn]` recorder line (so it lands in Run History, not only
-/// `~/Library/Logs`) for every configured alert rule that `resolvedRules` drops
-/// — a rule with an unknown metric/operator or an invalid threshold. Names the
-/// offending metric/when strings (config keys, not PII). No-op when none were
-/// dropped. `AlertRule` is `Equatable`, so "dropped" = configured minus resolved.
-private func reportDroppedAlertRules(
-    configured: [AlertRule],
-    resolved: [AlertRule],
-    recorder: ScheduledRunRecorder?
-) {
-    guard configured.count != resolved.count else { return }
-    for rule in configured where !resolved.contains(rule) {
-        let metricStr = rule.metric ?? "(none)"
-        let whenStr = rule.when ?? "(none)"
-        let message = "[warn] alert rule ignored — metric='\(metricStr)' when='\(whenStr)': "
-            + "unknown metric/operator or invalid threshold"
-        AppLogger.webhook.warning("\(message, privacy: .public)")
-        recorder?.record(message)
-    }
-}
-
-/// Post a failure webhook digest for a run that threw before generating a
-/// report. The error text is the only free-text egress channel — a network
-/// `errorDescription` can embed the Jamf server hostname — so in `full` mode it
-/// is scrubbed through the strictest pipeline (`LogRedactor` credential patterns
-/// + `DiagnosticRedactor` full-PII pass: hostnames, serials, emails, usernames)
-/// before it enters a fact. `minimal` mode drops the error fact entirely.
-/// Best-effort — never throws.
-@Sendable
-private func notifyScheduledRunFailure(
-    config: ReportConfig?,
-    profile: String,
-    mode: Schedule.RunMode,
-    errorDescription: String,
-    recorder: ScheduledRunRecorder?
-) async {
-    guard let notify = config?.notify, notify.isUsable else { return }
-    let facts = failureFacts(
-        detail: notify.resolvedDetail, profile: profile, mode: mode,
-        errorDescription: errorDescription
-    )
-    let sent = await WebhookNotifier.sendFailed(
-        config: notify, title: "Jamf Report — \(profile)", facts: facts
-    )
-    if !sent {
-        let message = "[warn] failure webhook notification failed for '\(profile)'"
-        fputs(message + "\n", stderr)
-        recorder?.record(message)
-    }
-}
+// Webhook fact assembly, the scheduled-run digest/alert senders, and the
+// metric-aware strict-prior selection now live in
+// `Services/ScheduledRunSignals.swift` (shared with the included CLI). This
+// file's scheduled path calls `ScheduledRunSignals.notifyScheduledRun` /
+// `.notifyMetricAlerts` / `.notifyScheduledRunFailure`; the fleet dead-man
+// overdue digest below stays here — it has no single-run CLI meaning.
 
 /// Headless dead-man overdue digest (2.6 "trust trio" #2). The GUI publishes
 /// overdue schedules and posts a once-per-day digest at launch; a host that only
@@ -552,11 +328,11 @@ private func scheduledRunSingle(
             let message = "[ok] scheduled snapshot complete for '\(profile)'\(trendsSuffix)"
             print(message)
             recorder?.record(message)
-            await notifyScheduledRun(
+            await ScheduledRunSignals.notifyScheduledRun(
                 config: routingConfig, profile: profile, mode: mode,
                 artifact: nil, recorder: recorder
             )
-            await notifyMetricAlerts(
+            await ScheduledRunSignals.notifyMetricAlerts(
                 config: routingConfig, profile: profile, workspace: workspace, recorder: recorder
             )
             recorder?.finish(exitCode: 0)
@@ -584,7 +360,7 @@ private func scheduledRunSingle(
         recorder?.record(message)
         // Tighten permissions on generated report and any newly written files.
         await WorkspacePermissionHardener.tighten(profile: profile)
-        await notifyScheduledRun(
+        await ScheduledRunSignals.notifyScheduledRun(
             config: config, profile: profile, mode: mode,
             artifact: outputURL.lastPathComponent,
             sheetFailures: failures.count,
@@ -593,7 +369,7 @@ private func scheduledRunSingle(
         // jamf-cli-only generates from cache without a fresh collect, so its
         // summary isn't "just produced" — skip alerting for it.
         if mode != .jamfCLIOnly {
-            await notifyMetricAlerts(
+            await ScheduledRunSignals.notifyMetricAlerts(
                 config: config, profile: profile, workspace: workspace, recorder: recorder
             )
         }
@@ -607,7 +383,7 @@ private func scheduledRunSingle(
         recorder?.finish(exitCode: 1)
         // Post failure digest — best-effort, after recorder is finished so the
         // webhook send latency never blocks the exit path.
-        await notifyScheduledRunFailure(
+        await ScheduledRunSignals.notifyScheduledRunFailure(
             config: routingConfig, profile: profile, mode: mode,
             errorDescription: errorDesc, recorder: nil
         )

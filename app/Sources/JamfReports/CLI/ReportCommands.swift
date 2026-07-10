@@ -15,13 +15,26 @@ struct Generate: AsyncParsableCommand {
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = output.map { URL(fileURLWithPath: $0) }
             ?? engine.resolveOutputURL(stem: "report", profile: profile)
-        let failures = try await engine.generate(
-            csvURL: nil, outputURL: outputURL, template: resolved, onLine: CLIRun.printLogLine)
-        // The workbook is written even when some sheets error, so always emit the
-        // path (scripts can still find the artifact); exit non-zero to flag partial.
-        print(outputURL.path)
-        if !failures.isEmpty {
-            CLIRun.fail("\(failures.count) sheet(s) failed to write (workbook still written)", code: 1)
+        // Trust signals (Run History record + webhook digest) — best-effort,
+        // additive, and mode-consistent with a scheduled jamf-cli-only run.
+        // generate does not collect, so it never evaluates metric alerts.
+        let signals = CLIRunSignals.begin(profile: profile, kind: .generate, config: config)
+        do {
+            let failures = try await engine.generate(
+                csvURL: nil, outputURL: outputURL, template: resolved,
+                onLine: signals.teeing(CLIRun.printLogLine))
+            // The workbook is written even when some sheets error, so always emit
+            // the path (scripts can still find the artifact); exit non-zero to
+            // flag partial.
+            print(outputURL.path)
+            await signals.finishSuccess(artifact: outputURL, sheetFailures: failures.count)
+            if !failures.isEmpty {
+                CLIRun.fail(
+                    "\(failures.count) sheet(s) failed to write (workbook still written)", code: 1)
+            }
+        } catch {
+            await signals.finishFailure(error)
+            throw error
         }
     }
 }
@@ -34,14 +47,24 @@ struct Collect: AsyncParsableCommand {
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
-        try await ReportEngine.collect(
-            profile: profile,
-            workspacePaths: WorkspacePaths.self,
-            tiers: CLIRun.parseTiers(tiers),
-            force: force,
-            onLine: CLIRun.printLogLine
-        )
-        print("[ok] collect complete for \(profile)")
+        // Trust signals — a CLI collect now records to Run History, evaluates
+        // metric alerts, and posts the notify digest exactly like a snapshot-only
+        // scheduled run. All best-effort; the exit code and stdout are unchanged.
+        let signals = CLIRunSignals.begin(profile: profile, kind: .collect)
+        do {
+            try await ReportEngine.collect(
+                profile: profile,
+                workspacePaths: WorkspacePaths.self,
+                tiers: CLIRun.parseTiers(tiers),
+                force: force,
+                onLine: signals.teeing(CLIRun.printLogLine)
+            )
+            print("[ok] collect complete for \(profile)")
+            await signals.finishSuccess()
+        } catch {
+            await signals.finishFailure(error)
+            throw error
+        }
     }
 }
 

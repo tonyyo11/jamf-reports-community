@@ -351,14 +351,18 @@ final class AdversarialPinTests: XCTestCase {
         XCTAssertTrue(decoded.reason.hasPrefix("salvaged"), "reason=\(decoded.reason)")
     }
 
-    // MARK: - Pin 11 — envelope truncation is NOT salvaged (documented limit)
+    // MARK: - Pin 11 — envelope truncation IS salvaged (limitation closed, 2.6)
 
-    /// Salvage is bare-array-only. A truncated `{"results":[...` envelope yields
-    /// nil, not a partial recovery.
-    func testPin11_TruncatedEnvelopeNotSalvaged() {
+    /// Envelope salvage recovers the complete-element prefix of a truncated
+    /// `{"results":[...` payload, mirroring the bare-array path. (This pin
+    /// originally asserted the pre-2.6 bare-array-only limitation.)
+    func testPin11_TruncatedEnvelopeSalvagesPrefix() throws {
         let raw = #"{"results":[{"device":"a","ea_name":"x","value":0},{"device":"b""#
         let decoded = EAResultRow.decodeSnapshot(Data(raw.utf8))
-        XCTAssertNil(decoded.rows, "salvage is bare-array-only; truncated envelopes are not recovered")
+        let rows = try XCTUnwrap(decoded.rows, "truncated envelope must salvage its prefix")
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.device, "a")
+        XCTAssertTrue(decoded.reason.hasPrefix("salvaged"), "reason=\(decoded.reason)")
     }
 
     // MARK: - Pin 12 — daysTo50 is the first OBSERVED crossing (not interpolated)
