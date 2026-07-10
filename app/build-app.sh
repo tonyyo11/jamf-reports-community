@@ -73,8 +73,15 @@ chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 # Theme.swift `FontRegistry.locateFont(named:)` and
 # DebugLoggingService.bundledProfileURL. The SwiftPM bundle is deliberately NOT
 # copied into the packaged .app.
+#
+# Search the whole bundle tree, not just its top level: the classic llbuild
+# layout puts resources flat at the bundle root, but Xcode 27's swiftbuild emits
+# a nested macOS bundle (Contents/Resources/*.ttf). A `-maxdepth 1` here silently
+# shipped ZERO fonts under swiftbuild, so IBM Plex Mono never registered and every
+# mono label fell back to a wider system font (overflowing segmented controls and
+# tracked-label rows). `-type f` + the extension filter keep this to real assets.
 if [[ -d "$BUNDLE" ]]; then
-  find "$BUNDLE" -mindepth 1 -maxdepth 1 -type f \
+  find "$BUNDLE" -type f \
     \( -name "*.ttf" -o -name "*.otf" -o -name "*.png" -o -name "*.json" \
        -o -name "*.mobileconfig" \) \
     -print0 | while IFS= read -r -d '' asset; do
