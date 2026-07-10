@@ -210,9 +210,10 @@ struct CSVEAWalkthroughSheet: View {
                                     value: connectedBinding(ea), placeholder: "e.g. Installed",
                                     mono: true)
                                     .frame(maxWidth: 220)
-                                    .popoverTip(WalkthroughTips.connectedValue)
                                 Spacer()
                             }
+                            TipView(WalkthroughTips.connectedValue)
+                                .frame(maxWidth: 360, alignment: .leading)
                             Text("Pre-filled from a sample value. Set it to what this column "
                                 + "shows when the agent is installed/connected — matched as a "
                                 + "case-insensitive substring (e.g. Installed, Running, or a "

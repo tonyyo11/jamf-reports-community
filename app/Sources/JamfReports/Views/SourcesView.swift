@@ -306,9 +306,10 @@ struct SourcesView: View {
                         showingEAWalkthrough = true
                     }
                     .help("Detect Extension Attribute columns in your newest CSV and adopt them into config.yaml.")
-                    .popoverTip(SourcesTips.eaTracking)
                 }
                 .padding(.top, 4)
+                TipView(SourcesTips.eaTracking)
+                    .frame(maxWidth: 460, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity)
@@ -343,8 +344,9 @@ struct SourcesView: View {
                         runDoctor()
                     }
                     .disabled(doctorRunning)
-                    .popoverTip(SourcesTips.connectionHealth)
                 }
+                TipView(SourcesTips.connectionHealth)
+                    .frame(maxWidth: 460, alignment: .leading)
 
                 doctorBody
             }

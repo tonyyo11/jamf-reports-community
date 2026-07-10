@@ -318,7 +318,7 @@ struct OnboardingView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.radioGroup)
-                    .popoverTip(OnboardingTips.connectionType)
+                    TipView(OnboardingTips.connectionType)
                 }
             }
 
@@ -355,7 +355,7 @@ struct OnboardingView: View {
                             flow.setClientSecret(data)
                         }
                         .frame(height: 28)
-                        .popoverTip(OnboardingTips.secretField)
+                        TipView(OnboardingTips.secretField)
                     }
                     .frame(maxWidth: .infinity)
                 }

@@ -337,7 +337,8 @@ private struct ColumnsTab: View {
                         (ColumnFamily.mobile, "Mobile Devices", "ipad"),
                     ]
                 )
-                .popoverTip(ConfigTips.columnMapping)
+                TipView(ConfigTips.columnMapping)
+                    .frame(maxWidth: 480, alignment: .leading)
                 switch family {
                 case .mac:    macColumnsCard
                 case .mobile: mobileColumnsCard
@@ -501,7 +502,7 @@ private struct ColumnsTab: View {
                     .foregroundStyle(Theme.Text.secondary)
                 PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm,
                           action: runScaffold)
-                .popoverTip(ConfigTips.rescaffold)
+                TipView(ConfigTips.rescaffold)
             }
         }
     }

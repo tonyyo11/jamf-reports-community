@@ -38,7 +38,8 @@ struct NotificationsCard: View {
                     get: { notifyEnabled },
                     set: { notifyEnabled = $0; saveNotifyConfig() }))
                     .toggleStyle(.switch)
-                    .popoverTip(AutomationTips.notifications)
+                TipView(AutomationTips.notifications)
+                    .frame(maxWidth: 420, alignment: .leading)
 
                 if notifyEnabled {
                     Picker("Service", selection: Binding(
