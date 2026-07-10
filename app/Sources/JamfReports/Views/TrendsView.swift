@@ -87,12 +87,15 @@ struct TrendsView: View {
     /// "+8200%"). Chosen as "under one unit of the metric" rather than a
     /// stricter zero check, since 0.2 is already visually indistinguishable
     /// from zero for a percentage/count metric.
-    static let relativeChangeBaselineFloor: Double = 1.0
+    // nonisolated: pure math with no MainActor need. TrendsView is a View, so
+    // on Swift 6.1 its statics inherit MainActor isolation and can't be called
+    // from a nonisolated test context — nonisolated keeps them callable anywhere.
+    nonisolated static let relativeChangeBaselineFloor: Double = 1.0
 
     /// Relative change as a percentage of `baseline`, or `nil` when the
     /// baseline is too close to zero for the ratio to be meaningful. Pure
     /// and unit-testable independent of SwiftUI state.
-    static func relativeChangePercent(delta: Double, baseline: Double) -> Double? {
+    nonisolated static func relativeChangePercent(delta: Double, baseline: Double) -> Double? {
         guard abs(baseline) >= relativeChangeBaselineFloor else { return nil }
         return (delta / baseline) * 100
     }
