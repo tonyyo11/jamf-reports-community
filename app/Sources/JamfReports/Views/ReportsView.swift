@@ -167,7 +167,7 @@ struct ReportsView: View {
             PageHeader(
                 kicker: "Generated Reports",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
-                title: "\(reports.count) reports archived",
+                title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
                 subtitle: "~/Jamf-Reports/\(workspace.profile)/Generated Reports/"
             ) {
                 AnyView(

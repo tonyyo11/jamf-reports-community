@@ -690,6 +690,15 @@ struct OverviewView: View {
             sparkValues: values,
             sparkColor: Color(hex: metric.colorHex)
         )
+        // The label can be an operator-configured string (compliance baseline
+        // name, EDR agent name) with no length guarantee — some CBP configs
+        // set it to a raw audit-plist filename. StatTile's Kicker doesn't cap
+        // line count, so a long value wraps mid-word onto a second line.
+        // `.lineLimit`/`.truncationMode` are environment modifiers that
+        // cascade into the Kicker's Text without touching the shared
+        // component — constrain to a single elided line here instead.
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
 
     // MARK: OS distribution donut + Top failing rules

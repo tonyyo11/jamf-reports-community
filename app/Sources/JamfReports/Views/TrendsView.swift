@@ -80,7 +80,26 @@ struct TrendsView: View {
     private var startVal: Double { values.first ?? 0 }
     private var endVal: Double { values.last ?? 0 }
     private var delta: Double { endVal - startVal }
-    private var pctDelta: Double { startVal == 0 ? 0 : (delta / startVal) * 100 }
+
+    /// Below this baseline (in the metric's own units), a relative-change
+    /// percentage is not meaningful — a tiny absolute move off a near-zero
+    /// baseline reads as an absurd swing (e.g. 0.2% → 16.2% renders as
+    /// "+8200%"). Chosen as "under one unit of the metric" rather than a
+    /// stricter zero check, since 0.2 is already visually indistinguishable
+    /// from zero for a percentage/count metric.
+    static let relativeChangeBaselineFloor: Double = 1.0
+
+    /// Relative change as a percentage of `baseline`, or `nil` when the
+    /// baseline is too close to zero for the ratio to be meaningful. Pure
+    /// and unit-testable independent of SwiftUI state.
+    static func relativeChangePercent(delta: Double, baseline: Double) -> Double? {
+        guard abs(baseline) >= relativeChangeBaselineFloor else { return nil }
+        return (delta / baseline) * 100
+    }
+
+    private var pctDelta: Double? {
+        Self.relativeChangePercent(delta: delta, baseline: startVal)
+    }
 
     /// "good" trend for stale-devices is *down*; everything else is *up*.
     private var deltaIsPositive: Bool {
@@ -377,7 +396,11 @@ struct TrendsView: View {
                                 HStack(spacing: 4) {
                                     Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
                                         .font(.system(size: 11, weight: .bold))
-                                    Text("\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", pctDelta))%)")
+                                    Text(
+                                        pctDelta.map {
+                                            "\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", $0))%)"
+                                        } ?? "\(abs(Int(delta.rounded())))\(metric.unit)"
+                                    )
                                 }
                                 .font(Theme.Fonts.mono(14, weight: .semibold))
                                 .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
