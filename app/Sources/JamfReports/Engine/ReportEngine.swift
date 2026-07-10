@@ -513,21 +513,24 @@ struct ReportEngine: Sendable {
 
         guard totalDevices > 0 else { return nil }
 
-        // Stale count from device-compliance, using `daysSinceCheckin >= resolvedStaleDays`
-        // with the config threshold (default 30 days). The server-side `stale` flag uses a
-        // ~90-100d cadence and is intentionally avoided here. Note: this path only unified
-        // the summary-writer threshold (#176); DeviceInventoryService and StaleDeviceService
-        // still hardcode 30 and use `daysSinceContact` — counts agree at the default config
-        // but diverge with a non-default threshold (follow-up: parameterize those services).
+        // Stale count from device-compliance, using the row's resolved day count
+        // (`days_since_contact`, falling back to legacy `days_since_checkin`)
+        // `>= resolvedStaleDays` with the config threshold (default 30 days).
+        // Current jamf-cli emits `days_since_contact` (a String), not the legacy
+        // `days_since_checkin`, so the old checkin-only filter always read nil and
+        // reported 0 stale. When no day count is emitted at all, `isStale` falls
+        // back to the server-side `stale` flag. Note: this path unified the
+        // summary-writer threshold (#176); DeviceInventoryService and
+        // StaleDeviceService still hardcode 30 and use `daysSinceContact` — counts
+        // agree at the default config but diverge with a non-default threshold
+        // (follow-up: parameterize those services).
         let staleDaysThreshold = config.thresholds?.resolvedStaleDays ?? 30
         // nil (not 0) when device-compliance was never collected — unknown is
         // not zero, and a 0 here renders as a measured "0 stale devices".
         var staleCount: Int? = nil
         if let compData = cachedData(kind: "device-compliance"),
            let rows = try? JSONDecoder().decode([DeviceComplianceRow].self, from: compData) {
-            staleCount = rows.filter {
-                ($0.daysSinceCheckin ?? 0) >= staleDaysThreshold
-            }.count
+            staleCount = rows.filter { $0.isStale(atDays: staleDaysThreshold) }.count
         }
 
         // OS current % — SOFA-driven: a device is "current" when its OS version is

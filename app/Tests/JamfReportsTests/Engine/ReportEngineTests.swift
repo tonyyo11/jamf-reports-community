@@ -439,6 +439,63 @@ final class ReportEngineTests: XCTestCase {
             "staleCount must be 2 (B+C exceed 30d) — A has stale=true but only 10 days")
     }
 
+    /// Regression for the always-0 staleCount bug: current jamf-cli emits
+    /// `days_since_contact` (a String), NOT the legacy `days_since_checkin`, so
+    /// the old checkin-only filter read nil for every row and reported 0 stale.
+    /// The summary must count real stale devices from the production shape, and
+    /// fall back to the `stale` flag only when no day count is present.
+    func testSummaryStaleCountUsesDaysSinceContactProdShape() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("stale-count-contact-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        let secPayload = """
+        [{"section":"summary","data":{"total_devices":5,"filevault_encrypted":5,
+          "sip_enabled":5,"firewall_enabled":5,"gatekeeper_enabled":5}}]
+        """
+        try Data(secPayload.utf8).write(
+            to: secDir.appendingPathComponent("security_\(recentStamp).json"))
+
+        // Production shape: `days_since_contact` is a STRING; no `days_since_checkin`.
+        //   A: "10" fresh, stale flag true  → NOT stale at 30 (day count wins over flag)
+        //   B: "45"                          → stale
+        //   C: "4160" (real prod value)      → stale
+        //   D: no day count, stale=true      → stale via `stale` fallback
+        //   E: no day count, stale=false     → NOT stale
+        let compDir = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+        try FileManager.default.createDirectory(at: compDir, withIntermediateDirectories: true)
+        let compPayload = """
+        [
+          {"name":"A","serial":"","managed":true,"stale":true,"days_since_contact":"10","last_contact":"2026-07-01T00:00:00Z"},
+          {"name":"B","serial":"","managed":true,"stale":false,"days_since_contact":"45"},
+          {"name":"C","serial":"","managed":true,"stale":true,"days_since_contact":"4160"},
+          {"name":"D","serial":"","managed":true,"stale":true},
+          {"name":"E","serial":"","managed":true,"stale":false}
+        ]
+        """
+        try Data(compPayload.utf8).write(
+            to: compDir.appendingPathComponent("device-compliance_\(recentStamp).json"))
+
+        let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+        let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        engine.emitSummaryJSON(summariesDir: summariesDir)
+
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
+        let obj = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(contentsOf: summaryFile)) as? [String: Any])
+        let staleCount = try XCTUnwrap(obj["staleCount"] as? Int)
+
+        // B (45d) + C (4160d) + D (stale flag, no day count) = 3. The old
+        // days_since_checkin-only filter would have reported 0.
+        XCTAssertEqual(staleCount, 3,
+            "staleCount must count B+C (days_since_contact) and D (stale fallback)")
+    }
+
     /// staleCount must agree with DeviceInventorySnapshot.staleCount(thresholdDays:) —
     /// the same computation DevicesView uses for its "Stale" stat tile.
     func testSummaryStaleCountAgreesWithDeviceInventorySnapshot() throws {

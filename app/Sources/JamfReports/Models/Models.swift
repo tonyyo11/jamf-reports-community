@@ -533,9 +533,11 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     }
 
     private static func statusLooksBad(_ value: String) -> Bool {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
         guard !text.isEmpty else { return false }
-        if text.contains("not enabled") || text.contains("disabled") || text.contains("not collected") {
+        if text.contains("not ") || text.contains("disabled") {
             return true
         }
         return ["false", "no", "0", "unencrypted", "not escrowed"].contains(text)
@@ -813,12 +815,11 @@ private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
 }
 
 private func valueLooksGood(_ value: String) -> Bool {
-    let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+        .replacingOccurrences(of: "_", with: " ")
     guard !text.isEmpty else { return false }
-    if text.contains("not enabled")
-        || text.contains("disabled")
-        || text.contains("unencrypted")
-        || text.contains("not escrowed") {
+    if text.contains("not ") || text.contains("disabled") || text.contains("unencrypted") {
         return false
     }
     return text.contains("enabled")

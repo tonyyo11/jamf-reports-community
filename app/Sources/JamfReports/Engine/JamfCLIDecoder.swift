@@ -317,11 +317,42 @@ struct DeviceComplianceRow: Decodable, Sendable {
     let serial: String?
     let managed: Bool?
     let stale: Bool?
+    /// Legacy key. Current jamf-cli emits `days_since_contact` instead; kept as
+    /// a fallback for older snapshots.
     let daysSinceCheckin: Int?
+    /// Current jamf-cli key: days since the device last contacted Jamf. Arrives
+    /// as a String ("4160") in production but tolerated as a number too (matches
+    /// CoreDashboard's `days_since_contact` precedence).
+    let daysSinceContact: Int?
 
     private enum CodingKeys: String, CodingKey {
         case name, serial, managed, stale
         case daysSinceCheckin = "days_since_checkin"
+        case daysSinceContact = "days_since_contact"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        serial = try c.decodeIfPresent(String.self, forKey: .serial)
+        managed = try c.decodeIfPresent(Bool.self, forKey: .managed)
+        stale = try c.decodeIfPresent(Bool.self, forKey: .stale)
+        // Tolerant int decode: both keys can arrive as String or number across
+        // jamf-cli versions (reuses AnyCodable.intValue like other decoders here).
+        daysSinceCheckin = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceCheckin)?.intValue
+        daysSinceContact = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceContact)?.intValue
+    }
+
+    /// Resolved day count, preferring the current `days_since_contact` key and
+    /// falling back to the legacy `days_since_checkin`.
+    var resolvedDaysSinceContact: Int? { daysSinceContact ?? daysSinceCheckin }
+
+    /// Whether the device is stale at `>= threshold` days. Uses the resolved day
+    /// count when present; otherwise falls back to the server-side `stale` flag
+    /// (coarser ~90-100d cadence, but honest when no day count is emitted).
+    func isStale(atDays threshold: Int) -> Bool {
+        if let days = resolvedDaysSinceContact { return days >= threshold }
+        return stale == true
     }
 }
 
@@ -806,13 +837,43 @@ struct GroupAnalysisRow: Decodable, Sendable {
 struct MobileDeviceInventoryItem: Decodable, Sendable {
     let mobileDeviceId: String?
     let deviceType: String?
+    let hardware: MobileDeviceHardware?
     let general: MobileDeviceGeneral?
     let userAndLocation: MobileDeviceUserLocation?
     let applications: [MobileDeviceApplication]?
 
     private enum CodingKeys: String, CodingKey {
-        case mobileDeviceId, deviceType, general, userAndLocation, applications
+        case mobileDeviceId, deviceType, hardware, general, userAndLocation, applications
     }
+
+    /// Explicit memberwise init with `hardware` defaulted, so demo/preview call
+    /// sites that predate the `hardware` field keep compiling. `Decodable`
+    /// synthesis is unaffected (no custom `init(from:)`).
+    init(
+        mobileDeviceId: String? = nil,
+        deviceType: String? = nil,
+        hardware: MobileDeviceHardware? = nil,
+        general: MobileDeviceGeneral? = nil,
+        userAndLocation: MobileDeviceUserLocation? = nil,
+        applications: [MobileDeviceApplication]? = nil
+    ) {
+        self.mobileDeviceId = mobileDeviceId
+        self.deviceType = deviceType
+        self.hardware = hardware
+        self.general = general
+        self.userAndLocation = userAndLocation
+        self.applications = applications
+    }
+}
+
+/// Hardware section of a mobile device. Only the form-factor fields are decoded:
+/// jamf-cli's `deviceType` is the OS family ("iOS"), so the iPad-vs-iPhone
+/// distinction lives here in `model` ("iPhone 5 (CDMA)") / `modelIdentifier`
+/// ("iPhone5,2"). Can arrive as `null` when the hardware section wasn't
+/// requested/collected.
+struct MobileDeviceHardware: Decodable, Sendable {
+    let model: String?
+    let modelIdentifier: String?
 }
 
 struct MobileDeviceGeneral: Decodable, Sendable {
@@ -863,6 +924,12 @@ struct MobileDeviceListRow: Decodable, Sendable {
     let serialNumber: String?
     let username: String?
     let type: String?
+    /// Current jamf-cli list shape mirrors the inventory shape: form factor
+    /// lives in `hardware.model` and the OS family in `deviceType`. Decoded
+    /// additively so both the older flat shape (top-level `model`/`type`) and
+    /// the current nested shape classify. Optional — nil for the older shape.
+    let hardware: MobileDeviceHardware?
+    let deviceType: String?
 }
 
 // MARK: - Classic iOS/mobile config profiles

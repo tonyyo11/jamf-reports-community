@@ -427,6 +427,85 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows.count, 1)
         XCTAssertNil(rows[0].name)
         XCTAssertNil(rows[0].daysSinceCheckin)
+        XCTAssertNil(rows[0].daysSinceContact)
+        XCTAssertNil(rows[0].resolvedDaysSinceContact)
+    }
+
+    /// Production shape: `days_since_contact` arrives as a STRING and there is no
+    /// `days_since_checkin`. The row must decode the count and classify staleness.
+    func testDeviceComplianceRowProdContactShape() throws {
+        let json = """
+        [{"name":"Backancient","serial":"","managed":true,
+          "stale":true,"days_since_contact":"4160","last_contact":"2015-02-17T21:33:23.712Z"}]
+        """
+        let rows = try JSONDecoder().decode([DeviceComplianceRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].daysSinceContact, 4160)
+        XCTAssertNil(rows[0].daysSinceCheckin)
+        XCTAssertEqual(rows[0].resolvedDaysSinceContact, 4160)
+        XCTAssertTrue(rows[0].isStale(atDays: 30))
+    }
+
+    /// A fresh device (small day count, stale flag false) is not stale at 30d,
+    /// and the day count wins over the coarser server-side flag when present.
+    func testDeviceComplianceRowFreshNotStale() throws {
+        let json = """
+        [{"name":"Fresh","stale":false,"days_since_contact":"4"},
+         {"name":"FlagButRecent","stale":true,"days_since_contact":"10"}]
+        """
+        let rows = try JSONDecoder().decode([DeviceComplianceRow].self, from: Data(json.utf8))
+        XCTAssertFalse(rows[0].isStale(atDays: 30))
+        XCTAssertFalse(rows[1].isStale(atDays: 30),
+            "day count (10) must win over the stale flag")
+    }
+
+    /// When no day count is emitted, `isStale` falls back to the server `stale` flag.
+    func testDeviceComplianceRowStaleFlagFallback() throws {
+        let json = """
+        [{"name":"NoDays","stale":true},{"name":"NoDaysFalse","stale":false}]
+        """
+        let rows = try JSONDecoder().decode([DeviceComplianceRow].self, from: Data(json.utf8))
+        XCTAssertNil(rows[0].resolvedDaysSinceContact)
+        XCTAssertTrue(rows[0].isStale(atDays: 30), "no day count → fall back to stale flag")
+        XCTAssertFalse(rows[1].isStale(atDays: 30))
+    }
+
+    /// Legacy `days_since_checkin` snapshots still resolve via the fallback.
+    func testDeviceComplianceRowLegacyCheckinFallback() throws {
+        let json = """
+        [{"name":"Legacy","stale":false,"days_since_checkin":45}]
+        """
+        let rows = try JSONDecoder().decode([DeviceComplianceRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].daysSinceCheckin, 45)
+        XCTAssertEqual(rows[0].resolvedDaysSinceContact, 45)
+        XCTAssertTrue(rows[0].isStale(atDays: 30))
+    }
+
+    // MARK: - MobileDeviceHardware / form-factor decode
+
+    /// The current mobile shapes carry form factor in `hardware.model` /
+    /// `hardware.modelIdentifier`; `deviceType` is only the OS family ("iOS").
+    func testMobileDeviceInventoryItemDecodesHardware() throws {
+        let json = """
+        [{"mobileDeviceId":"1","deviceType":"iOS",
+          "hardware":{"model":"iPhone 5 (CDMA)","modelIdentifier":"iPhone5,2"}},
+         {"mobileDeviceId":"2","deviceType":"iOS","hardware":null}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceInventoryItem].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].hardware?.model, "iPhone 5 (CDMA)")
+        XCTAssertEqual(rows[0].hardware?.modelIdentifier, "iPhone5,2")
+        XCTAssertNil(rows[1].hardware)
+    }
+
+    /// The mobile-devices-list rich shape (mobileDeviceId/deviceType/hardware)
+    /// must decode additively on `MobileDeviceListRow`.
+    func testMobileDeviceListRowDecodesNestedHardware() throws {
+        let json = """
+        [{"mobileDeviceId":"1","deviceType":"iOS",
+          "hardware":{"model":"iPad Air","modelIdentifier":"iPad13,1"}}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceListRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows[0].hardware?.modelIdentifier, "iPad13,1")
+        XCTAssertEqual(rows[0].deviceType, "iOS")
     }
 
     // MARK: - EAResultRow
