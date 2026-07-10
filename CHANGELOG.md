@@ -41,6 +41,14 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Buttons inside the Fleet Overview per-profile drill-down ("Open Trends",
+  "Open Patch Compliance", and the other issue and Summary Details actions) did
+  nothing since v2.3.0 (#203). The Overview screen's metric drill-downs had the
+  same defect. Both pages kept their own navigation stack from before the
+  v2.3.0 toolbar rework, which left it nested inside the app shell's stack —
+  unsupported in SwiftUI — so the target screen rendered underneath the
+  drill-down page instead of replacing it. Drill-downs are now plain
+  state-driven pages; the breadcrumb returns to the parent screen as before.
 - Fixed a crash that could take down the whole Patch screen (and the velocity
   report sheet) when the patch-release-dates snapshot contained two entries for
   the same title id — possible with duplicated patch title configurations or a

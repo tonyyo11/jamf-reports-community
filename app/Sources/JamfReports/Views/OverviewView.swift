@@ -26,7 +26,11 @@ struct OverviewView: View {
     /// after each run completes. PR-15.
     @State private var generatedHashes: [String: String] = [:]
     @State private var activitySelection: DeviceInventoryRecord.ID? = nil
-    @State private var navigationPath = NavigationPath()
+    /// State-driven drill-down instead of a NavigationStack — this view is
+    /// hosted inside ContentView.shell's own NavigationStack, and nested
+    /// stacks are unsupported (the pushed page layers over the outer stack's
+    /// root, silently swallowing tab-switch actions fired from inside it).
+    @State private var drill: OverviewDrillDown?
     @State private var legacyWorkspaces: [String] = []
     @State private var legacySchedules: [String] = []
     @State private var checklist: GettingStartedChecklist?
@@ -58,83 +62,11 @@ struct OverviewView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    header
-                    if !workspace.demoMode, !workspace.isWorkspaceInitialized {
-                        workspaceInitBanner
-                    }
-                    migrationBanner
-                    if !workspace.demoMode, let cl = checklist, !cl.isComplete {
-                        gettingStartedCard(cl)
-                    }
-                    // PR-13: shared StaleDataBanner surfaces freshness above
-                    // the KPI grid. Suppressed in demo mode (canonical demo
-                    // dataset is intentionally static). Renders nothing when
-                    // source is .fresh. #181: never-fetched gains a "Collect
-                    // now" action that runs the full first collect.
-                    if !workspace.demoMode {
-                        StaleDataBanner(
-                            source: trendStore.cacheSource,
-                            onCollect: { runFirstCollect() },
-                            isCollecting: isRunningFirstCollect
-                        )
-                    }
-                    // v2.2.0: heavy-tier (per-device) data missing or older
-                    // than a week. Never auto-collected — the button is the
-                    // only trigger. Hidden while the never-fetched banner is
-                    // up: its "Collect now" already runs every tier, so a
-                    // second prompt would be a redundant warn surface.
-                    if !workspace.demoMode, !workspace.staleHeavyTiers.isEmpty,
-                       trendStore.cacheSource != .neverFetchedLive {
-                        heavyTierStalePrompt
-                    }
-                    // 2.6 dead-man switch: a scheduled run that should have
-                    // fired but produced no artifact surfaces here instead of
-                    // silence. One banner summarizing all issues, not N banners.
-                    if !workspace.demoMode, !workspace.automationHealthIssues.isEmpty {
-                        automationHealthBanner
-                    }
-                    // R1: these KPI cards render the daily digest, not live
-                    // inventory — say so, and flag cached/missing inputs (R4).
-                    if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
-                        ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
-                    }
-                    // v2.5 (macOS 27, opt-in): turns the same daily digest into a
-                    // plain-language insight card. `platformSupported` is a
-                    // synchronous, config-free check — macOS 26 hosts never see
-                    // this card at all (no "requires macOS 27" placeholder).
-                    if !workspace.demoMode, ModelAvailability.platformSupported {
-                        AIInsightCard(
-                            profile: workspace.profile,
-                            current: trendStore.filteredSummaries.last,
-                            previous: trendStore.filteredSummaries.count >= 2
-                                ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
-                                : nil
-                        )
-                    }
-                    statRow
-                    if workspace.demoMode {
-                        osAndRules
-                        securityAgents
-                        recentActivity
-                    } else {
-                        liveWorkspaceState
-                    }
-                }
-                .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                    leading: Theme.Metrics.pagePadH,
-                                    bottom: Theme.Metrics.pagePadBottom,
-                                    trailing: Theme.Metrics.pagePadH))
-            }
-            .overlay {
-                if !workspace.demoMode, trendStore.isLoading, trendStore.filteredSummaries.isEmpty {
-                    trendsLoadingOverlay
-                }
-            }
-            .navigationDestination(for: OverviewDrillDown.self) { destination in
-                overviewDetail(destination)
+        Group {
+            if let drill {
+                overviewDetail(drill)
+            } else {
+                overviewRoot
             }
         }
         .tint(Theme.Colors.goldBright)
@@ -164,8 +96,83 @@ struct OverviewView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
-            if !navigationPath.isEmpty {
-                navigationPath = NavigationPath()
+            drill = nil
+        }
+    }
+
+    private var overviewRoot: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                if !workspace.demoMode, !workspace.isWorkspaceInitialized {
+                    workspaceInitBanner
+                }
+                migrationBanner
+                if !workspace.demoMode, let cl = checklist, !cl.isComplete {
+                    gettingStartedCard(cl)
+                }
+                // PR-13: shared StaleDataBanner surfaces freshness above
+                // the KPI grid. Suppressed in demo mode (canonical demo
+                // dataset is intentionally static). Renders nothing when
+                // source is .fresh. #181: never-fetched gains a "Collect
+                // now" action that runs the full first collect.
+                if !workspace.demoMode {
+                    StaleDataBanner(
+                        source: trendStore.cacheSource,
+                        onCollect: { runFirstCollect() },
+                        isCollecting: isRunningFirstCollect
+                    )
+                }
+                // v2.2.0: heavy-tier (per-device) data missing or older
+                // than a week. Never auto-collected — the button is the
+                // only trigger. Hidden while the never-fetched banner is
+                // up: its "Collect now" already runs every tier, so a
+                // second prompt would be a redundant warn surface.
+                if !workspace.demoMode, !workspace.staleHeavyTiers.isEmpty,
+                   trendStore.cacheSource != .neverFetchedLive {
+                    heavyTierStalePrompt
+                }
+                // 2.6 dead-man switch: a scheduled run that should have
+                // fired but produced no artifact surfaces here instead of
+                // silence. One banner summarizing all issues, not N banners.
+                if !workspace.demoMode, !workspace.automationHealthIssues.isEmpty {
+                    automationHealthBanner
+                }
+                // R1: these KPI cards render the daily digest, not live
+                // inventory — say so, and flag cached/missing inputs (R4).
+                if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
+                    ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
+                }
+                // v2.5 (macOS 27, opt-in): turns the same daily digest into a
+                // plain-language insight card. `platformSupported` is a
+                // synchronous, config-free check — macOS 26 hosts never see
+                // this card at all (no "requires macOS 27" placeholder).
+                if !workspace.demoMode, ModelAvailability.platformSupported {
+                    AIInsightCard(
+                        profile: workspace.profile,
+                        current: trendStore.filteredSummaries.last,
+                        previous: trendStore.filteredSummaries.count >= 2
+                            ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
+                            : nil
+                    )
+                }
+                statRow
+                if workspace.demoMode {
+                    osAndRules
+                    securityAgents
+                    recentActivity
+                } else {
+                    liveWorkspaceState
+                }
+            }
+            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
+                                leading: Theme.Metrics.pagePadH,
+                                bottom: Theme.Metrics.pagePadBottom,
+                                trailing: Theme.Metrics.pagePadH))
+        }
+        .overlay {
+            if !workspace.demoMode, trendStore.isLoading, trendStore.filteredSummaries.isEmpty {
+                trendsLoadingOverlay
             }
         }
     }
@@ -302,14 +309,13 @@ struct OverviewView: View {
         }
     }
 
-    /// Pops the current drill-down off the NavigationStack. Called by breadcrumb
-    /// "Overview" links inside drill-down detail views. We can't use
-    /// `@Environment(\.dismiss)` here because the property is read on the root
-    /// `OverviewView`; closures captured at that scope dismiss the root, which
-    /// on a top-level macOS window closes the window itself.
+    /// Clears the current drill-down, returning to the Overview root. Called
+    /// by breadcrumb "Overview" links inside drill-down detail views. We
+    /// don't use `@Environment(\.dismiss)` here because the property is read
+    /// on the root `OverviewView`; closures captured at that scope dismiss
+    /// the root, which on a top-level macOS window closes the window itself.
     private func popDrillDown() {
-        guard !navigationPath.isEmpty else { return }
-        navigationPath.removeLast()
+        drill = nil
     }
 
     private var workspaceInitBanner: some View {
@@ -608,7 +614,9 @@ struct OverviewView: View {
         ) {
             ForEach(workspace.selectedScoreCards) { metric in
                 let isDanger = scoreCardTrend(for: metric) == .down && metric != .stale
-                NavigationLink(value: OverviewDrillDown.metric(metric.rawValue)) {
+                Button {
+                    drill = .metric(metric.rawValue)
+                } label: {
                     scoreCard(for: metric)
                         .modifier(StatTileHealthModifier(isDanger: isDanger))
                         .drillDownChrome()
@@ -688,7 +696,9 @@ struct OverviewView: View {
 
     private var osAndRules: some View {
         HStack(alignment: .top, spacing: 12) {
-            NavigationLink(value: OverviewDrillDown.osDistribution) {
+            Button {
+                drill = .osDistribution
+            } label: {
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
@@ -725,7 +735,9 @@ struct OverviewView: View {
             .help("Open macOS distribution details")
             .frame(maxWidth: .infinity)
 
-            NavigationLink(value: OverviewDrillDown.failingRules) {
+            Button {
+                drill = .failingRules
+            } label: {
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top) {
@@ -820,7 +832,9 @@ struct OverviewView: View {
                 }
                 HStack(spacing: 10) {
                     ForEach(DemoData.securityAgents) { a in
-                        NavigationLink(value: OverviewDrillDown.securityAgent(a.name)) {
+                        Button {
+                            drill = .securityAgent(a.name)
+                        } label: {
                             agentCard(a)
                                 .drillDownChrome()
                         }
@@ -845,7 +859,9 @@ struct OverviewView: View {
                     SectionHeader(title: "Recent Activity")
                     Spacer()
                     Pill(text: "8 of 524", tone: .muted)
-                    NavigationLink(value: OverviewDrillDown.recentActivity) {
+                    Button {
+                        drill = .recentActivity
+                    } label: {
                         Text("View all")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)

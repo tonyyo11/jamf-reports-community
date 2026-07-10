@@ -3,7 +3,6 @@ import SwiftUI
 
 struct FleetOverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorSchemeContrast) private var contrast
 
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
@@ -11,7 +10,15 @@ struct FleetOverviewView: View {
     @State private var isLoading = false
     @State private var issuesOnly: Bool = false
     @State private var showIssuePopover = false
-    @State private var navigationPath = NavigationPath()
+    /// State-driven drill-down instead of a NavigationStack — this view is
+    /// hosted inside ContentView.shell's own NavigationStack, and nested
+    /// stacks are unsupported (the pushed page layers over the outer stack's
+    /// root, silently swallowing tab-switch actions fired from inside it).
+    @State private var drilledProfile: String?
+
+    init(drilledProfile: String? = nil) {
+        _drilledProfile = State(initialValue: drilledProfile)
+    }
 
     private var visibleRows: [FleetProfileOverview] {
         issuesOnly ? rows.filter { fleetProfileHasIssue($0.summary) } : rows
@@ -36,23 +43,8 @@ struct FleetOverviewView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    ProvenanceBadge(
-                        asOf: rows.compactMap { $0.summary?.date }.max()
-                    )
-                    summaryStrip
-                    issuesFilter
-                    profileGrid
-                }
-                .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                    leading: Theme.Metrics.pagePadH,
-                                    bottom: Theme.Metrics.pagePadBottom,
-                                    trailing: Theme.Metrics.pagePadH))
-            }
-            .navigationDestination(for: String.self) { profile in
+        Group {
+            if let profile = drilledProfile {
                 if let row = rows.first(where: { $0.profile == profile }) {
                     profileDetail(row)
                 } else {
@@ -65,15 +57,29 @@ struct FleetOverviewView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        ProvenanceBadge(
+                            asOf: rows.compactMap { $0.summary?.date }.max()
+                        )
+                        summaryStrip
+                        issuesFilter
+                        profileGrid
+                    }
+                    .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
+                                        leading: Theme.Metrics.pagePadH,
+                                        bottom: Theme.Metrics.pagePadBottom,
+                                        trailing: Theme.Metrics.pagePadH))
+                }
             }
         }
         .task(id: profileKey) {
             await load()
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
-            if !navigationPath.isEmpty {
-                navigationPath = NavigationPath()
-            }
+            drilledProfile = nil
         }
     }
 
@@ -179,7 +185,7 @@ struct FleetOverviewView: View {
             ForEach(rows.filter(\.hasIssue)) { row in
                 Button {
                     showIssuePopover = false
-                    navigationPath.append(row.profile)
+                    drilledProfile = row.profile
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
@@ -246,7 +252,9 @@ struct FleetOverviewView: View {
                     spacing: 12
                 ) {
                     ForEach(visibleRows) { row in
-                        NavigationLink(value: row.profile) {
+                        Button {
+                            drilledProfile = row.profile
+                        } label: {
                             FleetProfileCard(row: row)
                                 .fleetDrillDownChrome()
                         }
@@ -264,7 +272,7 @@ struct FleetOverviewView: View {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeader(
                     kicker: row.profile,
-                    breadcrumbs: [Breadcrumb(label: "Fleet", action: { dismiss() })],
+                    breadcrumbs: [Breadcrumb(label: "Fleet", action: { drilledProfile = nil })],
                     title: row.profile,
                     subtitle: row.summary.map { "Latest summary \($0.date)" }
                         ?? "No successful summary found for this profile"
@@ -551,6 +559,7 @@ struct FleetOverviewView: View {
 
         if workspace.demoMode {
             rows = demoRows()
+            clearDrillDownIfProfileMissing()
             return
         }
 
@@ -566,10 +575,19 @@ struct FleetOverviewView: View {
                 )
             }
         }.value
-        
+
         if !rows.isEmpty {
             workspace.toast = Toast(message: "Fleet data refreshed", style: .success)
         }
+        clearDrillDownIfProfileMissing()
+    }
+
+    /// A reload can drop the profile currently drilled into (e.g. it stopped
+    /// being initialized) — without this the "Loading X…" placeholder would
+    /// persist forever with nothing to load.
+    private func clearDrillDownIfProfileMissing() {
+        guard let profile = drilledProfile, !rows.contains(where: { $0.profile == profile }) else { return }
+        drilledProfile = nil
     }
 
     private func demoRows() -> [FleetProfileOverview] {
