@@ -269,7 +269,8 @@ final class LaunchAgentWriterTests: XCTestCase {
         }
 
         let runAtLoad = plist["RunAtLoad"] as? Bool
-        XCTAssertEqual(runAtLoad, false, "RunAtLoad must be false")
+        XCTAssertEqual(runAtLoad, false,
+                       "RunAtLoad must be false for the jamf-cli-only (re-render) mode")
 
         let disabled = plist["Disabled"] as? Bool
         XCTAssertEqual(disabled, true, "Disabled must be true when load: false")
@@ -301,6 +302,38 @@ final class LaunchAgentWriterTests: XCTestCase {
             XCTAssertEqual(parsed?.mode, mode,
                            "Mode \(mode.rawValue) must round-trip through the plist")
         }
+    }
+
+    /// RunAtLoad tracks the mode: collect modes run at login so a Mac that was
+    /// asleep/logged-out at the scheduled time catches up; re-render and backup
+    /// modes stay false to avoid login-time churn.
+    func testNativeSingleWriteRunAtLoadTracksMode() throws {
+        for mode in Schedule.RunMode.allCases {
+            let sched = schedule(name: "Test-RunAtLoad-\(mode.rawValue)", mode: mode)
+            guard let agentLabel = LaunchAgentWriter.label(for: sched) else {
+                XCTFail("Expected a valid label for \(mode.rawValue)")
+                continue
+            }
+            let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
+            defer {
+                try? FileManager.default.removeItem(at: plan.plistURL)
+                let logDir = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+                try? FileManager.default.removeItem(at: logDir)
+            }
+            let data = try Data(contentsOf: plan.plistURL)
+            let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as! [String: Any]
+            XCTAssertEqual(
+                plist["RunAtLoad"] as? Bool, mode.runsAtLoad,
+                "RunAtLoad for \(mode.rawValue) must equal mode.runsAtLoad"
+            )
+        }
+        // Pin the intent so a future mode-set change is a deliberate decision.
+        XCTAssertTrue(Schedule.RunMode.snapshotOnly.runsAtLoad)
+        XCTAssertTrue(Schedule.RunMode.jamfCLIFull.runsAtLoad)
+        XCTAssertTrue(Schedule.RunMode.csvAssisted.runsAtLoad)
+        XCTAssertFalse(Schedule.RunMode.jamfCLIOnly.runsAtLoad)
+        XCTAssertFalse(Schedule.RunMode.backup.runsAtLoad)
     }
 
     // MARK: - PR-23 T-18: --tiers in ProgramArguments

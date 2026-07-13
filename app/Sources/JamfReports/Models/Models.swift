@@ -168,6 +168,26 @@ struct Schedule: Identifiable, Sendable {
                 return []
             }
         }
+
+        /// Whether the LaunchAgent for this mode should set `RunAtLoad`.
+        ///
+        /// The collect modes (which gather jamf-cli data) run at login so a Mac
+        /// that was asleep or logged out at the scheduled time catches up its
+        /// missed collection as soon as the user logs in. This is safe because
+        /// `ReportEngine.collect` is idempotent per its cadence — a non-forced
+        /// collect skips every kind that isn't due, so repeated logins on the
+        /// same day do no redundant work; only a genuinely-missed collect runs.
+        ///
+        /// `jamf-cli-only` (re-render from cache) and `backup` return false —
+        /// regenerating a workbook or cutting a `pro backup` at every login is
+        /// pure churn with no freshness benefit; a missed one simply runs on its
+        /// next scheduled fire.
+        var runsAtLoad: Bool {
+            switch self {
+            case .snapshotOnly, .jamfCLIFull, .csvAssisted: true
+            case .jamfCLIOnly, .backup: false
+            }
+        }
     }
     enum LastStatus: String, Sendable, CaseIterable {
         case ok, warn, fail, partial
