@@ -32,11 +32,12 @@ jobs:
             VERSION="$INPUT_VERSION"
           fi
           # Validate version string before writing to env or paths.
-          # Must match vX.Y.Z (strict semver tag format) to prevent injection
-          # via a maliciously-crafted workflow_dispatch input value.
-          if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+          # Must match vX.Y.Z with an optional lowercase prerelease suffix
+          # (-rc1, -beta2, -alpha1) — the restricted character set still prevents
+          # injection via a maliciously-crafted workflow_dispatch input value.
+          if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta|alpha)[0-9]+)?$'; then
             echo "✗ Invalid version format: '$VERSION'" >&2
-            echo "  Expected: vX.Y.Z (e.g. v1.0.0)" >&2
+            echo "  Expected: vX.Y.Z or vX.Y.Z-rcN / -betaN / -alphaN" >&2
             exit 1
           fi
           ./scripts/build-release.sh "$VERSION"
@@ -60,3 +61,6 @@ jobs:
             ${{ env.ASSET_PATH }}
             ${{ env.SUMS_PATH }}
           generate_release_notes: true
+          # Tags carrying a prerelease suffix (-rc1, -beta2, …) publish as a
+          # GitHub prerelease; a bare vX.Y.Z tag publishes as a full release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
