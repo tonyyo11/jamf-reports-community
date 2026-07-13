@@ -11,6 +11,9 @@ struct DevicesView: View {
     @State private var filter: DeviceFilter = .all
     @State private var selectedID: DeviceInventoryRecord.ID?
     @State private var staleDays = 30
+    /// One-shot guard so the picker seeds from `thresholds.stale_device_days`
+    /// on first appear, then stays user-adjustable for the session.
+    @State private var didSeedStaleDays = false
     @State private var osFilter: String?
     @State private var isLoading = false
     @State private var deviceDetail: DeviceDetail?
@@ -200,6 +203,12 @@ struct DevicesView: View {
         }
         .onPreferenceChange(DevicesPageWidthKey.self) { width in
             pageWidth = width
+        }
+        .onAppear {
+            guard !didSeedStaleDays else { return }
+            didSeedStaleDays = true
+            let configured = Int(workspace.configState.staleDeviceDays) ?? 30
+            staleDays = min(max(configured, AppConstants.staleDaysMin), AppConstants.staleDaysMax)
         }
         .task(id: "\(workspace.profile)-\(workspace.demoMode)") {
             await reload()

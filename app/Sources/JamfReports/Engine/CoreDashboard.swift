@@ -2703,7 +2703,10 @@ struct CoreDashboard: Sendable {
         for tier in StaleDeviceService.Tier.allCases { tierCounts[tier] = 0 }
         for item in items {
             let days = asInt(item["days_since_contact"]) ?? asInt(item["days_since_checkin"])
-            tierCounts[StaleDeviceService.Tier.tier(for: days), default: 0] += 1
+            let tier = StaleDeviceService.Tier.tier(
+                for: days, staleDays: config.thresholds?.resolvedStaleDays ?? 30
+            )
+            tierCounts[tier, default: 0] += 1
         }
         m.recentCount = tierCounts[.recent]
         m.offlineCount = tierCounts[.offline]

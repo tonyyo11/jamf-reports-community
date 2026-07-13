@@ -93,6 +93,12 @@ struct OutreachView: View {
         return "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s") bucketed by days since check-in."
     }
 
+    /// Configured `thresholds.stale_device_days` (default 30). Tier boundaries
+    /// scale from it so this screen agrees with the Overview/Fleet tiles.
+    private var configuredStaleDays: Int {
+        Int(workspace.configState.staleDeviceDays) ?? 30
+    }
+
     // MARK: - Data loading
 
     private func loadIfNeeded() {
@@ -104,7 +110,11 @@ struct OutreachView: View {
     private func reload() {
         snapshot = workspace.demoMode
             ? Self.demoSnapshot
-            : StaleDeviceService.snapshot(profile: workspace.profile, demoMode: false)
+            : StaleDeviceService.snapshot(
+                profile: workspace.profile,
+                demoMode: false,
+                staleDays: configuredStaleDays
+            )
     }
 
     private static var demoSnapshot: StaleDeviceService.Snapshot {
@@ -174,11 +184,12 @@ struct OutreachView: View {
     }
 
     private func tierSubtitle(for tier: StaleDeviceService.Tier) -> String {
+        let s = configuredStaleDays
         switch tier {
-        case .recent:  return "0-30 days"
-        case .offline: return "31-90 days"
-        case .inactive: return "91-180 days"
-        case .dormant:  return "180+ days"
+        case .recent:   return "0-\(s) days"
+        case .offline:  return "\(s + 1)-\(3 * s) days"
+        case .inactive: return "\(3 * s + 1)-\(6 * s) days"
+        case .dormant:  return "\(6 * s)+ days"
         }
     }
 

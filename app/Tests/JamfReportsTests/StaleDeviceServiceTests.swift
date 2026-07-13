@@ -62,6 +62,98 @@ final class StaleDeviceServiceTests: XCTestCase {
         XCTAssertTrue(dormant.contains(365))
     }
 
+    // MARK: - Config-driven threshold tests
+
+    /// At the default staleDays == 30 the parameterized boundaries must reduce
+    /// EXACTLY to the historical 30 / 90 / 180 split — this is a consistency fix,
+    /// not a behavior change for default configs.
+    func testTierBoundariesDefaultThresholdByteIdentical() throws {
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 0, staleDays: 30), .recent)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 30, staleDays: 30), .recent)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 31, staleDays: 30), .offline)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 90, staleDays: 30), .offline)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 91, staleDays: 30), .inactive)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 180, staleDays: 30), .inactive)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 181, staleDays: 30), .dormant)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: nil, staleDays: 30), .recent)
+
+        // contains() at staleDays 30 == the old hardcoded predicate
+        XCTAssertTrue(StaleDeviceService.Tier.recent.contains(30, staleDays: 30))
+        XCTAssertFalse(StaleDeviceService.Tier.recent.contains(31, staleDays: 30))
+        XCTAssertTrue(StaleDeviceService.Tier.offline.contains(31, staleDays: 30))
+        XCTAssertTrue(StaleDeviceService.Tier.offline.contains(90, staleDays: 30))
+        XCTAssertFalse(StaleDeviceService.Tier.offline.contains(91, staleDays: 30))
+        XCTAssertTrue(StaleDeviceService.Tier.inactive.contains(91, staleDays: 30))
+        XCTAssertTrue(StaleDeviceService.Tier.inactive.contains(180, staleDays: 30))
+        XCTAssertFalse(StaleDeviceService.Tier.inactive.contains(181, staleDays: 30))
+        XCTAssertTrue(StaleDeviceService.Tier.dormant.contains(181, staleDays: 30))
+    }
+
+    /// At a non-default threshold the boundaries scale as 1× / 3× / 6× —
+    /// staleDays 45 → recent 0-45, offline 46-135, inactive 136-270, dormant 271+.
+    func testTierBoundariesScaleAtNonDefaultThreshold() throws {
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 45, staleDays: 45), .recent)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 46, staleDays: 45), .offline)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 135, staleDays: 45), .offline)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 136, staleDays: 45), .inactive)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 270, staleDays: 45), .inactive)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 271, staleDays: 45), .dormant)
+
+        XCTAssertTrue(StaleDeviceService.Tier.recent.contains(45, staleDays: 45))
+        XCTAssertFalse(StaleDeviceService.Tier.recent.contains(46, staleDays: 45))
+        XCTAssertTrue(StaleDeviceService.Tier.offline.contains(46, staleDays: 45))
+        XCTAssertTrue(StaleDeviceService.Tier.offline.contains(135, staleDays: 45))
+        XCTAssertFalse(StaleDeviceService.Tier.offline.contains(136, staleDays: 45))
+        XCTAssertTrue(StaleDeviceService.Tier.inactive.contains(136, staleDays: 45))
+        XCTAssertTrue(StaleDeviceService.Tier.inactive.contains(270, staleDays: 45))
+        XCTAssertFalse(StaleDeviceService.Tier.dormant.contains(270, staleDays: 45))
+        XCTAssertTrue(StaleDeviceService.Tier.dormant.contains(271, staleDays: 45))
+    }
+
+    /// The default `contains`/`tier` overloads (staleDays omitted) must behave
+    /// identically to explicitly passing 30 — proves nothing broke for the many
+    /// existing callers that never pass a threshold.
+    func testDefaultOverloadsMatchThirtyExplicit() throws {
+        for days in [0, 30, 31, 90, 91, 180, 181, 400] {
+            XCTAssertEqual(
+                StaleDeviceService.Tier.tier(for: days),
+                StaleDeviceService.Tier.tier(for: days, staleDays: 30)
+            )
+        }
+    }
+
+    func testSnapshotBucketsAtNonDefaultThreshold() throws {
+        func record(_ id: String, _ days: Int) -> DeviceInventoryRecord {
+            var r = DeviceInventoryRecord.empty(id: id, source: "test")
+            r.name = id
+            r.daysSinceContact = days
+            return r
+        }
+        // At staleDays 45: 40→recent, 100→offline, 200→inactive, 300→dormant.
+        let records = [record("r", 40), record("o", 100), record("i", 200), record("d", 300)]
+        let snapshot = StaleDeviceService.snapshot(from: records, staleDays: 45)
+
+        XCTAssertEqual(snapshot.totalDevices, 4)
+        XCTAssertEqual(snapshot.tierCounts[.recent], 1)
+        XCTAssertEqual(snapshot.tierCounts[.offline], 1)
+        XCTAssertEqual(snapshot.tierCounts[.inactive], 1)
+        XCTAssertEqual(snapshot.tierCounts[.dormant], 1)
+
+        // The 100-day device is "offline" at 45 but "inactive" at 30 — proving
+        // the threshold actually re-buckets. (Asserted directly to avoid the
+        // aggregate-count ambiguity: at staleDays 30 the 40-day device is also
+        // offline, so the offline bucket is not empty.)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 100, staleDays: 45), .offline)
+        XCTAssertEqual(StaleDeviceService.Tier.tier(for: 100, staleDays: 30), .inactive)
+
+        // At staleDays 30 the set re-buckets: 40→offline, 100→inactive, 200/300→dormant.
+        let snapshot30 = StaleDeviceService.snapshot(from: records, staleDays: 30)
+        XCTAssertEqual(snapshot30.tierCounts[.recent], 0)
+        XCTAssertEqual(snapshot30.tierCounts[.offline], 1, "the 40-day device is offline at 30")
+        XCTAssertEqual(snapshot30.tierCounts[.inactive], 1, "the 100-day device is inactive at 30")
+        XCTAssertEqual(snapshot30.tierCounts[.dormant], 2)
+    }
+
     // MARK: - Service logic tests
 
     func testSnapshotFromRecordsPartitionsCorrectly() throws {
