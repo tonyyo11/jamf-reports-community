@@ -378,12 +378,39 @@ enum LaunchAgentService {
         let label: String
         let displayName: String
         let enabled: Bool
+        /// Owning profile slug for a per-profile (non-multi) agent; "" for multi.
+        /// Used to scope the dead-man banner so a DIFFERENT profile's agent
+        /// doesn't surface as this workspace's own.
+        let profile: String
+        /// True for the global all-profiles managed/multi agents, which cover
+        /// every profile and so surface on each profile's Overview.
+        let isMulti: Bool
         /// Most recent time this schedule should have fired at/before the probe.
         let expectedFire: Date?
         /// Newest run artifact's finish time, if any run has ever recorded one.
         let lastRunFinishedAt: Date?
         /// Newest run artifact's success flag (nil when no artifact recorded).
         let lastRunSuccess: Bool?
+
+        init(
+            label: String,
+            displayName: String,
+            enabled: Bool,
+            profile: String = "",
+            isMulti: Bool = false,
+            expectedFire: Date?,
+            lastRunFinishedAt: Date?,
+            lastRunSuccess: Bool?
+        ) {
+            self.label = label
+            self.displayName = displayName
+            self.enabled = enabled
+            self.profile = profile
+            self.isMulti = isMulti
+            self.expectedFire = expectedFire
+            self.lastRunFinishedAt = lastRunFinishedAt
+            self.lastRunSuccess = lastRunSuccess
+        }
     }
 
     /// Lightweight per-agent inputs for the overdue/failing evaluator. Reuses the
@@ -436,10 +463,30 @@ enum LaunchAgentService {
             label: label,
             displayName: humanName(from: parts.slug, mode: mode),
             enabled: enabled,
+            profile: parts.profile,
+            isMulti: parts.isMulti,
             expectedFire: expectedFire,
             lastRunFinishedAt: runStatus?.finishedAt,
             lastRunSuccess: runStatus?.success
         )
+    }
+
+    /// Health inputs relevant to `profile`'s Overview: the global managed
+    /// (`isMulti`) agents surface on every profile (managed collection covers
+    /// this profile too), PLUS this profile's own user-built agents. A
+    /// DIFFERENT profile's hand-built agents are dropped so they don't bleed
+    /// onto this workspace's Overview as if they were its own.
+    static func healthInputs(
+        for profile: String, in dir: URL = agentsDir, now: Date = Date()
+    ) -> [ScheduleHealthInput] {
+        filterHealthInputs(healthInputs(in: dir, now: now), forProfile: profile)
+    }
+
+    /// Pure filter behind `healthInputs(for:)` — unit-tested directly.
+    static func filterHealthInputs(
+        _ inputs: [ScheduleHealthInput], forProfile profile: String
+    ) -> [ScheduleHealthInput] {
+        inputs.filter { $0.isMulti || $0.profile == profile }
     }
 
     private static func plistLabel(_ url: URL) -> String? {

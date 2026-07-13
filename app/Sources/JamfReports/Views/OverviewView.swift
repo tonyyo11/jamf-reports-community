@@ -34,7 +34,6 @@ struct OverviewView: View {
     @State private var legacyWorkspaces: [String] = []
     @State private var legacySchedules: [String] = []
     @State private var checklist: GettingStartedChecklist?
-    @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
 
     private var defaultTrendRange: TrendRange {
         TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
@@ -77,7 +76,12 @@ struct OverviewView: View {
             Task { await loadTrendsOffMain() }
         }
         .onChange(of: workspace.profile) { _, _ in
-            Task { await loadTrendsOffMain() }
+            Task {
+                await loadTrendsOffMain()
+                // Health inputs are now per-profile-filtered — recompute on
+                // switch so the banner reflects the newly-active workspace.
+                await workspace.refreshAutomationHealth()
+            }
         }
         .onChange(of: defaultTrendRangeRaw) { _, _ in
             // Range change only re-filters cached data — no disk read.
@@ -256,12 +260,34 @@ struct OverviewView: View {
                 formatter.localizedString(for: $0, relativeTo: Date())
             } ?? "never"
             let more = overdue.count > 1 ? " (+\(overdue.count - 1) more)" : ""
+            if first.isMulti {
+                // Global all-profiles managed agent — label it fleet-wide so a
+                // fresh per-profile operator doesn't read it as this workspace's
+                // own backup/collect.
+                return "Managed automation (all profiles) — "
+                    + "\(fleetWideName(first.displayName)) should have run "
+                    + "\(when); last success \(last)\(more)."
+            }
             return "Scheduled run overdue — \(first.displayName) should have run "
                 + "\(when); last success \(last)\(more)."
         }
-        let name = failing.first?.displayName ?? "A scheduled run"
         let more = failing.count > 1 ? " (+\(failing.count - 1) more)" : ""
+        if let firstFailing = failing.first, firstFailing.isMulti {
+            return "Managed automation (all profiles) — "
+                + "\(fleetWideName(firstFailing.displayName)) failed on its last "
+                + "run\(more) — check Automation."
+        }
+        let name = failing.first?.displayName ?? "A scheduled run"
         return "\(name) failed on its last run\(more) — check Automation."
+    }
+
+    /// Strip a leading "Managed " from a managed agent's display name so the
+    /// fleet-wide banner reads "Managed automation … — Backup …" rather than
+    /// the redundant "… — Managed Backup …".
+    private func fleetWideName(_ displayName: String) -> String {
+        displayName.hasPrefix("Managed ")
+            ? String(displayName.dropFirst("Managed ".count))
+            : displayName
     }
 
     /// Run the trend-store disk scan (summaries + ea-results) OFF the main
@@ -1314,11 +1340,14 @@ struct OverviewView: View {
         let collected = await Task.detached(priority: .utility) {
             TrendStore.readLatestSnapshotMTime(profile: profile) != nil
         }.value
-        let policyRaw = automationPolicyRaw
-
+        // Per-profile only: a real LaunchAgent owned by THIS profile. The
+        // app-global `AutomationPolicy.isManaged` disjunct was dropped —
+        // managed automation being enabled elsewhere must not tick a fresh
+        // profile's "set up a schedule" ✓. (Tradeoff: under managed-only
+        // automation, with no per-profile agent, this step never ticks — which
+        // matches the per-profile intent of the getting-started flow.)
         let scheduled = await Task.detached(priority: .utility) {
-            AutomationPolicy.parse(policyRaw).isManaged
-                || LaunchAgentService.list().contains { $0.profile == profile }
+            LaunchAgentService.list().contains { $0.profile == profile }
         }.value
 
         let customized = await Task.detached(priority: .utility) {

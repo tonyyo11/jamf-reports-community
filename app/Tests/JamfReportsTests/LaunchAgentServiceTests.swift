@@ -553,6 +553,10 @@ final class LaunchAgentServiceTests: XCTestCase {
             "managed multi agent with no --status-file must read the per-profile status file"
         )
         XCTAssertEqual(input.lastRunSuccess, true)
+        XCTAssertTrue(input.isMulti,
+                      "a multi.managed-* plist must populate isMulti so it surfaces fleet-wide")
+        XCTAssertEqual(input.profile, "",
+                       "multi agents carry no owning profile slug")
     }
 
     func testMultiHealthInputPicksNewestProfileStatus() throws {

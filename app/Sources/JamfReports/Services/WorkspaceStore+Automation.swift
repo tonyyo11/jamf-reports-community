@@ -16,11 +16,32 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
     let label: String
     let displayName: String
     let kind: Kind
+    /// True for the global all-profiles managed agents — the banner labels these
+    /// as fleet-wide so a fresh per-profile operator doesn't read a managed
+    /// backup/collect as their own workspace's. Defaults false for callers that
+    /// don't distinguish (e.g. the overdue-digest fact builder).
+    let isMulti: Bool
     /// When the schedule should have last fired (`.overdue`) — nil is not
     /// expected for a produced issue but kept optional for the model's purity.
     let expectedFire: Date?
     /// When the last recorded run finished, if any (`.failing`, or last success).
     let lastRunFinishedAt: Date?
+
+    init(
+        label: String,
+        displayName: String,
+        kind: Kind,
+        isMulti: Bool = false,
+        expectedFire: Date?,
+        lastRunFinishedAt: Date?
+    ) {
+        self.label = label
+        self.displayName = displayName
+        self.kind = kind
+        self.isMulti = isMulti
+        self.expectedFire = expectedFire
+        self.lastRunFinishedAt = lastRunFinishedAt
+    }
 }
 
 /// Pure evaluator for the scheduled-run dead-man switch. Given the raw
@@ -58,6 +79,7 @@ enum AutomationHealth {
                     label: input.label,
                     displayName: input.displayName,
                     kind: .overdue,
+                    isMulti: input.isMulti,
                     expectedFire: expected,
                     lastRunFinishedAt: input.lastRunFinishedAt
                 )
@@ -68,6 +90,7 @@ enum AutomationHealth {
                     label: input.label,
                     displayName: input.displayName,
                     kind: .failing,
+                    isMulti: input.isMulti,
                     expectedFire: input.expectedFire,
                     lastRunFinishedAt: input.lastRunFinishedAt
                 )
@@ -151,9 +174,11 @@ extension WorkspaceStore {
             return
         }
         let profile = self.profile
-        // Scan + evaluate off the main actor; both are pure file reads.
+        // Scan + evaluate off the main actor; both are pure file reads. Scope to
+        // THIS profile's agents plus the global managed (isMulti) agents so a
+        // DIFFERENT profile's hand-built schedule can't bleed onto this Overview.
         let issues = await Task.detached(priority: .utility) {
-            AutomationHealth.evaluate(inputs: LaunchAgentService.healthInputs())
+            AutomationHealth.evaluate(inputs: LaunchAgentService.healthInputs(for: profile))
         }.value
         AutomationHealthModel.shared.issues = issues
 

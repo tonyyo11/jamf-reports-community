@@ -135,6 +135,8 @@ final class AutomationHealthTests: XCTestCase {
         label: String = "com.github.tonyyo11.jamf-reports-community.prod.freshness",
         displayName: String = "Freshness",
         enabled: Bool = true,
+        profile: String = "prod",
+        isMulti: Bool = false,
         expectedFire: Date?,
         lastRunFinishedAt: Date?,
         lastRunSuccess: Bool?
@@ -143,6 +145,8 @@ final class AutomationHealthTests: XCTestCase {
             label: label,
             displayName: displayName,
             enabled: enabled,
+            profile: profile,
+            isMulti: isMulti,
             expectedFire: expectedFire,
             lastRunFinishedAt: lastRunFinishedAt,
             lastRunSuccess: lastRunSuccess
@@ -285,5 +289,108 @@ final class AutomationHealthTests: XCTestCase {
         )
         XCTAssertEqual(issues.count, 1)
         XCTAssertEqual(issues.first?.kind, .failing)
+    }
+
+    // MARK: - Per-profile health-input filter (BUG 1)
+
+    /// BUG 1: a DIFFERENT profile's user-built agent must NOT surface on this
+    /// profile's Overview, while the global managed (isMulti) agent and this
+    /// profile's own agents do.
+    func testFilterKeepsMultiAndActiveProfileDropsOtherProfile() {
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let managed = input(
+            label: "com.github.tonyyo11.jamf-reports-community.multi.managed-backup",
+            displayName: "Managed Backup", profile: "", isMulti: true,
+            expectedFire: expected, lastRunFinishedAt: nil, lastRunSuccess: nil
+        )
+        let otherProfile = input(
+            label: "com.github.tonyyo11.jamf-reports-community.other.freshness",
+            displayName: "Freshness", profile: "other", isMulti: false,
+            expectedFire: expected, lastRunFinishedAt: nil, lastRunSuccess: nil
+        )
+        let activeProfile = input(
+            label: "com.github.tonyyo11.jamf-reports-community.active.freshness",
+            displayName: "Freshness", profile: "active", isMulti: false,
+            expectedFire: expected, lastRunFinishedAt: nil, lastRunSuccess: nil
+        )
+
+        let filtered = LaunchAgentService.filterHealthInputs(
+            [managed, otherProfile, activeProfile], forProfile: "active"
+        )
+        XCTAssertEqual(
+            Set(filtered.map(\.label)),
+            Set([managed.label, activeProfile.label]),
+            "keeps the isMulti managed agent + the active profile's own agent"
+        )
+        XCTAssertFalse(
+            filtered.contains { $0.label == otherProfile.label },
+            "a different profile's user-built agent must not bleed onto this Overview"
+        )
+    }
+
+    func testFilterEmptyProfileStillKeepsMultiOnly() {
+        let managed = input(
+            label: "com.x.multi.managed-scan", displayName: "Managed Scan",
+            profile: "", isMulti: true,
+            expectedFire: nil, lastRunFinishedAt: nil, lastRunSuccess: nil
+        )
+        let perProfile = input(
+            label: "com.x.prod.scan", displayName: "Scan",
+            profile: "prod", isMulti: false,
+            expectedFire: nil, lastRunFinishedAt: nil, lastRunSuccess: nil
+        )
+        // A caller with no active profile ("") still sees the fleet-wide managed
+        // agents but no per-profile agent (none has profile == "").
+        let filtered = LaunchAgentService.filterHealthInputs(
+            [managed, perProfile], forProfile: ""
+        )
+        XCTAssertEqual(filtered.map(\.label), [managed.label])
+    }
+
+    // MARK: - isMulti propagation (drives the fleet-wide banner copy)
+
+    /// The `isMulti` flag from the input must reach the produced issue so the
+    /// Overview banner can label managed/multi agents as fleet-wide. The final
+    /// string assembly is view-private (`OverviewView.automationHealthMessage`)
+    /// and reachable only through the view; this pins the seam that gates it.
+    func testEvaluatePropagatesIsMultiForOverdue() {
+        let now = referenceNow()
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(
+                displayName: "Managed Backup", profile: "", isMulti: true,
+                expectedFire: expected, lastRunFinishedAt: nil, lastRunSuccess: nil
+            )],
+            now: now
+        )
+        XCTAssertEqual(issues.first?.kind, .overdue)
+        XCTAssertEqual(issues.first?.isMulti, true)
+    }
+
+    func testEvaluatePropagatesIsMultiForFailing() {
+        let now = referenceNow()
+        let recorded = date(year: 2026, month: 7, day: 6, hour: 6, minute: 5)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(
+                displayName: "Managed Reports", profile: "", isMulti: true,
+                expectedFire: nil, lastRunFinishedAt: recorded, lastRunSuccess: false
+            )],
+            now: now
+        )
+        XCTAssertEqual(issues.first?.kind, .failing)
+        XCTAssertEqual(issues.first?.isMulti, true)
+    }
+
+    func testEvaluateDefaultsIsMultiFalseForPerProfileAgent() {
+        let now = referenceNow()
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(
+                profile: "prod", isMulti: false,
+                expectedFire: expected, lastRunFinishedAt: nil, lastRunSuccess: nil
+            )],
+            now: now
+        )
+        XCTAssertEqual(issues.first?.isMulti, false)
     }
 }
