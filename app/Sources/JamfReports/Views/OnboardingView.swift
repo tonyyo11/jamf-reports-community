@@ -52,11 +52,13 @@ struct OnboardingView: View {
     private var progressStrip: some View {
         let sequence = flow.stepSequence
         let currentIndex = sequence.firstIndex(of: flow.currentStep) ?? 0
-        return HStack(spacing: 10) {
-            ForEach(Array(sequence.enumerated()), id: \.element.id) { idx, step in
-                stepPill(step, index: idx, currentIndex: currentIndex)
-                if idx < sequence.count - 1 {
-                    Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 10, height: 0.5)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(Array(sequence.enumerated()), id: \.element.id) { idx, step in
+                    stepPill(step, index: idx, currentIndex: currentIndex)
+                    if idx < sequence.count - 1 {
+                        Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 10, height: 0.5)
+                    }
                 }
             }
         }
@@ -82,6 +84,8 @@ struct OnboardingView: View {
             }
             Text(step.label)
                 .font(.caption)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(current ? Theme.Colors.fg :
                                  done ? Theme.Colors.fg2 : Theme.Text.tertiary(contrast))
         }
