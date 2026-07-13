@@ -146,6 +146,35 @@ versions in this repository map to git tags.
 - A "drops more than" alert comparing against sparse history now prefers a
   prior summary that actually carries the rule's metric, so a data-absent day
   at the lookback boundary can't silently disarm the rule.
+- Text no longer renders one character per line: the packaged app now bundles
+  its monospace fonts correctly, so tracked headers, status chips, segmented
+  controls, and timestamps render crisply instead of falling back to a wider
+  system font that overflowed fixed-width controls.
+- In-app guidance tips no longer render as an oversized empty box — each tip now
+  appears inline beside the control it describes.
+- Stale-device counts now agree across Overview, Fleet Overview, Devices, and
+  Offline Outreach, and honor `thresholds.stale_device_days` everywhere
+  (previously the Devices and Offline Outreach screens used a fixed 30 days, and
+  the summary counted 0 when jamf-cli reported staleness under a newer field).
+- The Devices FileVault tile now reports the true encryption rate instead of
+  rounding a single unencrypted device away as 100% / "0 security gaps".
+- Mobile Fleet classifies iPad vs iPhone by hardware model rather than OS
+  family, so the per-device-type breakdown is no longer 0/0 on an iOS fleet.
+- The mSCP compliance tile no longer wraps a long baseline label mid-word.
+- The Trends relative-change figure no longer shows an absurd percentage (e.g.
+  8200%) when the comparison baseline is at or near zero — it omits the
+  parenthetical and shows the absolute change.
+- The Generated screen header now reads "N reports" instead of "N reports
+  archived" (these are generated outputs, not archives).
+- The AI Insights card now names the model it will actually use — a config
+  locked to on-device no longer claims Private Cloud Compute.
+- The Overview automation-health banner and Getting-Started checklist no longer
+  present fleet-wide or another profile's state as the active profile's own: the
+  banner labels fleet-wide managed automation as "Managed automation (all
+  profiles)", and "Set up a schedule" reflects a schedule for the current
+  profile rather than the global managed-automation switch.
+- The onboarding step progress no longer wraps step labels one character per
+  line — the strip scrolls horizontally when the steps don't fit.
 
 ### Security
 
@@ -190,6 +219,12 @@ versions in this repository map to git tags.
   compliance band trend chart with a warning marker and excluded from EA
   coverage-drift comparisons, so a partially-recovered day never reads as a real
   fleet change.
+- Managed data-collection schedules now catch up at login: the collect agents run
+  when you log in, so a Mac that was asleep or logged out at the scheduled time
+  gathers its data as soon as you're back — repeated logins do no redundant work
+  (a collect that isn't due is skipped). Report and backup schedules stay on their
+  calendar. These remain user LaunchAgents, so they still don't run while no user
+  is logged in.
 
 ## [2.5.0] - 2026-07-06
 
