@@ -7,6 +7,23 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Tracked jamf-cli dependency updated to v1.23.0. No code changes required for
+  existing functionality. Notable upstream additions in v1.23.0:
+  - New `--download-packages` flag for `pro backup` to retrieve JCDS-hosted
+    package binaries alongside config objects. The current backup mode runs
+    `jamf-cli pro backup` without this flag; it remains unchanged, and the new
+    flag is a future integration candidate.
+  - New Jamf Security Cloud namespace (`jsc`) adding Risk, Device Lifecycle, and
+    SSE commands — future integration candidates for fleet posture reporting.
+  - `dateCompleted` field added to MDM and policy history output — additive;
+    existing parsing is unaffected.
+  - App Installers gains deployment export, history, version updates, and `--all`
+    bulk retry — noted as future integration candidates.
+  - Compliance Benchmarks: `selectedOsVersions` support added — additive field.
+  - New `update --set` command for fetch-merge-put on PUT endpoints; not used.
+
 ## [2.5.0] - 2026-07-06
 
 ### Added
