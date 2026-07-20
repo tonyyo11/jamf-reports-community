@@ -9,6 +9,14 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Duplicate-serial detection (jamf-cli 1.23+): collection now gathers the new
+  `pro report duplicate-serials` data, and the Health Audit screen gains a
+  "Duplicate serials" section listing the affected records (serial, record IDs,
+  names, last contact). Duplicated serial numbers silently corrupt any report
+  that joins device records by serial, so surfacing them is a data-integrity
+  check. On older jamf-cli versions the section explains what it needs instead
+  of rendering empty. jamf-cli's own `pro audit` duplicate-serials check also
+  appears among audit findings automatically once the binary is updated.
 - Metric-threshold webhook alerting (opt-in): a new `alerts:` config block defines
   rules like "FileVault below 90%" or "patch compliance drops more than 5 points
   week-over-week", evaluated against each scheduled run's daily summary. When a
@@ -201,6 +209,12 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- Tracks jamf-cli v1.24.0 (was v1.22.0). Updating the binary also enriches
+  device drill-downs for free: MDM-command and policy history rows now carry
+  completion dates and accurate command states (jamf-cli 1.23+). One upstream
+  behavior change to be aware of: `--serial`-based lookups on a duplicated
+  serial now error instead of silently picking an arbitrary record (the app
+  itself resolves devices by ID and is unaffected).
 - On macOS 26 and earlier the AI Insights surfaces (Overview card, Settings
   panel) are now hidden entirely instead of explaining that they need
   macOS 27 — the feature can never run there, so the app no longer
@@ -225,6 +239,15 @@ versions in this repository map to git tags.
   (a collect that isn't due is skipped). Report and backup schedules stay on their
   calendar. These remain user LaunchAgents, so they still don't run while no user
   is logged in.
+
+### Removed
+
+- The dormant smart-group creation feature (the "Create smart group" affordances
+  wired into the Outreach, Security Posture, Compliance Posture, and Updates
+  screens). It depended on a jamf-cli smart-group-templates command that was
+  proposed upstream but never shipped, so the buttons could never appear on any
+  real installation. Removed entirely rather than left as dead weight; smart-group
+  *reporting* (the read-only group inventory surfaces) is unaffected.
 
 ## [2.5.0] - 2026-07-06
 
