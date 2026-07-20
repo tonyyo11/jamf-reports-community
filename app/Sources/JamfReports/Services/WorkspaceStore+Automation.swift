@@ -142,20 +142,18 @@ extension WorkspaceStore {
     /// down any leftover managed agents if the operator turned the policy off.
     /// Returns the install/remove actions it applied (empty when nothing
     /// changed) so callers can surface confirmation.
+    ///
+    /// The one-time RunAtLoad migration (agents installed before that change
+    /// were written with RunAtLoad:false; the reconcile signature ignores
+    /// RunAtLoad so only a forced pass rewrites them) is shared with the
+    /// headless `--scheduled-run` self-heal via
+    /// `ManagedAutomation.reconcileWithMigration` — see its doc.
     @discardableResult
     func reconcileManagedAutomation() async -> [ManagedAutomation.ActionOutcome] {
         guard !demoMode else { return [] }
-        // One-time migration: agents installed before the RunAtLoad change were
-        // written with RunAtLoad:false. The reconcile signature ignores RunAtLoad
-        // (it keys on mode/schedule/tiers), so only a forced reconcile rewrites
-        // them. Force once so existing collect agents pick up the login catch-up;
-        // fresh installs already get it from the writer. No-op when unmanaged.
-        let migrationKey = "managedRunAtLoadMigratedV1"
-        let force = !UserDefaults.standard.bool(forKey: migrationKey)
-        let outcomes = await ManagedAutomation.reconcile(
-            policy: AutomationPolicy.current(), force: force
+        let outcomes = await ManagedAutomation.reconcileWithMigration(
+            policy: AutomationPolicy.current()
         )
-        if force { UserDefaults.standard.set(true, forKey: migrationKey) }
         // The install/remove above can change what "should have fired" — recompute
         // the dead-man state on the same chain so the banner reflects it at once.
         await refreshAutomationHealth()

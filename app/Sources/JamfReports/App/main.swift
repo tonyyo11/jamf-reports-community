@@ -100,6 +100,39 @@ private func appendFleetLog(_ message: String) {
 // `.notifyMetricAlerts` / `.notifyScheduledRunFailure`; the fleet dead-man
 // overdue digest below stays here — it has no single-run CLI meaning.
 
+/// Pure guard behind `reconcileManagedAutomationHeadless` — extracted so the
+/// "unmanaged → no profile discovery, no filesystem I/O" contract is
+/// unit-testable without touching `AutomationPolicy.current()` or `UserDefaults`.
+func shouldReconcileManagedAutomationHeadless(policy: AutomationPolicy) -> Bool {
+    policy.isManaged
+}
+
+/// Headless managed-automation self-heal (2.6 field-incident fix). Before
+/// this, `ManagedAutomation.reconcile` — including the one-shot RunAtLoad
+/// migration and any policy edit (cadence, exclusions, report grouping) —
+/// only ever ran from a GUI launch or the Automation screen. A host that
+/// never opens the GUI (the whole point of "managed" automation) could sit
+/// on stale plists indefinitely; a fleet Mac was found with a weekend-old
+/// RunAtLoad:false migration that had never applied. Call EXACTLY ONCE per
+/// `--scheduled-run` process, after all per-profile data collection, so
+/// reconcile can never delay or fail the run itself.
+///
+/// No-op when automation isn't managed — bails before any profile discovery
+/// or filesystem I/O, matching `WorkspaceStore.catchUpCollectIfNeeded`'s
+/// early-exit shape. `currentLabel` is this process's OWN LaunchAgent label
+/// (threaded from `--label`); reconcile self-skips bootout/bootstrap for it —
+/// see `ManagedAutomation.reconcile(currentLabel:)`. Best-effort: reconcile
+/// never throws, and every action failure is logged + captured in the
+/// returned outcomes rather than surfaced to the caller.
+@Sendable
+func reconcileManagedAutomationHeadless(
+    currentLabel: String?,
+    policy: AutomationPolicy = AutomationPolicy.current()
+) async {
+    guard shouldReconcileManagedAutomationHeadless(policy: policy) else { return }
+    _ = await ManagedAutomation.reconcileWithMigration(policy: policy, currentLabel: currentLabel)
+}
+
 /// Headless dead-man overdue digest (2.6 "trust trio" #2). The GUI publishes
 /// overdue schedules and posts a once-per-day digest at launch; a host that only
 /// ever runs the LaunchAgent (GUI never opened) would otherwise get zero
@@ -466,6 +499,10 @@ private func scheduledRun(profile: String) async -> Int32 {
         if mode == .jamfCLIOnly || mode == .jamfCLIFull || mode == .csvAssisted {
             emitConsolidatedReports()
         }
+        // Managed-automation self-heal — once per process, after all
+        // per-profile data collection, so a policy edit or the RunAtLoad
+        // migration applies on hosts that never open the GUI.
+        await reconcileManagedAutomationHeadless(currentLabel: label)
         // Dead-man overdue digest for headless hosts — once per process, after
         // all per-profile work.
         await notifyOverdueSchedulesHeadless(profiles: profiles.map(\.name))
@@ -475,6 +512,9 @@ private func scheduledRun(profile: String) async -> Int32 {
     let code = await scheduledRunSingle(
         profile: profile, mode: mode, tiers: tiers, verbose: verbose, label: label
     )
+    // Managed-automation self-heal — once per process, before the overdue digest
+    // so a reconciled agent's next-fire time is reflected in that same pass.
+    await reconcileManagedAutomationHeadless(currentLabel: label)
     await notifyOverdueSchedulesHeadless(profiles: [profile])
     return code
 }

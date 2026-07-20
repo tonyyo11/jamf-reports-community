@@ -178,6 +178,15 @@ enum ManagedAutomation {
     /// production implementations; tests inject spies so no real `launchctl`
     /// runs.
     ///
+    /// - Parameter currentLabel: The LaunchAgent label of THIS process, when
+    ///   it is itself a scheduled-run invocation (threaded from `--label`).
+    ///   The action targeting this exact label — install or remove — is
+    ///   routed through `installFileOnly`/`removeFileOnly` instead of the
+    ///   normal closures, so reconciling never `launchctl bootout`s the job
+    ///   that is currently executing this code. `nil` (the GUI's case, and
+    ///   any process that isn't itself a managed agent) disables the
+    ///   self-skip entirely — every action goes through the normal path.
+    ///
     /// Returns per-action outcomes so callers can surface real results rather
     /// than counting planned actions. `Action` is not `Equatable` by design —
     /// callers pattern-match `outcome.action`.
@@ -185,10 +194,13 @@ enum ManagedAutomation {
     static func reconcile(
         policy: AutomationPolicy,
         force: Bool = false,
+        currentLabel: String? = nil,
         discover: () -> [JamfCLIProfile] = ProfileService.discoverLocal,
         installed: () -> [Schedule] = LaunchAgentService.list,
         install: @Sendable (Schedule) async -> (Int32, String?),
-        remove: @Sendable (String) async -> String?
+        installFileOnly: @Sendable (Schedule) async -> (Int32, String?) = defaultInstallFileOnly,
+        remove: @Sendable (String) async -> String?,
+        removeFileOnly: @Sendable (String) async -> String? = defaultRemoveFileOnly
     ) async -> [ActionOutcome] {
         let profiles = discover()
         let excluded = Set(policy.excludedProfiles)
@@ -200,7 +212,9 @@ enum ManagedAutomation {
         for action in actions {
             switch action {
             case .install(let sched):
-                let (code, reason) = await install(sched)
+                let isSelf = currentLabel != nil
+                    && LaunchAgentWriter.label(for: sched) == currentLabel
+                let (code, reason) = isSelf ? await installFileOnly(sched) : await install(sched)
                 let succeeded = (code == 0)
                 if !succeeded {
                     let name = sched.name
@@ -208,11 +222,19 @@ enum ManagedAutomation {
                     AppLogger.cli.error(
                         "install \(name, privacy: .public) failed: \(detail, privacy: .public)"
                     )
+                } else if isSelf {
+                    AppLogger.cli.info(
+                        """
+                        install \(sched.name, privacy: .public) wrote its own running plist \
+                        file-only (no bootout/bootstrap)
+                        """
+                    )
                 }
                 outcomes.append(
                     ActionOutcome(action: action, succeeded: succeeded, failureReason: reason))
             case .remove(let label):
-                let reason = await remove(label)
+                let isSelf = currentLabel != nil && label == currentLabel
+                let reason = isSelf ? await removeFileOnly(label) : await remove(label)
                 let succeeded = (reason == nil)
                 if !succeeded {
                     let detail = reason ?? "unknown error"
@@ -233,13 +255,50 @@ enum ManagedAutomation {
     static func reconcile(
         policy: AutomationPolicy,
         force: Bool = false,
+        currentLabel: String? = nil,
         discover: () -> [JamfCLIProfile] = ProfileService.discoverLocal,
         installed: () -> [Schedule] = LaunchAgentService.list
     ) async -> [ActionOutcome] {
         await reconcile(
-            policy: policy, force: force, discover: discover, installed: installed,
+            policy: policy, force: force, currentLabel: currentLabel,
+            discover: discover, installed: installed,
             install: defaultInstall, remove: defaultRemove
         )
+    }
+
+    /// One-shot migration wrapper: forces a single reconcile pass when
+    /// `migrationKey` hasn't been claimed yet (see `WorkspaceStore
+    /// .reconcileManagedAutomation`'s doc for the RunAtLoad-migration
+    /// history), and marks it claimed ONLY when every action in that forced
+    /// pass succeeded (`migrationShouldComplete`). A partial failure leaves
+    /// the flag unset so the NEXT launch or scheduled run retries — silently
+    /// marking a failed pass "done" would strand the affected agent's plist
+    /// on its old (pre-migration) settings forever.
+    ///
+    /// Shared by the GUI launch path and the headless `--scheduled-run` self
+    /// -heal (2.6 field-incident fix: before this, a policy edit or the
+    /// RunAtLoad migration only ever applied on a GUI launch, so a
+    /// headless-only host could run on stale plists indefinitely).
+    @discardableResult
+    static func reconcileWithMigration(
+        policy: AutomationPolicy,
+        currentLabel: String? = nil,
+        migrationKey: String = "managedRunAtLoadMigratedV1",
+        defaults: UserDefaults = .standard
+    ) async -> [ActionOutcome] {
+        let force = !defaults.bool(forKey: migrationKey)
+        let outcomes = await reconcile(policy: policy, force: force, currentLabel: currentLabel)
+        if force, migrationShouldComplete(outcomes: outcomes) {
+            defaults.set(true, forKey: migrationKey)
+        }
+        return outcomes
+    }
+
+    /// Pure decision behind `reconcileWithMigration`: the migration flag may
+    /// be marked complete only when every attempted action succeeded. An
+    /// empty plan (nothing needed doing) trivially satisfies this.
+    static func migrationShouldComplete(outcomes: [ActionOutcome]) -> Bool {
+        outcomes.allSatisfy(\.succeeded)
     }
 
     /// Default install closure: captures the error reason string so the reconcile
@@ -247,6 +306,21 @@ enum ManagedAutomation {
     static let defaultInstall: @Sendable (Schedule) async -> (Int32, String?) = { schedule in
         do {
             let code = try await CLIBridge().setupLaunchAgent(schedule, load: true) { _ in }
+            return (code, code != 0 ? "launchctl exit \(code)" : nil)
+        } catch {
+            return (-1, error.localizedDescription)
+        }
+    }
+
+    /// File-only install: writes the plist without touching the running job
+    /// (`CLIBridge.setupLaunchAgent(applyToRunningJob: false)`). Used only for
+    /// the reconcile action whose label equals `currentLabel` — see
+    /// `reconcile(currentLabel:)`.
+    static let defaultInstallFileOnly: @Sendable (Schedule) async -> (Int32, String?) = { schedule in
+        do {
+            let code = try await CLIBridge().setupLaunchAgent(
+                schedule, load: true, applyToRunningJob: false
+            ) { _ in }
             return (code, code != 0 ? "launchctl exit \(code)" : nil)
         } catch {
             return (-1, error.localizedDescription)
@@ -273,6 +347,22 @@ enum ManagedAutomation {
         do {
             try LaunchAgentWriter.delete(label)
             return nil  // success
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    /// File-only remove: deletes the plist without `launchctl bootout` — the
+    /// same self-preservation rule as `defaultInstallFileOnly`, for the
+    /// (unlikely) case where the current process's own label is no longer
+    /// desired mid-run.
+    static let defaultRemoveFileOnly: @Sendable (String) async -> String? = { label in
+        guard owns(label) else {
+            return "refused — label '\(label)' is not owned by managed automation"
+        }
+        do {
+            try LaunchAgentWriter.delete(label)
+            return nil
         } catch {
             return error.localizedDescription
         }

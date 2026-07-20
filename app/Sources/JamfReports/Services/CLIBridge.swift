@@ -1713,12 +1713,26 @@ final class CLIBridge {
         return 0
     }
 
+    /// - Parameter applyToRunningJob: When `false`, only the plist FILE is
+    ///   written — `launchctl bootout`/`bootstrap` are skipped entirely. Used
+    ///   exclusively when `schedule`'s own label is the LaunchAgent label of
+    ///   the CURRENTLY-RUNNING scheduled-run process: a bootout of your own
+    ///   label kills the process mid-run. launchd re-reads `RunAtLoad` /
+    ///   `StartCalendarInterval` from the plist at job LOAD time (next
+    ///   login/reload), so the in-memory job keeps running on its old
+    ///   schedule until then — sufficient for a policy edit or migration to
+    ///   apply on the schedule's NEXT fire without killing this one.
     func setupLaunchAgent(
         _ schedule: Schedule,
         load: Bool,
+        applyToRunningJob: Bool = true,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
-        if schedule.isMulti { return try await setupMultiLaunchAgent(schedule, load: load, onLine: onLine) }
+        if schedule.isMulti {
+            return try await setupMultiLaunchAgent(
+                schedule, load: load, applyToRunningJob: applyToRunningJob, onLine: onLine
+            )
+        }
 
         guard await ensureWorkspace(profile: schedule.profile, onLine: onLine) != nil else {
             throw CLIBridgeError.workspaceMissing(profile: schedule.profile)
@@ -1734,6 +1748,11 @@ final class CLIBridge {
 
         let action = load ? "writing and loading" : "writing disabled"
         onLine(.init(timestamp: Date(), level: .info, text: "[info] \(action) LaunchAgent \(plan.label)"))
+        guard applyToRunningJob else {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] wrote \(plan.label) file-only — running job untouched"))
+            return 0
+        }
         _ = await LaunchAgentWriter.unload(plan.label)
         if load {
             let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)
@@ -1749,6 +1768,7 @@ final class CLIBridge {
     private func setupMultiLaunchAgent(
         _ schedule: Schedule,
         load: Bool,
+        applyToRunningJob: Bool = true,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard LaunchAgentWriter.label(for: schedule) != nil else {
@@ -1772,6 +1792,11 @@ final class CLIBridge {
             let action = load ? "writing and loading" : "writing disabled"
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] \(action) multi-profile LaunchAgent \(plan.label)"))
+            guard applyToRunningJob else {
+                onLine(.init(timestamp: Date(), level: .info,
+                             text: "[info] file-only write for \(plan.label) — not reloading the running job"))
+                return 0
+            }
             _ = await LaunchAgentWriter.unload(plan.label)
             if load {
                 let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)

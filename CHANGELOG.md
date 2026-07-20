@@ -57,6 +57,35 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Scheduled collects no longer report "server unreachable" — with a failing
+  banner and a webhook alert — when the only data kinds that were actually due
+  are ones that chronically fail (for example Platform-API kinds a tenant's
+  API role can't access, or a command the installed jamf-cli doesn't have
+  yet). If healthy kinds were skipped because their data was already fresh,
+  that freshness is proof the server was recently reachable, so the run now
+  completes as a normal partial outcome; and a "command doesn't exist"
+  failure never counts toward an unreachable verdict at all.
+- Automation Health no longer lets one profile's successful run hide another
+  profile's failure of the same managed schedule: on multi-profile
+  installations, each profile's screens now read that profile's own run
+  status, so a genuine failure stays visible until that profile's next run
+  succeeds. (The fleet-wide overdue digest keeps its across-profiles view.)
+- Managed automation now repairs itself without the app: every scheduled run
+  finishes by reconciling the managed LaunchAgents, so a machine whose agents
+  were written by an older build (or deleted) is healed by the next run
+  instead of waiting for someone to open the app. A running agent never
+  reloads its own job (its plist is updated on disk and takes effect at next
+  login), and the one-time RunAtLoad migration is now only marked complete
+  when the rewrite verifiably succeeded, so a failed attempt retries.
+- A batch of layout and copy fixes from field screenshots: the Devices filter
+  control and the Generated / Run History / Backups header buttons no longer
+  wrap letter-by-letter at narrow window widths; the Trends compliance
+  headline no longer overlaps its delta badge; the compliance band legend
+  only appears under the compliance band chart; stat-tile arrows now match
+  the sign of their delta; Device Lookup no longer claims "no cached
+  inventory" while inventory exists (its cache probe never refreshed after
+  first render); and the workbook preview footer dropped a Python-era
+  "matplotlib" mention and a wildly wrong size estimate.
 - Buttons inside the Fleet Overview per-profile drill-down ("Open Trends",
   "Open Patch Compliance", and the other issue and Summary Details actions) did
   nothing since v2.3.0 (#203). The Overview screen's metric drill-downs had the
