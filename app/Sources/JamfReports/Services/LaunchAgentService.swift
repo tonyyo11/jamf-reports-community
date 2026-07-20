@@ -421,6 +421,27 @@ enum LaunchAgentService {
     ///
     /// - Parameter dir: directory to scan (tests pass a temp dir).
     static func healthInputs(in dir: URL = agentsDir, now: Date = Date()) -> [ScheduleHealthInput] {
+        scannedHealthInputs(in: dir, now: now, statusProfile: nil)
+    }
+
+    /// Shared plist scan behind both `healthInputs(in:)` and `healthInputs(for:)`.
+    ///
+    /// `statusProfile` controls how a MULTI (managed, all-profiles) agent's run
+    /// status is resolved:
+    /// - `nil` (the fleet-wide/profile-less caller, `healthInputs(in:)`):
+    ///   preserves the pre-existing cross-profile "newest finish wins" fallback
+    ///   (`newestMultiRunStatus`) — used only for `.overdue` detection by the
+    ///   headless dead-man digest, where "did this schedule fire recently
+    ///   ANYWHERE" is the correct question.
+    /// - non-nil (`healthInputs(for:)`): scopes the fallback to THAT profile's
+    ///   own `<workspace>/automation/<label>_status.json` — never another
+    ///   profile's. A multi agent's `.failing` state must reflect what
+    ///   happened for the profile being evaluated; otherwise a different
+    ///   profile's later (successful) run of the same shared schedule can mask
+    ///   this profile's genuine failure on its own Overview/Automation screen.
+    private static func scannedHealthInputs(
+        in dir: URL, now: Date, statusProfile: String?
+    ) -> [ScheduleHealthInput] {
         let prefix = "\(LaunchAgentWriter.labelPrefix)."
         let entries = (try? FileManager.default.contentsOfDirectory(
             at: dir,
@@ -430,11 +451,13 @@ enum LaunchAgentService {
         return entries
             .filter { $0.pathExtension == "plist" }
             .filter { $0.lastPathComponent.hasPrefix(prefix) }
-            .compactMap { healthInput(for: $0, now: now) }
+            .compactMap { healthInput(for: $0, now: now, statusProfile: statusProfile) }
             .sorted { $0.displayName < $1.displayName }
     }
 
-    private static func healthInput(for url: URL, now: Date) -> ScheduleHealthInput? {
+    private static func healthInput(
+        for url: URL, now: Date, statusProfile: String?
+    ) -> ScheduleHealthInput? {
         guard let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization
                 .propertyList(from: data, format: nil) as? [String: Any],
@@ -447,18 +470,13 @@ enum LaunchAgentService {
         let enabled = !((plist["Disabled"] as? Bool) ?? false)
         let mode = runMode(from: args) ?? .jamfCLIOnly
         let expectedFire = lastScheduledFireDate(from: plist["StartCalendarInterval"], before: now)
-        let statusURL = parts.isMulti
-            ? multiStatusFileURL(from: args, label: label)
-            : statusFileURL(from: args, profile: parts.profile, label: label)
-        // Managed all-profiles agents carry no `--status-file`, so the
-        // multi status-file read yields nil; the run instead records status
-        // per profile at `<workspace>/automation/<label>_status.json`. Fall
-        // back to scanning those (newest finish wins) so a managed agent is
-        // not read as perpetually overdue.
-        let runStatus = parts.isMulti
-            ? (readMultiRunStatus(from: statusURL, label: label)
-                ?? newestMultiRunStatus(label: label))
-            : readRunStatus(from: statusURL, profile: parts.profile)
+        let runStatus: ParsedRunStatus?
+        if parts.isMulti {
+            runStatus = multiRunStatus(label: label, args: args, statusProfile: statusProfile)
+        } else {
+            let statusURL = statusFileURL(from: args, profile: parts.profile, label: label)
+            runStatus = readRunStatus(from: statusURL, profile: parts.profile)
+        }
         return ScheduleHealthInput(
             label: label,
             displayName: humanName(from: parts.slug, mode: mode),
@@ -471,15 +489,56 @@ enum LaunchAgentService {
         )
     }
 
+    /// Resolve a MULTI (managed, all-profiles) agent's run status.
+    ///
+    /// Managed all-profiles agents carry no `--status-file`, so
+    /// `readMultiRunStatus` (which requires one) always yields nil for them;
+    /// the run instead records status per profile at
+    /// `<workspace>/automation/<label>_status.json`.
+    ///
+    /// - `statusProfile` provided: read ONLY that profile's own record —
+    ///   label-exact AND profile-exact, never a different profile's file for
+    ///   the same label. A failing agent stays failing until this profile's
+    ///   own next run of it succeeds (or the overdue branch takes over).
+    /// - `statusProfile` nil: fall back to scanning every local profile's
+    ///   record for this label and take the newest finish (`newestMultiRunStatus`)
+    ///   — pinned by `testMultiHealthInputPicksNewestProfileStatus` — so a
+    ///   managed agent isn't read as perpetually overdue by the fleet-wide,
+    ///   profile-less caller.
+    private static func multiRunStatus(
+        label: String, args: [String], statusProfile: String?
+    ) -> ParsedRunStatus? {
+        let statusURL = multiStatusFileURL(from: args, label: label)
+        if let status = readMultiRunStatus(from: statusURL, label: label) {
+            return status
+        }
+        if let statusProfile {
+            return readRunStatus(
+                from: statusFileURL(from: [], profile: statusProfile, label: label),
+                profile: statusProfile
+            )
+        }
+        return newestMultiRunStatus(label: label)
+    }
+
     /// Health inputs relevant to `profile`'s Overview: the global managed
     /// (`isMulti`) agents surface on every profile (managed collection covers
     /// this profile too), PLUS this profile's own user-built agents. A
     /// DIFFERENT profile's hand-built agents are dropped so they don't bleed
     /// onto this workspace's Overview as if they were its own.
+    ///
+    /// A multi agent's run status here is resolved from `profile`'s OWN
+    /// status file only (see `multiRunStatus`) — never a different local
+    /// profile's — so e.g. "Managed Freshness" failing for this profile can
+    /// never be masked by another profile's later successful run of the same
+    /// shared schedule.
     static func healthInputs(
         for profile: String, in dir: URL = agentsDir, now: Date = Date()
     ) -> [ScheduleHealthInput] {
-        filterHealthInputs(healthInputs(in: dir, now: now), forProfile: profile)
+        filterHealthInputs(
+            scannedHealthInputs(in: dir, now: now, statusProfile: profile),
+            forProfile: profile
+        )
     }
 
     /// Pure filter behind `healthInputs(for:)` — unit-tested directly.
