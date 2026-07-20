@@ -116,6 +116,54 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertEqual(provDict?["operatorUserHost"] as? String, "user@host")
     }
 
+    // MARK: - mobileDeviceCount round-trip
+
+    func testMobileDeviceCountRoundTrips() throws {
+        let original = DailySummary(
+            date: "2026-07-20",
+            totalDevices: 500,
+            fileVaultPct: nil,
+            compliancePct: nil,
+            staleCount: nil,
+            osCurrentPct: nil,
+            crowdstrikePct: nil,
+            patchPct: nil,
+            source: "jamf-cli",
+            mobileDeviceCount: 42
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(DailySummary.self, from: data)
+        XCTAssertEqual(decoded.mobileDeviceCount, 42)
+    }
+
+    func testMobileDeviceCountOmittedWhenNil() throws {
+        let summary = DailySummary(
+            date: "2026-07-20",
+            totalDevices: 500,
+            fileVaultPct: nil,
+            compliancePct: nil,
+            staleCount: nil,
+            osCurrentPct: nil,
+            crowdstrikePct: nil,
+            patchPct: nil,
+            source: "jamf-cli"
+        )
+        let data = try JSONEncoder().encode(summary)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertNil(json?["mobileDeviceCount"], "mobileDeviceCount must be absent when nil")
+
+        let decoded = try JSONDecoder().decode(DailySummary.self, from: data)
+        XCTAssertNil(decoded.mobileDeviceCount)
+    }
+
+    func testLegacySummaryJSONDecodesWithoutMobileDeviceCount() throws {
+        let json = """
+        {"date":"2025-01-01","totalDevices":200,"source":"csv"}
+        """
+        let decoded = try JSONDecoder().decode(DailySummary.self, from: Data(json.utf8))
+        XCTAssertNil(decoded.mobileDeviceCount)
+    }
+
     func testLegacySummaryJSONDecodesWithoutProvenance() throws {
         // Old Python-generated summary.json files have no "provenance" key.
         // DailySummary must still decode cleanly.
@@ -247,6 +295,46 @@ final class SummaryJSONEmitTests: XCTestCase {
                        "complianceIsProxy must be true when falling back to security-report proxy")
         XCTAssertNotNil(s.compliancePct,
                         "Proxy compliancePct must be populated when device security data is present")
+    }
+
+    // MARK: - mobileDeviceCount derivation wiring
+
+    /// A mobile-devices-list snapshot on disk at collect time is reflected in
+    /// the emitted summary's mobileDeviceCount.
+    func testEmitIncludesMobileDeviceCountWhenSnapshotPresent() throws {
+        let dataDir = tmpDir.appendingPathComponent("mobile-data", isDirectory: true)
+        let localEngine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+
+        try writeMinimalSecuritySnapshot(to: dataDir)
+        try writeMobileDevicesListSnapshot(to: dataDir, count: 7)
+
+        let localSummaries = tmpDir.appendingPathComponent("mobile-summaries", isDirectory: true)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let summaries = SummaryJSONParser.parseDirectory(localSummaries)
+        let s = try XCTUnwrap(summaries.first)
+        XCTAssertEqual(s.mobileDeviceCount, 7)
+    }
+
+    /// No mobile-devices-list snapshot on disk — mobileDeviceCount is nil,
+    /// never a fabricated 0.
+    func testEmitOmitsMobileDeviceCountWhenSnapshotAbsent() throws {
+        try writeMinimalSecuritySnapshot()
+        engine.emitSummaryJSON(summariesDir: summariesDir)
+        let summaries = SummaryJSONParser.parseDirectory(summariesDir)
+        guard let s = summaries.first else { return }
+        XCTAssertNil(s.mobileDeviceCount)
+    }
+
+    private func writeMobileDevicesListSnapshot(to dataDir: URL, count: Int) throws {
+        let listDir = dataDir.appendingPathComponent("mobile-devices-list", isDirectory: true)
+        try FileManager.default.createDirectory(at: listDir, withIntermediateDirectories: true)
+        let rows: [[String: Any]] = (0..<count).map { i in
+            ["id": "\(i)", "name": "iPad-\(i)", "model": "iPad", "type": "iPad"]
+        }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        let file = listDir.appendingPathComponent("mobile-devices-list_\(recentStamp).json")
+        try data.write(to: file)
     }
 
     // MARK: - freshSummaryIsBetter unit tests

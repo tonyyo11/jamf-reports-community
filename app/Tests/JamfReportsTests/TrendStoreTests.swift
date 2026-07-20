@@ -57,7 +57,8 @@ final class TrendStoreTests: XCTestCase {
         date: String,
         totalDevices: Int = 500,
         compliancePct: Double? = 90,
-        crowdstrikePct: Double? = 95
+        crowdstrikePct: Double? = 95,
+        mobileDeviceCount: Int? = nil
     ) -> DailySummary {
         DailySummary(
             date: date,
@@ -67,7 +68,8 @@ final class TrendStoreTests: XCTestCase {
             staleCount: 12,
             osCurrentPct: 80,
             crowdstrikePct: crowdstrikePct,
-            patchPct: 88
+            patchPct: 88,
+            mobileDeviceCount: mobileDeviceCount
         )
     }
 
@@ -448,6 +450,70 @@ final class TrendStoreTests: XCTestCase {
         let expectedZero: Double = 76.0
         XCTAssertEqual(withMeasuredZero ?? -1, expectedZero, accuracy: 0.01,
                        "a measured zero still earns the stale component")
+    }
+
+    // MARK: - managedDeviceSeries() — computers-vs-mobile trend
+
+    /// The Computers series always has one point per summary (totalDevices is
+    /// never optional); the Mobile series only carries dates where
+    /// mobileDeviceCount was recorded.
+    func testManagedDeviceSeriesSkipsNilMobileCounts() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-07-01", totalDevices: 100, mobileDeviceCount: nil),
+                summary(date: "2026-07-08", totalDevices: 110, mobileDeviceCount: 12),
+                summary(date: "2026-07-15", totalDevices: 120, mobileDeviceCount: 15),
+            ],
+            range: .all
+        )
+
+        let series = store.managedDeviceSeries()
+
+        let computers = try? XCTUnwrap(series.first { $0.label == "Computers" })
+        XCTAssertEqual(computers?.points.map(\.value), [100, 110, 120])
+
+        let mobile = try? XCTUnwrap(series.first { $0.label == "Mobile devices" })
+        XCTAssertEqual(mobile?.points.count, 2, "the nil-mobile day must be skipped, not zero-filled")
+        XCTAssertEqual(mobile?.points.map(\.value), [12, 15])
+    }
+
+    /// When no summary has ever recorded a mobile count, the Mobile series is
+    /// entirely absent (not a single-series array with an empty points list) —
+    /// days before the field existed are correctly invisible, not zero.
+    func testManagedDeviceSeriesOmitsMobileSeriesWhenNeverRecorded() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-07-01", totalDevices: 100, mobileDeviceCount: nil),
+                summary(date: "2026-07-08", totalDevices: 110, mobileDeviceCount: nil),
+            ],
+            range: .all
+        )
+
+        let series = store.managedDeviceSeries()
+
+        XCTAssertEqual(series.map(\.label), ["Computers"])
+    }
+
+    func testManagedDeviceSeriesEmptyWhenNoSummaries() {
+        let store = TrendStore(summaries: [], range: .all)
+        XCTAssertTrue(store.managedDeviceSeries().isEmpty)
+    }
+
+    /// The headline value (`points(metric: .managedDevices)`) is the computer
+    /// count for every summary — the two-line breakdown is a chart-only view,
+    /// mirroring `.activeDevices`.
+    func testManagedDevicesMetricPointsMatchTotalDevices() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-07-01", totalDevices: 100, mobileDeviceCount: 10),
+                summary(date: "2026-07-08", totalDevices: 110, mobileDeviceCount: 11),
+            ],
+            range: .all
+        )
+
+        let points = store.points(metric: .managedDevices)
+
+        XCTAssertEqual(points.map(\.value), [100, 110])
     }
 }
 

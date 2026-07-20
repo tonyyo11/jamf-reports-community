@@ -160,6 +160,14 @@ struct OverviewView: View {
                             : nil
                     )
                 }
+                // DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
+                // Historical computers-vs-mobile split, straight off the archived
+                // daily summary — Jamf Pro itself has no "how many managed Macs
+                // did we have on <past date>" answer. Live-only: demo mode has no
+                // dated mobile-count series to split a caption against.
+                if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
+                    managedDevicesTile(latest)
+                }
                 statRow
                 if workspace.demoMode {
                     osAndRules
@@ -626,6 +634,28 @@ struct OverviewView: View {
         guard let first = generatedHashes.first else { return "" }
         let short = String(first.value.prefix(12))
         return "sha256: \(short)…"
+    }
+
+    /// Fixed (non-togglable) tile pairing the always-present computer count
+    /// with the optional mobile-device count. Unlike `statRow`'s customizable
+    /// score cards, this always renders when a summary exists — computers and
+    /// mobile devices are the app's most basic "how big is the fleet" answer.
+    private func managedDevicesTile(_ latest: DailySummary) -> some View {
+        let computers = latest.totalDevices
+        let mobile = latest.mobileDeviceCount
+        let total = computers + (mobile ?? 0)
+        let computerLabel = "\(computers) computer\(computers == 1 ? "" : "s")"
+        let caption = mobile.map { "\(computerLabel) · \($0) mobile" } ?? computerLabel
+
+        return StatTile(
+            label: "Managed Devices",
+            value: "\(total)",
+            sub: caption,
+            sparkValues: trendStore.values(metric: .managedDevices),
+            sparkColor: Color(hex: TrendSeries.Metric.managedDevices.colorHex)
+        )
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
 
     private var statRow: some View {
@@ -1273,6 +1303,8 @@ struct OverviewView: View {
             "Weighted composite from Security Posture. Open that tab to see the breakdown."
         case .mscpBandTrend:
             "Per-baseline mSCP compliance band trends over time. Open Compliance Posture for current distribution."
+        case .managedDevices:
+            "Historical computers-vs-mobile split. Open Devices or Mobile Fleet to inspect current records."
         }
         return Text(text)
             .font(.footnote)
@@ -1289,6 +1321,8 @@ struct OverviewView: View {
             return [.securityPosture, .compliancePosture]
         case .edrAgent:
             return [.devices, .config]
+        case .managedDevices:
+            return [.devices, .mobileFleet]
         }
     }
 

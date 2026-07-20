@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import CoreGraphics
 
 struct TrendPoint: Identifiable, Sendable, Equatable {
     let date: Date
@@ -305,6 +306,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             guard let counts else { return nil }
             let withData = counts.total - counts.noData
             return withData > 0 ? Double(withData) : nil
+        case .managedDevices:
+            // Headline value for the pill/hero display — the computer count
+            // (always present). The two-line breakdown against mobile devices
+            // is rendered separately by `managedDeviceSeries()`.
+            return Double(summary.totalDevices)
         }
     }
 
@@ -386,6 +392,35 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         }
 
         return MSCPChartDataBuilder.salvagedDates(in: inRange)
+    }
+
+    /// Two-series device-count chart for `.managedDevices`: fleet-wide
+    /// computers (`totalDevices`, always present) and mobile devices
+    /// (`mobileDeviceCount`, nil-skipped). Range-filtered to match
+    /// `filteredSummaries`, mirroring `mscpStackedSeries()`.
+    ///
+    /// The Mobile series is entirely absent — not zero-filled — for any date
+    /// before `mobileDeviceCount` was recorded; that's expected, not a gap.
+    func managedDeviceSeries() -> [ChartSeries] {
+        guard !filteredSummaries.isEmpty else { return [] }
+
+        let computerPoints = filteredSummaries.map {
+            (date: $0.parsedDate, value: Double($0.totalDevices))
+        }
+        var series = [
+            ChartSeries(label: "Computers", color: ChartPalette.seriesColors[0], points: computerPoints),
+        ]
+
+        let mobilePoints: [(date: Date, value: Double)] = filteredSummaries.compactMap { summary in
+            guard let count = summary.mobileDeviceCount else { return nil }
+            return (date: summary.parsedDate, value: Double(count))
+        }
+        if !mobilePoints.isEmpty {
+            series.append(
+                ChartSeries(label: "Mobile devices", color: ChartPalette.seriesColors[4], points: mobilePoints)
+            )
+        }
+        return series
     }
 
     // MARK: - Band-point cache

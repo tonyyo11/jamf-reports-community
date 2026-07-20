@@ -512,4 +512,49 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.iPadCount, 1)
         XCTAssertEqual(snapshot.appleTVCount, 0)
     }
+
+    // MARK: - deviceCount(fromMobileDevicesListData:) — Managed Devices summary field
+
+    /// Real jamf-cli shape: a bare array, no envelope. Mirrors `loadDeviceList`.
+    func testDeviceCountFromBareArrayFixture() throws {
+        let url = TestFixtures.dir("jamf-cli-data/mobile-devices-list/mobile-devices-list.json")
+        let data = try Data(contentsOf: url)
+
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: data)
+
+        // Fixture is decoded elsewhere against this same file; assert only
+        // that the bare-array path decodes and returns a positive count —
+        // avoids pinning the fixture's exact row count in two places.
+        XCTAssertNotNil(count)
+        XCTAssertGreaterThan(count ?? 0, 0)
+    }
+
+    func testDeviceCountFromEnvelopePrefersTotalCount() throws {
+        let json = """
+        {"totalCount": 42, "results": [{"id": "1", "name": "iPad-1"}]}
+        """
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data(json.utf8))
+        XCTAssertEqual(count, 42, "totalCount must win over results.count when both are present")
+    }
+
+    func testDeviceCountFromEnvelopeFallsBackToResultsCountWhenTotalCountAbsent() throws {
+        let json = """
+        {"results": [{"id": "1", "name": "iPad-1"}, {"id": "2", "name": "iPad-2"}]}
+        """
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data(json.utf8))
+        XCTAssertEqual(count, 2)
+    }
+
+    func testDeviceCountFromBareArrayCountsRows() throws {
+        let json = """
+        [{"id": "1", "name": "iPad-1"}, {"id": "2", "name": "iPad-2"}, {"id": "3", "name": "iPad-3"}]
+        """
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data(json.utf8))
+        XCTAssertEqual(count, 3)
+    }
+
+    func testDeviceCountReturnsNilForUndecodableData() throws {
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data("not json".utf8))
+        XCTAssertNil(count, "undecodable data must be nil, never a fabricated 0")
+    }
 }

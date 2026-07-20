@@ -326,6 +326,29 @@ struct MobileFleetService: Sendable {
         )
     }
 
+    // MARK: - Summary count derivation
+
+    /// Device count from a raw `mobile-devices-list` snapshot's bytes, for the
+    /// "Managed Devices" summary/trend field. Tries the current bare-array
+    /// shape first (mirrors `loadDeviceList`'s decode), then a
+    /// `{totalCount, results}` envelope (preferring `totalCount` when
+    /// present, falling back to `results.count`). Returns nil when the data
+    /// decodes as neither — absence is never reported as 0.
+    static func deviceCount(fromMobileDevicesListData data: Data) -> Int? {
+        if let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) {
+            return devices.count
+        }
+        if let envelope = try? JSONDecoder().decode(MobileDevicesListEnvelope.self, from: data) {
+            return envelope.totalCount ?? envelope.results?.count
+        }
+        return nil
+    }
+
+    private struct MobileDevicesListEnvelope: Decodable, Sendable {
+        let totalCount: Int?
+        let results: [MobileDeviceListRow]?
+    }
+
     // MARK: - Internals
 
     private static func loadDeviceList(

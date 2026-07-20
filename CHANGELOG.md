@@ -9,6 +9,14 @@ versions in this repository map to git tags.
 
 ### Added
 
+- Managed-device count history: Trends gains a "Managed Devices" metric
+  charting the fleet's total computer and mobile-device counts over time, and
+  Overview gains a matching tile with the computer/mobile split — so you can
+  answer "how many managed Macs did we have on a given date?" from the app's
+  own archived daily summaries (something Jamf Pro itself can't report).
+  Computer counts are already present in every summary the app has ever
+  written, so that history appears retroactively; mobile counts start
+  recording with the first collect on this version.
 - Duplicate-serial detection (jamf-cli 1.23+): collection now gathers the new
   `pro report duplicate-serials` data, and the Health Audit screen gains a
   "Duplicate serials" section listing the affected records (serial, record IDs,

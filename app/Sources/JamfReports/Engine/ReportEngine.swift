@@ -513,6 +513,14 @@ struct ReportEngine: Sendable {
 
         guard totalDevices > 0 else { return nil }
 
+        // Mobile device count for the "Managed Devices" trend/tile — nil (not
+        // 0) when the mobile-devices-list snapshot is absent or undecodable;
+        // most tenants that only manage Macs will never populate this.
+        var mobileDeviceCount: Int? = nil
+        if let mobileData = cachedData(kind: "mobile-devices-list") {
+            mobileDeviceCount = MobileFleetService.deviceCount(fromMobileDevicesListData: mobileData)
+        }
+
         // Stale count from device-compliance, using the row's resolved day count
         // (`days_since_contact`, falling back to legacy `days_since_checkin`)
         // `>= resolvedStaleDays` with the config threshold (default 30 days).
@@ -669,7 +677,8 @@ struct ReportEngine: Sendable {
             complianceIsProxy: complianceIsProxy,
             mscpBands: mscpBandsSnapshot,
             mscpBandColumns: mscpBandColumnsSnapshot,
-            collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil
+            collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil,
+            mobileDeviceCount: mobileDeviceCount
         )
     }
 

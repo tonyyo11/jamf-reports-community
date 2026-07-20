@@ -48,14 +48,23 @@ struct TrendsView: View {
         return trendStore.chartDomain
     }
 
+    /// Values driving `chartYDomain`. `.managedDevices` renders TWO series
+    /// (Computers, Mobile devices) — the domain must bound both, not just the
+    /// single headline value `value(for:in:)` returns for the pill/hero
+    /// display, or a larger mobile-device line could clip off the chart.
+    private var chartYDomainValues: [Double] {
+        guard metric == .managedDevices else { return values }
+        return trendStore.managedDeviceSeries().flatMap { $0.points.map(\.value) }
+    }
+
     /// Y-axis domain that respects the metric's preferred "good frame" but
     /// always expands to fit actual data. Without this, a Stability Index of
     /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
     /// clips off the top of `metric.maxY = 60`. Floor at 0 — values are
     /// non-negative by construction (validated in the data layer).
     private var chartYDomain: ClosedRange<Double> {
-        let dataMin = values.min()
-        let dataMax = values.max()
+        let dataMin = chartYDomainValues.min()
+        let dataMax = chartYDomainValues.max()
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
         let hi = max(metric.maxY, dataMax ?? metric.maxY)
         return lo...hi
@@ -279,6 +288,8 @@ struct TrendsView: View {
     /// Filter available metrics based on data availability.
     /// .mscpBandTrend only appears when mSCP band history exists.
     /// .securityScore only appears when security score data exists.
+    /// .managedDevices is live-only — demo mode has no dated mobile-count
+    /// series to split the two-line chart against.
     private var availableMetrics: [TrendSeries.Metric] {
         TrendSeries.Metric.allCases.filter { metric in
             switch metric {
@@ -287,6 +298,8 @@ struct TrendsView: View {
             case .securityScore:
                 // Keep existing logic for security score availability
                 return trendStore.points(metric: .securityScore).count > 0
+            case .managedDevices:
+                return !workspaceStore.demoMode
             default:
                 return true
             }
@@ -455,6 +468,31 @@ struct TrendsView: View {
                                     .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
                                 }
                             }
+                        } else if metric == .managedDevices {
+                            // Two-line chart: Computers vs. Mobile devices.
+                            // Series identity (`by:`) is what lets Charts render
+                            // and legend them distinctly — a constant
+                            // foregroundStyle would collapse both into one line.
+                            let deviceSeries = trendStore.managedDeviceSeries()
+                            ForEach(deviceSeries, id: \.label) { series in
+                                ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
+                                    LineMark(
+                                        x: .value("Date", point.date),
+                                        y: .value("Count", point.value)
+                                    )
+                                    .foregroundStyle(by: .value("Type", series.label))
+                                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                    .interpolationMethod(.monotone)
+
+                                    PointMark(
+                                        x: .value("Date", point.date),
+                                        y: .value("Count", point.value)
+                                    )
+                                    .foregroundStyle(by: .value("Type", series.label))
+                                    .symbolSize(30)
+                                    .accessibilityLabel("\(series.label): \(Int(point.value)) on \(SummaryJSONParser.dateFormatter.string(from: point.date))")
+                                }
+                            }
                         } else {
                             // Standard line + area chart for other metrics
                             ForEach(Array(trendPoints.enumerated()), id: \.offset) { _, point in
@@ -485,8 +523,10 @@ struct TrendsView: View {
                             }
                         }
 
-                        // Selection indicator (only for non-mSCP metrics)
-                        if metric != .mscpBandTrend {
+                        // Selection indicator (single-series metrics only —
+                        // .mscpBandTrend and .managedDevices render multiple
+                        // series and have no one "the" value to highlight)
+                        if metric != .mscpBandTrend, metric != .managedDevices {
                             if let selectedPoint {
                                 RuleMark(x: .value("Selected", selectedPoint.date))
                                     .foregroundStyle(Theme.Colors.hairlineStrong)
@@ -529,8 +569,8 @@ struct TrendsView: View {
                         }
                     }
                     .chartForegroundStyleScale(
-                        domain: mscpBandChartScale.labels,
-                        range: mscpBandChartScale.colors
+                        domain: heroChartForegroundScale.labels,
+                        range: heroChartForegroundScale.colors
                     )
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
@@ -788,6 +828,22 @@ struct TrendsView: View {
         let series = trendStore.mscpStackedSeries()
         guard !series.isEmpty else { return (["Band"], [Theme.Colors.fg2]) }
         return (series.map(\.label), series.map { Color(cgColor: $0.color) })
+    }
+
+    /// Label/color scale for the `.managedDevices` two-line chart, same
+    /// derivation as `mscpBandChartScale`.
+    private var managedDevicesChartScale: (labels: [String], colors: [Color]) {
+        let series = trendStore.managedDeviceSeries()
+        guard !series.isEmpty else { return (["Computers"], [Theme.Colors.info]) }
+        return (series.map(\.label), series.map { Color(cgColor: $0.color) })
+    }
+
+    /// The `.chartForegroundStyleScale` the hero chart applies. Only
+    /// `.mscpBandTrend` and `.managedDevices` marks use `.foregroundStyle(by:)`
+    /// — every other metric styles its mark directly, so the scale is inert
+    /// for them and picking the right one here only matters for those two.
+    private var heroChartForegroundScale: (labels: [String], colors: [Color]) {
+        metric == .managedDevices ? managedDevicesChartScale : mscpBandChartScale
     }
 
     /// Band legend for the live stacked-area chart.

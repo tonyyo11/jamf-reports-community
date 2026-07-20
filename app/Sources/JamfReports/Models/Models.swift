@@ -928,6 +928,12 @@ struct TrendSeries: Identifiable, Sendable {
         /// of device counts by compliance band (Pass/Low/Medium/High) over time.
         /// Only appears in TrendsView metric picker when mscpBands history exists.
         case mscpBandTrend
+        /// Historical computers-vs-mobile device count, split into two series
+        /// in the chart (`TrendStore.managedDeviceSeries()`) while this single
+        /// case drives the pill/hero headline number via `value(for:in:)`
+        /// (computer count — Jamf Pro itself can't answer "how many managed
+        /// Macs did we have on <past date>", but every archived summary can).
+        case managedDevices
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
@@ -941,6 +947,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
             case .mscpBandTrend: return "mSCP Compliance Bands"
+            case .managedDevices: return "Managed Devices"
             }
         }
 
@@ -955,13 +962,13 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var unit: String {
             switch self {
-            case .stale, .activeDevices, .mscpBandTrend: return ""
+            case .stale, .activeDevices, .mscpBandTrend, .managedDevices: return ""
             default: return "%"
             }
         }
         var minY: Double {
             switch self {
-            case .activeDevices, .mscpBandTrend: return 0
+            case .activeDevices, .mscpBandTrend, .managedDevices: return 0
             case .stability:     return 40
             case .compliance:    return 40
             case .fileVault:     return 60
@@ -974,7 +981,7 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var maxY: Double {
             switch self {
-            case .activeDevices: return 1000
+            case .activeDevices, .managedDevices: return 1000
             case .stale:         return 60
             case .mscpBandTrend: return 500  // Per-band device count max
             default:             return 100
@@ -992,6 +999,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .patch:         return 0xBF5AF2
             case .securityScore: return 0xFF453A
             case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
+            case .managedDevices: return 0x4472C4  // Matches the Computers series line
             }
         }
     }
