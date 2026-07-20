@@ -187,4 +187,52 @@ final class CollectDeadVerdictTests: XCTestCase {
         ]
         XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
     }
+
+    // MARK: - skippedNotDueCount veto (field defect, jamf-cli 1.21.1, 2026-07)
+    //
+    // A freshness collect that skipped every healthy kind as "not due" (fresh cache
+    // from a prior run) and then only attempted the chronically-failing residue —
+    // Platform-API 404s (exit 1) plus duplicate-serials on a pre-1.23 binary (exit 2)
+    // — must not read as a total outage; a cadence skip is recent proof the server
+    // and jamf-cli both work.
+
+    /// Failures only, but at least one kind was skipped as not-due this run →
+    /// NOT dead. The fresh-cache skip is proof the server is reachable.
+    func testFailuresOnlyWithSkipsPresent_isNotCollectDead() {
+        let outcomes = [
+            outcome("compliance-devices", 1),
+            outcome("ddm-status", 1),
+            outcome("duplicate-serials", 2),
+        ]
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 4))
+    }
+
+    /// All failures are exit 2 (usage — bad flags / unrecognized subcommand), no
+    /// skips → NOT dead. Exit 2 says nothing about server reachability; this is a
+    /// broken invocation (e.g. duplicate-serials on a pre-1.23 binary), not an outage.
+    func testAllExitTwoNoSkips_isNotCollectDead() {
+        let outcomes = [
+            outcome("duplicate-serials", 2),
+            outcome("some-new-command", 2),
+        ]
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+    }
+
+    /// Zero successes, zero skips, and at least one non-exit-2 failure → still dead.
+    /// The true outage case must keep firing once the exit-2 and skip noise is
+    /// excluded from the evidence.
+    func testNoSkipsWithNonUsageFailure_isCollectDead() {
+        let outcomes = [
+            outcome("duplicate-serials", 2),
+            outcome("compliance-devices", 1),
+        ]
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+    }
+
+    /// exit 7 (partial failure) still counts as success evidence even when the
+    /// skippedNotDueCount veto isn't in play — a saved partial result is not an outage.
+    func testExit7CountsAsSuccessRegardlessOfSkips_isNotCollectDead() {
+        let outcomes = [outcome("ea-results", 7), outcome("compliance-devices", 1)]
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+    }
 }

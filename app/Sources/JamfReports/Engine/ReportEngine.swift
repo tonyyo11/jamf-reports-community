@@ -1307,8 +1307,7 @@ struct ReportEngine: Sendable {
     }
 
     /// Whether a collect's per-command outcomes represent a total outage where live
-    /// calls were attempted but ALL failed (any non-zero exit code) with zero successes
-    /// and no HTTP 401 signals.
+    /// calls were attempted but ALL failed with zero successes and no HTTP 401 signals.
     ///
     /// This catches the case where the server is unreachable, jamf-cli is broken, or
     /// every call exits non-zero for reasons unrelated to auth (exit 1 network error,
@@ -1318,13 +1317,31 @@ struct ReportEngine: Sendable {
     /// success. Auth-dead (`isCollectAuthDead`) is checked first at the call site, so
     /// this function is only reached when no 401 was present.
     ///
-    /// Returns false for an empty outcome set (no live calls were attempted) and for any
-    /// outcome set that includes at least one `exit 0` or `exit 7` (partial failure) success.
-    static func isCollectDead(_ outcomes: [CollectOutcome]) -> Bool {
+    /// Field defect (production, jamf-cli 1.21.1, 2026-07): a freshness collect that
+    /// skipped every healthy kind as "not due" (fresh cache from a prior run) and then
+    /// only attempted the chronically-failing residue — Platform-API 404s (exit 1) plus
+    /// `duplicate-serials` on a pre-1.23 binary (exit 2, unrecognized subcommand) — was
+    /// misdiagnosed as a total outage even though the server was demonstrably reachable
+    /// a minute earlier. Two refinements fix that without weakening the real-outage case:
+    ///
+    /// - `skippedNotDueCount`: a cadence "not due" skip is recent proof the server and
+    ///   jamf-cli both work, so any skip at all vetoes the dead verdict for this run.
+    /// - exit 2 (`CLIBridge.exitCodeUsage` — bad flags / unrecognized subcommand, e.g. a
+    ///   too-new command on an old binary) says nothing about server reachability and is
+    ///   excluded from the "failure" evidence; an all-exit-2 run is a broken invocation,
+    ///   not an outage, and only warns per-kind.
+    ///
+    /// Returns false for an empty outcome set, for any outcome set that includes at least
+    /// one `exit 0` or `exit 7` (partial failure) success, for any run where at least one
+    /// kind was skipped as not-due, and for a failure set that is exit-2-only.
+    static func isCollectDead(_ outcomes: [CollectOutcome], skippedNotDueCount: Int = 0) -> Bool {
         guard !outcomes.isEmpty else { return false }
-        return !outcomes.contains {
+        let anySuccess = outcomes.contains {
             $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
         }
+        guard !anySuccess else { return false }
+        guard skippedNotDueCount == 0 else { return false }
+        return outcomes.contains { $0.exitCode != CLIBridge.exitCodeUsage }
     }
 
     static func collect(
@@ -1471,9 +1488,13 @@ struct ReportEngine: Sendable {
             // AuditView and WorkspaceStore+Refresh all consume as "audit".
             // audit-platform-checks omitted: no Swift reader for that kind yet.
             (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
-            // v1.23.0+ only — an older binary prints Cobra's parent-help text and exits 0
-            // for this unknown subcommand; the isJSONSnapshot guard below drops that output
-            // instead of poisoning the cache (see the classic-macos-profiles rename comment).
+            // v1.23.0+ only. Observed behavior on jamf-cli 1.21.1 (production, 2026-07):
+            // an older binary exits 2 (usage — unrecognized subcommand), NOT Cobra's
+            // exit-0-with-parent-help; exit 2 falls through the exit-0/exit-7 success
+            // check below and is never saved. The isJSONSnapshot guard is kept as
+            // defense-in-depth for any jamf-cli build that does print help at exit 0
+            // (see the classic-macos-profiles rename comment), but the real-world
+            // failure mode on old binaries is a clean non-zero exit.
             (["-p", profile, "pro", "report", "duplicate-serials", "--output", "json"],
              "duplicate-serials"),
         ]
@@ -1516,6 +1537,10 @@ struct ReportEngine: Sendable {
         // Used to build liveKinds for R4 provenance — exit-0 non-JSON output
         // (Cobra help) passes the exitCode==0 filter but must NOT be "live".
         var savedKinds: Set<String> = []
+        // Cadence "not due" skips only — NOT tier-filter skips, which say nothing
+        // about server reachability. Feeds isCollectDead's veto: a run that skipped
+        // fresh-cache kinds and failed only the chronic residue is not an outage.
+        var skippedNotDueCount = 0
         for (args, kind) in plannedCommands {
             // T-9 tier filter: drop kinds outside the selected tier set.
             // An unmapped kind has no tier and is always allowed — the
@@ -1533,6 +1558,7 @@ struct ReportEngine: Sendable {
             let cadence = CadenceResolver.cadence(forReport: kind)
             let lastRun = stateStore?.lastRun(report: kind)
             if !force, !CadenceResolver.isDue(lastRun: lastRun, cadence: cadence, now: collectStart) {
+                skippedNotDueCount += 1
                 onLine(.init(
                     timestamp: Date(), level: .info,
                     text: "[skip] \(kind): not due (last: \(lastRunLabel(lastRun)), cadence: \(cadence.label))"
@@ -1606,9 +1632,16 @@ struct ReportEngine: Sendable {
                                  text: "[ok] \(kind): \(data.count) bytes"))
                 }
             } else if useCachedData {
-                // use_cached_data=true: warn and skip; cached snapshot (if any) used at generate time.
+                // use_cached_data=true: warn and skip. Only claim "using cached" when a
+                // cached snapshot for this kind actually exists on disk — otherwise the
+                // generate step has nothing to fall back to and the copy would mislead.
+                let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
+                let hasCachedSnapshot = FileManager.newestJSONFile(in: kindDir) != nil
+                let cacheNote = hasCachedSnapshot
+                    ? "skipped (using cached)"
+                    : "no cached snapshot available"
                 onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] \(kind): exit \(exitCode) — skipped (using cached)"))
+                             text: "[warn] \(kind): exit \(exitCode) — \(cacheNote)"))
             } else {
                 // use_cached_data=false: treat collect failure as fatal for this kind.
                 onLine(.init(timestamp: Date(), level: .fail,
@@ -1638,12 +1671,14 @@ struct ReportEngine: Sendable {
             throw ReportEngineError.authExpired(profile: profile, failedCount: authFailures)
         }
 
-        // Total-outage guard: all live calls failed (any non-zero exit), no 401 signals
-        // and no successes → server unreachable or jamf-cli broken. Without this guard
-        // the run falls through to SOFA + emitSummaryJSON and records Success while
-        // serving entirely stale cache. Abort BEFORE SOFA/summary for the same reason
-        // as auth-dead: no degraded snapshot should be promoted as fresh data.
-        if Self.isCollectDead(outcomes) {
+        // Total-outage guard: all live calls failed, no 401 signals, no successes, no
+        // "not due" cadence skips this run, and at least one failure isn't a bare exit-2
+        // usage error → server unreachable or jamf-cli broken. Without this guard the run
+        // falls through to SOFA + emitSummaryJSON and records Success while serving
+        // entirely stale cache. Abort BEFORE SOFA/summary for the same reason as
+        // auth-dead: no degraded snapshot should be promoted as fresh data. See
+        // isCollectDead's doc comment for the field defect this veto set fixes.
+        if Self.isCollectDead(outcomes, skippedNotDueCount: skippedNotDueCount) {
             let failedCount = outcomes.count
             let msg = "[error] all \(failedCount) live jamf-cli call(s) failed for '\(profile)' " +
                 "(server unreachable or jamf-cli broken) — no snapshot written."
