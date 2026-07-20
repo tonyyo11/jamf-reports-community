@@ -225,8 +225,8 @@ versions in this repository map to git tags.
   (a collect that isn't due is skipped). Report and backup schedules stay on their
   calendar. These remain user LaunchAgents, so they still don't run while no user
   is logged in.
-- Tracked jamf-cli dependency updated to v1.23.0. No code changes required for
-  existing functionality. Notable upstream additions in v1.23.0:
+- Tracked jamf-cli dependency updated to v1.24.0. No code changes required for
+  existing functionality. Notable upstream additions across v1.23.0 and v1.24.0:
   - New `--download-packages` flag for `pro backup` to retrieve JCDS-hosted
     package binaries alongside config objects. The current backup mode runs
     `jamf-cli pro backup` without this flag; it remains unchanged, and the new
@@ -239,6 +239,12 @@ versions in this repository map to git tags.
     bulk retry — noted as future integration candidates.
   - Compliance Benchmarks: `selectedOsVersions` support added — additive field.
   - New `update --set` command for fetch-merge-put on PUT endpoints; not used.
+  - New `--name` flag for benchmark-reports commands (v1.24.0) — additive filter;
+    no existing call sites affected.
+  - `--serial` alias and `--subset` flag added to classic history commands
+    (v1.24.0) — additive; existing classic group/history calls are unchanged.
+  - OpenAPI spec updated to Jamf Pro 11.30.0 (v1.24.0) — internal; no JSON
+    shape changes affect current parsing.
 
 
 ## [2.5.0] - 2026-07-06
