@@ -747,6 +747,32 @@ struct HardwareModelRow: Decodable, Sendable {
     let pct: String?
 }
 
+// MARK: - Duplicate serials
+// `jamf-cli pro report duplicate-serials --output json` (v1.23.0+)
+// Shape (bare array, flat, pre-grouped by serial + ordered by numeric id):
+// [ { "serial": String, "id": String, "name": String, "last_contact": String } ]
+// Source: internal/commands/pro_report_serials.go — runReportDuplicateSerials
+// returns `[]map[string]any` with exactly these four keys, and
+// output.Formatter.printJSON does a plain `json.NewEncoder(w).Encode(data)` on
+// that slice — no envelope, matching the classic-computer-groups convention.
+
+/// Not Identifiable on purpose — a per-access computed id would abort SwiftUI
+/// Table (#185). `id` is `AnyCodable` because jamf-cli has emitted record ids
+/// as both JSON string and number across versions/commands (the exact
+/// ambiguity `SmartGroupRow` was hardened against) — a strict `String?` would
+/// invalidate the whole snapshot on one number-typed row.
+struct DuplicateSerialRow: Decodable, Sendable {
+    let serial: String?
+    let id: AnyCodable?
+    let name: String?
+    let lastContact: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case serial, id, name
+        case lastContact = "last_contact"
+    }
+}
+
 // MARK: - Audit
 // `jamf-cli pro audit --output json`
 

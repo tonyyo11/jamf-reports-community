@@ -1238,6 +1238,8 @@ struct ReportEngine: Sendable {
         "mobile-device-inventory-details",
         // Health audit — cheap single call; see collect command matrix entry above.
         "audit",
+        // Duplicate-serial records (v1.23.0+) — data-integrity aggregate query.
+        "duplicate-serials",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
         "sofa",
         "patch-release-dates",
@@ -1460,6 +1462,11 @@ struct ReportEngine: Sendable {
             // AuditView and WorkspaceStore+Refresh all consume as "audit".
             // audit-platform-checks omitted: no Swift reader for that kind yet.
             (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
+            // v1.23.0+ only — an older binary prints Cobra's parent-help text and exits 0
+            // for this unknown subcommand; the isJSONSnapshot guard below drops that output
+            // instead of poisoning the cache (see the classic-macos-profiles rename comment).
+            (["-p", profile, "pro", "report", "duplicate-serials", "--output", "json"],
+             "duplicate-serials"),
         ]
 
         let plannedCommands: [(args: [String], kind: String)]
