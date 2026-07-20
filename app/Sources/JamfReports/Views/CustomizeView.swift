@@ -243,7 +243,7 @@ struct CustomizeView: View {
                 .background(Theme.Surface.high)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
-                Text("Estimated workbook · ~1.1 MB · \(enabledSheets.count) sheets · matplotlib charts embedded")
+                Text("Estimated workbook · \(enabledSheets.count) sheets · native charts embedded")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }

@@ -407,6 +407,8 @@ struct TrendsView: View {
                                 .monospacedDigit()
                                 .contentTransition(.numericText(countsDown: delta < 0))
                                 .animation(.snappy(duration: 0.35), value: displayVal)
+                                .lineLimit(1)
+                                .layoutPriority(1)
 
                             if selectedPoint == nil {
                                 HStack(spacing: 4) {
@@ -417,14 +419,17 @@ struct TrendsView: View {
                                             "\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", $0))%)"
                                         } ?? "\(abs(Int(delta.rounded())))\(metric.unit)"
                                     )
+                                    .lineLimit(1)
                                 }
                                 .font(Theme.Fonts.mono(14, weight: .semibold))
                                 .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+                                .fixedSize(horizontal: true, vertical: false)
                                 Pill(text: rangeBadgeText, tone: .muted)
                             } else {
                                 Text("at \(displayDate)")
                                     .font(Theme.Fonts.mono(14, weight: .semibold))
                                     .foregroundStyle(Theme.Colors.goldBright)
+                                    .lineLimit(1)
                             }
                         }
                     }
@@ -613,14 +618,25 @@ struct TrendsView: View {
 
     // MARK: Comparison row (stacked bands + multi-line)
 
+    /// `complianceBandCard` (and its "Pass (0) · Low (1–10) · …" band legend)
+    /// only makes sense while the mSCP band metric is the hero selection —
+    /// showing it under Stability Index or Active Devices reads as a leftover
+    /// legend for an unrelated chart. `securityPostureCard` is a general
+    /// comparison reference and stays visible regardless of hero selection.
     private var comparisonRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) {
-                complianceBandCard
-                securityPostureCard
-            }
-            VStack(spacing: 16) {
-                complianceBandCard
+        Group {
+            if metric == .mscpBandTrend {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 12) {
+                        complianceBandCard
+                        securityPostureCard
+                    }
+                    VStack(spacing: 16) {
+                        complianceBandCard
+                        securityPostureCard
+                    }
+                }
+            } else {
                 securityPostureCard
             }
         }

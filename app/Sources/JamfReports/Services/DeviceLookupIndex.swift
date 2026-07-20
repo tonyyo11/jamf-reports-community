@@ -10,7 +10,15 @@ import Foundation
 /// (`DeviceInventoryRecord` with risk scoring, patch state, etc.) and only
 /// indexes computers. This index is deliberately lightweight: it carries just
 /// enough fields to display a candidate chip and pick the right CLI call.
+///
+/// `@Observable` — without it, `DeviceLookupView`'s `@State private var index`
+/// only re-renders when the *reference* is reassigned, not when `load(profile:)`
+/// mutates this class's stored properties in place. The unobserved mutation was
+/// invisible: `resolve(_:)` still saw the freshly loaded `candidates`, so lookups
+/// worked, but any view text reading `index.candidates.count` (the cached-count
+/// caption) stayed frozen at its first-paint value forever.
 @MainActor
+@Observable
 final class DeviceLookupIndex {
 
     enum Kind: String, Sendable, Equatable, Hashable {

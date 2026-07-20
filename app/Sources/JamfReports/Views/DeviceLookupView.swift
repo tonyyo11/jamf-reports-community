@@ -108,7 +108,7 @@ struct DeviceLookupView: View {
         let count = index.candidates.count
         let countLabel: String
         if count == 0 {
-            countLabel = "no cached inventory yet — run Refresh to populate"
+            countLabel = "No cached inventory yet — run Refresh to populate"
         } else {
             let computers = index.candidates.lazy.filter { $0.kind == .computer }.count
             let mobiles = count - computers
