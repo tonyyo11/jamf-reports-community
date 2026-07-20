@@ -246,6 +246,15 @@ versions in this repository map to git tags.
 
 ### Changed
 
+- "Active Devices" now means truly active: the Overview tile and Trends metric
+  report managed devices minus stale ones (per your configured
+  `thresholds.stale_device_days`), instead of duplicating the total. The tile
+  says what it counts ("Checked in within Nd"); when staleness has never been
+  measured the value honestly shows as unknown rather than overstating.
+  Alongside the new Managed Devices tile, the pair now distinguishes "how many
+  devices we manage" from "how many are actually checking in." A summary
+  written earlier in the day also picks up the mobile-device count on the next
+  collect instead of waiting for tomorrow.
 - Tracks jamf-cli v1.24.0 (was v1.22.0). Updating the binary also enriches
   device drill-downs for free: MDM-command and policy history rows now carry
   completion dates and accurate command states (jamf-cli 1.23+). One upstream

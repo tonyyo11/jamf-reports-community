@@ -425,6 +425,43 @@ final class SummaryJSONEmitTests: XCTestCase {
                        "nil → nil staleCount is not an upgrade")
     }
 
+    // MARK: - freshSummaryIsBetter mobileDeviceCount upgrade rules
+
+    /// nil → measured: a summary written before the mobile-devices snapshot
+    /// existed (or by a prior build) is upgraded once a later collect measures it.
+    func testFreshSummaryIsBetter_mobileCountNilToMeasured_returnsTrue() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: nil)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: 42)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                      "nil → measured mobileDeviceCount is an upgrade: the unknown becomes known")
+    }
+
+    /// measured → nil: a fresh run that couldn't determine the mobile count must
+    /// not overwrite an existing run that did.
+    func testFreshSummaryIsBetter_mobileCountMeasuredToNil_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: 42)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: nil)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "measured → nil mobileDeviceCount is a downgrade: must not clobber it")
+    }
+
+    /// both measured: no upgrade, even if the values differ — the digest
+    /// keeps the first same-day measurement rather than churning on every run.
+    func testFreshSummaryIsBetter_mobileCountMeasuredToMeasured_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: 42)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: 50)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "measured → measured mobileDeviceCount is not an upgrade")
+    }
+
+    /// both nil: neither run measured mobile devices; no upgrade.
+    func testFreshSummaryIsBetter_bothMobileCountNil_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: nil)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: nil)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "nil → nil mobileDeviceCount is not an upgrade")
+    }
+
     // MARK: - emitSummaryJSON upgrade behavior (integration)
 
     /// Existing proxy summary + fresh real-mSCP summary → file overwritten with real data.
@@ -544,7 +581,8 @@ final class SummaryJSONEmitTests: XCTestCase {
         hasBands: Bool,
         date: String = "2026-06-05",
         totalDevices: Int = 100,
-        staleCount: Int? = 5
+        staleCount: Int? = 5,
+        mobileDeviceCount: Int? = nil
     ) -> DailySummary {
         let bands: [String: MSCPBandCounts]? = hasBands
             ? ["NIST": MSCPBandCounts(pass: 80, low: 10, medLow: 5, medium: 3, high: 2, noData: 0)]
@@ -560,7 +598,8 @@ final class SummaryJSONEmitTests: XCTestCase {
             patchPct: 85.0,
             source: "jamf-cli",
             complianceIsProxy: complianceIsProxy,
-            mscpBands: bands
+            mscpBands: bands,
+            mobileDeviceCount: mobileDeviceCount
         )
     }
 

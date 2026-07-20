@@ -278,7 +278,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     private func value(for metric: TrendSeries.Metric, in summary: DailySummary) -> Double? {
         switch metric {
         case .stability:     return summary.stabilityIndex
-        case .activeDevices: return Double(summary.totalDevices)
+        // Redefined 2.6: active = totalDevices - staleCount, not totalDevices
+        // (was redundant with .managedDevices). Nil when staleness is
+        // unmeasured — the point is skipped, never overstated as the total.
+        case .activeDevices: return summary.activeDeviceCount.map(Double.init)
         case .compliance:    return summary.compliancePct
         case .fileVault:     return summary.fileVaultPct
         case .osCurrent:     return summary.osCurrentPct

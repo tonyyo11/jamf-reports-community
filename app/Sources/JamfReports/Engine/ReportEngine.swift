@@ -367,10 +367,13 @@ struct ReportEngine: Sendable {
     /// "Better" means at least one of:
     /// - `existing.complianceIsProxy == true` AND `fresh.complianceIsProxy == false`
     ///   (real mSCP data is now available where before only the 4-control proxy was), OR
-    /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`.
+    /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`, OR
+    /// - `existing.staleCount`/`mobileDeviceCount` is nil (unmeasured) AND `fresh` measured it,
+    ///   or `existing.staleCount == 0` on a non-empty fleet AND `fresh` measures a real value.
     ///
-    /// Never returns true when the fresh run would downgrade (real→proxy, or bands dropped),
-    /// preserving the PR-18 protection against partial-collect clobbering a good summary.
+    /// Never returns true when the fresh run would downgrade (real→proxy, bands dropped, or a
+    /// measured value replaced by nil), preserving the PR-18 protection against a partial
+    /// collect clobbering a good summary.
     static func freshSummaryIsBetter(existing: DailySummary, fresh: DailySummary) -> Bool {
         if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
         let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
@@ -384,6 +387,12 @@ struct ReportEngine: Sendable {
         if existing.staleCount == nil, fresh.staleCount != nil { return true }
         if existing.staleCount == 0, existing.totalDevices > 0,
            let freshStale = fresh.staleCount, freshStale > 0 { return true }
+        // Same pattern for mobileDeviceCount: a same-day summary written before
+        // a mobile-devices collect landed (or by a prior build that predates
+        // the field) must not freeze mobileDeviceCount at nil all day once a
+        // later collect measures it. Upgrade only; a measured count is never
+        // replaced by nil.
+        if existing.mobileDeviceCount == nil, fresh.mobileDeviceCount != nil { return true }
         return false
     }
 

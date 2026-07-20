@@ -735,12 +735,22 @@ struct OverviewView: View {
             return diff > 0 ? .up : .down
         }()
 
+        // DRAFT — needs visual verification. Clarifies that Active Devices
+        // (redefined 2.6 to exclude stale devices) is not the same count as
+        // Managed Devices.
+        let subText: String? = {
+            guard metric == .activeDevices else { return nil }
+            let days = Int(workspace.configState.staleDeviceDays) ?? 30
+            return "Checked in within \(days)d"
+        }()
+
         return StatTile(
             label: metric.displayLabel(
                 benchmarkLabel: workspace.complianceBenchmarkLabel,
                 edrAgentName: workspace.edrAgentName
             ),
             value: valueStr,
+            sub: subText,
             delta: values.count >= 2 ? deltaStr : nil,
             deltaTrend: trend,
             sparkValues: values,
@@ -1284,6 +1294,7 @@ struct OverviewView: View {
                 staleMeasured: latest?.staleCount != nil
             ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
+            "Excludes devices stale beyond \(Int(workspace.configState.staleDeviceDays) ?? 30)d. " +
             "Open Devices to inspect records contributing to this count."
         case .compliance:
             latest?.complianceIsProxy == true

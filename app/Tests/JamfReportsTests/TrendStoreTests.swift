@@ -20,6 +20,9 @@ final class TrendStoreTests: XCTestCase {
         XCTAssertEqual(store.dates().map(dateString), ["2026-04-01", "2026-04-08", "2026-04-15"])
     }
 
+    /// Redefined 2.6: active = totalDevices - staleCount (was totalDevices,
+    /// redundant with .managedDevices). The `summary()` helper's default
+    /// staleCount is 12, so both points are total minus 12.
     func testActiveDevicePointsIncludeEverySummary() {
         let store = TrendStore(
             summaries: [
@@ -32,7 +35,45 @@ final class TrendStoreTests: XCTestCase {
         let points = store.points(metric: .activeDevices)
 
         XCTAssertEqual(points.map { dateString($0.date) }, ["2026-04-01", "2026-04-08"])
-        XCTAssertEqual(points.map(\.value), [100, 125])
+        XCTAssertEqual(points.map(\.value), [88, 113])
+    }
+
+    func testActiveDevicesSubtractsStaleFromTotal() {
+        let store = TrendStore(
+            summaries: [summary(date: "2026-04-01", totalDevices: 97, staleCount: 93)],
+            range: .all
+        )
+
+        XCTAssertEqual(store.points(metric: .activeDevices).map(\.value), [4])
+    }
+
+    /// staleCount nil (device-compliance never collected) means active is
+    /// UNKNOWN, not "assume everyone is active" — the point is skipped.
+    func testActiveDevicesSkipsWhenStaleCountUnmeasured() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-04-01", totalDevices: 100, staleCount: nil),
+                summary(date: "2026-04-08", totalDevices: 100, staleCount: 40),
+            ],
+            range: .all
+        )
+
+        let points = store.points(metric: .activeDevices)
+
+        XCTAssertEqual(points.map { dateString($0.date) }, ["2026-04-08"])
+        XCTAssertEqual(points.map(\.value), [60])
+    }
+
+    /// A mixed-day snapshot can measure staleCount greater than totalDevices
+    /// (e.g. stale sourced from a fresher inventory than the total) — clamp
+    /// at zero rather than reporting a negative active count.
+    func testActiveDevicesClampsAtZeroWhenStaleExceedsTotal() {
+        let store = TrendStore(
+            summaries: [summary(date: "2026-04-01", totalDevices: 10, staleCount: 25)],
+            range: .all
+        )
+
+        XCTAssertEqual(store.points(metric: .activeDevices).map(\.value), [0])
     }
 
     func testActiveDevicesDemoSeriesUsesTotalDevicesTrend() {
@@ -58,14 +99,15 @@ final class TrendStoreTests: XCTestCase {
         totalDevices: Int = 500,
         compliancePct: Double? = 90,
         crowdstrikePct: Double? = 95,
-        mobileDeviceCount: Int? = nil
+        mobileDeviceCount: Int? = nil,
+        staleCount: Int? = 12
     ) -> DailySummary {
         DailySummary(
             date: date,
             totalDevices: totalDevices,
             fileVaultPct: 98,
             compliancePct: compliancePct,
-            staleCount: 12,
+            staleCount: staleCount,
             osCurrentPct: 80,
             crowdstrikePct: crowdstrikePct,
             patchPct: 88,

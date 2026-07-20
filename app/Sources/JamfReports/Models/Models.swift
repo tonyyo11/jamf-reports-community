@@ -1079,6 +1079,16 @@ extension DailySummary {
             totalDevices: totalDevices
         )
     }
+
+    /// `totalDevices` minus `staleCount` — devices that checked in within the
+    /// configured stale threshold. Nil when staleness is unmeasured
+    /// (device-compliance never collected); never falls back to `totalDevices`,
+    /// which would overstate. Clamped at zero to guard against mixed-day
+    /// snapshots where `staleCount` briefly exceeds `totalDevices`.
+    var activeDeviceCount: Int? {
+        guard let staleCount else { return nil }
+        return max(totalDevices - staleCount, 0)
+    }
 }
 
 // MARK: - Trend range
