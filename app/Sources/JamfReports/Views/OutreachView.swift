@@ -13,13 +13,6 @@ struct OutreachView: View {
     @State private var selectedTier: StaleDeviceService.Tier = .offline
     @State private var copyConfirmation: String?
 
-    /// `stale-checkin` template from jamf-cli `pro sg`, loaded once on appear.
-    /// `nil` means either the templates haven't loaded yet or jamf-cli is older
-    /// than v1.17 (feature-detect failed) — either way, the Create button hides.
-    @State private var staleCheckinTemplate: SmartGroupTemplate?
-    @State private var showSmartGroupSheet = false
-    @State private var bridge = CLIBridge()
-
     var body: some View {
         PageScaffold {
             PageHeader(
@@ -42,49 +35,9 @@ struct OutreachView: View {
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
-        .task(id: workspace.profile) { await loadSmartGroupTemplate() }
         .onChange(of: workspace.profile) { _, _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reload()
-        }
-        .sheet(isPresented: $showSmartGroupSheet) {
-            if let template = staleCheckinTemplate {
-                SmartGroupApplySheet(
-                    viewModel: SmartGroupApplySheetViewModel(
-                        template: template,
-                        profile: workspace.profile,
-                        templateService: SmartGroupTemplateService(
-                            executor: DefaultCLIExecutor(bridge: bridge)
-                        ),
-                        applyService: SmartGroupApplyService(
-                            executor: DefaultCLIExecutor(bridge: bridge)
-                        ),
-                        suggestedName: "Stale Macs 90+ days (Jamf Reports)"
-                    )
-                )
-                .environment(workspace)
-            }
-        }
-    }
-
-    /// Loads the `stale-checkin` template once per profile. Silently no-ops when
-    /// jamf-cli is missing or missing PR #205; the Create button just stays hidden.
-    private func loadSmartGroupTemplate() async {
-        let service = SmartGroupTemplateService(executor: DefaultCLIExecutor(bridge: bridge))
-        do {
-            let templates = try await service.listTemplates(profile: workspace.profile)
-            staleCheckinTemplate = templates.first(where: { $0.slug == "mdm/stale-checkin" })
-        } catch SmartGroupTemplateServiceError.featureNotAvailable {
-            // Expected when jamf-cli is missing or doesn't include PR #205 yet —
-            // silent hide is the documented behavior.
-            staleCheckinTemplate = nil
-        } catch {
-            // Network, auth, decode, or other real failure — log so the operator
-            // can diagnose why the create-smart-group button is missing from the UI.
-            AppLogger.cli.error(
-                "OutreachView smart-group templates load failed: \(String(describing: error), privacy: .private)"
-            )
-            staleCheckinTemplate = nil
         }
     }
 
@@ -229,22 +182,6 @@ struct OutreachView: View {
                     action: exportOutreachCSV
                 )
                 .help("Export all stale devices across every tier to a CSV in the workspace")
-
-                // Smart-group creation appears only when jamf-cli's `pro sg`
-                // namespace is available AND the active tier carries 90+-day
-                // devices (the stale-checkin template's hardcoded threshold).
-                // Showing it on the 31-90d "offline" tier would mislead
-                // operators into thinking they're targeting that bucket.
-                if staleCheckinTemplate != nil, selectedTier != .offline {
-                    PNPButton(
-                        title: "Create smart group",
-                        icon: "rectangle.stack.badge.plus",
-                        style: .neutral,
-                        action: { showSmartGroupSheet = true }
-                    )
-                    .help("Create a smart group of Macs that haven't checked in for 90+ days")
-                    .accessibilityLabel("Create smart group for 90 plus day stale devices")
-                }
 
                 if let copyConfirmation {
                     Pill(text: copyConfirmation, tone: .teal)

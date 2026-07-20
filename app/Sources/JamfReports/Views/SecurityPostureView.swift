@@ -17,21 +17,6 @@ struct SecurityPostureView: View {
     /// Empty string ⇒ the v3.5 defaults via `ScoringConfig.parse`.
     @AppStorage(ScoringConfig.storageKey) private var scoringRaw: String = ""
 
-    /// Encryption-category templates from jamf-cli `pro sg` (PR #205, target release TBD).
-    /// Loaded once per profile; empty when feature-detect fails (older jamf-cli).
-    @State private var encryptionTemplates: [SmartGroupTemplate] = []
-    @State private var selectedTemplate: SmartGroupTemplate?
-    @State private var bridge = CLIBridge()
-
-    /// Encryption templates in operational priority order — not-encrypted is
-    /// the most actionable (devices with FV completely off), followed by IRK
-    /// problems where the policy is partially applied but recovery is broken.
-    private static let templateOrder: [String] = [
-        "encryption/not-encrypted",
-        "encryption/invalid-recovery-key",
-        "encryption/escrow-missing",
-    ]
-
     var body: some View {
         PageScaffold {
             PageHeader(
@@ -68,86 +53,15 @@ struct SecurityPostureView: View {
             } else {
                 heroScoreCard
                 kpiGrid
-                if !encryptionTemplates.isEmpty {
-                    encryptionSmartGroupBar
-                }
                 actionItemsCard
                 osDistributionCard
             }
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
-        .task(id: workspace.profile) { await loadEncryptionTemplates() }
         .onChange(of: workspace.profile) { _, _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reload()
-        }
-        .sheet(item: $selectedTemplate) { template in
-            SmartGroupApplySheet(
-                viewModel: SmartGroupApplySheetViewModel(
-                    template: template,
-                    profile: workspace.profile,
-                    templateService: SmartGroupTemplateService(
-                        executor: DefaultCLIExecutor(bridge: bridge)
-                    ),
-                    applyService: SmartGroupApplyService(
-                        executor: DefaultCLIExecutor(bridge: bridge)
-                    )
-                )
-            )
-            .environment(workspace)
-        }
-    }
-
-    /// "Action row under the FV KPI" per the design plan. Sits between the
-    /// KPI grid and the action-items card so the operator can go from
-    /// "FV coverage is N%" → "Create smart group for the gap" → action items
-    /// without scrolling.
-    private var encryptionSmartGroupBar: some View {
-        Card(padding: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "lock.shield")
-                    .foregroundStyle(Theme.Colors.gold)
-                Text("Encryption remediation")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg)
-                Spacer()
-                Menu("Create smart group") {
-                    ForEach(encryptionTemplates) { template in
-                        Button {
-                            selectedTemplate = template
-                        } label: {
-                            Text(Self.menuLabel(for: template))
-                        }
-                    }
-                }
-                .help("Open a template-driven sheet to create a smart group for an encryption gap")
-            }
-        }
-    }
-
-    private static func menuLabel(for template: SmartGroupTemplate) -> String {
-        switch template.slug {
-        case "encryption/not-encrypted":        return "Devices not encrypted"
-        case "encryption/invalid-recovery-key": return "Invalid recovery key"
-        case "encryption/escrow-missing":       return "Recovery key escrow missing"
-        default:                     return template.description.isEmpty ? template.slug : template.description
-        }
-    }
-
-    private func loadEncryptionTemplates() async {
-        let service = SmartGroupTemplateService(executor: DefaultCLIExecutor(bridge: bridge))
-        do {
-            let all = try await service.listTemplates(profile: workspace.profile)
-            let bySlug = Dictionary(uniqueKeysWithValues: all.map { ($0.slug, $0) })
-            encryptionTemplates = Self.templateOrder.compactMap { bySlug[$0] }
-        } catch SmartGroupTemplateServiceError.featureNotAvailable {
-            encryptionTemplates = []
-        } catch {
-            AppLogger.cli.error(
-                "SecurityPostureView smart-group templates load failed: \(String(describing: error), privacy: .private)"
-            )
-            encryptionTemplates = []
         }
     }
 

@@ -264,9 +264,7 @@ metadata fields on a device record).
 expression (e.g. "FileVault Status = Encrypted AND OS Version >= 15"). New
 devices that match the criteria join automatically. **Static groups** are
 manual lists of devices. JamfReports surfaces smart-group membership in
-several dashboards. Smart-group apply actions depend on jamf-cli's
-`pro sg` namespace and are available only when the installed jamf-cli
-provides it.
+several dashboards.
 
 ---
 
