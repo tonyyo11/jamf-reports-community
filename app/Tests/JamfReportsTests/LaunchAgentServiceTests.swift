@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import JamfReports
@@ -771,5 +772,115 @@ final class LaunchAgentServiceTests: XCTestCase {
         try text.write(to: url, atomically: true, encoding: .utf8)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return url
+    }
+
+    // MARK: - kickstartNow (Automation Health "Run now")
+
+    func testKickstartNowSucceedsOnFirstAttemptNoFallback() async throws {
+        let label = "\(prefix).multi.managed-scan"
+        let dir = try makeAgentsDir()
+        let recorder = ArgvRecorder(exitCodes: [0])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: label, in: dir, runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertTrue(outcome.succeeded)
+        XCTAssertFalse(outcome.usedBootstrapFallback)
+        XCTAssertEqual(recorder.calls, [
+            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
+        ])
+    }
+
+    func testKickstartNowFallsBackToBootstrapThenRetriesKickstart() async throws {
+        let label = "\(prefix).multi.managed-freshness"
+        let dir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: dir, label: label, hour: 6, minute: 0)
+        let plistURL = dir.appendingPathComponent("\(label).plist")
+        // kickstart fails (job not loaded) → bootstrap the plist → kickstart again.
+        let recorder = ArgvRecorder(exitCodes: [1, 0, 0])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: label, in: dir, runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertTrue(outcome.succeeded)
+        XCTAssertTrue(outcome.usedBootstrapFallback)
+        XCTAssertEqual(recorder.calls, [
+            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
+            ["bootstrap", "gui/\(getuid())", plistURL.path],
+            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
+        ])
+    }
+
+    func testKickstartNowFailsWhenBootstrapFallbackAlsoFails() async throws {
+        let label = "\(prefix).multi.managed-reports"
+        let dir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: dir, label: label, hour: 6, minute: 20)
+        let recorder = ArgvRecorder(exitCodes: [1, 1])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: label, in: dir, runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertFalse(outcome.succeeded)
+        XCTAssertTrue(outcome.usedBootstrapFallback,
+                      "bootstrap was attempted even though it too failed")
+        XCTAssertEqual(
+            recorder.calls.count, 2, "no second kickstart retry after a failed bootstrap")
+    }
+
+    func testKickstartNowFailsWithoutFallbackWhenPlistNotFound() async throws {
+        // No plist written for this label in `dir` — the bootstrap fallback
+        // has nothing to bootstrap, so it must not be attempted.
+        let label = "\(prefix).multi.managed-backup"
+        let dir = try makeAgentsDir()
+        let recorder = ArgvRecorder(exitCodes: [1])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: label, in: dir, runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertFalse(outcome.succeeded)
+        XCTAssertFalse(outcome.usedBootstrapFallback)
+        XCTAssertEqual(recorder.calls.count, 1, "only the initial kickstart attempt runs")
+    }
+
+    func testKickstartNowRejectsInvalidLabelBeforeRunningLaunchctl() async {
+        let recorder = ArgvRecorder(exitCodes: [])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: "com.evil.example", runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertFalse(outcome.succeeded)
+        XCTAssertEqual(recorder.calls.count, 0, "an invalid label must never reach launchctl")
+    }
+}
+
+/// Records the exact argv of each injected `runLaunchctl` call and replays a
+/// scripted sequence of exit codes — `kickstartNow`'s only source of test
+/// truth, since production launchctl is never invoked in tests.
+private final class ArgvRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedCalls: [[String]] = []
+    private var exitCodes: [Int32]
+
+    init(exitCodes: [Int32]) {
+        self.exitCodes = exitCodes
+    }
+
+    func record(_ args: [String]) -> Int32 {
+        lock.lock()
+        defer { lock.unlock() }
+        recordedCalls.append(args)
+        guard !exitCodes.isEmpty else { return 0 }
+        return exitCodes.removeFirst()
+    }
+
+    var calls: [[String]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedCalls
     }
 }

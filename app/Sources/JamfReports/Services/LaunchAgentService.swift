@@ -232,13 +232,20 @@ enum LaunchAgentService {
 
     /// Resolve the on-disk plist URL whose `Label` matches `label`. Prefers the
     /// `<label>.plist` filename convention, then falls back to scanning.
-    private static func agentURL(forLabel label: String) -> URL? {
-        let direct = agentsDir.appendingPathComponent("\(label).plist")
+    ///
+    /// - Parameter dir: Directory to search. Defaults to the real
+    ///   `~/Library/LaunchAgents`; `kickstartNow` tests pass a temp dir.
+    private static func agentURL(forLabel label: String, in dir: URL = agentsDir) -> URL? {
+        let direct = dir.appendingPathComponent("\(label).plist")
         if FileManager.default.fileExists(atPath: direct.path), plistLabel(direct) == label {
             return direct
         }
-        return launchAgentEntries()
-            .first { $0.pathExtension == "plist" && plistLabel($0) == label }
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return entries.first { $0.pathExtension == "plist" && plistLabel($0) == label }
     }
 
     private static let archiveTimestampFormatter: DateFormatter = {
@@ -546,6 +553,81 @@ enum LaunchAgentService {
         _ inputs: [ScheduleHealthInput], forProfile profile: String
     ) -> [ScheduleHealthInput] {
         inputs.filter { $0.isMulti || $0.profile == profile }
+    }
+
+    // MARK: - Run now (health-row kickstart)
+
+    /// Outcome of `kickstartNow`, including whether the bootstrap fallback was
+    /// needed — surfaced for logging without changing the simple success Bool
+    /// the UI acts on.
+    struct KickstartOutcome: Sendable, Equatable {
+        let succeeded: Bool
+        let usedBootstrapFallback: Bool
+    }
+
+    /// One-click "Run now" for a failing/overdue Automation Health row:
+    /// immediately re-executes an INSTALLED agent's job via
+    /// `launchctl kickstart -k gui/<uid>/<label>`. launchd runs the real job
+    /// with its exact plist arguments, so the run records under the correct
+    /// label and writes the correct status file — a success genuinely clears
+    /// the row's health state.
+    ///
+    /// If kickstart fails — commonly because the plist is on disk but was
+    /// never `launchctl bootstrap`ed (e.g. after a file-only self-heal
+    /// write) — falls back to bootstrapping the plist first, then retries
+    /// kickstart once. Never throws; a failure is just a `false` the caller
+    /// surfaces as a toast.
+    ///
+    /// `runLaunchctl` is injectable so tests can assert the exact argv
+    /// without touching real launchctl; production uses `defaultRunLaunchctl`.
+    ///
+    /// - Parameter dir: Directory to locate the agent's plist in for the
+    ///   bootstrap fallback. Defaults to the real `~/Library/LaunchAgents`;
+    ///   tests pass a temp dir.
+    static func kickstartNow(
+        label: String,
+        in dir: URL = agentsDir,
+        runLaunchctl: @Sendable ([String]) async -> Int32 = defaultRunLaunchctl
+    ) async -> KickstartOutcome {
+        guard LaunchAgentWriter.isValidLabel(label) else {
+            return KickstartOutcome(succeeded: false, usedBootstrapFallback: false)
+        }
+        let target = "gui/\(getuid())/\(label)"
+        if await runLaunchctl(["kickstart", "-k", target]) == 0 {
+            return KickstartOutcome(succeeded: true, usedBootstrapFallback: false)
+        }
+        guard let url = agentURL(forLabel: label, in: dir) else {
+            return KickstartOutcome(succeeded: false, usedBootstrapFallback: false)
+        }
+        guard await runLaunchctl(["bootstrap", "gui/\(getuid())", url.path]) == 0 else {
+            return KickstartOutcome(succeeded: false, usedBootstrapFallback: true)
+        }
+        let succeeded = await runLaunchctl(["kickstart", "-k", target]) == 0
+        return KickstartOutcome(succeeded: succeeded, usedBootstrapFallback: true)
+    }
+
+    /// Production launchctl invocation for `kickstartNow` — mirrors
+    /// `LaunchAgentWriter`'s private async launchctl helper.
+    static let defaultRunLaunchctl: @Sendable ([String]) async -> Int32 = { args in
+        await withCheckedContinuation { cont in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            p.arguments = args
+            p.standardOutput = Pipe()
+            p.standardError = Pipe()
+            p.terminationHandler = { proc in cont.resume(returning: proc.terminationStatus) }
+            do {
+                try p.run()
+            } catch {
+                AppLogger.cli.error(
+                    """
+                    launchctl \(args.first ?? "", privacy: .public) launch failed: \
+                    \(error.localizedDescription, privacy: .private)
+                    """
+                )
+                cont.resume(returning: -1)
+            }
+        }
     }
 
     private static func plistLabel(_ url: URL) -> String? {

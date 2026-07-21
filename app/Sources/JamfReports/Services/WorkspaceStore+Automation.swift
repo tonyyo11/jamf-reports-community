@@ -42,6 +42,15 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
         self.expectedFire = expectedFire
         self.lastRunFinishedAt = lastRunFinishedAt
     }
+
+    /// True when `label` belongs to the reserved managed-automation label set
+    /// (`ManagedAutomation.owns`). Only managed rows get the health card's
+    /// one-click "Run now" — a hand-built agent's label was never reserved
+    /// by the managed policy, so kickstarting it here would be surprising;
+    /// that agent's own "Run now" lives on the Schedules screen instead.
+    var isManagedAgent: Bool {
+        ManagedAutomation.owns(label)
+    }
 }
 
 /// Pure evaluator for the scheduled-run dead-man switch. Given the raw
@@ -181,6 +190,23 @@ extension WorkspaceStore {
         AutomationHealthModel.shared.issues = issues
 
         await maybeNotifyOverdue(issues: issues, profile: profile)
+    }
+
+    /// One-click "Run now" for a failing/overdue managed row on the
+    /// Automation Health card. Kickstarts the agent's own LaunchAgent job
+    /// off the main actor so the run records under its real label (see
+    /// `LaunchAgentService.kickstartNow`). Returns whether the kickstart
+    /// itself was accepted — NOT whether the collect/generate it triggers
+    /// ultimately succeeds, since that finishes asynchronously.
+    ///
+    /// No dedicated re-eval timer here: `refreshAutomationHealth` already
+    /// runs on the next reconcile, app-foreground (`willBecomeActive`), and
+    /// manual reconcile, any of which will pick up the kicked-off job's
+    /// status file once it finishes and clear the row.
+    func runNowFromHealthRow(label: String) async -> Bool {
+        await Task.detached(priority: .userInitiated) {
+            await LaunchAgentService.kickstartNow(label: label)
+        }.value.succeeded
     }
 
     /// Post ONE overdue digest per day when any schedule is overdue AND the

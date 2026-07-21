@@ -419,6 +419,11 @@ private enum AutomationCardShared {
 private struct HealthCard: View {
     let issues: [AutomationHealthIssue]
 
+    @Environment(WorkspaceStore.self) private var workspace
+    // Labels with a kickstart in flight — disables that row's button so a
+    // double-click can't fire two overlapping "Run now" requests.
+    @State private var runningLabels: Set<String> = []
+
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
@@ -443,6 +448,21 @@ private struct HealthCard: View {
     }
 
     private func healthRow(_ issue: AutomationHealthIssue) -> some View {
+        // The button sits OUTSIDE the combined-accessibility group below so
+        // VoiceOver still exposes it as its own tappable element — nesting a
+        // Button inside `.accessibilityElement(children: .combine)` would
+        // fold it into the row's summary label and lose its action.
+        HStack(alignment: .top, spacing: 8) {
+            healthSummary(issue)
+            // Only a MANAGED row is eligible — a hand-built agent's own
+            // "Run now" lives on the Schedules screen, not here.
+            if issue.isManagedAgent {
+                runNowButton(issue)
+            }
+        }
+    }
+
+    private func healthSummary(_ issue: AutomationHealthIssue) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: issue.kind == .overdue ? "clock.badge.xmark" : "xmark.octagon")
                 .foregroundStyle(Theme.Colors.warn)
@@ -459,6 +479,32 @@ private struct HealthCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(healthAccessibilityLabel(issue))
+    }
+
+    private func runNowButton(_ issue: AutomationHealthIssue) -> some View {
+        let isRunning = runningLabels.contains(issue.label)
+        return PNPButton(
+            title: isRunning ? "Running…" : "Run now",
+            icon: isRunning ? "hourglass" : "play.fill",
+            size: .sm
+        ) {
+            Task { await runNow(issue) }
+        }
+        .disabled(isRunning)
+        .help("Immediately re-run this schedule's own LaunchAgent job.")
+    }
+
+    private func runNow(_ issue: AutomationHealthIssue) async {
+        guard !runningLabels.contains(issue.label) else { return }
+        runningLabels.insert(issue.label)
+        defer { runningLabels.remove(issue.label) }
+        let started = await workspace.runNowFromHealthRow(label: issue.label)
+        workspace.toast = Toast(
+            message: started
+                ? "Run started for \(issue.displayName) — health updates when it finishes."
+                : "Couldn't start \(issue.displayName) — see Console for details.",
+            style: started ? .success : .danger
+        )
     }
 
     private func healthAccessibilityLabel(_ issue: AutomationHealthIssue) -> String {

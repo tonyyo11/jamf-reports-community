@@ -393,4 +393,45 @@ final class AutomationHealthTests: XCTestCase {
         )
         XCTAssertEqual(issues.first?.isMulti, false)
     }
+
+    // MARK: - isManagedAgent (Run Now eligibility)
+
+    func testIsManagedAgentTrueForReservedManagedLabel() {
+        let issue = AutomationHealthIssue(
+            label: ManagedAutomation.label(for: .scan),
+            displayName: "Managed Scan",
+            kind: .failing,
+            isMulti: true,
+            expectedFire: nil,
+            lastRunFinishedAt: nil
+        )
+        XCTAssertTrue(issue.isManagedAgent)
+    }
+
+    func testIsManagedAgentFalseForHandBuiltPerProfileAgent() {
+        let issue = AutomationHealthIssue(
+            label: "com.github.tonyyo11.jamf-reports-community.prod.weekly-report",
+            displayName: "Weekly Report",
+            kind: .failing,
+            isMulti: false,
+            expectedFire: nil,
+            lastRunFinishedAt: nil
+        )
+        XCTAssertFalse(issue.isManagedAgent)
+    }
+
+    /// A user's own multi schedule could be named to LOOK managed
+    /// ("managed-freshness-backup") — eligibility must be exact membership,
+    /// never a prefix match, mirroring `ManagedAutomation.owns`.
+    func testIsManagedAgentFalseForHandBuiltMultiLabelResemblingManaged() {
+        let issue = AutomationHealthIssue(
+            label: "com.github.tonyyo11.jamf-reports-community.multi.managed-freshness-backup",
+            displayName: "My Schedule",
+            kind: .overdue,
+            isMulti: true,
+            expectedFire: nil,
+            lastRunFinishedAt: nil
+        )
+        XCTAssertFalse(issue.isManagedAgent)
+    }
 }
