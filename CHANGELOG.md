@@ -57,6 +57,18 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- A single endpoint returning 401 can no longer be misread as expired
+  credentials: before declaring authentication dead (the hard-fail that
+  raises the Failing banner and asks you to re-authenticate), the collect now
+  runs one `pro auth token` confirmation probe. If credentials are valid, the
+  run completes with a clear warning naming the affected data kinds instead —
+  the 401 is endpoint-specific (commonly a token expiring inside jamf-cli's
+  long per-device commands on older versions). Genuine credential death
+  behaves exactly as before. Failing scheduled runs are also now recoverable
+  on the spot: failing or overdue managed schedules in Automation Health gain
+  a "Run now" button that re-runs the real agent under its own identity, so a
+  success genuinely clears the health state — previously a failed weekly
+  schedule stayed red for a week with no way to retry it.
 - Scheduled collects no longer report "server unreachable" — with a failing
   banner and a webhook alert — when the only data kinds that were actually due
   are ones that chronically fail (for example Platform-API kinds a tenant's

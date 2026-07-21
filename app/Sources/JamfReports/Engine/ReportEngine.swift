@@ -1353,12 +1353,86 @@ struct ReportEngine: Sendable {
         return outcomes.contains { $0.exitCode != CLIBridge.exitCodeUsage }
     }
 
+    /// Confirmation probe run before honoring an `isCollectAuthDead` verdict — one
+    /// cheap `pro auth token` call, checked for exit 0. Injectable for tests; defaults
+    /// to `defaultAuthConfirmationProbe`, which spawns the real jamf-cli.
+    ///
+    /// Field defect (production, jamf-cli 1.21.1, 2026-07): a scan-tier run made
+    /// exactly ONE live call — `patch-device-failures`, the most API-expensive
+    /// command — which 401'd, while the same morning's freshness run had already
+    /// collected six other kinds successfully on the same profile and a direct
+    /// `jamf-cli doctor` HEAD probe passed. `isCollectAuthDead` correctly reads
+    /// "zero successes + a 401 in this run's outcomes" — but that single endpoint's
+    /// 401 is not proof the credentials themselves are dead; a long-running
+    /// per-device command can 401 mid-flight (token expiry inside the call, or a
+    /// server-side token quirk on that endpoint) while the stored credentials
+    /// remain valid. This probe disproves the "dead" hypothesis before the app
+    /// aborts a run — and, on a weekly schedule, sticks a Failing banner for a week.
+    ///
+    /// Pro-only by construction: `CollectRouter` routes Jamf School profiles to
+    /// `schoolCollect` exclusively and never calls `collect`, so this probe (a
+    /// `pro auth token` call) never runs against a School profile in normal
+    /// production use. It runs unconditionally here rather than gating a second
+    /// time on product type — School's API-key auth has no equivalent to gate on.
+    typealias AuthConfirmationProbe = @Sendable (
+        _ profile: String,
+        _ bin: URL
+    ) async -> Bool
+
+    /// Production `AuthConfirmationProbe`: runs `pro auth token` and treats exit 0
+    /// as confirmed-alive. A launch failure or non-zero exit is treated as
+    /// "could not confirm" (false), which preserves today's throw behavior.
+    static let defaultAuthConfirmationProbe: AuthConfirmationProbe = { profile, bin in
+        let probeBridge = CLIBridge()
+        guard let (exitCode, _) = try? await probeBridge.runAndCapture(
+            executable: bin,
+            arguments: ["-p", profile, "pro", "auth", "token", "--output", "json", "--no-input"],
+            environment: CLIBridge.environmentForJamfCLI(),
+            onLine: { _ in }
+        ) else {
+            return false
+        }
+        return exitCode == 0
+    }
+
+    /// What `collect` must do once an `isCollectAuthDead(outcomes)` verdict has
+    /// been resolved with the confirmation probe.
+    enum AuthDeadDecision: Equatable {
+        /// The probe confirmed credentials are alive — warn (naming the 401'd
+        /// kinds) and let the run continue as an ordinary partial failure.
+        case confirmedAlive(warnedKinds: [String])
+        /// The probe could not confirm auth is alive — abort as before.
+        case confirmedDead(failedCount: Int)
+    }
+
+    /// Resolves the auth-dead branch: runs the confirmation `probe` ONLY when
+    /// `isCollectAuthDead(outcomes)` is true (never for a healthy run or one with
+    /// no 401 evidence), and returns `nil` when there is nothing to resolve.
+    /// Isolated from the process-spawning `collect` loop so it is directly
+    /// testable with a spy probe — no jamf-cli binary required.
+    static func evaluateAuthDead(
+        outcomes: [CollectOutcome],
+        profile: String,
+        bin: URL,
+        probe: AuthConfirmationProbe
+    ) async -> AuthDeadDecision? {
+        guard Self.isCollectAuthDead(outcomes) else { return nil }
+        let authFailedKinds = outcomes
+            .filter { $0.exitCode == CLIBridge.exitCodeUnauthorized }
+            .map(\.kind)
+        if await probe(profile, bin) {
+            return .confirmedAlive(warnedKinds: authFailedKinds)
+        }
+        return .confirmedDead(failedCount: authFailedKinds.count)
+    }
+
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         skipExpensive: Bool = false,
         force: Bool = false,
+        authConfirmationProbe: AuthConfirmationProbe = defaultAuthConfirmationProbe,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         guard ProfileService.isValid(profile) else {
@@ -1668,16 +1742,30 @@ struct ReportEngine: Sendable {
         // successes does not reach here — it took the cache-fallback branch above.
         // Skipped when use_cached_data=false (that path already threw collectFailed on
         // the first failure).
-        if Self.isCollectAuthDead(outcomes) {
-            let authFailures = outcomes.filter {
-                $0.exitCode == CLIBridge.exitCodeUnauthorized
-            }.count
-            let msg = "[error] auth failed for '\(profile)': \(authFailures) live call(s) " +
-                "returned 401 and none succeeded — re-authenticate " +
-                "(jamf-cli -p \(profile) pro auth token). No snapshot written."
-            AppLogger.collect.error("\(msg, privacy: .public)")
-            onLine(.init(timestamp: Date(), level: .fail, text: msg))
-            throw ReportEngineError.authExpired(profile: profile, failedCount: authFailures)
+        // Confirmation probe (see AuthConfirmationProbe's doc comment for the field
+        // defect this fixes): one endpoint's 401 is not proof credentials are dead.
+        // evaluateAuthDead only calls the probe when isCollectAuthDead is true.
+        if let decision = await Self.evaluateAuthDead(
+            outcomes: outcomes, profile: profile, bin: bin, probe: authConfirmationProbe
+        ) {
+            switch decision {
+            case .confirmedAlive(let warnedKinds):
+                let msg = "[warn] auth confirmation probe succeeded for '\(profile)' — " +
+                    "credentials are valid. \(warnedKinds.joined(separator: ", ")) " +
+                    "returned 401, but a direct `pro auth token` check passed, so this " +
+                    "reads as endpoint-specific (a mid-command token expiry or a " +
+                    "server-side token quirk on that command) rather than dead " +
+                    "credentials. Updating jamf-cli may resolve it. Continuing."
+                AppLogger.collect.warning("\(msg, privacy: .public)")
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            case .confirmedDead(let failedCount):
+                let msg = "[error] auth failed for '\(profile)': \(failedCount) live call(s) " +
+                    "returned 401 and none succeeded — re-authenticate " +
+                    "(jamf-cli -p \(profile) pro auth token). No snapshot written."
+                AppLogger.collect.error("\(msg, privacy: .public)")
+                onLine(.init(timestamp: Date(), level: .fail, text: msg))
+                throw ReportEngineError.authExpired(profile: profile, failedCount: failedCount)
+            }
         }
 
         // Total-outage guard: all live calls failed, no 401 signals, no successes, no
