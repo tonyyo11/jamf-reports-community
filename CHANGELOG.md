@@ -9,8 +9,8 @@ versions in this repository map to git tags.
 
 ### Changed
 
-- Tracked jamf-cli dependency updated to v1.24.0. No code changes required for
-  existing functionality. Notable upstream additions across v1.23.0 and v1.24.0:
+- Tracked jamf-cli dependency updated to v1.25.0. No code changes required for
+  existing functionality. Notable upstream additions across v1.23.0 through v1.25.0:
   - New `--download-packages` flag for `pro backup` to retrieve JCDS-hosted
     package binaries alongside config objects. The current backup mode runs
     `jamf-cli pro backup` without this flag; it remains unchanged, and the new
@@ -29,6 +29,10 @@ versions in this repository map to git tags.
     (v1.24.0) — additive; existing classic group/history calls are unchanged.
   - OpenAPI spec updated to Jamf Pro 11.30.0 (v1.24.0) — internal; no JSON
     shape changes affect current parsing.
+  - New `pro classic-computer-app-usage` command (v1.25.0) — additive; future
+    integration candidate for app-usage reporting.
+  - Update command `--set` flag now warns about all write-only fields (v1.25.0)
+    — bug fix internal to jamf-cli; no impact on this project.
 
 ## [2.5.0] - 2026-07-06
 
